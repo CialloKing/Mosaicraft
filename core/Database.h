@@ -93,7 +93,9 @@ public:
     std::vector<ImageRecord> queryByLRange(double minL, double maxL, int limit = 200);
 
     // 轻量版：仅返回 id 列表（GPU 路径用，避免取 BLOB/长文本列）
-    std::vector<int> queryIdsByLRange(double minL, double maxL, int limit = 200);
+    // sortByUse=true 按使用次数升序；GPU 路径无需排序可传 false 大幅加速
+    std::vector<int> queryIdsByLRange(double minL, double maxL, int limit = 200,
+                                       bool sortByUse = true);
 
     // 查询全部记录
     std::vector<ImageRecord> allRecords() { return queryByLRange(0.0, 255.0, 999999); }

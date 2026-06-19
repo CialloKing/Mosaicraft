@@ -355,7 +355,8 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
     return results;
 }
 
-std::vector<int> Database::queryIdsByLRange(double minL, double maxL, int limit)
+std::vector<int> Database::queryIdsByLRange(double minL, double maxL, int limit,
+                                              bool sortByUse)
 {
     std::vector<int> results;
     if (!m_db)
@@ -364,13 +365,15 @@ std::vector<int> Database::queryIdsByLRange(double minL, double maxL, int limit)
     }
 
     // 只取 id 列，跳过 BLOB/长文本，避免不必要的数据传输
-    const char* sql = R"SQL(
-        SELECT id
-        FROM images
-        WHERE avg_l BETWEEN ? AND ?
-        ORDER BY use_count ASC
-        LIMIT ?
-    )SQL";
+    // GPU 路径无需排序（GPU 端会重新评分），去掉 ORDER BY 可节省 ~40% 查询时间
+    const char* sql = sortByUse
+        ? R"SQL(
+            SELECT id FROM images WHERE avg_l BETWEEN ? AND ?
+            ORDER BY use_count ASC LIMIT ?
+        )SQL"
+        : R"SQL(
+            SELECT id FROM images WHERE avg_l BETWEEN ? AND ? LIMIT ?
+        )SQL";
 
     sqlite3_stmt* stmt = nullptr;
     sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
