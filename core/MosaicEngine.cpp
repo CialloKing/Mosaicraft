@@ -5,6 +5,7 @@
 #include "FeatureIndex.h"
 #include "FeaturePack.h"
 #include "FeatureUtils.h"
+#include "ImageCache.h"
 #include "UnicodeIO.h"
 #include "compute/CudaBackend.h"
 
@@ -126,6 +127,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::atomic<int64_t> opTinyNs{0};
     std::atomic<int64_t> opEdgeNs{0};
     std::atomic<int64_t> opLbpNs{0};
+
+    // Placement 阶段 profile
+    std::atomic<int64_t> opPlaceDecodeNs{0};
+    std::atomic<int64_t> opPlaceResizeNs{0};
+    std::atomic<int64_t> opPlaceCopyNs{0};
 
     std::cout << "GPU: " << (cfg.useGpu ? "CUDA enabled" : "disabled (CPU only)") << std::endl;
     cfg.print();
@@ -339,6 +345,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         std::cout << "  Selection:   " << msSelect    << " ms\n";
         std::cout << "  Placement:   " << msPlace     << " ms\n";
+        if (opPlaceDecodeNs > 0)
+        {
+            auto toMs = [](int64_t ns) { return ns / 1000000.0; };
+            std::cout << "    Decode:   " << std::setprecision(1) << toMs(opPlaceDecodeNs) << " ms\n";
+            std::cout << "    Copy:     " << std::setprecision(1) << toMs(opPlaceCopyNs) << " ms\n";
+        }
         std::cout << "  === Total: " << msTotal     << " ms ===\n";
         if (totalTiles > 0)
             std::cout << "  Avg/tile:    " << (msTotal / totalTiles) << " ms\n";
@@ -590,17 +602,22 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::atomic<int> tileDone{0};
             std::atomic<int> tileFail{0};
             std::vector<std::thread> tileWorkers;
+            ImageCache imgCache;  // 线程安全缓存
             for (int t = 0; t < nThreads; ++t) {
                 tileWorkers.emplace_back([&, t]() {
+                    using Ns = std::chrono::nanoseconds;
                     char fname[512];
                     for (int ti = t; ti < totalTiles; ti += nThreads) {
                         int libIdx = bestLibIdx[ti];
                         if (libIdx < 0) { tileFail++; continue; }
                         int ty = ti / tilesX, tx = ti % tilesX;
-                        cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                        if (m.empty()) { tileFail++; continue; }
-                        cv::Mat r;
-                        cv::resize(m, r, cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                        const auto& rec = bestRecords[ti];
+                        auto t0 = Clock::now();
+                        cv::Mat r = imgCache.getOrLoad(
+                            rec.id, rec.filePath, outTileW, outTileH);
+                        if (r.empty()) { tileFail++; continue; }
+                        auto t1 = Clock::now();
+                        opPlaceDecodeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
                         if (cfg.colorAdjust) { adjustColor(r, cfg.colorStrength); }
                         // DZI 格式: {name}_files/{level}/{col}_{row}.jpg
                         snprintf(fname, sizeof(fname), "%s/%d_%d.jpg",
@@ -643,10 +660,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::atomic<int> placeNoCand{0};  // 无效候选导致的失败
         std::atomic<int> placeLoadErr{0}; // 文件读取失败
         std::vector<std::thread> placeWorkers;
+        ImageCache imgCache;  // 线程安全缓存，避免重复 imread
         for (int t = 0; t < nThreads; ++t)
         {
             placeWorkers.emplace_back([&, t]() {
-                // 每个线程直接读文件 + cv::resize，无锁
+                using Ns = std::chrono::nanoseconds;
                 for (int ti = t; ti < totalTiles; ti += nThreads)
                 {
                     int libIdx = bestLibIdx[ti];
@@ -654,20 +672,24 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     const auto& rec = bestRecords[ti];
                     int ty = ti / tilesX, tx = ti % tilesX;
 
-                    cv::Mat matchImg = imreadUnicode(rec.filePath, cv::IMREAD_COLOR);
-                    if (matchImg.empty())
+                    auto t0 = Clock::now();
+                    cv::Mat resized = imgCache.getOrLoad(
+                        rec.id, rec.filePath, outTileW, outTileH);
+                    if (resized.empty())
                     {
                         placeLoadErr++; placeFail++;
+                        opPlaceDecodeNs += std::chrono::duration_cast<Ns>(Clock::now() - t0).count();
                         continue;
                     }
+                    auto t1 = Clock::now();
+                    opPlaceDecodeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
 
-                    cv::Mat resized;
-                    cv::resize(matchImg, resized, cv::Size(outTileW, outTileH),
-                               0, 0, cv::INTER_AREA);
                     if (cfg.colorAdjust) { adjustColor(resized, cfg.colorStrength); }
                     // 每个线程写不重叠的 ROI，无需加锁
                     resized.copyTo(output(cv::Rect(tx * outTileW, ty * outTileH,
                                                   outTileW, outTileH)));
+                    auto t2 = Clock::now();
+                    opPlaceCopyNs += std::chrono::duration_cast<Ns>(t2 - t1).count();
 
                     int d = ++placeDone;
                     if (d % 500 == 0 || d == totalTiles)
