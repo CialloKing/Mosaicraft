@@ -1,6 +1,7 @@
 #include "MosaicEngine.h"
 #include "Database.h"
 #include "DeepZoomWriter.h"
+#include "FeatureIndex.h"
 #include "FeatureUtils.h"
 #include "UnicodeIO.h"
 #include "compute/CudaBackend.h"
@@ -304,48 +305,25 @@ bool MosaicEngine::generate(const std::string& targetPath,
         // GPU 批量流水线：SQLite 预查 → 一次 GPU → 顺序选择 → 多线程贴图
         // ════════════════════════════════════════════════════════
 
-        // —— Phase A: 内存二分查找（allRecords 已在内存，无需 SQLite） ——
-        // 建立 avgL 排序索引，O(log n) 查找替代 65000+ 次 SQL 查询
-        std::cout << "  building L-index (" << dbCount << " images)..." << std::flush;
-        std::vector<std::pair<double, int>> lIndex;  // (avgL, libIdx)
-        lIndex.reserve(dbCount);
-        for (int i = 0; i < dbCount; ++i)
-            lIndex.emplace_back(allRecords[i].avgL, i);
-        std::sort(lIndex.begin(), lIndex.end());
+        // —— Phase A: ANN 近似最近邻索引 ——
+        // HNSW 图结构索引，O(log n) 查询，恒定 200 候选（不受图库规模影响）
+        std::cout << "  building ANN index (" << dbCount << " images)..." << std::flush;
+        FeatureIndex annIndex;
+        annIndex.build(allRecords);
         std::cout << " done" << std::endl;
 
         std::cout << "  collecting candidates..." << std::flush;
         std::vector<int> allIndices(totalTiles * N, -1);
+        std::vector<float> tileVec;
         for (int ti = 0; ti < totalTiles; ++ti)
         {
-            double tL = allTL[ti];
-            double lo = tL - cfg.lRange;
-            double hi = tL + cfg.lRange;
-
-            // 逐步扩大范围直到命中（处理极端亮/暗 tile）
-            while (true)
-            {
-                auto itLo = std::lower_bound(lIndex.begin(), lIndex.end(), lo,
-                    [](const auto& p, double v) { return p.first < v; });
-                auto itHi = std::upper_bound(itLo, lIndex.end(), hi,
-                    [](double v, const auto& p) { return v < p.first; });
-
-                int count = static_cast<int>(itHi - itLo);
-                if (count > 0)
-                {
-                    int take = std::min(count, N);
-                    // 从命中区间均匀采样，避免偏向某一亮度
-                    double step = static_cast<double>(count) / take;
-                    for (int j = 0; j < take; ++j)
-                        allIndices[ti * N + j] = itLo[static_cast<int>(j * step)].second;
-                    break;
-                }
-                // 扩大搜索范围（对称扩展）
-                double expand = hi - lo;
-                lo = (lo - expand < 0.0) ? 0.0 : lo - expand;
-                hi = (hi + expand > 255.0) ? 255.0 : hi + expand;
-                if (lo <= 0.0 && hi >= 255.0) break;  // 全库无匹配
-            }
+            buildTileVector(allTL[ti], allTA[ti], allTB[ti],
+                            allGrid[ti], allTiny[ti], allEdge[ti], allLBP[ti],
+                            tileVec);
+            auto ids = annIndex.query(tileVec.data(), N);
+            int nc = static_cast<int>(ids.size());
+            for (int j = 0; j < nc; ++j)
+                allIndices[ti * N + j] = ids[j];  // 已是 0-based 库索引
         }
         std::cout << " done" << std::endl;
 
