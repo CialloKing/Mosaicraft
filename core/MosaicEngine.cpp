@@ -115,7 +115,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     using Ms = std::chrono::duration<double, std::milli>;
     auto tStart = Clock::now();
     auto tLast  = tStart;
-    double msFeat = 0, msANNBuild = 0, msANNQuery = 0, msGPUScore = 0, msSelect = 0, msPlace = 0;
+    double msFeat = 0, msANNBuild = 0, msGPUScore = 0, msSelect = 0, msPlace = 0;
     double msPrep = 0;  // DB加载 + GPU library构建（仅GPU路径）
 
     // 特征提取操作级 profile（纳秒精度的原子累加器）
@@ -315,7 +315,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     auto printBenchmark = [&](const char* label) {
         if (!cfg.benchmark) return;
         double msTotal = Ms(Clock::now() - tStart).count();
-        std::cout << "\n═══ Benchmark " << label << " ═══\n";
+        std::cout << "\n=== Benchmark " << label << " ===\n";
         std::cout << "  Total tiles:     " << totalTiles << "\n";
         std::cout << "  Candidates/tile: " << N << "\n";
         if (msPrep > 0)
@@ -342,7 +342,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         std::cout << "  Selection:   " << msSelect    << " ms\n";
         std::cout << "  Placement:   " << msPlace     << " ms\n";
-        std::cout << "  ═══ Total: " << msTotal     << " ms ═══\n";
+        std::cout << "  === Total: " << msTotal     << " ms ===\n";
         if (totalTiles > 0)
             std::cout << "  Avg/tile:    " << (msTotal / totalTiles) << " ms\n";
         std::cout << std::flush;
