@@ -7,11 +7,15 @@ GPU 加速的照片马赛克拼贴生成器。
 ## 特性
 
 - **五层特征匹配** — AvgLAB + 4×4 Grid + 16×16 TinyImage + 边缘密度 + LBP 纹理
+- **ANN 近似最近邻** — hnswlib 索引，O(log n) 查询，恒定 200 候选
 - **GPU 加速** — CUDA kernel 并行计算候选距离（RTX 4060 / sm_89）
 - **自动退化** — 无 GPU 时静默切换 CPU，零配置
 - **SQLite 索引** — 标量存库、大特征存文件，支持 10 万+ 图库
+- **Deep Zoom 输出** — 生成多级金字塔 + `.dzi` 清单 + 内嵌 OpenSeadragon HTML viewer，双击浏览
+- **分块输出** — `--tiled` 每 tile 独立文件，无 JPEG 65500px 尺寸限制
+- **局部颜色校正** — 逐 tile 随机微调亮度/饱和度，减少重复感
 - **Unicode 路径** — 日文/中文文件名原生支持
-- **Linux 风格 CLI** — `build` / `mosaic` 子命令
+- **Linux 风格 CLI** — `build` / `mosaic` / `inspect` 子命令
 
 ## 依赖
 
@@ -68,29 +72,88 @@ mosaicraft mosaic -i target.jpg -d ./lib.db -o output.jpg
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
-| `--tile-w/h` | 32 | tile 尺寸 |
-| `--out-w/h` | 原图 | 输出分辨率 |
-| `--lab-weight` | 0.15 | LAB 权重 |
-| `--grid-weight` | 0.25 | Grid4x4 权重 |
-| `--tiny-weight` | 0.35 | TinyImage 权重 |
-| `--edge-weight` | 0.05 | 边缘权重 |
-| `--lbp-weight` | 0.20 | LBP 纹理权重 |
-| `--candidates` | 200 | 粗筛候选数 |
+| `-i, --input` | — | 目标图（必填） |
+| `-d, --db` | mosaicraft.db | 数据库路径 |
+| `-o, --output` | mosaic.jpg | 输出路径 |
+| `--tile-w` | 45 | tile 宽度 |
+| `--tile-h` | 80 | tile 高度 |
+| `--out-w/h` | 原图 | 输出分辨率（0=auto） |
+| `--candidates` | 200 | 粗筛候选数（ANN→GPU 精筛） |
+| `--lab-weight` | 0.20 | LAB 颜色权重 |
+| `--grid-weight` | 0.45 | Grid4x4 结构权重 |
+| `--tiny-weight` | 0.25 | TinyImage 纹理权重 |
+| `--edge-weight` | 0.05 | 边缘密度权重 |
+| `--lbp-weight` | 0.05 | LBP 纹理权重 |
+| `--penalty` | 0.01 | 使用次数惩罚 |
+| `--topn-random` | 1 | 从 Top-N 随机选取（>1 增加多样性） |
+| `--quality` | 95 | JPEG 质量 1-100 |
+| `--tiled` | — | 分块输出（每 tile 独立文件） |
+| `--deepzoom` | — | 生成 Deep Zoom 金字塔 + HTML viewer |
+| `--no-color-adjust` | — | 禁用颜色微调 |
+| `--color-strength` | 0.10 | 颜色微调强度 0-0.5 |
+| `--benchmark` | — | 打印各阶段耗时分解 |
 | `--cpu` | — | 强制 CPU |
+
+### 查看特征
+
+```bash
+mosaicraft inspect -i image.jpg [-d lib.db]
+```
+
+输出目标图的 AvgLAB、边缘密度、LBP 熵、数据库覆盖情况、亮度分布统计。
 
 ### 示例
 
 ```bash
-# 输出 1920×1080，细粒度 tile，加重纹理匹配
-mosaicraft mosaic -i photo.jpg -d lib.db \
-  --out-w 1920 --out-h 1080 \
-  --tile-w 16 --tile-h 16 \
-  --tiny-weight 0.4 --lbp-weight 0.3
+# 标准生成（分块 + Deep Zoom，输出后双击 .html 即可浏览）
+mosaicraft mosaic -i photo.jpg -d lib.db -o result --tiled --deepzoom
 
 # 快速预览
 mosaicraft mosaic -i photo.jpg -d lib.db \
   --out-w 640 --out-h 480 --tile-w 64 --tile-h 64
+
+# 高多样性 + 启动 benchmark
+mosaicraft mosaic -i photo.jpg -d lib.db \
+  --topn-random 5 --benchmark
 ```
+
+## 性能概况
+
+以下数据基于 **25,034 张图库**、RTX 4060、Release 构建，`--benchmark` 实测。
+
+### 阶段耗时（602 tiles, 1920×1080 输出）
+
+| 阶段 | 耗时 | 占比 | 备注 |
+|------|------|------|------|
+| Prep (DB + GPU 加载) | 1100-1400 ms | 71-89% | 🔴 主要瓶颈：50K 个小文件 open() |
+| Features (多线程提取) | 140-160 ms | 9-10% | |
+| Placement (贴图) | 220-270 ms | 14-17% | |
+| ANN 构建+查询 | ~10 ms | <1% | ✅ 已优化完毕 |
+| GPU 评分 | 3-4 ms | <1% | ✅ 吞吐 40-136M scores/s |
+| Selection | ~0 ms | ~0% | |
+
+### candidates 对性能的影响
+
+| candidates | GPU 评分 | GPU 吞吐 | 总时间 |
+|-----------|---------|----------|--------|
+| 200 | 3.0 ms | 40M scores/s | ~1550 ms |
+| 500 | 3.8 ms | 80M scores/s | ~1760 ms |
+| 1000 | 4.4 ms | 136M scores/s | ~1550 ms |
+
+**结论：candidates 已经是纯质量参数，提高至 1000 对总时间几乎无影响。**
+
+### 当前瓶颈
+
+```
+启动阶段的 50,000 次小文件 open()/close()
+  ↓
+25K .tiny (256B) + 25K .hist (1024B) = 31 MB 数据
+  ↓
+瓶颈不在数据量（31MB SSD 顺序读 < 10ms）
+   在文件句柄风暴（50K 次 syscall ≈ 1000ms+）
+```
+
+ANN、GPU 评分、特征提取均已优化至总时间 1-10% 以内，继续投入这些方向收益极低。
 
 ## 项目结构
 
@@ -101,15 +164,29 @@ Mosaicraft/
 │   ├── BatchProcessor      多线程批处理
 │   ├── Database            SQLite 索引
 │   ├── FeatureExtractor    V1~V4 特征提取
+│   ├── FeatureIndex        HNSW 近似最近邻索引
 │   ├── MosaicEngine        马赛克生成引擎
+│   ├── DeepZoomWriter      Deep Zoom 金字塔 + HTML viewer
+│   ├── FeatureUtils        特征距离计算
 │   └── UnicodeIO           Unicode 路径支持
 ├── compute/
 │   ├── CudaBackend.h       CUDA 接口
-│   └── CudaBackend.cu      GPU kernel
+│   ├── CudaBackend.cu      GPU kernel
+│   └── FeatureExtractorCuda.cu  GPU 特征提取
 ├── src/
-│   └── main.cpp            CLI 入口
+│   └── main.cpp            CLI 入口 (build / mosaic / inspect)
 └── CMakeLists.txt
 ```
+
+## 路线图
+
+| 版本 | 内容 | 状态 |
+|------|------|------|
+| v0.4 | inspect 命令、特征可视化 | ✅ |
+| v0.5 | ANN 候选选择 (hnswlib) | ✅ |
+| v0.6 | Deep Zoom HTML viewer、颜色校正、benchmark、topn-random CLI | ✅ |
+| v0.7 | **Feature Pack Cache** — 50K 小文件 → 单个二进制缓存，Prep 预计 1400→~300ms | 计划中 |
+| v1.0 | 百万图库支持、稳定版 | 计划中 |
 
 ## 许可证
 
