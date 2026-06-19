@@ -5,6 +5,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <opencv2/imgproc.hpp>
 
 #include <tiffio.h>
 
@@ -47,14 +48,16 @@ public:
 
     ~BigTiffWriter() { if (m_tif) TIFFClose(m_tif); }
 
-    // 逐行写入（OpenCV Mat BGR 交错，step 为行字节数 = cols * 3 或补齐值）
+    // 逐行写入（输入为 OpenCV BGR，逐行 cvtColor→RGB 后写 TIFF）
     bool writeMat(const uint8_t* data, int step)
     {
         for (int y = 0; y < m_h; ++y)
         {
-            if (TIFFWriteScanline(m_tif,
-                    const_cast<uint8_t*>(data + static_cast<size_t>(y) * step),
-                    y, 0) < 0)
+            cv::Mat rowBGR(1, m_w, CV_8UC3,
+                           const_cast<uint8_t*>(data + static_cast<size_t>(y) * step));
+            cv::Mat rowRGB;
+            cv::cvtColor(rowBGR, rowRGB, cv::COLOR_BGR2RGB);
+            if (TIFFWriteScanline(m_tif, rowRGB.data, y, 0) < 0)
             {
                 std::cerr << "  BigTiffWriter: row " << y << " failed" << std::endl;
                 return false;

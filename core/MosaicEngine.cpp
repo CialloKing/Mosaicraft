@@ -820,11 +820,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // 写入输出
     if (fmt == "tiff")
     {
-        // TIFF PHOTOMETRIC_RGB 需要 RGB 顺序，OpenCV 默认 BGR
-        cv::Mat rgb;
-        cv::cvtColor(output, rgb, cv::COLOR_BGR2RGB);
+        // BigTiffWriter 内部逐行 BGR→RGB，无需全图 cvtColor
         BigTiffWriter tiff(outputPath, outW, outH);
-        if (!tiff.writeMat(rgb.data, static_cast<int>(rgb.step)))
+        if (!tiff.writeMat(output.data, static_cast<int>(output.step)))
         {
             std::cerr << "ERROR: BigTiffWriter failed" << std::endl;
             return false;
