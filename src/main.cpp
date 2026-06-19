@@ -1,6 +1,7 @@
 #include "core/Database.h"
 #include "core/Database.h"
 #include "core/FeatureExtractor.h"
+#include "core/FeatureUtils.h"
 #include "core/ImageNormalizer.h"
 #include "core/MosaicEngine.h"
 #include "core/UnicodeIO.h"
@@ -436,6 +437,101 @@ static int cmdMosaic(int argc, char* argv[])
 }
 
 // ============================================================
+// inspect 子命令 — 特征诊断
+// ============================================================
+static int cmdInspect(int argc, char* argv[])
+{
+    std::string imagePath;
+    std::string dbPath = "mosaicraft.db";
+
+    for (int i = 2; i < argc; ++i)
+    {
+        std::string arg = argv[i];
+        if ((arg == "-i" || arg == "--input") && i + 1 < argc)
+            imagePath = argv[++i];
+        else if ((arg == "-d" || arg == "--db") && i + 1 < argc)
+            dbPath = argv[++i];
+    }
+
+    if (imagePath.empty())
+    {
+        std::cerr << "Usage: mosaicraft inspect -i <image> [-d <db>]" << std::endl;
+        return 1;
+    }
+
+    // 加载并归一化图像
+    cv::Mat img = imreadUnicode(imagePath, cv::IMREAD_COLOR);
+    if (img.empty())
+    {
+        std::cerr << "ERROR: Cannot read: " << imagePath << std::endl;
+        return 1;
+    }
+    std::cout << "Image: " << imagePath << " (" << img.cols << "x" << img.rows << ")" << std::endl;
+
+    cv::Mat native;
+    cv::resize(img, native, cv::Size(180, 320), 0, 0, cv::INTER_LINEAR);
+
+    // 提取特征
+    cv::Mat lab;
+    cv::cvtColor(native, lab, cv::COLOR_BGR2Lab);
+    cv::Scalar m = cv::mean(lab);
+    double tL = m[0], tA = m[1], tB = m[2];
+
+    auto grid = computeGrid4x4(native);
+    auto tiny = computeTinyImage(native);
+    double edge = computeEdgeDensity(native);
+    auto lbp = computeLBPHistogram(native);
+
+    // 显示
+    std::cout << "\nAvgLAB:  L=" << std::fixed << std::setprecision(1) << tL
+              << "  A=" << tA << "  B=" << tB << std::endl;
+    std::cout << "Edge density: " << std::setprecision(4) << edge << std::endl;
+    std::cout << "LBP entropy:  " << std::setprecision(4);
+    double lbpEntropy = 0.0;
+    for (float v : lbp) { if (v > 0) lbpEntropy -= v * std::log2(v); }
+    std::cout << lbpEntropy << std::endl;
+
+    // 查询数据库
+    Database db(dbPath);
+    if (db.isOpen())
+    {
+        int total = db.totalCount();
+        auto candidates = db.queryIdsByLRange(tL - 20, tL + 20, 200, false);
+        std::cout << "\nDatabase: " << total << " images" << std::endl;
+        std::cout << "L-range [" << (tL - 20) << ", " << (tL + 20) << "]: "
+                  << candidates.size() << " candidates"
+                  << " (" << std::setprecision(1) << (100.0 * candidates.size() / total) << "% of library)"
+                  << std::endl;
+
+        // 统计 L 分布（从 allRecords）
+        auto all = db.allRecords();
+        double minL = 255, maxL = 0, sumL = 0;
+        for (const auto& r : all)
+        {
+            if (r.avgL < minL) minL = r.avgL;
+            if (r.avgL > maxL) maxL = r.avgL;
+            sumL += r.avgL;
+        }
+        std::cout << "Library L range: [" << std::setprecision(1) << minL
+                  << ", " << maxL << "]  avg=" << (sumL / total) << std::endl;
+
+        // 覆盖率
+        int dark = 0, mid = 0, bright = 0;
+        for (const auto& r : all)
+        {
+            if (r.avgL < 30) dark++;
+            else if (r.avgL < 70) mid++;
+            else bright++;
+        }
+        std::cout << "Distribution: dark=" << dark << " (" << (100.0*dark/total)
+                  << "%)  mid=" << mid << " (" << (100.0*mid/total)
+                  << "%)  bright=" << bright << " (" << (100.0*bright/total) << "%)" << std::endl;
+    }
+
+    return 0;
+}
+
+// ============================================================
 // main
 // ============================================================
 int main(int argc, char* argv[])
@@ -455,6 +551,10 @@ int main(int argc, char* argv[])
     else if (cmd == "mosaic")
     {
         return cmdMosaic(argc, argv);
+    }
+    else if (cmd == "inspect")
+    {
+        return cmdInspect(argc, argv);
     }
     else if (cmd == "-h" || cmd == "--help")
     {
