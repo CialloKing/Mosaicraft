@@ -263,35 +263,18 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int tilesY = (target.rows + cfg.tileH - 1) / cfg.tileH;
 
     // 输出 tile 使用原生分辨率（180×320）
-    // 单图模式下若总尺寸超过 JPEG 65500px 限制则自动等比缩减
-    // 分块模式下不缩放（每 tile 独立文件，无尺寸限制）
+    // 单图模式下，若总尺寸超过编码器 65500px 限制则自动切换分块输出
     int outTileW = cfg.nativeTileW;
     int outTileH = cfg.nativeTileH;
     const int MAX_DIM = 65500;
     if (!cfg.tiledOutput && (tilesX * outTileW > MAX_DIM || tilesY * outTileH > MAX_DIM))
     {
-        double scaleW = (tilesX * outTileW > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesX * outTileW) : 1.0;
-        double scaleH = (tilesY * outTileH > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesY * outTileH) : 1.0;
-        double scale = std::min(scaleW, scaleH);
-        outTileW = std::max(1, static_cast<int>(outTileW * scale));
-        outTileH = std::max(1, static_cast<int>(outTileH * scale));
-        std::cout << "  (auto-scaled tile " << outTileW << "x" << outTileH
-                  << " to fit JPEG 65500px limit)" << std::endl;
+        cfg.tiledOutput = true;
+        std::cout << "  (auto-switched to tiled: output exceeds 65500px encoder limit)" << std::endl;
     }
 
     int outW = tilesX * outTileW;
     int outH = tilesY * outTileH;
-
-    // 单图模式下，若输出 Mat 超过 1.5 GB 则自动回退到分块输出
-    const int64_t MAX_SINGLE_PIXELS = 1500LL * 1024 * 1024 / 3;  // ~524M pixels
-    if (!cfg.tiledOutput && static_cast<int64_t>(outW) * outH > MAX_SINGLE_PIXELS)
-    {
-        std::cout << "  (auto-switching to tiled: output would be "
-                  << outW << "x" << outH << ", "
-                  << (static_cast<int64_t>(outW) * outH * 3 / (1024*1024)) << " MB)"
-                  << std::endl;
-        cfg.tiledOutput = true;
-    }
 
     // 边缘补全（按目标 tile 尺寸算 pad，不是输出 tile 尺寸）
     int padRight  = tilesX * cfg.tileW - target.cols;
@@ -779,9 +762,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::string ext = outputPath.substr(dotPos + 1);
             if (ext == "png" || ext == "PNG") fmt = "png";
             else if (ext == "webp" || ext == "WEBP") fmt = "webp";
+            else if (ext == "tiff" || ext == "tif" || ext == "TIFF" || ext == "TIF") fmt = "tiff";
         }
     }
-    if (fmt != "jpg" && fmt != "png" && fmt != "webp") fmt = "jpg";
+    if (fmt != "jpg" && fmt != "png" && fmt != "webp" && fmt != "tiff") fmt = "jpg";
 
     // 构建 imwrite 参数
     std::vector<int> writeParams;
@@ -791,6 +775,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
         writeParams = {cv::IMWRITE_PNG_COMPRESSION, 3};  // 3 = 速度和大小平衡
     else if (fmt == "webp")
         writeParams = {cv::IMWRITE_WEBP_QUALITY, cfg.jpegQuality};
+    else if (fmt == "tiff")
+        writeParams = {};  // TIFF 无需特殊参数
 
     if (!imwriteUnicode(outputPath, output, writeParams))
     {

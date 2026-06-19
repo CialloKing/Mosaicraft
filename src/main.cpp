@@ -76,7 +76,8 @@ Mosaic options:
   --tile-h     <n>       Tile height in pixels (default: 80)
   --tiled                Output tiles as separate files (no size limit)
   --deepzoom             Generate Deep Zoom pyramid (compatible with OpenSeadragon)
-  --quality    <n>       JPEG quality 1-100 (default: 95)
+  --quality    <n>       JPEG/WebP quality 1-100 (default: 95)
+  --format     <ext>     jpg, png, webp, tiff (default: from output extension)
   --cpu                  Force CPU (no GPU)
 
 Common options:
@@ -449,7 +450,7 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --candidates <n>      Coarse candidates per tile (default: 200)" << std::endl;
             std::cout << "  --topn-random <n>     Pick from top-N (1=best, >1=varied, default: 1)" << std::endl;
             std::cout << "  --quality <n>         JPEG/WebP quality 1-100 (default: 95)" << std::endl;
-            std::cout << "  --format <ext>        Output format: jpg, png, webp (default: from output extension)" << std::endl;
+            std::cout << "  --format <ext>        Output format: jpg, png, webp, tiff (default: from extension)" << std::endl;
             std::cout << "  --cpu                 Force CPU (no GPU)" << std::endl;
             std::cout << "  --tiled               Output tiles as separate files (no size limit)" << std::endl;
             std::cout << "  --deepzoom            Generate Deep Zoom pyramid + .dzi + HTML viewer" << std::endl;
@@ -481,6 +482,7 @@ static int cmdMosaic(int argc, char* argv[])
             std::string ext = outputPath.substr(dotPos + 1);
             if (ext == "png" || ext == "PNG") cfg.outputFormat = "png";
             else if (ext == "webp" || ext == "WEBP") cfg.outputFormat = "webp";
+            else if (ext == "tiff" || ext == "tif" || ext == "TIFF" || ext == "TIF") cfg.outputFormat = "tiff";
         }
     }
 
