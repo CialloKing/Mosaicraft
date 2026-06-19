@@ -210,7 +210,9 @@ private:
 class ImageCache
 {
 public:
-    size_t maxImages;  // 公开供日志输出
+    ImageCache() : maxImages(500) {}  // 固定上限，避免多线程累计消耗过多内存
+
+    size_t maxImages;
 
     cv::Mat* get(int id, const std::string& path)
     {
@@ -363,8 +365,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int tilesX = (target.cols + cfg.tileW - 1) / cfg.tileW;
     int tilesY = (target.rows + cfg.tileH - 1) / cfg.tileH;
 
-    // 输出 tile 始终使用原生分辨率（180×320），保证每个 tile 可观可辨
-    // 但如果总输出超过 JPEG 65500px 限制，则自动等比缩减
+    // 输出 tile 使用原生分辨率（180×320），保证每个 tile 可观可辨
+    // 但如果总输出超过 JPEG 65500px 硬限制，自动等比缩减
     int outTileW = cfg.nativeTileW;
     int outTileH = cfg.nativeTileH;
     const int MAX_DIM = 65500;
@@ -376,7 +378,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         outTileW = std::max(1, static_cast<int>(outTileW * scale));
         outTileH = std::max(1, static_cast<int>(outTileH * scale));
         std::cout << "  (auto-scaled tile " << outTileW << "x" << outTileH
-                  << " to fit JPEG limit)" << std::endl;
+                  << " to fit JPEG 65500px limit)" << std::endl;
     }
 
     int outW = tilesX * outTileW;
@@ -493,8 +495,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 for (int ti = t; ti < totalTiles; ti += nQueryThreads)
                 {
                     double tL = allTL[ti];
-                    // sortByUse=false: GPU 端会重新评分，SQL 排序无意义，节省 ~40% 查询时间
+                    // sortByUse=false: GPU 端会重新评分
                     auto ids = threadDb.queryIdsByLRange(tL - cfg.lRange, tL + cfg.lRange, N, false);
+                    // 候选不足时逐步扩大 L 范围（处理极端亮/暗 tile 偏离图库分布的情况）
+                    double expandRange = cfg.lRange;
+                    while (ids.empty() && expandRange < 255.0)
+                    {
+                        expandRange *= 2.0;
+                        ids = threadDb.queryIdsByLRange(tL - expandRange, tL + expandRange, N, false);
+                    }
                     int nc = static_cast<int>(ids.size());
                     for (int j = 0; j < nc; ++j)
                         allIndices[ti * N + j] = ids[j] - 1;  // DB id(1-based) → 库索引(0-based)
@@ -531,6 +540,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
         // —— Phase D: 顺序选择（邻域去重 + Top-N 随机，依赖历史状态不可并行） ——
         std::cout << "  selecting best..." << std::flush;
+        int noCandidateCount = 0;  // 诊断：统计无候选的 tile
         for (int ti = 0; ti < totalTiles; ++ti)
         {
             double* scores = &allScores[ti * N];
@@ -539,7 +549,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
             int validCount = 0;
             for (int j = 0; j < N; ++j)
                 if (indices[j] >= 0) validCount++;
-            if (validCount == 0) { continue; }
+            if (validCount == 0)
+            {
+                noCandidateCount++;
+                continue;
+            }
             // 频率分级惩罚：1次轻罚(允许并排)、2次中罚、3+次重罚(防聚类)
             for (int j = 0; j < N; ++j)
             {
@@ -576,6 +590,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         cntGrid = totalTiles; cntTiny = totalTiles;
         cntEdge = totalTiles; cntLBP  = totalTiles;
+        if (noCandidateCount > 0)
+            std::cout << " (" << noCandidateCount << " tiles had no candidates!)";
         std::cout << " done" << std::endl;
 
         // —— Phase E: 多线程贴图（带 ImageCache，减少重复 I/O） ——
@@ -585,25 +601,26 @@ bool MosaicEngine::generate(const std::string& targetPath,
                   << std::flush;
         std::atomic<int> placeDone{0};
         std::atomic<int> placeFail{0};
+        std::atomic<int> placeNoCand{0};  // 无效候选导致的失败
+        std::atomic<int> placeLoadErr{0}; // 文件读取失败
         std::vector<std::thread> placeWorkers;
         for (int t = 0; t < nThreads; ++t)
         {
             placeWorkers.emplace_back([&, t]() {
-                // 每个线程独立缓存，避免加锁竞争
-                ImageCache imgCache;
+                // 每个线程直接读文件（ImageCache 在极端并行下可能引发内存压力）
                 for (int ti = t; ti < totalTiles; ti += nThreads)
                 {
                     int libIdx = bestLibIdx[ti];
-                    if (libIdx < 0) { placeFail++; continue; }
+                    if (libIdx < 0) { placeNoCand++; placeFail++; continue; }
                     const auto& rec = bestRecords[ti];
                     int ty = ti / tilesX, tx = ti % tilesX;
 
-                    // 优先从缓存取，缓存未命中则读文件
-                    cv::Mat matchImg;
-                    cv::Mat* cached = imgCache.get(rec.id, rec.filePath);
-                    if (cached) { matchImg = *cached; }
-                    else { matchImg = imreadUnicode(rec.filePath, cv::IMREAD_COLOR); }
-                    if (matchImg.empty()) { placeFail++; continue; }
+                    cv::Mat matchImg = imreadUnicode(rec.filePath, cv::IMREAD_COLOR);
+                    if (matchImg.empty())
+                    {
+                        placeLoadErr++; placeFail++;
+                        continue;
+                    }
 
                     cv::Mat resized;
                     cv::resize(matchImg, resized, cv::Size(outTileW, outTileH),
@@ -622,6 +639,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
         for (auto& w : placeWorkers) w.join();
         matched = totalTiles - placeFail.load();
         loadFail = placeFail.load();
+        if (placeNoCand > 0 || placeLoadErr > 0)
+            std::cout << "  (noCand=" << placeNoCand << " loadErr=" << placeLoadErr << ")";
         std::cout << std::endl;
     }
     else
