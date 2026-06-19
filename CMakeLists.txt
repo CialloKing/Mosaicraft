@@ -13,6 +13,17 @@ find_package(OpenCV REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 
+# CUDA 架构（可通过 -DCUDA_ARCH=sm_xx 覆盖，默认 RTX 4060 / sm_89）
+set(CUDA_ARCH "sm_89" CACHE STRING "Target CUDA compute capability")
+
+# vcpkg include 路径，供 nvcc 使用（nvcc 不经过 target_include_directories）
+if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+    set(VCPKG_TRIPLET_INCLUDE "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include")
+else()
+    message(WARNING "vcpkg toolchain not detected; nvcc may miss third-party headers")
+    set(VCPKG_TRIPLET_INCLUDE "")
+endif()
+
 # ============================================================
 # 手动编译 CUDA 源文件
 # ============================================================
@@ -24,15 +35,15 @@ add_custom_command(
     COMMAND "${CUDAToolkit_BIN_DIR}/nvcc.exe"
         -c "${CMAKE_SOURCE_DIR}/compute/CudaBackend.cu"
         -o "${CUDA_OBJ1}"
-        -arch=sm_89 -std=c++17
+        -arch=${CUDA_ARCH} -std=c++17
         -ccbin "${CMAKE_CXX_COMPILER}"
         -I"${CMAKE_SOURCE_DIR}"
-        -I"D:/C++project/SDK/vcpkg/installed/x64-windows/include/opencv4"
-        -I"D:/C++project/SDK/vcpkg/installed/x64-windows/include"
+        -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
+        -I"${VCPKG_TRIPLET_INCLUDE}"
         -Xcompiler "/utf-8" --compiler-options "/MD"
     DEPENDS "${CMAKE_SOURCE_DIR}/compute/CudaBackend.cu"
             "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h"
-    COMMENT "Compiling CudaBackend.cu..."
+    COMMENT "Compiling CudaBackend.cu (${CUDA_ARCH})..."
 )
 
 add_custom_command(
@@ -40,11 +51,11 @@ add_custom_command(
     COMMAND "${CUDAToolkit_BIN_DIR}/nvcc.exe"
         -c "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu"
         -o "${CUDA_OBJ2}"
-        -arch=sm_89 -std=c++17
+        -arch=${CUDA_ARCH} -std=c++17
         -ccbin "${CMAKE_CXX_COMPILER}"
         -I"${CMAKE_SOURCE_DIR}"
-        -I"D:/C++project/SDK/vcpkg/installed/x64-windows/include/opencv4"
-        -I"D:/C++project/SDK/vcpkg/installed/x64-windows/include"
+        -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
+        -I"${VCPKG_TRIPLET_INCLUDE}"
         -Xcompiler "/utf-8" --compiler-options "/MD"
     DEPENDS "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu"
             "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.h"
