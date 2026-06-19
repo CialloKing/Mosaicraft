@@ -75,7 +75,10 @@ public:
         // 创建 L2 空间索引
         m_space = new hnswlib::L2Space(dim);
         m_index = new hnswlib::HierarchicalNSW<float>(m_space, count, 16, 200);
-        m_index->addPoint(data.data(), 0);  // 批量添加从 id=0 开始
+        // 逐点添加：hnswlib::addPoint 每次只加一个向量，label 即 0-based 库索引
+        for (int i = 0; i < count; ++i) {
+            m_index->addPoint(&data[i * dim], i);
+        }
 
         return true;
     }
