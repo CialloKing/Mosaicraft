@@ -1,6 +1,7 @@
 #include "core/Database.h"
 #include "core/Database.h"
 #include "core/FeatureExtractor.h"
+#include "core/FeaturePack.h"
 #include "core/FeatureUtils.h"
 #include "core/ImageNormalizer.h"
 #include "core/MosaicEngine.h"
@@ -304,6 +305,14 @@ static int cmdBuild(int argc, char* argv[])
     std::cout << std::endl;
     std::cout << "Done: " << inserted << " images indexed, "
               << db.totalCount() << " total in database." << std::endl;
+
+    // 构建二进制特征缓存（消除 50K 小文件 I/O）
+    std::cout << "Building feature cache..." << std::flush;
+    if (FeaturePack::buildCache(featDir, db.allRecords()))
+        std::cout << " done" << std::endl;
+    else
+        std::cout << " failed" << std::endl;
+
     return 0;
 }
 

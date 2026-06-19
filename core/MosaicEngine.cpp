@@ -2,6 +2,7 @@
 #include "Database.h"
 #include "DeepZoomWriter.h"
 #include "FeatureIndex.h"
+#include "FeaturePack.h"
 #include "FeatureUtils.h"
 #include "UnicodeIO.h"
 #include "compute/CudaBackend.h"
@@ -10,6 +11,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -114,6 +116,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
     auto tStart = Clock::now();
     auto tLast  = tStart;
     double msFeat = 0, msANNBuild = 0, msANNQuery = 0, msGPUScore = 0, msSelect = 0, msPlace = 0;
+    double msPrep = 0;  // DB加载 + GPU library构建（仅GPU路径）
+
+    // 特征提取操作级 profile（纳秒精度的原子累加器）
+    std::atomic<int64_t> opResizeNs{0};
+    std::atomic<int64_t> opLabNs{0};
+    std::atomic<int64_t> opGridNs{0};
+    std::atomic<int64_t> opTinyNs{0};
+    std::atomic<int64_t> opEdgeNs{0};
+    std::atomic<int64_t> opLbpNs{0};
 
     std::cout << "GPU: " << (cfg.useGpu ? "CUDA enabled" : "disabled (CPU only)") << std::endl;
     cfg.print();
@@ -175,32 +186,65 @@ bool MosaicEngine::generate(const std::string& targetPath,
             h_use[i] = rec.useCount;
         }
 
-        // 多线程并行读取 tiny 和 LBP 文件（主要 I/O 瓶颈）
-        int nUploadThreads = std::thread::hardware_concurrency();
-        if (nUploadThreads < 2) nUploadThreads = 2;
-        if (nUploadThreads > 16) nUploadThreads = 16;  // 磁盘 I/O 线程过多反而退化
-        std::vector<std::thread> uploadWorkers;
-        for (int t = 0; t < nUploadThreads; ++t)
+        // 尝试加载二进制特征缓存（tiny.bin + lbp.bin）
+        // 缓存有效时用 2 次 fread 替代 50K 次文件 I/O
+        bool cacheLoaded = false;
+        std::string featDirCache;  // 特征目录（从首条记录提取，回退时复用）
+        if (!allRecords.empty() && !allRecords[0].tinyPath.empty())
         {
-            uploadWorkers.emplace_back([&, t]() {
-                FeatureCache cache;  // 每个线程独立缓存，避免加锁
-                for (int i = t; i < dbCount; i += nUploadThreads)
-                {
-                    const auto& rec = allRecords[i];
-                    if (!rec.tinyPath.empty())
-                    {
-                        auto* td = cache.loadTiny(rec.id, rec.tinyPath);
-                        if (td) std::memcpy(&h_tiny[i*256], td->data(), 256);
-                    }
-                    if (!rec.histPath.empty())
-                    {
-                        auto* ld = cache.loadLBP(rec.id, rec.histPath);
-                        if (ld) std::memcpy(&h_lbp[i*256], ld->data(), 256*sizeof(float));
-                    }
-                }
-            });
+            // 从首条记录的 tinyPath 提取 featDir
+            std::string firstTiny = allRecords[0].tinyPath;
+            // tinyPath 格式: "normalized/features/000042.tiny"
+            auto slashPos = firstTiny.rfind('/');
+            auto backslashPos = firstTiny.rfind('\\');
+            auto dirEnd = (slashPos != std::string::npos && backslashPos != std::string::npos)
+                ? std::max(slashPos, backslashPos)
+                : (slashPos != std::string::npos ? slashPos : backslashPos);
+            if (dirEnd != std::string::npos)
+            {
+                featDirCache = firstTiny.substr(0, dirEnd);
+                std::vector<int> recordIds;
+                recordIds.reserve(dbCount);
+                for (const auto& r : allRecords)
+                    recordIds.push_back(r.id);
+                cacheLoaded = FeaturePack::tryLoad(featDirCache, recordIds, h_tiny, h_lbp);
+            }
         }
-        for (auto& w : uploadWorkers) w.join();
+
+        if (!cacheLoaded)
+        {
+            // 缓存不存在或失效 → 回退到多线程逐文件读取
+            std::cout << "  (feature cache miss, reading individual files)" << std::endl;
+            int nUploadThreads = std::thread::hardware_concurrency();
+            if (nUploadThreads < 2) nUploadThreads = 2;
+            if (nUploadThreads > 16) nUploadThreads = 16;  // 磁盘 I/O 线程过多反而退化
+            std::vector<std::thread> uploadWorkers;
+            for (int t = 0; t < nUploadThreads; ++t)
+            {
+                uploadWorkers.emplace_back([&, t]() {
+                    FeatureCache cache;  // 每个线程独立缓存，避免加锁
+                    for (int i = t; i < dbCount; i += nUploadThreads)
+                    {
+                        const auto& rec = allRecords[i];
+                        if (!rec.tinyPath.empty())
+                        {
+                            auto* td = cache.loadTiny(rec.id, rec.tinyPath);
+                            if (td) std::memcpy(&h_tiny[i*256], td->data(), 256);
+                        }
+                        if (!rec.histPath.empty())
+                        {
+                            auto* ld = cache.loadLBP(rec.id, rec.histPath);
+                            if (ld) std::memcpy(&h_lbp[i*256], ld->data(), 256*sizeof(float));
+                        }
+                    }
+                });
+            }
+            for (auto& w : uploadWorkers) w.join();
+
+            // 回退完成，顺带构建二进制缓存（下次启动即可命中）
+            if (!featDirCache.empty())
+                FeaturePack::buildCache(featDirCache, allRecords);
+        }
         if (cuda::uploadLibrary(gpuLib, h_lab.data(), h_grid.data(),
                                  h_tiny.data(), h_edge.data(),
                                  h_lbp.data(), h_use.data(), dbCount))
@@ -274,7 +318,19 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << "\n═══ Benchmark " << label << " ═══\n";
         std::cout << "  Total tiles:     " << totalTiles << "\n";
         std::cout << "  Candidates/tile: " << N << "\n";
+        if (msPrep > 0)
+            std::cout << "  Prep (DB+GPU): " << std::fixed << std::setprecision(1) << msPrep    << " ms\n";
         std::cout << "  Features:    " << std::fixed << std::setprecision(1) << msFeat       << " ms\n";
+        if (opResizeNs > 0)
+        {
+            auto toMs = [](int64_t ns) { return ns / 1000000.0; };
+            std::cout << "    Resize:   " << std::setprecision(1) << toMs(opResizeNs) << " ms\n";
+            std::cout << "    LAB:      " << std::setprecision(1) << toMs(opLabNs)    << " ms\n";
+            std::cout << "    Grid:     " << std::setprecision(1) << toMs(opGridNs)   << " ms\n";
+            std::cout << "    Tiny:     " << std::setprecision(1) << toMs(opTinyNs)   << " ms\n";
+            std::cout << "    Edge:     " << std::setprecision(1) << toMs(opEdgeNs)   << " ms\n";
+            std::cout << "    LBP:      " << std::setprecision(1) << toMs(opLbpNs)    << " ms\n";
+        }
         if (msANNBuild > 0)
             std::cout << "  ANN (bld+q): " << msANNBuild  << " ms\n";
         if (msGPUScore > 0)
@@ -300,23 +356,37 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     int nThreads = std::thread::hardware_concurrency();
     if (nThreads < 2) nThreads = 2;
+
+    // 准备阶段计时：DB加载、GPU library构建到此结束
+    auto tPreFeat = Clock::now();
+    msPrep = Ms(tPreFeat - tLast).count();
+    tLast = tPreFeat;
+
     std::atomic<int> featDone{0};
     std::vector<std::thread> featWorkers;
     for (int t = 0; t < nThreads; ++t) {
         featWorkers.emplace_back([&, t]() {
+            using Ns = std::chrono::nanoseconds;
             for (int idx = t; idx < totalTiles; idx += nThreads) {
                 int ty = idx / tilesX, tx = idx % tilesX;
                 cv::Mat roi = target(cv::Rect(tx*cfg.tileW, ty*cfg.tileH, cfg.tileW, cfg.tileH));
                 // 将 ROI 缩放到图库原生分辨率，确保特征与库图片同尺度可比
                 cv::Mat roiNative;
+                auto t0 = Clock::now();
                 cv::resize(roi, roiNative, cv::Size(cfg.nativeTileW, cfg.nativeTileH), 0, 0, cv::INTER_LINEAR);
+                auto t1 = Clock::now(); opResizeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
                 cv::Mat lab; cv::cvtColor(roiNative, lab, cv::COLOR_BGR2Lab);
                 cv::Scalar m = cv::mean(lab);
                 allTL[idx]=m[0]; allTA[idx]=m[1]; allTB[idx]=m[2];
+                auto t2 = Clock::now(); opLabNs += std::chrono::duration_cast<Ns>(t2 - t1).count();
                 allGrid[idx] = computeGrid4x4(roiNative);
+                auto t3 = Clock::now(); opGridNs += std::chrono::duration_cast<Ns>(t3 - t2).count();
                 allTiny[idx] = computeTinyImage(roiNative);
+                auto t4 = Clock::now(); opTinyNs += std::chrono::duration_cast<Ns>(t4 - t3).count();
                 allEdge[idx] = computeEdgeDensity(roiNative);
+                auto t5 = Clock::now(); opEdgeNs += std::chrono::duration_cast<Ns>(t5 - t4).count();
                 allLBP[idx] = computeLBPHistogram(roiNative);
+                auto t6 = Clock::now(); opLbpNs += std::chrono::duration_cast<Ns>(t6 - t5).count();
                 int d = ++featDone;
                 if (d % 500 == 0 || d == totalTiles)
                     std::cout << "\r  features " << d << "/" << totalTiles << std::flush;
