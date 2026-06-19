@@ -6,6 +6,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -430,38 +431,49 @@ bool MosaicEngine::generate(const std::string& targetPath,
         // GPU 批量流水线：SQLite 预查 → 一次 GPU → 顺序选择 → 多线程贴图
         // ════════════════════════════════════════════════════════
 
-        // —— Phase A: 多线程并行收集候选（每线程独立 SQLite 连接，WAL 模式支持并发读） ——
+        // —— Phase A: 内存二分查找（allRecords 已在内存，无需 SQLite） ——
+        // 建立 avgL 排序索引，O(log n) 查找替代 65000+ 次 SQL 查询
+        std::cout << "  building L-index (" << dbCount << " images)..." << std::flush;
+        std::vector<std::pair<double, int>> lIndex;  // (avgL, libIdx)
+        lIndex.reserve(dbCount);
+        for (int i = 0; i < dbCount; ++i)
+            lIndex.emplace_back(allRecords[i].avgL, i);
+        std::sort(lIndex.begin(), lIndex.end());
+        std::cout << " done" << std::endl;
+
         std::cout << "  collecting candidates..." << std::flush;
         std::vector<int> allIndices(totalTiles * N, -1);
-        int nQueryThreads = std::thread::hardware_concurrency();
-        if (nQueryThreads < 2) nQueryThreads = 2;
-        if (nQueryThreads > 8) nQueryThreads = 8;  // SQLite I/O 瓶颈，线程过多反而退化
-        std::vector<std::thread> queryWorkers;
-        for (int t = 0; t < nQueryThreads; ++t)
+        for (int ti = 0; ti < totalTiles; ++ti)
         {
-            queryWorkers.emplace_back([&, t]() {
-                // 每个线程打开独立的只读 SQLite 连接（WAL 模式天然支持多读）
-                Database threadDb(dbPath);
-                if (!threadDb.isOpen()) { return; }
-                for (int ti = t; ti < totalTiles; ti += nQueryThreads)
+            double tL = allTL[ti];
+            double lo = tL - cfg.lRange;
+            double hi = tL + cfg.lRange;
+
+            // 逐步扩大范围直到命中（处理极端亮/暗 tile）
+            while (true)
+            {
+                auto itLo = std::lower_bound(lIndex.begin(), lIndex.end(), lo,
+                    [](const auto& p, double v) { return p.first < v; });
+                auto itHi = std::upper_bound(itLo, lIndex.end(), hi,
+                    [](double v, const auto& p) { return v < p.first; });
+
+                int count = static_cast<int>(itHi - itLo);
+                if (count > 0)
                 {
-                    double tL = allTL[ti];
-                    // sortByUse=false: GPU 端会重新评分
-                    auto ids = threadDb.queryIdsByLRange(tL - cfg.lRange, tL + cfg.lRange, N, false);
-                    // 候选不足时逐步扩大 L 范围（处理极端亮/暗 tile 偏离图库分布的情况）
-                    double expandRange = cfg.lRange;
-                    while (ids.empty() && expandRange < 255.0)
-                    {
-                        expandRange *= 2.0;
-                        ids = threadDb.queryIdsByLRange(tL - expandRange, tL + expandRange, N, false);
-                    }
-                    int nc = static_cast<int>(ids.size());
-                    for (int j = 0; j < nc; ++j)
-                        allIndices[ti * N + j] = ids[j] - 1;  // DB id(1-based) → 库索引(0-based)
+                    int take = std::min(count, N);
+                    // 从命中区间均匀采样，避免偏向某一亮度
+                    double step = static_cast<double>(count) / take;
+                    for (int j = 0; j < take; ++j)
+                        allIndices[ti * N + j] = itLo[static_cast<int>(j * step)].second;
+                    break;
                 }
-            });
+                // 扩大搜索范围（对称扩展）
+                double expand = hi - lo;
+                lo = (lo - expand < 0.0) ? 0.0 : lo - expand;
+                hi = (hi + expand > 255.0) ? 255.0 : hi + expand;
+                if (lo <= 0.0 && hi >= 255.0) break;  // 全库无匹配
+            }
         }
-        for (auto& w : queryWorkers) w.join();
         std::cout << " done" << std::endl;
 
         // —— Phase B: 扁平化 tile 特征（GPU 需要连续内存布局） ——
