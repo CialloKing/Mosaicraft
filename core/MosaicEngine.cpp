@@ -772,18 +772,16 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // 写入输出
     if (fmt == "tiff")
     {
-        // 使用 libtiff 直写，绕过 OpenCV 的 65500px 限制
-        try
+        // TIFF PHOTOMETRIC_RGB 需要 RGB 顺序，OpenCV 默认 BGR
+        cv::Mat rgb;
+        cv::cvtColor(output, rgb, cv::COLOR_BGR2RGB);
+        BigTiffWriter tiff(outputPath, outW, outH);
+        if (!tiff.writeMat(rgb.data, static_cast<int>(rgb.step)))
         {
-            BigTiffWriter tiff(outputPath, outW, outH);
-            tiff.writeMat(output.data, static_cast<int>(output.step));
-            tiff.close();
-        }
-        catch (const std::exception& e)
-        {
-            std::cerr << "ERROR: " << e.what() << std::endl;
+            std::cerr << "ERROR: BigTiffWriter failed" << std::endl;
             return false;
         }
+        tiff.close();
     }
     else
     {
