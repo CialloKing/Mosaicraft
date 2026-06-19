@@ -431,8 +431,8 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  -i, --input <path>    Target image (required)" << std::endl;
             std::cout << "  -d, --db <path>       Database (default: mosaicraft.db)" << std::endl;
             std::cout << "  -o, --output <path>   Output path (default: mosaic.jpg)" << std::endl;
-            std::cout << "  --tile-w <n>          Tile width (default: 45, min: 4)" << std::endl;
-            std::cout << "  --tile-h <n>          Tile height (default: 80, min: 4)" << std::endl;
+            std::cout << "  --tile-w <n>          Tile width (default: 9, min: 4)" << std::endl;
+            std::cout << "  --tile-h <n>          Tile height (default: 16, min: 4)" << std::endl;
             std::cout << "  --out-w <n>           Output width in pixels (0=auto)" << std::endl;
             std::cout << "  --out-h <n>           Output height in pixels (0=auto)" << std::endl;
             std::cout << "  --lab-weight <f>      LAB weight (default: 0.20)" << std::endl;

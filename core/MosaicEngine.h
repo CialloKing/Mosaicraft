@@ -11,8 +11,8 @@ class MosaicEngine
 public:
     struct Config
     {
-        int tileW = 45;         // 默认 45×80，保持 9:16 比例；增大 tile 确保特征与图库同尺度，输出可控
-        int tileH = 80;
+        int tileW = 9;          // 默认 9×16（图库 180×320 的等比缩小），最大化 tile 数量
+        int tileH = 16;
         int candidates = 200;
         double lRange = 20.0;
         double usePenalty = 0.01;

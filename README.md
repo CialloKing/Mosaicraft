@@ -75,8 +75,8 @@ mosaicraft mosaic -i target.jpg -d ./lib.db -o output.jpg
 | `-i, --input` | — | 目标图（必填） |
 | `-d, --db` | mosaicraft.db | 数据库路径 |
 | `-o, --output` | mosaic.jpg | 输出路径 |
-| `--tile-w` | 45 | tile 宽度 |
-| `--tile-h` | 80 | tile 高度 |
+| `--tile-w` | 9 | tile 宽度 |
+| `--tile-h` | 16 | tile 高度 |
 | `--out-w/h` | 原图 | 输出分辨率（0=auto） |
 | `--candidates` | 200 | 粗筛候选数（ANN→GPU 精筛） |
 | `--lab-weight` | 0.20 | LAB 颜色权重 |
@@ -110,7 +110,7 @@ mosaicraft mosaic -i photo.jpg -d lib.db -o result --tiled --deepzoom
 
 # 快速预览
 mosaicraft mosaic -i photo.jpg -d lib.db \
-  --out-w 640 --out-h 480 --tile-w 64 --tile-h 64
+  --out-w 640 --out-h 480 --tile-w 45 --tile-h 80
 
 # 高多样性 + 启动 benchmark
 mosaicraft mosaic -i photo.jpg -d lib.db \
