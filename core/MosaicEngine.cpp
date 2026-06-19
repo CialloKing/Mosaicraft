@@ -349,6 +349,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         {
             auto toMs = [](int64_t ns) { return ns / 1000000.0; };
             std::cout << "    Decode:   " << std::setprecision(1) << toMs(opPlaceDecodeNs) << " ms\n";
+            std::cout << "    Resize:   " << std::setprecision(1) << toMs(opPlaceResizeNs) << " ms\n";
             std::cout << "    Copy:     " << std::setprecision(1) << toMs(opPlaceCopyNs) << " ms\n";
         }
         std::cout << "  === Total: " << msTotal     << " ms ===\n";

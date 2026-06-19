@@ -30,6 +30,16 @@ public:
         cv::Mat img = cv::imread(filePath, cv::IMREAD_COLOR);
         if (img.empty()) return img;
 
+        // 归一化图片本身就是 180×320，与输出 tile 同尺寸时跳过 resize
+        if (img.cols == outW && img.rows == outH)
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            auto it = m_cache.find(key);
+            if (it != m_cache.end()) return it->second;
+            m_cache[key] = img;
+            return img;
+        }
+
         cv::Mat resized;
         cv::resize(img, resized, cv::Size(outW, outH), 0, 0, cv::INTER_AREA);
 
