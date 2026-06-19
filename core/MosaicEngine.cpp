@@ -1,5 +1,6 @@
 #include "MosaicEngine.h"
 #include "Database.h"
+#include "DeepZoomWriter.h"
 #include "UnicodeIO.h"
 #include "compute/CudaBackend.h"
 
@@ -568,8 +569,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
         {
             // 分块输出：每 tile 独立文件，无尺寸限制，无需大 Mat
             std::error_code ec;
-            std::filesystem::create_directories(outputPath, ec);
-            std::cout << "  writing tiles to " << outputPath << "/ (" << nThreads << " threads)..."
+            std::string level0Dir = outputPath + "_files/0";
+            std::filesystem::create_directories(level0Dir, ec);
+            std::cout << "  writing tiles (" << nThreads << " threads)..."
                       << std::flush;
             std::atomic<int> tileDone{0};
             std::atomic<int> tileFail{0};
@@ -585,8 +587,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         if (m.empty()) { tileFail++; continue; }
                         cv::Mat r;
                         cv::resize(m, r, cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
-                        snprintf(fname, sizeof(fname), "%s/tile_%04d_%04d.jpg",
-                                 outputPath.c_str(), ty, tx);
+                        // DZI 格式: {name}_files/{level}/{col}_{row}.jpg
+                        snprintf(fname, sizeof(fname), "%s/%d_%d.jpg",
+                                 level0Dir.c_str(), tx, ty);
                         imwriteUnicode(fname, r, {cv::IMWRITE_JPEG_QUALITY, cfg.jpegQuality});
                         int d = ++tileDone;
                         if (d % 2000 == 0 || d == totalTiles)
@@ -598,10 +601,17 @@ bool MosaicEngine::generate(const std::string& targetPath,
             matched = totalTiles - tileFail.load();
             loadFail = tileFail.load();
             std::cout << std::endl;
-            std::cout << "Tiles written: " << matched << " / " << totalTiles;
+            std::cout << "Level 0: " << matched << " / " << totalTiles << " tiles";
             if (loadFail > 0) std::cout << "  (failed: " << loadFail << ")";
             std::cout << std::endl;
             if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);
+
+            if (cfg.deepZoom)
+            {
+                std::cout << "  building pyramid levels..." << std::endl;
+                DeepZoomWriter::buildPyramid(level0Dir, outTileW, outTileH,
+                                             tilesX, tilesY, cfg.jpegQuality);
+            }
             return true;
         }
 

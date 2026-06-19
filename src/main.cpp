@@ -72,6 +72,7 @@ Mosaic options:
   --tile-w     <n>       Tile width in pixels (default: 45)
   --tile-h     <n>       Tile height in pixels (default: 80)
   --tiled                Output tiles as separate files (no size limit)
+  --deepzoom             Generate Deep Zoom pyramid (compatible with OpenSeadragon)
   --quality    <n>       JPEG quality 1-100 (default: 95)
   --cpu                  Force CPU (no GPU)
 
@@ -386,6 +387,11 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.tiledOutput = true;
         }
+        else if (arg == "--deepzoom")
+        {
+            cfg.tiledOutput = true;   // deepzoom 隐含 tiled
+            cfg.deepZoom = true;
+        }
         else if (arg == "-h" || arg == "--help")
         {
             std::cout << "Usage: mosaicraft mosaic -i <image> -d <db> [options]" << std::endl;
@@ -407,6 +413,7 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --quality <n>         JPEG quality 1-100 (default: 95)" << std::endl;
             std::cout << "  --cpu                 Force CPU (no GPU)" << std::endl;
             std::cout << "  --tiled               Output tiles as separate files (no size limit)" << std::endl;
+            std::cout << "  --deepzoom            Generate Deep Zoom pyramid + .dzi manifest" << std::endl;
             return 0;
         }
         else
