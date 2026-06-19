@@ -131,12 +131,9 @@ public:
         dzi.close();
         std::cout << "  DZI manifest: " << dziPath << " (" << (maxLevel + 1) << " levels)" << std::endl;
 
-        // 生成 index.html — 双击即可在浏览器中浏览 Deep Zoom 马赛克
+        // 生成 index.html — 使用内嵌 tileSource 避免 file:// 下 XHR 被拦截
         std::string htmlPath = basePath + ".html";
         std::ofstream html(htmlPath);
-        // dzi 文件名（不含路径，因为 html 和 .dzi 在同一目录）
-        std::string dziName = stem + ".dzi";
-        // _files 目录名
         std::string filesDir = stem + "_files";
         html << R"(<!DOCTYPE html>
 <html lang="en">
@@ -154,17 +151,38 @@ public:
     border-radius: 20px; font-size: 13px; pointer-events: none; z-index: 10;
   }
   #info span { color: #fff; font-weight: 600; }
+  #fallback {
+    display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    background: rgba(0,0,0,0.85); color: #ccc; padding: 20px 30px; border-radius: 12px;
+    text-align: center; z-index: 20; font-size: 14px; line-height: 1.8;
+  }
+  #fallback code { background: #333; padding: 2px 8px; border-radius: 4px; color: #fff; }
 </style>
 </head>
 <body>
 <div id="viewer"></div>
 <div id="info">)" << totalW << " × " << totalH << R"( px  |  Level 0: <span>)" << cols << "×" << rows << R"(</span> tiles  |  Scroll to zoom</div>
+<div id="fallback">
+  <p>OpenSeadragon failed to load.</p>
+  <p>Run a local server in the output directory:</p>
+  <p><code>python -m http.server 8080</code></p>
+  <p>then open <code>http://localhost:8080/)" << stem << R"(.html</code></p>
+</div>
 <script src="https://unpkg.com/openseadragon@4.1.1/build/openseadragon/openseadragon.min.js"></script>
 <script>
-  OpenSeadragon({
+  var viewer = OpenSeadragon({
     id: "viewer",
     prefixUrl: "https://unpkg.com/openseadragon@4.1.1/build/openseadragon/images/",
-    tileSources: ")" << dziName << R"(",
+    tileSources: {
+      Image: {
+        xmlns: "http://schemas.microsoft.com/deepzoom/2008",
+        Url: ")" << filesDir << R"(/",
+        Format: "jpg",
+        Overlap: "0",
+        TileSize: ")" << tileW << R"(",
+        Size: { Width: ")" << totalW << R"(", Height: ")" << totalH << R"(" }
+      }
+    },
     showNavigator: true,
     navigatorPosition: "BOTTOM_RIGHT",
     navigatorHeight: 140,
@@ -176,6 +194,9 @@ public:
     visibilityRatio: 0.5,
     minZoomImageRatio: 0.1,
     maxZoomPixelRatio: 4
+  });
+  viewer.addHandler("open-failed", function() {
+    document.getElementById("fallback").style.display = "block";
   });
 </script>
 </body>
