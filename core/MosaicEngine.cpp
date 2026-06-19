@@ -10,6 +10,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -17,6 +18,7 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <string>
 #include <unordered_map>
@@ -73,6 +75,25 @@ private:
 };
 
 // ============================================================
+// 局部颜色校正：随机微调饱和度与亮度，减少马赛克重复感
+// 在 HSV 空间操作，H 通道不变，S/V 通道在 [1-strength, 1+strength] 范围内随机缩放
+// ============================================================
+static void adjustColor(cv::Mat& img, double strength)
+{
+    cv::Mat hsv;
+    cv::cvtColor(img, hsv, cv::COLOR_BGR2HSV);
+    std::vector<cv::Mat> channels(3);
+    cv::split(hsv, channels);
+    // channels[0]=H, [1]=S, [2]=V
+    double sFactor = 1.0 + (rand() % 2001 - 1000) / 1000.0 * strength;
+    double vFactor = 1.0 + (rand() % 2001 - 1000) / 1000.0 * strength;
+    channels[1] = channels[1] * sFactor;  // 饱和度
+    channels[2] = channels[2] * vFactor;  // 亮度
+    cv::merge(channels, hsv);
+    cv::cvtColor(hsv, img, cv::COLOR_HSV2BGR);
+}
+
+// ============================================================
 // 生成
 // ============================================================
 bool MosaicEngine::generate(const std::string& targetPath,
@@ -86,6 +107,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
     {
         cfg.useGpu = false;
     }
+
+    // Benchmark 计时
+    using Clock = std::chrono::steady_clock;
+    using Ms = std::chrono::duration<double, std::milli>;
+    auto tStart = Clock::now();
+    auto tLast  = tStart;
+    double msFeat = 0, msANNBuild = 0, msANNQuery = 0, msGPUScore = 0, msSelect = 0, msPlace = 0;
+
     std::cout << "GPU: " << (cfg.useGpu ? "CUDA enabled" : "disabled (CPU only)") << std::endl;
     cfg.print();
 
@@ -236,6 +265,33 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     // ——— 多线程预计算所有 tile 特征 ———
     int totalTiles = tilesX * tilesY;
+    int N = cfg.candidates;  // 候选数（GPU 路径下用于 benchmark）
+
+    // Benchmark 报告 lambda（在结束时调用；必须在 totalTiles/N 之后定义）
+    auto printBenchmark = [&](const char* label) {
+        if (!cfg.benchmark) return;
+        double msTotal = Ms(Clock::now() - tStart).count();
+        std::cout << "\n═══ Benchmark " << label << " ═══\n";
+        std::cout << "  Total tiles:     " << totalTiles << "\n";
+        std::cout << "  Candidates/tile: " << N << "\n";
+        std::cout << "  Features:    " << std::fixed << std::setprecision(1) << msFeat       << " ms\n";
+        if (msANNBuild > 0)
+            std::cout << "  ANN (bld+q): " << msANNBuild  << " ms\n";
+        if (msGPUScore > 0)
+        {
+            std::cout << "  GPU scoring: " << msGPUScore  << " ms\n";
+            std::cout << "  GPU speed:   " << std::fixed << std::setprecision(0)
+                      << (totalTiles * static_cast<double>(N) / msGPUScore * 1000.0)
+                      << " scores/s\n";
+        }
+        std::cout << "  Selection:   " << msSelect    << " ms\n";
+        std::cout << "  Placement:   " << msPlace     << " ms\n";
+        std::cout << "  ═══ Total: " << msTotal     << " ms ═══\n";
+        if (totalTiles > 0)
+            std::cout << "  Avg/tile:    " << (msTotal / totalTiles) << " ms\n";
+        std::cout << std::flush;
+    };
+
     std::vector<double> allTL(totalTiles), allTA(totalTiles), allTB(totalTiles);
     std::vector<std::vector<float>> allGrid(totalTiles);
     std::vector<std::vector<uint8_t>> allTiny(totalTiles);
@@ -270,6 +326,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
     for (auto& w : featWorkers) w.join();
     std::cout << std::endl;
 
+    // Phase 0 计时
+    auto tFeat = Clock::now();
+    msFeat = Ms(tFeat - tLast).count();
+    tLast = tFeat;
+
     int matched = 0;
     int loadFail = 0;
     int cntGrid = 0, cntMissGrid = 0;
@@ -290,7 +351,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     double nTinyW = cfg.tinyWeight / wSum;
     double nEdgeW = cfg.edgeWeight / wSum;
     double nLbpW  = cfg.lbpWeight / wSum;
-    const int N = cfg.candidates;
+    N = cfg.candidates;
 
     // 每个 tile 最终选中的记录（GPU 路径预存，CPU 路径内联处理）
     std::vector<ImageRecord> bestRecords(totalTiles);
@@ -327,6 +388,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         std::cout << " done" << std::endl;
 
+        // Phase A 计时（ANN 构建 + 查询）
+        auto tANN = Clock::now();
+        msANNBuild = Ms(tANN - tLast).count();
+        tLast = tANN;
+
         // —— Phase B: 扁平化 tile 特征（GPU 需要连续内存布局） ——
         std::vector<float>   flatGrid(totalTiles * 48);
         std::vector<uint8_t> flatTiny(totalTiles * 256);
@@ -351,6 +417,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
             nLabW, nGridW, nTinyW, nEdgeW, nLbpW, cfg.usePenalty,
             allScores.data());
         std::cout << " done" << std::endl;
+
+        // Phase C 计时
+        auto tGPU = Clock::now();
+        msGPUScore = Ms(tGPU - tLast).count();
+        tLast = tGPU;
 
         // —— Phase D: 顺序选择（邻域去重 + Top-N 随机，依赖历史状态不可并行） ——
         std::cout << "  selecting best..." << std::flush;
@@ -408,6 +479,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << " (" << noCandidateCount << " tiles had no candidates!)";
         std::cout << " done" << std::endl;
 
+        // Phase D 计时
+        auto tSelect = Clock::now();
+        msSelect = Ms(tSelect - tLast).count();
+        tLast = tSelect;
+
         // —— Phase E: 贴图 ——
         int nThreads = std::thread::hardware_concurrency();
         if (nThreads < 2) nThreads = 2;
@@ -434,6 +510,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         if (m.empty()) { tileFail++; continue; }
                         cv::Mat r;
                         cv::resize(m, r, cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                        if (cfg.colorAdjust) { adjustColor(r, cfg.colorStrength); }
                         // DZI 格式: {name}_files/{level}/{col}_{row}.jpg
                         snprintf(fname, sizeof(fname), "%s/%d_%d.jpg",
                                  level0Dir.c_str(), tx, ty);
@@ -459,6 +536,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 DeepZoomWriter::buildPyramid(level0Dir, outTileW, outTileH,
                                              tilesX, tilesY, cfg.jpegQuality);
             }
+
+            // 贴图计时
+            msPlace = Ms(Clock::now() - tLast).count();
+            printBenchmark("tiled");
             return true;
         }
 
@@ -492,6 +573,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     cv::Mat resized;
                     cv::resize(matchImg, resized, cv::Size(outTileW, outTileH),
                                0, 0, cv::INTER_AREA);
+                    if (cfg.colorAdjust) { adjustColor(resized, cfg.colorStrength); }
                     // 每个线程写不重叠的 ROI，无需加锁
                     resized.copyTo(output(cv::Rect(tx * outTileW, ty * outTileH,
                                                   outTileW, outTileH)));
@@ -586,6 +668,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 cv::Mat resized;
                 cv::resize(matchImg, resized, cv::Size(outTileW, outTileH),
                            0, 0, cv::INTER_AREA);
+                if (cfg.colorAdjust) { adjustColor(resized, cfg.colorStrength); }
                 resized.copyTo(output(cv::Rect(tx * outTileW, ty * outTileH,
                                               outTileW, outTileH)));
                 matched++;
@@ -622,6 +705,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
               << " lbp=" << cntLBP << "/" << (cntLBP + cntMissLBP)
               << std::endl;
     if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);
+
+    // 贴图计时
+    msPlace = Ms(Clock::now() - tLast).count();
+    printBenchmark("single");
     return true;
 }
 

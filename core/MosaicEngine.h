@@ -44,6 +44,13 @@ public:
         bool deepZoom    = false;   // 生成 Deep Zoom 金字塔（含多级缩放 + .dzi 清单）
         int  jpegQuality = 95;      // JPEG 质量（1-100），分块模式用 95，单图用 100
 
+        // 局部颜色校正：对每张候选图随机微调亮度/饱和度，减少视觉重复感
+        bool   colorAdjust = true;         // 启用颜色校正
+        double colorStrength = 0.10;       // 调整幅度（±10%）
+
+        // Benchmark：输出各阶段耗时与统计（用于性能分析）
+        bool benchmark = false;
+
         void print() const
         {
             std::cout << "  tile: " << tileW << "x" << tileH
@@ -58,6 +65,7 @@ public:
                       << " Edge=" << edgeWeight
                       << " LBP=" << lbpWeight
                       << "  penalty=" << usePenalty
+                      << (colorAdjust ? "  colorAdj=on" : "")
                       << std::endl;
         }
     };

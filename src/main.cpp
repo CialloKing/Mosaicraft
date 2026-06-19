@@ -57,8 +57,9 @@ static void printHelp()
     std::cout << R"(Mosaicraft — Image mosaic generator
 
 Usage:
-  mosaicraft build  [options]    Build image database
-  mosaicraft mosaic [options]    Create mosaic from target image
+  mosaicraft build   [options]    Build image database
+  mosaicraft mosaic  [options]    Create mosaic from target image
+  mosaicraft inspect [options]    Inspect image features / database coverage
 
 Build options:
   -i, --input  <dir>     Source image directory (required)
@@ -79,6 +80,10 @@ Mosaic options:
 
 Common options:
   -h, --help             Show this help
+
+Inspect options:
+  -i, --input  <path>    Image to inspect (required)
+  -d, --db     <path>    Database path (default: mosaicraft.db)
 )";
 }
 
@@ -375,6 +380,11 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.candidates = std::max(10, std::atoi(argv[++i]));
         }
+        else if (arg == "--topn-random" && i + 1 < argc)
+        {
+            int v = std::atoi(argv[++i]);
+            cfg.topNrandom = std::max(1, v);
+        }
         else if (arg == "--cpu")
         {
             cfg.useGpu = false;
@@ -392,6 +402,19 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.tiledOutput = true;   // deepzoom 隐含 tiled
             cfg.deepZoom = true;
+        }
+        else if (arg == "--no-color-adjust")
+        {
+            cfg.colorAdjust = false;
+        }
+        else if (arg == "--color-strength" && i + 1 < argc)
+        {
+            double v = std::atof(argv[++i]);
+            cfg.colorStrength = std::max(0.0, std::min(0.5, v));
+        }
+        else if (arg == "--benchmark")
+        {
+            cfg.benchmark = true;
         }
         else if (arg == "-h" || arg == "--help")
         {
@@ -411,10 +434,14 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --penalty <f>         Use-count penalty (default: 0.01)" << std::endl;
             std::cout << "  --l-range <f>         L brightness search range (default: 20)" << std::endl;
             std::cout << "  --candidates <n>      Coarse candidates per tile (default: 200)" << std::endl;
+            std::cout << "  --topn-random <n>     Pick from top-N (1=best, >1=varied, default: 1)" << std::endl;
             std::cout << "  --quality <n>         JPEG quality 1-100 (default: 95)" << std::endl;
             std::cout << "  --cpu                 Force CPU (no GPU)" << std::endl;
             std::cout << "  --tiled               Output tiles as separate files (no size limit)" << std::endl;
             std::cout << "  --deepzoom            Generate Deep Zoom pyramid + .dzi manifest" << std::endl;
+            std::cout << "  --no-color-adjust     Disable per-tile brightness/saturation jitter" << std::endl;
+            std::cout << "  --color-strength <f>  Color jitter intensity 0-0.5 (default: 0.10)" << std::endl;
+            std::cout << "  --benchmark           Print per-phase timing breakdown" << std::endl;
             return 0;
         }
         else

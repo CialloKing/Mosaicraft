@@ -130,6 +130,59 @@ public:
         dzi << "</Image>\n";
         dzi.close();
         std::cout << "  DZI manifest: " << dziPath << " (" << (maxLevel + 1) << " levels)" << std::endl;
+
+        // 生成 index.html — 双击即可在浏览器中浏览 Deep Zoom 马赛克
+        std::string htmlPath = basePath + ".html";
+        std::ofstream html(htmlPath);
+        // dzi 文件名（不含路径，因为 html 和 .dzi 在同一目录）
+        std::string dziName = stem + ".dzi";
+        // _files 目录名
+        std::string filesDir = stem + "_files";
+        html << R"(<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mosaicraft — )" << stem << R"(</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a1a; font-family: system-ui, sans-serif; }
+  #viewer { width: 100vw; height: 100vh; }
+  #info {
+    position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.7); color: #ccc; padding: 6px 16px;
+    border-radius: 20px; font-size: 13px; pointer-events: none; z-index: 10;
+  }
+  #info span { color: #fff; font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="viewer"></div>
+<div id="info">)" << totalW << " × " << totalH << R"( px  |  Level 0: <span>)" << cols << "×" << rows << R"(</span> tiles  |  Scroll to zoom</div>
+<script src="https://unpkg.com/openseadragon@4.1.1/build/openseadragon/openseadragon.min.js"></script>
+<script>
+  OpenSeadragon({
+    id: "viewer",
+    prefixUrl: "https://unpkg.com/openseadragon@4.1.1/build/openseadragon/images/",
+    tileSources: ")" << dziName << R"(",
+    showNavigator: true,
+    navigatorPosition: "BOTTOM_RIGHT",
+    navigatorHeight: 140,
+    navigatorWidth: 180,
+    showZoomControl: true,
+    showHomeControl: true,
+    showFullPageControl: true,
+    homeFillsViewer: true,
+    visibilityRatio: 0.5,
+    minZoomImageRatio: 0.1,
+    maxZoomPixelRatio: 4
+  });
+</script>
+</body>
+</html>
+)";
+        html.close();
+        std::cout << "  HTML viewer: " << htmlPath << std::endl;
     }
 };
 
