@@ -298,7 +298,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     auto allRecords = db.allRecords();  // 全库记录，在 GPU 路径中按索引取
     dbCount = static_cast<int>(allRecords.size());
 
-    // ——— 图库特征常驻 GPU ———
+    // ——— 图库特征常驻 GPU（多线程并行加载 tiny/LBP 文件） ———
     cuda::GpuLibrary gpuLib;
     if (cfg.useGpu && cuda::isCudaAvailable())
     {
@@ -309,26 +309,43 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::vector<float>   h_lbp(dbCount * 256);
         std::vector<int>     h_use(dbCount);
 
-        FeatureCache cache;
+        // 打包标量特征（无需 I/O，单线程即可）
         for (int i = 0; i < dbCount; ++i)
         {
             const auto& rec = allRecords[i];
             h_lab[i*3+0] = rec.avgL; h_lab[i*3+1] = rec.avgA; h_lab[i*3+2] = rec.avgB;
             if (rec.grid4x4.size() == 48)
                 std::memcpy(&h_grid[i*48], rec.grid4x4.data(), 48*sizeof(float));
-            if (!rec.tinyPath.empty())
-            {
-                auto* td = cache.loadTiny(rec.id, rec.tinyPath);
-                if (td) std::memcpy(&h_tiny[i*256], td->data(), 256);
-            }
             h_edge[i] = rec.edgeDensity;
-            if (!rec.histPath.empty())
-            {
-                auto* ld = cache.loadLBP(rec.id, rec.histPath);
-                if (ld) std::memcpy(&h_lbp[i*256], ld->data(), 256*sizeof(float));
-            }
             h_use[i] = rec.useCount;
         }
+
+        // 多线程并行读取 tiny 和 LBP 文件（主要 I/O 瓶颈）
+        int nUploadThreads = std::thread::hardware_concurrency();
+        if (nUploadThreads < 2) nUploadThreads = 2;
+        if (nUploadThreads > 16) nUploadThreads = 16;  // 磁盘 I/O 线程过多反而退化
+        std::vector<std::thread> uploadWorkers;
+        for (int t = 0; t < nUploadThreads; ++t)
+        {
+            uploadWorkers.emplace_back([&, t]() {
+                FeatureCache cache;  // 每个线程独立缓存，避免加锁
+                for (int i = t; i < dbCount; i += nUploadThreads)
+                {
+                    const auto& rec = allRecords[i];
+                    if (!rec.tinyPath.empty())
+                    {
+                        auto* td = cache.loadTiny(rec.id, rec.tinyPath);
+                        if (td) std::memcpy(&h_tiny[i*256], td->data(), 256);
+                    }
+                    if (!rec.histPath.empty())
+                    {
+                        auto* ld = cache.loadLBP(rec.id, rec.histPath);
+                        if (ld) std::memcpy(&h_lbp[i*256], ld->data(), 256*sizeof(float));
+                    }
+                }
+            });
+        }
+        for (auto& w : uploadWorkers) w.join();
         if (cuda::uploadLibrary(gpuLib, h_lab.data(), h_grid.data(),
                                  h_tiny.data(), h_edge.data(),
                                  h_lbp.data(), h_use.data(), dbCount))
@@ -448,17 +465,16 @@ bool MosaicEngine::generate(const std::string& targetPath,
         // GPU 批量流水线：SQLite 预查 → 一次 GPU → 顺序选择 → 多线程贴图
         // ════════════════════════════════════════════════════════
 
-        // —— Phase A: 预收集全部候选（SQLite 查询） ——
+        // —— Phase A: 预收集全部候选（轻量 ID 查询，避免取 BLOB） ——
         std::cout << "  collecting candidates..." << std::flush;
         std::vector<int> allIndices(totalTiles * N, -1);
         for (int ti = 0; ti < totalTiles; ++ti)
         {
             double tL = allTL[ti];
-            auto candidates = db.queryByLRange(tL - cfg.lRange, tL + cfg.lRange, N);
-            int nc = static_cast<int>(candidates.size());
+            auto ids = db.queryIdsByLRange(tL - cfg.lRange, tL + cfg.lRange, N);
+            int nc = static_cast<int>(ids.size());
             for (int j = 0; j < nc; ++j)
-                allIndices[ti * N + j] = candidates[j].id - 1;
-            // 不足 N 个候选的保持 -1，kernel 中跳过
+                allIndices[ti * N + j] = ids[j] - 1;  // DB id(1-based) → 库索引(0-based)
         }
         std::cout << " done" << std::endl;
 
@@ -536,7 +552,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         cntEdge = totalTiles; cntLBP  = totalTiles;
         std::cout << " done" << std::endl;
 
-        // —— Phase E: 多线程贴图（纯 I/O + resize，各行 ROI 不重叠，无锁） ——
+        // —— Phase E: 多线程贴图（带 ImageCache，减少重复 I/O） ——
         int nThreads = std::thread::hardware_concurrency();
         if (nThreads < 2) nThreads = 2;
         std::cout << "  placing tiles (" << nThreads << " threads)..."
@@ -547,6 +563,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
         for (int t = 0; t < nThreads; ++t)
         {
             placeWorkers.emplace_back([&, t]() {
+                // 每个线程独立缓存，避免加锁竞争
+                ImageCache imgCache;
                 for (int ti = t; ti < totalTiles; ti += nThreads)
                 {
                     int libIdx = bestLibIdx[ti];
@@ -554,7 +572,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     const auto& rec = bestRecords[ti];
                     int ty = ti / tilesX, tx = ti % tilesX;
 
-                    cv::Mat matchImg = imreadUnicode(rec.filePath, cv::IMREAD_COLOR);
+                    // 优先从缓存取，缓存未命中则读文件
+                    cv::Mat matchImg;
+                    cv::Mat* cached = imgCache.get(rec.id, rec.filePath);
+                    if (cached) { matchImg = *cached; }
+                    else { matchImg = imreadUnicode(rec.filePath, cv::IMREAD_COLOR); }
                     if (matchImg.empty()) { placeFail++; continue; }
 
                     cv::Mat resized;

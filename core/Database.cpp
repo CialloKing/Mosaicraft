@@ -355,6 +355,37 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
     return results;
 }
 
+std::vector<int> Database::queryIdsByLRange(double minL, double maxL, int limit)
+{
+    std::vector<int> results;
+    if (!m_db)
+    {
+        return results;
+    }
+
+    // 只取 id 列，跳过 BLOB/长文本，避免不必要的数据传输
+    const char* sql = R"SQL(
+        SELECT id
+        FROM images
+        WHERE avg_l BETWEEN ? AND ?
+        ORDER BY use_count ASC
+        LIMIT ?
+    )SQL";
+
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    sqlite3_bind_double(stmt, 1, minL);
+    sqlite3_bind_double(stmt, 2, maxL);
+    sqlite3_bind_int(stmt, 3, limit);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW)
+    {
+        results.push_back(sqlite3_column_int(stmt, 0));
+    }
+    sqlite3_finalize(stmt);
+    return results;
+}
+
 int Database::totalCount()
 {
     if (!m_db)
