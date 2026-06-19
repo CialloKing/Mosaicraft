@@ -394,6 +394,10 @@ static int cmdMosaic(int argc, char* argv[])
             int v = std::atoi(argv[++i]);
             cfg.topNrandom = std::max(1, v);
         }
+        else if (arg == "--format" && i + 1 < argc)
+        {
+            cfg.outputFormat = argv[++i];
+        }
         else if (arg == "--cpu")
         {
             cfg.useGpu = false;
@@ -444,7 +448,8 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --l-range <f>         L brightness search range (default: 20)" << std::endl;
             std::cout << "  --candidates <n>      Coarse candidates per tile (default: 200)" << std::endl;
             std::cout << "  --topn-random <n>     Pick from top-N (1=best, >1=varied, default: 1)" << std::endl;
-            std::cout << "  --quality <n>         JPEG quality 1-100 (default: 95)" << std::endl;
+            std::cout << "  --quality <n>         JPEG/WebP quality 1-100 (default: 95)" << std::endl;
+            std::cout << "  --format <ext>        Output format: jpg, png, webp (default: from output extension)" << std::endl;
             std::cout << "  --cpu                 Force CPU (no GPU)" << std::endl;
             std::cout << "  --tiled               Output tiles as separate files (no size limit)" << std::endl;
             std::cout << "  --deepzoom            Generate Deep Zoom pyramid + .dzi + HTML viewer" << std::endl;
@@ -465,6 +470,18 @@ static int cmdMosaic(int argc, char* argv[])
     {
         std::cerr << "ERROR: --input is required for mosaic." << std::endl;
         return 1;
+    }
+
+    // 自动从输出路径推断格式（若未显式指定 --format）
+    if (cfg.outputFormat == "jpg")
+    {
+        auto dotPos = outputPath.rfind('.');
+        if (dotPos != std::string::npos)
+        {
+            std::string ext = outputPath.substr(dotPos + 1);
+            if (ext == "png" || ext == "PNG") cfg.outputFormat = "png";
+            else if (ext == "webp" || ext == "WEBP") cfg.outputFormat = "webp";
+        }
     }
 
     MosaicEngine engine;

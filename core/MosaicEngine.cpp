@@ -282,6 +282,17 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int outW = tilesX * outTileW;
     int outH = tilesY * outTileH;
 
+    // 单图模式下，若输出 Mat 超过 1.5 GB 则自动回退到分块输出
+    const int64_t MAX_SINGLE_PIXELS = 1500LL * 1024 * 1024 / 3;  // ~524M pixels
+    if (!cfg.tiledOutput && static_cast<int64_t>(outW) * outH > MAX_SINGLE_PIXELS)
+    {
+        std::cout << "  (auto-switching to tiled: output would be "
+                  << outW << "x" << outH << ", "
+                  << (static_cast<int64_t>(outW) * outH * 3 / (1024*1024)) << " MB)"
+                  << std::endl;
+        cfg.tiledOutput = true;
+    }
+
     // 边缘补全（按目标 tile 尺寸算 pad，不是输出 tile 尺寸）
     int padRight  = tilesX * cfg.tileW - target.cols;
     int padBottom = tilesY * cfg.tileH - target.rows;
@@ -757,7 +768,31 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     std::cout << std::endl;
 
-    if (!imwriteUnicode(outputPath, output, {cv::IMWRITE_JPEG_QUALITY, cfg.jpegQuality}))
+    // 检测输出格式
+    std::string fmt = cfg.outputFormat;
+    if (fmt == "jpg" || fmt.empty())
+    {
+        // 尝试从 outputPath 扩展名推断
+        auto dotPos = outputPath.rfind('.');
+        if (dotPos != std::string::npos)
+        {
+            std::string ext = outputPath.substr(dotPos + 1);
+            if (ext == "png" || ext == "PNG") fmt = "png";
+            else if (ext == "webp" || ext == "WEBP") fmt = "webp";
+        }
+    }
+    if (fmt != "jpg" && fmt != "png" && fmt != "webp") fmt = "jpg";
+
+    // 构建 imwrite 参数
+    std::vector<int> writeParams;
+    if (fmt == "jpg")
+        writeParams = {cv::IMWRITE_JPEG_QUALITY, cfg.jpegQuality};
+    else if (fmt == "png")
+        writeParams = {cv::IMWRITE_PNG_COMPRESSION, 3};  // 3 = 速度和大小平衡
+    else if (fmt == "webp")
+        writeParams = {cv::IMWRITE_WEBP_QUALITY, cfg.jpegQuality};
+
+    if (!imwriteUnicode(outputPath, output, writeParams))
     {
         std::cerr << "ERROR: Cannot write output: " << outputPath << std::endl;
         return false;
