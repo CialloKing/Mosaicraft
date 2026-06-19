@@ -161,9 +161,23 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
     std::cout << "Database: " << dbCount << " images" << std::endl;
 
-    // ——— 加载全库记录（GPU 索引 → ImageRecord 映射用） ———
+    // 提取特征目录（供 FeaturePack / ANN 持久化使用）
+    std::string featDirCache;
     auto allRecords = db.allRecords();  // 全库记录，在 GPU 路径中按索引取
     dbCount = static_cast<int>(allRecords.size());
+
+    // 从首条记录提取特征目录
+    if (!allRecords.empty() && !allRecords[0].tinyPath.empty())
+    {
+        std::string firstTiny = allRecords[0].tinyPath;
+        auto slashPos = firstTiny.rfind('/');
+        auto backslashPos = firstTiny.rfind('\\');
+        auto dirEnd = (slashPos != std::string::npos && backslashPos != std::string::npos)
+            ? std::max(slashPos, backslashPos)
+            : (slashPos != std::string::npos ? slashPos : backslashPos);
+        if (dirEnd != std::string::npos)
+            featDirCache = firstTiny.substr(0, dirEnd);
+    }
 
     // ——— 图库特征常驻 GPU（多线程并行加载 tiny/LBP 文件） ———
     cuda::GpuLibrary gpuLib;
@@ -190,26 +204,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
         // 尝试加载二进制特征缓存（tiny.bin + lbp.bin）
         // 缓存有效时用 2 次 fread 替代 50K 次文件 I/O
         bool cacheLoaded = false;
-        std::string featDirCache;  // 特征目录（从首条记录提取，回退时复用）
         if (!allRecords.empty() && !allRecords[0].tinyPath.empty())
         {
-            // 从首条记录的 tinyPath 提取 featDir
-            std::string firstTiny = allRecords[0].tinyPath;
-            // tinyPath 格式: "normalized/features/000042.tiny"
-            auto slashPos = firstTiny.rfind('/');
-            auto backslashPos = firstTiny.rfind('\\');
-            auto dirEnd = (slashPos != std::string::npos && backslashPos != std::string::npos)
-                ? std::max(slashPos, backslashPos)
-                : (slashPos != std::string::npos ? slashPos : backslashPos);
-            if (dirEnd != std::string::npos)
-            {
-                featDirCache = firstTiny.substr(0, dirEnd);
-                std::vector<int> recordIds;
-                recordIds.reserve(dbCount);
-                for (const auto& r : allRecords)
-                    recordIds.push_back(r.id);
-                cacheLoaded = FeaturePack::tryLoad(featDirCache, recordIds, h_tiny, h_lbp);
-            }
+            std::vector<int> recordIds;
+            recordIds.reserve(dbCount);
+            for (const auto& r : allRecords)
+                recordIds.push_back(r.id);
+            cacheLoaded = FeaturePack::tryLoad(featDirCache, recordIds, h_tiny, h_lbp);
         }
 
         if (!cacheLoaded)
@@ -433,24 +434,48 @@ bool MosaicEngine::generate(const std::string& targetPath,
         // ════════════════════════════════════════════════════════
 
         // —— Phase A: ANN 近似最近邻索引 ——
-        // HNSW 图结构索引，O(log n) 查询，恒定 200 候选（不受图库规模影响）
-        std::cout << "  building ANN index (" << dbCount << " images)..." << std::flush;
+        // 优先加载持久化索引（build 时保存），不存在则构建并保存
         FeatureIndex annIndex;
-        annIndex.build(allRecords);
-        std::cout << " done" << std::endl;
+        std::string annPath = featDirCache.empty() ? "lib.ann"
+                             : (featDirCache + "/lib.ann");
+        bool annLoaded = false;
+        if (!featDirCache.empty())
+        {
+            std::cout << "  loading ANN index..." << std::flush;
+            annLoaded = annIndex.load(annPath, 564, allRecords);
+            std::cout << (annLoaded ? " done" : " not found") << std::endl;
+        }
+        if (!annLoaded)
+        {
+            std::cout << "  building ANN index (" << dbCount << " images)..." << std::flush;
+            annIndex.build(allRecords);
+            std::cout << " done" << std::endl;
+            if (!featDirCache.empty())
+            {
+                if (annIndex.save(annPath))
+                    std::cout << "  ANN index saved: " << annPath << std::endl;
+            }
+        }
 
         std::cout << "  collecting candidates..." << std::flush;
         std::vector<int> allIndices(totalTiles * N, -1);
         std::vector<float> tileVec;
+        int annMissCount = 0;  // image_id 无法映射到 allRecords 的次数
         for (int ti = 0; ti < totalTiles; ++ti)
         {
             buildTileVector(allTL[ti], allTA[ti], allTB[ti],
                             allGrid[ti], allTiny[ti], allEdge[ti], allLBP[ti],
                             tileVec);
-            auto ids = annIndex.query(tileVec.data(), N);
-            int nc = static_cast<int>(ids.size());
+            auto imgIds = annIndex.query(tileVec.data(), N);
+            int nc = static_cast<int>(imgIds.size());
             for (int j = 0; j < nc; ++j)
-                allIndices[ti * N + j] = ids[j];  // 已是 0-based 库索引
+            {
+                int libIdx = annIndex.idToAllRecordsIndex(imgIds[j]);
+                if (libIdx >= 0)
+                    allIndices[ti * N + j] = libIdx;
+                else
+                    annMissCount++;
+            }
         }
         std::cout << " done" << std::endl;
 
