@@ -318,12 +318,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int tilesX = (target.cols + cfg.tileW - 1) / cfg.tileW;
     int tilesY = (target.rows + cfg.tileH - 1) / cfg.tileH;
 
-    // 输出 tile 使用原生分辨率（180×320），保证每个 tile 可观可辨
-    // 但如果总输出超过 JPEG 65500px 硬限制，自动等比缩减
+    // 输出 tile 使用原生分辨率（180×320）
+    // 单图模式下若总尺寸超过 JPEG 65500px 限制则自动等比缩减
+    // 分块模式下不缩放（每 tile 独立文件，无尺寸限制）
     int outTileW = cfg.nativeTileW;
     int outTileH = cfg.nativeTileH;
     const int MAX_DIM = 65500;
-    if (tilesX * outTileW > MAX_DIM || tilesY * outTileH > MAX_DIM)
+    if (!cfg.tiledOutput && (tilesX * outTileW > MAX_DIM || tilesY * outTileH > MAX_DIM))
     {
         double scaleW = (tilesX * outTileW > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesX * outTileW) : 1.0;
         double scaleH = (tilesY * outTileH > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesY * outTileH) : 1.0;
@@ -586,7 +587,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         cv::resize(m, r, cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
                         snprintf(fname, sizeof(fname), "%s/tile_%04d_%04d.jpg",
                                  outputPath.c_str(), ty, tx);
-                        imwriteUnicode(fname, r, {cv::IMWRITE_JPEG_QUALITY, 95});
+                        imwriteUnicode(fname, r, {cv::IMWRITE_JPEG_QUALITY, cfg.jpegQuality});
                         int d = ++tileDone;
                         if (d % 2000 == 0 || d == totalTiles)
                             std::cout << "\r  writing " << d << "/" << totalTiles << std::flush;
@@ -746,7 +747,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     std::cout << std::endl;
 
-    if (!imwriteUnicode(outputPath, output, {cv::IMWRITE_JPEG_QUALITY, 100}))
+    if (!imwriteUnicode(outputPath, output, {cv::IMWRITE_JPEG_QUALITY, cfg.jpegQuality}))
     {
         std::cerr << "ERROR: Cannot write output: " << outputPath << std::endl;
         return false;

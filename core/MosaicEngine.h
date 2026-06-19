@@ -41,12 +41,14 @@ public:
 
         bool useGpu = true;
         bool tiledOutput = false;   // 分块输出：每 tile 独立文件，消除输出尺寸限制
+        int  jpegQuality = 95;      // JPEG 质量（1-100），分块模式用 95，单图用 100
 
         void print() const
         {
             std::cout << "  tile: " << tileW << "x" << tileH
                       << "  candidates: " << candidates
                       << "  L range: " << lRange
+                      << "  quality: " << jpegQuality
                       << (tiledOutput ? "  output: tiled" : "")
                       << std::endl;
             std::cout << "  weights: LAB=" << labWeight

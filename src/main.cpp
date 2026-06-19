@@ -68,9 +68,12 @@ Build options:
 Mosaic options:
   -i, --input  <path>    Target image to mosaicify (required)
   -d, --db     <path>    Database path (default: mosaicraft.db)
-  -o, --output <path>    Output image path (default: mosaic.jpg)
-  --tile-w     <n>       Tile width in pixels (default: 32)
-  --tile-h     <n>       Tile height in pixels (default: 32)
+  -o, --output <path>    Output path or directory (default: mosaic.jpg)
+  --tile-w     <n>       Tile width in pixels (default: 45)
+  --tile-h     <n>       Tile height in pixels (default: 80)
+  --tiled                Output tiles as separate files (no size limit)
+  --quality    <n>       JPEG quality 1-100 (default: 95)
+  --cpu                  Force CPU (no GPU)
 
 Common options:
   -h, --help             Show this help
@@ -374,6 +377,11 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.useGpu = false;
         }
+        else if (arg == "--quality" && i + 1 < argc)
+        {
+            int q = std::atoi(argv[++i]);
+            cfg.jpegQuality = std::max(1, std::min(100, q));
+        }
         else if (arg == "--tiled")
         {
             cfg.tiledOutput = true;
@@ -383,21 +391,22 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "Usage: mosaicraft mosaic -i <image> -d <db> [options]" << std::endl;
             std::cout << "  -i, --input <path>    Target image (required)" << std::endl;
             std::cout << "  -d, --db <path>       Database (default: mosaicraft.db)" << std::endl;
-            std::cout << "  -o, --output <path>   Output image (default: mosaic.jpg)" << std::endl;
-            std::cout << "  --tile-w <n>          Tile width (default: 9, min: 4)" << std::endl;
-            std::cout << "  --tile-h <n>          Tile height (default: 16, min: 4)" << std::endl;
+            std::cout << "  -o, --output <path>   Output path (default: mosaic.jpg)" << std::endl;
+            std::cout << "  --tile-w <n>          Tile width (default: 45, min: 4)" << std::endl;
+            std::cout << "  --tile-h <n>          Tile height (default: 80, min: 4)" << std::endl;
             std::cout << "  --out-w <n>           Output width in pixels (0=auto)" << std::endl;
             std::cout << "  --out-h <n>           Output height in pixels (0=auto)" << std::endl;
-            std::cout << "  --lab-weight <f>      LAB weight (default: 0.15)" << std::endl;
-            std::cout << "  --grid-weight <f>     Grid weight (default: 0.25)" << std::endl;
-            std::cout << "  --tiny-weight <f>     TinyImage weight (default: 0.35)" << std::endl;
+            std::cout << "  --lab-weight <f>      LAB weight (default: 0.20)" << std::endl;
+            std::cout << "  --grid-weight <f>     Grid weight (default: 0.45)" << std::endl;
+            std::cout << "  --tiny-weight <f>     TinyImage weight (default: 0.25)" << std::endl;
             std::cout << "  --edge-weight <f>     Edge density weight (default: 0.05)" << std::endl;
-            std::cout << "  --lbp-weight <f>      LBP histogram weight (default: 0.20)" << std::endl;
+            std::cout << "  --lbp-weight <f>      LBP histogram weight (default: 0.05)" << std::endl;
             std::cout << "  --penalty <f>         Use-count penalty (default: 0.01)" << std::endl;
             std::cout << "  --l-range <f>         L brightness search range (default: 20)" << std::endl;
-            std::cout << "  --candidates <n>      SQLite coarse candidates (default: 200)" << std::endl;
+            std::cout << "  --candidates <n>      Coarse candidates per tile (default: 200)" << std::endl;
+            std::cout << "  --quality <n>         JPEG quality 1-100 (default: 95)" << std::endl;
             std::cout << "  --cpu                 Force CPU (no GPU)" << std::endl;
-            std::cout << "  --tiled               Output each tile as separate file (no size limit)" << std::endl;
+            std::cout << "  --tiled               Output tiles as separate files (no size limit)" << std::endl;
             return 0;
         }
         else
