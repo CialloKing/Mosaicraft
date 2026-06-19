@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -361,9 +362,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
     std::cout << ")" << std::endl;
 
-    cv::Mat output(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
-
-    // ——— 多线程预计算所有 tile 特征（最大瓶颈） ———
+    // ——— 多线程预计算所有 tile 特征 ———
     int totalTiles = tilesX * tilesY;
     std::vector<double> allTL(totalTiles), allTA(totalTiles), allTB(totalTiles);
     std::vector<std::vector<float>> allGrid(totalTiles);
@@ -424,6 +423,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // 每个 tile 最终选中的记录（GPU 路径预存，CPU 路径内联处理）
     std::vector<ImageRecord> bestRecords(totalTiles);
     std::vector<int> bestLibIdx(totalTiles, -1);
+
+    // 单图输出时的大 Mat（分块模式不需要，声明在此以便跨分支使用）
+    cv::Mat output;
 
     if (cfg.useGpu && gpuLib.count > 0)
     {
@@ -557,9 +559,53 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << " (" << noCandidateCount << " tiles had no candidates!)";
         std::cout << " done" << std::endl;
 
-        // —— Phase E: 多线程贴图（各行 ROI 不重叠，无锁） ——
+        // —— Phase E: 贴图 ——
         int nThreads = std::thread::hardware_concurrency();
         if (nThreads < 2) nThreads = 2;
+
+        if (cfg.tiledOutput)
+        {
+            // 分块输出：每 tile 独立文件，无尺寸限制，无需大 Mat
+            std::error_code ec;
+            std::filesystem::create_directories(outputPath, ec);
+            std::cout << "  writing tiles to " << outputPath << "/ (" << nThreads << " threads)..."
+                      << std::flush;
+            std::atomic<int> tileDone{0};
+            std::atomic<int> tileFail{0};
+            std::vector<std::thread> tileWorkers;
+            for (int t = 0; t < nThreads; ++t) {
+                tileWorkers.emplace_back([&, t]() {
+                    char fname[512];
+                    for (int ti = t; ti < totalTiles; ti += nThreads) {
+                        int libIdx = bestLibIdx[ti];
+                        if (libIdx < 0) { tileFail++; continue; }
+                        int ty = ti / tilesX, tx = ti % tilesX;
+                        cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
+                        if (m.empty()) { tileFail++; continue; }
+                        cv::Mat r;
+                        cv::resize(m, r, cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                        snprintf(fname, sizeof(fname), "%s/tile_%04d_%04d.jpg",
+                                 outputPath.c_str(), ty, tx);
+                        imwriteUnicode(fname, r, {cv::IMWRITE_JPEG_QUALITY, 95});
+                        int d = ++tileDone;
+                        if (d % 2000 == 0 || d == totalTiles)
+                            std::cout << "\r  writing " << d << "/" << totalTiles << std::flush;
+                    }
+                });
+            }
+            for (auto& w : tileWorkers) w.join();
+            matched = totalTiles - tileFail.load();
+            loadFail = tileFail.load();
+            std::cout << std::endl;
+            std::cout << "Tiles written: " << matched << " / " << totalTiles;
+            if (loadFail > 0) std::cout << "  (failed: " << loadFail << ")";
+            std::cout << std::endl;
+            if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);
+            return true;
+        }
+
+        // 单图输出
+        output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
         std::cout << "  placing tiles (" << nThreads << " threads)..."
                   << std::flush;
         std::atomic<int> placeDone{0};
@@ -612,6 +658,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         // CPU 路径（逐 tile 顺序处理，保留原有逻辑）
         // ════════════════════════════════════════════════════════
         FeatureCache cache;
+        output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
 
         for (int ty = 0; ty < tilesY; ++ty)
         {

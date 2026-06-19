@@ -40,13 +40,14 @@ public:
         int topNrandom = 1;
 
         bool useGpu = true;
+        bool tiledOutput = false;   // 分块输出：每 tile 独立文件，消除输出尺寸限制
 
         void print() const
         {
             std::cout << "  tile: " << tileW << "x" << tileH
-                      << "  out: " << (outW > 0 ? std::to_string(outW) + "x" + std::to_string(outH) : "native " + std::to_string(nativeTileW) + "x" + std::to_string(nativeTileH) + " per tile")
                       << "  candidates: " << candidates
                       << "  L range: " << lRange
+                      << (tiledOutput ? "  output: tiled" : "")
                       << std::endl;
             std::cout << "  weights: LAB=" << labWeight
                       << " Grid=" << gridWeight

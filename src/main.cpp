@@ -374,6 +374,10 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.useGpu = false;
         }
+        else if (arg == "--tiled")
+        {
+            cfg.tiledOutput = true;
+        }
         else if (arg == "-h" || arg == "--help")
         {
             std::cout << "Usage: mosaicraft mosaic -i <image> -d <db> [options]" << std::endl;
@@ -393,6 +397,7 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --l-range <f>         L brightness search range (default: 20)" << std::endl;
             std::cout << "  --candidates <n>      SQLite coarse candidates (default: 200)" << std::endl;
             std::cout << "  --cpu                 Force CPU (no GPU)" << std::endl;
+            std::cout << "  --tiled               Output each tile as separate file (no size limit)" << std::endl;
             return 0;
         }
         else
