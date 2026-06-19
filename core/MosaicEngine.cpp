@@ -1,4 +1,5 @@
 #include "MosaicEngine.h"
+#include "BigTiffWriter.h"
 #include "Database.h"
 #include "DeepZoomWriter.h"
 #include "FeatureIndex.h"
@@ -263,11 +264,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int tilesY = (target.rows + cfg.tileH - 1) / cfg.tileH;
 
     // 输出 tile 使用原生分辨率（180×320）
-    // 单图模式下，若总尺寸超过编码器 65500px 限制则自动切换分块输出
+    // 单图模式下，若使用非 TIFF 格式且超出编码器 65500px 限制则自动切换分块
     int outTileW = cfg.nativeTileW;
     int outTileH = cfg.nativeTileH;
     const int MAX_DIM = 65500;
-    if (!cfg.tiledOutput && (tilesX * outTileW > MAX_DIM || tilesY * outTileH > MAX_DIM))
+    if (!cfg.tiledOutput && cfg.outputFormat != "tiff"
+        && (tilesX * outTileW > MAX_DIM || tilesY * outTileH > MAX_DIM))
     {
         cfg.tiledOutput = true;
         std::cout << "  (auto-switched to tiled: output exceeds 65500px encoder limit)" << std::endl;
@@ -767,21 +769,37 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
     if (fmt != "jpg" && fmt != "png" && fmt != "webp" && fmt != "tiff") fmt = "jpg";
 
-    // 构建 imwrite 参数
-    std::vector<int> writeParams;
-    if (fmt == "jpg")
-        writeParams = {cv::IMWRITE_JPEG_QUALITY, cfg.jpegQuality};
-    else if (fmt == "png")
-        writeParams = {cv::IMWRITE_PNG_COMPRESSION, 3};  // 3 = 速度和大小平衡
-    else if (fmt == "webp")
-        writeParams = {cv::IMWRITE_WEBP_QUALITY, cfg.jpegQuality};
-    else if (fmt == "tiff")
-        writeParams = {};  // TIFF 无需特殊参数
-
-    if (!imwriteUnicode(outputPath, output, writeParams))
+    // 写入输出
+    if (fmt == "tiff")
     {
-        std::cerr << "ERROR: Cannot write output: " << outputPath << std::endl;
-        return false;
+        // 使用 libtiff 直写，绕过 OpenCV 的 65500px 限制
+        try
+        {
+            BigTiffWriter tiff(outputPath, outW, outH);
+            tiff.writeMat(output.data, static_cast<int>(output.step));
+            tiff.close();
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "ERROR: " << e.what() << std::endl;
+            return false;
+        }
+    }
+    else
+    {
+        std::vector<int> writeParams;
+        if (fmt == "jpg")
+            writeParams = {cv::IMWRITE_JPEG_QUALITY, cfg.jpegQuality};
+        else if (fmt == "png")
+            writeParams = {cv::IMWRITE_PNG_COMPRESSION, 3};
+        else if (fmt == "webp")
+            writeParams = {cv::IMWRITE_WEBP_QUALITY, cfg.jpegQuality};
+
+        if (!imwriteUnicode(outputPath, output, writeParams))
+        {
+            std::cerr << "ERROR: Cannot write output: " << outputPath << std::endl;
+            return false;
+        }
     }
 
     std::cout << "Mosaic saved: " << outputPath

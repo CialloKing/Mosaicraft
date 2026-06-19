@@ -11,6 +11,7 @@ endif()
 
 find_package(OpenCV REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
+find_package(TIFF REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 
 # CUDA 架构（可通过 -DCUDA_ARCH=sm_xx 覆盖，默认 RTX 4060 / sm_89）
@@ -40,6 +41,7 @@ add_custom_command(
         -I"${CMAKE_SOURCE_DIR}"
         -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
         -I"${VCPKG_TRIPLET_INCLUDE}"
+        -I"${TIFF_INCLUDE_DIR}"
         -Xcompiler "/utf-8" --compiler-options "/MD"
     DEPENDS "${CMAKE_SOURCE_DIR}/compute/CudaBackend.cu"
             "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h"
@@ -56,6 +58,7 @@ add_custom_command(
         -I"${CMAKE_SOURCE_DIR}"
         -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
         -I"${VCPKG_TRIPLET_INCLUDE}"
+        -I"${TIFF_INCLUDE_DIR}"
         -Xcompiler "/utf-8" --compiler-options "/MD"
     DEPENDS "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu"
             "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.h"
@@ -75,11 +78,13 @@ add_library(mosaicraft_core STATIC
 
 target_include_directories(mosaicraft_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${TIFF_INCLUDE_DIR}
 )
 
 target_link_libraries(mosaicraft_core PUBLIC
     ${OpenCV_LIBS}
     unofficial::sqlite3::sqlite3
+    ${TIFF_LIBRARIES}
 )
 
 # ============================================================
