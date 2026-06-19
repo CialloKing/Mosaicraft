@@ -6,10 +6,6 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -19,7 +15,6 @@
 #include <iostream>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace mosaicraft
@@ -202,50 +197,6 @@ public:
 private:
     std::unordered_map<int, std::vector<uint8_t>> m_tiny;
     std::unordered_map<int, std::vector<float>> m_lbp;
-};
-
-// ============================================================
-// 图像缓存
-// ============================================================
-class ImageCache
-{
-public:
-    ImageCache() : maxImages(500) {}  // 固定上限，避免多线程累计消耗过多内存
-
-    size_t maxImages;
-
-    cv::Mat* get(int id, const std::string& path)
-    {
-        auto it = m_cache.find(id);
-        if (it != m_cache.end()) return &it->second;
-
-        if (maxImages > 0 && m_cache.size() >= maxImages) return nullptr;
-
-        cv::Mat img = imreadUnicode(path, cv::IMREAD_COLOR);
-        if (img.empty()) return nullptr;
-
-        auto [ins, _] = m_cache.emplace(id, std::move(img));
-        return &ins->second;
-    }
-
-private:
-    std::unordered_map<int, cv::Mat> m_cache;
-
-    static size_t estimateMaxImages()
-    {
-#ifdef _WIN32
-        MEMORYSTATUSEX mem;
-        mem.dwLength = sizeof(mem);
-        if (GlobalMemoryStatusEx(&mem))
-        {
-            // 使用空闲内存的 60%，每张归一化图 ~172KB
-            size_t freeMB = static_cast<size_t>(mem.ullAvailPhys / (1024ULL * 1024ULL));
-            size_t maxByRam = freeMB / 2 * 1000 / 172;
-            if (maxByRam > 500) return std::min(maxByRam, size_t(10000));
-        }
-#endif
-        return 2000;
-    }
 };
 
 // ============================================================
