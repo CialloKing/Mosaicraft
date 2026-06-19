@@ -179,7 +179,7 @@ public:
         Url: ")" << filesDir << R"(/",
         Format: "jpg",
         Overlap: "0",
-        TileSize: ")" << tileW << R"(",
+        TileSize: { Width: ")" << tileW << R"(", Height: ")" << tileH << R"(" },
         Size: { Width: ")" << totalW << R"(", Height: ")" << totalH << R"(" }
       }
     },
