@@ -185,7 +185,7 @@ Mosaicraft/
 | v0.4 | inspect 命令、特征可视化 | ✅ |
 | v0.5 | ANN 候选选择 (hnswlib) | ✅ |
 | v0.6 | Deep Zoom HTML viewer、颜色校正、benchmark、topn-random CLI | ✅ |
-| v0.7 | **Feature Pack Cache** — 50K 小文件 → 单个二进制缓存，Prep 预计 1400→~300ms | 计划中 |
+| v0.7 | **Feature Pack Cache** — 50K 小文件 → 2 个二进制缓存，Prep 3337→291ms, Total 5.6x | ✅ |
 | v1.0 | 百万图库支持、稳定版 | 计划中 |
 
 ## 许可证
