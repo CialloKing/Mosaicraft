@@ -88,7 +88,7 @@ mosaicraft mosaic -i target.jpg -d ./lib.db -o output.jpg
 | `--topn-random` | 1 | 从 Top-N 随机选取（>1 增加多样性） |
 | `--quality` | 95 | JPEG 质量 1-100 |
 | `--tiled` | — | 分块输出（每 tile 独立文件） |
-| `--deepzoom` | — | 生成 Deep Zoom 金字塔 + HTML viewer |
+| `--deepzoom` | — | 生成 Deep Zoom 金字塔 + HTML viewer（适合 tile<5000） |
 | `--no-color-adjust` | — | 禁用颜色微调 |
 | `--color-strength` | 0.10 | 颜色微调强度 0-0.5 |
 | `--benchmark` | — | 打印各阶段耗时分解 |
@@ -105,16 +105,16 @@ mosaicraft inspect -i image.jpg [-d lib.db]
 ### 示例
 
 ```bash
-# 标准生成（分块 + Deep Zoom，输出后双击 .html 即可浏览）
-mosaicraft mosaic -i photo.jpg -d lib.db -o result --tiled --deepzoom
+# 默认：单张大图 JPG（最稳定，推荐）
+mosaicraft mosaic -i photo.jpg -d lib.db -o output.jpg
 
-# 快速预览
+# 快速预览（限制输出尺寸）
 mosaicraft mosaic -i photo.jpg -d lib.db \
   --out-w 640 --out-h 480 --tile-w 45 --tile-h 80
 
-# 高多样性 + 启动 benchmark
-mosaicraft mosaic -i photo.jpg -d lib.db \
-  --topn-random 5 --benchmark
+# Deep Zoom 交互浏览（仅适合 tile 数 < 5000 的较小输出）
+mosaicraft mosaic -i photo.jpg -d lib.db -o result --tiled --deepzoom \
+  --out-w 1920 --out-h 1080 --tile-w 45 --tile-h 80
 ```
 
 ## 性能概况

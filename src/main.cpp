@@ -447,7 +447,8 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --quality <n>         JPEG quality 1-100 (default: 95)" << std::endl;
             std::cout << "  --cpu                 Force CPU (no GPU)" << std::endl;
             std::cout << "  --tiled               Output tiles as separate files (no size limit)" << std::endl;
-            std::cout << "  --deepzoom            Generate Deep Zoom pyramid + .dzi manifest" << std::endl;
+            std::cout << "  --deepzoom            Generate Deep Zoom pyramid + .dzi + HTML viewer" << std::endl;
+            std::cout << "                        (best with --out-w/h to limit tile count)" << std::endl;
             std::cout << "  --no-color-adjust     Disable per-tile brightness/saturation jitter" << std::endl;
             std::cout << "  --color-strength <f>  Color jitter intensity 0-0.5 (default: 0.10)" << std::endl;
             std::cout << "  --benchmark           Print per-phase timing breakdown" << std::endl;
