@@ -545,7 +545,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << " (" << noCandidateCount << " tiles had no candidates!)";
         std::cout << " done" << std::endl;
 
-        // —— Phase E: 多线程贴图（带 ImageCache，减少重复 I/O） ——
+        // —— Phase E: 多线程贴图（各行 ROI 不重叠，无锁） ——
         int nThreads = std::thread::hardware_concurrency();
         if (nThreads < 2) nThreads = 2;
         std::cout << "  placing tiles (" << nThreads << " threads)..."
@@ -558,7 +558,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         for (int t = 0; t < nThreads; ++t)
         {
             placeWorkers.emplace_back([&, t]() {
-                // 每个线程直接读文件（ImageCache 在极端并行下可能引发内存压力）
+                // 每个线程直接读文件 + cv::resize，无锁
                 for (int ti = t; ti < totalTiles; ti += nThreads)
                 {
                     int libIdx = bestLibIdx[ti];
