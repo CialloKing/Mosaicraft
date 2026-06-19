@@ -364,8 +364,20 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int tilesY = (target.rows + cfg.tileH - 1) / cfg.tileH;
 
     // 输出 tile 始终使用原生分辨率（180×320），保证每个 tile 可观可辨
+    // 但如果总输出超过 JPEG 65500px 限制，则自动等比缩减
     int outTileW = cfg.nativeTileW;
     int outTileH = cfg.nativeTileH;
+    const int MAX_DIM = 65500;
+    if (tilesX * outTileW > MAX_DIM || tilesY * outTileH > MAX_DIM)
+    {
+        double scaleW = (tilesX * outTileW > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesX * outTileW) : 1.0;
+        double scaleH = (tilesY * outTileH > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesY * outTileH) : 1.0;
+        double scale = std::min(scaleW, scaleH);
+        outTileW = std::max(1, static_cast<int>(outTileW * scale));
+        outTileH = std::max(1, static_cast<int>(outTileH * scale));
+        std::cout << "  (auto-scaled tile " << outTileW << "x" << outTileH
+                  << " to fit JPEG limit)" << std::endl;
+    }
 
     int outW = tilesX * outTileW;
     int outH = tilesY * outTileH;
@@ -705,20 +717,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     std::cout << std::endl;
 
-    // JPEG 编码器限制单边 ≤ 65500 像素，超限自动切 PNG
-    bool needPng = (outW > 65500 || outH > 65500);
-    std::vector<int> imwriteParams;
-    if (needPng)
-    {
-        imwriteParams = {cv::IMWRITE_PNG_COMPRESSION, 3};  // 压缩级别 3，平衡速度/体积
-        std::cout << "  (output " << outW << "x" << outH << " > 65500px, switching to PNG)" << std::endl;
-    }
-    else
-    {
-        imwriteParams = {cv::IMWRITE_JPEG_QUALITY, 100};
-    }
-
-    if (!imwriteUnicode(outputPath, output, imwriteParams))
+    if (!imwriteUnicode(outputPath, output, {cv::IMWRITE_JPEG_QUALITY, 100}))
     {
         std::cerr << "ERROR: Cannot write output: " << outputPath << std::endl;
         return false;
