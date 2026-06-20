@@ -61,6 +61,7 @@ Usage:
   mosaicraft build   [options]    Build image database
   mosaicraft mosaic  [options]    Create mosaic from target image
   mosaicraft inspect [options]    Inspect image features / database coverage
+  mosaicraft db-stats [options]   Show database statistics
 
 Build options:
   -i, --input  <dir>     Source image directory (required)
@@ -597,6 +598,72 @@ static int cmdInspect(int argc, char* argv[])
 }
 
 // ============================================================
+// db-stats 子命令：输出图库统计信息
+// ============================================================
+static int cmdDbStats(int argc, char* argv[])
+{
+    std::string dbPath = "mosaicraft.db";
+
+    for (int i = 2; i < argc; ++i)
+    {
+        std::string arg = argv[i];
+        if ((arg == "-d" || arg == "--db") && i + 1 < argc)
+            dbPath = argv[++i];
+    }
+
+    Database db(dbPath);
+    if (!db.isOpen())
+    {
+        std::cerr << "ERROR: Cannot open database: " << dbPath << std::endl;
+        return 1;
+    }
+
+    auto all = db.allRecords();
+    int total = static_cast<int>(all.size());
+    if (total == 0)
+    {
+        std::cout << "Database is empty." << std::endl;
+        return 0;
+    }
+
+    // LAB 分布
+    double minL=255, maxL=0, sumL=0, sumA=0, sumB=0;
+    double minA=255, maxA=0, minB=255, maxB=0;
+    for (const auto& r : all)
+    {
+        if (r.avgL < minL) minL = r.avgL; if (r.avgL > maxL) maxL = r.avgL;
+        if (r.avgA < minA) minA = r.avgA; if (r.avgA > maxA) maxA = r.avgA;
+        if (r.avgB < minB) minB = r.avgB; if (r.avgB > maxB) maxB = r.avgB;
+        sumL += r.avgL; sumA += r.avgA; sumB += r.avgB;
+    }
+
+    // 亮度分布
+    int dark=0, mid=0, bright=0;
+    for (const auto& r : all)
+    {
+        if (r.avgL < 30) dark++;
+        else if (r.avgL < 70) mid++;
+        else bright++;
+    }
+
+    // Grid 维度
+    int gridDim = all[0].grid4x4.size();
+
+    std::cout << "=== Database Statistics ===\n";
+    std::cout << "  Images: " << total << "\n";
+    std::cout << "  Grid dim: " << gridDim << " (" << (gridDim/3) << " cells)\n";
+    std::cout << "  LAB: L[" << std::fixed << std::setprecision(1) << minL
+              << "," << maxL << "] avg=" << (sumL/total)
+              << "  A[" << minA << "," << maxA << "] avg=" << (sumA/total)
+              << "  B[" << minB << "," << maxB << "] avg=" << (sumB/total) << "\n";
+    std::cout << "  Brightness: dark=" << dark << " (" << (100.0*dark/total)
+              << "%) mid=" << mid << " (" << (100.0*mid/total)
+              << "%) bright=" << bright << " (" << (100.0*bright/total) << "%)\n";
+
+    return 0;
+}
+
+// ============================================================
 // main
 // ============================================================
 int main(int argc, char* argv[])
@@ -620,6 +687,10 @@ int main(int argc, char* argv[])
     else if (cmd == "inspect")
     {
         return cmdInspect(argc, argv);
+    }
+    else if (cmd == "db-stats")
+    {
+        return cmdDbStats(argc, argv);
     }
     else if (cmd == "-h" || cmd == "--help")
     {

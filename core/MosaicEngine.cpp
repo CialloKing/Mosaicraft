@@ -366,6 +366,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::vector<double> analyzeLabD, analyzeGridD, analyzeEdgeD;
     std::vector<double> analyzeGaps;      // winner-runnerUp 分数差
     std::vector<int>    analyzeRanks;     // winner 在候选排序中的位置(1-based)
+    std::vector<int>    analyzeAnnRanks;  // winner 在 ANN Top200 中的位置(0=最优)
     std::vector<int>    analyzeCat;       // 0=Smooth, 1=Edge, 2=Texture, 3=Normal
 
     int N = cfg.candidates;  // 候选数（GPU 路径下用于 benchmark）
@@ -741,6 +742,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             analyzeEdgeD.reserve(totalTiles);
             analyzeGaps.reserve(totalTiles);
             analyzeRanks.reserve(totalTiles);
+            analyzeAnnRanks.reserve(totalTiles);
             analyzeCat.reserve(totalTiles);
         }
 
@@ -830,6 +832,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
                 analyzeGaps.push_back(gap);
                 analyzeRanks.push_back(rankPos + 1);  // 1-based rank in sorted Top-N
+
+                // ANN rank: winner 在 ANN 查询结果中的位置 (0=最优)
+                int annRank = -1;
+                for (int j = 0; j < N; ++j)
+                {
+                    if (allIndices[ti * N + j] == chosenLibIdx) { annRank = j; break; }
+                }
+                analyzeAnnRanks.push_back(annRank);
 
                 // 分类：与自适应权重相同的统计量
                 int cat = 3;  // Normal
@@ -1231,6 +1241,23 @@ bool MosaicEngine::generate(const std::string& targetPath,
             double total = static_cast<double>(analyzeRanks.size());
             std::cout << "  Winner rank in TopN: #1=" << std::setprecision(1) << (rankBuckets[0]*100/total)
                       << "% #2=" << (rankBuckets[1]*100/total) << "% #3=" << (rankBuckets[2]*100/total) << "%\n";
+        }
+        // ANN 候选排名分布（winner 在 ANN 200 候选中的位置）
+        if (!analyzeAnnRanks.empty())
+        {
+            int annTop1=0, annTop5=0, annTop10=0, annTop20=0, annTop50=0;
+            for (int r : analyzeAnnRanks)
+            {
+                if (r == 0) annTop1++;
+                if (r < 5) annTop5++;
+                if (r < 10) annTop10++;
+                if (r < 20) annTop20++;
+                if (r < 50) annTop50++;
+            }
+            double t = static_cast<double>(analyzeAnnRanks.size());
+            std::cout << "  ANN recall: Top1=" << std::setprecision(1) << (annTop1*100/t)
+                      << "% Top5=" << (annTop5*100/t) << "% Top10=" << (annTop10*100/t)
+                      << "% Top20=" << (annTop20*100/t) << "%\n";
         }
         // 分类分数
         if (!analyzeCat.empty())
