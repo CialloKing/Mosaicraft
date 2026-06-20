@@ -442,6 +442,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int cntEdge = 0, cntMissEdge = 0;
     int cntLBP  = 0, cntMissLBP  = 0;
 
+    // 邻域窗口自动：至少覆盖 2 行 tile（垂直邻域）和默认 300（水平邻域）
+    if (cfg.neighborWindow <= 0)
+        cfg.neighborWindow = std::max(300, tilesX * 2);
+
     // 滑动窗口 + 频率计数：允许少量重用但阻止聚类
     std::deque<int> recentIds;
     std::unordered_map<int, int> freqInWindow;

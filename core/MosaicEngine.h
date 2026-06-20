@@ -33,7 +33,7 @@ public:
         double lbpWeight  = 0.05;
 
         // 邻域去重：滑动窗口内频率分级惩罚（1次轻罚/2次中罚/3+次重罚）
-        int neighborWindow = 300;    // 覆盖约 2.7 行，超出窗口后可重用
+        int neighborWindow = 0;    // 邻域窗口：0=自动（≥2×tilesX），覆盖垂直邻域
         double neighborPenalty = 100.0;  // 基础惩罚值
 
         // Top-N 随机：1 = 始终选最优匹配（邻域惩罚已保证多样性）
