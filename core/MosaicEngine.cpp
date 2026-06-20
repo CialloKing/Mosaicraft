@@ -1325,6 +1325,26 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     }
                     std::cout << "\n";
                 }
+                // 自动生成权重：贡献越大的 cell 权重越大
+                double wTotal = 0;
+                for (int i = 0; i < 64; ++i)
+                {
+                    double d = analyzeGridCellSum[i] / n;
+                    if (d < 0.001) d = 0.001;
+                    wTotal += 1.0 / d;
+                }
+                std::cout << "  Grid weights (auto-tuned): {";
+                for (int r = 0; r < 8; ++r)
+                {
+                    if (r > 0) std::cout << "   ";
+                    for (int c = 0; c < 8; ++c)
+                    {
+                        double w = (1.0 / (analyzeGridCellSum[r*8+c] / n)) / wTotal * 64.0;
+                        std::cout << std::fixed << std::setprecision(2) << w;
+                        if (r*8+c < 63) std::cout << ",";
+                    }
+                    std::cout << (r < 7 ? "\n" : "}\n");
+                }
             }
         }
         std::cout << "  Reuse: unique=" << useCount.size() << "/" << n
