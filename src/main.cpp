@@ -426,6 +426,11 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.upscale = std::max(1, std::atoi(argv[++i]));
         }
+        else if (arg == "--output-tile" && i + 2 < argc)
+        {
+            cfg.nativeTileW = std::max(1, std::atoi(argv[++i]));
+            cfg.nativeTileH = std::max(1, std::atoi(argv[++i]));
+        }
         else if (arg == "--color-adjust")
         {
             cfg.colorAdjust = true;
