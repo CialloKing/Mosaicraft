@@ -36,8 +36,8 @@ public:
         int neighborWindow = 0;    // 邻域窗口：0=自动（≥2×tilesX），覆盖垂直邻域
         double neighborPenalty = 100.0;  // 基础惩罚值
 
-        // Top-N 随机：1 = 始终选最优匹配（邻域惩罚已保证多样性）
-        int topNrandom = 1;
+        // Top-N 随机：>1 从 Top-N 选最优打破纯色区规则图案
+        int topNrandom = 3;
 
         bool useGpu = true;
         bool tiledOutput = false;   // 分块输出：每 tile 独立文件，消除输出尺寸限制
