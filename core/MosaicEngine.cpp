@@ -364,6 +364,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::vector<double> analyzeScores;
     std::vector<int>    analyzeImageIds;
     std::vector<double> analyzeLabD, analyzeGridD, analyzeEdgeD;
+    std::vector<double> analyzeGaps;      // winner-runnerUp 分数差
+    std::vector<int>    analyzeRanks;     // winner 在候选排序中的位置(1-based)
+    std::vector<int>    analyzeCat;       // 0=Smooth, 1=Edge, 2=Texture, 3=Normal
 
     int N = cfg.candidates;  // 候选数（GPU 路径下用于 benchmark）
 
@@ -736,6 +739,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
             analyzeLabD.reserve(totalTiles);
             analyzeGridD.reserve(totalTiles);
             analyzeEdgeD.reserve(totalTiles);
+            analyzeGaps.reserve(totalTiles);
+            analyzeRanks.reserve(totalTiles);
+            analyzeCat.reserve(totalTiles);
         }
 
         std::cout << "  selecting best..." << std::flush;
@@ -803,7 +809,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 double labD  = labDistance(allTL[ti], allTA[ti], allTB[ti], rec.avgL, rec.avgA, rec.avgB);
                 double gridD = gridDistance8x8(allGrid[ti], rec.grid4x4);
                 double edgeD = std::abs(allEdge[ti] - rec.edgeDensity);
-                // 组合特征分数（不含惩罚）：热力图用此分数
                 double totalW = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight + cfg.edgeWeight + cfg.lbpWeight;
                 double featScore = (cfg.labWeight*labD + cfg.gridWeight*gridD + cfg.edgeWeight*edgeD) / totalW;
                 analyzeScores.push_back(featScore);
@@ -811,6 +816,45 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 analyzeLabD.push_back(labD);
                 analyzeGridD.push_back(gridD);
                 analyzeEdgeD.push_back(edgeD);
+
+                // Top-K Gap: winner vs runner-up（含惩罚的原始分数差）
+                double winnerScore = scores[pick];
+                double gap = 0.0;
+                if (validCount >= 2)
+                {
+                    // idxs[0] 是最优，找 runner-up（与 winner 不同的候选）
+                    double runnerScore = (idxs[0] != pick) ? scores[idxs[0]] :
+                        ((idxs[1] != pick) ? scores[idxs[1]] : (validCount > 2 ? scores[idxs[2]] : winnerScore));
+                    gap = runnerScore - winnerScore;
+                }
+                analyzeGaps.push_back(gap);
+                analyzeRanks.push_back(pick + 1);  // 1-based rank in sorted Top-N
+
+                // 分类：与自适应权重相同的统计量
+                int cat = 3;  // Normal
+                if (allEdge[ti] < 0.005)
+                {
+                    double lSum = 0, lSq = 0;
+                    for (int k = 0; k < 64; ++k)
+                    {
+                        double lv = allGrid[ti][k * 3];
+                        lSum += lv; lSq += lv * lv;
+                    }
+                    double lVar = lSq / 64.0 - (lSum / 64.0) * (lSum / 64.0);
+                    if (lVar < 100.0) cat = 0;  // Smooth
+                }
+                else if (allEdge[ti] > 0.01) { cat = 1; }  // Edge
+                else
+                {
+                    double lbpEnt = 0.0;
+                    for (int k = 0; k < 256; ++k)
+                    {
+                        float v = allLBP[ti][k];
+                        if (v > 0.0f) lbpEnt -= v * std::log2(v);
+                    }
+                    if (lbpEnt > 3.0) cat = 2;  // Texture
+                }
+                analyzeCat.push_back(cat);
             }
             // 维护滑动窗口和频率计数
             int chosenId = bestRecords[ti].id;
@@ -1162,6 +1206,48 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "    LAB="  << std::setprecision(1) << (labSum*100/contribTotal)
                       << "%  Grid=" << (gridSum*100/contribTotal)
                       << "%  Edge=" << (edgeSum*100/contribTotal) << "%\n";
+        // Top-K Gap 统计
+        if (!analyzeGaps.empty())
+        {
+            auto sortedGaps = analyzeGaps;
+            std::sort(sortedGaps.begin(), sortedGaps.end());
+            double gapMean = 0;
+            for (double g : analyzeGaps) gapMean += g;
+            gapMean /= analyzeGaps.size();
+            std::cout << "  Winner-RunnerUp gap: mean=" << std::setprecision(4) << gapMean
+                      << " median=" << sortedGaps[analyzeGaps.size()/2]
+                      << " p90=" << sortedGaps[analyzeGaps.size()*9/10] << "\n";
+        }
+        // 候选排名分布（winner 在排序 Top-N 中的位置）
+        if (!analyzeRanks.empty())
+        {
+            int rankBuckets[4] = {0, 0, 0, 0};  // 1, 2, 3, 4+
+            for (int r : analyzeRanks)
+            {
+                if (r <= 3) rankBuckets[r-1]++;
+                else rankBuckets[3]++;
+            }
+            double total = static_cast<double>(analyzeRanks.size());
+            std::cout << "  Winner rank in TopN: #1=" << std::setprecision(1) << (rankBuckets[0]*100/total)
+                      << "% #2=" << (rankBuckets[1]*100/total) << "% #3=" << (rankBuckets[2]*100/total) << "%\n";
+        }
+        // 分类分数
+        if (!analyzeCat.empty())
+        {
+            double catScores[4] = {0, 0, 0, 0};
+            int catCounts[4] = {0, 0, 0, 0};
+            const char* catNames[] = {"Smooth", "Edge", "Texture", "Normal"};
+            for (int i = 0; i < static_cast<int>(analyzeCat.size()); ++i)
+            {
+                int c = analyzeCat[i];
+                if (c >= 0 && c < 4) { catScores[c] += analyzeScores[i]; catCounts[c]++; }
+            }
+            std::cout << "  Score by category:\n";
+            for (int c = 0; c < 4; ++c)
+                if (catCounts[c] > 0)
+                    std::cout << "    " << catNames[c] << "(" << catCounts[c] << "): "
+                              << std::setprecision(4) << (catScores[c]/catCounts[c]) << "\n";
+        }
         std::cout << "  Reuse: unique=" << useCount.size() << "/" << n
                   << " ratio=" << std::setprecision(2) << (static_cast<double>(n)/useCount.size()) << "x\n";
         std::cout << "  Top 5 most used:\n";
