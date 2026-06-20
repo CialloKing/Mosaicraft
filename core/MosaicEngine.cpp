@@ -1249,6 +1249,27 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     std::cout << "    " << catNames[c] << "(" << catCounts[c] << "): "
                               << std::setprecision(4) << (catScores[c]/catCounts[c]) << "\n";
         }
+        // 最差匹配 tile 定位
+        std::cout << "  Worst 5 tiles:\n";
+        std::vector<std::pair<double,int>> worstIdx;
+        for (int i = 0; i < n; ++i)
+            worstIdx.push_back({analyzeScores[i], i});
+        std::sort(worstIdx.rbegin(), worstIdx.rend());  // 降序：最差在前
+        for (int k = 0; k < std::min(5, n); ++k)
+        {
+            int ti = worstIdx[k].second;
+            int tx = ti % tilesX, ty = ti / tilesX;
+            std::cout << "    (" << tx << "," << ty << ") score="
+                      << std::fixed << std::setprecision(4) << worstIdx[k].first;
+            if (ti < static_cast<int>(analyzeCat.size()))
+            {
+                const char* cn = (analyzeCat[ti]==0)?"Smooth":
+                                 (analyzeCat[ti]==1)?"Edge":
+                                 (analyzeCat[ti]==2)?"Texture":"Normal";
+                std::cout << " [" << cn << "]";
+            }
+            std::cout << "\n";
+        }
         std::cout << "  Reuse: unique=" << useCount.size() << "/" << n
                   << " ratio=" << std::setprecision(2) << (static_cast<double>(n)/useCount.size()) << "x\n";
         std::cout << "  Top 5 most used:\n";
