@@ -569,6 +569,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::vector<double> tileEdgeW(totalTiles, nEdgeW);
         std::vector<double> tileLbpW(totalTiles, nLbpW);
         double totalW = nLabW + nGridW + nTinyW + nEdgeW + nLbpW;
+        int cntSmooth = 0, cntEdge = 0, cntTexture = 0;  // 调试统计
         for (int ti = 0; ti < totalTiles; ++ti)
         {
             double e = allEdge[ti];
@@ -594,12 +595,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 // 纯色/平滑区域：颜色最重要
                 tileLabW[ti]  = nLabW  * 2.0;
                 tileEdgeW[ti] = nEdgeW * 0.5;
+                cntSmooth++;
             }
             else if (e > 0.3)
             {
                 // 高边缘（建筑/文字）：边缘最重要
                 tileEdgeW[ti] = nEdgeW * 3.0;
                 tileLabW[ti]  = nLabW  * 0.5;
+                cntEdge++;
             }
             if (lbpEnt > 6.5)
             {
@@ -607,6 +610,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 tileLbpW[ti]  = nLbpW * 3.0;
                 tileTinyW[ti] = nTinyW * 2.0;
                 tileLabW[ti]  = nLabW  * 0.5;
+                cntTexture++;
             }
             // 归一化
             double tw = tileLabW[ti] + tileGridW[ti] + tileTinyW[ti] + tileEdgeW[ti] + tileLbpW[ti];
@@ -618,7 +622,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
             tileLbpW[ti]  *= scale;
         }
 
-        std::cout << "  GPU scoring " << totalTiles << " x " << N << "..."
+        std::cout << "  GPU scoring " << totalTiles << " x " << N
+                  << " (adaptive: smooth=" << cntSmooth
+                  << " edge=" << cntEdge << " texture=" << cntTexture << ")..."
                   << std::flush;
         std::vector<double> allScores(totalTiles * N, 1e30);
         cuda::scoreBatch(
