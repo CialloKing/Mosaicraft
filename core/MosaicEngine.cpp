@@ -519,7 +519,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         if (!featDirCache.empty())
         {
             std::cout << "  loading ANN index..." << std::flush;
-            annLoaded = annIndex.load(annPath, 564, allRecords);
+            annLoaded = annIndex.load(annPath, 708, allRecords);
             std::cout << (annLoaded ? " done" : " not found") << std::endl;
         }
         if (!annLoaded)
@@ -682,16 +682,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
         msGPUScore = Ms(tGPU - tLast).count();
         tLast = tGPU;
 
-        // —— Phase D: 顺序选择 + 8×8 vs 降采样4×4 对比 ——
-        // 当前 DB 存 8×8 Grid；对比时将 tile 和库图都降采样到 4×4 模拟旧版
-        std::vector<std::vector<float>> libGrid4x4(dbCount);  // 8×8→4×4 降采样
-        std::vector<std::vector<float>> tileGrid4x4(totalTiles);
-        for (int i = 0; i < dbCount; ++i)
+        // —— Phase D: 顺序选择 + 邻域去重 ——
+        // 8×8 vs 4×4 对比：仅 --analyze 时运行
+        std::vector<std::vector<float>> libGrid4x4, tileGrid4x4;
+        if (cfg.analyze)
         {
-            // 8×8 降采样到 4×4：每 2×2 cell 取平均
-            tileGrid4x4_status: ;  // 用到时再算
-        }
-        // 预计算库图 4×4
+            libGrid4x4.resize(dbCount);
+            tileGrid4x4.resize(totalTiles);
+            // 预计算库图 4×4
         for (int i = 0; i < dbCount; ++i)
         {
             const auto& g8 = allRecords[i].grid4x4;
@@ -731,6 +729,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
             }
         }
+        } // if (cfg.analyze) — 预计算结束
 
         int grid4Top1 = 0, grid8Top1 = 0, top1Differ = 0;
 
@@ -775,8 +774,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 else if (cnt == 1) { scores[j] += cfg.neighborPenalty * 0.1; }
             }
             // Top-N 随机选择（topN 不超过有效候选数）
-            // —— 8×8 vs 降采样4×4 对比 ——
-            if (validCount > 0)
+            // —— 8×8 vs 降采样4×4 对比（仅 --analyze） ——
+            if (cfg.analyze && validCount > 0)
             {
                 double best4 = 1e30, best8 = 1e30;
                 int best4idx = -1, best8idx = -1;
@@ -898,7 +897,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         if (totalTiles > 0)
         {
             int validTiles = totalTiles - noCandidateCount;
-            if (validTiles > 0)
+            if (cfg.analyze && validTiles > 0)
             {
                 std::cout << "\n  Grid 8x8 experiment: "
                           << "Top1 differ=" << top1Differ << "/" << validTiles
