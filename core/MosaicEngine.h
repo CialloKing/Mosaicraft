@@ -53,6 +53,10 @@ public:
         // Benchmark：输出各阶段耗时与统计（用于性能分析）
         bool benchmark = false;
 
+        // 目标图上采样因子：>1 时先将原图放大，再以 9×16 格分割
+        // 2× = 4× tile 密度，输出分辨率不变（配合 nativeTile 缩半）
+        int upscale = 0;   // 0=自动（nativeTile<180 时自动 2×）
+
         void print() const
         {
             std::cout << "  tile: " << tileW << "x" << tileH

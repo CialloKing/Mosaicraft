@@ -145,6 +145,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
         return false;
     }
 
+    // 若输出 tile 小于库图特征尺寸，自动上采样原图保持分辨率
+    if (cfg.upscale == 0 && (cfg.nativeTileW < 180 || cfg.nativeTileH < 320))
+        cfg.upscale = 2;  // nativeTile 90×160 → 2× 上采样
+
     // 指定输出尺寸时，先缩放目标图（仅改变 tile 数量，输出 tile 始终原生分辨率）
     if (cfg.outW > 0 && cfg.outH > 0)
     {
@@ -152,6 +156,17 @@ bool MosaicEngine::generate(const std::string& targetPath,
         cv::resize(target, resized, cv::Size(cfg.outW, cfg.outH), 0, 0, cv::INTER_AREA);
         target = resized;
         std::cout << "Target resized to: " << cfg.outW << "x" << cfg.outH << std::endl;
+    }
+
+    // 自动上采样：输出 tile < 180×320 时放大原图，保持分辨率不变
+    if (cfg.upscale > 1)
+    {
+        cv::Mat up;
+        cv::resize(target, up, cv::Size(target.cols * cfg.upscale, target.rows * cfg.upscale),
+                   0, 0, cv::INTER_LINEAR);
+        target = up;
+        std::cout << "Target upscaled " << cfg.upscale << "x: "
+                  << target.cols << "x" << target.rows << std::endl;
     }
 
     Database db(dbPath);
