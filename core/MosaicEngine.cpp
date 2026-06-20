@@ -798,7 +798,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             int topN = std::min(cfg.topNrandom, std::min(N, validCount));
             std::partial_sort(idxs.begin(), idxs.begin() + topN, idxs.end(),
                 [&](int a, int b) { return scores[a] < scores[b]; });
-            int pick = idxs[rand() % topN];
+            int rankPos = rand() % topN;       // 选中位置 0-based，即 rank-1
+            int pick = idxs[rankPos];
             int chosenLibIdx = indices[pick];
             bestLibIdx[ti] = chosenLibIdx;
             bestRecords[ti] = allRecords[chosenLibIdx];
@@ -817,18 +818,18 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 analyzeGridD.push_back(gridD);
                 analyzeEdgeD.push_back(edgeD);
 
-                // Top-K Gap: winner vs runner-up（含惩罚的原始分数差）
+                // Top-K Gap: winner vs true best（含惩罚的原始分数差）
                 double winnerScore = scores[pick];
                 double gap = 0.0;
                 if (validCount >= 2)
                 {
-                    // idxs[0] 是最优，找 runner-up（与 winner 不同的候选）
-                    double runnerScore = (idxs[0] != pick) ? scores[idxs[0]] :
-                        ((idxs[1] != pick) ? scores[idxs[1]] : (validCount > 2 ? scores[idxs[2]] : winnerScore));
-                    gap = runnerScore - winnerScore;
+                    if (rankPos == 0)  // winner 即最优
+                        gap = scores[idxs[1]] - winnerScore;
+                    else               // 最优未被选中
+                        gap = scores[idxs[0]] - winnerScore;  // 负值=winner更差
                 }
                 analyzeGaps.push_back(gap);
-                analyzeRanks.push_back(pick + 1);  // 1-based rank in sorted Top-N
+                analyzeRanks.push_back(rankPos + 1);  // 1-based rank in sorted Top-N
 
                 // 分类：与自适应权重相同的统计量
                 int cat = 3;  // Normal
