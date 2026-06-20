@@ -315,6 +315,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
     }
 
+    // WebP 限制 16383px（与 JPEG 65500 不同）
+    const int WEBP_MAX = 16383;
+    if (!cfg.tiledOutput && cfg.outputFormat == "webp"
+        && (tilesX * outTileW > WEBP_MAX || tilesY * outTileH > WEBP_MAX))
+    {
+        cfg.tiledOutput = true;
+        std::cout << "  (auto-switched to tiled: output exceeds WebP 16383px limit)" << std::endl;
+    }
+
     int outW = tilesX * outTileW;
     int outH = tilesY * outTileH;
 
