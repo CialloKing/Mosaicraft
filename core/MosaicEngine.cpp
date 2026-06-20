@@ -82,21 +82,21 @@ private:
 // 局部颜色校正：随机微调饱和度与亮度，减少马赛克重复感
 // 在 HSV 空间操作，H 通道不变，S/V 通道在 [1-strength, 1+strength] 范围内随机缩放
 // ============================================================
+// 局部颜色微调：在 LAB 空间仅微调 L（亮度）通道
+// LAB 感知均匀，仅调 L 不碰 AB → 颜色不变、无摩尔纹
+// L 范围：[-strength, +strength] 偏正（避免变暗感知）
 static void adjustColor(cv::Mat& img, double strength)
 {
-    cv::Mat hsv;
-    cv::cvtColor(img, hsv, cv::COLOR_BGR2HSV);
+    cv::Mat lab;
+    cv::cvtColor(img, lab, cv::COLOR_BGR2Lab);
     std::vector<cv::Mat> channels(3);
-    cv::split(hsv, channels);
-    // channels[0]=H, [1]=S, [2]=V
-    // V 偏亮：范围 [1-0.5s, 1+s]，避免变暗
-    double vFactor = 1.0 + ((rand() % 1001 - 333) / 1000.0) * strength;
-    // S 偏饱和：范围 [1-0.3s, 1+s]
-    double sFactor = 1.0 + ((rand() % 1001 - 230) / 1000.0) * strength;
-    channels[1] = channels[1] * sFactor;  // 饱和度
-    channels[2] = channels[2] * vFactor;  // 亮度
-    cv::merge(channels, hsv);
-    cv::cvtColor(hsv, img, cv::COLOR_HSV2BGR);
+    cv::split(lab, channels);
+    // channels[0]=L, [1]=A, [2]=B
+    // L 因子：[-s, +s] 偏正，仅调亮度
+    double lFactor = 1.0 + ((rand() % 1001 - 300) / 1000.0) * strength;
+    channels[0] = channels[0] * lFactor;
+    cv::merge(channels, lab);
+    cv::cvtColor(lab, img, cv::COLOR_Lab2BGR);
 }
 
 // ============================================================

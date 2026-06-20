@@ -48,7 +48,7 @@ public:
 
         // 局部颜色校正：对每张候选图随机微调亮度/饱和度，减少视觉重复感
         bool   colorAdjust = false;        // 默认关闭（远看有摩尔纹，待进一步优化）
-        double colorStrength = 0.10;       // 调整幅度（±10%）
+        double colorStrength = 0.04;       // LAB L 通道微调幅度（0.04 = ±4% 亮度）
 
         // Benchmark：输出各阶段耗时与统计（用于性能分析）
         bool benchmark = false;
