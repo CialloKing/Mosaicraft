@@ -368,6 +368,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::vector<int>    analyzeRanks;     // winner 在候选排序中的位置(1-based)
     std::vector<int>    analyzeAnnRanks;  // winner 在 ANN Top200 中的位置(0=最优)
     std::vector<int>    analyzeCat;       // 0=Smooth, 1=Edge, 2=Texture, 3=Normal
+    double analyzeGridCellSum[64] = {0};   // 每个 cell 的距离累计（用于贡献分析）
 
     int N = cfg.candidates;  // 候选数（GPU 路径下用于 benchmark）
 
@@ -866,6 +867,16 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     if (lbpEnt > 3.0) cat = 2;  // Texture
                 }
                 analyzeCat.push_back(cat);
+
+                // Grid 8×8 每 cell 贡献：累加选中对的 cell LAB 距离
+                for (int ci = 0; ci < 64; ++ci)
+                {
+                    int off = ci * 3;
+                    double dl = allGrid[ti][off] / 255.0 - rec.grid4x4[off] / 255.0;
+                    double da = allGrid[ti][off+1] / 255.0 - rec.grid4x4[off+1] / 255.0;
+                    double db = allGrid[ti][off+2] / 255.0 - rec.grid4x4[off+2] / 255.0;
+                    analyzeGridCellSum[ci] += std::sqrt(dl*dl + da*da + db*db);
+                }
             }
             // 维护滑动窗口和频率计数
             int chosenId = bestRecords[ti].id;
@@ -1296,6 +1307,25 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 std::cout << " [" << cn << "]";
             }
             std::cout << "\n";
+        }
+        // Grid 8×8 cell 贡献分析（每 cell 的平均 LAB 距离，越小=越重要）
+        {
+            double cellSum = 0;
+            for (int i = 0; i < 64; ++i) cellSum += analyzeGridCellSum[i];
+            if (cellSum > 0)
+            {
+                std::cout << "  Grid 8x8 cell contribution (avg distance, lower=more important):\n";
+                for (int r = 0; r < 8; ++r)
+                {
+                    std::cout << "    ";
+                    for (int c = 0; c < 8; ++c)
+                    {
+                        double val = analyzeGridCellSum[r * 8 + c] / n * 100.0;
+                        std::cout << std::fixed << std::setprecision(1) << std::setw(5) << val;
+                    }
+                    std::cout << "\n";
+                }
+            }
         }
         std::cout << "  Reuse: unique=" << useCount.size() << "/" << n
                   << " ratio=" << std::setprecision(2) << (static_cast<double>(n)/useCount.size()) << "x\n";
