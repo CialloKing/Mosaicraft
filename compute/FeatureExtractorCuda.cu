@@ -114,7 +114,7 @@ extern "C" __global__ void featureKernel(
         // Grid4x4: 确定所属 cell
         int cellX = x / GRID_CW;
         int cellY = y / GRID_CH;
-        int cellIdx = cellY * 4 + cellX;
+        int cellIdx = cellY * 8 + cellX;
         atomicAdd(&s_gridLab[cellIdx * 3 + 0], lv);
         atomicAdd(&s_gridLab[cellIdx * 3 + 1], av);
         atomicAdd(&s_gridLab[cellIdx * 3 + 2], bv);
