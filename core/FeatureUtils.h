@@ -97,6 +97,18 @@ inline double gridDistance8x8(const std::vector<float>& a,
                                const std::vector<float>& b)
 {
     if (a.size() != 192 || b.size() != 192) { return 1e6; }
+    // 空间权重：源于 15K tile 实测 Grid 贡献分析
+    // 中心 cell 匹配最稳定(权重↑)，底行最不可靠(权重↓)
+    constexpr double w[64] = {
+        0.85,0.92,0.96,0.99,1.00,0.99,0.94,0.89,
+        0.96,1.02,1.06,1.11,1.11,1.10,1.05,0.98,
+        0.97,1.03,1.07,1.10,1.11,1.09,1.05,0.98,
+        0.96,1.02,1.06,1.09,1.09,1.07,1.02,0.96,
+        0.97,1.03,1.08,1.13,1.13,1.10,1.05,0.98,
+        0.98,1.05,1.10,1.14,1.14,1.10,1.06,0.98,
+        0.97,1.02,1.06,1.10,1.11,1.06,1.02,0.94,
+        0.46,0.47,0.48,0.48,0.48,0.47,0.47,0.46
+    };
     double sum = 0.0;
     for (int i = 0; i < 64; ++i)
     {
@@ -104,7 +116,7 @@ inline double gridDistance8x8(const std::vector<float>& a,
         double dl = a[idx] - b[idx];
         double da = a[idx + 1] - b[idx + 1];
         double db = a[idx + 2] - b[idx + 2];
-        sum += std::sqrt(dl * dl + da * da + db * db);
+        sum += std::sqrt(dl * dl + da * da + db * db) * w[i];
     }
     return sum / 64.0 / 100.0;
 }
