@@ -53,7 +53,7 @@ __global__ void scoreKernel(
     // --- Grid distance (mean of 16 cell LAB distances) ---
     double gridDist = 0.0;
     {
-        const float* candGrid = d_candGrid + idx * 48;
+        const float* candGrid = d_candGrid + idx * 192;
         const float* tGrid = tileGrid;
 
         // 检查 grid 是否可用（至少第一个值非零或全零都算合法；
@@ -159,7 +159,7 @@ __global__ void scoreIndexedKernel(
     // --- Grid distance ---
     double gridDist = 0.0;
     {
-        const float* candGrid = libGrid + libIdx * 48;
+        const float* candGrid = libGrid + libIdx * 192;
         double sum = 0.0;
         for (int i = 0; i < 16; ++i)
         {
@@ -222,7 +222,7 @@ __global__ void scoreBatchKernel(
     const double* __restrict__ tileL,     // [totalTiles]
     const double* __restrict__ tileA,
     const double* __restrict__ tileB,
-    const float* __restrict__ tileGrid,   // [totalTiles * 48]
+    const float* __restrict__ tileGrid,   // [totalTiles * 192]
     const std::uint8_t* __restrict__ tileTiny, // [totalTiles * 256]
     const double* __restrict__ tileEdge,   // [totalTiles]
     const float* __restrict__ tileLBP,     // [totalTiles * 256]
@@ -265,8 +265,8 @@ __global__ void scoreBatchKernel(
     // --- Grid distance ---
     double gridDist = 0.0;
     {
-        const float* tGrid = tileGrid + tileIdx * 48;
-        const float* cGrid = libGrid + libIdx * 48;
+        const float* tGrid = tileGrid + tileIdx * 192;
+        const float* cGrid = libGrid + libIdx * 192;
         double sum = 0.0;
         for (int i = 0; i < 16; ++i)
         {
@@ -435,14 +435,14 @@ int matchOnGpu(
 } while(0)
 
     CUDA_CHECK(cudaMalloc(&d_lab,  N * 3 * sizeof(double)));
-    CUDA_CHECK(cudaMalloc(&d_grid, N * 48 * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_grid, N * 192 * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_tiny, N * 256));
     CUDA_CHECK(cudaMalloc(&d_edge, N * sizeof(double)));
     CUDA_CHECK(cudaMalloc(&d_lbp,  N * 256 * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_use,  N * sizeof(int)));
 
     CUDA_CHECK(cudaMemcpy(d_lab,  cd.lab,  N * 3 * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_grid, cd.grid, N * 48 * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_grid, cd.grid, N * 192 * sizeof(float), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_tiny, cd.tiny, N * 256, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_edge, cd.edge, N * sizeof(double), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_lbp,  cd.lbp,  N * 256 * sizeof(float), cudaMemcpyHostToDevice));
@@ -453,11 +453,11 @@ int matchOnGpu(
     std::uint8_t* d_tileTiny = nullptr;
     float*   d_tileLBP = nullptr;
 
-    CUDA_CHECK(cudaMalloc(&d_tileGrid, 48 * sizeof(float)));
+    CUDA_CHECK(cudaMalloc(&d_tileGrid, 192 * sizeof(float)));
     CUDA_CHECK(cudaMalloc(&d_tileTiny, 256));
     CUDA_CHECK(cudaMalloc(&d_tileLBP,  256 * sizeof(float)));
 
-    CUDA_CHECK(cudaMemcpy(d_tileGrid, tileGrid, 48 * sizeof(float), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_tileGrid, tileGrid, 192 * sizeof(float), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_tileTiny, tileTiny, 256, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_tileLBP,  tileLBP,  256 * sizeof(float), cudaMemcpyHostToDevice));
 
@@ -493,13 +493,13 @@ bool uploadLibrary(GpuLibrary& lib,
     if (N <= 0) return false;
     lib.count = N;
     cudaMalloc(&lib.d_lab,  N * 3 * sizeof(double));
-    cudaMalloc(&lib.d_grid, N * 48 * sizeof(float));
+    cudaMalloc(&lib.d_grid, N * 192 * sizeof(float));
     cudaMalloc(&lib.d_tiny, N * 256);
     cudaMalloc(&lib.d_edge, N * sizeof(double));
     cudaMalloc(&lib.d_lbp,  N * 256 * sizeof(float));
     cudaMalloc(&lib.d_use,  N * sizeof(int));
     cudaMemcpy(lib.d_lab,  h_lab,  N * 3 * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(lib.d_grid, h_grid, N * 48 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(lib.d_grid, h_grid, N * 192 * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(lib.d_tiny, h_tiny, N * 256, cudaMemcpyHostToDevice);
     cudaMemcpy(lib.d_edge, h_edge, N * sizeof(double), cudaMemcpyHostToDevice);
     cudaMemcpy(lib.d_lbp,  h_lbp,  N * 256 * sizeof(float), cudaMemcpyHostToDevice);
@@ -533,7 +533,7 @@ int matchAgainstLibrary(
     float*   d_tileGrid = nullptr;
     std::uint8_t* d_tileTiny = nullptr;
     float*   d_tileLBP = nullptr;
-    cudaMalloc(&d_tileGrid, 48 * sizeof(float));
+    cudaMalloc(&d_tileGrid, 192 * sizeof(float));
     cudaMalloc(&d_tileTiny, 256);
     cudaMalloc(&d_tileLBP,  256 * sizeof(float));
     cudaMemcpy(d_tileGrid, tileGrid, 48 * sizeof(float), cudaMemcpyHostToDevice);
@@ -582,9 +582,9 @@ void scoreIndices(
     // 上传 tile 特征
     float *d_tileGrid=nullptr, *d_tileLBP=nullptr;
     uint8_t* d_tileTiny=nullptr;
-    cudaMalloc(&d_tileGrid, 48*sizeof(float)); cudaMalloc(&d_tileTiny, 256);
+    cudaMalloc(&d_tileGrid, 192*sizeof(float)); cudaMalloc(&d_tileTiny, 256);
     cudaMalloc(&d_tileLBP, 256*sizeof(float));
-    cudaMemcpy(d_tileGrid, tileGrid, 48*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_tileGrid, tileGrid, 192*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_tileTiny, tileTiny, 256, cudaMemcpyHostToDevice);
     cudaMemcpy(d_tileLBP, tileLBP, 256*sizeof(float), cudaMemcpyHostToDevice);
 
@@ -626,9 +626,9 @@ int matchWithIndices(
 
     float* d_tileGrid = nullptr; uint8_t* d_tileTiny = nullptr; float* d_tileLBP = nullptr;
     int* d_indices = nullptr;
-    cudaMalloc(&d_tileGrid, 48*sizeof(float)); cudaMalloc(&d_tileTiny, 256);
+    cudaMalloc(&d_tileGrid, 192*sizeof(float)); cudaMalloc(&d_tileTiny, 256);
     cudaMalloc(&d_tileLBP, 256*sizeof(float)); cudaMalloc(&d_indices, N*sizeof(int));
-    cudaMemcpy(d_tileGrid, tileGrid, 48*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_tileGrid, tileGrid, 192*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_tileTiny, tileTiny, 256, cudaMemcpyHostToDevice);
     cudaMemcpy(d_tileLBP, tileLBP, 256*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_indices, indices, N*sizeof(int), cudaMemcpyHostToDevice);
@@ -667,7 +667,7 @@ int matchWithIndices(
 void scoreBatch(
     int totalTiles,
     const double* h_tileL, const double* h_tileA, const double* h_tileB,
-    const float* h_tileGrid,     // [totalTiles * 48]，已扁平化
+    const float* h_tileGrid,     // [totalTiles * 192]，已扁平化
     const std::uint8_t* h_tileTiny, // [totalTiles * 256]
     const double* h_tileEdge,     // [totalTiles]
     const float* h_tileLBP,       // [totalTiles * 256]
@@ -689,7 +689,7 @@ void scoreBatch(
     cudaMalloc(&d_tileL,    totalTiles * sizeof(double));
     cudaMalloc(&d_tileA,    totalTiles * sizeof(double));
     cudaMalloc(&d_tileB,    totalTiles * sizeof(double));
-    cudaMalloc(&d_tileGrid, totalTiles * 48 * sizeof(float));
+    cudaMalloc(&d_tileGrid, totalTiles * 192 * sizeof(float));
     cudaMalloc(&d_tileTiny, totalTiles * 256);
     cudaMalloc(&d_tileEdge, totalTiles * sizeof(double));
     cudaMalloc(&d_tileLBP,  totalTiles * 256 * sizeof(float));
@@ -697,7 +697,7 @@ void scoreBatch(
     cudaMemcpy(d_tileL,    h_tileL,    totalTiles * sizeof(double), cudaMemcpyHostToDevice);
     cudaMemcpy(d_tileA,    h_tileA,    totalTiles * sizeof(double), cudaMemcpyHostToDevice);
     cudaMemcpy(d_tileB,    h_tileB,    totalTiles * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_tileGrid, h_tileGrid, totalTiles * 48 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_tileGrid, h_tileGrid, totalTiles * 192 * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_tileTiny, h_tileTiny, totalTiles * 256, cudaMemcpyHostToDevice);
     cudaMemcpy(d_tileEdge, h_tileEdge, totalTiles * sizeof(double), cudaMemcpyHostToDevice);
     cudaMemcpy(d_tileLBP,  h_tileLBP,  totalTiles * 256 * sizeof(float), cudaMemcpyHostToDevice);

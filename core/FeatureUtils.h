@@ -112,9 +112,11 @@ inline double gridDistance8x8(const std::vector<float>& a,
 inline double gridDistance(const std::vector<float>& a,
                             const std::vector<float>& b)
 {
-    if (a.size() != 48 || b.size() != 48) { return 1e6; }
+    // 支持 48 (4×4) 和 192 (8×8)，按 3 通道自动适配
+    if (a.size() != b.size() || a.size() % 3 != 0) { return 1e6; }
+    int cells = static_cast<int>(a.size()) / 3;
     double sum = 0.0;
-    for (std::size_t i = 0; i < 16; ++i)
+    for (int i = 0; i < cells; ++i)
     {
         std::size_t idx = i * 3;
         double dl = a[idx] - b[idx];
@@ -122,7 +124,7 @@ inline double gridDistance(const std::vector<float>& a,
         double db = a[idx + 2] - b[idx + 2];
         sum += std::sqrt(dl * dl + da * da + db * db);
     }
-    return sum / 16.0 / 100.0;
+    return sum / cells / 100.0;
 }
 
 inline std::vector<uint8_t> computeTinyImage(const cv::Mat& bgr)

@@ -90,7 +90,7 @@ bool Database::createTables()
             saturation      REAL DEFAULT 0.0,
             color_variance  REAL DEFAULT 0.0,
 
-            -- 区域结构特征（V2）：4×4 LAB Grid = 48 float BLOB
+            -- 区域结构特征（V2）：8×8 LAB Grid = 192 float BLOB
             grid4x4         BLOB,
 
             -- TinyImage 16×16 灰度图文件路径（V3）

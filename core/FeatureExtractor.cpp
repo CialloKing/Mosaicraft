@@ -39,8 +39,8 @@ void FeatureExtractor::compute(const cv::Mat& bgr,
     rec.meanBrightness = cv::mean(gray)[0];
 
     // ——— V2：4×4 LAB Grid ———
-    const int gridRows = 4;
-    const int gridCols = 4;
+    const int gridRows = 8;
+    const int gridCols = 8;
     const int cellH = bgr.rows / gridRows;
     const int cellW = bgr.cols / gridCols;
 

@@ -190,7 +190,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     if (cfg.useGpu && cuda::isCudaAvailable())
     {
         std::vector<double>  h_lab(dbCount * 3);
-        std::vector<float>   h_grid(dbCount * 48);
+        std::vector<float>   h_grid(dbCount * 192);
         std::vector<uint8_t> h_tiny(dbCount * 256);
         std::vector<double>  h_edge(dbCount);
         std::vector<float>   h_lbp(dbCount * 256);
@@ -201,8 +201,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
         {
             const auto& rec = allRecords[i];
             h_lab[i*3+0] = rec.avgL; h_lab[i*3+1] = rec.avgA; h_lab[i*3+2] = rec.avgB;
-            if (rec.grid4x4.size() == 48)
-                std::memcpy(&h_grid[i*48], rec.grid4x4.data(), 48*sizeof(float));
+            if (rec.grid4x4.size() == 192)
+                std::memcpy(&h_grid[i*192], rec.grid4x4.data(), 192*sizeof(float));
             h_edge[i] = rec.edgeDensity;
             h_use[i] = rec.useCount;
         }
@@ -258,7 +258,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                                  h_lbp.data(), h_use.data(), dbCount))
         {
             std::cout << "GPU library: " << dbCount << " images (" 
-                      << (dbCount * (48*4+256+256*4) / 1024) << " KB)" << std::endl;
+                      << (dbCount * (192*4+256+256*4) / 1024) << " KB)" << std::endl;
         }
         else
         {
@@ -363,7 +363,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::vector<std::vector<uint8_t>> allTiny(totalTiles);
     std::vector<double> allEdge(totalTiles);
     std::vector<std::vector<float>> allLBP(totalTiles);
-    std::vector<std::vector<float>> allGrid8x8(totalTiles);  // 8×8 实验
+
+    // Phase D 降采样 4×4 对比用（8×8→4×4）
 
     int nThreads = std::thread::hardware_concurrency();
     if (nThreads < 2) nThreads = 2;
@@ -390,8 +391,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 cv::Scalar m = cv::mean(lab);
                 allTL[idx]=m[0]; allTA[idx]=m[1]; allTB[idx]=m[2];
                 auto t2 = Clock::now(); opLabNs += std::chrono::duration_cast<Ns>(t2 - t1).count();
-                allGrid[idx] = computeGrid4x4(roiNative);
-                allGrid8x8[idx] = computeGrid8x8(roiNative);  // 8×8 实验对比
+                allGrid[idx] = computeGrid8x8(roiNative);  // 8×8 Grid (192维)
                 auto t3 = Clock::now(); opGridNs += std::chrono::duration_cast<Ns>(t3 - t2).count();
                 allTiny[idx] = computeTinyImage(roiNative);
                 auto t4 = Clock::now(); opTinyNs += std::chrono::duration_cast<Ns>(t4 - t3).count();
@@ -500,12 +500,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
         tLast = tANN;
 
         // —— Phase B: 扁平化 tile 特征（GPU 需要连续内存布局） ——
-        std::vector<float>   flatGrid(totalTiles * 48);
+        std::vector<float>   flatGrid(totalTiles * 192);
         std::vector<uint8_t> flatTiny(totalTiles * 256);
         std::vector<float>   flatLBP(totalTiles * 256);
         for (int ti = 0; ti < totalTiles; ++ti)
         {
-            std::memcpy(&flatGrid[ti * 48], allGrid[ti].data(), 48 * sizeof(float));
+            std::memcpy(&flatGrid[ti * 192], allGrid[ti].data(), 192 * sizeof(float));
             std::memcpy(&flatTiny[ti * 256], allTiny[ti].data(), 256);
             std::memcpy(&flatLBP[ti * 256], allLBP[ti].data(), 256 * sizeof(float));
         }
@@ -529,11 +529,55 @@ bool MosaicEngine::generate(const std::string& targetPath,
         msGPUScore = Ms(tGPU - tLast).count();
         tLast = tGPU;
 
-        // —— Phase D: 顺序选择（邻域去重 + Top-N 随机，依赖历史状态不可并行） ——
-        // 同时计算 8×8 Grid 对比统计（不影响实际选择）
-        std::vector<std::vector<float>> libGrid8x8(dbCount);  // 库图 4×4→8×8 升采样
+        // —— Phase D: 顺序选择 + 8×8 vs 降采样4×4 对比 ——
+        // 当前 DB 存 8×8 Grid；对比时将 tile 和库图都降采样到 4×4 模拟旧版
+        std::vector<std::vector<float>> libGrid4x4(dbCount);  // 8×8→4×4 降采样
+        std::vector<std::vector<float>> tileGrid4x4(totalTiles);
         for (int i = 0; i < dbCount; ++i)
-            upsampleGrid4x4to8x8(allRecords[i].grid4x4, libGrid8x8[i]);
+        {
+            // 8×8 降采样到 4×4：每 2×2 cell 取平均
+            tileGrid4x4_status: ;  // 用到时再算
+        }
+        // 预计算库图 4×4
+        for (int i = 0; i < dbCount; ++i)
+        {
+            const auto& g8 = allRecords[i].grid4x4;
+            libGrid4x4[i].resize(48);
+            for (int r = 0; r < 4; ++r)
+            {
+                for (int c = 0; c < 4; ++c)
+                {
+                    for (int ch = 0; ch < 3; ++ch)
+                    {
+                        float sum = 0;
+                        for (int dr = 0; dr < 2; ++dr)
+                            for (int dc = 0; dc < 2; ++dc)
+                                sum += g8[((r*2+dr)*8 + (c*2+dc)) * 3 + ch];
+                        libGrid4x4[i][(r*4+c)*3 + ch] = sum / 4.0f;
+                    }
+                }
+            }
+        }
+        // 预计算 tile 4×4
+        for (int ti = 0; ti < totalTiles; ++ti)
+        {
+            const auto& g8 = allGrid[ti];
+            tileGrid4x4[ti].resize(48);
+            for (int r = 0; r < 4; ++r)
+            {
+                for (int c = 0; c < 4; ++c)
+                {
+                    for (int ch = 0; ch < 3; ++ch)
+                    {
+                        float sum = 0;
+                        for (int dr = 0; dr < 2; ++dr)
+                            for (int dc = 0; dc < 2; ++dc)
+                                sum += g8[((r*2+dr)*8 + (c*2+dc)) * 3 + ch];
+                        tileGrid4x4[ti][(r*4+c)*3 + ch] = sum / 4.0f;
+                    }
+                }
+            }
+        }
 
         int grid4Top1 = 0, grid8Top1 = 0, top1Differ = 0;  // 8×8 对比统计
 
@@ -565,7 +609,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 else if (cnt == 1) { scores[j] += cfg.neighborPenalty * 0.1; }
             }
             // Top-N 随机选择（topN 不超过有效候选数）
-            // —— 8×8 对比：用 8×8 Grid 重新计算候选分数，看 Top1 是否变化 ——
+            // —— 8×8 vs 降采样4×4 对比 ——
             if (validCount > 0)
             {
                 double best4 = 1e30, best8 = 1e30;
@@ -573,13 +617,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 for (int j = 0; j < N; ++j)
                 {
                     if (indices[j] < 0) continue;
-                    // 4×4 分数 = GPU 已计算（含邻域惩罚）
-                    if (scores[j] < best4) { best4 = scores[j]; best4idx = indices[j]; }
-                    // 8×8 分数 = GPU分数 - grid4x4贡献 + grid8x8贡献
-                    double grid4d = gridDistance(allGrid[ti], allRecords[indices[j]].grid4x4);
-                    double grid8d = gridDistance8x8(allGrid8x8[ti], libGrid8x8[indices[j]]);
-                    // GPU 分数中减去 grid4x4 部分再加 8×8，其他特征不变
-                    double score8 = scores[j] - nGridW * grid4d + nGridW * grid8d;
+                    // GPU scores 已含 8×8 grid；4×4 分数 = 减去 8×8 贡献 + 4×4 贡献
+                    double grid8d = gridDistance8x8(allGrid[ti], allRecords[indices[j]].grid4x4);
+                    double grid4d = gridDistance(tileGrid4x4[ti], libGrid4x4[indices[j]]);
+                    double score4 = scores[j] - nGridW * grid8d + nGridW * grid4d;
+                    double score8 = scores[j];  // GPU 已用 8×8
+                    if (score4 < best4) { best4 = score4; best4idx = indices[j]; }
                     if (score8 < best8) { best8 = score8; best8idx = indices[j]; }
                 }
                 if (best4idx >= 0) grid4Top1++;

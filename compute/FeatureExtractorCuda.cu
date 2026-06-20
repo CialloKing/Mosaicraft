@@ -17,9 +17,9 @@ namespace cuda {
 static constexpr int IMG_W = 320;
 static constexpr int IMG_H = 180;
 static constexpr int IMG_PIX = IMG_W * IMG_H;        // 57600
-static constexpr int GRID_CW = IMG_W / 4;             // 80
-static constexpr int GRID_CH = IMG_H / 4;             // 45
-static constexpr int GRID_CELLS = 16;
+static constexpr int GRID_CW = IMG_W / 8;             // 40
+static constexpr int GRID_CH = IMG_H / 8;             // 22.5→22
+static constexpr int GRID_CELLS = 64;
 static constexpr int TINY_W = 16;
 static constexpr int TINY_H = 16;
 static constexpr int LBP_BINS = 256;
@@ -63,7 +63,7 @@ __device__ float rgb2gray(float r, float g, float b)
 // ============================================================
 extern "C" __global__ void featureKernel(
     const uint8_t* __restrict__ d_images,   // [batchSize * IMG_H * IMG_W * 3]
-    float* __restrict__ d_grid,             // [batchSize * 48]
+    float* __restrict__ d_grid,             // [batchSize * 192]
     uint8_t* __restrict__ d_tiny,           // [batchSize * 256]
     float* __restrict__ d_lbp,              // [batchSize * 256]
     double* __restrict__ d_avgLAB,          // [batchSize * 3]
@@ -169,7 +169,7 @@ extern "C" __global__ void featureKernel(
         d_contrast[imgIdx]   = (grayVar > 0 ? sqrtf(grayVar) : 0.0f) / 255.0f;
         d_edgeDensity[imgIdx] = static_cast<double>(s_edgeCount) / nPix;
 
-        int outOff = imgIdx * 48;
+        int outOff = imgIdx * 192;
         for (int c = 0; c < GRID_CELLS; ++c)
         {
             float cnt = GRID_CW * GRID_CH;
@@ -267,7 +267,7 @@ int extractBatch(
     double*  d_edge = nullptr;
 
     cudaMalloc(&d_images, N * imgBytes);
-    cudaMalloc(&d_grid, N * 48 * sizeof(float));
+    cudaMalloc(&d_grid, N * 192 * sizeof(float));
     cudaMalloc(&d_tiny, N * 256);
     cudaMalloc(&d_lbp, N * 256 * sizeof(float));
     cudaMalloc(&d_avgLAB, N * 3 * sizeof(double));
@@ -294,7 +294,7 @@ int extractBatch(
     }
 
     // 下载结果
-    std::vector<float> h_grid(N * 48);
+    std::vector<float> h_grid(N * 192);
     std::vector<uint8_t> h_tiny(N * 256);
     std::vector<float> h_lbp(N * 256);
     std::vector<double> h_avgLAB(N * 3);
@@ -302,7 +302,7 @@ int extractBatch(
     std::vector<double> h_contrast(N);
     std::vector<double> h_edge(N);
 
-    cudaMemcpy(h_grid.data(), d_grid, N * 48 * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_grid.data(), d_grid, N * 192 * sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_tiny.data(), d_tiny, N * 256, cudaMemcpyDeviceToHost);
     cudaMemcpy(h_lbp.data(), d_lbp, N * 256 * sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_avgLAB.data(), d_avgLAB, N * 3 * sizeof(double), cudaMemcpyDeviceToHost);
@@ -318,7 +318,7 @@ int extractBatch(
     for (int i = 0; i < N; ++i)
     {
         auto& rec = records[i];
-        rec.grid4x4.assign(&h_grid[i * 48], &h_grid[i * 48] + 48);
+        rec.grid4x4.assign(&h_grid[i * 192], &h_grid[i * 192] + 192);
         rec.avgL = h_avgLAB[i * 3 + 0];
         rec.avgA = h_avgLAB[i * 3 + 1];
         rec.avgB = h_avgLAB[i * 3 + 2];

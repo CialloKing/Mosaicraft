@@ -37,7 +37,7 @@ public:
         int count = static_cast<int>(records.size());
         if (count == 0) return false;
 
-        constexpr int dim = 564;
+        constexpr int dim = 708;
         m_dim = dim;
 
         // 构建 id → index 映射（供查询后用）
@@ -57,9 +57,9 @@ public:
             vec[off++] = static_cast<float>(rec.avgA / 255.0);
             vec[off++] = static_cast<float>(rec.avgB / 255.0);
 
-            for (int j = 0; j < 48 && j < static_cast<int>(rec.grid4x4.size()); ++j)
+            for (int j = 0; j < 192 && j < static_cast<int>(rec.grid4x4.size()); ++j)
                 vec[off++] = rec.grid4x4[j] / 255.0f;
-            for (int j = static_cast<int>(rec.grid4x4.size()); j < 48; ++j)
+            for (int j = static_cast<int>(rec.grid4x4.size()); j < 192; ++j)
                 vec[off++] = 0.0f;
 
             // Tiny/LBP 在 ANN 阶段用 0 填充，完整特征由 GPU 精排使用
@@ -92,7 +92,7 @@ public:
     bool load(const std::string& path, int dim,
               const std::vector<ImageRecord>& records)
     {
-        constexpr int kDim = 564;
+        constexpr int kDim = 708;
         if (dim != kDim) return false;
 
         int count = static_cast<int>(records.size());
@@ -157,7 +157,7 @@ private:
 };
 
 // ============================================================
-// 构建 tile 特征向量 (564 维)
+// 构建 tile 特征向量 (708 维)
 // ============================================================
 inline void buildTileVector(
     double tL, double tA, double tB,
@@ -167,14 +167,14 @@ inline void buildTileVector(
     const std::vector<float>& lbp,
     std::vector<float>& out)
 {
-    out.resize(564);
+    out.resize(708);
     int off = 0;
 
     out[off++] = static_cast<float>(tL / 255.0);
     out[off++] = static_cast<float>(tA / 255.0);
     out[off++] = static_cast<float>(tB / 255.0);
 
-    for (int j = 0; j < 48; ++j)
+    for (int j = 0; j < 192; ++j)
         out[off++] = (j < static_cast<int>(grid.size())) ? grid[j] / 255.0f : 0.0f;
 
     for (int j = 0; j < 256; ++j)
