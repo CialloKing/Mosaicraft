@@ -89,8 +89,10 @@ static void adjustColor(cv::Mat& img, double strength)
     std::vector<cv::Mat> channels(3);
     cv::split(hsv, channels);
     // channels[0]=H, [1]=S, [2]=V
-    double sFactor = 1.0 + (rand() % 2001 - 1000) / 1000.0 * strength;
-    double vFactor = 1.0 + (rand() % 2001 - 1000) / 1000.0 * strength;
+    // V Æ«ÁÁ£º·¶Î§ [1-0.5s, 1+s]£¬±ÜÃâ±ä°µ
+    double vFactor = 1.0 + ((rand() % 1001 - 333) / 1000.0) * strength;
+    // S Æ«±¥ºÍ£º·¶Î§ [1-0.3s, 1+s]
+    double sFactor = 1.0 + ((rand() % 1001 - 230) / 1000.0) * strength;
     channels[1] = channels[1] * sFactor;  // ±¥ºÍ¶È
     channels[2] = channels[2] * vFactor;  // ÁÁ¶È
     cv::merge(channels, hsv);
