@@ -1333,6 +1333,41 @@ bool MosaicEngine::generate(const std::string& targetPath,
         for (int i = 0; i < std::min(5, static_cast<int>(topUsed.size())); ++i)
             std::cout << "    id=" << topUsed[i].second << " : " << topUsed[i].first << " times\n";
 
+        // ---- 导出最差 tile（目标块 + 匹配图）----
+        std::string anaDir = outputPath;
+        auto dp = anaDir.rfind('.');
+        if (dp != std::string::npos) anaDir = anaDir.substr(0, dp) + "_analysis";
+        else anaDir += "_analysis";
+        std::filesystem::create_directories(anaDir);
+        constexpr int kExport = 20;
+        for (int k = 0; k < std::min(kExport, n); ++k)
+        {
+            int ti = worstIdx[k].second;
+            int tx = ti % tilesX, ty = ti / tilesX;
+            char fname[256];
+            // 目标 tile（放大到 180×320 便于对比）
+            cv::Mat tileROI = target(cv::Rect(tx*cfg.tileW, ty*cfg.tileH, cfg.tileW, cfg.tileH));
+            cv::Mat tileBig;
+            cv::resize(tileROI, tileBig, cv::Size(180, 320), 0, 0, cv::INTER_NEAREST);  // 像素放大
+            const char* cn = (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==0)?"S":
+                             (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==1)?"E":
+                             (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==2)?"T":"N";
+            snprintf(fname, sizeof(fname), "%s/worst_%02d_s%.4f_%s_tile.png",
+                     anaDir.c_str(), k, worstIdx[k].first, cn);
+            cv::imwrite(fname, tileBig);
+            // 匹配图
+            if (ti < static_cast<int>(bestRecords.size()) && !bestRecords[ti].filePath.empty())
+            {
+                cv::Mat match = cv::imread(bestRecords[ti].filePath, cv::IMREAD_COLOR);
+                if (!match.empty())
+                {
+                    snprintf(fname, sizeof(fname), "%s/worst_%02d_match.png", anaDir.c_str(), k);
+                    cv::imwrite(fname, match);
+                }
+            }
+        }
+        std::cout << "  Worst tiles exported: " << anaDir << "/ (x" << kExport << ")\n";
+
         // 热力图
         std::string heatPath = outputPath;
         auto dotPos = heatPath.rfind('.');
