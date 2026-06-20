@@ -1,6 +1,20 @@
 # Mosaicraft 项目百科全书
 
-> 最后更新：2026-06-21 | 版本：v1.1 Beta
+> 最后更新：2026-06-21 | 版本：v1.5
+
+## 目录
+
+1. [项目概述](#1-项目概述)
+2. [架构设计](#2-架构设计)
+3. [命令行完全参考](#3-命令行完全参考)
+4. [性能数据](#4-性能数据)
+5. [质量分析体系](#5-质量分析体系)
+6. [输出格式行为](#6-输出格式行为)
+7. [Bug 历史与经验教训](#7-bug-历史与经验教训)
+8. [版本演进](#8-版本演进)
+9. [构建与发布](#9-构建与发布)
+10. [开发规范](#10-开发规范)
+11. [已知限制与未来方向](#11-已知限制与未来方向)
 
 ## 目录
 
@@ -214,17 +228,42 @@ mosaicraft inspect -i <img> [-d <db>]
 | target3.jpg | `--upscale 2` | 81,420 | 31860×36800 JPG | ~50s |
 | target.png | 默认 | 65,330 | 50040×75200 TIFF | ~34s |
 
-### 分析报告示例 (target6.jpg)
+### 分析报告示例 (target6.jpg, 15K tiles)
 
 ```
 === Match Quality Analysis ===
-  Score: mean=0.1646 median=0.1546 p90=0.2527
+  Score: mean=0.1524 median=0.1429 p90=0.2404  (-7.4% vs 等权)
   Feature: LAB=13.2%  Grid=69.2%  Edge=17.5%
-  Gap: mean=-0.0035  (TopN=3 代价 2.1%)
+  Gap: -0.0035  (TopN=3 代价 2.1%)
   Rank: #1=33.6% #2=33.4% #3=33.0%
-  Category: Smooth(7117)=0.1364  Normal(8025)=0.1895
+  ANN recall: Top1=7.2% Top5=25.1% Top20=54.7%  (30≈200)
+  Grid cell: 中心7.8~8.0 → 底行19.3 (2.5x差异)
+  Grid weights: {0.88,0.94,...,0.46} (auto-tuned)
   Reuse: 3277/15142 unique  ratio=4.62x
+  Worst tiles: *_analysis/ (20 pairs)
+  Heatmap: *_heatmap.png
 ```
+
+### 图库诊断示例
+
+```
+=== Database Statistics ===
+  Images: 25034  Grid: 8×8 (192 dim)
+  LAB: L[41.9,246.8] avg=174  A[106.5,177.9] avg=135  B[81.2,178.8] avg=128
+  Brightness: dark=0 mid=95 bright=24939 (99.6% 偏亮)
+  Coverage gaps: dark(95) ← 仅50张暗图，需补夜景
+```
+
+### 已验证的核心发现
+
+| 发现 | 数据 | 行动 |
+|------|------|------|
+| Grid 69% 贡献，中心 2.5× 底行 | → Spatial Weight Map | Score -7.4% |
+| candidates 30≈200 | → 默认保持 200（安全余量） | — |
+| Top3 Random 代价 2.1% | → 保留默认 | — |
+| 图库暗光 0.2% | → `db-stats` 诊断 | 补夜景图 |
+| Adaptive Weights 退步 | → 冻结为实验选项 | — |
+| Edge 密度在 tile 上恒为 0 | → 9×16→180×320 上采样抹平边缘 | 已知限制 |
 
 ---
 
@@ -271,15 +310,30 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 
 ## 7. 版本演进
 
-| 版本 | 关键变更 |
-|------|----------|
-| v0.4 | inspect 命令 |
-| v0.5 | ANN hnswlib 候选选择 |
-| v0.6 | DeepZoom HTML、颜色校正、benchmark、topn-random |
-| v0.7 | FeaturePack 缓存 (50K→2 fread)、BigTIFF、ANN 持久化 |
-| v0.8 | ImageCache、8×8 Grid (192维)、智能格式切换、自适应权重 |
-| v1.0 | 90→160 默认 tile、upscale、output-tile、WebP 支持 |
-| v1.1 | `--analyze` 质量评估体系 |
+| 版本 | 关键变更 | Score |
+|------|----------|-------|
+| v0.4 | inspect 命令 | — |
+| v0.5 | ANN hnswlib 候选选择 | — |
+| v0.6 | DeepZoom HTML、颜色校正、benchmark、topn-random | — |
+| v0.7 | FeaturePack 缓存 (50K→2 fread)、BigTIFF、ANN 持久化 | — |
+| v0.8 | ImageCache、8×8 Grid (192维)、智能格式切换、自适应权重 | — |
+| v1.0 | --upscale、--output-tile、WebP 支持、默认 tile 180×320 | — |
+| v1.1 | `--analyze` 质量评估体系（分数统计/特征贡献/复用率/热力图） | 0.1646 |
+| v1.3 | Grid 贡献分析(8×8热图)、Candidate sweep(30≈200)、db-stats | — |
+| v1.4 | **Spatial Weight Map**（首个数据驱动质量优化）、最差tile导出 | **0.1524 (-7.4%)** |
+| v1.5 | 覆盖缺口分析、权重自动生成 | 0.1524 |
+
+### Bug 历史（精选）
+
+| # | 版本 | 文件 | Bug | 影响 |
+|---|------|------|-----|------|
+| 1 | v1.0 | `FeatureExtractorCuda.cu:20` | `GRID_CW=180/8=22` 整数截断 | 🔴 越界写共享内存，全库 LAB 损坏 |
+| 2 | v1.0 | `FeatureIndex.h:78` | `addPoint(data, 0)` 仅加 1 点 | 🔴 所有 tile 同一张图 |
+| 3 | v0.7 | `FeaturePack.h` | v1 假设 ID 连续 | 🔴 全 tile 错配 |
+| 4 | v0.8 | `ImageCache.h` | 浅拷贝+adjustColor 原地修改 | 热门图反复调色变暗 |
+| 5 | v0.8 | `MosaicEngine.cpp` | neighborWindow=300 < tilesX(319) | 垂直邻域漏罚 |
+| 6 | v1.0 | `CudaBackend.cu:62` | Grid 循环 `i<16`(应为64) | 仅 1/4 格 |
+| 7 | v1.0 | `FeatureExtractorCuda.cu:117` | Cell 索引 `*4`(应为*8) | 行覆盖 |
 
 ---
 
