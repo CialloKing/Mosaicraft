@@ -352,7 +352,7 @@ int extractBatch(
             }
         }
 
-        rec.featureVersion = 4;
+        rec.featureVersion = 5;
     }
 
     return N;

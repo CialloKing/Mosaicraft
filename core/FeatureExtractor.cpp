@@ -17,7 +17,7 @@ int FeatureExtractor::featureVersion()
     // V2 = 2: + Grid4x4
     // V3 = 3: + TinyImage + 颜色统计
     // V4 = 4: + EdgeDensity + LBP 纹理直方图
-    return 4;
+    return 5;  // v5: Grid 8×8 (192-dim)
 }
 
 void FeatureExtractor::compute(const cv::Mat& bgr,
@@ -38,7 +38,7 @@ void FeatureExtractor::compute(const cv::Mat& bgr,
     cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
     rec.meanBrightness = cv::mean(gray)[0];
 
-    // ——— V2：4×4 LAB Grid ———
+    // ——— V2：8×8 LAB Grid ———
     const int gridRows = 8;
     const int gridCols = 8;
     const int cellH = bgr.rows / gridRows;
