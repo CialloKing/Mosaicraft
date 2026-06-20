@@ -796,15 +796,21 @@ bool MosaicEngine::generate(const std::string& targetPath,
             int chosenLibIdx = indices[pick];
             bestLibIdx[ti] = chosenLibIdx;
             bestRecords[ti] = allRecords[chosenLibIdx];
-            // --analyze: 记录选中 tile 的匹配分数（仅内存可得的 LAB/Grid/Edge 特征贡献）
+            // --analyze: 记录选中 tile 的特征距离（不含邻域惩罚，纯匹配质量）
             if (cfg.analyze)
             {
                 const auto& rec = allRecords[chosenLibIdx];
-                analyzeScores.push_back(scores[pick]);
+                double labD  = labDistance(allTL[ti], allTA[ti], allTB[ti], rec.avgL, rec.avgA, rec.avgB);
+                double gridD = gridDistance8x8(allGrid[ti], rec.grid4x4);
+                double edgeD = std::abs(allEdge[ti] - rec.edgeDensity);
+                // 组合特征分数（不含惩罚）：热力图用此分数
+                double totalW = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight + cfg.edgeWeight + cfg.lbpWeight;
+                double featScore = (cfg.labWeight*labD + cfg.gridWeight*gridD + cfg.edgeWeight*edgeD) / totalW;
+                analyzeScores.push_back(featScore);
                 analyzeImageIds.push_back(rec.id);
-                analyzeLabD.push_back(labDistance(allTL[ti], allTA[ti], allTB[ti], rec.avgL, rec.avgA, rec.avgB));
-                analyzeGridD.push_back(gridDistance8x8(allGrid[ti], rec.grid4x4));
-                analyzeEdgeD.push_back(std::abs(allEdge[ti] - rec.edgeDensity));
+                analyzeLabD.push_back(labD);
+                analyzeGridD.push_back(gridD);
+                analyzeEdgeD.push_back(edgeD);
             }
             // 维护滑动窗口和频率计数
             int chosenId = bestRecords[ti].id;
