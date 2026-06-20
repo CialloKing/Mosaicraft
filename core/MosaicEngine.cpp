@@ -407,7 +407,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 // 将 ROI 缩放到图库原生分辨率，确保特征与库图片同尺度可比
                 cv::Mat roiNative;
                 auto t0 = Clock::now();
-                cv::resize(roi, roiNative, cv::Size(cfg.nativeTileW, cfg.nativeTileH), 0, 0, cv::INTER_LINEAR);
+                cv::resize(roi, roiNative, cv::Size(180, 320), 0, 0, cv::INTER_LINEAR);
                 auto t1 = Clock::now(); opResizeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
                 cv::Mat lab; cv::cvtColor(roiNative, lab, cv::COLOR_BGR2Lab);
                 cv::Scalar m = cv::mean(lab);
