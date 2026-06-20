@@ -561,71 +561,75 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::memcpy(&flatLBP[ti * 256], allLBP[ti].data(), 256 * sizeof(float));
         }
 
-        // —— Phase C: 批量 GPU 评分（自适应权重：每 tile 独立调权） ——
-        // 根据 tile 特征计算自适应权重：纯色提 LAB，边缘提 Edge，纹理提 LBP
+        // —— Phase C: 批量 GPU 评分 ——
+        // 自适应权重：根据 tile 内容选择三档预设（实验选项 --adaptive-weights）
         std::vector<double> tileLabW(totalTiles, nLabW);
         std::vector<double> tileGridW(totalTiles, nGridW);
         std::vector<double> tileTinyW(totalTiles, nTinyW);
         std::vector<double> tileEdgeW(totalTiles, nEdgeW);
         std::vector<double> tileLbpW(totalTiles, nLbpW);
-        double totalW = nLabW + nGridW + nTinyW + nEdgeW + nLbpW;
-        int cntSmooth = 0, cntEdge = 0, cntTexture = 0;  // 调试统计
-        for (int ti = 0; ti < totalTiles; ++ti)
+        int cntSmooth = 0, cntEdge = 0, cntTexture = 0, cntNormal = 0;
+        if (cfg.adaptiveWeights)
         {
-            double e = allEdge[ti];
-            // LBP 熵：直方图越均匀熵越高（纹理复杂）
-            double lbpEnt = 0.0;
-            for (int k = 0; k < 256; ++k)
+            for (int ti = 0; ti < totalTiles; ++ti)
             {
-                float v = allLBP[ti][k];
-                if (v > 0.0f) lbpEnt -= v * std::log2(v);
-            }
-            // 颜色方差：Grid8×8 中 LAB 的 L 通道方差
-            double lSum = 0, lSq = 0;
-            for (int k = 0; k < 64; ++k)
-            {
-                double lv = allGrid[ti][k * 3];  // L 分量
-                lSum += lv; lSq += lv * lv;
-            }
-            double lVar = lSq / 64.0 - (lSum / 64.0) * (lSum / 64.0);
+                double e = allEdge[ti];
+                double lbpEnt = 0.0;
+                for (int k = 0; k < 256; ++k)
+                {
+                    float v = allLBP[ti][k];
+                    if (v > 0.0f) lbpEnt -= v * std::log2(v);
+                }
+                double lSum = 0, lSq = 0;
+                for (int k = 0; k < 64; ++k)
+                {
+                    double lv = allGrid[ti][k * 3];
+                    lSum += lv; lSq += lv * lv;
+                }
+                double lVar = lSq / 64.0 - (lSum / 64.0) * (lSum / 64.0);
 
-            // 调整逻辑：均匀+低边缘 → 提LAB降Edge；高边缘 → 提Edge降LAB；高纹理 → 提LBP降LAB
-            if (e < 0.05 && lVar < 100.0)
-            {
-                // 纯色/平滑区域：颜色最重要
-                tileLabW[ti]  = nLabW  * 2.0;
-                tileEdgeW[ti] = nEdgeW * 0.5;
-                cntSmooth++;
+                if (e < 0.05 && lVar < 100.0)
+                {
+                    // Smooth: 提 LAB 颜色，保持 Grid（天空渐变需要空间结构）
+                    tileLabW[ti] = 0.25;
+                    tileGridW[ti] = 0.45;
+                    tileTinyW[ti] = 0.20;
+                    tileEdgeW[ti] = 0.05;
+                    tileLbpW[ti] = 0.05;
+                    cntSmooth++;
+                }
+                else if (e > 0.3)
+                {
+                    // Edge-heavy: 轮廓结构 > 颜色
+                    tileLabW[ti] = 0.15;
+                    tileGridW[ti] = 0.40;
+                    tileTinyW[ti] = 0.25;
+                    tileEdgeW[ti] = 0.15;
+                    tileLbpW[ti] = 0.05;
+                    cntEdge++;
+                }
+                else if (lbpEnt > 6.5)
+                {
+                    // Texture-heavy: 纹理 > 颜色
+                    tileLabW[ti] = 0.15;
+                    tileGridW[ti] = 0.40;
+                    tileTinyW[ti] = 0.20;
+                    tileEdgeW[ti] = 0.05;
+                    tileLbpW[ti] = 0.20;
+                    cntTexture++;
+                }
+                else
+                {
+                    cntNormal++;
+                }
             }
-            else if (e > 0.3)
-            {
-                // 高边缘（建筑/文字）：边缘最重要
-                tileEdgeW[ti] = nEdgeW * 3.0;
-                tileLabW[ti]  = nLabW  * 0.5;
-                cntEdge++;
-            }
-            if (lbpEnt > 6.5)
-            {
-                // 高纹理（草地/毛发）：纹理最重要
-                tileLbpW[ti]  = nLbpW * 3.0;
-                tileTinyW[ti] = nTinyW * 2.0;
-                tileLabW[ti]  = nLabW  * 0.5;
-                cntTexture++;
-            }
-            // 归一化
-            double tw = tileLabW[ti] + tileGridW[ti] + tileTinyW[ti] + tileEdgeW[ti] + tileLbpW[ti];
-            double scale = totalW / tw;
-            tileLabW[ti]  *= scale;
-            tileGridW[ti] *= scale;
-            tileTinyW[ti] *= scale;
-            tileEdgeW[ti] *= scale;
-            tileLbpW[ti]  *= scale;
         }
 
-        std::cout << "  GPU scoring " << totalTiles << " x " << N
-                  << " (adaptive: smooth=" << cntSmooth
-                  << " edge=" << cntEdge << " texture=" << cntTexture << ")..."
-                  << std::flush;
+        std::cout << "  GPU scoring " << totalTiles << " x " << N;
+        if (cfg.adaptiveWeights)
+            std::cout << " (A:S" << cntSmooth << " E" << cntEdge
+                      << " T" << cntTexture << " N" << cntNormal << ")";
+        std::cout << "..." << std::flush;
         std::vector<double> allScores(totalTiles * N, 1e30);
         cuda::scoreBatch(
             totalTiles,

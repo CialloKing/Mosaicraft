@@ -435,6 +435,10 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.colorAdjust = true;
         }
+        else if (arg == "--adaptive-weights")
+        {
+            cfg.adaptiveWeights = true;
+        }
         else if (arg == "--color-strength" && i + 1 < argc)
         {
             double v = std::atof(argv[++i]);
