@@ -22,8 +22,8 @@ public:
         int outH = 0;
 
         // 原生 tile 尺寸（图库归一化规格，outW=0 时生效）
-        int nativeTileW = 90;    // 输出 tile 尺寸（图库归一化为 180×320，placement 时缩小）
-        int nativeTileH = 160;
+        int nativeTileW = 180;   // 输出 tile 尺寸（与图库归一化尺寸匹配）
+        int nativeTileH = 320;
 
         // 五特征权重（Grid4x4 最重，结构匹配核心；Edge 辅助过滤纹理）
         double labWeight  = 0.20;
