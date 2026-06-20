@@ -43,7 +43,8 @@ public:
         bool tiledOutput = false;   // 分块输出：每 tile 独立文件，消除输出尺寸限制
         bool deepZoom    = false;   // 生成 Deep Zoom 金字塔（含多级缩放 + .dzi 清单）
         int  jpegQuality = 95;      // JPEG 质量（1-100），分块模式用 95，单图用 100
-        std::string outputFormat = "jpg";  // 输出格式：jpg / png / webp（默认从输出路径扩展名推断）
+        std::string outputFormat = "jpg";  // 输出格式：jpg / png / webp / tiff
+        bool   formatExplicit = false;    // 是否显式指定 --format（否则允许自动切换）
 
         // 局部颜色校正：对每张候选图随机微调亮度/饱和度，减少视觉重复感
         bool   colorAdjust = true;         // 启用颜色校正

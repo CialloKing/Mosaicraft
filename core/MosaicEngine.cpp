@@ -275,11 +275,28 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int outTileW = cfg.nativeTileW;
     int outTileH = cfg.nativeTileH;
     const int MAX_DIM = 65500;
-    if (!cfg.tiledOutput && cfg.outputFormat != "tiff"
-        && (tilesX * outTileW > MAX_DIM || tilesY * outTileH > MAX_DIM))
+    if (!cfg.tiledOutput && (tilesX * outTileW > MAX_DIM || tilesY * outTileH > MAX_DIM))
     {
-        cfg.tiledOutput = true;
-        std::cout << "  (auto-switched to tiled: output exceeds 65500px encoder limit)" << std::endl;
+        if (cfg.outputFormat == "jpg")
+        {
+            if (cfg.formatExplicit)
+            {
+                // 用户显式指定了 jpg，但输出会超限 → 拒绝执行
+                std::cerr << "ERROR: Output exceeds JPEG 65500px limit ("
+                          << (tilesX * outTileW) << "x" << (tilesY * outTileH)
+                          << "). Use --format tiff or --tiled." << std::endl;
+                return false;
+            }
+            // 未显式指定格式，默认 jpg 超限 → 自动切 tiff
+            cfg.outputFormat = "tiff";
+            std::cout << "  (auto-switched to TIFF: output exceeds JPEG 65500px limit)" << std::endl;
+        }
+        else if (cfg.outputFormat != "tiff")
+        {
+            // 非 jpg 非 tiff（如 png/webp）超限 → 自动切 tiled
+            cfg.tiledOutput = true;
+            std::cout << "  (auto-switched to tiled: output exceeds 65500px encoder limit)" << std::endl;
+        }
     }
 
     int outW = tilesX * outTileW;

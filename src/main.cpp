@@ -398,6 +398,7 @@ static int cmdMosaic(int argc, char* argv[])
         else if (arg == "--format" && i + 1 < argc)
         {
             cfg.outputFormat = argv[++i];
+            cfg.formatExplicit = true;
         }
         else if (arg == "--cpu")
         {
@@ -471,19 +472,6 @@ static int cmdMosaic(int argc, char* argv[])
     {
         std::cerr << "ERROR: --input is required for mosaic." << std::endl;
         return 1;
-    }
-
-    // 自动从输出路径推断格式（若未显式指定 --format）
-    if (cfg.outputFormat == "jpg")
-    {
-        auto dotPos = outputPath.rfind('.');
-        if (dotPos != std::string::npos)
-        {
-            std::string ext = outputPath.substr(dotPos + 1);
-            if (ext == "png" || ext == "PNG") cfg.outputFormat = "png";
-            else if (ext == "webp" || ext == "WEBP") cfg.outputFormat = "webp";
-            else if (ext == "tiff" || ext == "tif" || ext == "TIFF" || ext == "TIF") cfg.outputFormat = "tiff";
-        }
     }
 
     MosaicEngine engine;
