@@ -363,6 +363,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::vector<std::vector<uint8_t>> allTiny(totalTiles);
     std::vector<double> allEdge(totalTiles);
     std::vector<std::vector<float>> allLBP(totalTiles);
+    std::vector<std::vector<float>> allGrid8x8(totalTiles);  // 8×8 实验
 
     int nThreads = std::thread::hardware_concurrency();
     if (nThreads < 2) nThreads = 2;
@@ -390,6 +391,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 allTL[idx]=m[0]; allTA[idx]=m[1]; allTB[idx]=m[2];
                 auto t2 = Clock::now(); opLabNs += std::chrono::duration_cast<Ns>(t2 - t1).count();
                 allGrid[idx] = computeGrid4x4(roiNative);
+                allGrid8x8[idx] = computeGrid8x8(roiNative);  // 8×8 实验对比
                 auto t3 = Clock::now(); opGridNs += std::chrono::duration_cast<Ns>(t3 - t2).count();
                 allTiny[idx] = computeTinyImage(roiNative);
                 auto t4 = Clock::now(); opTinyNs += std::chrono::duration_cast<Ns>(t4 - t3).count();
@@ -528,6 +530,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
         tLast = tGPU;
 
         // —— Phase D: 顺序选择（邻域去重 + Top-N 随机，依赖历史状态不可并行） ——
+        // 同时计算 8×8 Grid 对比统计（不影响实际选择）
+        std::vector<std::vector<float>> libGrid8x8(dbCount);  // 库图 4×4→8×8 升采样
+        for (int i = 0; i < dbCount; ++i)
+            upsampleGrid4x4to8x8(allRecords[i].grid4x4, libGrid8x8[i]);
+
+        int grid4Top1 = 0, grid8Top1 = 0, top1Differ = 0;  // 8×8 对比统计
+
         std::cout << "  selecting best..." << std::flush;
         int noCandidateCount = 0;  // 诊断：统计无候选的 tile
         for (int ti = 0; ti < totalTiles; ++ti)
@@ -556,6 +565,28 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 else if (cnt == 1) { scores[j] += cfg.neighborPenalty * 0.1; }
             }
             // Top-N 随机选择（topN 不超过有效候选数）
+            // —— 8×8 对比：用 8×8 Grid 重新计算候选分数，看 Top1 是否变化 ——
+            if (validCount > 0)
+            {
+                double best4 = 1e30, best8 = 1e30;
+                int best4idx = -1, best8idx = -1;
+                for (int j = 0; j < N; ++j)
+                {
+                    if (indices[j] < 0) continue;
+                    // 4×4 分数 = GPU 已计算（含邻域惩罚）
+                    if (scores[j] < best4) { best4 = scores[j]; best4idx = indices[j]; }
+                    // 8×8 分数 = GPU分数 - grid4x4贡献 + grid8x8贡献
+                    double grid4d = gridDistance(allGrid[ti], allRecords[indices[j]].grid4x4);
+                    double grid8d = gridDistance8x8(allGrid8x8[ti], libGrid8x8[indices[j]]);
+                    // GPU 分数中减去 grid4x4 部分再加 8×8，其他特征不变
+                    double score8 = scores[j] - nGridW * grid4d + nGridW * grid8d;
+                    if (score8 < best8) { best8 = score8; best8idx = indices[j]; }
+                }
+                if (best4idx >= 0) grid4Top1++;
+                if (best8idx >= 0) grid8Top1++;
+                if (best4idx != best8idx) top1Differ++;
+            }
+
             std::vector<int> idxs(N);
             for (int j = 0; j < N; ++j) idxs[j] = j;
             int topN = std::min(cfg.topNrandom, std::min(N, validCount));
@@ -581,6 +612,18 @@ bool MosaicEngine::generate(const std::string& targetPath,
         cntEdge = totalTiles; cntLBP  = totalTiles;
         if (noCandidateCount > 0)
             std::cout << " (" << noCandidateCount << " tiles had no candidates!)";
+        // 8×8 Grid 对比统计
+        if (totalTiles > 0)
+        {
+            int validTiles = totalTiles - noCandidateCount;
+            if (validTiles > 0)
+            {
+                std::cout << "\n  Grid 8x8 experiment: "
+                          << "Top1 differ=" << top1Differ << "/" << validTiles
+                          << " (" << std::fixed << std::setprecision(1)
+                          << (100.0 * top1Differ / validTiles) << "%)";
+            }
+        }
         std::cout << " done" << std::endl;
 
         // Phase D 计时

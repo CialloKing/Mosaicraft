@@ -45,6 +45,70 @@ inline std::vector<float> computeGrid4x4(const cv::Mat& bgr)
     return grid;
 }
 
+// —— 8×8 Grid 实验（用于验证是否值得全面升级） ——
+// 将图像分为 8×8=64 格，每格计算平均 LAB
+// 维数: 64×3 = 192 float
+inline std::vector<float> computeGrid8x8(const cv::Mat& bgr)
+{
+    const int gridRows = 8, gridCols = 8;
+    const int cellH = bgr.rows / gridRows, cellW = bgr.cols / gridCols;
+    std::vector<float> grid;
+    grid.reserve(192);
+    for (int r = 0; r < gridRows; ++r)
+    {
+        for (int c = 0; c < gridCols; ++c)
+        {
+            cv::Mat cell = bgr(cv::Rect(c * cellW, r * cellH, cellW, cellH));
+            cv::Mat cellLab;
+            cv::cvtColor(cell, cellLab, cv::COLOR_BGR2Lab);
+            cv::Scalar m = cv::mean(cellLab);
+            grid.push_back(static_cast<float>(m[0]));
+            grid.push_back(static_cast<float>(m[1]));
+            grid.push_back(static_cast<float>(m[2]));
+        }
+    }
+    return grid;
+}
+
+// 将 4×4 Grid (48维) 双线性插值升采样到 8×8 (192维)
+// 用于库图只有 4×4 时，与 tile 的 8×8 对齐比较
+inline void upsampleGrid4x4to8x8(const std::vector<float>& src48,
+                                  std::vector<float>& dst192)
+{
+    dst192.resize(192);
+    for (int r = 0; r < 8; ++r)
+    {
+        for (int c = 0; c < 8; ++c)
+        {
+            // 8×8 的 (r,c) 映射到 4×4 的 (r/2, c/2)
+            int srcR = r / 2;
+            int srcC = c / 2;
+            int srcIdx = (srcR * 4 + srcC) * 3;
+            int dstIdx = (r * 8 + c) * 3;
+            dst192[dstIdx + 0] = src48[srcIdx + 0];
+            dst192[dstIdx + 1] = src48[srcIdx + 1];
+            dst192[dstIdx + 2] = src48[srcIdx + 2];
+        }
+    }
+}
+
+// 8×8 Grid 距离（192维，64个cell）
+inline double gridDistance8x8(const std::vector<float>& a,
+                               const std::vector<float>& b)
+{
+    if (a.size() != 192 || b.size() != 192) { return 1e6; }
+    double sum = 0.0;
+    for (int i = 0; i < 64; ++i)
+    {
+        int idx = i * 3;
+        double dl = a[idx] - b[idx];
+        double da = a[idx + 1] - b[idx + 1];
+        double db = a[idx + 2] - b[idx + 2];
+        sum += std::sqrt(dl * dl + da * da + db * db);
+    }
+    return sum / 64.0 / 100.0;
+}
+
 inline double gridDistance(const std::vector<float>& a,
                             const std::vector<float>& b)
 {
