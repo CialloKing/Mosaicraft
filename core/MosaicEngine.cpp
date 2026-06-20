@@ -356,6 +356,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << ", padded +" << padRight << "x" << padBottom;
     }
     std::cout << ")" << std::endl;
+    // 比例对比
+    double srcRatio = static_cast<double>(target.cols) / target.rows;
+    double outRatio = static_cast<double>(outW) / outH;
+    std::cout << "  Aspect: src=" << std::fixed << std::setprecision(3) << srcRatio
+              << " out=" << outRatio << " (Δ" << std::abs(srcRatio - outRatio) << ")"
+              << std::endl;
 
     // ——— 多线程预计算所有 tile 特征 ———
     int totalTiles = tilesX * tilesY;
@@ -553,6 +559,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 else
                     annMissCount++;
             }
+            if (ti % 5000 == 0 || ti == totalTiles - 1)
+                std::cout << "\r  collecting candidates " << (ti+1) << "/" << totalTiles << std::flush;
         }
         std::cout << " done" << std::endl;
 
