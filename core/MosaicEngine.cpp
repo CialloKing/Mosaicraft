@@ -497,7 +497,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << "  collecting candidates..." << std::flush;
         std::vector<int> allIndices(totalTiles * N, -1);
         std::vector<float> tileVec;
-        int annMissCount = 0;  // image_id 无法映射到 allRecords 的次数
+        int annMissCount = 0;
         for (int ti = 0; ti < totalTiles; ++ti)
         {
             buildTileVector(allTL[ti], allTA[ti], allTB[ti],
