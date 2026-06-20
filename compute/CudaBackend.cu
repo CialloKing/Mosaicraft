@@ -50,7 +50,7 @@ __global__ void scoreKernel(
         labDist = sqrt(dl * dl + da * da + db * db) / 100.0;
     }
 
-    // --- Grid distance (mean of 16 cell LAB distances) ---
+    // --- Grid distance (mean of 64 cell LAB distances) ---
     double gridDist = 0.0;
     {
         const float* candGrid = d_candGrid + idx * 192;
@@ -59,7 +59,7 @@ __global__ void scoreKernel(
         // 检查 grid 是否可用（至少第一个值非零或全零都算合法；
         // 非法数据由 host 端保证不传入，这里直接计算）
         double sum = 0.0;
-        for (int i = 0; i < 16; ++i)
+        for (int i = 0; i < 64; ++i)
         {
             int off = i * 3;
             double dl = static_cast<double>(tGrid[off])     - static_cast<double>(candGrid[off]);
@@ -67,7 +67,7 @@ __global__ void scoreKernel(
             double db = static_cast<double>(tGrid[off + 2]) - static_cast<double>(candGrid[off + 2]);
             sum += sqrt(dl * dl + da * da + db * db);
         }
-        gridDist = sum / 16.0 / 100.0;
+        gridDist = sum / 64.0 / 100.0;
     }
 
     // --- TinyImage MSE ---
@@ -161,7 +161,7 @@ __global__ void scoreIndexedKernel(
     {
         const float* candGrid = libGrid + libIdx * 192;
         double sum = 0.0;
-        for (int i = 0; i < 16; ++i)
+        for (int i = 0; i < 64; ++i)
         {
             int off = i * 3;
             double dl2 = static_cast<double>(tileGrid[off])     - static_cast<double>(candGrid[off]);
@@ -169,7 +169,7 @@ __global__ void scoreIndexedKernel(
             double db2 = static_cast<double>(tileGrid[off + 2]) - static_cast<double>(candGrid[off + 2]);
             sum += sqrt(dl2 * dl2 + da2 * da2 + db2 * db2);
         }
-        gridDist = sum / 16.0 / 100.0;
+        gridDist = sum / 64.0 / 100.0;
     }
 
     // --- TinyImage MSE ---
@@ -268,7 +268,7 @@ __global__ void scoreBatchKernel(
         const float* tGrid = tileGrid + tileIdx * 192;
         const float* cGrid = libGrid + libIdx * 192;
         double sum = 0.0;
-        for (int i = 0; i < 16; ++i)
+        for (int i = 0; i < 64; ++i)
         {
             int off = i * 3;
             double dl2 = static_cast<double>(tGrid[off])     - static_cast<double>(cGrid[off]);
@@ -276,7 +276,7 @@ __global__ void scoreBatchKernel(
             double db2 = static_cast<double>(tGrid[off + 2]) - static_cast<double>(cGrid[off + 2]);
             sum += sqrt(dl2 * dl2 + da2 * da2 + db2 * db2);
         }
-        gridDist = sum / 16.0 / 100.0;
+        gridDist = sum / 64.0 / 100.0;
     }
 
     // --- TinyImage MSE ---
