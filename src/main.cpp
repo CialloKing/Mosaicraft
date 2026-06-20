@@ -660,6 +660,23 @@ static int cmdDbStats(int argc, char* argv[])
               << "%) mid=" << mid << " (" << (100.0*mid/total)
               << "%) bright=" << bright << " (" << (100.0*bright/total) << "%)\n";
 
+    // 亮度直方图 (8 bins: 0-32, 32-64, 64-96, 96-128, 128-160, 160-192, 192-224, 224-256)
+    int hist[8] = {0};
+    for (const auto& r : all)
+    {
+        int b = static_cast<int>(r.avgL) / 32;
+        if (b < 0) b = 0; if (b > 7) b = 7;
+        hist[b]++;
+    }
+    std::cout << "  L-histogram:\n";
+    for (int i = 0; i < 8; ++i)
+    {
+        int lo = i * 32, hi = (i == 7) ? 255 : (i + 1) * 32 - 1;
+        std::string bar(hist[i] * 50 / total, '#');
+        std::cout << "    " << std::setw(3) << lo << "-" << std::setw(3) << hi
+                  << " | " << bar << " " << hist[i] << "\n";
+    }
+
     return 0;
 }
 
