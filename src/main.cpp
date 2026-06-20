@@ -422,6 +422,10 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.colorAdjust = false;
         }
+        else if (arg == "--upscale" && i + 1 < argc)
+        {
+            cfg.upscale = std::max(1, std::atoi(argv[++i]));
+        }
         else if (arg == "--color-adjust")
         {
             cfg.colorAdjust = true;

@@ -145,10 +145,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
         return false;
     }
 
-    // 若输出 tile 小于库图特征尺寸，自动上采样原图保持分辨率
-    if (cfg.upscale == 0 && (cfg.nativeTileW < 180 || cfg.nativeTileH < 320))
-        cfg.upscale = 2;  // nativeTile 90×160 → 2× 上采样
-
     // 指定输出尺寸时，先缩放目标图（仅改变 tile 数量，输出 tile 始终原生分辨率）
     if (cfg.outW > 0 && cfg.outH > 0)
     {
@@ -158,7 +154,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << "Target resized to: " << cfg.outW << "x" << cfg.outH << std::endl;
     }
 
-    // 自动上采样：输出 tile < 180×320 时放大原图，保持分辨率不变
+    // --upscale：放大原图获取更多 tile（同输出分辨率，更高密度）
     if (cfg.upscale > 1)
     {
         cv::Mat up;
