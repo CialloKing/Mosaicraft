@@ -359,6 +359,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     // ——— 多线程预计算所有 tile 特征 ———
     int totalTiles = tilesX * tilesY;
+
+    // --analyze: 匹配质量分析数据容器
+    std::vector<double> analyzeScores;
+    std::vector<int>    analyzeImageIds;
+    std::vector<double> analyzeLabD, analyzeGridD, analyzeEdgeD;
+
     int N = cfg.candidates;  // 候选数（GPU 路径下用于 benchmark）
 
     // Benchmark 报告 lambda（在结束时调用；必须在 totalTiles/N 之后定义）
@@ -721,7 +727,16 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
         }
 
-        int grid4Top1 = 0, grid8Top1 = 0, top1Differ = 0;  // 8×8 对比统计
+        int grid4Top1 = 0, grid8Top1 = 0, top1Differ = 0;
+
+        if (cfg.analyze)
+        {
+            analyzeScores.reserve(totalTiles);
+            analyzeImageIds.reserve(totalTiles);
+            analyzeLabD.reserve(totalTiles);
+            analyzeGridD.reserve(totalTiles);
+            analyzeEdgeD.reserve(totalTiles);
+        }
 
         std::cout << "  selecting best..." << std::flush;
         int noCandidateCount = 0;  // 诊断：统计无候选的 tile
@@ -781,6 +796,16 @@ bool MosaicEngine::generate(const std::string& targetPath,
             int chosenLibIdx = indices[pick];
             bestLibIdx[ti] = chosenLibIdx;
             bestRecords[ti] = allRecords[chosenLibIdx];
+            // --analyze: 记录选中 tile 的匹配分数（仅内存可得的 LAB/Grid/Edge 特征贡献）
+            if (cfg.analyze)
+            {
+                const auto& rec = allRecords[chosenLibIdx];
+                analyzeScores.push_back(scores[pick]);
+                analyzeImageIds.push_back(rec.id);
+                analyzeLabD.push_back(labDistance(allTL[ti], allTA[ti], allTB[ti], rec.avgL, rec.avgA, rec.avgB));
+                analyzeGridD.push_back(gridDistance8x8(allGrid[ti], rec.grid4x4));
+                analyzeEdgeD.push_back(std::abs(allEdge[ti] - rec.edgeDensity));
+            }
             // 维护滑动窗口和频率计数
             int chosenId = bestRecords[ti].id;
             recentIds.push_back(chosenId);
@@ -1085,6 +1110,91 @@ bool MosaicEngine::generate(const std::string& targetPath,
               << " edge=" << cntEdge << "/" << (cntEdge + cntMissEdge)
               << " lbp=" << cntLBP << "/" << (cntLBP + cntMissLBP)
               << std::endl;
+
+    // —— 匹配质量分析报告 ——
+    if (cfg.analyze && !analyzeScores.empty())
+    {
+        int n = static_cast<int>(analyzeScores.size());
+        // 分数统计
+        std::vector<double> sortedScores = analyzeScores;
+        std::sort(sortedScores.begin(), sortedScores.end());
+        double scoreMean = 0, scoreMin = 1e30, scoreMax = 0;
+        for (double s : analyzeScores) { scoreMean += s; if (s < scoreMin) scoreMin = s; if (s > scoreMax) scoreMax = s; }
+        scoreMean /= n;
+        double scoreP50 = sortedScores[n/2];
+        double scoreP90 = sortedScores[n*9/10];
+        double scoreP99 = sortedScores[n*99/100];
+
+        // 特征贡献（仅 LAB/Grid/Edge 可用内存数据）
+        double labSum = 0, gridSum = 0, edgeSum = 0;
+        double labW = cfg.labWeight, gridW = cfg.gridWeight, edgeW = cfg.edgeWeight;
+        // 归一化权重（与 scoring 一致）
+        double totalW = labW + gridW + cfg.tinyWeight + edgeW + cfg.lbpWeight;
+        labW /= totalW; gridW /= totalW; edgeW /= totalW;
+        for (int i = 0; i < n; ++i)
+        {
+            labSum  += labW  * analyzeLabD[i];
+            gridSum += gridW * analyzeGridD[i];
+            edgeSum += edgeW * analyzeEdgeD[i];
+        }
+        double contribTotal = labSum + gridSum + edgeSum;
+
+        // 复用统计
+        std::unordered_map<int, int> useCount;
+        for (int id : analyzeImageIds) useCount[id]++;
+        std::vector<std::pair<int,int>> topUsed;
+        for (auto& [id, cnt] : useCount) topUsed.push_back({cnt, id});
+        std::sort(topUsed.rbegin(), topUsed.rend());
+
+        std::cout << "\n=== Match Quality Analysis ===\n";
+        std::cout << "  Tiles: " << n << "\n";
+        std::cout << "  Score: mean=" << std::fixed << std::setprecision(4) << scoreMean
+                  << " median=" << scoreP50 << " p90=" << scoreP90
+                  << " p99=" << scoreP99 << " max=" << scoreMax << "\n";
+        std::cout << "  Feature contribution (LAB/Grid/Edge only):\n";
+        if (contribTotal > 0)
+            std::cout << "    LAB="  << std::setprecision(1) << (labSum*100/contribTotal)
+                      << "%  Grid=" << (gridSum*100/contribTotal)
+                      << "%  Edge=" << (edgeSum*100/contribTotal) << "%\n";
+        std::cout << "  Reuse: unique=" << useCount.size() << "/" << n
+                  << " ratio=" << std::setprecision(2) << (static_cast<double>(n)/useCount.size()) << "x\n";
+        std::cout << "  Top 5 most used:\n";
+        for (int i = 0; i < std::min(5, static_cast<int>(topUsed.size())); ++i)
+            std::cout << "    id=" << topUsed[i].second << " : " << topUsed[i].first << " times\n";
+
+        // 热力图
+        std::string heatPath = outputPath;
+        auto dotPos = heatPath.rfind('.');
+        if (dotPos != std::string::npos)
+            heatPath = heatPath.substr(0, dotPos) + "_heatmap.png";
+        else
+            heatPath += "_heatmap.png";
+
+        double sMin = sortedScores.front(), sRange = sortedScores.back() - sMin;
+        if (sRange < 0.001) sRange = 0.001;
+        cv::Mat heat(tilesY * 4, tilesX * 4, CV_8UC3);
+        for (int ty = 0; ty < tilesY; ++ty)
+        {
+            for (int tx = 0; tx < tilesX; ++tx)
+            {
+                int ti = ty * tilesX + tx;
+                if (ti >= n) continue;
+                double s = analyzeScores[ti];
+                double t = (s - sMin) / sRange;  // 0=best, 1=worst
+                // 绿(好)→黄→红(差)
+                cv::Vec3b color;
+                if (t < 0.5)  // 绿→黄
+                    color = cv::Vec3b(0, static_cast<uchar>(255*t*2), static_cast<uchar>(255*(1-t*2)));
+                else          // 黄→红
+                    color = cv::Vec3b(0, static_cast<uchar>(255*(1-(t-0.5)*2)), static_cast<uchar>(255));
+                cv::rectangle(heat,
+                    cv::Rect(tx*4, ty*4, 4, 4), color, cv::FILLED);
+            }
+        }
+        cv::imwrite(heatPath, heat);
+        std::cout << "  Heatmap: " << heatPath << "\n";
+    }
+
     if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);
 
     // 贴图计时
