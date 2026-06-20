@@ -677,6 +677,17 @@ static int cmdDbStats(int argc, char* argv[])
                   << " | " << bar << " " << hist[i] << "\n";
     }
 
+    // 覆盖缺口分析（基于已有统计量）
+    std::cout << "  Coverage gaps:";
+    int gaps = 0;
+    if (dark + mid < total / 100)   { std::cout << " dark(" << (dark+mid) << ")"; gaps++; }
+    if (minA > 110.0)               { std::cout << " green-biased"; gaps++; }
+    if (maxA < 145.0)               { std::cout << " red-deficient"; gaps++; }
+    if (minB > 110.0)               { std::cout << " blue-biased"; gaps++; }
+    if (maxB < 145.0)               { std::cout << " yellow-deficient"; gaps++; }
+    if (gaps == 0)                  { std::cout << " none significant"; }
+    std::cout << "\n";
+
     return 0;
 }
 
