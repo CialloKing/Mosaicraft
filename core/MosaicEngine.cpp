@@ -273,29 +273,32 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int tilesY = (target.rows + cfg.tileH - 1) / cfg.tileH;
 
     // 输出 tile 使用原生分辨率（180×320）
-    // 单图模式下，若使用非 TIFF 格式且超出编码器 65500px 限制则自动切换分块
+    // 单图模式下超 65500px 检查
     int outTileW = cfg.nativeTileW;
     int outTileH = cfg.nativeTileH;
     const int MAX_DIM = 65500;
     if (!cfg.tiledOutput && (tilesX * outTileW > MAX_DIM || tilesY * outTileH > MAX_DIM))
     {
-        if (cfg.outputFormat == "jpg")
+        if (cfg.outputFormat == "jpg" && cfg.formatExplicit)
         {
-            if (cfg.formatExplicit)
-            {
-                // 用户显式指定了 jpg，但输出会超限 → 拒绝执行
-                std::cerr << "ERROR: Output exceeds JPEG 65500px limit ("
-                          << (tilesX * outTileW) << "x" << (tilesY * outTileH)
-                          << "). Use --format tiff or --tiled." << std::endl;
-                return false;
-            }
+            // 显式指定 jpg 超限 → 等比缩放输出 tile 至安全范围
+            double scaleW = (tilesX * outTileW > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesX * outTileW) : 1.0;
+            double scaleH = (tilesY * outTileH > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesY * outTileH) : 1.0;
+            double scale = std::min(scaleW, scaleH);
+            outTileW = std::max(1, static_cast<int>(outTileW * scale));
+            outTileH = std::max(1, static_cast<int>(outTileH * scale));
+            std::cout << "  (auto-scaled tile " << outTileW << "x" << outTileH
+                      << " to fit JPEG 65500px limit)" << std::endl;
+        }
+        else if (cfg.outputFormat == "jpg")
+        {
             // 未显式指定格式，默认 jpg 超限 → 自动切 tiff
             cfg.outputFormat = "tiff";
             std::cout << "  (auto-switched to TIFF: output exceeds JPEG 65500px limit)" << std::endl;
         }
         else if (cfg.outputFormat != "tiff")
         {
-            // 非 jpg 非 tiff（如 png/webp）超限 → 自动切 tiled
+            // 非 jpg 非 tiff 超限 → 自动切 tiled
             cfg.tiledOutput = true;
             std::cout << "  (auto-switched to tiled: output exceeds 65500px encoder limit)" << std::endl;
         }
