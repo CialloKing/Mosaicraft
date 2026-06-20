@@ -561,7 +561,63 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::memcpy(&flatLBP[ti * 256], allLBP[ti].data(), 256 * sizeof(float));
         }
 
-        // —— Phase C: 批量 GPU 评分（一次 kernel，消除逐 tile 启动开销） ——
+        // —— Phase C: 批量 GPU 评分（自适应权重：每 tile 独立调权） ——
+        // 根据 tile 特征计算自适应权重：纯色提 LAB，边缘提 Edge，纹理提 LBP
+        std::vector<double> tileLabW(totalTiles, nLabW);
+        std::vector<double> tileGridW(totalTiles, nGridW);
+        std::vector<double> tileTinyW(totalTiles, nTinyW);
+        std::vector<double> tileEdgeW(totalTiles, nEdgeW);
+        std::vector<double> tileLbpW(totalTiles, nLbpW);
+        double totalW = nLabW + nGridW + nTinyW + nEdgeW + nLbpW;
+        for (int ti = 0; ti < totalTiles; ++ti)
+        {
+            double e = allEdge[ti];
+            // LBP 熵：直方图越均匀熵越高（纹理复杂）
+            double lbpEnt = 0.0;
+            for (int k = 0; k < 256; ++k)
+            {
+                float v = allLBP[ti][k];
+                if (v > 0.0f) lbpEnt -= v * std::log2(v);
+            }
+            // 颜色方差：Grid8×8 中 LAB 的 L 通道方差
+            double lSum = 0, lSq = 0;
+            for (int k = 0; k < 64; ++k)
+            {
+                double lv = allGrid[ti][k * 3];  // L 分量
+                lSum += lv; lSq += lv * lv;
+            }
+            double lVar = lSq / 64.0 - (lSum / 64.0) * (lSum / 64.0);
+
+            // 调整逻辑：均匀+低边缘 → 提LAB降Edge；高边缘 → 提Edge降LAB；高纹理 → 提LBP降LAB
+            if (e < 0.05 && lVar < 100.0)
+            {
+                // 纯色/平滑区域：颜色最重要
+                tileLabW[ti]  = nLabW  * 2.0;
+                tileEdgeW[ti] = nEdgeW * 0.5;
+            }
+            else if (e > 0.3)
+            {
+                // 高边缘（建筑/文字）：边缘最重要
+                tileEdgeW[ti] = nEdgeW * 3.0;
+                tileLabW[ti]  = nLabW  * 0.5;
+            }
+            if (lbpEnt > 6.5)
+            {
+                // 高纹理（草地/毛发）：纹理最重要
+                tileLbpW[ti]  = nLbpW * 3.0;
+                tileTinyW[ti] = nTinyW * 2.0;
+                tileLabW[ti]  = nLabW  * 0.5;
+            }
+            // 归一化
+            double tw = tileLabW[ti] + tileGridW[ti] + tileTinyW[ti] + tileEdgeW[ti] + tileLbpW[ti];
+            double scale = totalW / tw;
+            tileLabW[ti]  *= scale;
+            tileGridW[ti] *= scale;
+            tileTinyW[ti] *= scale;
+            tileEdgeW[ti] *= scale;
+            tileLbpW[ti]  *= scale;
+        }
+
         std::cout << "  GPU scoring " << totalTiles << " x " << N << "..."
                   << std::flush;
         std::vector<double> allScores(totalTiles * N, 1e30);
@@ -571,7 +627,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             flatGrid.data(), flatTiny.data(), allEdge.data(), flatLBP.data(),
             allIndices.data(), N,
             gpuLib,
-            nLabW, nGridW, nTinyW, nEdgeW, nLbpW, cfg.usePenalty,
+            tileLabW.data(), tileGridW.data(), tileTinyW.data(), tileEdgeW.data(), tileLbpW.data(),
+            cfg.usePenalty,
             allScores.data());
         std::cout << " done" << std::endl;
 

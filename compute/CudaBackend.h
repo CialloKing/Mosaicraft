@@ -67,7 +67,8 @@ void scoreBatch(
     const double* h_tileEdge, const float* h_tileLBP,
     const int* h_indices, int N,
     const GpuLibrary& lib,
-    double labW, double gridW, double tinyW, double edgeW, double lbpW,
+    const double* h_labW, const double* h_gridW,
+    const double* h_tinyW, const double* h_edgeW, const double* h_lbpW,
     double usePenalty,
     double* outScores);
 

@@ -235,8 +235,12 @@ __global__ void scoreBatchKernel(
     const double* __restrict__ libEdge,
     const float* __restrict__ libLBP,
     const int* __restrict__ libUseCount,
-    // 权重
-    double labW, double gridW, double tinyW, double edgeW, double lbpW,
+    // 权重（每 tile 独立，支持自适应）
+    const double* __restrict__ tileLabW,   // [totalTiles]
+    const double* __restrict__ tileGridW,
+    const double* __restrict__ tileTinyW,
+    const double* __restrict__ tileEdgeW,
+    const double* __restrict__ tileLbpW,
     double usePenalty,
     // 输出：[totalTiles * N]
     double* __restrict__ d_scores)
@@ -311,12 +315,12 @@ __global__ void scoreBatchKernel(
         lbpDist = sum / 2.0;
     }
 
-    // --- Weighted score ---
-    double score = labW  * labDist
-                 + gridW * gridDist
-                 + tinyW * tinyDist
-                 + edgeW * edgeDist
-                 + lbpW  * lbpDist
+    // --- Weighted score（自适应权重）---
+    double score = tileLabW[tileIdx]  * labDist
+                 + tileGridW[tileIdx] * gridDist
+                 + tileTinyW[tileIdx] * tinyDist
+                 + tileEdgeW[tileIdx] * edgeDist
+                 + tileLbpW[tileIdx]  * lbpDist
                  + static_cast<double>(libUseCount[libIdx]) * usePenalty;
 
     d_scores[idx] = score;
@@ -674,7 +678,8 @@ void scoreBatch(
     const int* h_indices,         // [totalTiles * N]，-1 表示无效候选
     int N,
     const GpuLibrary& lib,
-    double labW, double gridW, double tinyW, double edgeW, double lbpW,
+    const double* h_labW, const double* h_gridW,
+    const double* h_tinyW, const double* h_edgeW, const double* h_lbpW,
     double usePenalty,
     double* outScores)            // [totalTiles * N]
 {
@@ -702,6 +707,19 @@ void scoreBatch(
     cudaMemcpy(d_tileEdge, h_tileEdge, totalTiles * sizeof(double), cudaMemcpyHostToDevice);
     cudaMemcpy(d_tileLBP,  h_tileLBP,  totalTiles * 256 * sizeof(float), cudaMemcpyHostToDevice);
 
+    // ——— 上传自适应权重（每 tile 一套） ———
+    double *d_labW = nullptr, *d_gridW = nullptr, *d_tinyW = nullptr, *d_edgeW = nullptr, *d_lbpW = nullptr;
+    cudaMalloc(&d_labW,  totalTiles * sizeof(double));
+    cudaMalloc(&d_gridW, totalTiles * sizeof(double));
+    cudaMalloc(&d_tinyW, totalTiles * sizeof(double));
+    cudaMalloc(&d_edgeW, totalTiles * sizeof(double));
+    cudaMalloc(&d_lbpW,  totalTiles * sizeof(double));
+    cudaMemcpy(d_labW,  h_labW,  totalTiles * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_gridW, h_gridW, totalTiles * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_tinyW, h_tinyW, totalTiles * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_edgeW, h_edgeW, totalTiles * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_lbpW,  h_lbpW,  totalTiles * sizeof(double), cudaMemcpyHostToDevice);
+
     // ——— 上传候选索引 ———
     int* d_indices = nullptr;
     cudaMalloc(&d_indices, totalWork * sizeof(int));
@@ -720,13 +738,14 @@ void scoreBatch(
         d_tileGrid, d_tileTiny, d_tileEdge, d_tileLBP,
         d_indices, N,
         lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use,
-        labW, gridW, tinyW, edgeW, lbpW, usePenalty,
+        d_labW, d_gridW, d_tinyW, d_edgeW, d_lbpW, usePenalty,
         d_scores);
 
     cudaDeviceSynchronize();
     cudaMemcpy(outScores, d_scores, totalWork * sizeof(double), cudaMemcpyDeviceToHost);
 
     // ——— 清理 ———
+    cudaFree(d_labW); cudaFree(d_gridW); cudaFree(d_tinyW); cudaFree(d_edgeW); cudaFree(d_lbpW);
     cudaFree(d_scores); cudaFree(d_indices);
     cudaFree(d_tileL); cudaFree(d_tileA); cudaFree(d_tileB);
     cudaFree(d_tileGrid); cudaFree(d_tileTiny);
