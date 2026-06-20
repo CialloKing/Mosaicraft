@@ -33,7 +33,7 @@ public:
         {
             std::lock_guard<std::mutex> lock(m_shards[s].mtx);
             auto it = m_shards[s].map.find(key);
-            if (it != m_shards[s].map.end()) return it->second;
+            if (it != m_shards[s].map.end()) return it->second.clone();
         }
 
         cv::Mat img = cv::imread(filePath, cv::IMREAD_COLOR);
@@ -44,9 +44,9 @@ public:
         {
             std::lock_guard<std::mutex> lock(m_shards[s].mtx);
             auto it = m_shards[s].map.find(key);
-            if (it != m_shards[s].map.end()) return it->second;
+            if (it != m_shards[s].map.end()) return it->second.clone();
             m_shards[s].map[key] = img;
-            return img;
+            return img.clone();
         }
 
         cv::Mat resized;
@@ -55,9 +55,9 @@ public:
         {
             std::lock_guard<std::mutex> lock(m_shards[s].mtx);
             auto it = m_shards[s].map.find(key);
-            if (it != m_shards[s].map.end()) return it->second;
+            if (it != m_shards[s].map.end()) return it->second.clone();
             m_shards[s].map[key] = resized;
-            return resized;
+            return resized.clone();
         }
     }
 

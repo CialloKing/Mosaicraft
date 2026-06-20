@@ -47,7 +47,7 @@ public:
         bool   formatExplicit = false;    // 是否显式指定 --format（否则允许自动切换）
 
         // 局部颜色校正：对每张候选图随机微调亮度/饱和度，减少视觉重复感
-        bool   colorAdjust = true;         // 启用颜色校正
+        bool   colorAdjust = false;        // 默认关闭（HSV 微调偶尔导致偏暗，待修复）
         double colorStrength = 0.10;       // 调整幅度（±10%）
 
         // Benchmark：输出各阶段耗时与统计（用于性能分析）

@@ -422,6 +422,10 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.colorAdjust = false;
         }
+        else if (arg == "--color-adjust")
+        {
+            cfg.colorAdjust = true;
+        }
         else if (arg == "--color-strength" && i + 1 < argc)
         {
             double v = std::atof(argv[++i]);
@@ -456,7 +460,7 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --tiled               Output tiles as separate files (no size limit)" << std::endl;
             std::cout << "  --deepzoom            Generate Deep Zoom pyramid + .dzi + HTML viewer" << std::endl;
             std::cout << "                        (best with --out-w/h to limit tile count)" << std::endl;
-            std::cout << "  --no-color-adjust     Disable per-tile brightness/saturation jitter" << std::endl;
+            std::cout << "  --color-adjust        Enable per-tile brightness/saturation jitter" << std::endl;
             std::cout << "  --color-strength <f>  Color jitter intensity 0-0.5 (default: 0.10)" << std::endl;
             std::cout << "  --benchmark           Print per-phase timing breakdown" << std::endl;
             return 0;
