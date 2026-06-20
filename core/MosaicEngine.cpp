@@ -588,7 +588,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
                 double lVar = lSq / 64.0 - (lSum / 64.0) * (lSum / 64.0);
 
-                if (e < 0.05 && lVar < 100.0)
+                if (e < 0.005 && lVar < 100.0)
                 {
                     // Smooth: 提 LAB 颜色，保持 Grid（天空渐变需要空间结构）
                     tileLabW[ti] = 0.25;
@@ -598,9 +598,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     tileLbpW[ti] = 0.05;
                     cntSmooth++;
                 }
-                else if (e > 0.3)
+                else if (e > 0.01)
                 {
-                    // Edge-heavy: 轮廓结构 > 颜色
+                    // Edge-heavy: 轮廓结构 > 颜色（阈值 0.01 适配 9×16 小 ROI）
                     tileLabW[ti] = 0.15;
                     tileGridW[ti] = 0.40;
                     tileTinyW[ti] = 0.25;
@@ -608,7 +608,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     tileLbpW[ti] = 0.05;
                     cntEdge++;
                 }
-                else if (lbpEnt > 6.5)
+                else if (lbpEnt > 3.0)
                 {
                     // Texture-heavy: 纹理 > 颜色
                     tileLabW[ti] = 0.15;
@@ -627,8 +627,32 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
         std::cout << "  GPU scoring " << totalTiles << " x " << N;
         if (cfg.adaptiveWeights)
-            std::cout << " (A:S" << cntSmooth << " E" << cntEdge
-                      << " T" << cntTexture << " N" << cntNormal << ")";
+        {
+            // 收集分布统计以校准阈值
+            std::vector<double> edgeVals(totalTiles), lbpVals(totalTiles);
+            for (int ti = 0; ti < totalTiles; ++ti)
+            {
+                edgeVals[ti] = allEdge[ti];
+                double ent = 0.0;
+                for (int k = 0; k < 256; ++k)
+                {
+                    float v = allLBP[ti][k];
+                    if (v > 0.0f) ent -= v * std::log2(v);
+                }
+                lbpVals[ti] = ent;
+            }
+            std::sort(edgeVals.begin(), edgeVals.end());
+            std::sort(lbpVals.begin(), lbpVals.end());
+            auto pct = [&](const auto& v, double p) { return v[static_cast<size_t>(p * v.size())]; };
+            std::cout << "\n  Edge:  P50=" << std::fixed << std::setprecision(3) << pct(edgeVals, 0.50)
+                      << " P90=" << pct(edgeVals, 0.90) << " P95=" << pct(edgeVals, 0.95)
+                      << " P99=" << pct(edgeVals, 0.99);
+            std::cout << "\n  LBP:   P50=" << std::setprecision(2) << pct(lbpVals, 0.50)
+                      << " P90=" << pct(lbpVals, 0.90) << " P95=" << pct(lbpVals, 0.95)
+                      << " P99=" << pct(lbpVals, 0.99);
+            std::cout << "\n  Class: S=" << cntSmooth << " E=" << cntEdge
+                      << " T=" << cntTexture << " N=" << cntNormal;
+        }
         std::cout << "..." << std::flush;
         std::vector<double> allScores(totalTiles * N, 1e30);
         cuda::scoreBatch(
