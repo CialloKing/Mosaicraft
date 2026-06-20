@@ -1142,11 +1142,21 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
     if (fmt != "jpg" && fmt != "png" && fmt != "webp" && fmt != "tiff") fmt = "jpg";
 
+    // 自动更正扩展名：格式切换后输出路径与格式对齐
+    std::string outPath = outputPath;
+    auto outDot = outPath.rfind('.');
+    if (outDot != std::string::npos)
+    {
+        std::string oldExt = outPath.substr(outDot + 1);
+        if (fmt == "tiff" && (oldExt == "jpg" || oldExt == "jpeg" || oldExt == "png" || oldExt == "webp"))
+            outPath = outPath.substr(0, outDot) + ".tiff";
+    }
+
     // 写入输出
     if (fmt == "tiff")
     {
         // BigTiffWriter 内部逐行 BGR→RGB，无需全图 cvtColor
-        BigTiffWriter tiff(outputPath, outW, outH);
+        BigTiffWriter tiff(outPath, outW, outH);
         if (!tiff.writeMat(output.data, static_cast<int>(output.step)))
         {
             std::cerr << "ERROR: BigTiffWriter failed" << std::endl;
@@ -1171,7 +1181,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
     }
 
-    std::cout << "Mosaic saved: " << outputPath
+    std::cout << "Mosaic saved: " << outPath
               << "  (" << matched << " / " << totalTiles << " tiles"
               << (loadFail > 0 ? ", loadFail=" + std::to_string(loadFail) : "")
               << ")"
@@ -1354,7 +1364,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "    id=" << topUsed[i].second << " : " << topUsed[i].first << " times\n";
 
         // ---- 导出最差 tile（目标块 + 匹配图）----
-        std::string anaDir = outputPath;
+        std::string anaDir = outPath;
         auto dp = anaDir.rfind('.');
         if (dp != std::string::npos) anaDir = anaDir.substr(0, dp) + "_analysis";
         else anaDir += "_analysis";
@@ -1389,7 +1399,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << "  Worst tiles exported: " << anaDir << "/ (x" << kExport << ")\n";
 
         // 热力图
-        std::string heatPath = outputPath;
+        std::string heatPath = outPath;
         auto dotPos = heatPath.rfind('.');
         if (dotPos != std::string::npos)
             heatPath = heatPath.substr(0, dotPos) + "_heatmap.png";
