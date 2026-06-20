@@ -17,8 +17,8 @@ namespace cuda {
 static constexpr int IMG_W = 320;
 static constexpr int IMG_H = 180;
 static constexpr int IMG_PIX = IMG_W * IMG_H;        // 57600
-static constexpr int GRID_CW = IMG_W / 8;             // 40
-static constexpr int GRID_CH = IMG_H / 8;             // 22.5→22
+static constexpr int GRID_CW = (IMG_W + 7) / 8;             // 23 (ceil)
+static constexpr int GRID_CH = (IMG_H + 7) / 8;             // 40 (ceil)
 static constexpr int GRID_CELLS = 64;
 static constexpr int TINY_W = 16;
 static constexpr int TINY_H = 16;
@@ -111,9 +111,11 @@ extern "C" __global__ void featureKernel(
         float lv, av, bv;
         rgb2lab(r, g, b, lv, av, bv);
 
-        // Grid4x4: 确定所属 cell
+        // Grid: 确定所属 cell（带边界钳制保护）
         int cellX = x / GRID_CW;
         int cellY = y / GRID_CH;
+        if (cellX >= 8) cellX = 7;
+        if (cellY >= 8) cellY = 7;
         int cellIdx = cellY * 8 + cellX;
         atomicAdd(&s_gridLab[cellIdx * 3 + 0], lv);
         atomicAdd(&s_gridLab[cellIdx * 3 + 1], av);
