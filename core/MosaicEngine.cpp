@@ -1043,11 +1043,22 @@ bool MosaicEngine::generate(const std::string& targetPath,
         // ════════════════════════════════════════════════════════
         // CPU 路径（逐 tile 顺序处理，保留原有逻辑）
         // ════════════════════════════════════════════════════════
-        FeatureCache cache;
+        FeatureIndex annCpu;
+        std::string annPath = featDirCache.empty() ? "lib.ann" : (featDirCache + "/lib.ann");
+        std::cout << "  loading ANN index..." << std::flush;
+        if (!annCpu.load(annPath, 708, allRecords)) {
+            std::cout << " building..." << std::flush;
+            annCpu.build(allRecords);
+            if (!featDirCache.empty()) annCpu.save(annPath);
+        }
+        std::cout << " done" << std::endl;
+
+        ImageCache imgCache;
         output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
 
         for (int ty = 0; ty < tilesY; ++ty)
         {
+            std::vector<float> tileVec;
             for (int tx = 0; tx < tilesX; ++tx)
             {
                 int ti = ty * tilesX + tx;
@@ -1059,61 +1070,35 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
                 bool uGrid = true, uTiny = true, uEdge = true, uLBP = true;
 
-                auto candidates = db.queryByLRange(tL - cfg.lRange,
-                                                    tL + cfg.lRange,
-                                                    cfg.candidates);
-                if (candidates.empty()) { continue; }
-                const int nC = static_cast<int>(candidates.size());
+                // ANN 查询候选（替代 SQLite L-range）
+                buildTileVector(tL,tA,tB,tileGrid,tileTiny,tileEdge,tileLBP, tileVec);
+                auto imgIds = annCpu.query(tileVec.data(), N);
+                if (imgIds.empty()) { continue; }
+                const int nC = static_cast<int>(imgIds.size());
                 int bestIdx = 0;
                 double bestScore = 1e30;
                 for (int i = 0; i < nC; ++i)
                 {
-                    const auto& rec = candidates[i];
+                    int libIdx = annCpu.idToAllRecordsIndex(imgIds[i]);
+                    if (libIdx < 0) continue;
+                    const auto& rec = allRecords[libIdx];
+                    // 简化评分：LAB + Grid + Edge + useCount（CPU 路径用）
                     double labD = labDistance(tL, tA, tB, rec.avgL, rec.avgA, rec.avgB);
-                    double gridD = gridDistance(tileGrid, rec.grid4x4);
-                    bool hasGrid = (gridD < 1e5);
-                    double tinyD = 1.0; bool hasTiny = false;
-                    if (!rec.tinyPath.empty()) {
-                        auto* td = cache.loadTiny(rec.id, rec.tinyPath);
-                        if (td) { tinyD = tinyMSE(tileTiny, *td); hasTiny = true; }
-                    }
+                    double gridD = gridDistance8x8(tileGrid, rec.grid4x4);
                     double edgeD = std::abs(tileEdge - rec.edgeDensity);
-                    bool hasEdge = true;
-                    double lbpD = 1.0; bool hasLBP = false;
-                    if (!rec.histPath.empty()) {
-                        auto* ld = cache.loadLBP(rec.id, rec.histPath);
-                        if (ld) { lbpD = lbpDistance(tileLBP, *ld); hasLBP = true; }
-                    }
-                    double wSumCs = cfg.labWeight;
-                    if (hasGrid) wSumCs += cfg.gridWeight;
-                    if (hasTiny) wSumCs += cfg.tinyWeight;
-                    if (hasEdge) wSumCs += cfg.edgeWeight;
-                    if (hasLBP)  wSumCs += cfg.lbpWeight;
-                    double score = (cfg.labWeight/wSumCs)*labD;
-                    if (hasGrid) score += (cfg.gridWeight/wSumCs)*gridD;
-                    if (hasTiny) score += (cfg.tinyWeight/wSumCs)*tinyD;
-                    if (hasEdge) score += (cfg.edgeWeight/wSumCs)*edgeD;
-                    if (hasLBP)  score += (cfg.lbpWeight/wSumCs)*lbpD;
-                    score += rec.useCount * cfg.usePenalty;
+                    double score = cfg.labWeight*labD + cfg.gridWeight*gridD
+                                 + cfg.edgeWeight*edgeD + rec.useCount*cfg.usePenalty;
                     if (score < bestScore) {
-                        bestScore = score; bestIdx = i;
-                        uGrid = hasGrid; uTiny = hasTiny;
-                        uEdge = hasEdge; uLBP = hasLBP;
+                        bestScore = score; bestIdx = libIdx;
                     }
                 }
 
-                if (uGrid) cntGrid++; else cntMissGrid++;
-                if (uTiny) cntTiny++; else cntMissTiny++;
-                if (uEdge) cntEdge++; else cntMissEdge++;
-                if (uLBP)  cntLBP++;  else cntMissLBP++;
+                cntGrid++; cntTiny++; cntEdge++; cntLBP++;
 
-                const auto& bestRec = candidates[static_cast<std::size_t>(bestIdx)];
-                cv::Mat matchImg = imreadUnicode(bestRec.filePath, cv::IMREAD_COLOR);
-                if (matchImg.empty()) { loadFail++; continue; }
+                const auto& bestRec = allRecords[bestIdx];
+                cv::Mat resized = imgCache.getOrLoad(bestRec.id, bestRec.filePath, outTileW, outTileH);
+                if (resized.empty()) { loadFail++; continue; }
 
-                cv::Mat resized;
-                cv::resize(matchImg, resized, cv::Size(outTileW, outTileH),
-                           0, 0, cv::INTER_AREA);
                 if (cfg.colorAdjust) { adjustColor(resized, cfg.colorStrength); }
                 resized.copyTo(output(cv::Rect(tx * outTileW, ty * outTileH,
                                               outTileW, outTileH)));
