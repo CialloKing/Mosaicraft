@@ -1409,6 +1409,35 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         std::cout << "  Worst tiles exported: " << anaDir << "/ (x" << kExport << ")\n";
 
+        // 最差 tile 诊断报告
+        {
+            std::string rptPath = anaDir + "/worst_report.txt";
+            std::ofstream rpt(rptPath);
+            rpt << "=== Worst Tile Analysis ===\n";
+            for (int k = 0; k < std::min(kExport, n); ++k) {
+                int ti = worstIdx[k].second, tx = ti % tilesX, ty = ti / tilesX;
+                const auto& rec = bestRecords[ti];
+                double labD = labDistance(allTL[ti],allTA[ti],allTB[ti],rec.avgL,rec.avgA,rec.avgB);
+                double gridD = gridDistance8x8(allGrid[ti], rec.grid4x4);
+                double edgeD = std::abs(allEdge[ti] - rec.edgeDensity);
+                rpt << "\n#" << (k+1) << " tile(" << tx << "," << ty << ") score=" << worstIdx[k].first << "\n";
+                rpt << "  Tile  LAB=" << allTL[ti] << "," << allTA[ti] << "," << allTB[ti]
+                    << " Edge=" << allEdge[ti] << "\n";
+                rpt << "  Match LAB=" << rec.avgL << "," << rec.avgA << "," << rec.avgB
+                    << " Edge=" << rec.edgeDensity << "\n";
+                rpt << "  Dists: LAB=" << labD << " Grid=" << gridD << " Edge=" << edgeD << "\n";
+                // 诊断原因
+                std::string cause;
+                if (labD > 0.3) cause = "color mismatch (LAB dist " + std::to_string(labD).substr(0,4) + ")";
+                else if (gridD > 0.5) cause = "spatial mismatch (Grid dist " + std::to_string(gridD).substr(0,4) + ")";
+                else if (allTL[ti] < 60) cause = "dark region (tile L=" + std::to_string((int)allTL[ti]) + ")";
+                else if (rec.useCount > 10) cause = "popular image penalty (used " + std::to_string(rec.useCount) + "x)";
+                else cause = "combined mismatch";
+                rpt << "  Cause: " << cause << "\n";
+            }
+            std::cout << "  Diagnosis report: " << rptPath << "\n";
+        }
+
         // 热力图
         std::string heatPath = outPath;
         auto dotPos = heatPath.rfind('.');
