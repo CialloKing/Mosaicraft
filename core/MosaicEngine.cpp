@@ -491,6 +491,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // 滑动窗口 + 频率计数：允许少量重用但阻止聚类
     std::deque<int> recentIds;
     std::unordered_map<int, int> freqInWindow;
+    std::deque<std::vector<float>> recentGrids;  // 差分图检测（仅保留最近100个）
+    constexpr double GRID_DUP_THRESHOLD = 0.015;
+    constexpr double GRID_DUP_PENALTY = 50.0;
+    constexpr int GRID_DUP_WINDOW = 100;  // 搜索窗口（平衡性能）
 
     // 权重归一化（所有 tile 共用）
     double wSum = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight;
@@ -780,6 +784,16 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 if (cnt >= 3)      { scores[j] += cfg.neighborPenalty; }
                 else if (cnt == 2) { scores[j] += cfg.neighborPenalty * 0.4; }
                 else if (cnt == 1) { scores[j] += cfg.neighborPenalty * 0.1; }
+                // 差分图检测：候选与最近 tile 的 Grid 相位 → 加罚
+                const auto& candGrid = allRecords[indices[j]].grid4x4;
+                for (const auto& rg : recentGrids)
+                {
+                    if (gridDistance8x8(candGrid, rg) < GRID_DUP_THRESHOLD)
+                    {
+                        scores[j] += GRID_DUP_PENALTY;
+                        break;
+                    }
+                }
             }
             // Top-N 随机选择（topN 不超过有效候选数）
             // —— 8×8 vs 降采样4×4 对比（仅 --analyze） ——
@@ -889,10 +903,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
             int chosenId = bestRecords[ti].id;
             recentIds.push_back(chosenId);
             freqInWindow[chosenId]++;
+            recentGrids.push_back(allRecords[chosenLibIdx].grid4x4);  // 差分图检测
+            while (static_cast<int>(recentGrids.size()) > GRID_DUP_WINDOW)
+                recentGrids.pop_front();  // 限制窗口大小，避免 O(n²)
             if (static_cast<int>(recentIds.size()) > cfg.neighborWindow)
             {
                 int oldId = recentIds.front();
                 recentIds.pop_front();
+                recentGrids.pop_front();  // 同步弹出
                 if (--freqInWindow[oldId] <= 0)
                     freqInWindow.erase(oldId);
             }
