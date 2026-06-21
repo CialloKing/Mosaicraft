@@ -13,7 +13,7 @@ public:
     {
         int tileW = 9;          // 默认 9×16（图库 180×320 的等比缩小），最大化 tile 数量
         int tileH = 16;
-        int candidates = 200;  // ANN 粗筛候选数（105K图库下200优于30）
+        int candidates = 150;  // 105K图库 sweep: 150≈200≈300, 最佳平衡点
         double lRange = 20.0;
         double usePenalty = 0.01;
 
