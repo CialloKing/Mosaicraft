@@ -1055,65 +1055,84 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
         ImageCache imgCache;
         output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
+        int noCandidateCount = 0;
 
-        for (int ty = 0; ty < tilesY; ++ty)
+        // Phase 1: ANN 查询 + 邻域去重选择（顺序，同 GPU 路径）
+        std::vector<int> bestLibIdxCpu(totalTiles, -1);
+        std::vector<ImageRecord> bestRecsCpu(totalTiles);
+        std::deque<int> recentIds;
+        std::unordered_map<int, int> freq;
+        if (cfg.neighborWindow <= 0) cfg.neighborWindow = std::max(300, tilesX * 2);
+
+        std::cout << "  selecting best..." << std::flush;
+        for (int ti = 0; ti < totalTiles; ++ti)
         {
             std::vector<float> tileVec;
-            for (int tx = 0; tx < tilesX; ++tx)
-            {
-                int ti = ty * tilesX + tx;
-                double tL = allTL[ti], tA = allTA[ti], tB = allTB[ti];
-                const auto& tileGrid = allGrid[ti];
-                const auto& tileTiny = allTiny[ti];
-                double tileEdge = allEdge[ti];
-                const auto& tileLBP = allLBP[ti];
-
-                bool uGrid = true, uTiny = true, uEdge = true, uLBP = true;
-
-                // ANN 查询候选（替代 SQLite L-range）
-                buildTileVector(tL,tA,tB,tileGrid,tileTiny,tileEdge,tileLBP, tileVec);
-                auto imgIds = annCpu.query(tileVec.data(), N);
-                if (imgIds.empty()) { continue; }
-                const int nC = static_cast<int>(imgIds.size());
-                int bestIdx = 0;
-                double bestScore = 1e30;
-                for (int i = 0; i < nC; ++i)
-                {
-                    int libIdx = annCpu.idToAllRecordsIndex(imgIds[i]);
-                    if (libIdx < 0) continue;
-                    const auto& rec = allRecords[libIdx];
-                    // 简化评分：LAB + Grid + Edge + useCount（CPU 路径用）
-                    double labD = labDistance(tL, tA, tB, rec.avgL, rec.avgA, rec.avgB);
-                    double gridD = gridDistance8x8(tileGrid, rec.grid4x4);
-                    double edgeD = std::abs(tileEdge - rec.edgeDensity);
-                    double score = cfg.labWeight*labD + cfg.gridWeight*gridD
-                                 + cfg.edgeWeight*edgeD + rec.useCount*cfg.usePenalty;
-                    if (score < bestScore) {
-                        bestScore = score; bestIdx = libIdx;
-                    }
-                }
-
-                cntGrid++; cntTiny++; cntEdge++; cntLBP++;
-
-                const auto& bestRec = allRecords[bestIdx];
-                cv::Mat resized = imgCache.getOrLoad(bestRec.id, bestRec.filePath, outTileW, outTileH);
-                if (resized.empty()) { loadFail++; continue; }
-
-                if (cfg.colorAdjust) { adjustColor(resized, cfg.colorStrength); }
-                resized.copyTo(output(cv::Rect(tx * outTileW, ty * outTileH,
-                                              outTileW, outTileH)));
-                matched++;
-
-                // 每 100 个 tile 或每行末尾输出进度
-                if (tx == tilesX - 1 || ti % 100 == 0)
-                {
-                    int done = ti + 1;
-                    std::cout << "\r  " << done << " / " << totalTiles
-                              << "  (" << (100 * done / totalTiles) << "%)"
-                              << std::flush;
-                }
+            buildTileVector(allTL[ti],allTA[ti],allTB[ti],allGrid[ti],
+                            allTiny[ti],allEdge[ti],allLBP[ti], tileVec);
+            auto imgIds = annCpu.query(tileVec.data(), N);
+            if (imgIds.empty()) { noCandidateCount++; continue; }
+            // 计算分数 + 邻域惩罚
+            std::vector<std::pair<double,int>> scored;
+            for (int j = 0; j < (int)imgIds.size(); ++j) {
+                int li = annCpu.idToAllRecordsIndex(imgIds[j]);
+                if (li < 0) continue;
+                const auto& r = allRecords[li];
+                double s = cfg.labWeight*labDistance(allTL[ti],allTA[ti],allTB[ti],r.avgL,r.avgA,r.avgB)
+                         + cfg.gridWeight*gridDistance8x8(allGrid[ti], r.grid4x4)
+                         + cfg.edgeWeight*std::abs(allEdge[ti]-r.edgeDensity);
+                auto it = freq.find(r.id);
+                int cnt = (it != freq.end()) ? it->second : 0;
+                if (cnt >= 3) s += cfg.neighborPenalty;
+                else if (cnt == 2) s += cfg.neighborPenalty * 0.4;
+                else if (cnt == 1) s += cfg.neighborPenalty * 0.1;
+                scored.push_back({s, li});
             }
+            if (scored.empty()) { noCandidateCount++; continue; }
+            std::sort(scored.begin(), scored.end());
+            int topN = std::min(cfg.topNrandom, (int)scored.size());
+            int pickIdx = scored[rand() % topN].second;
+            bestLibIdxCpu[ti] = pickIdx;
+            bestRecsCpu[ti] = allRecords[pickIdx];
+            // 维护滑动窗口
+            int chosenId = bestRecsCpu[ti].id;
+            recentIds.push_back(chosenId); freq[chosenId]++;
+            if ((int)recentIds.size() > cfg.neighborWindow) {
+                int old = recentIds.front(); recentIds.pop_front();
+                if (--freq[old] <= 0) freq.erase(old);
+            }
+            if (ti % 5000 == 0 || ti == totalTiles-1)
+                std::cout << "\r  selecting " << (ti+1) << "/" << totalTiles << std::flush;
         }
+        cntGrid = cntTiny = cntEdge = cntLBP = totalTiles;
+        if (noCandidateCount > 0)
+            std::cout << " (" << noCandidateCount << " tiles no candidates!)";
+        std::cout << " done" << std::endl;
+
+        // Phase 2: 多线程贴图
+        int nT = std::thread::hardware_concurrency();
+        if (nT < 2) nT = 2; if (nT > 16) nT = 16;
+        std::atomic<int> placed{0}, pFail{0};
+        std::cout << "  placing (" << nT << " threads)..." << std::flush;
+        std::vector<std::thread> pWorkers;
+        for (int t = 0; t < nT; ++t) {
+            pWorkers.emplace_back([&, t]() {
+                for (int ti = t; ti < totalTiles; ti += nT) {
+                    int li = bestLibIdxCpu[ti];
+                    if (li < 0) { pFail++; continue; }
+                    int ty = ti / tilesX, tx = ti % tilesX;
+                    cv::Mat m = imgCache.getOrLoad(bestRecsCpu[ti].id, bestRecsCpu[ti].filePath, outTileW, outTileH);
+                    if (m.empty()) { pFail++; continue; }
+                    if (cfg.colorAdjust) adjustColor(m, cfg.colorStrength);
+                    m.copyTo(output(cv::Rect(tx*outTileW,ty*outTileH,outTileW,outTileH)));
+                    matched++;
+                    int d = ++placed;
+                    if (d % 2000 == 0 || d == totalTiles)
+                        std::cout << "\r  placing " << d << "/" << totalTiles << std::flush;
+                }
+            });
+        }
+        for (auto& w : pWorkers) w.join();
     }
 
     std::cout << std::endl;
