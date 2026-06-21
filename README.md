@@ -174,6 +174,7 @@ Mosaicraft/
 | v1.1 | --analyze 质量评估体系 | ✅ |
 | v1.4 | Spatial Weight Map (Score -7.4%) | ✅ |
 | v1.5 | db-stats 覆盖诊断 | ✅ |
+| v1.6 | candidates 200→30 (2× 加速)、CPU=GPU、诊断报告 | ✅ |
 | v2.0 | GUI、增量建库、百万图库 | 计划中 |
 
 ## 许可证

@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书
 
-> 最后更新：2026-06-21 | 版本：v1.5
+> 最后更新：2026-06-21 | 版本：v1.6
 
 ## 目录
 
@@ -322,6 +322,8 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | v1.3 | Grid 贡献分析(8×8热图)、Candidate sweep(30≈200)、db-stats | — |
 | v1.4 | **Spatial Weight Map**（首个数据驱动质量优化）、最差tile导出 | **0.1524 (-7.4%)** |
 | v1.5 | 覆盖缺口分析、权重自动生成 | 0.1524 |
+| v1.6 | **candidates 200→30** (ANN 4.8×, Total 2×, Score -17.6%); CPU=GPU; 诊断报告 | **0.1256** |
+| v2.0 | Tile Streaming、GUI、百万图库 | 计划中 |
 
 ### Bug 历史（精选）
 
