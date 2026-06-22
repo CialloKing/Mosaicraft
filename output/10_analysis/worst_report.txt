@@ -1,0 +1,121 @@
+=== Worst Tile Analysis ===
+
+#1 tile(149,31) score=0.317749
+  Tile  LAB=231.705,90.1356,166.917 Edge=0
+  Match LAB=214.686,127.351,173.294 Edge=0.927569
+  Dists: LAB=0.414163 Grid=0.418972 Edge=0.927569
+  Cause: color mismatch (LAB dist 0.41)
+
+#2 tile(152,31) score=0.31477
+  Tile  LAB=230.554,93.1056,166.373 Edge=0
+  Match LAB=210.932,127.008,153.858 Edge=0.767639
+  Dists: LAB=0.411216 Grid=0.431433 Edge=0.767639
+  Cause: color mismatch (LAB dist 0.41)
+
+#3 tile(147,31) score=0.314237
+  Tile  LAB=230.849,90.9445,166.124 Edge=0
+  Match LAB=230.525,130.898,143.393 Edge=0.450608
+  Dists: LAB=0.459677 Grid=0.443936 Edge=0.450608
+  Cause: color mismatch (LAB dist 0.45)
+
+#4 tile(165,28) score=0.313696
+  Tile  LAB=232.363,92.2403,164.343 Edge=0
+  Match LAB=224.116,125.749,135.806 Edge=0.520226
+  Dists: LAB=0.447791 Grid=0.440282 Edge=0.520226
+  Cause: color mismatch (LAB dist 0.44)
+
+#5 tile(156,31) score=0.312748
+  Tile  LAB=229.873,95.3901,165.633 Edge=0
+  Match LAB=214.251,127.548,141.265 Edge=0.582986
+  Dists: LAB=0.432658 Grid=0.437926 Edge=0.582986
+  Cause: color mismatch (LAB dist 0.43)
+
+#6 tile(158,28) score=0.311646
+  Tile  LAB=233.415,92.1314,164.79 Edge=0
+  Match LAB=229.338,124.12,132.584 Edge=0.478993
+  Dists: LAB=0.455757 Grid=0.436765 Edge=0.478993
+  Cause: color mismatch (LAB dist 0.45)
+
+#7 tile(145,25) score=0.311454
+  Tile  LAB=228.513,92.9208,163.808 Edge=0
+  Match LAB=214.251,127.548,141.265 Edge=0.582986
+  Dists: LAB=0.437105 Grid=0.433075 Edge=0.582986
+  Cause: color mismatch (LAB dist 0.43)
+
+#8 tile(162,28) score=0.310763
+  Tile  LAB=233.003,92.3463,164.559 Edge=0
+  Match LAB=225.246,125.865,135.668 Edge=0.517726
+  Dists: LAB=0.449264 Grid=0.433387 Edge=0.517726
+  Cause: color mismatch (LAB dist 0.44)
+
+#9 tile(161,28) score=0.310757
+  Tile  LAB=233.341,92.1751,164.69 Edge=0
+  Match LAB=233.234,124.71,133.167 Edge=0.448056
+  Dists: LAB=0.453022 Grid=0.439444 Edge=0.448056
+  Cause: color mismatch (LAB dist 0.45)
+
+#10 tile(156,30) score=0.310127
+  Tile  LAB=235.077,92.0724,165.006 Edge=0
+  Match LAB=232.96,130.36,141.422 Edge=0.550365
+  Dists: LAB=0.450182 Grid=0.427939 Edge=0.550365
+  Cause: color mismatch (LAB dist 0.45)
+
+#11 tile(154,28) score=0.309612
+  Tile  LAB=232.585,91.7108,165.23 Edge=0
+  Match LAB=212.767,124.961,145.205 Edge=0.643663
+  Dists: LAB=0.435815 Grid=0.422812 Edge=0.643663
+  Cause: color mismatch (LAB dist 0.43)
+
+#12 tile(161,30) score=0.309247
+  Tile  LAB=236.778,93.255,163.756 Edge=0
+  Match LAB=229.409,124.388,132.907 Edge=0.421858
+  Dists: LAB=0.444436 Grid=0.442815 Edge=0.421858
+  Cause: color mismatch (LAB dist 0.44)
+
+#13 tile(151,29) score=0.309245
+  Tile  LAB=232.517,92.323,164.861 Edge=0
+  Match LAB=222.775,126.895,139.397 Edge=0.607483
+  Dists: LAB=0.440287 Grid=0.42403 Edge=0.607483
+  Cause: color mismatch (LAB dist 0.44)
+
+#14 tile(165,31) score=0.308833
+  Tile  LAB=232.158,92.0825,165.42 Edge=0
+  Match LAB=227.248,128.104,138.394 Edge=0.252083
+  Dists: LAB=0.452994 Grid=0.456955 Edge=0.252083
+  Cause: color mismatch (LAB dist 0.45)
+
+#15 tile(150,30) score=0.308829
+  Tile  LAB=232.835,91.9839,165.307 Edge=0
+  Match LAB=238.734,122.045,131.431 Edge=0.424878
+  Dists: LAB=0.456734 Grid=0.436086 Edge=0.424878
+  Cause: color mismatch (LAB dist 0.45)
+
+#16 tile(160,28) score=0.308118
+  Tile  LAB=233.59,92.0595,164.822 Edge=0
+  Match LAB=216.076,123.258,140.691 Edge=0.72408
+  Dists: LAB=0.431558 Grid=0.412449 Edge=0.72408
+  Cause: color mismatch (LAB dist 0.43)
+
+#17 tile(157,30) score=0.307327
+  Tile  LAB=235.291,92.1382,164.976 Edge=0
+  Match LAB=234.211,127.653,139.036 Edge=0.564028
+  Dists: LAB=0.439926 Grid=0.424756 Edge=0.564028
+  Cause: color mismatch (LAB dist 0.43)
+
+#18 tile(150,29) score=0.305644
+  Tile  LAB=232.138,92.4196,164.715 Edge=0
+  Match LAB=217.759,126.516,144.428 Edge=0.575712
+  Dists: LAB=0.422007 Grid=0.427682 Edge=0.575712
+  Cause: color mismatch (LAB dist 0.42)
+
+#19 tile(154,29) score=0.305474
+  Tile  LAB=234.181,92.232,164.807 Edge=0
+  Match LAB=227.248,128.104,138.394 Edge=0.252083
+  Dists: LAB=0.450835 Grid=0.450452 Edge=0.252083
+  Cause: color mismatch (LAB dist 0.45)
+
+#20 tile(166,30) score=0.305286
+  Tile  LAB=234.224,92.7048,164.006 Edge=0
+  Match LAB=233.234,124.71,133.167 Edge=0.448056
+  Dists: LAB=0.444569 Grid=0.431043 Edge=0.448056
+  Cause: color mismatch (LAB dist 0.44)
