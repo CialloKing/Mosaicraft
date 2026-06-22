@@ -731,6 +731,11 @@ static int cmdDbPurge(int argc, char* argv[])
     {
         if (!r.filePath.empty() && !std::filesystem::exists(r.filePath))
         {
+            // 同步删除孤儿特征文件
+            if (!r.tinyPath.empty() && std::filesystem::exists(r.tinyPath))
+                std::filesystem::remove(r.tinyPath);
+            if (!r.histPath.empty() && std::filesystem::exists(r.histPath))
+                std::filesystem::remove(r.histPath);
             db.removeImage(r.id);
             removed++;
         }

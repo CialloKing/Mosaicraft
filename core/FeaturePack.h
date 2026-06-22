@@ -86,8 +86,47 @@ public:
         if (!beginWrite(featDir, static_cast<int>(sorted.size())))
             return false;
 
+        // 尝试加载旧缓存 → 旧图直接从缓存复刻，免读独立文件
+        std::vector<uint8_t> oldTiny;
+        std::vector<float>   oldLbp;
+        std::vector<int>     oldIds;
+        {
+            std::string tp = featDir + "/tiny.bin";
+            std::string lp = featDir + "/lbp.bin";
+            FILE* ft = fopen(tp.c_str(), "rb");
+            FILE* fl = fopen(lp.c_str(), "rb");
+            if (ft && fl) {
+                uint32_t tc = 0, lc = 0;
+                if (fread(&tc,4,1,ft)==1 && fread(&lc,4,1,fl)==1 && tc==lc) {
+                    int oldN = static_cast<int>(tc);
+                    oldTiny.resize(oldN * 256);
+                    oldLbp.resize(oldN * 256);
+                    oldIds.resize(oldN);
+                    for (int i = 0; i < oldN; ++i) {
+                        int32_t tid=0, lid=0;
+                        if (fread(&tid,4,1,ft)!=1 || fread(&oldTiny[i*256],1,256,ft)!=256 ||
+                            fread(&lid,4,1,fl)!=1 || fread(&oldLbp[i*256],4,256,fl)!=256 || tid!=lid)
+                            { oldIds.clear(); break; }
+                        oldIds[i] = static_cast<int>(tid);
+                    }
+                }
+                fclose(ft); fclose(fl);
+            }
+        }
+        std::unordered_map<int,int> oldPos;
+        for (int i = 0; i < static_cast<int>(oldIds.size()); ++i)
+            oldPos[oldIds[i]] = i;
+
         for (const auto* rec : sorted)
         {
+            auto op = oldPos.find(rec->id);
+            if (op != oldPos.end()) {
+                int o = op->second;
+                appendImage(rec->id,
+                    std::vector<uint8_t>(oldTiny.begin()+o*256, oldTiny.begin()+(o+1)*256),
+                    std::vector<float>(oldLbp.begin()+o*256, oldLbp.begin()+(o+1)*256));
+                continue;
+            }
             std::vector<uint8_t> tiny(256, 0);
             if (!rec->tinyPath.empty())
             {
