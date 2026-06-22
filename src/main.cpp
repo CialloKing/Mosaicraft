@@ -70,7 +70,7 @@ Build options:
   -d, --db     <path>    Database path (default: mosaicraft.db)
   -t, --threads <n>      Worker threads (default: auto)
       --append           Append mode: add new images without rebuilding
-      --recursive        Scan subdirectories for source images
+  -r, --recursive        Scan subdirectories for source images
       --normalize-only   Only normalize images, don't build database
 
 Mosaic options:
@@ -150,7 +150,7 @@ static int cmdBuild(int argc, char* argv[])
         {
             appendMode = true;
         }
-        else if (arg == "--recursive")
+        else if (arg == "-r" || arg == "--recursive")
         {
             recursive = true;
         }
@@ -160,7 +160,7 @@ static int cmdBuild(int argc, char* argv[])
         }
         else if (arg == "-h" || arg == "--help")
         {
-            std::cout << "Usage: mosaicraft build -i <dir> [-o <dir>] [-d <db>] [-t <n>] [--append] [--recursive] [--normalize-only]" << std::endl;
+            std::cout << "Usage: mosaicraft build -i <dir> [-o <dir>] [-d <db>] [-t <n>] [--append] [-r] [--normalize-only]" << std::endl;
             return 0;
         }
         else
