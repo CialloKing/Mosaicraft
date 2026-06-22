@@ -1391,6 +1391,20 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << "  Top 5 most used:\n";
         for (int i = 0; i < std::min(5, static_cast<int>(topUsed.size())); ++i)
             std::cout << "    id=" << topUsed[i].second << " : " << topUsed[i].first << " times\n";
+        // 使用频率分布
+        int freqDist[6] = {0};  // 1x, 2x, 3x, 4-5x, 6-10x, 10x+
+        for (const auto& [id, cnt] : useCount)
+        {
+            if (cnt == 1) freqDist[0]++;
+            else if (cnt == 2) freqDist[1]++;
+            else if (cnt == 3) freqDist[2]++;
+            else if (cnt <= 5) freqDist[3]++;
+            else if (cnt <= 10) freqDist[4]++;
+            else freqDist[5]++;
+        }
+        std::cout << "  Freq dist: 1x=" << freqDist[0] << " 2x=" << freqDist[1]
+                  << " 3x=" << freqDist[2] << " 4-5x=" << freqDist[3]
+                  << " 6-10x=" << freqDist[4] << " 10x+=" << freqDist[5] << "\n";
 
         // ---- 导出最差 tile（目标块 + 匹配图）----
         std::string anaDir = outPath;
