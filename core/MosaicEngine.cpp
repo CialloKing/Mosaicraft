@@ -1419,7 +1419,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         int exported = 0;
         for (const auto& [cnt, id] : topUsed)
         {
-            if (exported >= 20) break;
+            if (cnt < 2) break;  // 只导出出现 2 次及以上的图
             // 查找该 id 对应的 filePath
             for (int i = 0; i < dbCount; ++i)
             {
