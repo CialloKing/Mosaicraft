@@ -594,8 +594,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
         int base = std::max(300, tilesX * 2);
         // 动态：随库大小缓增长（O(√N)），大库覆盖更多候选
         int dynamic = static_cast<int>(std::sqrt(static_cast<double>(allRecords.size())) * 1.5);
-        cfg.neighborWindow = std::max(base, std::min(dynamic, 600));
-        // 46K→323, 100K→474, 5K→max(300, tilesX*2)
+        cfg.neighborWindow = std::max(base, std::min(dynamic, 400));
+        // 46K→323, 200K→400(cap), sweep: 300-400甜区
     }
 
     // 滑动窗口 + 频率计数：允许少量重用但阻止聚类
@@ -1511,9 +1511,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         std::cout << "  Reuse: unique=" << useCount.size() << "/" << n
                   << " ratio=" << std::setprecision(2) << (static_cast<double>(n)/useCount.size()) << "x\n";
-        std::cout << "  Top 5 most used:\n";
-        for (int i = 0; i < std::min(5, static_cast<int>(topUsed.size())); ++i)
+        std::cout << "  Top 10 most used:\n";
+        int top10Total = 0;
+        for (int i = 0; i < std::min(10, static_cast<int>(topUsed.size())); ++i)
+        {
             std::cout << "    id=" << topUsed[i].second << " : " << topUsed[i].first << " times\n";
+            top10Total += topUsed[i].first;
+        }
+        std::cout << "  Top10 share: " << std::fixed << std::setprecision(1)
+                  << (100.0 * top10Total / n) << "% of all tiles\n";
         // 使用频率分布
         int freqDist[6] = {0};  // 1x, 2x, 3x, 4-5x, 6-10x, 10x+
         for (const auto& [id, cnt] : useCount)
