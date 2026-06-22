@@ -592,6 +592,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // 滑动窗口 + 频率计数：允许少量重用但阻止聚类
     std::deque<int> recentIds;
     std::unordered_map<int, int> freqInWindow;
+    // 强制间隔：同一图片至少间隔 minGap 个 tile 才能再次使用
+    const int MIN_GAP = std::max(50, tilesX);  // 至少一行
+    std::unordered_map<int, int> lastUsedAt;   // imageId → 最后使用的 tile 编号
     std::deque<std::vector<float>> recentGrids;  // 差分图检测（仅保留最近100个）
     constexpr double GRID_DUP_THRESHOLD = 0.010;  // 更严格：更小的距离即视为重复
     constexpr double GRID_DUP_PENALTY = 200.0;     // 差分图重罚：等效使用200次
@@ -885,6 +888,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 if (cnt >= 3)      { scores[j] += cfg.neighborPenalty; }
                 else if (cnt == 2) { scores[j] += cfg.neighborPenalty * 0.4; }
                 else if (cnt == 1) { scores[j] += cfg.neighborPenalty * 0.1; }
+                // 强制间隔：同一图片在 MIN_GAP 内重复 → 罚 500（远超差分图惩罚）
+                auto gapIt = lastUsedAt.find(imgId);
+                if (gapIt != lastUsedAt.end() && (ti - gapIt->second) < MIN_GAP)
+                {
+                    scores[j] += 500.0;
+                }
                 // 差分图检测：候选与最近 tile 的 Grid 相位 → 加罚
                 const auto& candGrid = allRecords[indices[j]].grid4x4;
                 for (const auto& rg : recentGrids)
@@ -1004,6 +1013,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             int chosenId = bestRecords[ti].id;
             recentIds.push_back(chosenId);
             freqInWindow[chosenId]++;
+            lastUsedAt[chosenId] = ti;       // 记录最后使用位置
             recentGrids.push_back(allRecords[chosenLibIdx].grid4x4);  // 差分图检测
             while (static_cast<int>(recentGrids.size()) > GRID_DUP_WINDOW)
                 recentGrids.pop_front();  // 限制窗口大小，避免 O(n²)
@@ -1181,6 +1191,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::vector<ImageRecord> bestRecsCpu(totalTiles);
         std::deque<int> recentIds;
         std::unordered_map<int, int> freq;
+        std::unordered_map<int, int> lastUsedAt;
+        const int MIN_GAP = std::max(50, tilesX);
         if (cfg.neighborWindow <= 0) cfg.neighborWindow = std::max(300, tilesX * 2);
 
         std::cout << "  selecting best..." << std::flush;
@@ -1205,6 +1217,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 if (cnt >= 3) s += cfg.neighborPenalty;
                 else if (cnt == 2) s += cfg.neighborPenalty * 0.4;
                 else if (cnt == 1) s += cfg.neighborPenalty * 0.1;
+                auto gapIt = lastUsedAt.find(r.id);  // 强制间隔
+                if (gapIt != lastUsedAt.end() && (ti - gapIt->second) < MIN_GAP) s += 500.0;
                 scored.push_back({s, li});
             }
             if (scored.empty()) { noCandidateCount++; continue; }
@@ -1215,7 +1229,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             bestRecsCpu[ti] = allRecords[pickIdx];
             // 维护滑动窗口
             int chosenId = bestRecsCpu[ti].id;
-            recentIds.push_back(chosenId); freq[chosenId]++;
+            recentIds.push_back(chosenId); freq[chosenId]++; lastUsedAt[chosenId] = ti;
             if ((int)recentIds.size() > cfg.neighborWindow) {
                 int old = recentIds.front(); recentIds.pop_front();
                 if (--freq[old] <= 0) freq.erase(old);
