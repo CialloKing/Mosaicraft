@@ -4,6 +4,8 @@
 
 #include <cstring>
 #include <iostream>
+#include <tuple>
+#include <unordered_map>
 #include <string>
 #include <unordered_set>
 
@@ -505,6 +507,57 @@ bool Database::exec(const std::string& sql)
         return false;
     }
     return true;
+}
+
+// ============================================================
+// 使用统计
+// ============================================================
+
+void Database::initUsageStats()
+{
+    exec("CREATE TABLE IF NOT EXISTS usage_stats ("
+         "image_id INTEGER PRIMARY KEY,"
+         "total_runs INTEGER DEFAULT 0,"
+         "total_tiles INTEGER DEFAULT 0,"
+         "last_used TEXT,"
+         "FOREIGN KEY (image_id) REFERENCES images(id))");
+}
+
+void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount)
+{
+    initUsageStats();
+    exec("BEGIN TRANSACTION");
+    for (const auto& [imgId, tileCount] : imageUseCount)
+    {
+        std::string sql = "INSERT INTO usage_stats (image_id, total_runs, total_tiles, last_used) "
+                          "VALUES (" + std::to_string(imgId) + ", 1, " + std::to_string(tileCount)
+                          + ", datetime('now')) "
+                          "ON CONFLICT(image_id) DO UPDATE SET "
+                          "total_runs = total_runs + 1, "
+                          "total_tiles = total_tiles + " + std::to_string(tileCount)
+                          + ", last_used = datetime('now')";
+        exec(sql);
+    }
+    exec("COMMIT");
+}
+
+std::vector<std::tuple<int, int, int>> Database::topUsedImages(int limit)
+{
+    std::vector<std::tuple<int, int, int>> result;
+    initUsageStats();
+    // 使用 exec 回调模式
+    std::string sql = "SELECT image_id, total_runs, total_tiles FROM usage_stats "
+                      "ORDER BY total_runs DESC LIMIT " + std::to_string(limit);
+    char* errMsg = nullptr;
+    auto callback = [](void* data, int argc, char** argv, char**) -> int {
+        auto* vec = static_cast<std::vector<std::tuple<int,int,int>>*>(data);
+        if (argc >= 3)
+            vec->emplace_back(std::atoi(argv[0]), std::atoi(argv[1]), std::atoi(argv[2]));
+        return 0;
+    };
+    sqlite3_exec(m_db, sql.c_str(), callback, &result, &errMsg);
+    if (errMsg) { sqlite3_free(errMsg); }
+    return result;
 }
 
 } // namespace mosaicraft

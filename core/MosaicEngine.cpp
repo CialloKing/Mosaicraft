@@ -1737,6 +1737,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
             html.close();
             std::cout << "  HTML report: " << htmlPath << "\n";
         }
+
+        // 记录使用统计到 SQLite
+        if (db.isOpen() && !useCount.empty())
+            db.recordRunUsage(useCount);
     }
 
     if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);

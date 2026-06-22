@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <string>
+#include <tuple>
+#include <unordered_map>
 #include <vector>
 
 // 前向声明，避免暴露 sqlite3.h 到头文件
@@ -105,6 +107,13 @@ public:
 
     // 获取图库总数
     int totalCount();
+
+    // ——— 使用统计 ———
+    // 记录一次马赛克生成中各图片的使用情况（同一图片多次 tile 仅计一次 run）
+    void recordRunUsage(const std::unordered_map<int, int>& imageUseCount);
+    // 查询使用统计：返回 (image_id, total_runs, total_tiles) 按 total_runs 降序
+    std::vector<std::tuple<int, int, int>> topUsedImages(int limit = 50);
+    void initUsageStats();
 
 private:
     sqlite3* m_db;

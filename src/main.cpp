@@ -783,6 +783,46 @@ static int cmdDbPurge(int argc, char* argv[])
 }
 
 // ============================================================
+// db-usage 子命令：查看图片使用统计
+// ============================================================
+static int cmdDbUsage(int argc, char* argv[])
+{
+    std::string dbPath = "mosaicraft.db";
+    int limit = 50;
+
+    for (int i = 2; i < argc; ++i)
+    {
+        std::string arg = argv[i];
+        if ((arg == "-d" || arg == "--db") && i + 1 < argc)
+            dbPath = argv[++i];
+        else if (arg == "-n" && i + 1 < argc)
+            limit = std::atoi(argv[++i]);
+    }
+
+    Database db(dbPath);
+    if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return 1; }
+
+    auto top = db.topUsedImages(limit);
+    if (top.empty())
+    {
+        std::cout << "No usage data yet. Run a mosaic with --analyze to start tracking." << std::endl;
+        return 0;
+    }
+
+    std::cout << "Top " << top.size() << " most used images (by mosaic runs):\n";
+    std::cout << "  Rank  Image ID    Runs    Tiles\n";
+    for (size_t i = 0; i < top.size(); ++i)
+    {
+        auto [id, runs, tiles] = top[i];
+        std::cout << "  " << std::setw(4) << (i+1) << "  "
+                  << std::setw(8) << id << "  "
+                  << std::setw(6) << runs << "  "
+                  << std::setw(8) << tiles << "\n";
+    }
+    return 0;
+}
+
+// ============================================================
 // main
 // ============================================================
 int main(int argc, char* argv[])
@@ -814,6 +854,10 @@ int main(int argc, char* argv[])
     else if (cmd == "db-purge")
     {
         return cmdDbPurge(argc, argv);
+    }
+    else if (cmd == "db-usage")
+    {
+        return cmdDbUsage(argc, argv);
     }
     else if (cmd == "-h" || cmd == "--help")
     {
