@@ -789,6 +789,7 @@ static int cmdDbUsage(int argc, char* argv[])
 {
     std::string dbPath = "mosaicraft.db";
     int limit = 50;
+    std::string exportDir;
 
     for (int i = 2; i < argc; ++i)
     {
@@ -797,6 +798,8 @@ static int cmdDbUsage(int argc, char* argv[])
             dbPath = argv[++i];
         else if (arg == "-n" && i + 1 < argc)
             limit = std::atoi(argv[++i]);
+        else if ((arg == "--export" || arg == "-o") && i + 1 < argc)
+            exportDir = argv[++i];
     }
 
     Database db(dbPath);
@@ -818,6 +821,40 @@ static int cmdDbUsage(int argc, char* argv[])
                   << std::setw(8) << id << "  "
                   << std::setw(6) << runs << "  "
                   << std::setw(8) << tiles << "\n";
+    }
+
+    // 导出：按全局 tile 使用量排序，复制归一化图到导出目录
+    if (!exportDir.empty())
+    {
+        auto allRecs = db.allRecords();
+        std::unordered_map<int, std::string> pathMap;
+        for (const auto& r : allRecs) pathMap[r.id] = r.filePath;
+
+        auto allUsed = db.topUsedImages(999999);  // 全部
+        // 按 total_tiles 降序排列（topUsedImages 返回的是按 total_runs 排序，需要重新排）
+        std::sort(allUsed.begin(), allUsed.end(),
+            [](const auto& a, const auto& b) {
+                return std::get<2>(a) > std::get<2>(b);
+            });
+
+        std::filesystem::create_directories(exportDir);
+        int exported = 0;
+        for (size_t i = 0; i < allUsed.size(); ++i)
+        {
+            auto [id, runs, tiles] = allUsed[i];
+            auto it = pathMap.find(id);
+            if (it == pathMap.end()) continue;
+            std::string srcPath = it->second;
+            if (!std::filesystem::exists(srcPath)) continue;
+            std::string ext = srcPath.substr(srcPath.find_last_of('.'));
+            char fname[512];
+            snprintf(fname, sizeof(fname), "%s/rank%04zu_%druns_%dtiles_id%d%s",
+                     exportDir.c_str(), i+1, runs, tiles, id, ext.c_str());
+            std::filesystem::copy_file(srcPath, fname,
+                std::filesystem::copy_options::overwrite_existing);
+            exported++;
+        }
+        std::cout << "\n  Exported " << exported << " images to " << exportDir << "\n";
     }
     return 0;
 }
