@@ -1429,8 +1429,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     if (!img.empty())
                     {
                         char fn[256];
-                        snprintf(fn, sizeof(fn), "%s/rank%02d_%dx_id%d.jpg",
-                                 freqDir.c_str(), exported + 1, cnt, id);
+                        // 文件名：排名_次数_id_归一化文件名
+                        std::string normFile = std::filesystem::path(allRecords[i].filePath).filename().string();
+                        snprintf(fn, sizeof(fn), "%s/rank%02d_%dx_id%d_%s",
+                                 freqDir.c_str(), exported + 1, cnt, id, normFile.c_str());
                         cv::imwrite(fn, img);
                         exported++;
                     }
