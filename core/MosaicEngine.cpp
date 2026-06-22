@@ -1412,6 +1412,36 @@ bool MosaicEngine::generate(const std::string& targetPath,
         if (dp != std::string::npos) anaDir = anaDir.substr(0, dp) + "_analysis";
         else anaDir += "_analysis";
         std::filesystem::create_directories(anaDir);
+
+        // 导出频率排名图片（topUsed 已按使用次数降序排列）
+        std::string freqDir = anaDir + "/freq_rank";
+        std::filesystem::create_directories(freqDir);
+        int exported = 0;
+        for (const auto& [cnt, id] : topUsed)
+        {
+            if (exported >= 20) break;
+            // 查找该 id 对应的 filePath
+            for (int i = 0; i < dbCount; ++i)
+            {
+                if (allRecords[i].id == id && !allRecords[i].filePath.empty())
+                {
+                    cv::Mat img = cv::imread(allRecords[i].filePath, cv::IMREAD_COLOR);
+                    if (!img.empty())
+                    {
+                        char fn[256];
+                        snprintf(fn, sizeof(fn), "%s/rank%02d_%dx_id%d.jpg",
+                                 freqDir.c_str(), exported + 1, cnt, id);
+                        cv::imwrite(fn, img);
+                        exported++;
+                    }
+                    break;
+                }
+            }
+        }
+        if (exported > 0)
+            std::cout << "  Frequency ranking: " << freqDir << "/ (x" << exported << ")\n";
+
+        // ---- 最差 tile 导出 ----
         constexpr int kExport = 20;
         for (int k = 0; k < std::min(kExport, n); ++k)
         {
