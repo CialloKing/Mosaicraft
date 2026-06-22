@@ -587,7 +587,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     // 邻域窗口自动：至少覆盖 2 行 tile（垂直邻域）和默认 300（水平邻域）
     if (cfg.neighborWindow <= 0)
-        cfg.neighborWindow = std::max(300, tilesX * 2);
+    {
+        // 基础：至少 2 行 tile
+        int base = std::max(300, tilesX * 2);
+        // 动态：随库大小缓增长（O(√N)），大库覆盖更多候选
+        int dynamic = static_cast<int>(std::sqrt(static_cast<double>(allRecords.size())) * 1.5);
+        cfg.neighborWindow = std::max(base, std::min(dynamic, 600));
+        // 46K→323, 100K→474, 5K→max(300, tilesX*2)
+    }
 
     // 滑动窗口 + 频率计数：允许少量重用但阻止聚类
     std::deque<int> recentIds;
