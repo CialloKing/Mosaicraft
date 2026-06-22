@@ -776,5 +776,18 @@ bool isCudaAvailable()
     return (err == cudaSuccess && count > 0);
 }
 
+// ============================================================
+// 从 tile ROI 批量提取特征（CPU resize → GPU kernel）
+// 委托给 FeatureExtractorCuda::extractFeaturesRaw
+// ============================================================
+extern int extractTileFeatures(
+    const uint8_t* h_tiles180, int N,
+    double* h_avgLAB, float* h_grid, uint8_t* h_tiny,
+    double* h_edge, float* h_lbp)
+{
+    return mosaicraft::cuda::extractFeaturesRaw(
+        h_tiles180, N, h_avgLAB, h_grid, h_tiny, h_edge, h_lbp);
+}
+
 } // namespace cuda
 } // namespace mosaicraft

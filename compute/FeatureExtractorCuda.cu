@@ -358,5 +358,63 @@ int extractBatch(
     return N;
 }
 
+// ============================================================
+// 原始特征提取（mosaic 用，不写文件，只返回向量）
+// 调用 featureKernel 后直接拷贝结果到 host 缓冲区
+// ============================================================
+int extractFeaturesRaw(
+    const uint8_t* h_images, int N,
+    double* h_avgLAB, float* h_grid, uint8_t* h_tiny,
+    double* h_edge, float* h_lbp)
+{
+    if (N <= 0) return 0;
+
+    size_t imgBytes = IMG_PIX * 3;
+    uint8_t* d_images = nullptr;
+    float*   d_grid = nullptr;
+    uint8_t* d_tiny = nullptr;
+    float*   d_lbp = nullptr;
+    double*  d_avgLAB = nullptr;
+    double*  d_bright = nullptr;
+    double*  d_contrast = nullptr;
+    double*  d_edge = nullptr;
+
+    cudaMalloc(&d_images, N * imgBytes);
+    cudaMalloc(&d_grid, N * 192 * sizeof(float));
+    cudaMalloc(&d_tiny, N * 256);
+    cudaMalloc(&d_lbp, N * 256 * sizeof(float));
+    cudaMalloc(&d_avgLAB, N * 3 * sizeof(double));
+    cudaMalloc(&d_bright, N * sizeof(double));
+    cudaMalloc(&d_contrast, N * sizeof(double));
+    cudaMalloc(&d_edge, N * sizeof(double));
+
+    cudaMemcpy(d_images, h_images, N * imgBytes, cudaMemcpyHostToDevice);
+
+    featureKernel<<<N, 320>>>(
+        d_images, d_grid, d_tiny, d_lbp,
+        d_avgLAB, d_bright, d_contrast, d_edge, N);
+
+    cudaDeviceSynchronize();
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "GPU tile feature error: %s\n", cudaGetErrorString(err));
+        cudaFree(d_images); cudaFree(d_grid); cudaFree(d_tiny);
+        cudaFree(d_lbp); cudaFree(d_avgLAB); cudaFree(d_bright);
+        cudaFree(d_contrast); cudaFree(d_edge);
+        return -1;
+    }
+
+    cudaMemcpy(h_avgLAB, d_avgLAB, N * 3 * sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_grid,   d_grid,   N * 192 * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_tiny,   d_tiny,   N * 256, cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_edge,   d_edge,   N * sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_lbp,    d_lbp,    N * 256 * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_images); cudaFree(d_grid); cudaFree(d_tiny);
+    cudaFree(d_lbp); cudaFree(d_avgLAB); cudaFree(d_bright);
+    cudaFree(d_contrast); cudaFree(d_edge);
+    return N;
+}
+
 } // namespace cuda
 } // namespace mosaicraft

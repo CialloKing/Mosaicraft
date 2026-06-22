@@ -82,5 +82,16 @@ int matchOnGpu(
 
 bool isCudaAvailable();
 
+int extractTileFeatures(
+    const std::uint8_t* h_tiles180, int N,
+    double* h_avgLAB, float* h_grid, std::uint8_t* h_tiny,
+    double* h_edge, float* h_lbp);
+
+// 原始特征提取（从 FeatureExtractorCuda，不写文件）
+int extractFeaturesRaw(
+    const std::uint8_t* h_images, int N,
+    double* h_avgLAB, float* h_grid, std::uint8_t* h_tiny,
+    double* h_edge, float* h_lbp);
+
 } // namespace cuda
 } // namespace mosaicraft

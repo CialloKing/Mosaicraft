@@ -438,41 +438,142 @@ bool MosaicEngine::generate(const std::string& targetPath,
     msPrep = Ms(tPreFeat - tLast).count();
     tLast = tPreFeat;
 
-    std::atomic<int> featDone{0};
-    std::vector<std::thread> featWorkers;
-    for (int t = 0; t < nThreads; ++t) {
-        featWorkers.emplace_back([&, t]() {
-            using Ns = std::chrono::nanoseconds;
-            for (int idx = t; idx < totalTiles; idx += nThreads) {
-                int ty = idx / tilesX, tx = idx % tilesX;
-                cv::Mat roi = target(cv::Rect(tx*cfg.tileW, ty*cfg.tileH, cfg.tileW, cfg.tileH));
-                // 将 ROI 缩放到图库原生分辨率，确保特征与库图片同尺度可比
-                cv::Mat roiNative;
-                auto t0 = Clock::now();
-                cv::resize(roi, roiNative, cv::Size(180, 320), 0, 0, cv::INTER_LINEAR);
-                auto t1 = Clock::now(); opResizeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
-                cv::Mat lab; cv::cvtColor(roiNative, lab, cv::COLOR_BGR2Lab);
-                cv::Scalar m = cv::mean(lab);
-                allTL[idx]=m[0]; allTA[idx]=m[1]; allTB[idx]=m[2];
-                auto t2 = Clock::now(); opLabNs += std::chrono::duration_cast<Ns>(t2 - t1).count();
-                allGrid[idx] = computeGrid8x8(roiNative);  // 8×8 Grid (192维)
-                auto t3 = Clock::now(); opGridNs += std::chrono::duration_cast<Ns>(t3 - t2).count();
-                allTiny[idx] = computeTinyImage(roiNative);
-                auto t4 = Clock::now(); opTinyNs += std::chrono::duration_cast<Ns>(t4 - t3).count();
-                allEdge[idx] = computeEdgeDensity(roiNative);
-                auto t5 = Clock::now(); opEdgeNs += std::chrono::duration_cast<Ns>(t5 - t4).count();
-                allLBP[idx] = computeLBPHistogram(roiNative);
-                auto t6 = Clock::now(); opLbpNs += std::chrono::duration_cast<Ns>(t6 - t5).count();
-                int d = ++featDone;
-                if (d % 500 == 0 || d == totalTiles)
-                    std::cout << "\r  features " << d << "/" << totalTiles << std::flush;
-            }
-        });
-    }
-    for (auto& w : featWorkers) w.join();
-    std::cout << std::endl;
+    // Phase 0: 特征提取（GPU 批量加速，CPU 回退）
+    if (cfg.useGpu)
+    {
+        const int BATCH = 256;
+        std::vector<uint8_t> batch180(BATCH * 180 * 320 * 3);
+        std::vector<double> batchLAB(BATCH * 3);
+        std::vector<float>  batchGrid(BATCH * 192);
+        std::vector<uint8_t> batchTiny(BATCH * 256);
+        std::vector<double> batchEdgeArr(BATCH);
+        std::vector<float>  batchLBP(BATCH * 256);
 
-    // Phase 0 计时
+        int batchStart = 0;
+        for (; batchStart + BATCH <= totalTiles; batchStart += BATCH)
+        {
+            int batchN = BATCH;
+
+            // CPU resize: 9×16 → 180×320（多线程）
+            #pragma omp parallel for
+            for (int i = 0; i < batchN; ++i)
+            {
+                int ti = batchStart + i;
+                int ty = ti / tilesX, tx = ti % tilesX;
+                cv::Mat roi = target(cv::Rect(tx*cfg.tileW, ty*cfg.tileH, cfg.tileW, cfg.tileH));
+                cv::Mat roi180;
+                cv::resize(roi, roi180, cv::Size(180, 320), 0, 0, cv::INTER_LINEAR);
+                std::memcpy(&batch180[i * 180 * 320 * 3], roi180.data, 180 * 320 * 3);
+            }
+
+            // GPU 批量提取特征
+            int ret = mosaicraft::cuda::extractFeaturesRaw(
+                batch180.data(), batchN,
+                batchLAB.data(), batchGrid.data(), batchTiny.data(),
+                batchEdgeArr.data(), batchLBP.data());
+            if (ret < 0) { cfg.useGpu = false; break; }
+
+            // 回读结果
+            for (int i = 0; i < batchN; ++i)
+            {
+                int ti = batchStart + i;
+                allTL[ti]  = batchLAB[i * 3 + 0];
+                allTA[ti]  = batchLAB[i * 3 + 1];
+                allTB[ti]  = batchLAB[i * 3 + 2];
+                allGrid[ti].assign(&batchGrid[i * 192], &batchGrid[(i + 1) * 192]);
+                allTiny[ti].assign(&batchTiny[i * 256], &batchTiny[(i + 1) * 256]);
+                allEdge[ti] = batchEdgeArr[i];
+                allLBP[ti].assign(&batchLBP[i * 256], &batchLBP[(i + 1) * 256]);
+            }
+            std::cout << "\r  features " << (batchStart + batchN) << "/" << totalTiles << std::flush;
+        }
+
+        // 剩余不足 256 的尾批
+        if (batchStart < totalTiles)
+        {
+            int tailN = totalTiles - batchStart;
+            std::vector<uint8_t> tail180(tailN * 180 * 320 * 3);
+            std::vector<double> tailLAB(tailN * 3);
+            std::vector<float>  tailGrid(tailN * 192);
+            std::vector<uint8_t> tailTiny(tailN * 256);
+            std::vector<double> tailEdgeArr(tailN);
+            std::vector<float>  tailLBP(tailN * 256);
+
+            #pragma omp parallel for
+            for (int i = 0; i < tailN; ++i)
+            {
+                int ti = batchStart + i;
+                int ty = ti / tilesX, tx = ti % tilesX;
+                cv::Mat roi = target(cv::Rect(tx*cfg.tileW, ty*cfg.tileH, cfg.tileW, cfg.tileH));
+                cv::Mat roi180;
+                cv::resize(roi, roi180, cv::Size(180, 320), 0, 0, cv::INTER_LINEAR);
+                std::memcpy(&tail180[i * 180 * 320 * 3], roi180.data, 180 * 320 * 3);
+            }
+
+            int ret = mosaicraft::cuda::extractFeaturesRaw(
+                tail180.data(), tailN,
+                tailLAB.data(), tailGrid.data(), tailTiny.data(),
+                tailEdgeArr.data(), tailLBP.data());
+            if (ret < 0) { cfg.useGpu = false; }
+
+            if (cfg.useGpu)
+            {
+                for (int i = 0; i < tailN; ++i)
+                {
+                    int ti = batchStart + i;
+                    allTL[ti]  = tailLAB[i * 3 + 0];
+                    allTA[ti]  = tailLAB[i * 3 + 1];
+                    allTB[ti]  = tailLAB[i * 3 + 2];
+                    allGrid[ti].assign(&tailGrid[i * 192], &tailGrid[(i + 1) * 192]);
+                    allTiny[ti].assign(&tailTiny[i * 256], &tailTiny[(i + 1) * 256]);
+                    allEdge[ti] = tailEdgeArr[i];
+                    allLBP[ti].assign(&tailLBP[i * 256], &tailLBP[(i + 1) * 256]);
+                }
+            }
+            std::cout << "\r  features " << totalTiles << "/" << totalTiles << std::endl;
+        }
+        else
+        {
+            std::cout << std::endl;
+        }
+    }
+
+    if (!cfg.useGpu)  // CPU 回退（完整 16 线程提取）
+    {
+        std::atomic<int> featDone{0};
+        std::vector<std::thread> featWorkers;
+        for (int t = 0; t < nThreads; ++t) {
+            featWorkers.emplace_back([&, t]() {
+                using Ns = std::chrono::nanoseconds;
+                for (int idx = t; idx < totalTiles; idx += nThreads) {
+                    int ty = idx / tilesX, tx = idx % tilesX;
+                    cv::Mat roi = target(cv::Rect(tx*cfg.tileW, ty*cfg.tileH, cfg.tileW, cfg.tileH));
+                    cv::Mat roiNative;
+                    auto t0 = Clock::now();
+                    cv::resize(roi, roiNative, cv::Size(180, 320), 0, 0, cv::INTER_LINEAR);
+                    auto t1 = Clock::now(); opResizeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
+                    cv::Mat lab; cv::cvtColor(roiNative, lab, cv::COLOR_BGR2Lab);
+                    cv::Scalar m = cv::mean(lab);
+                    allTL[idx]=m[0]; allTA[idx]=m[1]; allTB[idx]=m[2];
+                    auto t2 = Clock::now(); opLabNs += std::chrono::duration_cast<Ns>(t2 - t1).count();
+                    allGrid[idx] = computeGrid8x8(roiNative);
+                    auto t3 = Clock::now(); opGridNs += std::chrono::duration_cast<Ns>(t3 - t2).count();
+                    allTiny[idx] = computeTinyImage(roiNative);
+                    auto t4 = Clock::now(); opTinyNs += std::chrono::duration_cast<Ns>(t4 - t3).count();
+                    allEdge[idx] = computeEdgeDensity(roiNative);
+                    auto t5 = Clock::now(); opEdgeNs += std::chrono::duration_cast<Ns>(t5 - t4).count();
+                    allLBP[idx] = computeLBPHistogram(roiNative);
+                    auto t6 = Clock::now(); opLbpNs += std::chrono::duration_cast<Ns>(t6 - t5).count();
+                    int d = ++featDone;
+                    if (d % 500 == 0 || d == totalTiles)
+                        std::cout << "\r  features " << d << "/" << totalTiles << std::flush;
+                }
+            });
+        }
+        for (auto& w : featWorkers) w.join();
+        std::cout << std::endl;
+    }
+
     auto tFeat = Clock::now();
     msFeat = Ms(tFeat - tLast).count();
     tLast = tFeat;
