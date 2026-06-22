@@ -554,7 +554,7 @@ int matchAgainstLibrary(
     cudaMalloc(&d_tileGrid, 192 * sizeof(float));
     cudaMalloc(&d_tileTiny, 256);
     cudaMalloc(&d_tileLBP,  256 * sizeof(float));
-    cudaMemcpy(d_tileGrid, tileGrid, 48 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_tileGrid, tileGrid, 192 * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_tileTiny, tileTiny, 256, cudaMemcpyHostToDevice);
     cudaMemcpy(d_tileLBP,  tileLBP,  256 * sizeof(float), cudaMemcpyHostToDevice);
 

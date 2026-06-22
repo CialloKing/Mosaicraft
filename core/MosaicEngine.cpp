@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <random>
 #include <iostream>
 #include <string>
 #include <unordered_map>
@@ -92,8 +93,9 @@ static void adjustColor(cv::Mat& img, double strength)
     std::vector<cv::Mat> channels(3);
     cv::split(lab, channels);
     // channels[0]=L, [1]=A, [2]=B
-    // L 因子：[-s, +s] 偏正，仅调亮度
-    double lFactor = 1.0 + ((rand() % 1001 - 300) / 1000.0) * strength;
+    // L 因子：[-s, +s] 偏正，仅调亮度（线程安全：thread_local 随机引擎）
+    thread_local std::mt19937 rng(std::random_device{}());
+    double lFactor = 1.0 + ((rng() % 1001 - 300) / 1000.0) * strength;
     channels[0] = channels[0] * lFactor;
     cv::merge(channels, lab);
     cv::cvtColor(lab, img, cv::COLOR_Lab2BGR);
@@ -888,7 +890,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             for (int j = 0; j < N; ++j)
             {
                 int libIdx = indices[j];
-                if (libIdx < 0) continue;
+                if (libIdx < 0 || libIdx >= static_cast<int>(allRecords.size())) continue;
                 int imgId = allRecords[libIdx].id;
                 auto it = freqInWindow.find(imgId);
                 int cnt = (it != freqInWindow.end()) ? it->second : 0;
@@ -1021,14 +1023,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
             recentIds.push_back(chosenId);
             freqInWindow[chosenId]++;
             lastUsedAt[chosenId] = ti;       // 记录最后使用位置
-            recentGrids.push_back(allRecords[chosenLibIdx].grid4x4);  // 差分图检测
+            recentGrids.push_back(allRecords[chosenLibIdx].grid4x4);
             while (static_cast<int>(recentGrids.size()) > GRID_DUP_WINDOW)
-                recentGrids.pop_front();  // 限制窗口大小，避免 O(n²)
+                recentGrids.pop_front();
             if (static_cast<int>(recentIds.size()) > cfg.neighborWindow)
             {
                 int oldId = recentIds.front();
                 recentIds.pop_front();
-                recentGrids.pop_front();  // 同步弹出
                 if (--freqInWindow[oldId] <= 0)
                     freqInWindow.erase(oldId);
             }
