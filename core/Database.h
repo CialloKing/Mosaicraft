@@ -84,6 +84,9 @@ public:
     // 插入一条记录；若 file_path 已存在则忽略（UNIQUE 约束）
     bool insertImage(const ImageRecord& rec);
 
+    // 删除单条记录（db-purge 用）
+    bool removeImage(int id);
+
     // ——— 读操作 ———
 
     // 去重：检查 hash 是否已存在

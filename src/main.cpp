@@ -62,6 +62,7 @@ Usage:
   mosaicraft mosaic  [options]    Create mosaic from target image
   mosaicraft inspect [options]    Inspect image features / database coverage
   mosaicraft db-stats [options]   Show database statistics
+  mosaicraft db-purge [options]   Remove orphan records (after deleting images)
 
 Build options:
   -i, --input  <dir>     Source image directory (required)
@@ -692,6 +693,41 @@ static int cmdDbStats(int argc, char* argv[])
 }
 
 // ============================================================
+// db-purge 子命令：清除归一化目录中不存在的孤儿记录
+// ============================================================
+static int cmdDbPurge(int argc, char* argv[])
+{
+    std::string dbPath = "mosaicraft.db";
+
+    for (int i = 2; i < argc; ++i)
+    {
+        std::string arg = argv[i];
+        if ((arg == "-d" || arg == "--db") && i + 1 < argc)
+            dbPath = argv[++i];
+    }
+
+    Database db(dbPath);
+    if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return 1; }
+
+    auto all = db.allRecords();
+    int total = static_cast<int>(all.size());
+    int removed = 0;
+    for (const auto& r : all)
+    {
+        if (!r.filePath.empty() && !std::filesystem::exists(r.filePath))
+        {
+            db.removeImage(r.id);
+            removed++;
+        }
+    }
+
+    std::cout << "Purged " << removed << " / " << total << " orphan records." << std::endl;
+    if (removed > 0)
+        std::cout << "  Note: delete normalized/features/*.bin and lib.ann, then re-run mosaic to rebuild caches." << std::endl;
+    return 0;
+}
+
+// ============================================================
 // main
 // ============================================================
 int main(int argc, char* argv[])
@@ -719,6 +755,10 @@ int main(int argc, char* argv[])
     else if (cmd == "db-stats")
     {
         return cmdDbStats(argc, argv);
+    }
+    else if (cmd == "db-purge")
+    {
+        return cmdDbPurge(argc, argv);
     }
     else if (cmd == "-h" || cmd == "--help")
     {

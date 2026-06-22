@@ -240,6 +240,18 @@ bool Database::insertImage(const ImageRecord& rec)
     return true;
 }
 
+bool Database::removeImage(int id)
+{
+    if (!m_db) return false;
+    const char* sql = "DELETE FROM images WHERE id = ?";
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, id);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return rc == SQLITE_DONE;
+}
+
 // ============================================================
 // 查询
 // ============================================================
