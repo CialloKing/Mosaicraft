@@ -585,6 +585,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int cntGrid = 0, cntMissGrid = 0;
     int cntTiny = 0, cntMissTiny = 0;
     int cntEdge = 0, cntMissEdge = 0;
+    int cntSmoothCat = 0, cntEdgeCat = 0, cntTextureCat = 0, cntNormalCat = 0;
+    double smoothSum = 0, edgeSum = 0, textureSum = 0, normalSum = 0;
     int cntLBP  = 0, cntMissLBP  = 0;
 
     // 邻域窗口自动：至少覆盖 2 行 tile（垂直邻域）和默认 300（水平邻域）
@@ -1662,6 +1664,79 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         cv::imwrite(heatPath, heat);
         std::cout << "  Heatmap: " << heatPath << "\n";
+
+        // ——— HTML 分析报告 ———
+        std::string htmlPath = anaDir + "/report.html";
+        std::ofstream html(htmlPath);
+        if (html.is_open())
+        {
+            html << "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">\n";
+            html << "<title>Mosaicraft Analysis</title>\n";
+            html << "<style>body{font-family:system-ui,sans-serif;max-width:960px;margin:0 auto;padding:20px;"
+                 << "background:#1a1a2e;color:#e0e0e0}h1{color:#e94560}h2{color:#f0a500;border-bottom:1px solid #333}"
+                 << "table{border-collapse:collapse;width:100%;margin:10px 0}"
+                 << "th,td{border:1px solid #444;padding:8px;text-align:right}th{background:#16213e;color:#f0a500}"
+                 << "tr:nth-child(even){background:#0f3460}.good{color:#4ecca3}.warn{color:#f0a500}.bad{color:#e94560}"
+                 << ".bar{display:inline-block;height:12px;background:#e94560;border-radius:2px}"
+                 << "</style></head><body>\n";
+            html << "<h1>&#55356;&#57211; Mosaicraft Analysis Report</h1>\n";
+
+            // 概览
+            html << "<h2>Overview</h2><table>\n";
+            html << "<tr><th>Tiles</th><td>" << totalTiles << "</td></tr>\n";
+            html << "<tr><th>Output</th><td>" << (tilesX*outTileW) << " x " << (tilesY*outTileH) << "</td></tr>\n";
+            html << "<tr><th>Matched</th><td>" << matched << " / " << totalTiles << "</td></tr>\n";
+            html << "</table>\n";
+
+            // Score
+            html << "<h2>Match Quality</h2><table>\n";
+            html << "<tr><th>Score Mean</th><td>" << scoreMean << "</td></tr>\n";
+            html << "<tr><th>Score Median</th><td>" << scoreP50 << "</td></tr>\n";
+            html << "<tr><th>Score P90</th><td>" << scoreP90 << "</td></tr>\n";
+            html << "<tr><th>Score P99</th><td>" << scoreP99 << "</td></tr>\n";
+            html << "<tr><th>Score Max</th><td class=\"warn\">" << scoreMax << "</td></tr>\n";
+            html << "</table>\n";
+
+            // 多样性
+            html << "<h2>Diversity</h2><table>\n";
+            html << "<tr><th>Unique Images</th><td>" << useCount.size() << " / " << n << "</td></tr>\n";
+            html << "<tr><th>Reuse Ratio</th><td>" << std::fixed << std::setprecision(2) << (double)n/useCount.size() << "x</td></tr>\n";
+            html << "<tr><th>Top10 Share</th><td>" << std::setprecision(1) << (100.0*top10Total/n) << "%</td></tr>\n";
+            html << "</table>\n";
+
+            // Top10
+            html << "<h2>Top 10 Most Used</h2><table>\n";
+            html << "<tr><th>Rank</th><th>Image ID</th><th>Uses</th><th>Bar</th></tr>\n";
+            int topMax = topUsed.empty() ? 1 : topUsed[0].first;
+            for (int i = 0; i < std::min(10, (int)topUsed.size()); ++i)
+            {
+                int w = (int)(100.0 * topUsed[i].first / topMax);
+                html << "<tr><td>" << (i+1) << "</td><td>" << topUsed[i].second
+                     << "</td><td>" << topUsed[i].first
+                     << "</td><td><span class=\"bar\" style=\"width:" << w << "px\"></span></td></tr>\n";
+            }
+            html << "</table>\n";
+
+            // 频率分布
+            html << "<h2>Frequency Distribution</h2><table>\n";
+            html << "<tr><th>Category</th><th>Count</th><th>%</th></tr>\n";
+            const char* catNames[] = {"1x","2x","3x","4-5x","6-10x","10x+"};
+            int freqDist[6] = {0};
+            for (const auto& [id, cnt] : useCount) {
+                if (cnt == 1) freqDist[0]++; else if (cnt == 2) freqDist[1]++;
+                else if (cnt == 3) freqDist[2]++; else if (cnt <= 5) freqDist[3]++;
+                else if (cnt <= 10) freqDist[4]++; else freqDist[5]++;
+            }
+            for (int i = 0; i < 6; ++i)
+                html << "<tr><td>" << catNames[i] << "</td><td>" << freqDist[i]
+                     << "</td><td>" << std::setprecision(1) << (100.0*freqDist[i]/n) << "%</td></tr>\n";
+            html << "</table>\n";
+
+            html << "<p>Heatmap: <a href=\"" << heatPath << "\">" << heatPath << "</a></p>\n";
+            html << "</body></html>";
+            html.close();
+            std::cout << "  HTML report: " << htmlPath << "\n";
+        }
     }
 
     if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);
