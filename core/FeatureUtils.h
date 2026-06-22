@@ -116,7 +116,7 @@ inline double gridDistance8x8(const std::vector<float>& a,
         double dl = a[idx] - b[idx];
         double da = a[idx + 1] - b[idx + 1];
         double db = a[idx + 2] - b[idx + 2];
-        sum += std::sqrt(dl * dl + da * da + db * db) * w[i];
+        sum += (dl * dl + da * da + db * db) * w[i];
     }
     return sum / 64.0 / 100.0;
 }

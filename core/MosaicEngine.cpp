@@ -598,7 +598,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::deque<std::vector<float>> recentGrids;  // 差分图检测（仅保留最近100个）
     constexpr double GRID_DUP_THRESHOLD = 0.010;  // 更严格：更小的距离即视为重复
     constexpr double GRID_DUP_PENALTY = 200.0;     // 差分图重罚：等效使用200次
-    constexpr int GRID_DUP_WINDOW = 200;           // 扩大窗口覆盖更多邻域
+    constexpr int GRID_DUP_WINDOW = 50;            // 缩小窗口→减少 O(N×candidates×window)
 
     // 权重归一化（所有 tile 共用）
     double wSum = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight;
