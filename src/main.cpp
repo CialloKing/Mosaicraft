@@ -100,6 +100,7 @@ static int cmdBuild(int argc, char* argv[])
     std::string outputDir = "normalized";
     std::string dbPath = "mosaicraft.db";
     int threads = 0;
+    bool appendMode = false;
 
     // 解析参数
     for (int i = 2; i < argc; ++i)
@@ -125,9 +126,13 @@ static int cmdBuild(int argc, char* argv[])
                 threads = 0;
             }
         }
+        else if (arg == "--append")
+        {
+            appendMode = true;
+        }
         else if (arg == "-h" || arg == "--help")
         {
-            std::cout << "Usage: mosaicraft build -i <dir> [-o <dir>] [-d <db>] [-t <n>]" << std::endl;
+            std::cout << "Usage: mosaicraft build -i <dir> [-o <dir>] [-d <db>] [-t <n>] [--append]" << std::endl;
             return 0;
         }
         else
