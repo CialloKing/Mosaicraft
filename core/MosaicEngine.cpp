@@ -942,7 +942,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             {
                 const auto& rec = allRecords[chosenLibIdx];
                 double labD  = labDistance(allTL[ti], allTA[ti], allTB[ti], rec.avgL, rec.avgA, rec.avgB);
-                double gridD = gridDistance8x8(allGrid[ti], rec.grid4x4);
+                double gridD = gridDistance8x8(allGrid[ti], rec.grid4x4, true);
                 double edgeD = std::abs(allEdge[ti] - rec.edgeDensity);
                 double totalW = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight + cfg.edgeWeight + cfg.lbpWeight;
                 double featScore = (cfg.labWeight*labD + cfg.gridWeight*gridD + cfg.edgeWeight*edgeD) / totalW;
@@ -1597,7 +1597,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 int ti = worstIdx[k].second, tx = ti % tilesX, ty = ti / tilesX;
                 const auto& rec = bestRecords[ti];
                 double labD = labDistance(allTL[ti],allTA[ti],allTB[ti],rec.avgL,rec.avgA,rec.avgB);
-                double gridD = gridDistance8x8(allGrid[ti], rec.grid4x4);
+                double gridD = gridDistance8x8(allGrid[ti], rec.grid4x4, true);
                 double edgeD = std::abs(allEdge[ti] - rec.edgeDensity);
                 rpt << "\n#" << (k+1) << " tile(" << tx << "," << ty << ") score=" << worstIdx[k].first << "\n";
                 rpt << "  Tile  LAB=" << allTL[ti] << "," << allTA[ti] << "," << allTB[ti]

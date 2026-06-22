@@ -94,7 +94,8 @@ inline void upsampleGrid4x4to8x8(const std::vector<float>& src48,
 
 // 8×8 Grid 距离（192维，64个cell）
 inline double gridDistance8x8(const std::vector<float>& a,
-                               const std::vector<float>& b)
+                               const std::vector<float>& b,
+                               bool useSqrt = false)  // false=平方(排序用), true=开方(显示用)
 {
     if (a.size() != 192 || b.size() != 192) { return 1e6; }
     // 空间权重：源于 15K tile 实测 Grid 贡献分析
@@ -116,7 +117,8 @@ inline double gridDistance8x8(const std::vector<float>& a,
         double dl = a[idx] - b[idx];
         double da = a[idx + 1] - b[idx + 1];
         double db = a[idx + 2] - b[idx + 2];
-        sum += (dl * dl + da * da + db * db) * w[i];
+        double sq = dl * dl + da * da + db * db;
+        sum += (useSqrt ? std::sqrt(sq) : sq) * w[i];
     }
     return sum / 64.0 / 100.0;
 }
