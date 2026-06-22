@@ -233,35 +233,54 @@ static int cmdBuild(int argc, char* argv[])
     int normThreads = static_cast<int>(std::thread::hardware_concurrency());
     if (normThreads < 2) normThreads = 2;
 
-    std::cout << "Normalizing (" << normThreads << " threads)..." << std::endl;
+    // 当输入==输出时跳过归一化（文件已规整），仅重建索引
+    bool inputIsOutput = (std::filesystem::equivalent(inputDir, outputDir));
+    if (!inputIsOutput)
+    {
+        std::cout << "Normalizing (" << normThreads << " threads)..." << std::endl;
+    }
+    else
+    {
+        std::cout << "Skipping normalization (input == output)" << std::endl;
+    }
 
     std::vector<std::thread> workers;
-    std::atomic<size_t> nextIdx = appendMode
-        ? std::atomic<size_t>(db.totalCount())
-        : std::atomic<size_t>(0);
-    for (int t = 0; t < normThreads; ++t) {
-        workers.emplace_back([&]() {
-            for (;;) {
-                size_t i = nextIdx.fetch_add(1);
-                if (i >= files.size()) break;
-                const std::string& inPath = files[i];
-                std::string ext = pathToUtf8(u8path(inPath).extension());
-                char name[64];
-                snprintf(name, sizeof(name), "%06zu%s", i, ext.c_str());
-                fs::path outPath = fs::path(outputDir) / name;
-                outPaths[i] = pathToUtf8(outPath);
-                try {
-                    if (normalizer.process(inPath, pathToUtf8(outPath)))
-                        okFlags[i] = true;
-                } catch (...) {}
-                int d = ++normDone;
-                if (d % 200 == 0 || d == (int)files.size())
-                    std::cout << "\r  normalize " << d << "/" << files.size() << std::flush;
-            }
-        });
+    if (!inputIsOutput)
+    {
+        std::atomic<size_t> nextIdx = appendMode
+            ? std::atomic<size_t>(db.totalCount())
+            : std::atomic<size_t>(0);
+        for (int t = 0; t < normThreads; ++t) {
+            workers.emplace_back([&]() {
+                for (;;) {
+                    size_t i = nextIdx.fetch_add(1);
+                    if (i >= files.size()) break;
+                    const std::string& inPath = files[i];
+                    std::string ext = pathToUtf8(u8path(inPath).extension());
+                    char name[64];
+                    snprintf(name, sizeof(name), "%06zu%s", i, ext.c_str());
+                    fs::path outPath = fs::path(outputDir) / name;
+                    outPaths[i] = pathToUtf8(outPath);
+                    try {
+                        if (normalizer.process(inPath, pathToUtf8(outPath)))
+                            okFlags[i] = true;
+                    } catch (...) {}
+                    int d = ++normDone;
+                    if (d % 200 == 0 || d == (int)files.size())
+                        std::cout << "\r  normalize " << d << "/" << files.size() << std::flush;
+                }
+            });
+        }
+        for (auto& w : workers) w.join();
+        std::cout << std::endl;
     }
-    for (auto& w : workers) w.join();
-    std::cout << std::endl;
+    else
+    {
+        // input==output：文件已规整，直接使用原路径
+        outPaths = files;
+        normDone = static_cast<int>(files.size());
+        for (size_t i = 0; i < files.size(); ++i) okFlags[i] = true;
+    }
 
     // 鈥斺€斺€?Phase 2: 鍝堝笇 + 鐗瑰緛鎻愬彇 + 鍏ュ簱 鈥斺€斺€?
     if (normOnly)
