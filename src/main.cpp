@@ -69,18 +69,36 @@ Build options:
   -o, --output <dir>     Output directory for normalized images (default: normalized)
   -d, --db     <path>    Database path (default: mosaicraft.db)
   -t, --threads <n>      Worker threads (default: auto)
+  -a, --append           Append mode: add new images without rebuilding
+  -r, --recursive        Scan subdirectories for source images
+  -N, --normalize-only   Only normalize images, don't build database
 
 Mosaic options:
   -i, --input  <path>    Target image to mosaicify (required)
   -d, --db     <path>    Database path (default: mosaicraft.db)
   -o, --output <path>    Output path or directory (default: mosaic.jpg)
-  --tile-w     <n>       Tile width in pixels (default: 45)
-  --tile-h     <n>       Tile height in pixels (default: 80)
+  --tile-w     <n>       Tile width in pixels (default: 9)
+  --tile-h     <n>       Tile height in pixels (default: 16)
+  -c, --candidates <n>   ANN query candidates (default: 150)
+  -f, --format  <ext>    jpg, png, webp, tiff (default: from extension, JPG°˙auto-scale over 65500px)
+  -q, --quality <n>      JPEG/WebP quality 1-100 (default: 95)
+  -W, --out-w    <n>     Target output width in pixels
+  -H, --out-h    <n>     Target output height in pixels
+  -U, --upscale  <n>     Upscale target n°¡ before tiling (more tiles, same res)
+  --output-tile <w> <h>  Output tile pixel size (default: 180x320)
   --tiled                Output tiles as separate files (no size limit)
-  --deepzoom             Generate Deep Zoom pyramid (compatible with OpenSeadragon)
-  --quality    <n>       JPEG/WebP quality 1-100 (default: 95)
-  --format     <ext>     jpg, png, webp, tiff (default: from output extension)
-  --cpu                  Force CPU (no GPU)
+  --deepzoom             Generate Deep Zoom pyramid for OpenSeadragon
+  -n, --no-color-adjust  Disable LAB color adjustment
+  --color-strength <v>   Color adjustment strength (default: 0.04, off by default)
+  --lab-weight   <w>     LAB distance weight (default: 0.20)
+  --grid-weight  <w>     Grid 8°¡8 distance weight (default: 0.45)
+  --tiny-weight  <w>     Tiny feature weight (default: 0.25)
+  --edge-weight  <w>     Edge density weight (default: 0.05)
+  --lbp-weight   <w>     LBP histogram weight (default: 0.05)
+  --penalty      <w>     Reuse penalty per use (default: 0.01)
+  -A, --analyze          Generate quality analysis report
+  -B, --benchmark        Show phase timing
+  -C, --cpu              Force CPU, no GPU acceleration
 
 Common options:
   -h, --help             Show this help
@@ -102,6 +120,7 @@ static int cmdBuild(int argc, char* argv[])
     int threads = 0;
     bool appendMode = false;
     bool normOnly = false;
+    bool recursive = false;
 
     // Ëß£ÊûêÂèÇÊï∞
     for (int i = 2; i < argc; ++i)
@@ -127,17 +146,21 @@ static int cmdBuild(int argc, char* argv[])
                 threads = 0;
             }
         }
-        else if (arg == "--append")
+        else if (arg == "-a" || arg == "--append")
         {
             appendMode = true;
         }
-        else if (arg == "--normalize-only")
+        else if (arg == "-r" || arg == "--recursive")
+        {
+            recursive = true;
+        }
+        else if (arg == "-N" || arg == "--normalize-only")
         {
             normOnly = true;
         }
         else if (arg == "-h" || arg == "--help")
         {
-            std::cout << "Usage: mosaicraft build -i <dir> [-o <dir>] [-d <db>] [-t <n>] [--append] [--normalize-only]" << std::endl;
+            std::cout << "Usage: mosaicraft build -i <dir> [-o <dir>] [-d <db>] [-t <n>] [-a] [-r] [-N]" << std::endl;
             return 0;
         }
         else
@@ -178,32 +201,19 @@ static int cmdBuild(int argc, char* argv[])
     };
 
     std::vector<std::string> files;
-    for (const auto& entry : fs::recursive_directory_iterator(inputDir, ec))
     {
-        if (!entry.is_regular_file())
-        {
-            continue;
-        }
-
-        std::string ext = entry.path().extension().string();
-        for (auto& c : ext)
-        {
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        }
-
-        bool supported = false;
-        for (const auto& e : exts)
-        {
-            if (ext == e)
-            {
-                supported = true;
-                break;
-            }
-        }
-        if (supported)
-        {
-            files.push_back(pathToUtf8(entry.path()));
-        }
+        auto addEntry = [&](const auto& entry) {
+            if (!entry.is_regular_file()) return;
+            std::string ext = entry.path().extension().string();
+            for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            bool supported = false;
+            for (const auto& e : exts) { if (ext == e) { supported = true; break; } }
+            if (supported) files.push_back(pathToUtf8(entry.path()));
+        };
+        if (recursive)
+            for (const auto& entry : fs::recursive_directory_iterator(inputDir, ec)) addEntry(entry);
+        else
+            for (const auto& entry : fs::directory_iterator(inputDir, ec)) addEntry(entry);
     }
 
     std::sort(files.begin(), files.end());
@@ -369,11 +379,11 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.tileH = std::max(4, std::atoi(argv[++i]));
         }
-        else if (arg == "--out-w" && i + 1 < argc)
+        else if ((arg == "-W" || arg == "--out-w") && i + 1 < argc)
         {
             cfg.outW = std::max(1, std::atoi(argv[++i]));
         }
-        else if (arg == "--out-h" && i + 1 < argc)
+        else if ((arg == "-H" || arg == "--out-h") && i + 1 < argc)
         {
             cfg.outH = std::max(1, std::atoi(argv[++i]));
         }
@@ -405,7 +415,7 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.lRange = std::atof(argv[++i]);
         }
-        else if (arg == "--candidates" && i + 1 < argc)
+        else if ((arg == "-c" || arg == "--candidates") && i + 1 < argc)
         {
             cfg.candidates = std::max(10, std::atoi(argv[++i]));
         }
@@ -414,16 +424,16 @@ static int cmdMosaic(int argc, char* argv[])
             int v = std::atoi(argv[++i]);
             cfg.topNrandom = std::max(1, v);
         }
-        else if (arg == "--format" && i + 1 < argc)
+        else if ((arg == "-f" || arg == "--format") && i + 1 < argc)
         {
             cfg.outputFormat = argv[++i];
             cfg.formatExplicit = true;
         }
-        else if (arg == "--cpu")
+        else if (arg == "-C" || arg == "--cpu")
         {
             cfg.useGpu = false;
         }
-        else if (arg == "--quality" && i + 1 < argc)
+        else if ((arg == "-q" || arg == "--quality") && i + 1 < argc)
         {
             int q = std::atoi(argv[++i]);
             cfg.jpegQuality = std::max(1, std::min(100, q));
@@ -437,11 +447,11 @@ static int cmdMosaic(int argc, char* argv[])
             cfg.tiledOutput = true;   // deepzoom ÈöêÂê´ tiled
             cfg.deepZoom = true;
         }
-        else if (arg == "--no-color-adjust")
+        else if (arg == "-n" || arg == "--no-color-adjust")
         {
             cfg.colorAdjust = false;
         }
-        else if (arg == "--upscale" && i + 1 < argc)
+        else if ((arg == "-U" || arg == "--upscale") && i + 1 < argc)
         {
             cfg.upscale = std::max(1, std::atoi(argv[++i]));
         }
