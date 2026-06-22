@@ -101,6 +101,7 @@ static int cmdBuild(int argc, char* argv[])
     std::string dbPath = "mosaicraft.db";
     int threads = 0;
     bool appendMode = false;
+    bool normOnly = false;
 
     // 解析参数
     for (int i = 2; i < argc; ++i)
@@ -130,9 +131,13 @@ static int cmdBuild(int argc, char* argv[])
         {
             appendMode = true;
         }
+        else if (arg == "--normalize-only")
+        {
+            normOnly = true;
+        }
         else if (arg == "-h" || arg == "--help")
         {
-            std::cout << "Usage: mosaicraft build -i <dir> [-o <dir>] [-d <db>] [-t <n>] [--append]" << std::endl;
+            std::cout << "Usage: mosaicraft build -i <dir> [-o <dir>] [-d <db>] [-t <n>] [--append] [--normalize-only]" << std::endl;
             return 0;
         }
         else
@@ -247,6 +252,11 @@ static int cmdBuild(int argc, char* argv[])
     std::cout << std::endl;
 
     // ——— Phase 2: 哈希 + 特征提取 + 入库 ———
+    if (normOnly)
+    {
+        std::cout << "Normalize only: " << (normDone.load()) << " images written to " << outputDir << std::endl;
+        return 0;
+    }
     FeatureExtractor extractor;
     bool gpuOk = cuda::isCudaAvailable();
     constexpr int GPU_BATCH = 32;
