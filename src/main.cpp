@@ -69,36 +69,36 @@ Build options:
   -o, --output <dir>     Output directory for normalized images (default: normalized)
   -d, --db     <path>    Database path (default: mosaicraft.db)
   -t, --threads <n>      Worker threads (default: auto)
-  -a, --append           Append mode: add new images without rebuilding
-  -r, --recursive        Scan subdirectories for source images
-  -N, --normalize-only   Only normalize images, don't build database
+      --append           Append mode: add new images without rebuilding
+      --recursive        Scan subdirectories for source images
+      --normalize-only   Only normalize images, don't build database
 
 Mosaic options:
   -i, --input  <path>    Target image to mosaicify (required)
   -d, --db     <path>    Database path (default: mosaicraft.db)
   -o, --output <path>    Output path or directory (default: mosaic.jpg)
-  --tile-w     <n>       Tile width in pixels (default: 9)
-  --tile-h     <n>       Tile height in pixels (default: 16)
-  -c, --candidates <n>   ANN query candidates (default: 150)
-  -f, --format  <ext>    jpg, png, webp, tiff (default: from extension, JPG¡úauto-scale over 65500px)
-  -q, --quality <n>      JPEG/WebP quality 1-100 (default: 95)
-  -W, --out-w    <n>     Target output width in pixels
-  -H, --out-h    <n>     Target output height in pixels
-  -U, --upscale  <n>     Upscale target n¡Á before tiling (more tiles, same res)
-  --output-tile <w> <h>  Output tile pixel size (default: 180x320)
-  --tiled                Output tiles as separate files (no size limit)
-  --deepzoom             Generate Deep Zoom pyramid for OpenSeadragon
-  -n, --no-color-adjust  Disable LAB color adjustment
-  --color-strength <v>   Color adjustment strength (default: 0.04, off by default)
-  --lab-weight   <w>     LAB distance weight (default: 0.20)
-  --grid-weight  <w>     Grid 8¡Á8 distance weight (default: 0.45)
-  --tiny-weight  <w>     Tiny feature weight (default: 0.25)
-  --edge-weight  <w>     Edge density weight (default: 0.05)
-  --lbp-weight   <w>     LBP histogram weight (default: 0.05)
-  --penalty      <w>     Reuse penalty per use (default: 0.01)
-  -A, --analyze          Generate quality analysis report
-  -B, --benchmark        Show phase timing
-  -C, --cpu              Force CPU, no GPU acceleration
+      --tile-w     <n>   Tile width in pixels (default: 9)
+      --tile-h     <n>   Tile height in pixels (default: 16)
+      --candidates <n>   ANN query candidates (default: 150)
+      --format     <ext> jpg, png, webp, tiff (default: from extension, JPG¡úauto-scale over 65500px)
+      --quality    <n>   JPEG/WebP quality 1-100 (default: 95)
+      --out-w      <n>   Target output width in pixels
+      --out-h      <n>   Target output height in pixels
+      --upscale    <n>   Upscale target n¡Á before tiling (more tiles, same res)
+      --output-tile <w> <h>  Output tile pixel size (default: 180x320)
+      --tiled            Output tiles as separate files (no size limit)
+      --deepzoom         Generate Deep Zoom pyramid for OpenSeadragon
+      --no-color-adjust  Disable LAB color adjustment
+      --color-strength <v>  Color adjustment strength (default: 0.04, off by default)
+      --lab-weight   <w> LAB distance weight (default: 0.20)
+      --grid-weight  <w> Grid 8¡Á8 distance weight (default: 0.45)
+      --tiny-weight  <w> Tiny feature weight (default: 0.25)
+      --edge-weight  <w> Edge density weight (default: 0.05)
+      --lbp-weight   <w> LBP histogram weight (default: 0.05)
+      --penalty      <w> Reuse penalty per use (default: 0.01)
+      --analyze          Generate quality analysis report
+      --benchmark        Show phase timing
+      --cpu              Force CPU, no GPU acceleration
 
 Common options:
   -h, --help             Show this help
@@ -146,21 +146,21 @@ static int cmdBuild(int argc, char* argv[])
                 threads = 0;
             }
         }
-        else if (arg == "-a" || arg == "--append")
+        else if (arg == "--append")
         {
             appendMode = true;
         }
-        else if (arg == "-r" || arg == "--recursive")
+        else if (arg == "--recursive")
         {
             recursive = true;
         }
-        else if (arg == "-N" || arg == "--normalize-only")
+        else if (arg == "--normalize-only")
         {
             normOnly = true;
         }
         else if (arg == "-h" || arg == "--help")
         {
-            std::cout << "Usage: mosaicraft build -i <dir> [-o <dir>] [-d <db>] [-t <n>] [-a] [-r] [-N]" << std::endl;
+            std::cout << "Usage: mosaicraft build -i <dir> [-o <dir>] [-d <db>] [-t <n>] [--append] [--recursive] [--normalize-only]" << std::endl;
             return 0;
         }
         else
@@ -415,7 +415,7 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.lRange = std::atof(argv[++i]);
         }
-        else if ((arg == "-c" || arg == "--candidates") && i + 1 < argc)
+        else if (arg == "--candidates" && i + 1 < argc)
         {
             cfg.candidates = std::max(10, std::atoi(argv[++i]));
         }
@@ -429,7 +429,7 @@ static int cmdMosaic(int argc, char* argv[])
             cfg.outputFormat = argv[++i];
             cfg.formatExplicit = true;
         }
-        else if (arg == "-C" || arg == "--cpu")
+        else if (arg == "--cpu")
         {
             cfg.useGpu = false;
         }
@@ -447,7 +447,7 @@ static int cmdMosaic(int argc, char* argv[])
             cfg.tiledOutput = true;   // deepzoom éšå« tiled
             cfg.deepZoom = true;
         }
-        else if (arg == "-n" || arg == "--no-color-adjust")
+        else if (arg == "--no-color-adjust")
         {
             cfg.colorAdjust = false;
         }
