@@ -1161,8 +1161,40 @@ bool MosaicEngine::generate(const std::string& targetPath,
         if (useStreamTiff)
             std::cout << "  (streaming TIFF mode — low memory)" << std::endl;
 
-        if (!useStreamTiff)
-            output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
+        if (useStreamTiff)
+        {
+            std::cout << "  (streaming TIFF mode)" << std::endl;
+            // 跳过 placement，直接流式 TIFF 写出
+            BigTiffWriter tiff(outputPath, outW, outH);
+            std::vector<uint8_t> rowBuf(outW * 3);
+            for (int ty = 0; ty < tilesY; ++ty)
+            {
+                for (int y = 0; y < outTileH; ++y)
+                {
+                    for (int tx = 0; tx < tilesX; ++tx)
+                    {
+                        int ti = ty * tilesX + tx;
+                        if (ti >= totalTiles) continue;
+                        cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
+                        if (m.empty()) continue;
+                        cv::resize(m, m, cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                        cv::Mat tileRow = m.row(y);
+                        std::memcpy(&rowBuf[tx * outTileW * 3], tileRow.data, outTileW * 3);
+                    }
+                    tiff.writeRow(ty * outTileH + y, rowBuf.data());
+                }
+                if (ty % 20 == 0)
+                    std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
+            }
+            tiff.close();
+            std::cout << std::endl;
+            std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
+                      << " / " << totalTiles << " tiles)" << std::endl;
+            printBenchmark("single");
+            return true;
+        }
+
+        output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
         std::cout << "  placing tiles (" << nThreads << " threads)..."
                   << std::flush;
         std::atomic<int> placeDone{0};
@@ -1345,6 +1377,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
 
     // 写入输出
+write_streaming_tiff:
     if (fmt == "tiff")
     {
         if (output.empty())
