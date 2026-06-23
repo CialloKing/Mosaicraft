@@ -83,13 +83,11 @@ public:
                 return a->id < b->id;
             });
 
-        if (!beginWrite(featDir, static_cast<int>(sorted.size())))
-            return false;
-
-        // 尝试加载旧缓存 → 旧图直接从缓存复刻，免读独立文件
+        // 先读取旧缓存（在 beginWrite 截断之前！）
         std::vector<uint8_t> oldTiny;
         std::vector<float>   oldLbp;
         std::vector<int>     oldIds;
+        if (!featDir.empty())
         {
             std::string tp = featDir + "/tiny.bin";
             std::string lp = featDir + "/lbp.bin";
@@ -116,6 +114,9 @@ public:
         std::unordered_map<int,int> oldPos;
         for (int i = 0; i < static_cast<int>(oldIds.size()); ++i)
             oldPos[oldIds[i]] = i;
+
+        if (!beginWrite(featDir, static_cast<int>(sorted.size())))
+            return false;
 
         for (const auto* rec : sorted)
         {

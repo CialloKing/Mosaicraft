@@ -130,8 +130,8 @@ extern "C" __global__ void featureKernel(
         if (x > 0 && y > 0)
         {
             float center = gray;
-            float right = rgb2gray(img[(y * IMG_W + x - 1) * 3], img[(y * IMG_W + x - 1) * 3 + 1], img[(y * IMG_W + x - 1) * 3 + 2]);
-            float down  = rgb2gray(img[((y-1) * IMG_W + x) * 3], img[((y-1) * IMG_W + x) * 3 + 1], img[((y-1) * IMG_W + x) * 3 + 2]);
+            float right = rgb2gray(img[(y * IMG_W + x - 1) * 3 + 2], img[(y * IMG_W + x - 1) * 3 + 1], img[(y * IMG_W + x - 1) * 3]);  // BGR→RGB
+            float down  = rgb2gray(img[((y-1) * IMG_W + x) * 3 + 2], img[((y-1) * IMG_W + x) * 3 + 1], img[((y-1) * IMG_W + x) * 3]);
             float grad = fabsf(center - right) + fabsf(center - down);
             if (grad > 30.0f) localEdge++;
         }
@@ -140,11 +140,11 @@ extern "C" __global__ void featureKernel(
         if (x > 0 && x < IMG_W - 1 && y > 0 && y < IMG_H - 1)
         {
             uint8_t code = 0;
-            float c = rgb2gray(img[((y) * IMG_W + x) * 3], img[((y) * IMG_W + x) * 3 + 1], img[((y) * IMG_W + x) * 3 + 2]);
+            float c = rgb2gray(img[((y) * IMG_W + x) * 3 + 2], img[((y) * IMG_W + x) * 3 + 1], img[((y) * IMG_W + x) * 3]);  // BGR→RGB
             auto gv = [&](int dy, int dx) {
-                float v = rgb2gray(img[((y+dy) * IMG_W + (x+dx)) * 3],
+                float v = rgb2gray(img[((y+dy) * IMG_W + (x+dx)) * 3 + 2],
                                    img[((y+dy) * IMG_W + (x+dx)) * 3 + 1],
-                                   img[((y+dy) * IMG_W + (x+dx)) * 3 + 2]);
+                                   img[((y+dy) * IMG_W + (x+dx)) * 3]);  // BGR→RGB
                 return v >= c ? 1.0f : 0.0f;
             };
             if (gv(-1,-1)) code |= 1;    if (gv(-1,0)) code |= 2;    if (gv(-1,1)) code |= 4;

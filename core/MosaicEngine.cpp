@@ -580,7 +580,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     msFeat = Ms(tFeat - tLast).count();
     tLast = tFeat;
 
-    int matched = 0;
+    std::atomic<int> matched{0};
     int loadFail = 0;
     int cntGrid = 0, cntMissGrid = 0;
     int cntTiny = 0, cntMissTiny = 0;

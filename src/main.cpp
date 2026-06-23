@@ -250,23 +250,25 @@ static int cmdBuild(int argc, char* argv[])
     std::vector<std::thread> workers;
     if (!inputIsOutput)
     {
-        std::atomic<size_t> nextIdx = appendMode
+        std::atomic<size_t> nextFileIdx{0};   // 文件向量索引（从0递增）
+        std::atomic<size_t> nextNameIdx = appendMode
             ? std::atomic<size_t>(db.totalCount())
-            : std::atomic<size_t>(0);
+            : std::atomic<size_t>(0);          // 输出文件编号（append时从已有末尾开始）
         for (int t = 0; t < normThreads; ++t) {
             workers.emplace_back([&]() {
                 for (;;) {
-                    size_t i = nextIdx.fetch_add(1);
-                    if (i >= files.size()) break;
-                    const std::string& inPath = files[i];
+                    size_t fi = nextFileIdx.fetch_add(1);  // 文件索引
+                    if (fi >= files.size()) break;
+                    const std::string& inPath = files[fi];
                     std::string ext = pathToUtf8(u8path(inPath).extension());
                     char name[64];
-                    snprintf(name, sizeof(name), "%06zu%s", i, ext.c_str());
+                    size_t nameIdx = nextNameIdx.fetch_add(1);  // 输出编号
+                    snprintf(name, sizeof(name), "%06zu%s", nameIdx, ext.c_str());
                     fs::path outPath = fs::path(outputDir) / name;
-                    outPaths[i] = pathToUtf8(outPath);
+                    outPaths[fi] = pathToUtf8(outPath);
                     try {
                         if (normalizer.process(inPath, pathToUtf8(outPath)))
-                            okFlags[i] = true;
+                            okFlags[fi] = true;
                     } catch (...) {}
                     int d = ++normDone;
                     if (d % 200 == 0 || d == (int)files.size())
