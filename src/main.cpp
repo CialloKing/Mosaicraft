@@ -13,6 +13,8 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/core.hpp>
 
+#include <ctime>
+
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -237,7 +239,13 @@ static int cmdBuild(int argc, char* argv[])
     if (normThreads < 2) normThreads = 2;
 
     // 当输入==输出时跳过归一化（文件已规整），仅重建索引
-    bool inputIsOutput = (std::filesystem::equivalent(inputDir, outputDir));
+    std::error_code equivEc;
+    bool inputIsOutput = false;
+    try {
+        inputIsOutput = std::filesystem::equivalent(inputDir, outputDir, equivEc);
+    } catch (...) {
+        inputIsOutput = false;
+    }
     if (!inputIsOutput)
     {
         std::cout << "Normalizing (" << normThreads << " threads)..." << std::endl;
@@ -622,7 +630,7 @@ static int cmdInspect(int argc, char* argv[])
         std::cout << "\nDatabase: " << total << " images" << std::endl;
         std::cout << "L-range [" << (tL - 20) << ", " << (tL + 20) << "]: "
                   << candidates.size() << " candidates"
-                  << " (" << std::setprecision(1) << (100.0 * candidates.size() / total) << "% of library)"
+                  << (total > 0 ? " (" + std::to_string(100 * candidates.size() / total) + "%)" : "")
                   << std::endl;
 
         // 缁熻?? L 鍒嗗竷锛堜粠 allRecords锛?
@@ -635,7 +643,7 @@ static int cmdInspect(int argc, char* argv[])
             sumL += r.avgL;
         }
         std::cout << "Library L range: [" << std::setprecision(1) << minL
-                  << ", " << maxL << "]  avg=" << (sumL / total) << std::endl;
+                  << ", " << maxL << "]  avg=" << (total > 0 ? sumL/total : 0) << std::endl;
 
         // 瑕嗙洊鐜?
         int dark = 0, mid = 0, bright = 0;
@@ -985,6 +993,7 @@ static int cmdDbHealth(int argc, char* argv[])
 // ============================================================
 int main(int argc, char* argv[])
 {
+    srand(static_cast<unsigned>(time(nullptr)) ^ static_cast<unsigned>(reinterpret_cast<uintptr_t>(&argc)));
     if (argc < 2)
     {
         printHelp();

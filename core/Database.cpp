@@ -498,6 +498,7 @@ void Database::migrate()
 
 bool Database::exec(const std::string& sql)
 {
+    if (!m_db) return false;
     char* errMsg = nullptr;
     int rc = sqlite3_exec(m_db, sql.c_str(), nullptr, nullptr, &errMsg);
     if (rc != SQLITE_OK)
