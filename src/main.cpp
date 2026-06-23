@@ -54,7 +54,7 @@ static std::string hashMat(const cv::Mat& mat)
 }
 
 // 用法
-static constexpr const char* VERSION = "1.9.0";
+static constexpr const char* VERSION = "1.10.0";
 
 static void printHelp()
 {
