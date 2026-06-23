@@ -52,6 +52,29 @@ public:
         TIFFSetField(m_tif, TIFFTAG_ROWSPERSTRIP,    height);
     }
 
+    // 流式模式：ROWSPERSTRIP=1，每行独立可写（超大图免全图 Mat）
+    BigTiffWriter(const std::string& path, int width, int height, bool streaming)
+        : m_w(width), m_h(height)
+    {
+        int64_t rawSize = static_cast<int64_t>(width) * height * 3;
+        const char* mode = (rawSize > 3500LL * 1024 * 1024) ? "w8" : "w";
+#ifdef _WIN32
+        std::wstring wpath = std::filesystem::u8path(path).wstring();
+        m_tif = TIFFOpenW(wpath.c_str(), mode);
+#else
+        m_tif = TIFFOpen(path.c_str(), mode);
+#endif
+        if (!m_tif) throw std::runtime_error("BigTiffWriter: cannot open " + path);
+        TIFFSetField(m_tif, TIFFTAG_IMAGEWIDTH,      width);
+        TIFFSetField(m_tif, TIFFTAG_IMAGELENGTH,     height);
+        TIFFSetField(m_tif, TIFFTAG_BITSPERSAMPLE,   8);
+        TIFFSetField(m_tif, TIFFTAG_SAMPLESPERPIXEL, 3);
+        TIFFSetField(m_tif, TIFFTAG_ORIENTATION,     ORIENTATION_TOPLEFT);
+        TIFFSetField(m_tif, TIFFTAG_PLANARCONFIG,    PLANARCONFIG_CONTIG);
+        TIFFSetField(m_tif, TIFFTAG_PHOTOMETRIC,     PHOTOMETRIC_RGB);
+        TIFFSetField(m_tif, TIFFTAG_ROWSPERSTRIP,    1);  // 每行独立 strip：流式可写
+    }
+
     ~BigTiffWriter() { if (m_tif) TIFFClose(m_tif); }
 
     // 逐行写入（输入为 OpenCV BGR，逐行 cvtColor→RGB 后写 TIFF）
@@ -78,7 +101,10 @@ public:
         cv::Mat rowRGB;
         cv::Mat rowBGR(1, m_w, CV_8UC3, const_cast<uint8_t*>(bgrRow));
         cv::cvtColor(rowBGR, rowRGB, cv::COLOR_BGR2RGB);
-        return TIFFWriteScanline(m_tif, rowRGB.data, y, 0) >= 0;
+        int rc = TIFFWriteScanline(m_tif, rowRGB.data, y, 0);
+        if (rc < 0)
+            std::cerr << "BigTiffWriter::writeRow failed at y=" << y << " (w=" << m_w << ")" << std::endl;
+        return rc >= 0;
     }
 
     void close() { if (m_tif) { TIFFClose(m_tif); m_tif = nullptr; } }

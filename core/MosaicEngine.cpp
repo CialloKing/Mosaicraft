@@ -1165,7 +1165,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         {
             std::cout << "  (streaming TIFF mode)" << std::endl;
             // 跳过 placement，直接流式 TIFF 写出
-            BigTiffWriter tiff(outputPath, outW, outH);
+            BigTiffWriter tiff(outputPath, outW, outH, true);  // streaming mode
             std::vector<uint8_t> rowBuf(outW * 3);
             for (int ty = 0; ty < tilesY; ++ty)
             {
