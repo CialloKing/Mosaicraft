@@ -777,13 +777,13 @@ static int cmdDbPurge(int argc, char* argv[])
     int removed = 0;
     for (const auto& r : all)
     {
-        if (!r.filePath.empty() && !std::filesystem::exists(r.filePath))
+        if (!r.filePath.empty() && !std::filesystem::exists(u8path(r.filePath)))
         {
             // 同�??删除孤儿特征文件
-            if (!r.tinyPath.empty() && std::filesystem::exists(r.tinyPath))
-                std::filesystem::remove(r.tinyPath);
-            if (!r.histPath.empty() && std::filesystem::exists(r.histPath))
-                std::filesystem::remove(r.histPath);
+            if (!r.tinyPath.empty() && std::filesystem::exists(u8path(r.tinyPath)))
+                std::filesystem::remove(u8path(r.tinyPath));
+            if (!r.histPath.empty() && std::filesystem::exists(u8path(r.histPath)))
+                std::filesystem::remove(u8path(r.histPath));
             db.removeImage(r.id);
             removed++;
         }
@@ -886,7 +886,8 @@ static int cmdDbUsage(int argc, char* argv[])
             if (it == pathMap.end()) continue;
             std::string srcPath = it->second;
             if (!std::filesystem::exists(srcPath)) continue;
-            std::string ext = srcPath.substr(srcPath.find_last_of('.'));
+            auto dotPos = srcPath.find_last_of('.');
+            std::string ext = (dotPos != std::string::npos) ? srcPath.substr(dotPos) : "";
             char fname[512];
             snprintf(fname, sizeof(fname), "%s/rank%04zu_%druns_%dtiles_id%d%s",
                      exportDir.c_str(), i+1, runs, tiles, id, ext.c_str());

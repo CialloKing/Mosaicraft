@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -24,7 +25,12 @@ public:
         int64_t rawSize = static_cast<int64_t>(width) * height * 3;
         const char* mode = (rawSize > 3500LL * 1024 * 1024) ? "w8" : "w";
 
+#ifdef _WIN32
+        std::wstring wpath = std::filesystem::u8path(path).wstring();
+        m_tif = TIFFOpenW(wpath.c_str(), mode);  // TIFFOpenW: 文件名宽字符，mode 仍为 ANSI
+#else
         m_tif = TIFFOpen(path.c_str(), mode);
+#endif
         if (!m_tif)
             throw std::runtime_error("BigTiffWriter: cannot open " + path);
 
