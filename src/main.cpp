@@ -860,6 +860,95 @@ static int cmdDbUsage(int argc, char* argv[])
 }
 
 // ============================================================
+// db-health 子命令：图库健康度诊断
+// ============================================================
+static int cmdDbHealth(int argc, char* argv[])
+{
+    std::string dbPath = "mosaicraft.db";
+    for (int i = 2; i < argc; ++i)
+        if ((std::string(argv[i]) == "-d" || std::string(argv[i]) == "--db") && i + 1 < argc)
+            dbPath = argv[++i];
+
+    Database db(dbPath);
+    if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return 1; }
+
+    auto all = db.allRecords();
+    int total = static_cast<int>(all.size());
+    if (total == 0) { std::cout << "Database is empty.\n"; return 0; }
+
+    std::cout << "=== Database Health ===\n\n";
+    std::cout << "Images: " << total << "\n";
+
+    // ——— 亮度覆盖 ———
+    int dark = 0, mid = 0, bright = 0;
+    for (const auto& r : all) {
+        if (r.avgL < 50) dark++;
+        else if (r.avgL < 150) mid++;
+        else bright++;
+    }
+    double dPct = 100.0 * dark / total, mPct = 100.0 * mid / total, bPct = 100.0 * bright / total;
+
+    std::cout << "\n--- Brightness Coverage ---\n";
+    std::cout << "  Dark  (<50L):  " << std::fixed << std::setprecision(1) << dPct << "% (" << dark << ")\n";
+    std::cout << "  Mid   (50-150L): " << mPct << "% (" << mid << ")\n";
+    std::cout << "  Bright(>150L): " << bPct << "% (" << bright << ")\n";
+    if (dPct < 5.0)  std::cout << "  WARN: Dark images severely underrepresented\n";
+    if (mPct < 15.0) std::cout << "  WARN: Mid-tone images underrepresented\n";
+
+    // ——— 色域覆盖 ———
+    double minA = 255, maxA = 0, minB = 255, maxB = 0;
+    for (const auto& r : all) {
+        if (r.avgA < minA) minA = r.avgA; if (r.avgA > maxA) maxA = r.avgA;
+        if (r.avgB < minB) minB = r.avgB; if (r.avgB > maxB) maxB = r.avgB;
+    }
+    std::cout << "\n--- Color Gamut ---\n";
+    std::cout << "  A (green-red): " << std::setprecision(0) << minA << "-" << maxA << "\n";
+    std::cout << "  B (blue-yellow): " << std::setprecision(0) << minB << "-" << maxB << "\n";
+    if (minA > 115) std::cout << "  WARN: Lacking green-toned images\n";
+    if (maxA < 140) std::cout << "  WARN: Lacking red/warm-toned images\n";
+    if (minB > 115) std::cout << "  WARN: Lacking blue/cool-toned images\n";
+    if (maxB < 140) std::cout << "  WARN: Lacking yellow-toned images\n";
+
+    // ——— 使用统计 ———
+    auto used = db.topUsedImages(999999);
+    int usedCount = static_cast<int>(used.size());
+    int unusedCount = total - usedCount;
+
+    std::cout << "\n--- Usage ---\n";
+    std::cout << "  Used:   " << usedCount << " (" << std::setprecision(1) << (100.0*usedCount/total) << "%)\n";
+    std::cout << "  Unused: " << unusedCount << " (" << (100.0*unusedCount/total) << "%)\n";
+    if (unusedCount > total / 2)
+        std::cout << "  WARN: >50% images never used - consider pruning\n";
+
+    // ——— 热点集中度 ———
+    if (!used.empty()) {
+        int64_t totalTiles = 0;
+        for (const auto& [id, runs, tiles] : used) totalTiles += tiles;
+        int top1pct = std::max(1, usedCount / 100);
+        int64_t top1Tiles = 0;
+        for (int i = 0; i < top1pct && i < usedCount; ++i)
+            top1Tiles += std::get<2>(used[i]);
+        std::cout << "\n--- Hotspot Concentration ---\n";
+        std::cout << "  Top 1% (" << top1pct << " images): " << std::setprecision(1)
+                  << (100.0*top1Tiles/totalTiles) << "% of all tiles\n";
+        if (100.0*top1Tiles/totalTiles > 20.0)
+            std::cout << "  WARN: Small subset dominates matching\n";
+    }
+
+    // ——— 建议 ———
+    std::cout << "\n--- Recommendations ---\n";
+    int recs = 0;
+    if (dPct < 5.0)  { std::cout << "  + Add night / indoor / low-light photos\n"; recs++; }
+    if (mPct < 15.0) { std::cout << "  + Add overcast / shadow / twilight scenes\n"; recs++; }
+    if (minA > 115 || maxA < 140) { std::cout << "  + Diversify green-red color range\n"; recs++; }
+    if (minB > 115 || maxB < 140) { std::cout << "  + Diversify blue-yellow color range\n"; recs++; }
+    if (unusedCount > total / 2) { std::cout << "  + Run db-usage to identify dead weight\n"; recs++; }
+    if (recs == 0) std::cout << "  Database looks well-balanced!\n";
+
+    return 0;
+}
+
+// ============================================================
 // main
 // ============================================================
 int main(int argc, char* argv[])
@@ -895,6 +984,10 @@ int main(int argc, char* argv[])
     else if (cmd == "db-usage")
     {
         return cmdDbUsage(argc, argv);
+    }
+    else if (cmd == "db-health")
+    {
+        return cmdDbHealth(argc, argv);
     }
     else if (cmd == "-h" || cmd == "--help")
     {
