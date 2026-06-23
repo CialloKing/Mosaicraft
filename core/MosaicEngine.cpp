@@ -1633,13 +1633,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "  Diagnosis report: " << rptPath << "\n";
         }
 
-        // 热力图
-        std::string heatPath = outPath;
-        auto dotPos = heatPath.rfind('.');
-        if (dotPos != std::string::npos)
-            heatPath = heatPath.substr(0, dotPos) + "_heatmap.png";
-        else
-            heatPath += "_heatmap.png";
+        // 热力图（统一放在 _analysis 目录）
+        std::string heatPath = anaDir + "/heatmap.png";
 
         double sMin = sortedScores.front(), sRange = sortedScores.back() - sMin;
         if (sRange < 0.001) sRange = 0.001;
@@ -1778,7 +1773,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
             html << "</div>\n";
 
-            html << "<p>Heatmap: <a href=\"" << heatPath << "\">" << heatPath << "</a></p>\n";
+            html << "<p>Heatmap: <a href=\"heatmap.png\">heatmap.png</a></p>\n";
             html << "</body></html>";
             html.close();
             std::cout << "  HTML report: " << htmlPath << "\n";
