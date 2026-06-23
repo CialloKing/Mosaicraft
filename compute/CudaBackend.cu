@@ -509,19 +509,26 @@ bool uploadLibrary(GpuLibrary& lib,
                    const float* h_lbp, const int* h_use, int N)
 {
     if (N <= 0) return false;
+    lib.count = 0;  // 先清零，失败时 freeLibrary 不会释放垃圾指针
+
+    #define CUDA_ALLOC(p, size) \
+        if (cudaMalloc(&p, size) != cudaSuccess) { freeLibrary(lib); return false; }
+    #define CUDA_UPLOAD(p, h, size) \
+        if (cudaMemcpy(p, h, size, cudaMemcpyHostToDevice) != cudaSuccess) { freeLibrary(lib); return false; }
+
+    CUDA_ALLOC(lib.d_lab,  N * 3 * sizeof(double));
+    CUDA_ALLOC(lib.d_grid, N * 192 * sizeof(float));
+    CUDA_ALLOC(lib.d_tiny, N * 256);
+    CUDA_ALLOC(lib.d_edge, N * sizeof(double));
+    CUDA_ALLOC(lib.d_lbp,  N * 256 * sizeof(float));
+    CUDA_ALLOC(lib.d_use,  N * sizeof(int));
+    CUDA_UPLOAD(lib.d_lab,  h_lab,  N * 3 * sizeof(double));
+    CUDA_UPLOAD(lib.d_grid, h_grid, N * 192 * sizeof(float));
+    CUDA_UPLOAD(lib.d_tiny, h_tiny, N * 256);
+    CUDA_UPLOAD(lib.d_edge, h_edge, N * sizeof(double));
+    CUDA_UPLOAD(lib.d_lbp,  h_lbp,  N * 256 * sizeof(float));
+    CUDA_UPLOAD(lib.d_use,  h_use,  N * sizeof(int));
     lib.count = N;
-    cudaMalloc(&lib.d_lab,  N * 3 * sizeof(double));
-    cudaMalloc(&lib.d_grid, N * 192 * sizeof(float));
-    cudaMalloc(&lib.d_tiny, N * 256);
-    cudaMalloc(&lib.d_edge, N * sizeof(double));
-    cudaMalloc(&lib.d_lbp,  N * 256 * sizeof(float));
-    cudaMalloc(&lib.d_use,  N * sizeof(int));
-    cudaMemcpy(lib.d_lab,  h_lab,  N * 3 * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(lib.d_grid, h_grid, N * 192 * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(lib.d_tiny, h_tiny, N * 256, cudaMemcpyHostToDevice);
-    cudaMemcpy(lib.d_edge, h_edge, N * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(lib.d_lbp,  h_lbp,  N * 256 * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(lib.d_use,  h_use,  N * sizeof(int), cudaMemcpyHostToDevice);
     return true;
 }
 
