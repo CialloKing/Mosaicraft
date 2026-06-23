@@ -995,6 +995,14 @@ static int cmdDbHealth(int argc, char* argv[])
 int main(int argc, char* argv[])
 {
     srand(static_cast<unsigned>(time(nullptr)) ^ static_cast<unsigned>(reinterpret_cast<uintptr_t>(&argc)));
+
+    // Windows: argv 使用系统 ANSI 编码（中文系统为 GBK），转为 UTF-8 原地替换
+    static std::vector<std::string> utf8Args(argc);
+    for (int i = 0; i < argc; ++i)
+    {
+        utf8Args[i] = localToUtf8(argv[i]);
+        argv[i] = &utf8Args[i][0];
+    }
     if (argc < 2)
     {
         printHelp();

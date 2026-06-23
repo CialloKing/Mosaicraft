@@ -52,6 +52,31 @@ inline std::string pathToUtf8(const std::filesystem::path& p)
 // fs::path(string) on Windows uses ACP (e.g. GBK), corrupting
 // non-ASCII. This converts via wide chars first.
 // ============================================================
+
+// ============================================================
+// localToUtf8: 系统本地编码(std::string from argv) → UTF-8
+// ============================================================
+#ifdef _WIN32
+inline std::string localToUtf8(const std::string& local)
+{
+    if (local.empty()) return {};
+    int wlen = MultiByteToWideChar(CP_ACP, 0, local.c_str(), -1, nullptr, 0);
+    if (wlen <= 0) return local;
+    std::wstring wstr(wlen, L'\0');
+    MultiByteToWideChar(CP_ACP, 0, local.c_str(), -1, &wstr[0], wlen);
+    int ulen = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (ulen <= 0) return local;
+    std::string result(ulen, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &result[0], ulen, nullptr, nullptr);
+    while (!result.empty() && result.back() == '\0') result.pop_back();
+    return result;
+}
+#else
+inline std::string localToUtf8(const std::string& local) { return local; }
+#endif
+
+// ============================================================
+// u8path: UTF-8 std::string → std::filesystem::path
 inline std::filesystem::path u8path(const std::string& utf8)
 {
 #ifdef _WIN32
