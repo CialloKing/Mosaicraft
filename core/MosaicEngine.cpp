@@ -1697,6 +1697,28 @@ bool MosaicEngine::generate(const std::string& targetPath,
             html << "<tr><th>Score Max</th><td class=\"warn\">" << scoreMax << "</td></tr>\n";
             html << "</table>\n";
 
+            // Score 分布柱状图
+            {
+                int histBins[10] = {0};
+                for (double s : analyzeScores) {
+                    int bi = static_cast<int>(s * 30);
+                    if (bi < 0) bi = 0; if (bi > 9) bi = 9;
+                    histBins[bi]++;
+                }
+                int histMax = 1; for (int h : histBins) if (h > histMax) histMax = h;
+                html << "<h2>Score Distribution</h2>\n";
+                html << "<div style=\"font-family:monospace;font-size:12px;line-height:1.4\">\n";
+                for (int i = 0; i < 10; ++i) {
+                    int w = (int)(60.0 * histBins[i] / histMax);
+                    double lo = i * 0.033;
+                    html << "<span style=\"color:#888\">" << std::fixed << std::setprecision(2) << lo << "</span> "
+                         << "<span style=\"background:#e94560;display:inline-block;width:" << w << "px;height:12px\" "
+                         << "title=\"" << histBins[i] << " tiles\"></span> "
+                         << histBins[i] << "<br>\n";
+                }
+                html << "</div>\n";
+            }
+
             // 多样性
             html << "<h2>Diversity</h2><table>\n";
             html << "<tr><th>Unique Images</th><td>" << useCount.size() << " / " << n << "</td></tr>\n";

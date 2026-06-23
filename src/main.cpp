@@ -5,6 +5,7 @@
 #include "core/FeatureUtils.h"
 #include "core/ImageNormalizer.h"
 #include "core/MosaicEngine.h"
+#include <unordered_set>
 #include "core/UnicodeIO.h"
 #include "compute/CudaBackend.h"
 #include "compute/FeatureExtractorCuda.h"
@@ -610,7 +611,7 @@ static int cmdInspect(int argc, char* argv[])
     for (float v : lbp) { if (v > 0) lbpEntropy -= v * std::log2(v); }
     std::cout << lbpEntropy << std::endl;
 
-    // 鏌ヨ�鏁版嵁搴?
+    // 鏌ヨ??鏁版嵁搴?
     Database db(dbPath);
     if (db.isOpen())
     {
@@ -622,7 +623,7 @@ static int cmdInspect(int argc, char* argv[])
                   << " (" << std::setprecision(1) << (100.0 * candidates.size() / total) << "% of library)"
                   << std::endl;
 
-        // 缁熻� L 鍒嗗竷锛堜粠 allRecords锛?
+        // 缁熻?? L 鍒嗗竷锛堜粠 allRecords锛?
         auto all = db.allRecords();
         double minL = 255, maxL = 0, sumL = 0;
         for (const auto& r : all)
@@ -651,7 +652,7 @@ static int cmdInspect(int argc, char* argv[])
 }
 
 // ============================================================
-// db-stats 瀛愬懡浠わ細杈撳嚭鍥惧簱缁熻�淇℃伅
+// db-stats 瀛愬懡浠わ細杈撳嚭鍥惧簱缁熻??淇℃伅
 // ============================================================
 static int cmdDbStats(int argc, char* argv[])
 {
@@ -690,7 +691,7 @@ static int cmdDbStats(int argc, char* argv[])
         sumL += r.avgL; sumA += r.avgA; sumB += r.avgB;
     }
 
-    // 浜�害鍒嗗竷
+    // 浜??害鍒嗗竷
     int dark=0, mid=0, bright=0;
     for (const auto& r : all)
     {
@@ -713,7 +714,7 @@ static int cmdDbStats(int argc, char* argv[])
               << "%) mid=" << mid << " (" << (100.0*mid/total)
               << "%) bright=" << bright << " (" << (100.0*bright/total) << "%)\n";
 
-    // 浜�害鐩存柟鍥?(8 bins: 0-32, 32-64, 64-96, 96-128, 128-160, 160-192, 192-224, 224-256)
+    // 浜??害鐩存柟鍥?(8 bins: 0-32, 32-64, 64-96, 96-128, 128-160, 160-192, 192-224, 224-256)
     int hist[8] = {0};
     for (const auto& r : all)
     {
@@ -768,7 +769,7 @@ static int cmdDbPurge(int argc, char* argv[])
     {
         if (!r.filePath.empty() && !std::filesystem::exists(r.filePath))
         {
-            // 鍚屾�鍒犻櫎瀛ゅ効鐗瑰緛鏂囦欢
+            // 鍚屾??鍒犻櫎瀛ゅ効鐗瑰緛鏂囦欢
             if (!r.tinyPath.empty() && std::filesystem::exists(r.tinyPath))
                 std::filesystem::remove(r.tinyPath);
             if (!r.histPath.empty() && std::filesystem::exists(r.histPath))
@@ -792,6 +793,7 @@ static int cmdDbUsage(int argc, char* argv[])
     std::string dbPath = "mosaicraft.db";
     int limit = 50;
     std::string exportDir;
+    bool showUnused = false;
 
     for (int i = 2; i < argc; ++i)
     {
@@ -800,6 +802,8 @@ static int cmdDbUsage(int argc, char* argv[])
             dbPath = argv[++i];
         else if (arg == "-n" && i + 1 < argc)
             limit = std::atoi(argv[++i]);
+        else if (arg == "--unused")
+            showUnused = true;
         else if ((arg == "--export" || arg == "-o") && i + 1 < argc)
             exportDir = argv[++i];
     }
@@ -823,6 +827,30 @@ static int cmdDbUsage(int argc, char* argv[])
                   << std::setw(8) << id << "  "
                   << std::setw(6) << runs << "  "
                   << std::setw(8) << tiles << "\n";
+    }
+
+    // --unused: 列出从未使用的图片
+    if (showUnused)
+    {
+        auto allRecs = db.allRecords();
+        auto used = db.topUsedImages(999999);
+        std::unordered_set<int> usedIds;
+        for (const auto& [id, runs, tiles] : used) usedIds.insert(id);
+
+        int unused = 0;
+        for (const auto& r : allRecs)
+        {
+            if (!usedIds.count(r.id))
+            {
+                if (unused < 50)  // 只显示前50个
+                    std::cout << "  unused: id=" << r.id << "  " << r.filePath << "\n";
+                unused++;
+            }
+        }
+        std::cout << "\n  Total unused: " << unused << " / " << allRecs.size()
+                  << " (" << std::fixed << std::setprecision(1) << (100.0*unused/allRecs.size()) << "%)\n";
+        if (unused > 0 && exportDir.empty())
+            std::cout << "  Tip: use --export <dir> to export used images\n";
     }
 
     // 导出：按全局 tile 使用量排序，复制归一化图到导出目录
