@@ -53,6 +53,8 @@ static std::string hashMat(const cv::Mat& mat)
 }
 
 // 用法
+static constexpr const char* VERSION = "1.9.0";
+
 static void printHelp()
 {
     std::cout << R"(Mosaicraft �?Image mosaic generator
@@ -961,6 +963,11 @@ int main(int argc, char* argv[])
 
     std::string cmd = argv[1];
 
+    if (cmd == "-V" || cmd == "--version")
+    {
+        std::cout << "Mosaicraft " << VERSION << "\n";
+        return 0;
+    }
     if (cmd == "build")
     {
         return cmdBuild(argc, argv);
