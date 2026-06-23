@@ -1,4 +1,4 @@
-# Mosaicraft v1.9.0
+# Mosaicraft v1.10.0
 
 GPU 加速的照片马赛克拼贴生成器。将数千张图片建立特征索引，目标图分割为小格后逐格匹配图库中最相似的图片，拼接输出超大分辨率马赛克。
 
@@ -23,7 +23,7 @@ mosaicraft mosaic -i target.jpg -d ./lib.db -o output.jpg  # 生成
 - **智能格式** — 默认 JPG，超限自动 TIFF/等比缩放
 - **参数自适应** — candidates 默认 150，neighborWindow O(√N) 动态缩放
 - **Deep Zoom** — 金字塔 + HTML viewer
-- **Unicode 路径** — 日文/中文文件名
+- **Unicode 路径** — 中文或其他语言文件名
 
 ## 安装
 
@@ -103,7 +103,6 @@ mosaicraft mosaic -i p.jpg -d lib.db --benchmark
 | `--quality` | 95 | JPEG/WebP 质量 |
 | `--candidates` | 150 | ANN 候选数 |
 | `--neighbor-window` | auto | 邻域窗口（默认 O(√N) 动态） |
-| `--quality` | 95 | JPEG/WebP 质量 |
 | `--lab/grid/tiny/edge/lbp-weight` | 0.20/0.45/0.25/0.05/0.05 | 特征权重 |
 | `--penalty` | 0.01 | 复用惩罚 |
 | `--color-adjust` | 关闭 | LAB L 微调 |
@@ -149,7 +148,7 @@ mosaicraft mosaic -i p.jpg -d lib.db --analyze
 
 输出：分数统计(P50/P90/P99)、特征贡献%、ANN 召回率、复用统计、Grid 8×8 贡献热图、空间权重代码、最差 20 tile 导出(PNG)、热力图。
 
-## 性能 (46K 图库, RTX 4060)
+## 性能表现 (46K 图库, RTX 4060)
 
 | 目标图 | 原图 | Tiles | 输出 | Score | Total |
 |--------|------|-------|------|-------|-------|
@@ -191,21 +190,6 @@ Mosaicraft/
 ├── CMakeLists.txt
 └── README.md
 ```
-│   ├── FeatureExtractor      # 特征提取
-│   ├── FeatureIndex (HNSW)   # ANN 索引+持久化
-│   ├── FeatureUtils          # 距离计算 (含空间权重)
-│   ├── FeaturePack           # 二进制缓存
-│   ├── BigTiffWriter         # BigTIFF
-│   ├── DeepZoomWriter        # 金字塔+HTML
-│   ├── ImageCache            # 分片缓存
-│   ├── ImageNormalizer       # 归一化
-│   ├── Database              # SQLite
-│   └── hnswlib/              # HNSW (vendored)
-├── compute/                  # CUDA
-│   ├── CudaBackend           # GPU 评分
-│   └── FeatureExtractorCuda  # GPU 特征提取
-└── docs/ENCYCLOPEDIA.md      # 项目百科全书
-```
 
 ## 路线图
 
@@ -217,8 +201,12 @@ Mosaicraft/
 | v1.1 | --analyze 质量评估体系 | ✅ |
 | v1.4 | Spatial Weight Map (Score -7.4%) | ✅ |
 | v1.5 | db-stats 覆盖诊断 | ✅ |
-| v1.6 | candidates 200→30 (2× 加速)、CPU=GPU、诊断报告 | ✅ |
-| v2.0 | GUI、增量建库、百万图库 | 计划中 |
+| v1.6 | candidates sweep (150最优)、CPU=GPU | ✅ |
+| v1.7 | GPU Features (43×加速)、sqrt移除 | ✅ |
+| v1.8 | 增量建库、动态Window、HTML报告 | ✅ |
+| v1.9 | db-health 健康度诊断 | ✅ |
+| v1.10 | WorstTile对照、--unused、Unicode全链路 | ✅ |
+| v2.0 | Avalonia GUI | 计划中 |
 
 ## 许可证
 
