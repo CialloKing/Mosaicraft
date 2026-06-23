@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书
 
-> 最后更新：2026-06-21 | 版本：v1.6
+> 最后更新：2026-06-23 | 版本：v1.8
 
 ## 目录
 
@@ -154,6 +154,9 @@ mosaicraft build -i <dir> [-o <dir>] [-d <path>] [-t <n>]
 | `-o --output <dir>` | `normalized` | 归一化输出目录 |
 | `-d --db <path>` | `mosaicraft.db` | 数据库路径 |
 | `-t --threads <n>` | 自动 | 归一化线程数 |
+| `--append` | — | 增量建库（仅新增图片） |
+| `-r --recursive` | — | 递归扫描子目录 |
+| `--normalize-only` | — | 仅归一化不建库（初筛用） |
 
 ### mosaic
 
@@ -323,7 +326,9 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | v1.4 | **Spatial Weight Map**（首个数据驱动质量优化）、最差tile导出 | **0.1524 (-7.4%)** |
 | v1.5 | 覆盖缺口分析、权重自动生成 | 0.1524 |
 | v1.6 | **candidates 200→30** (ANN 4.8×, Total 2×, Score -17.6%); CPU=GPU; 诊断报告 | **0.1256** |
-| v2.0 | Tile Streaming、GUI、百万图库 | 计划中 |
+| v1.7 | **GPU Features** (96s→2.2s, 43×); sqrt移除 (Selection 88s→15s); Grid去重优化 | 0.0993 |
+| v1.8 | 数据库增/减量; neighborWindow动态O(√N); `--analyze` HTML报告; `db-usage` 全局统计 | 0.0993 |
+| v2.0 | Tile Streaming、Avalonia UI、百万图库 | 计划中 |
 
 ### Bug 历史（精选）
 
