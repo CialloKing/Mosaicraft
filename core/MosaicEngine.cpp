@@ -1754,6 +1754,30 @@ bool MosaicEngine::generate(const std::string& targetPath,
                      << "</td><td>" << std::setprecision(1) << (100.0*freqDist[i]/n) << "%</td></tr>\n";
             html << "</table>\n";
 
+            // Worst Tiles ∂‘’’Õº
+            html << "<h2>Worst Tiles Gallery (Top 10)</h2>\n";
+            html << "<div style=\"display:grid;grid-template-columns:repeat(5,1fr);gap:8px\">\n";
+            constexpr int kShowWorst = 10;
+            for (int k = 0; k < std::min(kShowWorst, n); ++k)
+            {
+                int ti = worstIdx[k].second;
+                int tx = ti % tilesX, ty = ti / tilesX;
+                const char* cn = (ti < (int)analyzeCat.size() && analyzeCat[ti]==0)?"S":
+                                 (ti < (int)analyzeCat.size() && analyzeCat[ti]==1)?"E":
+                                 (ti < (int)analyzeCat.size() && analyzeCat[ti]==2)?"T":"N";
+                const char* cnFull = cn[0]=='S'?"Smooth":cn[0]=='E'?"Edge":cn[0]=='T'?"Texture":"Normal";
+                html << "<div style=\"background:#0f3460;padding:4px;text-align:center\">\n";
+                html << "<img src=\"worst_" << std::setfill('0') << std::setw(2) << k
+                     << "_s" << std::fixed << std::setprecision(4) << worstIdx[k].first
+                     << "_" << cn << "_tile.png\" style=\"width:90px;height:160px\"><br>\n";
+                html << "<img src=\"worst_" << std::setfill('0') << std::setw(2) << k
+                     << "_match.png\" style=\"width:90px;height:160px;margin-top:2px\"><br>\n";
+                html << "<span style=\"font-size:10px;color:#aaa\">(" << tx << "," << ty << ") "
+                     << std::setprecision(3) << worstIdx[k].first << " " << cnFull << "</span>\n";
+                html << "</div>\n";
+            }
+            html << "</div>\n";
+
             html << "<p>Heatmap: <a href=\"" << heatPath << "\">" << heatPath << "</a></p>\n";
             html << "</body></html>";
             html.close();
