@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书
 
-> 最后更新：2026-06-23 | 版本：v1.8
+> 最后更新：2026-06-23 | 版本：v1.9.0-dev
 
 ## 目录
 
@@ -313,22 +313,29 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 
 ## 7. 版本演进
 
+采用 [SemVer](https://semver.org)：`MAJOR.MINOR.PATCH`
+
 | 版本 | 关键变更 | Score |
 |------|----------|-------|
-| v0.4 | inspect 命令 | — |
-| v0.5 | ANN hnswlib 候选选择 | — |
-| v0.6 | DeepZoom HTML、颜色校正、benchmark、topn-random | — |
-| v0.7 | FeaturePack 缓存 (50K→2 fread)、BigTIFF、ANN 持久化 | — |
-| v0.8 | ImageCache、8×8 Grid (192维)、智能格式切换、自适应权重 | — |
-| v1.0 | --upscale、--output-tile、WebP 支持、默认 tile 180×320 | — |
-| v1.1 | `--analyze` 质量评估体系（分数统计/特征贡献/复用率/热力图） | 0.1646 |
-| v1.3 | Grid 贡献分析(8×8热图)、Candidate sweep(30≈200)、db-stats | — |
-| v1.4 | **Spatial Weight Map**（首个数据驱动质量优化）、最差tile导出 | **0.1524 (-7.4%)** |
-| v1.5 | 覆盖缺口分析、权重自动生成 | 0.1524 |
-| v1.6 | **candidates 200→30** (ANN 4.8×, Total 2×, Score -17.6%); CPU=GPU; 诊断报告 | **0.1256** |
-| v1.7 | **GPU Features** (96s→2.2s, 43×); sqrt移除 (Selection 88s→15s); Grid去重优化 | 0.0993 |
-| v1.8 | 数据库增/减量; neighborWindow动态O(√N); `--analyze` HTML报告; `db-usage` 全局统计 | 0.0993 |
-| v2.0 | Tile Streaming、Avalonia UI、百万图库 | 计划中 |
+| 0.4.0 | inspect 命令 | — |
+| 0.5.0 | ANN hnswlib 候选选择 | — |
+| 0.6.0 | DeepZoom HTML、颜色校正、benchmark、topn-random | — |
+| 0.7.0 | FeaturePack 缓存 (50K→2 fread)、BigTIFF、ANN 持久化 | — |
+| 0.8.0 | ImageCache、8×8 Grid (192维)、智能格式切换、自适应权重 | — |
+| 1.0.0 | --upscale、--output-tile、WebP 支持、默认 tile 180×320 | — |
+| 1.1.0 | `--analyze` 质量评估体系（分数统计/特征贡献/复用率/热力图） | 0.1646 |
+| 1.3.0 | Grid 贡献分析(8×8热图)、Candidate sweep(30≈200)、db-stats | — |
+| 1.4.0 | **Spatial Weight Map**（首个数据驱动质量优化）、最差tile导出 | **0.1524** |
+| 1.5.0 | 覆盖缺口分析、权重自动生成 | 0.1524 |
+| 1.6.0 | **candidates sweep**, CPU=GPU, 诊断报告 | **0.1256** |
+| 1.7.0 | **GPU Features** (43×); sqrt移除; Grid去重优化 | 0.0993 |
+| 1.8.0 | 增/减量 DB, neighborWindow 动态, HTML 报告, db-usage | 0.0993 |
+| **1.9.0** | **db-health** 健康度诊断 + 建议 | 0.0993 |
+| 1.10.0 | HTML Report Pro, 打包/安装器, 配置文件 | 计划中 |
+| 1.11.0 | 预设管理, 图库诊断增强 | 计划中 |
+| **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
+
+> v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
 
 ### Bug 历史（精选）
 
