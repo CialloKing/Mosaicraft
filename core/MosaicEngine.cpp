@@ -28,6 +28,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <sstream>
 
 namespace mosaicraft
 {
@@ -145,6 +146,22 @@ bool MosaicEngine::generate(const std::string& targetPath,
     {
         std::cerr << "ERROR: Cannot read target image: " << targetPath << std::endl;
         return false;
+    }
+
+    // 计算目标图内容哈希（像素采样，仅用于改名去重）
+    std::string targetHash;
+    {
+        // 每 100 像素采样 1 个，最多取 10000 像素 × 3 通道 ≈ 30KB
+        int step = std::max(1, (target.rows * target.cols) / 10000);
+        uint64_t h = 0x9e3779b97f4a7c15ULL;
+        const uint8_t* data = target.data;
+        for (int i = 0; i < target.rows * target.cols * 3; i += step * 3)
+        {
+            h ^= static_cast<uint64_t>(data[i]) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+        }
+        std::stringstream ss;
+        ss << std::hex << h;
+        targetHash = ss.str();
     }
 
     // 指定输出尺寸时，先缩放目标图（仅改变 tile 数量，输出 tile 始终原生分辨率）
@@ -1781,7 +1798,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
         // 记录使用统计到 SQLite
         if (db.isOpen() && !useCount.empty())
-            db.recordRunUsage(useCount);
+            db.recordRunUsage(useCount, targetHash, targetPath);
     }
 
     if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);

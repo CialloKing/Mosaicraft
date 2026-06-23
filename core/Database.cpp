@@ -522,19 +522,53 @@ void Database::initUsageStats()
          "total_tiles INTEGER DEFAULT 0,"
          "last_used TEXT,"
          "FOREIGN KEY (image_id) REFERENCES images(id))");
+    // 目标图哈希记录：防止改名后重复计数
+    exec("CREATE TABLE IF NOT EXISTS target_runs ("
+         "target_hash TEXT PRIMARY KEY,"
+         "first_path TEXT,"
+         "run_count INTEGER DEFAULT 0,"
+         "last_used TEXT)");
 }
 
-void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount)
+void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
+                              const std::string& targetHash,
+                              const std::string& targetPath)
 {
     initUsageStats();
+
+    // 检查目标图内容哈希是否已存在（改名去重）
+    bool isNewTarget = true;
+    if (!targetHash.empty()) {
+        std::string checkSql = "SELECT 1 FROM target_runs WHERE target_hash = '"
+                               + targetHash + "'";
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(m_db, checkSql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+            isNewTarget = (sqlite3_step(stmt) != SQLITE_ROW);
+            sqlite3_finalize(stmt);
+        }
+    }
+    // 更新 target_runs
+    if (!targetHash.empty()) {
+        if (isNewTarget)
+            exec("INSERT INTO target_runs (target_hash, first_path, run_count, last_used) "
+                 "VALUES ('" + targetHash + "', '" + targetPath + "', 1, datetime('now'))");
+        else
+            exec("UPDATE target_runs SET run_count = run_count + 1, "
+                 "last_used = datetime('now') WHERE target_hash = '" + targetHash + "'");
+    }
+
+    // 更新图片使用统计
     exec("BEGIN TRANSACTION");
     for (const auto& [imgId, tileCount] : imageUseCount)
     {
+        std::string runsExpr = isNewTarget ? "total_runs + 1" : "total_runs";
         std::string sql = "INSERT INTO usage_stats (image_id, total_runs, total_tiles, last_used) "
-                          "VALUES (" + std::to_string(imgId) + ", 1, " + std::to_string(tileCount)
+                          "VALUES (" + std::to_string(imgId) + ", "
+                          + (isNewTarget ? "1" : "0") + ", "
+                          + std::to_string(tileCount)
                           + ", datetime('now')) "
                           "ON CONFLICT(image_id) DO UPDATE SET "
-                          "total_runs = total_runs + 1, "
+                          "total_runs = " + runsExpr + ", "
                           "total_tiles = total_tiles + " + std::to_string(tileCount)
                           + ", last_used = datetime('now')";
         exec(sql);
