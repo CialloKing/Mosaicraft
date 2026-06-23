@@ -152,10 +152,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::string targetHash;
     {
         // 每 100 像素采样 1 个，最多取 10000 像素 × 3 通道 ≈ 30KB
-        int step = std::max(1, (target.rows * target.cols) / 10000);
+        int64_t totalPixels = static_cast<int64_t>(target.rows) * target.cols;
+        int step = std::max(1LL, totalPixels / 10000);
         uint64_t h = 0x9e3779b97f4a7c15ULL;
         const uint8_t* data = target.data;
-        for (int i = 0; i < target.rows * target.cols * 3; i += step * 3)
+        int64_t totalBytes = totalPixels * 3;
+        for (int64_t i = 0; i < totalBytes; i += step * 3)
         {
             h ^= static_cast<uint64_t>(data[i]) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
         }

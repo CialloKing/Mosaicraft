@@ -538,7 +538,7 @@ void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
 
     // 检查目标图内容哈希是否已存在（改名去重）
     bool isNewTarget = true;
-    if (!targetHash.empty()) {
+    if (!targetHash.empty() && m_db) {
         std::string checkSql = "SELECT 1 FROM target_runs WHERE target_hash = '"
                                + targetHash + "'";
         sqlite3_stmt* stmt = nullptr;
@@ -549,9 +549,15 @@ void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
     }
     // 更新 target_runs
     if (!targetHash.empty()) {
+        // SQL 安全：转义路径中的单引号
+        std::string safePath = targetPath;
+        size_t pos = 0;
+        while ((pos = safePath.find('\'', pos)) != std::string::npos) {
+            safePath.insert(pos, "'"); pos += 2;
+        }
         if (isNewTarget)
             exec("INSERT INTO target_runs (target_hash, first_path, run_count, last_used) "
-                 "VALUES ('" + targetHash + "', '" + targetPath + "', 1, datetime('now'))");
+                 "VALUES ('" + targetHash + "', '" + safePath + "', 1, datetime('now'))");
         else
             exec("UPDATE target_runs SET run_count = run_count + 1, "
                  "last_used = datetime('now') WHERE target_hash = '" + targetHash + "'");
