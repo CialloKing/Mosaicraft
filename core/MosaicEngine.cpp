@@ -25,6 +25,10 @@
 #include <iomanip>
 #include <random>
 #include <iostream>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -1143,7 +1147,22 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
 
         // 单图输出
-        output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
+        // 内存检测：raw > 500MB 且空闲 < 1.5× → 跳过 Mat 分配（流式 TIFF）
+        int64_t rawBytes = static_cast<int64_t>(outW) * outH * 3;
+        bool useStreamTiff = false;
+        if (cfg.outputFormat == "tiff" && rawBytes > 500LL * 1024 * 1024)
+        {
+#ifdef _WIN32
+            MEMORYSTATUSEX mem = { sizeof(mem) };
+            if (GlobalMemoryStatusEx(&mem))
+                useStreamTiff = (mem.ullAvailPhys < static_cast<ULONGLONG>(rawBytes) * 3 / 2);
+#endif
+        }
+        if (useStreamTiff)
+            std::cout << "  (streaming TIFF mode — low memory)" << std::endl;
+
+        if (!useStreamTiff)
+            output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
         std::cout << "  placing tiles (" << nThreads << " threads)..."
                   << std::flush;
         std::atomic<int> placeDone{0};
@@ -1328,14 +1347,43 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // 写入输出
     if (fmt == "tiff")
     {
-        // BigTiffWriter 内部逐行 BGR→RGB，无需全图 cvtColor
-        BigTiffWriter tiff(outPath, outW, outH);
-        if (!tiff.writeMat(output.data, static_cast<int>(output.step)))
+        if (output.empty())
         {
-            std::cerr << "ERROR: BigTiffWriter failed" << std::endl;
-            return false;
+            BigTiffWriter tiff(outPath, outW, outH);
+            std::vector<uint8_t> rowBuf(outW * 3);
+            for (int ty = 0; ty < tilesY; ++ty)
+            {
+                for (int y = 0; y < outTileH; ++y)
+                {
+                    for (int tx = 0; tx < tilesX; ++tx)
+                    {
+                        int ti = ty * tilesX + tx;
+                        if (ti >= totalTiles) continue;
+                        cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
+                        if (m.empty()) continue;
+                        cv::resize(m, m, cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                        cv::Mat tileRow = m.row(y);
+                        std::memcpy(&rowBuf[tx * outTileW * 3], tileRow.data, outTileW * 3);
+                    }
+                    tiff.writeRow(ty * outTileH + y, rowBuf.data());
+                }
+                if (ty % 20 == 0)
+                    std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
+            }
+            tiff.close();
+            matched = totalTiles;
+            std::cout << std::endl;
         }
-        tiff.close();
+        else
+        {
+            BigTiffWriter tiff(outPath, outW, outH);
+            if (!tiff.writeMat(output.data, static_cast<int>(output.step)))
+            {
+                std::cerr << "ERROR: BigTiffWriter failed" << std::endl;
+                return false;
+            }
+            tiff.close();
+        }
     }
     else
     {

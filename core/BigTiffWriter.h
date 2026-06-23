@@ -72,6 +72,15 @@ public:
         return true;
     }
 
+    // 逐行写入 BGR→RGB（流式用，无需完整 cv::Mat）
+    bool writeRow(int y, const uint8_t* bgrRow)
+    {
+        cv::Mat rowRGB;
+        cv::Mat rowBGR(1, m_w, CV_8UC3, const_cast<uint8_t*>(bgrRow));
+        cv::cvtColor(rowBGR, rowRGB, cv::COLOR_BGR2RGB);
+        return TIFFWriteScanline(m_tif, rowRGB.data, y, 0) >= 0;
+    }
+
     void close() { if (m_tif) { TIFFClose(m_tif); m_tif = nullptr; } }
 
 private:
