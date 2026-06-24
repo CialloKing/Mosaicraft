@@ -1165,29 +1165,36 @@ bool MosaicEngine::generate(const std::string& targetPath,
         {
             std::cout << "  (streaming TIFF mode)" << std::endl;
             // 跳过 placement，直接流式 TIFF 写出
-            BigTiffWriter tiff(outputPath, outW, outH, true);  // streaming mode
+            BigTiffWriter tiff(outputPath, outW, outH, true);
             std::vector<uint8_t> rowBuf(outW * 3);
+            cv::Mat tileRow;  // 当前行的 tile 缓存
             for (int ty = 0; ty < tilesY; ++ty)
             {
+                // 预读取本行所有 tile（320 行高 × tilesX 宽）
+                std::vector<cv::Mat> tileRowImgs(tilesX);
+                for (int tx = 0; tx < tilesX; ++tx)
+                {
+                    int ti = ty * tilesX + tx;
+                    if (ti >= totalTiles) continue;
+                    cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
+                    if (!m.empty())
+                        cv::resize(m, tileRowImgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                }
                 for (int y = 0; y < outTileH; ++y)
                 {
                     for (int tx = 0; tx < tilesX; ++tx)
                     {
-                        int ti = ty * tilesX + tx;
-                        if (ti >= totalTiles) continue;
-                        cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                        if (m.empty()) continue;
-                        cv::resize(m, m, cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
-                        cv::Mat tileRow = m.row(y);
-                        std::memcpy(&rowBuf[tx * outTileW * 3], tileRow.data, outTileW * 3);
+                        if (tileRowImgs[tx].empty()) continue;
+                        cv::Mat tr = tileRowImgs[tx].row(y);
+                        std::memcpy(&rowBuf[tx * outTileW * 3], tr.data, outTileW * 3);
                     }
                     tiff.writeRow(ty * outTileH + y, rowBuf.data());
                 }
-                if (ty % 20 == 0)
-                    std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
+                if (ty % 50 == 0)
+                    std::cout << "\r  streaming row " << (ty * outTileH) << "/" << outH << std::flush;
             }
             tiff.close();
-            std::cout << std::endl;
+            std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
             std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
                       << " / " << totalTiles << " tiles)" << std::endl;
             printBenchmark("single");
