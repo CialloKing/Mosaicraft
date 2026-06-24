@@ -42,6 +42,8 @@ public:
         }
         // 直接写行——libpng 错误会 longjmp 回构造的 setjmp，触发异常
         png_write_row(m_png, m_buf.data());
+        m_rowsWritten++;
+        if ((m_rowsWritten % 1000) == 0) png_write_flush(m_png);
         return true;
     }
 
@@ -54,7 +56,7 @@ public:
 
 private:
     FILE* m_fp=nullptr; png_structp m_png=nullptr; png_infop m_info=nullptr;
-    int m_w, m_h; std::vector<uint8_t> m_buf;
+    int m_w, m_h; int m_rowsWritten=0; std::vector<uint8_t> m_buf;
 };
 
 }
