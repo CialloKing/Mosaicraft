@@ -1159,6 +1159,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             if (GlobalMemoryStatusEx(&mem))
                 useStreamTiff = (mem.ullAvailPhys < static_cast<ULONGLONG>(rawBytes) * 3 / 2);
 #endif
+            // PNG >200MB 始终流式（OpenCV PNG 编码超大图不稳定）
+            if (cfg.outputFormat == "png") useStreamTiff = true;
         }
         if (useStreamTiff)
             std::cout << "  (streaming TIFF mode — low memory)" << std::endl;
@@ -1188,10 +1190,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
                             cv::Mat tr = imgs[tx].row(y);
                             std::memcpy(&rowBuf[tx * outTileW * 3], tr.data, outTileW * 3);
                         }
-                        png.writeRow(ty * outTileH + y, rowBuf.data());
+                        if (!png.writeRow(ty * outTileH + y, rowBuf.data()))
+                        {
+                            std::cerr << "\n  PNG writeRow failed at row " << (ty * outTileH + y) << std::endl;
+                            goto png_abort;
+                        }
                     }
                     if (ty % 10 == 0) std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
                 }
+            png_abort:
                 png.close();
                 std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
                 std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles

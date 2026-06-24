@@ -55,6 +55,7 @@ public:
     bool writeRow(int y, const uint8_t* bgrRow)
     {
         if (!m_png) return false;
+        if (setjmp(m_jmpBuf)) return false;  // libpng 错误 → 返回 false
         m_rowBuf.resize(m_w * 3);
         // BGR → RGB
         for (int x = 0; x < m_w; ++x) {
@@ -82,6 +83,7 @@ private:
     png_structp m_png = nullptr;
     png_infop m_info = nullptr;
     int m_w, m_h;
+    jmp_buf m_jmpBuf;
     std::vector<uint8_t> m_rowBuf;
 };
 
