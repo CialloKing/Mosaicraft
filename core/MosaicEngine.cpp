@@ -332,9 +332,20 @@ bool MosaicEngine::generate(const std::string& targetPath,
             cfg.outputFormat = "tiff";
             std::cout << "  (auto-switched to TIFF: output exceeds JPEG 65500px limit)" << std::endl;
         }
+        else if (cfg.outputFormat == "png")
+        {
+            // PNG 和 JPG 一样 65500px 限制 → 等比缩放
+            double scaleW = (tilesX * outTileW > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesX * outTileW) : 1.0;
+            double scaleH = (tilesY * outTileH > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesY * outTileH) : 1.0;
+            double scale = std::min(scaleW, scaleH);
+            outTileW = std::max(1, static_cast<int>(outTileW * scale));
+            outTileH = std::max(1, static_cast<int>(outTileH * scale));
+            std::cout << "  (auto-scaled tile " << outTileW << "x" << outTileH
+                      << " to fit PNG 65500px limit)" << std::endl;
+        }
         else if (cfg.outputFormat != "tiff")
         {
-            // 非 jpg 非 tiff 超限 → 自动切 tiled
+            // 其他格式超限 → 自动切 tiled
             cfg.tiledOutput = true;
             std::cout << "  (auto-switched to tiled: output exceeds 65500px encoder limit)" << std::endl;
         }
