@@ -1185,6 +1185,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                           }});
                       for (auto& w : ld) w.join(); }
                     for (int y = 0; y < outTileH; ++y) {
+                        std::memset(rowBuf.data(), 0, outW * 3);  // ÇåÁã·À²ÐÁô
                         for (int tx = 0; tx < tilesX; ++tx) {
                             if (imgs[tx].empty()) continue;
                             cv::Mat tr = imgs[tx].row(y);
