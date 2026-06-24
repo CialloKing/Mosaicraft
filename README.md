@@ -16,6 +16,8 @@ mosaicraft mosaic -i target.jpg -d ./lib.db -o output.jpg  # 生成
 - **ANN + GPU 四层检索** — hnswlib 粗筛 → GPU 精排 → Selection 去重 → 16 线程贴图
 - **GPU 特征提取** — 复用 featureKernel 批量处理, Features 96s→2.2s (43×)
 - **BigTIFF** — libtiff 直写，突破 65500px，实测 50040×75200
+- **PNG 流式** — libpng 逐行写盘，内存恒定 ~162KB，彻底消除 OOM，支持 `--png-level 1-9`
+- **WebP** — 自动等比缩放至 16383px，体积最小（93MB vs 1150MB PNG）
 - **质量分析** — `--analyze` 量化报告 + 热力图 + HTML 报告 + 最差 tile 导出
 - **图库诊断** — `db-stats` 亮度直方图 + 覆盖缺口；`db-usage` 全局热点图统计
 - **数据库管理** — `db-purge` 减量清理；`build --append` 增量建库；`build --recursive` 递归扫描
@@ -100,7 +102,8 @@ mosaicraft mosaic -i p.jpg -d lib.db --benchmark
 | `--out-w/h` | 原图 | 目标图缩放到指定分辨率 |
 | `--upscale <n>` | 关闭 | 先放大原图 n× 再分块 |
 | `--format` | 扩展名 | jpg/png/webp/tiff |
-| `--quality` | 95 | JPEG/WebP 质量 |
+| `--png-level` | 1 | PNG 压缩级别 1-9（1=最快 9=最小） |
+| `--quality` | 100 | JPEG/WebP 质量 |
 | `--candidates` | 150 | ANN 候选数 |
 | `--neighbor-window` | auto | 邻域窗口（默认 O(√N) 动态） |
 | `--lab/grid/tiny/edge/lbp-weight` | 0.20/0.45/0.25/0.05/0.05 | 特征权重 |
@@ -119,8 +122,8 @@ mosaicraft mosaic -i p.jpg -d lib.db --benchmark
 |------|------|----------|
 | JPG (默认) | 65500px | 未显式→TIFF；显式`--format jpg`→等比缩放 |
 | TIFF | 无限制 | — |
-| WebP | 16383px | 等比缩放 |
-| PNG | **无限制** | 空闲内存不足自动流式 |
+| WebP | 16383px | 等比缩放（超 65500px 也已修复） |
+| PNG | **无限制** | 逐行流式写入，内存恒定 ~162KB，`--png-level` 控制压缩级别 |
 
 ### 使用统计
 
@@ -150,20 +153,15 @@ mosaicraft mosaic -i p.jpg -d lib.db --analyze
 
 ## 性能表现 (46K 图库, RTX 4060)
 
-| 目标图 | 原图 | Tiles | 输出 | Score | Total |
-|--------|------|-------|------|-------|-------|
-| target5.png | 1134×1712 | 13,482 | 22680×34240 JPG | 0.110 | 19s |
-| target10.png | 1503×2286 | 22,879 | 30060×43840 JPG | 0.099 | 36s |
-| target8.jpg | 1584×2224 | 24,464 | 31680×44480 JPG | **0.092** | 40s |
-| target3.jpg | 1593×1836 | 20,355 | 31860×36800 JPG | 0.094 | 29s |
-| target4.jpg | 1782×3008 | 37,224 | 35640×60160 JPG | 0.108 | 53s |
-| target7.jpg | 2007×3008 | 41,924 | 40140×60160 JPG | 0.141 | 60s |
-| target.png | 2500×3750 | 65,330 | 43368×65330 JPG* | 0.121 | 82s |
-| target9.jpg | — | 86,925 | 39345×65265 JPG* | 0.097 | 100s |
-| target6.png | — | 93,600 | 38064×65400 JPG* | 0.098 | 106s |
-| target2.png | — | 93,900 | 35100×65417 JPG* | 0.105 | 105s |
-
-`*` = JPG 超 65500px 自动等比缩放。平均 1.3ms/tile。
+| 目标图 | 原图 | Tiles | 输出 | 格式 | 耗时 |
+|--------|------|-------|------|------|------|
+| target5.png | 1134×1712 | 13,482 | 22680×34240 | JPG q100 | 19s |
+| target5.png | 1134×1712 | 13,482 | 22680×34240 | PNG z1 | 72s |
+| target5.png | 1134×1712 | 13,482 | 22680×34240 | WebP | — |
+| target10.png | 1503×2286 | 22,879 | 30060×43840 | JPG q100 | 36s |
+| target10.png | 1503×2286 | 22,879 | 30060×43840 | PNG z1 | 395s |
+| target2.png | 2700×5000 | 93,900 | 54000×100160 | PNG z1 | — |
+| target9.jpg | 2740×4560 | 86,925 | 54900×91200 | PNG z1 | — |
 
 ## 项目结构
 
