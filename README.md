@@ -120,7 +120,7 @@ mosaicraft mosaic -i p.jpg -d lib.db --benchmark
 | JPG (默认) | 65500px | 未显式→TIFF；显式`--format jpg`→等比缩放 |
 | TIFF | 无限制 | — |
 | WebP | 16383px | 等比缩放 |
-| PNG | 65500px | 自动 tiled |
+| PNG | **无限制** | 空闲内存不足自动流式 |
 
 ### 使用统计
 
