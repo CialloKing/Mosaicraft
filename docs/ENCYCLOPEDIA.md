@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书
 
-> 最后更新：2026-06-23 | 版本：v1.9.0-dev
+> 最后更新：2026-06-24 | 版本：v1.10.0
 
 ## 目录
 
@@ -331,7 +331,8 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.7.0 | **GPU Features** (43×); sqrt移除; Grid去重优化 | 0.0993 |
 | 1.8.0 | 增/减量 DB, neighborWindow 动态, HTML 报告, db-usage | 0.0993 |
 | **1.9.0** | **db-health** 健康度诊断 + 建议 | 0.0993 |
-| 1.10.0 | HTML Report Pro, 打包/安装器, 配置文件 | 计划中 |
+| **1.10.0** | **流式TIFF/PNG** (超大图免全图Mat, 17×加速), HTML WorstTile, 回归测试 | 0.0993 |
+| 1.11.0 | HTML Report Pro, 打包/安装器, 配置文件 | 计划中 |
 | 1.11.0 | 预设管理, 图库诊断增强 | 计划中 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
