@@ -314,7 +314,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int outTileW = cfg.nativeTileW;
     int outTileH = cfg.nativeTileH;
     const int MAX_DIM = 65500;
-    if (!cfg.tiledOutput && (tilesX * outTileW > MAX_DIM || tilesY * outTileH > MAX_DIM))
+    if (!cfg.tiledOutput && cfg.outputFormat != "png"
+        && (tilesX * outTileW > MAX_DIM || tilesY * outTileH > MAX_DIM))
     {
         if (cfg.outputFormat == "jpg" && cfg.formatExplicit)
         {
@@ -332,17 +333,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
             // 未显式指定格式，默认 jpg 超限 → 自动切 tiff
             cfg.outputFormat = "tiff";
             std::cout << "  (auto-switched to TIFF: output exceeds JPEG 65500px limit)" << std::endl;
-        }
-        else if (cfg.outputFormat == "png")
-        {
-            // PNG 和 JPG 一样 65500px 限制 → 等比缩放
-            double scaleW = (tilesX * outTileW > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesX * outTileW) : 1.0;
-            double scaleH = (tilesY * outTileH > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesY * outTileH) : 1.0;
-            double scale = std::min(scaleW, scaleH);
-            outTileW = std::max(1, static_cast<int>(outTileW * scale));
-            outTileH = std::max(1, static_cast<int>(outTileH * scale));
-            std::cout << "  (auto-scaled tile " << outTileW << "x" << outTileH
-                      << " to fit PNG 65500px limit)" << std::endl;
         }
         else if (cfg.outputFormat != "tiff")
         {
