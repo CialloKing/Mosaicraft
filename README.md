@@ -206,7 +206,7 @@ Mosaicraft/
 | v1.8 | 增量建库、动态Window、HTML报告 | ✅ |
 | v1.9 | db-health 健康度诊断 | ✅ |
 | v1.10 | WorstTile对照、--unused、Unicode全链路 | ✅ |
-| v2.0 | Avalonia GUI | 计划中 |
+| v2.0 |  GUI | 计划中 |
 
 ## 许可证
 
