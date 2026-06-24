@@ -2,6 +2,7 @@
 #include "BigTiffWriter.h"
 #include "Database.h"
 #include "DeepZoomWriter.h"
+#include "PngStreamWriter.h"
 #include "FeatureIndex.h"
 #include "FeaturePack.h"
 #include "FeatureUtils.h"
@@ -1161,7 +1162,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         // 内存检测：raw > 500MB 且空闲 < 1.5× → 跳过 Mat 分配（流式 TIFF）
         int64_t rawBytes = static_cast<int64_t>(outW) * outH * 3;
         bool useStreamTiff = false;
-        if (cfg.outputFormat == "tiff" && rawBytes > 500LL * 1024 * 1024)
+        if ((cfg.outputFormat == "tiff" || cfg.outputFormat == "png") && rawBytes > 500LL * 1024 * 1024)
         {
 #ifdef _WIN32
             MEMORYSTATUSEX mem = { sizeof(mem) };
@@ -1174,8 +1175,41 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
         if (useStreamTiff)
         {
-            std::cout << "  (streaming TIFF mode)" << std::endl;
-            // 跳过 placement，多线程预读 + 逐行流式写出
+            std::cout << "  (streaming mode)" << std::endl;
+            // 多线程预读 + 逐行流式写出
+            if (cfg.outputFormat == "png") {
+                mosaicraft::PngStreamWriter png(outputPath, outW, outH);
+                std::vector<uint8_t> rowBuf(outW * 3);
+                int nLd = std::min(8, static_cast<int>(std::thread::hardware_concurrency()));
+                for (int ty = 0; ty < tilesY; ++ty) {
+                    std::vector<cv::Mat> imgs(tilesX);
+                    { std::atomic<int> nx{0}; std::vector<std::thread> ld;
+                      for (int t = 0; t < nLd; ++t) ld.emplace_back([&]() {
+                          for (int tx = nx++; tx < tilesX; tx = nx++) {
+                              int ti = ty * tilesX + tx;
+                              if (ti >= totalTiles) continue;
+                              cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
+                              if (!m.empty()) cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                          }});
+                      for (auto& w : ld) w.join(); }
+                    for (int y = 0; y < outTileH; ++y) {
+                        for (int tx = 0; tx < tilesX; ++tx) {
+                            if (imgs[tx].empty()) continue;
+                            cv::Mat tr = imgs[tx].row(y);
+                            std::memcpy(&rowBuf[tx * outTileW * 3], tr.data, outTileW * 3);
+                        }
+                        png.writeRow(ty * outTileH + y, rowBuf.data());
+                    }
+                    if (ty % 10 == 0) std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
+                }
+                png.close();
+                std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
+                std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
+                          << " / " << totalTiles << " tiles)" << std::endl;
+                printBenchmark("single");
+                return true;
+            }
+            else {
             BigTiffWriter tiff(outputPath, outW, outH, true);
             std::vector<uint8_t> rowBuf(outW * 3);
             int nLoaders = std::min(8, static_cast<int>(std::thread::hardware_concurrency()));
@@ -1219,7 +1253,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << " / " << totalTiles << " tiles)" << std::endl;
             printBenchmark("single");
             return true;
-        }
+            }  // else (TIFF)
+        }  // if (useStreamTiff)
 
         output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
         std::cout << "  placing tiles (" << nThreads << " threads)..."
