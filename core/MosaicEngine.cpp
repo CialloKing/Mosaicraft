@@ -4,6 +4,7 @@
 #include "DeepZoomWriter.h"
 #include "PngStreamWriter.h"
 #include "PngBatchWriter.h"
+#include "JpgStreamWriter.h"
 #include "FeatureIndex.h"
 #include "FeaturePack.h"
 #include "FeatureUtils.h"
@@ -1152,12 +1153,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
         // 单图输出
         int64_t rawBytes = static_cast<int64_t>(outW) * outH * 3;
 
-        // --- 统一写入模式决策（对 PNG/TIFF 生效）---
-        // auto：空闲内存 > 2× 原始数据 → batch；否则 stream
+        // --- 统一写入模式决策（对 PNG/TIFF 生效；JPG 仅 stream 显式触发）---
+        // auto：PNG/TIFF 根据空闲内存 → batch/stream；JPG 默认全量
         // stream：强制流式逐行写盘（低内存）
         // batch：强制全量缓冲后一次写出
         bool useStream = false;   // true=流式, false=全量
-        bool isHeavyFormat = (cfg.outputFormat == "png" || cfg.outputFormat == "tiff");
+        bool isHeavyFormat = (cfg.outputFormat == "png" || cfg.outputFormat == "tiff" || cfg.outputFormat == "jpg");
+        bool isJpg = (cfg.outputFormat == "jpg");
         if (isHeavyFormat && rawBytes > 500LL * 1024 * 1024)
         {
             if (cfg.writeMode == "stream")
@@ -1168,7 +1170,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
             {
                 useStream = false;
             }
-            else // auto：根据空闲内存自动选择
+            else if (isJpg)
+            {
+                useStream = false;  // JPG 默认全量，不自动切换
+            }
+            else // auto：PNG/TIFF 根据空闲内存自动选择
             {
 #ifdef _WIN32
                 MEMORYSTATUSEX mem = { sizeof(mem) };
@@ -1307,6 +1313,49 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 if (ty % 10 == 0) std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
             }
             png.close();
+            std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
+            std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
+                      << " / " << totalTiles << " tiles)" << std::endl;
+            printBenchmark("single");
+            return true;
+        }
+
+        // --- 流式 JPG ---
+        if (isHeavyFormat && useStream && cfg.outputFormat == "jpg")
+        {
+            std::cout << "  (streaming mode — JPG low memory)" << std::endl;
+            mosaicraft::JpgStreamWriter jpg(outputPath, outW, outH, cfg.jpegQuality);
+            std::vector<cv::Mat> imgs(tilesX);
+            std::vector<uint8_t> rowBuf(outW * 3);
+            int nLd = std::min(8, (int)std::thread::hardware_concurrency());
+            for (int ty = 0; ty < tilesY; ++ty) {
+                { std::atomic<int> nx{0}; std::vector<std::thread> ld;
+                  for (int t = 0; t < nLd; ++t) ld.emplace_back([&]() {
+                      for (int tx = nx++; tx < tilesX; tx = nx++) {
+                          int ti = ty * tilesX + tx; if (ti >= totalTiles) continue;
+                          cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
+                          if (!m.empty()) cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                      }});
+                  for (auto& w : ld) w.join(); }
+                for (int y = 0; y < outTileH; ++y) {
+                    uint8_t* dst = rowBuf.data();
+                    for (int tx = 0; tx < tilesX; ++tx) {
+                        if (imgs[tx].empty()) {
+                            std::memset(dst, 0, outTileW * 3);
+                        } else {
+                            std::memcpy(dst, imgs[tx].ptr<const uint8_t>(y), outTileW * 3);
+                        }
+                        dst += outTileW * 3;
+                    }
+                    // BGR→RGB 原地交换
+                    for (int x = 0; x < outW; ++x) {
+                        std::swap(rowBuf[x * 3], rowBuf[x * 3 + 2]);
+                    }
+                    jpg.writeRow(rowBuf.data());
+                }
+                if (ty % 10 == 0) std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
+            }
+            jpg.close();
             std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
             std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
                       << " / " << totalTiles << " tiles)" << std::endl;

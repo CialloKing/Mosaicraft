@@ -13,6 +13,7 @@ find_package(OpenCV REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(TIFF REQUIRED)
 find_package(PNG REQUIRED)
+find_package(JPEG REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 
 # CUDA 架构（可通过 -DCUDA_ARCH=sm_xx 覆盖，默认 RTX 4060 / sm_89）
@@ -87,6 +88,7 @@ target_link_libraries(mosaicraft_core PUBLIC
     unofficial::sqlite3::sqlite3
     ${TIFF_LIBRARIES}
     PNG::PNG
+    JPEG::JPEG
 )
 
 # ============================================================
