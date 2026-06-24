@@ -3,7 +3,6 @@
 #include "Database.h"
 #include "DeepZoomWriter.h"
 #include "PngStreamWriter.h"
-#include "PngBatchWriter.h"
 #include "FeatureIndex.h"
 #include "FeaturePack.h"
 #include "FeatureUtils.h"
@@ -335,7 +334,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             cfg.outputFormat = "tiff";
             std::cout << "  (auto-switched to TIFF: output exceeds JPEG 65500px limit)" << std::endl;
         }
-        else if (cfg.outputFormat != "tiff")
+        else if (cfg.outputFormat != "tiff" && cfg.outputFormat != "webp")
         {
             // 其他格式超限 → 自动切 tiled
             cfg.tiledOutput = true;
@@ -1171,8 +1170,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "  (streaming mode)" << std::endl;
             // 多线程预读 + 逐行流式写出
             if (cfg.outputFormat == "png") {
-                mosaicraft::PngBatchWriter png(outputPath, outW, outH);
+                // 真正流式：逐行组装 + BGR→RGB 内联 + 立即写盘
+                // 内存仅 ~outW*3 字节（单行），无需缓存全图 16GB
+                mosaicraft::PngStreamWriter png(outputPath, outW, outH, cfg.pngCompressionLevel);
                 std::vector<cv::Mat> imgs(tilesX);
+                std::vector<uint8_t> rowBuf(outW * 3);
                 int nLd = std::min(8, (int)std::thread::hardware_concurrency());
                 for (int ty = 0; ty < tilesY; ++ty) {
                     { std::atomic<int> nx{0}; std::vector<std::thread> ld;
@@ -1184,18 +1186,28 @@ bool MosaicEngine::generate(const std::string& targetPath,
                           }});
                       for (auto& w : ld) w.join(); }
                     for (int y = 0; y < outTileH; ++y) {
-                        uint8_t* dst = png.rowData(ty * outTileH + y);
+                        // 从 tile 组装一行 BGR 数据
+                        uint8_t* dst = rowBuf.data();
                         for (int tx = 0; tx < tilesX; ++tx) {
-                            if (imgs[tx].empty()) continue;
-                            std::memcpy(dst + tx * outTileW * 3, imgs[tx].row(y).data, outTileW * 3);
+                            if (imgs[tx].empty()) {
+                                std::memset(dst, 0, outTileW * 3);
+                            } else {
+                                std::memcpy(dst, imgs[tx].ptr<const uint8_t>(y), outTileW * 3);
+                            }
+                            dst += outTileW * 3;
+                        }
+                        // BGR→RGB 原地交换（仅交换 R/B 通道）
+                        for (int x = 0; x < outW; ++x) {
+                            std::swap(rowBuf[x * 3], rowBuf[x * 3 + 2]);
+                        }
+                        if (!png.writeRow(rowBuf.data())) {
+                            std::cerr << "\n  PNG writeRow failed at row " << (ty * outTileH + y) << std::endl;
+                            return false;
                         }
                     }
                     if (ty % 10 == 0) std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
                 }
-                if (!png.writeAll()) {
-                    std::cerr << "\n  PNG writeAll failed" << std::endl;
-                    return false;
-                }
+                png.close();
                 std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
                 std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
                           << " / " << totalTiles << " tiles)" << std::endl;

@@ -42,7 +42,7 @@ public:
         bool useGpu = true;
         bool tiledOutput = false;   // 分块输出：每 tile 独立文件，消除输出尺寸限制
         bool deepZoom    = false;   // 生成 Deep Zoom 金字塔（含多级缩放 + .dzi 清单）
-        int  jpegQuality = 95;      // JPEG 质量（1-100），分块模式用 95，单图用 100
+        int  jpegQuality = 100;      // JPEG 质量（1-100）
         std::string outputFormat = "jpg";  // 输出格式：jpg / png / webp / tiff
         bool   formatExplicit = false;    // 是否显式指定 --format（否则允许自动切换）
 
@@ -62,6 +62,7 @@ public:
         // 目标图上采样因子：>1 时先将原图放大，再以 9×16 格分割
         // 2× = 4× tile 密度，输出分辨率不变（配合 nativeTile 缩半）
         int upscale = 0;   // 0=自动（nativeTile<180 时自动 2×）
+        int pngCompressionLevel = 1;  // PNG 压缩级别 1-9，默认 1（最快速度）
 
         void print() const
         {
@@ -69,8 +70,10 @@ public:
                       << "  candidates: " << candidates
                       << "  L range: " << lRange
                       << "  quality: " << jpegQuality
-                      << "  format: " << outputFormat
-                      << (tiledOutput ? (deepZoom ? "  output: deepzoom" : "  output: tiled") : "")
+                      << "  format: " << outputFormat;
+            if (outputFormat == "png")
+                std::cout << "(z" << pngCompressionLevel << ")";
+            std::cout << (tiledOutput ? (deepZoom ? "  output: deepzoom" : "  output: tiled") : "")
                       << std::endl;
             std::cout << "  weights: LAB=" << labWeight
                       << " Grid=" << gridWeight

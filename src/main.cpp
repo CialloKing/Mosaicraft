@@ -86,7 +86,8 @@ Mosaic options:
       --tile-h     <n>   Tile height in pixels (default: 16)
       --candidates <n>   ANN query candidates (default: 150)
       --format     <ext> jpg, png, webp, tiff (default: from extension, JPG¡úauto-scale over 65500px)
-      --quality    <n>   JPEG/WebP quality 1-100 (default: 95)
+      --quality    <n>   JPEG/WebP quality 1-100 (default: 100)
+      --png-level  <n>   PNG compression 1-9 (default: 1=fastest, 9=smallest)
       --out-w      <n>   Target output width in pixels
       --out-h      <n>   Target output height in pixels
       --upscale    <n>   Upscale target n¡Á before tiling (more tiles, same res)
@@ -470,6 +471,11 @@ static int cmdMosaic(int argc, char* argv[])
             int q = std::atoi(argv[++i]);
             cfg.jpegQuality = std::max(1, std::min(100, q));
         }
+        else if (arg == "--png-level" && i + 1 < argc)
+        {
+            int lvl = std::atoi(argv[++i]);
+            cfg.pngCompressionLevel = std::max(1, std::min(9, lvl));
+        }
         else if (arg == "--tiled")
         {
             cfg.tiledOutput = true;
@@ -536,7 +542,8 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --l-range <f>         L brightness search range (default: 20)" << std::endl;
             std::cout << "  --candidates <n>      Coarse candidates per tile (default: 200)" << std::endl;
             std::cout << "  --topn-random <n>     Pick from top-N (1=best, >1=varied, default: 1)" << std::endl;
-            std::cout << "  --quality <n>         JPEG/WebP quality 1-100 (default: 95)" << std::endl;
+            std::cout << "  --quality <n>         JPEG/WebP quality 1-100 (default: 100)" << std::endl;
+            std::cout << "  --png-level <n>       PNG compression level 1-9 (default: 1=fastest)" << std::endl;
             std::cout << "  --format <ext>        Output format: jpg, png, webp, tiff (default: from extension)" << std::endl;
             std::cout << "  --cpu                 Force CPU (no GPU)" << std::endl;
             std::cout << "  --tiled               Output tiles as separate files (no size limit)" << std::endl;

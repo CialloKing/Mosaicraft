@@ -42,23 +42,31 @@ public:
     bool writeAll()
     {
         if (!m_png) return false;
-        // BGR→RGB 转换 + 设置行指针
+        // BGR→RGB 原地转换
         std::vector<uint8_t> rgb(m_w * 3);
         for (int y = 0; y < m_h; ++y) {
             const uint8_t* bgr = &m_image[static_cast<size_t>(y) * m_w * 3];
             for (int x = 0; x < m_w; ++x) {
                 rgb[x*3+0] = bgr[x*3+2]; rgb[x*3+1] = bgr[x*3+1]; rgb[x*3+2] = bgr[x*3+0];
             }
-            m_rows[y] = rgb.data();
-            // 释放 bgr 缓冲（复用 rgb）
             std::memcpy(const_cast<uint8_t*>(bgr), rgb.data(), m_w * 3);
         }
-        // 现在 m_image 已转为 RGB，直接用行指针
+        // m_image 已转为 RGB，设置行指针
         for (int y = 0; y < m_h; ++y)
             m_rows[y] = &m_image[static_cast<size_t>(y) * m_w * 3];
 
-        if (setjmp(png_jmpbuf(m_png))) return false;
-        png_write_image(m_png, m_rows.data());
+        // 分批写入，每 kFlushInterval 行刷新一次，防止 libpng 内部压缩缓冲区溢出
+        // png_write_image 一次性写入全部行无 flush，超大图(~4GB 原始数据)会导致
+        // libpng 内部 ZLIB 缓冲区在写入中途耗尽内存而 longjmp，留下截断的 PNG 文件
+        const int kFlushInterval = 1000;
+        for (int y = 0; y < m_h; y += kFlushInterval)
+        {
+            int batchH = kFlushInterval;
+            if (batchH > m_h - y) batchH = m_h - y;
+            if (setjmp(png_jmpbuf(m_png))) return false;
+            png_write_rows(m_png, &m_rows[y], batchH);
+            png_write_flush(m_png);
+        }
         png_write_end(m_png, m_info);
         png_destroy_write_struct(&m_png, &m_info);
         m_png = nullptr;
