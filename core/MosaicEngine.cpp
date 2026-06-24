@@ -1185,7 +1185,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
                           }});
                       for (auto& w : ld) w.join(); }
                     for (int y = 0; y < outTileH; ++y) {
-                        std::memset(rowBuf.data(), 0, outW * 3);  // ÇåÁã·À²ÐÁô
                         for (int tx = 0; tx < tilesX; ++tx) {
                             if (imgs[tx].empty()) continue;
                             cv::Mat tr = imgs[tx].row(y);
@@ -1193,7 +1192,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         }
                         if (!png.writeRow(ty * outTileH + y, rowBuf.data()))
                         {
-                            std::cerr << "\n  PNG writeRow failed at row " << (ty * outTileH + y) << std::endl;
+                            std::cerr << "\n  PNG writeRow failed at row " << (ty * outTileH + y)
+                                      << " (tileRow=" << ty << " pixelRow=" << y << ")" << std::endl;
                             goto png_abort;
                         }
                     }
