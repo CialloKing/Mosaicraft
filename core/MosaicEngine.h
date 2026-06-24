@@ -63,6 +63,7 @@ public:
         // 2× = 4× tile 密度，输出分辨率不变（配合 nativeTile 缩半）
         int upscale = 0;   // 0=自动（nativeTile<180 时自动 2×）
         int pngCompressionLevel = 1;  // PNG 压缩级别 1-9，默认 1（最快速度）
+        std::string writeMode = "auto";  // 写入模式：auto(内存自适应) / stream(低内存) / batch(全量)，对 PNG/TIFF 生效
 
         void print() const
         {
@@ -72,7 +73,12 @@ public:
                       << "  quality: " << jpegQuality
                       << "  format: " << outputFormat;
             if (outputFormat == "png")
-                std::cout << "(z" << pngCompressionLevel << ")";
+            if (outputFormat == "png")
+                std::cout << "(z" << pngCompressionLevel;
+            if (writeMode != "auto")
+                std::cout << "/" << writeMode;
+            if (outputFormat == "png")
+                std::cout << ")";
             std::cout << (tiledOutput ? (deepZoom ? "  output: deepzoom" : "  output: tiled") : "")
                       << std::endl;
             std::cout << "  weights: LAB=" << labWeight

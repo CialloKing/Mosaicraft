@@ -16,7 +16,8 @@ mosaicraft mosaic -i target.jpg -d ./lib.db -o output.jpg  # 生成
 - **ANN + GPU 四层检索** — hnswlib 粗筛 → GPU 精排 → Selection 去重 → 16 线程贴图
 - **GPU 特征提取** — 复用 featureKernel 批量处理, Features 96s→2.2s (43×)
 - **BigTIFF** — libtiff 直写，突破 65500px，实测 50040×75200
-- **PNG 流式** — libpng 逐行写盘，内存恒定 ~162KB，彻底消除 OOM，支持 `--png-level 1-9`
+- **PNG 流式** — libpng 逐行写盘，内存恒定 ~162KB，彻底消除 OOM，支持 `--png-level 1-9` 和 `--write-mode`
+- **智能写入** — `--write-mode auto(默认)/stream/batch`，统一控制 PNG/TIFF 流式与全量模式
 - **WebP** — 自动等比缩放至 16383px，体积最小（93MB vs 1150MB PNG）
 - **质量分析** — `--analyze` 量化报告 + 热力图 + HTML 报告 + 最差 tile 导出
 - **图库诊断** — `db-stats` 亮度直方图 + 覆盖缺口；`db-usage` 全局热点图统计
@@ -103,6 +104,7 @@ mosaicraft mosaic -i p.jpg -d lib.db --benchmark
 | `--upscale <n>` | 关闭 | 先放大原图 n× 再分块 |
 | `--format` | 扩展名 | jpg/png/webp/tiff |
 | `--png-level` | 1 | PNG 压缩级别 1-9（1=最快 9=最小） |
+| `--write-mode` | auto | 写入模式：auto(内存自适应)/stream(低内存)/batch(全量) |
 | `--quality` | 100 | JPEG/WebP 质量 |
 | `--candidates` | 150 | ANN 候选数 |
 | `--neighbor-window` | auto | 邻域窗口（默认 O(√N) 动态） |
@@ -123,7 +125,7 @@ mosaicraft mosaic -i p.jpg -d lib.db --benchmark
 | JPG (默认) | 65500px | 未显式→TIFF；显式`--format jpg`→等比缩放 |
 | TIFF | 无限制 | — |
 | WebP | 16383px | 等比缩放（超 65500px 也已修复） |
-| PNG | **无限制** | 逐行流式写入，内存恒定 ~162KB，`--png-level` 控制压缩级别 |
+| PNG | **无限制** | `--write-mode` 控制流式/全量，`--png-level` 控制压缩级别 |
 
 ### 使用统计
 

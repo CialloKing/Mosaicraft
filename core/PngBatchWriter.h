@@ -13,7 +13,7 @@ namespace mosaicraft {
 class PngBatchWriter
 {
 public:
-    PngBatchWriter(const std::string& path, int w, int h) : m_w(w), m_h(h)
+    PngBatchWriter(const std::string& path, int w, int h, int compressionLevel = 1) : m_w(w), m_h(h)
     {
 #ifdef _WIN32
         std::wstring wp = std::filesystem::u8path(path).wstring();
@@ -28,6 +28,8 @@ public:
         if (!m_info) { png_destroy_write_struct(&m_png,nullptr); fclose(m_fp); throw std::runtime_error("png_create_info_struct"); }
         if (setjmp(png_jmpbuf(m_png))) { png_destroy_write_struct(&m_png,&m_info); fclose(m_fp); throw std::runtime_error("Png init"); }
         png_init_io(m_png, m_fp);
+        png_set_filter(m_png, PNG_FILTER_TYPE_BASE, PNG_ALL_FILTERS);
+        png_set_compression_level(m_png, compressionLevel);
         png_set_IHDR(m_png, m_info, w, h, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
         png_write_info(m_png, m_info);
         // 预分配全部行缓冲区（BGR→RGB 在 writeAll 中转换）

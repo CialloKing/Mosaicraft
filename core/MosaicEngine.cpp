@@ -3,6 +3,7 @@
 #include "Database.h"
 #include "DeepZoomWriter.h"
 #include "PngStreamWriter.h"
+#include "PngBatchWriter.h"
 #include "FeatureIndex.h"
 #include "FeaturePack.h"
 #include "FeatureUtils.h"
@@ -1149,72 +1150,46 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
 
         // 单图输出
-        // 内存检测：raw > 500MB 且空闲 < 1.5× → 跳过 Mat 分配（流式 TIFF）
         int64_t rawBytes = static_cast<int64_t>(outW) * outH * 3;
-        bool useStreamTiff = false;
-        if ((cfg.outputFormat == "tiff" || cfg.outputFormat == "png") && rawBytes > 500LL * 1024 * 1024)
-        {
-#ifdef _WIN32
-            MEMORYSTATUSEX mem = { sizeof(mem) };
-            if (GlobalMemoryStatusEx(&mem))
-                useStreamTiff = (mem.ullAvailPhys < static_cast<ULONGLONG>(rawBytes) * 3 / 2);
-#endif
-            // PNG >200MB 始终流式（OpenCV PNG 编码超大图不稳定）
-            if (cfg.outputFormat == "png") useStreamTiff = true;
-        }
-        if (useStreamTiff)
-            std::cout << "  (streaming TIFF mode — low memory)" << std::endl;
 
-        if (useStreamTiff)
+        // --- 统一写入模式决策（对 PNG/TIFF 生效）---
+        // auto：空闲内存 > 2× 原始数据 → batch；否则 stream
+        // stream：强制流式逐行写盘（低内存）
+        // batch：强制全量缓冲后一次写出
+        bool useStream = false;   // true=流式, false=全量
+        bool isHeavyFormat = (cfg.outputFormat == "png" || cfg.outputFormat == "tiff");
+        if (isHeavyFormat && rawBytes > 500LL * 1024 * 1024)
         {
-            std::cout << "  (streaming mode)" << std::endl;
-            // 多线程预读 + 逐行流式写出
-            if (cfg.outputFormat == "png") {
-                // 真正流式：逐行组装 + BGR→RGB 内联 + 立即写盘
-                // 内存仅 ~outW*3 字节（单行），无需缓存全图 16GB
-                mosaicraft::PngStreamWriter png(outputPath, outW, outH, cfg.pngCompressionLevel);
-                std::vector<cv::Mat> imgs(tilesX);
-                std::vector<uint8_t> rowBuf(outW * 3);
-                int nLd = std::min(8, (int)std::thread::hardware_concurrency());
-                for (int ty = 0; ty < tilesY; ++ty) {
-                    { std::atomic<int> nx{0}; std::vector<std::thread> ld;
-                      for (int t = 0; t < nLd; ++t) ld.emplace_back([&]() {
-                          for (int tx = nx++; tx < tilesX; tx = nx++) {
-                              int ti = ty * tilesX + tx; if (ti >= totalTiles) continue;
-                              cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                              if (!m.empty()) cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
-                          }});
-                      for (auto& w : ld) w.join(); }
-                    for (int y = 0; y < outTileH; ++y) {
-                        // 从 tile 组装一行 BGR 数据
-                        uint8_t* dst = rowBuf.data();
-                        for (int tx = 0; tx < tilesX; ++tx) {
-                            if (imgs[tx].empty()) {
-                                std::memset(dst, 0, outTileW * 3);
-                            } else {
-                                std::memcpy(dst, imgs[tx].ptr<const uint8_t>(y), outTileW * 3);
-                            }
-                            dst += outTileW * 3;
-                        }
-                        // BGR→RGB 原地交换（仅交换 R/B 通道）
-                        for (int x = 0; x < outW; ++x) {
-                            std::swap(rowBuf[x * 3], rowBuf[x * 3 + 2]);
-                        }
-                        if (!png.writeRow(rowBuf.data())) {
-                            std::cerr << "\n  PNG writeRow failed at row " << (ty * outTileH + y) << std::endl;
-                            return false;
-                        }
-                    }
-                    if (ty % 10 == 0) std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
-                }
-                png.close();
-                std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
-                std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
-                          << " / " << totalTiles << " tiles)" << std::endl;
-                printBenchmark("single");
-                return true;
+            if (cfg.writeMode == "stream")
+            {
+                useStream = true;
             }
-            else {
+            else if (cfg.writeMode == "batch")
+            {
+                useStream = false;
+            }
+            else // auto：根据空闲内存自动选择
+            {
+#ifdef _WIN32
+                MEMORYSTATUSEX mem = { sizeof(mem) };
+                if (GlobalMemoryStatusEx(&mem))
+                    useStream = (mem.ullAvailPhys < static_cast<ULONGLONG>(rawBytes) * 2);
+                else
+                    useStream = true;
+#else
+                useStream = true;
+#endif
+            }
+        }
+        // else: <500MB 或非 PNG/TIFF → 走标准路径
+
+        if (isHeavyFormat && useStream)
+            std::cout << "  (streaming mode — low memory)" << std::endl;
+        else if (isHeavyFormat && rawBytes > 500LL * 1024 * 1024)
+            std::cout << "  (batch mode — full buffer " << (rawBytes / 1024 / 1024) << " MB)" << std::endl;
+
+        // --- 流式 TIFF ---
+        if (isHeavyFormat && useStream && cfg.outputFormat == "tiff") {
             BigTiffWriter tiff(outputPath, outW, outH, true);
             std::vector<uint8_t> rowBuf(outW * 3);
             int nLoaders = std::min(8, static_cast<int>(std::thread::hardware_concurrency()));
@@ -1258,8 +1233,86 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << " / " << totalTiles << " tiles)" << std::endl;
             printBenchmark("single");
             return true;
-            }  // else (TIFF)
-        }  // if (useStreamTiff)
+        }  // if (tiff streaming)
+        else if (cfg.outputFormat == "png" && !useStream)
+        {
+            // PNG batch 模式：全量缓冲，一次写出
+            std::cout << "  (batch mode — full buffer " << (rawBytes / 1024 / 1024) << " MB)" << std::endl;
+            mosaicraft::PngBatchWriter png(outputPath, outW, outH, cfg.pngCompressionLevel);
+            std::vector<cv::Mat> imgs(tilesX);
+            int nLd = std::min(8, (int)std::thread::hardware_concurrency());
+            for (int ty = 0; ty < tilesY; ++ty) {
+                { std::atomic<int> nx{0}; std::vector<std::thread> ld;
+                  for (int t = 0; t < nLd; ++t) ld.emplace_back([&]() {
+                      for (int tx = nx++; tx < tilesX; tx = nx++) {
+                          int ti = ty * tilesX + tx; if (ti >= totalTiles) continue;
+                          cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
+                          if (!m.empty()) cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                      }});
+                  for (auto& w : ld) w.join(); }
+                for (int y = 0; y < outTileH; ++y) {
+                    uint8_t* dst = png.rowData(ty * outTileH + y);
+                    for (int tx = 0; tx < tilesX; ++tx) {
+                        if (imgs[tx].empty()) continue;
+                        std::memcpy(dst + tx * outTileW * 3, imgs[tx].ptr<const uint8_t>(y), outTileW * 3);
+                    }
+                }
+                if (ty % 10 == 0) std::cout << "\r  batching " << (ty+1) << "/" << tilesY << std::flush;
+            }
+            if (!png.writeAll()) {
+                std::cerr << "\n  PNG writeAll failed" << std::endl;
+                return false;
+            }
+            std::cout << "\r  batch done: " << outH << " rows" << std::endl;
+            std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
+                      << " / " << totalTiles << " tiles)" << std::endl;
+            printBenchmark("single");
+            return true;
+        }
+        else if (cfg.outputFormat == "png")
+        {
+            // PNG stream 模式：逐行写盘，内存恒定 ~162KB
+            std::cout << "  (streaming mode — low memory)" << std::endl;
+            mosaicraft::PngStreamWriter png(outputPath, outW, outH, cfg.pngCompressionLevel);
+            std::vector<cv::Mat> imgs(tilesX);
+            std::vector<uint8_t> rowBuf(outW * 3);
+            int nLd = std::min(8, (int)std::thread::hardware_concurrency());
+            for (int ty = 0; ty < tilesY; ++ty) {
+                { std::atomic<int> nx{0}; std::vector<std::thread> ld;
+                  for (int t = 0; t < nLd; ++t) ld.emplace_back([&]() {
+                      for (int tx = nx++; tx < tilesX; tx = nx++) {
+                          int ti = ty * tilesX + tx; if (ti >= totalTiles) continue;
+                          cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
+                          if (!m.empty()) cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                      }});
+                  for (auto& w : ld) w.join(); }
+                for (int y = 0; y < outTileH; ++y) {
+                    uint8_t* dst = rowBuf.data();
+                    for (int tx = 0; tx < tilesX; ++tx) {
+                        if (imgs[tx].empty()) {
+                            std::memset(dst, 0, outTileW * 3);
+                        } else {
+                            std::memcpy(dst, imgs[tx].ptr<const uint8_t>(y), outTileW * 3);
+                        }
+                        dst += outTileW * 3;
+                    }
+                    for (int x = 0; x < outW; ++x) {
+                        std::swap(rowBuf[x * 3], rowBuf[x * 3 + 2]);
+                    }
+                    if (!png.writeRow(rowBuf.data())) {
+                        std::cerr << "\n  PNG writeRow failed at row " << (ty * outTileH + y) << std::endl;
+                        return false;
+                    }
+                }
+                if (ty % 10 == 0) std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
+            }
+            png.close();
+            std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
+            std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
+                      << " / " << totalTiles << " tiles)" << std::endl;
+            printBenchmark("single");
+            return true;
+        }
 
         output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
         std::cout << "  placing tiles (" << nThreads << " threads)..."

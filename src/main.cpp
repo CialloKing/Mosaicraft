@@ -88,6 +88,7 @@ Mosaic options:
       --format     <ext> jpg, png, webp, tiff (default: from extension, JPG→auto-scale over 65500px)
       --quality    <n>   JPEG/WebP quality 1-100 (default: 100)
       --png-level  <n>   PNG compression 1-9 (default: 1=fastest, 9=smallest)
+      --write-mode <m>   Write mode: auto/stream/batch (default: auto, for PNG/TIFF)
       --out-w      <n>   Target output width in pixels
       --out-h      <n>   Target output height in pixels
       --upscale    <n>   Upscale target n× before tiling (more tiles, same res)
@@ -476,6 +477,10 @@ static int cmdMosaic(int argc, char* argv[])
             int lvl = std::atoi(argv[++i]);
             cfg.pngCompressionLevel = std::max(1, std::min(9, lvl));
         }
+        else if (arg == "--write-mode" && i + 1 < argc)
+        {
+            cfg.writeMode = argv[++i];
+        }
         else if (arg == "--tiled")
         {
             cfg.tiledOutput = true;
@@ -544,6 +549,7 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --topn-random <n>     Pick from top-N (1=best, >1=varied, default: 1)" << std::endl;
             std::cout << "  --quality <n>         JPEG/WebP quality 1-100 (default: 100)" << std::endl;
             std::cout << "  --png-level <n>       PNG compression level 1-9 (default: 1=fastest)" << std::endl;
+            std::cout << "  --write-mode <m>      Write mode: auto(内存自适应)/stream(低内存)/batch(全量)" << std::endl;
             std::cout << "  --format <ext>        Output format: jpg, png, webp, tiff (default: from extension)" << std::endl;
             std::cout << "  --cpu                 Force CPU (no GPU)" << std::endl;
             std::cout << "  --tiled               Output tiles as separate files (no size limit)" << std::endl;
