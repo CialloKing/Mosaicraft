@@ -1164,22 +1164,31 @@ bool MosaicEngine::generate(const std::string& targetPath,
         if (useStreamTiff)
         {
             std::cout << "  (streaming TIFF mode)" << std::endl;
-            // 跳过 placement，直接流式 TIFF 写出
+            // 跳过 placement，多线程预读 + 逐行流式写出
             BigTiffWriter tiff(outputPath, outW, outH, true);
             std::vector<uint8_t> rowBuf(outW * 3);
-            cv::Mat tileRow;  // 当前行的 tile 缓存
+            int nLoaders = std::min(8, static_cast<int>(std::thread::hardware_concurrency()));
             for (int ty = 0; ty < tilesY; ++ty)
             {
-                // 预读取本行所有 tile（320 行高 × tilesX 宽）
+                // 多线程预读本行所有 tile
                 std::vector<cv::Mat> tileRowImgs(tilesX);
-                for (int tx = 0; tx < tilesX; ++tx)
                 {
-                    int ti = ty * tilesX + tx;
-                    if (ti >= totalTiles) continue;
-                    cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                    if (!m.empty())
-                        cv::resize(m, tileRowImgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                    std::atomic<int> nextTx{0};
+                    std::vector<std::thread> loaders;
+                    for (int t = 0; t < nLoaders; ++t)
+                        loaders.emplace_back([&]() {
+                            for (int tx = nextTx++; tx < tilesX; tx = nextTx++)
+                            {
+                                int ti = ty * tilesX + tx;
+                                if (ti >= totalTiles) continue;
+                                cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
+                                if (!m.empty())
+                                    cv::resize(m, tileRowImgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                            }
+                        });
+                    for (auto& w : loaders) w.join();
                 }
+                // 逐像素行写出
                 for (int y = 0; y < outTileH; ++y)
                 {
                     for (int tx = 0; tx < tilesX; ++tx)
