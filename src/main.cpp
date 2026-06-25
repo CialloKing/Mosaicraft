@@ -400,7 +400,7 @@ static int cmdBuild(int argc, char* argv[])
     }
     FeatureExtractor extractor;
     bool gpuOk = cuda::isCudaAvailable();
-    constexpr int GPU_BATCH = 32;
+    constexpr int GPU_BATCH = 256;  // 批量增大减少 kernel launch 开销
     if (gpuOk) std::cout << "Features: GPU (batch " << GPU_BATCH << ")" << std::endl;
     else       std::cout << "Features: CPU" << std::endl;
 
