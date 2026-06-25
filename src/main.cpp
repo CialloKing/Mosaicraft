@@ -1,4 +1,4 @@
-﻿#include "core/Database.h"
+#include "core/Database.h"
 #include "core/Database.h"
 #include "core/FeatureExtractor.h"
 #include "core/FeaturePack.h"
@@ -18,7 +18,11 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#ifdef _WIN32
+#include <io.h>
+#endif
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
@@ -26,6 +30,13 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+// 退出码
+#define EXIT_OK          0
+#define EXIT_ERR_GENERAL 1
+#define EXIT_ERR_DB      2
+#define EXIT_ERR_MEMORY  3
+#define EXIT_ERR_GPU     4
 
 namespace fs = std::filesystem;
 
@@ -94,7 +105,7 @@ Mosaic options:
       --out-w      <n>   Target output width in pixels
       --out-h      <n>   Target output height in pixels
       --upscale    <n>   Upscale target nX before tiling
-      --output-tile <w> <h>  Output tile pixel size (default: 180x320)
+      --output-tile <WxH>  Output tile pixel size (default: 180x320)
       --l-range     <f>  L brightness search range (default: 20)
       --topn-random <n>  Top-N random selection (default: 10)
       --neighbor-window <n>  Neighborhood window (default: 0=auto)
@@ -134,6 +145,7 @@ static int cmdBuild(int argc, char* argv[])
     int threads = 0;
     bool appendMode = false;
     bool normOnly = false;
+    bool forceMode = false;
     bool recursive = false;
 
     // 解析参数
@@ -172,6 +184,10 @@ static int cmdBuild(int argc, char* argv[])
         {
             normOnly = true;
         }
+        else if (arg == "-y" || arg == "--yes" || arg == "--force")
+        {
+            forceMode = true;
+        }
         else if (arg == "-h" || arg == "--help")
         {
             std::cout << "Usage: mosaicraft build -i <dir> [-o <dir>] [-d <db>] [-t <n>] [--append] [-r] [--normalize-only]" << std::endl;
@@ -201,7 +217,36 @@ static int cmdBuild(int argc, char* argv[])
     if (!db.createTables())
     {
         std::cerr << "Cannot create tables." << std::endl;
-        return 1;
+        return 2;
+    }
+
+    // 非追加模式：如果数据库已有记录，提示确认
+    if (!appendMode && !normOnly)
+    {
+        int existingCount = db.totalCount();
+        if (existingCount > 0 && !forceMode)
+        {
+            // 非 TTY 环境且无 -y → 拒绝执行
+#ifdef _WIN32
+            bool isTTY = _isatty(_fileno(stdin));
+#else
+            bool isTTY = isatty(fileno(stdin));
+#endif
+            if (!isTTY)
+            {
+                std::cerr << "ERROR: DB has " << existingCount
+                          << " records. Use -y to overwrite (non-interactive mode)." << std::endl;
+                return 1;
+            }
+            std::cout << "Database has " << existingCount
+                      << " records. Overwrite? [y/N] " << std::flush;
+            char answer = static_cast<char>(std::getchar());
+            if (answer != 'y' && answer != 'Y')
+            {
+                std::cout << "Aborted." << std::endl;
+                return 0;
+            }
+        }
     }
 
     std::error_code ec;
@@ -509,10 +554,15 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.upscale = std::max(1, std::atoi(argv[++i]));
         }
-        else if (arg == "--output-tile" && i + 2 < argc)
+        else if (arg == "--output-tile" && i + 1 < argc)
         {
-            cfg.nativeTileW = std::max(1, std::atoi(argv[++i]));
-            cfg.nativeTileH = std::max(1, std::atoi(argv[++i]));
+            // 格式: 180x320
+            const char* val = argv[++i];
+            const char* sep = strchr(val, 'x');
+            if (sep) {
+                cfg.nativeTileW = std::max(1, std::atoi(val));
+                cfg.nativeTileH = std::max(1, std::atoi(sep + 1));
+            }
         }
         else if (arg == "--color-adjust")
         {
@@ -551,7 +601,7 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --out-w <n>           Target output width (0=auto)" << std::endl;
             std::cout << "  --out-h <n>           Target output height (0=auto)" << std::endl;
             std::cout << "  --upscale <n>         Upscale target nX before tiling" << std::endl;
-            std::cout << "  --output-tile <w> <h> Output tile pixel size (default: 180x320)" << std::endl;
+            std::cout << "  --output-tile <WxH>   Output tile pixel size (default: 180x320)" << std::endl;
             std::cout << "  --l-range <f>         L brightness search range (default: 20)" << std::endl;
             std::cout << "  --topn-random <n>     Pick from top-N for variety (default: 10)" << std::endl;
             std::cout << "  --neighbor-window <n> Neighborhood window (default: 0=auto)" << std::endl;
@@ -583,6 +633,15 @@ static int cmdMosaic(int argc, char* argv[])
     {
         std::cerr << "ERROR: --input is required for mosaic." << std::endl;
         return 1;
+    }
+
+    // 输出模式互斥检测：单图输出不能同时指定分块/金字塔
+    if (cfg.tiledOutput || cfg.deepZoom)
+    {
+        // 分块模式可以指定 -o 作为输出目录前缀
+        // 不报错，但提醒用户
+        if (!outputPath.empty() && outputPath.find('_') == std::string::npos)
+            std::cout << "  Note: --tiled/--deepzoom outputs to " << outputPath << "_files/" << std::endl;
     }
 
     MosaicEngine engine;
@@ -782,20 +841,22 @@ static int cmdDbStats(int argc, char* argv[])
 
 // ============================================================
 // db-purge 子命令：清除归一化目录中不存在的孤儿记录
-// ============================================================
 static int cmdDbPurge(int argc, char* argv[])
 {
     std::string dbPath = "mosaicraft.db";
+    bool forceMode = false;
 
     for (int i = 2; i < argc; ++i)
     {
         std::string arg = argv[i];
         if ((arg == "-d" || arg == "--db") && i + 1 < argc)
             dbPath = argv[++i];
+        else if (arg == "-y" || arg == "--yes" || arg == "--force")
+            forceMode = true;
     }
 
     Database db(dbPath);
-    if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return 1; }
+    if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return 2; }
 
     auto all = db.allRecords();
     int total = static_cast<int>(all.size());
@@ -804,7 +865,6 @@ static int cmdDbPurge(int argc, char* argv[])
     {
         if (!r.filePath.empty() && !std::filesystem::exists(u8path(r.filePath)))
         {
-            // 同�??删除孤儿特征文件
             if (!r.tinyPath.empty() && std::filesystem::exists(u8path(r.tinyPath)))
                 std::filesystem::remove(u8path(r.tinyPath));
             if (!r.histPath.empty() && std::filesystem::exists(u8path(r.histPath)))
@@ -812,6 +872,29 @@ static int cmdDbPurge(int argc, char* argv[])
             db.removeImage(r.id);
             removed++;
         }
+    }
+
+    if (removed == 0)
+    {
+        std::cout << "No orphan records found." << std::endl;
+        return 0;
+    }
+
+    if (!forceMode)
+    {
+#ifdef _WIN32
+        bool isTTY = _isatty(_fileno(stdin));
+#else
+        bool isTTY = isatty(fileno(stdin));
+#endif
+        if (!isTTY)
+        {
+            std::cerr << "ERROR: " << removed << " orphan records. Use -y to purge." << std::endl;
+            return 1;
+        }
+        std::cout << "Found " << removed << " orphan records. Purge? [y/N] " << std::flush;
+        char answer = static_cast<char>(std::getchar());
+        if (answer != 'y' && answer != 'Y') { std::cout << "Aborted." << std::endl; return 0; }
     }
 
     std::cout << "Purged " << removed << " / " << total << " orphan records." << std::endl;

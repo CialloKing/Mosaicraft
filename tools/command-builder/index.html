@@ -99,8 +99,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
     <div class="row">
       <div class="field"><label>输出宽度 --out-w</label><input type="number" id="m-outw" placeholder="自动"></div>
       <div class="field"><label>输出高度 --out-h</label><input type="number" id="m-outh" placeholder="自动"></div>
-      <div class="field"><label>输出 Tile W --output-tile-w</label><input type="number" id="m-otilew" value="180"></div>
-      <div class="field"><label>输出 Tile H --output-tile-h</label><input type="number" id="m-otileh" value="320"></div>
+      <div class="field"><label>输出 Tile 尺寸 --output-tile</label><input type="text" id="m-otile" value="180x320" placeholder="180x320"></div>
     </div>
   </div>
   <div class="card">
@@ -278,8 +277,7 @@ function generateCommand() {
     const up = val('m-upscale'); if (up) lines.push('--upscale ' + up);
     const ow = val('m-outw'); if (ow) lines.push('--out-w ' + ow);
     const oh = val('m-outh'); if (oh) lines.push('--out-h ' + oh);
-    const otw = val('m-otilew'); if (otw && otw !== '180') lines.push('--output-tile ' + otw + ' ' + val('m-otileh'));
-    else if (val('m-otileh') && val('m-otileh') !== '320') lines.push('--output-tile ' + (val('m-otilew')||'180') + ' ' + val('m-otileh'));
+    const ot = val('m-otile'); if (ot && ot !== '180x320') lines.push('--output-tile ' + ot);
     const lw = val('m-labw'); if (lw && lw !== '0.20') lines.push('--lab-weight ' + lw);
     const gw = val('m-gridw'); if (gw && gw !== '0.45') lines.push('--grid-weight ' + gw);
     const tw2 = val('m-tinyw'); if (tw2 && tw2 !== '0.25') lines.push('--tiny-weight ' + tw2);
