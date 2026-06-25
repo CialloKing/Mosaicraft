@@ -243,9 +243,14 @@ int extractBatch(
 {
     int N = static_cast<int>(images.size());
     if (N <= 0) return 0;
+    if (images[0].empty()) return 0;
+
+    // 从实际图像读取尺寸
+    int imgW = images[0].cols;
+    int imgH = images[0].rows;
+    size_t imgBytes = static_cast<size_t>(imgW) * imgH * 3;
 
     // 上传图像到 GPU
-    size_t imgBytes = 180 * 320 * 3;  // extractBatch: fixed 180x320
     std::vector<uint8_t> h_images(N * imgBytes);
     for (int i = 0; i < N; ++i)
     {
@@ -280,13 +285,29 @@ int extractBatch(
     cudaMalloc(&d_edge, N * sizeof(double));
 
     cudaMemcpy(d_images, h_images.data(), N * imgBytes, cudaMemcpyHostToDevice);
-
-    // 启动 kernel: N 个 block, 每个 320 线程
-    featureKernel<180, 320><<<N, 180>>>(
-        d_images, d_grid, d_tiny, d_lbp,
-        d_avgLAB, d_bright, d_contrast, d_edge, N);
-
-    cudaDeviceSynchronize();
+    if (imgW == 180 && imgH == 320)
+        featureKernel<180, 320><<<N, 180>>>(
+            d_images, d_grid, d_tiny, d_lbp,
+            d_avgLAB, d_bright, d_contrast, d_edge, N);
+    else if (imgW == 320 && imgH == 180)
+        featureKernel<320, 180><<<N, 320>>>(
+            d_images, d_grid, d_tiny, d_lbp,
+            d_avgLAB, d_bright, d_contrast, d_edge, N);
+    else if (imgW == 360 && imgH == 640)
+        featureKernel<360, 640><<<N, 360>>>(
+            d_images, d_grid, d_tiny, d_lbp,
+            d_avgLAB, d_bright, d_contrast, d_edge, N);
+    else if (imgW == 640 && imgH == 360)
+        featureKernel<640, 360><<<N, 640>>>(
+            d_images, d_grid, d_tiny, d_lbp,
+            d_avgLAB, d_bright, d_contrast, d_edge, N);
+    else {
+        fprintf(stderr, "GPU build: unsupported size %dx%d\n", imgW, imgH);
+        cudaFree(d_images); cudaFree(d_grid); cudaFree(d_tiny); cudaFree(d_lbp);
+        cudaFree(d_avgLAB); cudaFree(d_bright); cudaFree(d_contrast); cudaFree(d_edge);
+        return 0;
+    }
+cudaDeviceSynchronize();
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess)
     {
@@ -375,23 +396,23 @@ namespace {
         constexpr int PIX = W * H;
         size_t imgBytes = PIX * 3;
         uint8_t *d_img=nullptr; float *d_grid=nullptr; uint8_t *d_tiny=nullptr;
-        float *d_lbp=nullptr; double *d_lab=nullptr, *d_bright=nullptr, *d_contr=nullptr, *d_edge=nullptr;
+        float *d_lbp=nullptr; double *d_lab=nullptr, *d_bright=nullptr, *d_contrast=nullptr, *d_edge=nullptr;
         cudaMalloc(&d_img, N * imgBytes);
         cudaMalloc(&d_grid, N * 192 * sizeof(float));
         cudaMalloc(&d_tiny, N * 256);
         cudaMalloc(&d_lbp, N * 256 * sizeof(float));
         cudaMalloc(&d_lab, N * 3 * sizeof(double));
         cudaMalloc(&d_bright, N * sizeof(double));
-        cudaMalloc(&d_contr, N * sizeof(double));
+        cudaMalloc(&d_contrast, N * sizeof(double));
         cudaMalloc(&d_edge, N * sizeof(double));
         cudaMemcpy(d_img, h_images, N * imgBytes, cudaMemcpyHostToDevice);
-        featureKernel<W, H><<<N, W>>>(d_img, d_grid, d_tiny, d_lbp, d_lab, d_bright, d_contr, d_edge, N);
+        featureKernel<W, H><<<N, W>>>(d_img, d_grid, d_tiny, d_lbp, d_lab, d_bright, d_contrast, d_edge, N);
         cudaDeviceSynchronize();
         cudaError_t err = cudaGetLastError();
         if (err != cudaSuccess) {
             fprintf(stderr, "GPU feature error (%dx%d): %s\n", W, H, cudaGetErrorString(err));
             cudaFree(d_img); cudaFree(d_grid); cudaFree(d_tiny); cudaFree(d_lbp);
-            cudaFree(d_lab); cudaFree(d_bright); cudaFree(d_contr); cudaFree(d_edge);
+            cudaFree(d_lab); cudaFree(d_bright); cudaFree(d_contrast); cudaFree(d_edge);
             return -1;
         }
         cudaMemcpy(h_avgLAB, d_lab, N*3*sizeof(double), cudaMemcpyDeviceToHost);
@@ -401,7 +422,7 @@ namespace {
         double hostEdge; cudaMemcpy(&hostEdge, d_edge, sizeof(double), cudaMemcpyDeviceToHost);
         *h_edge = hostEdge;
         cudaFree(d_img); cudaFree(d_grid); cudaFree(d_tiny); cudaFree(d_lbp);
-        cudaFree(d_lab); cudaFree(d_bright); cudaFree(d_contr); cudaFree(d_edge);
+        cudaFree(d_lab); cudaFree(d_bright); cudaFree(d_contrast); cudaFree(d_edge);
         return 0;
     }
 } // anonymous namespace
