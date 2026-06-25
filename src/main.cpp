@@ -343,10 +343,13 @@ static int cmdBuild(int argc, char* argv[])
     if (normOnly) { std::cout << "Normalize only mode" << std::endl; }
 
     // Shared queue: normalizer threads produce, GPU thread consumes
+    // Bounded to prevent memory explosion (16 producers vs 1 consumer)
     struct NormItem { cv::Mat img; std::string outPath; std::string stem; };
     std::queue<NormItem> normQueue;
     std::mutex queueMtx;
     std::condition_variable queueCV;
+    std::condition_variable queueFullCV;  // producer waits when queue is full
+    constexpr int MAX_QUEUE = 512;         // ~345 MB max (360x640x3 x 512)
     std::atomic<bool> normPhaseDone{false};
     std::atomic<int> gpuDone{0};
 
@@ -390,6 +393,8 @@ static int cmdBuild(int argc, char* argv[])
                     if (normQueue.empty()) continue;
                     item = std::move(normQueue.front());
                     normQueue.pop();
+                    lk.unlock();
+                    queueFullCV.notify_one();  // wake blocked producers
                 }
                 if (item.img.empty()) continue;
                 std::string hash = hashMat(item.img);
@@ -442,8 +447,10 @@ static int cmdBuild(int argc, char* argv[])
                         imwriteUnicode(pathToUtf8(outPath), result);
                         okFlags[fi] = true;
                         if (gpuOk && !normOnly) {
-                            std::lock_guard<std::mutex> lk(queueMtx);
+                            std::unique_lock<std::mutex> lk(queueMtx);
+                            queueFullCV.wait(lk, [&]{ return normQueue.size() < MAX_QUEUE || normPhaseDone.load(); });
                             normQueue.push({result.clone(), pathToUtf8(outPath), pathToUtf8(outPath.stem())});
+                            lk.unlock();
                             queueCV.notify_one();
                         }
                     } catch (...) {}
