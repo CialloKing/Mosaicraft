@@ -3,10 +3,12 @@
 #include "Database.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace mosaicraft
@@ -118,31 +120,48 @@ public:
         if (!beginWrite(featDir, static_cast<int>(sorted.size())))
             return false;
 
-        for (const auto* rec : sorted)
-        {
+        // Parallel read: multiple threads read tiny/lbp files concurrently
+        int nTotal = static_cast<int>(sorted.size());
+        int nThr = static_cast<int>(std::thread::hardware_concurrency());
+        if (nThr < 2) nThr = 2; if (nThr > 16) nThr = 16;
+        std::vector<std::vector<uint8_t>> allTiny(nTotal);
+        std::vector<std::vector<float>>   allLbp(nTotal);
+        std::atomic<int> nextIdx{0};
+        std::vector<std::thread> readers;
+        for (int t = 0; t < nThr; ++t) {
+            readers.emplace_back([&]() {
+                for (int i = nextIdx++; i < nTotal; i = nextIdx++) {
+                    const auto* rec = sorted[i];
+                    auto op = oldPos.find(rec->id);
+                    if (op != oldPos.end()) continue;
+                    std::vector<uint8_t> tiny(256, 0);
+                    if (!rec->tinyPath.empty()) {
+                        FILE* f = fopen(rec->tinyPath.c_str(), "rb");
+                        if (f) { fread(tiny.data(), 1, 256, f); fclose(f); }
+                    }
+                    std::vector<float> lbp(256, 0.0f);
+                    if (!rec->histPath.empty()) {
+                        FILE* f = fopen(rec->histPath.c_str(), "rb");
+                        if (f) { fread(lbp.data(), sizeof(float), 256, f); fclose(f); }
+                    }
+                    allTiny[i] = std::move(tiny);
+                    allLbp[i]  = std::move(lbp);
+                }
+            });
+        }
+        for (auto& w : readers) w.join();
+
+        for (int i = 0; i < nTotal; ++i) {
+            const auto* rec = sorted[i];
             auto op = oldPos.find(rec->id);
             if (op != oldPos.end()) {
                 int o = op->second;
                 appendImage(rec->id,
                     std::vector<uint8_t>(oldTiny.begin()+o*256, oldTiny.begin()+(o+1)*256),
                     std::vector<float>(oldLbp.begin()+o*256, oldLbp.begin()+(o+1)*256));
-                continue;
+            } else {
+                appendImage(rec->id, allTiny[i], allLbp[i]);
             }
-            std::vector<uint8_t> tiny(256, 0);
-            if (!rec->tinyPath.empty())
-            {
-                FILE* f = fopen(rec->tinyPath.c_str(), "rb");
-                if (f) { fread(tiny.data(), 1, 256, f); fclose(f); }
-            }
-
-            std::vector<float> lbp(256, 0.0f);
-            if (!rec->histPath.empty())
-            {
-                FILE* f = fopen(rec->histPath.c_str(), "rb");
-                if (f) { fread(lbp.data(), sizeof(float), 256, f); fclose(f); }
-            }
-
-            appendImage(rec->id, tiny, lbp);
         }
 
         endWrite();
