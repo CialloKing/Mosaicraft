@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mosaicraft 命令生成器</title>
+<style>
+:root {
+  --bg: #1a1a2e;
+  --panel: #16213e;
+  --accent: #e94560;
+  --fg: #eee;
+  --fg2: #aaa;
+  --input-bg: #0f3460;
+  --border: #533483;
+  --hover: #1a1a4e;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--fg); min-height: 100vh; }
+header { background: var(--panel); padding: 18px 32px; border-bottom: 2px solid var(--accent); display: flex; align-items: center; gap: 16px; }
+header h1 { font-size: 1.4rem; color: var(--accent); }
+header span { color: var(--fg2); font-size: 0.85rem; }
+.tabs { display: flex; background: var(--panel); border-bottom: 1px solid var(--border); padding: 0 24px; }
+.tab { padding: 12px 20px; cursor: pointer; color: var(--fg2); border: none; background: none; font-size: 0.95rem; transition: .2s; }
+.tab:hover { color: var(--fg); background: var(--hover); }
+.tab.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
+main { max-width: 900px; margin: 24px auto; padding: 0 20px; }
+.panel { display: none; }
+.panel.active { display: block; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+.card h3 { font-size: 0.95rem; color: var(--accent); margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.field { display: flex; flex-direction: column; min-width: 180px; flex: 1; }
+.field label { font-size: 0.82rem; color: var(--fg2); margin-bottom: 4px; }
+.field input, .field select { padding: 8px 10px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 4px; color: var(--fg); font-size: 0.9rem; }
+.field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
+.field input[type=checkbox] { width: auto; margin-top: 6px; }
+.field .hint { font-size: 0.72rem; color: var(--fg2); margin-top: 2px; }
+.output-area { background: #0d1117; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-top: 20px; }
+.output-area .cmd { font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.85rem; color: #58a6ff; white-space: pre-wrap; word-break: break-all; line-height: 1.7; }
+.btns { display: flex; gap: 10px; margin-top: 12px; }
+.btn { padding: 10px 24px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: .2s; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { filter: brightness(1.15); }
+.btn-secondary { background: var(--border); color: var(--fg); }
+.btn-secondary:hover { background: #6a4c93; }
+footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧩 Mosaicraft</h1>
+  <span>命令生成器 v1.11</span>
+</header>
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-cmd="mosaic">🎨 生成马赛克</button>
+  <button class="tab" data-cmd="build">📦 建库</button>
+  <button class="tab" data-cmd="inspect">🔍 查询</button>
+  <button class="tab" data-cmd="db-stats">📊 统计</button>
+  <button class="tab" data-cmd="db-purge">🧹 清理</button>
+  <button class="tab" data-cmd="db-usage">📋 使用记录</button>
+</nav>
+<main>
+
+<!-- ============ MOSAIC ============ -->
+<div class="panel active" id="panel-mosaic">
+  <div class="card">
+    <h3>必需参数</h3>
+    <div class="row">
+      <div class="field"><label>目标图片 -i</label><input type="text" id="m-input" placeholder="target.jpg"></div>
+      <div class="field"><label>数据库 -d</label><input type="text" id="m-db" value="mosaicraft.db"></div>
+      <div class="field"><label>输出路径 -o</label><input type="text" id="m-output" value="output.jpg"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>格式与质量</h3>
+    <div class="row">
+      <div class="field"><label>输出格式 --format</label><select id="m-format"><option value="">由扩展名决定</option><option value="jpg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option><option value="tiff">TIFF</option></select></div>
+      <div class="field"><label>JPEG/WebP 质量 --quality</label><input type="number" id="m-quality" value="100" min="1" max="100"></div>
+      <div class="field"><label>PNG 压缩级别 --png-level</label><select id="m-pnglevel"><option value="">默认(1)</option><option value="1">1 最快</option><option value="3">3 平衡</option><option value="6">6 默认</option><option value="9">9 最小</option></select></div>
+      <div class="field"><label>写入模式 --write-mode</label><select id="m-writemode"><option value="">auto(自动)</option><option value="stream">stream(流式低内存)</option><option value="batch">batch(全量缓冲)</option></select></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Tile 参数</h3>
+    <div class="row">
+      <div class="field"><label>Tile 宽度 --tile-w</label><input type="number" id="m-tilew" value="9" min="1"></div>
+      <div class="field"><label>Tile 高度 --tile-h</label><input type="number" id="m-tileh" value="16" min="1"></div>
+      <div class="field"><label>候选数 --candidates</label><input type="number" id="m-candidates" value="150" min="1"></div>
+      <div class="field"><label>上采样 --upscale</label><input type="number" id="m-upscale" min="1" placeholder="1× (不放大)"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>输出宽度 --out-w</label><input type="number" id="m-outw" placeholder="自动"></div>
+      <div class="field"><label>输出高度 --out-h</label><input type="number" id="m-outh" placeholder="自动"></div>
+      <div class="field"><label>输出 Tile W --output-tile-w</label><input type="number" id="m-otilew" value="180"></div>
+      <div class="field"><label>输出 Tile H --output-tile-h</label><input type="number" id="m-otileh" value="320"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>特征权重</h3>
+    <div class="row">
+      <div class="field"><label>LAB --lab-weight</label><input type="number" id="m-labw" value="0.20" step="0.01"></div>
+      <div class="field"><label>Grid --grid-weight</label><input type="number" id="m-gridw" value="0.45" step="0.01"></div>
+      <div class="field"><label>Tiny --tiny-weight</label><input type="number" id="m-tinyw" value="0.25" step="0.01"></div>
+      <div class="field"><label>Edge --edge-weight</label><input type="number" id="m-edgew" value="0.05" step="0.01"></div>
+      <div class="field"><label>LBP --lbp-weight</label><input type="number" id="m-lbpw" value="0.05" step="0.01"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>复用惩罚 --penalty</label><input type="number" id="m-penalty" value="0.01" step="0.01"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>开关选项</h3>
+    <div class="row">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-tiled"> 分块输出 --tiled</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-deepzoom"> DeepZoom --deepzoom</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-analyze"> 质量分析 --analyze</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-benchmark"> 性能分析 --benchmark</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-nocolor"> 禁用颜色校正 --no-color-adjust</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-cpu"> 仅 CPU --cpu</label>
+    </div>
+  </div>
+</div>
+
+<!-- ============ BUILD ============ -->
+<div class="panel" id="panel-build">
+  <div class="card">
+    <h3>必需参数</h3>
+    <div class="row">
+      <div class="field"><label>图片目录 -i *</label><input type="text" id="b-input" placeholder="./photos"></div>
+      <div class="field"><label>输出目录 -o</label><input type="text" id="b-output" value="normalized"></div>
+      <div class="field"><label>数据库 -d</label><input type="text" id="b-db" value="mosaicraft.db"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>选项</h3>
+    <div class="row">
+      <div class="field"><label>线程数 -t</label><input type="number" id="b-threads" placeholder="auto"></div>
+    </div>
+    <div class="row">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="b-append"> 增量模式 --append</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="b-recursive"> 递归扫描子目录 -r</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="b-normonly"> 仅归一化 --normalize-only</label>
+    </div>
+  </div>
+</div>
+
+<!-- ============ INSPECT ============ -->
+<div class="panel" id="panel-inspect">
+  <div class="card">
+    <h3>查询参数</h3>
+    <div class="row">
+      <div class="field"><label>图片路径 -i *</label><input type="text" id="i-input" placeholder="image.jpg"></div>
+      <div class="field"><label>数据库 -d</label><input type="text" id="i-db" value="mosaicraft.db"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ DB-STATS ============ -->
+<div class="panel" id="panel-dbstats">
+  <div class="card">
+    <h3>参数</h3>
+    <div class="row">
+      <div class="field"><label>数据库 -d</label><input type="text" id="s-db" value="mosaicraft.db"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ DB-PURGE ============ -->
+<div class="panel" id="panel-dbpurge">
+  <div class="card">
+    <h3>参数</h3>
+    <div class="row">
+      <div class="field"><label>数据库 -d</label><input type="text" id="p-db" value="mosaicraft.db"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ DB-USAGE ============ -->
+<div class="panel" id="panel-dbusage">
+  <div class="card">
+    <h3>参数</h3>
+    <div class="row">
+      <div class="field"><label>数据库 -d</label><input type="text" id="u-db" value="mosaicraft.db"></div>
+      <div class="field"><label>Top N -n</label><input type="number" id="u-n" value="50" min="1"></div>
+      <div class="field"><label>导出目录 --export</label><input type="text" id="u-export" placeholder="不导出"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ OUTPUT ============ -->
+<div class="output-area">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    <span style="color:var(--fg2);font-size:0.85rem">生成的命令 (PowerShell)</span>
+    <span id="copy-feedback" style="color:#58a6ff;font-size:0.8rem;display:none">✅ 已复制!</span>
+  </div>
+  <div class="cmd" id="cmd-output">mosaicraft mosaic -i target.jpg -d mosaicraft.db -o output.jpg</div>
+  <div class="btns">
+    <button class="btn btn-primary" onclick="generateCommand()">🔄 生成命令</button>
+    <button class="btn btn-secondary" onclick="copyCommand()">📋 复制到剪贴板</button>
+  </div>
+</div>
+
+</main>
+<footer>Mosaicraft Command Builder — 双击 index.html 即可使用，无需安装任何依赖</footer>
+
+<script>
+// Tab switching
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('panel-' + t.dataset.cmd).classList.add('active');
+    generateCommand();
+  });
+});
+
+// Auto-generate on any input change
+document.querySelectorAll('input, select').forEach(el => {
+  el.addEventListener('input', generateCommand);
+  el.addEventListener('change', generateCommand);
+});
+
+function val(id) {
+  const el = document.getElementById(id);
+  if (!el) return '';
+  if (el.type === 'checkbox') return el.checked;
+  return el.value.trim();
+}
+
+function opt(flag, value, cond) {
+  if (cond === undefined) cond = !!value;
+  if (!cond) return '';
+  if (value === true || value === 'on' || value === '1') return '  ' + flag;
+  return '  ' + flag + ' ' + value;
+}
+
+function generateCommand() {
+  const tab = document.querySelector('.tab.active').dataset.cmd;
+  let cmd = 'mosaicraft ' + tab;
+  let lines = [];
+
+  if (tab === 'mosaic') {
+    const inp = val('m-input'); if (inp) lines.push('-i ' + inp);
+    const db = val('m-db'); if (db) lines.push('-d ' + db);
+    const out = val('m-output'); if (out) lines.push('-o ' + out);
+    const fmt = val('m-format'); if (fmt) lines.push('--format ' + fmt);
+    const q = val('m-quality'); if (q && q !== '100') lines.push('--quality ' + q);
+    const pl = val('m-pnglevel'); if (pl) lines.push('--png-level ' + pl);
+    const wm = val('m-writemode'); if (wm) lines.push('--write-mode ' + wm);
+    const tw = val('m-tilew'); if (tw && tw !== '9') lines.push('--tile-w ' + tw);
+    const th = val('m-tileh'); if (th && th !== '16') lines.push('--tile-h ' + th);
+    const cand = val('m-candidates'); if (cand && cand !== '150') lines.push('--candidates ' + cand);
+    const up = val('m-upscale'); if (up) lines.push('--upscale ' + up);
+    const ow = val('m-outw'); if (ow) lines.push('--out-w ' + ow);
+    const oh = val('m-outh'); if (oh) lines.push('--out-h ' + oh);
+    const otw = val('m-otilew'); if (otw && otw !== '180') lines.push('--output-tile ' + otw + ' ' + val('m-otileh'));
+    else if (val('m-otileh') && val('m-otileh') !== '320') lines.push('--output-tile ' + (val('m-otilew')||'180') + ' ' + val('m-otileh'));
+    const lw = val('m-labw'); if (lw && lw !== '0.20') lines.push('--lab-weight ' + lw);
+    const gw = val('m-gridw'); if (gw && gw !== '0.45') lines.push('--grid-weight ' + gw);
+    const tw2 = val('m-tinyw'); if (tw2 && tw2 !== '0.25') lines.push('--tiny-weight ' + tw2);
+    const ew = val('m-edgew'); if (ew && ew !== '0.05') lines.push('--edge-weight ' + ew);
+    const lbw = val('m-lbpw'); if (lbw && lbw !== '0.05') lines.push('--lbp-weight ' + lbw);
+    const pen = val('m-penalty'); if (pen && pen !== '0.01') lines.push('--penalty ' + pen);
+    if (val('m-tiled')) lines.push('--tiled');
+    if (val('m-deepzoom')) lines.push('--deepzoom');
+    if (val('m-analyze')) lines.push('--analyze');
+    if (val('m-benchmark')) lines.push('--benchmark');
+    if (val('m-nocolor')) lines.push('--no-color-adjust');
+    if (val('m-cpu')) lines.push('--cpu');
+  }
+  else if (tab === 'build') {
+    const inp = val('b-input'); if (inp) lines.push('-i ' + inp);
+    const out = val('b-output'); if (out && out !== 'normalized') lines.push('-o ' + out);
+    const db = val('b-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
+    const thr = val('b-threads'); if (thr) lines.push('-t ' + thr);
+    if (val('b-append')) lines.push('--append');
+    if (val('b-recursive')) lines.push('-r');
+    if (val('b-normonly')) lines.push('--normalize-only');
+  }
+  else if (tab === 'inspect') {
+    const inp = val('i-input'); if (inp) lines.push('-i ' + inp);
+    const db = val('i-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
+  }
+  else if (tab === 'db-stats') {
+    const db = val('s-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
+  }
+  else if (tab === 'db-purge') {
+    const db = val('p-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
+  }
+  else if (tab === 'db-usage') {
+    const db = val('u-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
+    const n = val('u-n'); if (n && n !== '50') lines.push('-n ' + n);
+    const exp = val('u-export'); if (exp) lines.push('--export ' + exp);
+  }
+
+  if (lines.length === 0) {
+    cmd = 'mosaicraft ' + tab + '  (请填写参数)';
+  } else {
+    cmd = 'mosaicraft ' + tab + ' ' + lines.join(' ');
+  }
+  document.getElementById('cmd-output').textContent = cmd;
+}
+
+function copyCommand() {
+  const cmd = document.getElementById('cmd-output').textContent;
+  navigator.clipboard.writeText(cmd).then(() => {
+    const fb = document.getElementById('copy-feedback');
+    fb.style.display = 'inline';
+    setTimeout(() => { fb.style.display = 'none'; }, 2000);
+  }).catch(() => {
+    // Fallback for older browsers
+    const ta = document.createElement('textarea');
+    ta.value = cmd;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    const fb = document.getElementById('copy-feedback');
+    fb.style.display = 'inline';
+    setTimeout(() => { fb.style.display = 'none'; }, 2000);
+  });
+}
+
+// Initial generation
+generateCommand();
+</script>
+</body>
+</html>
