@@ -208,10 +208,11 @@ __global__ void featureKernel(
         }
     }
 
-    if (tx < 256)
+    // TinyImage: loop over all 256 pixels, works with any blockDim
+    for (int ti = tx; ti < 256; ti += blockDim.x)
     {
-        int ty = tx / 16;
-        int ttx = tx % 16;
+        int ty = ti / 16;
+        int ttx = ti % 16;
         int srcX0 = ttx * TINY_SX;
         int srcY0 = ty * TINY_SY;
         float sum = 0;
@@ -225,7 +226,7 @@ __global__ void featureKernel(
                 cnt++;
             }
         }
-        d_tiny[imgIdx * 256 + tx] = static_cast<uint8_t>(sum / cnt);
+        d_tiny[imgIdx * 256 + ti] = static_cast<uint8_t>(sum / cnt);
     }
 }
 
