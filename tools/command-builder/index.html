@@ -50,7 +50,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
 <body>
 <header>
   <h1>🧩 Mosaicraft</h1>
-  <span>命令生成器 v1.11</span>
+  <span>命令生成器 v1.12</span>
 </header>
 <nav class="tabs" id="tabs">
   <button class="tab active" data-cmd="mosaic">🎨 生成马赛克</button>
@@ -149,6 +149,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="b-append"> 增量模式 --append</label>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="b-recursive"> 递归扫描子目录 -r</label>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="b-normonly"> 仅归一化 --normalize-only</label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="b-force"> 强制覆盖 -y</label>
     </div>
   </div>
 </div>
@@ -180,6 +181,9 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
     <h3>参数</h3>
     <div class="row">
       <div class="field"><label>数据库 -d</label><input type="text" id="p-db" value="mosaicraft.db"></div>
+    </div>
+    <div class="row">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="p-force"> 跳过确认 -y</label>
     </div>
   </div>
 </div>
@@ -301,6 +305,7 @@ function generateCommand() {
     if (val('b-append')) lines.push('--append');
     if (val('b-recursive')) lines.push('-r');
     if (val('b-normonly')) lines.push('--normalize-only');
+    if (val('b-force')) lines.push('-y');
   }
   else if (tab === 'inspect') {
     const inp = val('i-input'); if (inp) lines.push('-i ' + inp);
@@ -311,6 +316,7 @@ function generateCommand() {
   }
   else if (tab === 'db-purge') {
     const db = val('p-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
+    if (val('p-force')) lines.push('-y');
   }
   else if (tab === 'db-health') {
     const db = val('h-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
