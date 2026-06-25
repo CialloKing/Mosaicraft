@@ -95,8 +95,8 @@ Mosaic options:
       --output-tile <w> <h>  Output tile pixel size (default: 180x320)
       --tiled            Output tiles as separate files (no size limit)
       --deepzoom         Generate Deep Zoom pyramid for OpenSeadragon
-      --no-color-adjust  Disable LAB color adjustment
-      --color-strength <v>  Color adjustment strength (default: 0.04, off by default)
+      --color-adjust      Enable LAB color adjustment (off by default)
+      --color-strength <v>  Color adjustment strength (default: 0.04)
       --lab-weight   <w> LAB distance weight (default: 0.20)
       --grid-weight  <w> Grid 8°¡8 distance weight (default: 0.45)
       --tiny-weight  <w> Tiny feature weight (default: 0.25)
@@ -490,10 +490,6 @@ static int cmdMosaic(int argc, char* argv[])
             cfg.tiledOutput = true;   // deepzoom ÈöêÂê´ tiled
             cfg.deepZoom = true;
         }
-        else if (arg == "--no-color-adjust")
-        {
-            cfg.colorAdjust = false;
-        }
         else if (arg == "--neighbor-window" && i + 1 < argc)
         {
             cfg.neighborWindow = std::atoi(argv[++i]);
@@ -556,7 +552,7 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --deepzoom            Generate Deep Zoom pyramid + .dzi + HTML viewer" << std::endl;
             std::cout << "                        (best with --out-w/h to limit tile count)" << std::endl;
             std::cout << "  --color-adjust        Enable per-tile brightness/saturation jitter" << std::endl;
-            std::cout << "  --color-strength <f>  Color jitter intensity 0-0.5 (default: 0.10)" << std::endl;
+            std::cout << "  --color-strength <f>  Color jitter intensity 0-0.5 (default: 0.04)" << std::endl;
             std::cout << "  --benchmark           Print per-phase timing breakdown" << std::endl;
             return 0;
         }
