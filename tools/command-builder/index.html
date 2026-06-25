@@ -143,6 +143,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
   <div class="card">
     <h3>选项</h3>
     <div class="row">
+      <div class="field"><label>归一化尺寸 --normalize-size</label><input type="text" id="b-normsize" value="180x320" placeholder="180x320"></div>
       <div class="field"><label>线程数 -t</label><input type="number" id="b-threads" placeholder="auto"></div>
     </div>
     <div class="row">
@@ -302,6 +303,7 @@ function generateCommand() {
     const out = val('b-output'); if (out && out !== 'normalized') lines.push('-o ' + out);
     const db = val('b-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
     const thr = val('b-threads'); if (thr) lines.push('-t ' + thr);
+    const ns = val('b-normsize'); if (ns && ns !== '180x320') lines.push('--normalize-size ' + ns);
     if (val('b-append')) lines.push('--append');
     if (val('b-recursive')) lines.push('-r');
     if (val('b-normonly')) lines.push('--normalize-only');

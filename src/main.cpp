@@ -87,6 +87,7 @@ Build options:
   -o, --output <dir>     Output directory for normalized images (default: normalized)
   -d, --db     <path>    Database path (default: mosaicraft.db)
   -t, --threads <n>      Worker threads (default: auto)
+      --normalize-size <WxH>  Normalized image size (default: 180x320)
       --append           Append mode: add new images without rebuilding
   -r, --recursive        Scan subdirectories for source images
       --normalize-only   Only normalize images, don't build database
@@ -159,6 +160,8 @@ static int cmdBuild(int argc, char* argv[])
     bool normOnly = false;
     bool forceMode = false;
     bool recursive = false;
+    int normW = 180;
+    int normH = 320;
 
     // 解析参数
     for (int i = 2; i < argc; ++i)
@@ -191,6 +194,15 @@ static int cmdBuild(int argc, char* argv[])
         else if (arg == "-r" || arg == "--recursive")
         {
             recursive = true;
+        }
+        else if (arg == "--normalize-size" && i + 1 < argc)
+        {
+            const char* val = argv[++i];
+            const char* sep = strchr(val, 'x');
+            if (sep) {
+                normW = std::max(1, std::atoi(val));
+                normH = std::max(1, std::atoi(sep + 1));
+            }
         }
         else if (arg == "--normalize-only")
         {
@@ -297,7 +309,7 @@ static int cmdBuild(int argc, char* argv[])
     }
 
     // —����?Phase 1: 多线程并行归丢��?—����?
-    ImageNormalizer normalizer(180, 320);
+    ImageNormalizer normalizer(normW, normH);
     std::vector<std::string> outPaths(files.size());
     std::vector<bool> okFlags(files.size(), false);
     std::atomic<int> normDone{0};
