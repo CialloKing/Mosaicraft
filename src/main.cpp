@@ -7,6 +7,7 @@
 #include "core/MosaicEngine.h"
 #include <unordered_set>
 #include "core/UnicodeIO.h"
+#include "core/UnicodeIO.h"
 #include "compute/CudaBackend.h"
 #include "compute/FeatureExtractorCuda.h"
 
@@ -37,6 +38,15 @@
 #define EXIT_ERR_DB      2
 #define EXIT_ERR_MEMORY  3
 #define EXIT_ERR_GPU     4
+
+// 辅助：如果 -d 指向目录，自动查找目录内的 mosaicraft.db
+static std::string resolveDbPath(const std::string& rawPath)
+{
+    std::error_code ec;
+    if (std::filesystem::is_directory(rawPath, ec))
+        return rawPath + "/mosaicraft.db";
+    return rawPath;
+}
 
 namespace fs = std::filesystem;
 
@@ -84,8 +94,8 @@ Usage:
 
 Build options:
   -i, --input  <dir>     Source image directory (required)
-  -o, --output <dir>     Output directory for normalized images (default: normalized)
-  -d, --db     <path>    Database path (default: mosaicraft.db)
+  -o, --output <dir>     Output directory (default: normalized, DB stored inside)
+  -d, --db     <path>    Database path (default: <output>/mosaicraft.db)
   -t, --threads <n>      Worker threads (default: auto)
       --normalize-size <WxH>  Normalized image size (default: 180x320)
       --append           Append mode: add new images without rebuilding
@@ -233,8 +243,16 @@ static int cmdBuild(int argc, char* argv[])
         return 1;
     }
 
+    // 默认 DB 放在归一化目录内（自包含图库包）
+    if (dbPath == "mosaicraft.db")
+        dbPath = outputDir + "/mosaicraft.db";
+
+    // 确保输出目录存在（DB 写入需要）
+    std::error_code ec;
+    fs::create_directories(outputDir, ec);
+
     // —����?建库 —����?
-    Database db(dbPath);
+    Database db(resolveDbPath(dbPath));
     if (!db.isOpen())
     {
         std::cerr << "Cannot open database: " << dbPath << std::endl;
@@ -276,8 +294,6 @@ static int cmdBuild(int argc, char* argv[])
         }
     }
 
-    std::error_code ec;
-    fs::create_directories(outputDir, ec);
     std::string featDir = outputDir + "/features";
     fs::create_directories(featDir, ec);
 
@@ -689,7 +705,7 @@ static int cmdMosaic(int argc, char* argv[])
     }
 
     MosaicEngine engine;
-    bool ok = engine.generate(inputPath, dbPath, outputPath, cfg);
+    bool ok = engine.generate(inputPath, resolveDbPath(dbPath), outputPath, cfg);
 
     return ok ? 0 : 1;
 }
@@ -750,7 +766,7 @@ static int cmdInspect(int argc, char* argv[])
     std::cout << lbpEntropy << std::endl;
 
     // 查�??数据�?
-    Database db(dbPath);
+    Database db(resolveDbPath(dbPath));
     if (db.isOpen())
     {
         int total = db.totalCount();
@@ -803,7 +819,7 @@ static int cmdDbStats(int argc, char* argv[])
             dbPath = argv[++i];
     }
 
-    Database db(dbPath);
+    Database db(resolveDbPath(dbPath));
     if (!db.isOpen())
     {
         std::cerr << "ERROR: Cannot open database: " << dbPath << std::endl;
@@ -899,7 +915,7 @@ static int cmdDbPurge(int argc, char* argv[])
             forceMode = true;
     }
 
-    Database db(dbPath);
+    Database db(resolveDbPath(dbPath));
     if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return 2; }
 
     auto all = db.allRecords();
@@ -970,7 +986,7 @@ static int cmdDbUsage(int argc, char* argv[])
             exportDir = argv[++i];
     }
 
-    Database db(dbPath);
+    Database db(resolveDbPath(dbPath));
     if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return EXIT_ERR_DB; }
 
     auto top = db.topUsedImages(limit);
@@ -1062,7 +1078,7 @@ static int cmdDbHealth(int argc, char* argv[])
         if ((std::string(argv[i]) == "-d" || std::string(argv[i]) == "--db") && i + 1 < argc)
             dbPath = argv[++i];
 
-    Database db(dbPath);
+    Database db(resolveDbPath(dbPath));
     if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return EXIT_ERR_DB; }
 
     auto all = db.allRecords();
