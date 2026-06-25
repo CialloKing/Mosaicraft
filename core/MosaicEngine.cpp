@@ -553,7 +553,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 allEdge[ti] = batchEdgeArr[i];
                 allLBP[ti].assign(&batchLBP[i * 256], &batchLBP[(i + 1) * 256]);
             }
-            std::cout << "\r  features " << (batchStart + batchN) << "/" << totalTiles << std::flush;
+            int done = batchStart + batchN;
+            double elapsed = std::chrono::duration<double>(Clock::now() - tPreFeat).count();
+            double eta = (elapsed / done) * (totalTiles - done);
+            std::cout << "\r  features " << done << "/" << totalTiles
+                      << " | ETA " << static_cast<int>(eta) << "s" << std::flush;
         }
 
         // ʣ�಻�� 256 ��β��

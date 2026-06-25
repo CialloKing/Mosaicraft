@@ -330,6 +330,9 @@ static int cmdBuild(int argc, char* argv[])
         return 1;
     }
     // Phase 1 & 2: pipelined — normalize (CPU) + feature extraction (GPU) run concurrently
+    auto tBuildStart = std::chrono::steady_clock::now();
+    auto tNormStart = tBuildStart;
+    std::chrono::steady_clock::time_point tGpuStart, tCacheStart, tNormEnd = tBuildStart;
     ImageNormalizer normalizer(normW, normH);
     std::vector<std::string> outPaths(files.size());
     std::vector<bool> okFlags(files.size(), false);
@@ -357,11 +360,13 @@ static int cmdBuild(int argc, char* argv[])
     if (gpuOk && !normOnly) {
         std::cout << "Normalizing + Features: GPU (batch " << GPU_BATCH << ", pipelined)" << std::endl;
         gpuThread = std::thread([&]() {
+            bool firstBatch = true;
             std::vector<cv::Mat> imgs; imgs.reserve(GPU_BATCH);
             std::vector<ImageRecord> recs; recs.reserve(GPU_BATCH);
             std::vector<std::string> stems; stems.reserve(GPU_BATCH);
             auto flush = [&]() {
                 if (imgs.empty()) return;
+                if (firstBatch) { tGpuStart = std::chrono::steady_clock::now(); firstBatch = false; }
                 int done = cuda::extractBatch(imgs, recs, featDir, stems);
                 if (done <= 0) {
                     for (size_t bi = 0; bi < imgs.size(); ++bi)
@@ -371,6 +376,9 @@ static int cmdBuild(int argc, char* argv[])
                 for (auto& rec : recs) { if (db.insertImage(rec)) inserted++; else skipped++; }
                 db.commitTransaction();
                 gpuDone += static_cast<int>(imgs.size());
+                int gd = gpuDone.load();
+                if (gd % 2000 == 0 || gd == static_cast<int>(files.size()))
+                    std::cout << "\r  gpu feature " << gd << "/" << files.size() << std::flush;
                 imgs.clear(); recs.clear(); stems.clear();
             };
             while (true) {
@@ -446,6 +454,7 @@ static int cmdBuild(int argc, char* argv[])
             });
         }
         for (auto& w : workers) w.join();
+        tNormEnd = std::chrono::steady_clock::now();
         std::cout << std::endl;
     }
     else
@@ -503,12 +512,27 @@ static int cmdBuild(int argc, char* argv[])
     std::cout << "Done: " << inserted << " images indexed, "
               << db.totalCount() << " total in database." << std::endl;
 
-    // 构建二进制特征缓存（消除 50K 小文�?I/O�?
+    // 分阶段耗时报告
+    auto tNow = std::chrono::steady_clock::now();
+    using Ms = std::chrono::milliseconds;
+    auto normMs = std::chrono::duration_cast<Ms>(tNormEnd - tNormStart).count();
+    auto gpuMs = std::chrono::duration_cast<Ms>(tNow - tGpuStart).count();
+    auto totalMs = std::chrono::duration_cast<Ms>(tNow - tBuildStart).count();
+    std::cout << "  Phase timing: normalize " << std::fixed << std::setprecision(1) << normMs/1000.0
+              << "s | GPU features " << gpuMs/1000.0 << "s";
+    if (totalMs > 0 && inserted > 0)
+        std::cout << " | throughput " << static_cast<int>(inserted * 1000.0 / totalMs) << " img/s";
+    std::cout << std::endl;
+
+    // 构建二进制特征缓存
+    tCacheStart = std::chrono::steady_clock::now();
     std::cout << "Building feature cache..." << std::flush;
     if (FeaturePack::buildCache(featDir, db.allRecords()))
         std::cout << " done" << std::endl;
     else
         std::cout << " failed" << std::endl;
+    auto cacheSec = std::chrono::duration_cast<Ms>(std::chrono::steady_clock::now() - tCacheStart).count() / 1000.0;
+    std::cout << "  Cache build: " << std::fixed << std::setprecision(1) << cacheSec << "s" << std::endl;
 
     // 记录建库时使用的归一化尺寸，供 mosaic 自适应
     db.setMeta("feature_w", std::to_string(normW));
@@ -871,6 +895,11 @@ static int cmdDbStats(int argc, char* argv[])
         std::cout << "Database is empty." << std::endl;
         return 0;
     }
+
+    std::string fw = db.getMeta("feature_w");
+    std::string fh = db.getMeta("feature_h");
+    if (!fw.empty() && !fh.empty())
+        std::cout << "Normalized size: " << fw << "x" << fh << std::endl;
 
     // LAB 分布
     double minL=255, maxL=0, sumL=0, sumA=0, sumB=0;
