@@ -225,14 +225,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int featBytes = featPixels * 3;
     std::cout << "  (feature space: " << featW << "x" << featH << ")" << std::endl;
 
-    // 自动推导输出 tile 尺寸：若用户未显式指定，跟随 DB 特征尺寸
+    // 自动推导输出 tile：横幅 → 320×180，竖幅/方形 → 180×320
     if (cfg.nativeTileW == 180 && cfg.nativeTileH == 320)
     {
-        if (featW != 180 || featH != 320)
+        if (featW > featH)  // 横幅
         {
-            cfg.nativeTileW = featW;
-            cfg.nativeTileH = featH;
-            std::cout << "  (auto output tile: " << featW << "x" << featH << ")" << std::endl;
+            cfg.nativeTileW = 320;
+            cfg.nativeTileH = 180;
+            std::cout << "  (auto output tile: 320x180, DB is landscape)" << std::endl;
         }
     }
 
