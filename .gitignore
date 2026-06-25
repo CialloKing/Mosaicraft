@@ -41,3 +41,6 @@ batch_tmp/
 # Temporary / debug files
 check_*.cpp
 test_*.cpp
+
+# Mosaicraft libraries
+library/
