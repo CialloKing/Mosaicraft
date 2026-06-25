@@ -444,7 +444,14 @@ static int cmdBuild(int argc, char* argv[])
                     try {
                         cv::Mat result = normalizer.processToMat(inPath);
                         if (result.empty()) continue;
-                        imwriteUnicode(pathToUtf8(outPath), result);
+                        // 使用较低压缩率减少体积：JPEG q90, PNG level 1
+                        std::string ext = pathToUtf8(outPath.extension());
+                        std::vector<int> writeParams;
+                        if (ext == ".jpg" || ext == ".jpeg")
+                            writeParams = {cv::IMWRITE_JPEG_QUALITY, 90};
+                        else if (ext == ".png")
+                            writeParams = {cv::IMWRITE_PNG_COMPRESSION, 1};
+                        imwriteUnicode(pathToUtf8(outPath), result, writeParams);
                         okFlags[fi] = true;
                         if (gpuOk && !normOnly) {
                             std::unique_lock<std::mutex> lk(queueMtx);
