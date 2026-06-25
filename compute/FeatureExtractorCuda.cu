@@ -275,16 +275,20 @@ int extractBatch(
     double*  d_contrast = nullptr;
     double*  d_edge = nullptr;
 
-    cudaMalloc(&d_images, N * imgBytes);
-    cudaMalloc(&d_grid, N * 192 * sizeof(float));
-    cudaMalloc(&d_tiny, N * 256);
-    cudaMalloc(&d_lbp, N * 256 * sizeof(float));
-    cudaMalloc(&d_avgLAB, N * 3 * sizeof(double));
-    cudaMalloc(&d_bright, N * sizeof(double));
-    cudaMalloc(&d_contrast, N * sizeof(double));
-    cudaMalloc(&d_edge, N * sizeof(double));
+    #define CUF(p, sz, lbl) if (cudaMalloc(&(p), (sz)) != cudaSuccess) { \
+        fprintf(stderr, "GPU OOM (%dx%d): %s\n", imgW, imgH, lbl); goto cu_cleanup; }
+    CUF(d_images, N * imgBytes, "image");
+    CUF(d_grid, N * 192 * sizeof(float), "grid");
+    CUF(d_tiny, N * 256, "tiny");
+    CUF(d_lbp, N * 256 * sizeof(float), "lbp");
+    CUF(d_avgLAB, N * 3 * sizeof(double), "lab");
+    CUF(d_bright, N * sizeof(double), "bright");
+    CUF(d_contrast, N * sizeof(double), "contrast");
+    CUF(d_edge, N * sizeof(double), "edge");
+    #undef CUF
 
-    cudaMemcpy(d_images, h_images.data(), N * imgBytes, cudaMemcpyHostToDevice);
+    if (cudaMemcpy(d_images, h_images.data(), N * imgBytes, cudaMemcpyHostToDevice) != cudaSuccess)
+        goto cu_cleanup;
     if (imgW == 180 && imgH == 320)
         featureKernel<180, 320><<<N, 180>>>(
             d_images, d_grid, d_tiny, d_lbp,
@@ -303,15 +307,14 @@ int extractBatch(
             d_avgLAB, d_bright, d_contrast, d_edge, N);
     else {
         fprintf(stderr, "GPU build: unsupported size %dx%d\n", imgW, imgH);
-        cudaFree(d_images); cudaFree(d_grid); cudaFree(d_tiny); cudaFree(d_lbp);
-        cudaFree(d_avgLAB); cudaFree(d_bright); cudaFree(d_contrast); cudaFree(d_edge);
-        return 0;
+        goto cu_cleanup;
     }
 cudaDeviceSynchronize();
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess)
     {
         fprintf(stderr, "GPU feature error: %s\n", cudaGetErrorString(err));
+    cu_cleanup:
         cudaFree(d_images); cudaFree(d_grid); cudaFree(d_tiny);
         cudaFree(d_lbp); cudaFree(d_avgLAB); cudaFree(d_bright);
         cudaFree(d_contrast); cudaFree(d_edge);
