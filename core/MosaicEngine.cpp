@@ -208,13 +208,22 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
     std::cout << "Database: " << dbCount << " images" << std::endl;
 
-    // ��ȡ����ʱʹ�õ������ռ�ߴ磨Ĭ�� 180��320 ���ݾɿ⣩
-    int featW = std::atoi(db.getMeta("feature_w", "180").c_str());
-    int featH = std::atoi(db.getMeta("feature_h", "320").c_str());
+    // Read feature resolution from DB meta (required; old DBs must be rebuilt) ���ݾɿ⣩
+    std::string fw = db.getMeta("feature_w");
+    std::string fh = db.getMeta("feature_h");
+    if (fw.empty() || fh.empty())
+    {
+        std::cerr << "ERROR: Database missing feature resolution metadata." << std::endl;
+        std::cerr << "  This database was built with an older version of Mosaicraft." << std::endl;
+        std::cerr << "  Please rebuild with: mosaicraft build -i <photos> -d <db>" << std::endl;
+        return false;
+    }
+    int featW = std::atoi(fw.c_str());
+    int featH = std::atoi(fh.c_str());
+    
     int featPixels = featW * featH;
     int featBytes = featPixels * 3;
-    if (featW != 180 || featH != 320)
-        std::cout << "  (feature space: " << featW << "x" << featH << ")" << std::endl;
+    std::cout << "  (feature space: " << featW << "x" << featH << ")" << std::endl;
 
 
     // ��ȡ����Ŀ¼���� FeaturePack / ANN �־û�ʹ�ã�
@@ -320,7 +329,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int tilesX = (target.cols + cfg.tileW - 1) / cfg.tileW;
     int tilesY = (target.rows + cfg.tileH - 1) / cfg.tileH;
 
-    // ��� tile ʹ��ԭ���ֱ��ʣ�180��320��
+    // Read feature resolution from DB meta (required; old DBs must be rebuilt)��
     // ��ͼģʽ�³� 65500px ���
     int outTileW = cfg.nativeTileW;
     int outTileH = cfg.nativeTileH;
@@ -1869,7 +1878,7 @@ write_streaming_tiff:
             int ti = worstIdx[k].second;
             int tx = ti % tilesX, ty = ti / tilesX;
             char fname[256];
-            // Ŀ�� tile���Ŵ� 180��320 ���ڶԱȣ�
+            // Read feature resolution from DB meta (required; old DBs must be rebuilt) ���ڶԱȣ�
             cv::Mat tileROI = target(cv::Rect(tx*cfg.tileW, ty*cfg.tileH, cfg.tileW, cfg.tileH));
             cv::Mat tileBig;
             cv::resize(tileROI, tileBig, cv::Size(featW, featH), 0, 0, cv::INTER_NEAREST);  // �Ŵ�
