@@ -108,6 +108,12 @@ public:
     // 获取图库总数
     int totalCount();
 
+    // ——— 元数据 ———
+    // 设置全局配置项（如 feature_w=180）；value 为任意字符串
+    bool setMeta(const std::string& key, const std::string& value);
+    // 读取配置项；若不存在则返回 defaultVal
+    std::string getMeta(const std::string& key, const std::string& defaultVal = "");
+
     // ——— 使用统计 ———
     // 记录一次马赛克生成中各图片的使用情况（同一图片多次 tile 仅计一次 run）
     void recordRunUsage(const std::unordered_map<int, int>& imageUseCount,

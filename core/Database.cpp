@@ -117,6 +117,11 @@ bool Database::createTables()
         CREATE INDEX IF NOT EXISTS idx_hash    ON images(file_hash);
         CREATE INDEX IF NOT EXISTS idx_avg_l   ON images(avg_l);
         CREATE INDEX IF NOT EXISTS idx_use     ON images(use_count);
+
+        CREATE TABLE IF NOT EXISTS meta (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
     )SQL";
 
     char* errMsg = nullptr;
@@ -132,6 +137,43 @@ bool Database::createTables()
     migrate();
 
     return true;
+}
+
+// ============================================================
+// Meta
+// ============================================================
+
+bool Database::setMeta(const std::string& key, const std::string& value)
+{
+    if (!m_db) return false;
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(m_db,
+        "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
+        -1, &stmt, nullptr);
+    if (!stmt) return false;
+    sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, value.c_str(), -1, SQLITE_STATIC);
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return rc == SQLITE_DONE;
+}
+
+std::string Database::getMeta(const std::string& key, const std::string& defaultVal)
+{
+    if (!m_db) return defaultVal;
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(m_db,
+        "SELECT value FROM meta WHERE key = ?",
+        -1, &stmt, nullptr);
+    if (!stmt) return defaultVal;
+    sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_STATIC);
+    std::string result = defaultVal;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char* val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        if (val) result = val;
+    }
+    sqlite3_finalize(stmt);
+    return result;
 }
 
 // ============================================================

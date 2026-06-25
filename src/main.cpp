@@ -453,6 +453,11 @@ static int cmdBuild(int argc, char* argv[])
     else
         std::cout << " failed" << std::endl;
 
+    // 记录建库时使用的归一化尺寸，供 mosaic 自适应
+    db.setMeta("feature_w", std::to_string(normW));
+    db.setMeta("feature_h", std::to_string(normH));
+    std::cout << "Feature resolution: " << normW << "x" << normH << std::endl;
+
     return 0;
 }
 
