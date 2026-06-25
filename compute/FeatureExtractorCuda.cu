@@ -397,23 +397,30 @@ namespace {
         size_t imgBytes = PIX * 3;
         uint8_t *d_img=nullptr; float *d_grid=nullptr; uint8_t *d_tiny=nullptr;
         float *d_lbp=nullptr; double *d_lab=nullptr, *d_bright=nullptr, *d_contrast=nullptr, *d_edge=nullptr;
-        cudaMalloc(&d_img, N * imgBytes);
-        cudaMalloc(&d_grid, N * 192 * sizeof(float));
-        cudaMalloc(&d_tiny, N * 256);
-        cudaMalloc(&d_lbp, N * 256 * sizeof(float));
-        cudaMalloc(&d_lab, N * 3 * sizeof(double));
-        cudaMalloc(&d_bright, N * sizeof(double));
-        cudaMalloc(&d_contrast, N * sizeof(double));
-        cudaMalloc(&d_edge, N * sizeof(double));
-        cudaMemcpy(d_img, h_images, N * imgBytes, cudaMemcpyHostToDevice);
+
+        auto cudaCheck = [](cudaError_t e, const char* name, int W, int H) {
+            if (e != cudaSuccess) {
+                fprintf(stderr, "GPU OOM (%dx%d): %s for %s\n", W, H, cudaGetErrorString(e), name);
+                return false;
+            }
+            return true;
+        };
+        #define ALLOC(p, sz, lbl) if (!cudaCheck(cudaMalloc(&(p), (sz)), lbl, W, H)) goto cu_cleanup
+        ALLOC(d_img, N * imgBytes, "image");
+        ALLOC(d_grid, N * 192 * sizeof(float), "grid");
+        ALLOC(d_tiny, N * 256, "tiny");
+        ALLOC(d_lbp, N * 256 * sizeof(float), "lbp");
+        ALLOC(d_lab, N * 3 * sizeof(double), "lab");
+        ALLOC(d_bright, N * sizeof(double), "bright");
+        ALLOC(d_contrast, N * sizeof(double), "contrast");
+        ALLOC(d_edge, N * sizeof(double), "edge");
+        #undef ALLOC
+
+        if (cudaMemcpy(d_img, h_images, N * imgBytes, cudaMemcpyHostToDevice) != cudaSuccess) goto cu_cleanup;
         featureKernel<W, H><<<N, W>>>(d_img, d_grid, d_tiny, d_lbp, d_lab, d_bright, d_contrast, d_edge, N);
-        cudaDeviceSynchronize();
-        cudaError_t err = cudaGetLastError();
-        if (err != cudaSuccess) {
-            fprintf(stderr, "GPU feature error (%dx%d): %s\n", W, H, cudaGetErrorString(err));
-            cudaFree(d_img); cudaFree(d_grid); cudaFree(d_tiny); cudaFree(d_lbp);
-            cudaFree(d_lab); cudaFree(d_bright); cudaFree(d_contrast); cudaFree(d_edge);
-            return -1;
+        if (cudaDeviceSynchronize() != cudaSuccess || cudaGetLastError() != cudaSuccess) {
+            fprintf(stderr, "GPU kernel error (%dx%d)\n", W, H);
+            goto cu_cleanup;
         }
         cudaMemcpy(h_avgLAB, d_lab, N*3*sizeof(double), cudaMemcpyDeviceToHost);
         cudaMemcpy(h_grid, d_grid, N*192*sizeof(float), cudaMemcpyDeviceToHost);
@@ -421,9 +428,10 @@ namespace {
         cudaMemcpy(h_lbp, d_lbp, N*256*sizeof(float), cudaMemcpyDeviceToHost);
         double hostEdge; cudaMemcpy(&hostEdge, d_edge, sizeof(double), cudaMemcpyDeviceToHost);
         *h_edge = hostEdge;
+    cu_cleanup:
         cudaFree(d_img); cudaFree(d_grid); cudaFree(d_tiny); cudaFree(d_lbp);
         cudaFree(d_lab); cudaFree(d_bright); cudaFree(d_contrast); cudaFree(d_edge);
-        return 0;
+        return (d_img && d_grid && d_tiny && d_lbp && d_lab && d_bright && d_contrast && d_edge) ? 0 : -1;
     }
 } // anonymous namespace
 

@@ -199,9 +199,12 @@ static int cmdBuild(int argc, char* argv[])
         {
             const char* val = argv[++i];
             const char* sep = strchr(val, 'x');
-            if (sep) {
+            if (sep && sep != val && *(sep+1) != '\0') {
                 normW = std::max(1, std::atoi(val));
                 normH = std::max(1, std::atoi(sep + 1));
+            } else {
+                std::cerr << "ERROR: --normalize-size expected WxH format (e.g. 180x320), got: " << val << std::endl;
+                return 1;
             }
         }
         else if (arg == "--normalize-only")
@@ -560,7 +563,13 @@ static int cmdMosaic(int argc, char* argv[])
         }
         else if (arg == "--write-mode" && i + 1 < argc)
         {
-            cfg.writeMode = argv[++i];
+            std::string mode = argv[++i];
+            if (mode == "auto" || mode == "stream" || mode == "batch")
+                cfg.writeMode = mode;
+            else {
+                std::cerr << "ERROR: --write-mode must be auto|stream|batch, got: " << mode << std::endl;
+                return 1;
+            }
         }
         else if (arg == "--tiled")
         {
@@ -588,9 +597,12 @@ static int cmdMosaic(int argc, char* argv[])
             // 格式: 180x320
             const char* val = argv[++i];
             const char* sep = strchr(val, 'x');
-            if (sep) {
+            if (sep && sep != val && *(sep+1) != '\0') {
                 cfg.nativeTileW = std::max(1, std::atoi(val));
                 cfg.nativeTileH = std::max(1, std::atoi(sep + 1));
+            } else {
+                std::cerr << "ERROR: --output-tile expected WxH format (e.g. 180x320), got: " << val << std::endl;
+                return 1;
             }
         }
         else if (arg == "--color-adjust")
