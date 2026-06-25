@@ -125,12 +125,24 @@ Mosaic options:
       --benchmark        Show phase timing
       --cpu              Force CPU, no GPU acceleration
 
+Output modes (choose one):
+  -o, --output <path>   Single image output (default)
+      --tiled            Tile set output (one file per tile)
+      --deepzoom         Deep Zoom pyramid + HTML viewer (implies --tiled)
+
 Common options:
   -h, --help             Show this help
 
 Inspect options:
   -i, --input  <path>    Image to inspect (required)
   -d, --db     <path>    Database path (default: mosaicraft.db)
+
+Exit status:
+  0  success
+  1  general error (bad path, invalid arguments)
+  2  database error (locked, corrupt, or missing)
+  3  memory / allocation failure
+  4  GPU / CUDA error
 )";
 }
 
@@ -211,7 +223,7 @@ static int cmdBuild(int argc, char* argv[])
     if (!db.isOpen())
     {
         std::cerr << "Cannot open database: " << dbPath << std::endl;
-        return 1;
+        return EXIT_ERR_DB;
     }
 
     if (!db.createTables())
@@ -620,6 +632,9 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --cpu                 Force CPU (no GPU)" << std::endl;
             std::cout << "  --tiled               Output tiles as separate files (no size limit)" << std::endl;
             std::cout << "  --deepzoom            Generate Deep Zoom pyramid + HTML viewer" << std::endl;
+            std::cout << std::endl;
+            std::cout << "  Output modes (choose one): -o (single), --tiled, --deepzoom" << std::endl;
+            std::cout << "  Exit status: 0=success 1=param/IO 2=database 3=memory 4=GPU" << std::endl;
             return 0;
         }
         else
@@ -763,7 +778,7 @@ static int cmdDbStats(int argc, char* argv[])
     if (!db.isOpen())
     {
         std::cerr << "ERROR: Cannot open database: " << dbPath << std::endl;
-        return 1;
+        return EXIT_ERR_DB;
     }
 
     auto all = db.allRecords();
@@ -927,7 +942,7 @@ static int cmdDbUsage(int argc, char* argv[])
     }
 
     Database db(dbPath);
-    if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return 1; }
+    if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return EXIT_ERR_DB; }
 
     auto top = db.topUsedImages(limit);
     if (top.empty())
@@ -1019,7 +1034,7 @@ static int cmdDbHealth(int argc, char* argv[])
             dbPath = argv[++i];
 
     Database db(dbPath);
-    if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return 1; }
+    if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return EXIT_ERR_DB; }
 
     auto all = db.allRecords();
     int total = static_cast<int>(all.size());
