@@ -83,6 +83,10 @@ int matchOnGpu(
 bool isCudaAvailable();
 
 int extractTileFeatures(
+    const std::uint8_t* h_tiles, int N, int imgW, int imgH,
+    double* h_avgLAB, float* h_grid, std::uint8_t* h_tiny,
+    double* h_edge, float* h_lbp);
+int extractTileFeatures(
     const std::uint8_t* h_tiles180, int N,
     double* h_avgLAB, float* h_grid, std::uint8_t* h_tiny,
     double* h_edge, float* h_lbp);
@@ -90,6 +94,12 @@ int extractTileFeatures(
 // 原始特征提取（从 FeatureExtractorCuda，不写文件）
 int extractFeaturesRaw(
     const std::uint8_t* h_images, int N,
+    double* h_avgLAB, float* h_grid, std::uint8_t* h_tiny,
+    double* h_edge, float* h_lbp);
+
+// 带特征尺寸的版本（支持 180x320 / 320x180 / 360x640 / 640x360）
+int extractFeaturesRaw(
+    const std::uint8_t* h_images, int N, int imgW, int imgH,
     double* h_avgLAB, float* h_grid, std::uint8_t* h_tiny,
     double* h_edge, float* h_lbp);
 

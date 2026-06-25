@@ -788,12 +788,21 @@ bool isCudaAvailable()
 // 委托给 FeatureExtractorCuda::extractFeaturesRaw
 // ============================================================
 extern int extractTileFeatures(
-    const uint8_t* h_tiles180, int N,
+    const uint8_t* h_tiles, int N, int imgW, int imgH,
     double* h_avgLAB, float* h_grid, uint8_t* h_tiny,
     double* h_edge, float* h_lbp)
 {
     return mosaicraft::cuda::extractFeaturesRaw(
-        h_tiles180, N, h_avgLAB, h_grid, h_tiny, h_edge, h_lbp);
+        h_tiles, N, imgW, imgH, h_avgLAB, h_grid, h_tiny, h_edge, h_lbp);
+}
+
+extern int extractTileFeatures(
+    const uint8_t* h_tiles, int N,
+    double* h_avgLAB, float* h_grid, uint8_t* h_tiny,
+    double* h_edge, float* h_lbp)
+{
+    return mosaicraft::cuda::extractFeaturesRaw(
+        h_tiles, N, h_avgLAB, h_grid, h_tiny, h_edge, h_lbp);
 }
 
 } // namespace cuda

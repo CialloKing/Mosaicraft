@@ -12,14 +12,18 @@ namespace mosaicraft {
 namespace cuda {
 
 // ============================================================
-// GPU 常量：归一化图尺寸
+// GPU 常量：归一化图尺寸 — 模板化以支持常见分辨率
 // ============================================================
-static constexpr int IMG_W = 320;
-static constexpr int IMG_H = 180;
-static constexpr int IMG_PIX = IMG_W * IMG_H;        // 57600
-static constexpr int GRID_CW = (IMG_W + 7) / 8;             // 23 (ceil)
-static constexpr int GRID_CH = (IMG_H + 7) / 8;             // 40 (ceil)
-static constexpr int GRID_CELLS = 64;
+template<int W, int H> struct GpuParams {
+    static constexpr int IMG_W = W;
+    static constexpr int IMG_H = H;
+    static constexpr int IMG_PIX = W * H;
+    static constexpr int GRID_CW = (W + 7) / 8;
+    static constexpr int GRID_CH = (H + 7) / 8;
+    static constexpr int GRID_CELLS = 64;
+    static constexpr int TINY_SX = W / 16;   // TinyImage 采样步长 X
+    static constexpr int TINY_SY = H / 16;   // TinyImage 采样步长 Y
+};
 static constexpr int TINY_W = 16;
 static constexpr int TINY_H = 16;
 static constexpr int LBP_BINS = 256;
@@ -57,43 +61,49 @@ __device__ float rgb2gray(float r, float g, float b)
 }
 
 // ============================================================
-// 主 kernel：每个 block 处理一张图片，计算全部特征
-// blockDim = (IMG_W, 1, 1) = 320 threads
-// 用网格跨行覆盖 IMG_H=180 行
+// 主 kernel：模板化，每个 block 处理一张图片
+// 模板参数 W, H = 图像宽高
 // ============================================================
-extern "C" __global__ void featureKernel(
-    const uint8_t* __restrict__ d_images,   // [batchSize * IMG_H * IMG_W * 3]
-    float* __restrict__ d_grid,             // [batchSize * 192]
-    uint8_t* __restrict__ d_tiny,           // [batchSize * 256]
-    float* __restrict__ d_lbp,              // [batchSize * 256]
-    double* __restrict__ d_avgLAB,          // [batchSize * 3]
-    double* __restrict__ d_brightness,      // [batchSize]
-    double* __restrict__ d_contrast,        // [batchSize]
-    double* __restrict__ d_edgeDensity,     // [batchSize]
+template<int W, int H>
+__global__ void featureKernel(
+    const uint8_t* __restrict__ d_images,
+    float* __restrict__ d_grid,
+    uint8_t* __restrict__ d_tiny,
+    float* __restrict__ d_lbp,
+    double* __restrict__ d_avgLAB,
+    double* __restrict__ d_brightness,
+    double* __restrict__ d_contrast,
+    double* __restrict__ d_edgeDensity,
     int batchSize)
 {
+    constexpr int IMG_W = W;
+    constexpr int IMG_H = H;
+    constexpr int IMG_PIX = W * H;
+    constexpr int GRID_CW = (W + 7) / 8;
+    constexpr int GRID_CH = (H + 7) / 8;
+    constexpr int GRID_CELLS = 64;
+    constexpr int TINY_SX = W / 16;
+    constexpr int TINY_SY = H / 16;
+
     int imgIdx = blockIdx.x;
     if (imgIdx >= batchSize) return;
 
     int tx = threadIdx.x;
-    int stride = blockDim.x; // 320
+    int stride = blockDim.x;
 
     const uint8_t* img = d_images + imgIdx * IMG_PIX * 3;
 
-    // 共享内存：每行 LAB 累积 (shared across threads in block)
-    __shared__ float s_gridLab[GRID_CELLS * 3];   // 16 cells × L,A,B
-    __shared__ float s_grayAcc;                    // 灰度总和
-    __shared__ float s_graySqAcc;                  // 灰度平方和
-    __shared__ int   s_edgeCount;                  // 边缘像素计数
-    __shared__ uint32_t s_lbpHist[LBP_BINS];       // LBP 直方图
+    __shared__ float s_gridLab[GRID_CELLS * 3];
+    __shared__ float s_grayAcc;
+    __shared__ float s_graySqAcc;
+    __shared__ int   s_edgeCount;
+    __shared__ uint32_t s_lbpHist[LBP_BINS];
 
-    // 初始化共享内存（仅前几个线程）
     if (tx < GRID_CELLS * 3) s_gridLab[tx] = 0.0f;
     if (tx == 0) { s_grayAcc = 0; s_graySqAcc = 0; s_edgeCount = 0; }
     if (tx < LBP_BINS) s_lbpHist[tx] = 0;
     __syncthreads();
 
-    // 每个线程处理一列，跨行遍历
     float localGrayAcc = 0, localGraySq = 0;
     int localEdge = 0;
 
@@ -107,11 +117,9 @@ extern "C" __global__ void featureKernel(
         float g = img[idx + 1];
         float r = img[idx + 2];
 
-        // LAB
         float lv, av, bv;
         rgb2lab(r, g, b, lv, av, bv);
 
-        // Grid: 确定所属 cell（带边界钳制保护）
         int cellX = x / GRID_CW;
         int cellY = y / GRID_CH;
         if (cellX >= 8) cellX = 7;
@@ -121,30 +129,27 @@ extern "C" __global__ void featureKernel(
         atomicAdd(&s_gridLab[cellIdx * 3 + 1], av);
         atomicAdd(&s_gridLab[cellIdx * 3 + 2], bv);
 
-        // Gray
         float gray = rgb2gray(r, g, b);
         localGrayAcc += gray;
         localGraySq += gray * gray;
 
-        // Edge (simple Sobel-like: abs diff with right/bottom neighbor)
         if (x > 0 && y > 0)
         {
             float center = gray;
-            float right = rgb2gray(img[(y * IMG_W + x - 1) * 3 + 2], img[(y * IMG_W + x - 1) * 3 + 1], img[(y * IMG_W + x - 1) * 3]);  // BGR→RGB
+            float right = rgb2gray(img[(y * IMG_W + x - 1) * 3 + 2], img[(y * IMG_W + x - 1) * 3 + 1], img[(y * IMG_W + x - 1) * 3]);
             float down  = rgb2gray(img[((y-1) * IMG_W + x) * 3 + 2], img[((y-1) * IMG_W + x) * 3 + 1], img[((y-1) * IMG_W + x) * 3]);
             float grad = fabsf(center - right) + fabsf(center - down);
             if (grad > 30.0f) localEdge++;
         }
 
-        // LBP: if not border
         if (x > 0 && x < IMG_W - 1 && y > 0 && y < IMG_H - 1)
         {
             uint8_t code = 0;
-            float c = rgb2gray(img[((y) * IMG_W + x) * 3 + 2], img[((y) * IMG_W + x) * 3 + 1], img[((y) * IMG_W + x) * 3]);  // BGR→RGB
+            float c = rgb2gray(img[((y) * IMG_W + x) * 3 + 2], img[((y) * IMG_W + x) * 3 + 1], img[((y) * IMG_W + x) * 3]);
             auto gv = [&](int dy, int dx) {
                 float v = rgb2gray(img[((y+dy) * IMG_W + (x+dx)) * 3 + 2],
                                    img[((y+dy) * IMG_W + (x+dx)) * 3 + 1],
-                                   img[((y+dy) * IMG_W + (x+dx)) * 3]);  // BGR→RGB
+                                   img[((y+dy) * IMG_W + (x+dx)) * 3]);
                 return v >= c ? 1.0f : 0.0f;
             };
             if (gv(-1,-1)) code |= 1;    if (gv(-1,0)) code |= 2;    if (gv(-1,1)) code |= 4;
@@ -154,13 +159,11 @@ extern "C" __global__ void featureKernel(
         }
     }
 
-    // 归约 local → shared
     atomicAdd(&s_grayAcc, localGrayAcc);
     atomicAdd(&s_graySqAcc, localGraySq);
     atomicAdd(&s_edgeCount, localEdge);
     __syncthreads();
 
-    // 前几个线程写结果
     if (tx == 0)
     {
         float nPix = IMG_PIX;
@@ -180,7 +183,6 @@ extern "C" __global__ void featureKernel(
             d_grid[outOff + c * 3 + 2] = s_gridLab[c * 3 + 2] / cnt;
         }
 
-        // AvgLAB
         float totalL = 0, totalA = 0, totalB = 0;
         for (int c = 0; c < GRID_CELLS; ++c)
         {
@@ -192,7 +194,6 @@ extern "C" __global__ void featureKernel(
         d_avgLAB[imgIdx * 3 + 1] = totalA / nPix;
         d_avgLAB[imgIdx * 3 + 2] = totalB / nPix;
 
-        // LBP (L1 normalize)
         int lbpOff = imgIdx * LBP_BINS;
         float lbpSum = 0;
         for (int i = 0; i < LBP_BINS; ++i) lbpSum += s_lbpHist[i];
@@ -207,19 +208,17 @@ extern "C" __global__ void featureKernel(
         }
     }
 
-    // TinyImage: 线程 0-255 各计算一个 16×16 像素
     if (tx < 256)
     {
         int ty = tx / 16;
         int ttx = tx % 16;
-        // 平均 pooling: 每个 tiny 像素覆盖 (320/16)×(180/16) = 20×11.25 ≈ 20×11 源像素
-        int srcX0 = ttx * 20;
-        int srcY0 = ty * 11;
+        int srcX0 = ttx * TINY_SX;
+        int srcY0 = ty * TINY_SY;
         float sum = 0;
         int cnt = 0;
-        for (int dy = 0; dy < 11 && (srcY0 + dy) < IMG_H; ++dy)
+        for (int dy = 0; dy < TINY_SY && (srcY0 + dy) < IMG_H; ++dy)
         {
-            for (int dx = 0; dx < 20 && (srcX0 + dx) < IMG_W; ++dx)
+            for (int dx = 0; dx < TINY_SX && (srcX0 + dx) < IMG_W; ++dx)
             {
                 int idx2 = ((srcY0 + dy) * IMG_W + (srcX0 + dx)) * 3;
                 sum += rgb2gray(img[idx2 + 2], img[idx2 + 1], img[idx2]);
@@ -229,6 +228,8 @@ extern "C" __global__ void featureKernel(
         d_tiny[imgIdx * 256 + tx] = static_cast<uint8_t>(sum / cnt);
     }
 }
+
+// 显式实例化：支持的四种分辨率
 
 // ============================================================
 // 主机接口
@@ -243,7 +244,7 @@ int extractBatch(
     if (N <= 0) return 0;
 
     // 上传图像到 GPU
-    size_t imgBytes = IMG_PIX * 3;
+    size_t imgBytes = 180 * 320 * 3;  // extractBatch: fixed 180x320
     std::vector<uint8_t> h_images(N * imgBytes);
     for (int i = 0; i < N; ++i)
     {
@@ -280,7 +281,7 @@ int extractBatch(
     cudaMemcpy(d_images, h_images.data(), N * imgBytes, cudaMemcpyHostToDevice);
 
     // 启动 kernel: N 个 block, 每个 320 线程
-    featureKernel<<<N, 320>>>(
+    featureKernel<180, 320><<<N, 180>>>(
         d_images, d_grid, d_tiny, d_lbp,
         d_avgLAB, d_bright, d_contrast, d_edge, N);
 
@@ -359,62 +360,75 @@ int extractBatch(
 }
 
 // ============================================================
-// 原始特征提取（mosaic 用，不写文件，只返回向量）
-// 调用 featureKernel 后直接拷贝结果到 host 缓冲区
+// 调度器宏：根据尺寸选择模板实例
 // ============================================================
+#define LAUNCH_FEATURE(W, H) \
+    if (imgW == W && imgH == H) return launchKernel<W, H>(h_images, N, h_avgLAB, h_grid, h_tiny, h_edge, h_lbp)
+
+namespace {
+    template<int W, int H>
+    int launchKernel(const uint8_t* h_images, int N,
+                     double* h_avgLAB, float* h_grid, uint8_t* h_tiny,
+                     double* h_edge, float* h_lbp)
+    {
+        constexpr int PIX = W * H;
+        size_t imgBytes = PIX * 3;
+        uint8_t *d_img=nullptr; float *d_grid=nullptr; uint8_t *d_tiny=nullptr;
+        float *d_lbp=nullptr; double *d_lab=nullptr, *d_bright=nullptr, *d_contr=nullptr, *d_edge=nullptr;
+        cudaMalloc(&d_img, N * imgBytes);
+        cudaMalloc(&d_grid, N * 192 * sizeof(float));
+        cudaMalloc(&d_tiny, N * 256);
+        cudaMalloc(&d_lbp, N * 256 * sizeof(float));
+        cudaMalloc(&d_lab, N * 3 * sizeof(double));
+        cudaMalloc(&d_bright, N * sizeof(double));
+        cudaMalloc(&d_contr, N * sizeof(double));
+        cudaMalloc(&d_edge, N * sizeof(double));
+        cudaMemcpy(d_img, h_images, N * imgBytes, cudaMemcpyHostToDevice);
+        featureKernel<W, H><<<N, W>>>(d_img, d_grid, d_tiny, d_lbp, d_lab, d_bright, d_contr, d_edge, N);
+        cudaDeviceSynchronize();
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            fprintf(stderr, "GPU feature error (%dx%d): %s\n", W, H, cudaGetErrorString(err));
+            cudaFree(d_img); cudaFree(d_grid); cudaFree(d_tiny); cudaFree(d_lbp);
+            cudaFree(d_lab); cudaFree(d_bright); cudaFree(d_contr); cudaFree(d_edge);
+            return -1;
+        }
+        cudaMemcpy(h_avgLAB, d_lab, N*3*sizeof(double), cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_grid, d_grid, N*192*sizeof(float), cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_tiny, d_tiny, N*256, cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_lbp, d_lbp, N*256*sizeof(float), cudaMemcpyDeviceToHost);
+        double hostEdge; cudaMemcpy(&hostEdge, d_edge, sizeof(double), cudaMemcpyDeviceToHost);
+        *h_edge = hostEdge;
+        cudaFree(d_img); cudaFree(d_grid); cudaFree(d_tiny); cudaFree(d_lbp);
+        cudaFree(d_lab); cudaFree(d_bright); cudaFree(d_contr); cudaFree(d_edge);
+        return 0;
+    }
+} // anonymous namespace
+
+// 带尺寸参数的版本
+int extractFeaturesRaw(
+    const uint8_t* h_images, int N, int imgW, int imgH,
+    double* h_avgLAB, float* h_grid, uint8_t* h_tiny,
+    double* h_edge, float* h_lbp)
+{
+    if (N <= 0) return 0;
+    LAUNCH_FEATURE(180, 320);
+    LAUNCH_FEATURE(320, 180);
+    LAUNCH_FEATURE(360, 640);
+    LAUNCH_FEATURE(640, 360);
+    fprintf(stderr, "GPU: unsupported feature size %dx%d, use CPU fallback\n", imgW, imgH);
+    return -1;
+}
+
+// 向后兼容：默认 180×320
 int extractFeaturesRaw(
     const uint8_t* h_images, int N,
     double* h_avgLAB, float* h_grid, uint8_t* h_tiny,
     double* h_edge, float* h_lbp)
 {
-    if (N <= 0) return 0;
-
-    size_t imgBytes = IMG_PIX * 3;
-    uint8_t* d_images = nullptr;
-    float*   d_grid = nullptr;
-    uint8_t* d_tiny = nullptr;
-    float*   d_lbp = nullptr;
-    double*  d_avgLAB = nullptr;
-    double*  d_bright = nullptr;
-    double*  d_contrast = nullptr;
-    double*  d_edge = nullptr;
-
-    cudaMalloc(&d_images, N * imgBytes);
-    cudaMalloc(&d_grid, N * 192 * sizeof(float));
-    cudaMalloc(&d_tiny, N * 256);
-    cudaMalloc(&d_lbp, N * 256 * sizeof(float));
-    cudaMalloc(&d_avgLAB, N * 3 * sizeof(double));
-    cudaMalloc(&d_bright, N * sizeof(double));
-    cudaMalloc(&d_contrast, N * sizeof(double));
-    cudaMalloc(&d_edge, N * sizeof(double));
-
-    cudaMemcpy(d_images, h_images, N * imgBytes, cudaMemcpyHostToDevice);
-
-    featureKernel<<<N, 320>>>(
-        d_images, d_grid, d_tiny, d_lbp,
-        d_avgLAB, d_bright, d_contrast, d_edge, N);
-
-    cudaDeviceSynchronize();
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        fprintf(stderr, "GPU tile feature error: %s\n", cudaGetErrorString(err));
-        cudaFree(d_images); cudaFree(d_grid); cudaFree(d_tiny);
-        cudaFree(d_lbp); cudaFree(d_avgLAB); cudaFree(d_bright);
-        cudaFree(d_contrast); cudaFree(d_edge);
-        return -1;
-    }
-
-    cudaMemcpy(h_avgLAB, d_avgLAB, N * 3 * sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_grid,   d_grid,   N * 192 * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_tiny,   d_tiny,   N * 256, cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_edge,   d_edge,   N * sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_lbp,    d_lbp,    N * 256 * sizeof(float), cudaMemcpyDeviceToHost);
-
-    cudaFree(d_images); cudaFree(d_grid); cudaFree(d_tiny);
-    cudaFree(d_lbp); cudaFree(d_avgLAB); cudaFree(d_bright);
-    cudaFree(d_contrast); cudaFree(d_edge);
-    return N;
+    return extractFeaturesRaw(h_images, N, 180, 320, h_avgLAB, h_grid, h_tiny, h_edge, h_lbp);
 }
+
 
 } // namespace cuda
 } // namespace mosaicraft

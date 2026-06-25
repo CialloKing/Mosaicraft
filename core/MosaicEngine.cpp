@@ -487,12 +487,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
     tLast = tPreFeat;
 
     // Phase 0: ������ȡ��GPU �������٣�CPU ���ˣ�
-    // GPU kernel Ӳ���� 180��320���Ǳ�׼�ߴ��˻ص� CPU
-    if (cfg.useGpu && (featW != 180 || featH != 320))
-    {
-        std::cout << "  (GPU kernel fixed at 180x320, falling back to CPU for " << featW << "x" << featH << ")" << std::endl;
-        cfg.useGpu = false;
-    }
     if (cfg.useGpu)
     {
         const int BATCH = 256;
@@ -522,7 +516,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
             // GPU ������ȡ����
             int ret = mosaicraft::cuda::extractFeaturesRaw(
-                batchFeat.data(), batchN,
+                batchFeat.data(), batchN, featW, featH,
                 batchLAB.data(), batchGrid.data(), batchTiny.data(),
                 batchEdgeArr.data(), batchLBP.data());
             if (ret < 0) { cfg.useGpu = false; break; }
@@ -565,7 +559,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
 
             int ret = mosaicraft::cuda::extractFeaturesRaw(
-                tailFeat.data(), tailN,
+                tailFeat.data(), tailN, featW, featH,
                 tailLAB.data(), tailGrid.data(), tailTiny.data(),
                 tailEdgeArr.data(), tailLBP.data());
             if (ret < 0) { cfg.useGpu = false; }
