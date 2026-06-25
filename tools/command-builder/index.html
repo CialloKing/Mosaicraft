@@ -70,7 +70,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
     <div class="row">
       <div class="field"><label>目标图片 -i</label><input type="text" id="m-input" placeholder="target.jpg"></div>
       <div class="field"><label>数据库 -d</label><input type="text" id="m-db" value="mosaicraft.db"></div>
-      <div class="field"><label>输出路径 -o</label><input type="text" id="m-output" value="output.jpg"></div>
+      <div class="field"><label>输出路径 -o</label><input type="text" id="m-output" value="mosaic.jpg"></div>
     </div>
   </div>
   <div class="card">
@@ -88,6 +88,12 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
       <div class="field"><label>Tile 宽度 --tile-w</label><input type="number" id="m-tilew" value="9" min="1"></div>
       <div class="field"><label>Tile 高度 --tile-h</label><input type="number" id="m-tileh" value="16" min="1"></div>
       <div class="field"><label>候选数 --candidates</label><input type="number" id="m-candidates" value="150" min="1"></div>
+      <div class="field"><label>TopN 随机 --topn-random</label><input type="number" id="m-topn" value="10" min="1"><span class="hint">随机选取池大小</span></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>L 亮度范围 --l-range</label><input type="number" id="m-lrange" value="20" min="0" step="1"></div>
+      <div class="field"><label>邻域窗口 --neighbor-window</label><input type="number" id="m-nwin" value="0" min="0" placeholder="0=自动"></div>
+      <div class="field"><label>邻域惩罚 --neighbor-penalty</label><input type="number" id="m-npen" value="100" min="0" step="1"><span class="hint">基础惩罚值</span></div>
       <div class="field"><label>上采样 --upscale</label><input type="number" id="m-upscale" min="1" placeholder="1× (不放大)"></div>
     </div>
     <div class="row">
@@ -264,6 +270,10 @@ function generateCommand() {
     const tw = val('m-tilew'); if (tw && tw !== '9') lines.push('--tile-w ' + tw);
     const th = val('m-tileh'); if (th && th !== '16') lines.push('--tile-h ' + th);
     const cand = val('m-candidates'); if (cand && cand !== '150') lines.push('--candidates ' + cand);
+    const topn = val('m-topn'); if (topn && topn !== '10') lines.push('--topn-random ' + topn);
+    const lr = val('m-lrange'); if (lr && lr !== '20') lines.push('--l-range ' + lr);
+    const nw = val('m-nwin'); if (nw && nw !== '0') lines.push('--neighbor-window ' + nw);
+    const np = val('m-npen'); if (np && np !== '100') lines.push('--neighbor-penalty ' + np);
     const up = val('m-upscale'); if (up) lines.push('--upscale ' + up);
     const ow = val('m-outw'); if (ow) lines.push('--out-w ' + ow);
     const oh = val('m-outh'); if (oh) lines.push('--out-h ' + oh);
