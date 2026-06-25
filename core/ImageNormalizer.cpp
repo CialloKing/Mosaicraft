@@ -41,6 +41,14 @@ bool ImageNormalizer::process(const std::string& inputPath, const std::string& o
     return true;
 }
 
+cv::Mat ImageNormalizer::processToMat(const std::string& inputPath)
+{
+    cv::Mat src = imreadUnicode(inputPath, cv::IMREAD_COLOR);
+    if (src.empty()) return cv::Mat();
+    cv::Mat covered = resizeToCover(src);
+    return centerCrop(covered);
+}
+
 cv::Mat ImageNormalizer::resizeToCover(const cv::Mat& src)
 {
     const int srcW = src.cols;

@@ -31,6 +31,9 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
 
 // 退出码
 #define EXIT_OK          0
@@ -326,8 +329,7 @@ static int cmdBuild(int argc, char* argv[])
         std::cerr << "No supported images found." << std::endl;
         return 1;
     }
-
-    // —����?Phase 1: 多线程并行归丢��?—����?
+    // Phase 1 & 2: pipelined — normalize (CPU) + feature extraction (GPU) run concurrently
     ImageNormalizer normalizer(normW, normH);
     std::vector<std::string> outPaths(files.size());
     std::vector<bool> okFlags(files.size(), false);
@@ -335,45 +337,107 @@ static int cmdBuild(int argc, char* argv[])
     int normThreads = static_cast<int>(std::thread::hardware_concurrency());
     if (normThreads < 2) normThreads = 2;
 
-    // ������==���ʱ������һ�����ļ��ѹ����������ؽ�����
-    std::error_code equivEc;
-    bool inputIsOutput = false;
-    try {
-        inputIsOutput = std::filesystem::equivalent(inputDir, outputDir, equivEc);
-    } catch (...) {
-        inputIsOutput = false;
-    }
-    if (!inputIsOutput)
-    {
-        std::cout << "Normalizing (" << normThreads << " threads)..." << std::endl;
-    }
-    else
-    {
-        std::cout << "Skipping normalization (input == output)" << std::endl;
+    if (normOnly) { std::cout << "Normalize only mode" << std::endl; }
+
+    // Shared queue: normalizer threads produce, GPU thread consumes
+    struct NormItem { cv::Mat img; std::string outPath; std::string stem; };
+    std::queue<NormItem> normQueue;
+    std::mutex queueMtx;
+    std::condition_variable queueCV;
+    std::atomic<bool> normPhaseDone{false};
+    std::atomic<int> gpuDone{0};
+
+    FeatureExtractor extractor;
+    bool gpuOk = cuda::isCudaAvailable();
+    constexpr int GPU_BATCH = 256;
+    int inserted = 0, skipped = 0;
+
+    // GPU consumer thread (started before normalization so it can receive immediately)
+    std::thread gpuThread;
+    if (gpuOk && !normOnly) {
+        std::cout << "Normalizing + Features: GPU (batch " << GPU_BATCH << ", pipelined)" << std::endl;
+        gpuThread = std::thread([&]() {
+            std::vector<cv::Mat> imgs; imgs.reserve(GPU_BATCH);
+            std::vector<ImageRecord> recs; recs.reserve(GPU_BATCH);
+            std::vector<std::string> stems; stems.reserve(GPU_BATCH);
+            auto flush = [&]() {
+                if (imgs.empty()) return;
+                int done = cuda::extractBatch(imgs, recs, featDir, stems);
+                if (done <= 0) {
+                    for (size_t bi = 0; bi < imgs.size(); ++bi)
+                        extractor.compute(imgs[bi], recs[bi], featDir, stems[bi]);
+                }
+                db.beginTransaction();
+                for (auto& rec : recs) { if (db.insertImage(rec)) inserted++; else skipped++; }
+                db.commitTransaction();
+                gpuDone += static_cast<int>(imgs.size());
+                imgs.clear(); recs.clear(); stems.clear();
+            };
+            while (true) {
+                NormItem item;
+                {
+                    std::unique_lock<std::mutex> lk(queueMtx);
+                    queueCV.wait(lk, [&]{ return !normQueue.empty() || normPhaseDone.load(); });
+                    if (normQueue.empty() && normPhaseDone.load()) { flush(); break; }
+                    if (normQueue.empty()) continue;
+                    item = std::move(normQueue.front());
+                    normQueue.pop();
+                }
+                if (item.img.empty()) continue;
+                std::string hash = hashMat(item.img);
+                if (db.existsByHash(hash)) { fs::remove(u8path(item.outPath)); skipped++; continue; }
+                ImageRecord rec;
+                rec.filePath = item.outPath; rec.fileHash = hash;
+                rec.srcWidth = item.img.cols; rec.srcHeight = item.img.rows;
+                rec.aspectRatio = (rec.srcHeight > 0) ? (double)rec.srcWidth / rec.srcHeight : 0.0;
+                rec.fileSize = fs::file_size(u8path(item.outPath));
+                std::string ext = pathToUtf8(u8path(item.outPath).extension());
+                if (!ext.empty() && ext[0] == '.') ext = ext.substr(1);
+                rec.format = ext;
+                imgs.push_back(item.img); recs.push_back(rec); stems.push_back(item.stem);
+                if ((int)imgs.size() >= GPU_BATCH) flush();
+            }
+        });
+    } else if (!normOnly) {
+        std::cout << "Features: CPU" << std::endl;
     }
 
-    std::vector<std::thread> workers;
+    // Producer threads: normalize images
+    std::error_code equivEc;
+    bool inputIsOutput = false;
+    try { inputIsOutput = std::filesystem::equivalent(inputDir, outputDir, equivEc); }
+    catch (...) { inputIsOutput = false; }
+
     if (!inputIsOutput)
     {
-        std::atomic<size_t> nextFileIdx{0};   // �ļ�������������0������
+        if (!gpuOk || normOnly) std::cout << "Normalizing (" << normThreads << " threads)..." << std::endl;
+        std::atomic<size_t> nextFileIdx{0};
         std::atomic<size_t> nextNameIdx = appendMode
             ? std::atomic<size_t>(db.totalCount())
-            : std::atomic<size_t>(0);          // ����ļ���ţ�appendʱ������ĩβ��ʼ��
+            : std::atomic<size_t>(0);
+        std::vector<std::thread> workers;
         for (int t = 0; t < normThreads; ++t) {
             workers.emplace_back([&]() {
                 for (;;) {
-                    size_t fi = nextFileIdx.fetch_add(1);  // �ļ�����
+                    size_t fi = nextFileIdx.fetch_add(1);
                     if (fi >= files.size()) break;
                     const std::string& inPath = files[fi];
                     std::string ext = pathToUtf8(u8path(inPath).extension());
                     char name[64];
-                    size_t nameIdx = nextNameIdx.fetch_add(1);  // ������
+                    size_t nameIdx = nextNameIdx.fetch_add(1);
                     snprintf(name, sizeof(name), "%06zu%s", nameIdx, ext.c_str());
                     fs::path outPath = fs::path(outputDir) / name;
                     outPaths[fi] = pathToUtf8(outPath);
                     try {
-                        if (normalizer.process(inPath, pathToUtf8(outPath)))
-                            okFlags[fi] = true;
+                        cv::Mat result = normalizer.processToMat(inPath);
+                        if (result.empty()) continue;
+                        imwriteUnicode(pathToUtf8(outPath), result);
+                        okFlags[fi] = true;
+                        if (gpuOk && !normOnly) {
+                            std::lock_guard<std::mutex> lk(queueMtx);
+                            normQueue.push({result.clone(), pathToUtf8(outPath), pathToUtf8(outPath.stem())});
+                            queueCV.notify_one();
+                        }
                     } catch (...) {}
                     int d = ++normDone;
                     if (d % 200 == 0 || d == (int)files.size())
@@ -386,80 +450,54 @@ static int cmdBuild(int argc, char* argv[])
     }
     else
     {
-        // input==output���ļ��ѹ�����ֱ��ʹ��ԭ·��
         outPaths = files;
         normDone = static_cast<int>(files.size());
         for (size_t i = 0; i < files.size(); ++i) okFlags[i] = true;
     }
 
-    // —����?Phase 2: 哈希 + 特征提取 + 入库 —����?
-    if (normOnly)
+    // Signal GPU thread that normalization is done
+    normPhaseDone.store(true);
+    queueCV.notify_all();
+    if (gpuOk && !normOnly) {
+        gpuThread.join();
+        std::cout << "  GPU done: " << gpuDone.load() << std::endl;
+    }
+
+    // CPU fallback: process files that were not sent to GPU
+    if (!gpuOk && !normOnly)
     {
+        std::cout << "Features: CPU" << std::endl;
+        for (size_t i = 0; i < files.size(); ++i) {
+            if (!okFlags[i]) { skipped++; continue; }
+            const std::string& outPath = outPaths[i];
+            try {
+                cv::Mat img = imreadUnicode(outPath, cv::IMREAD_COLOR);
+                if (img.empty()) { skipped++; continue; }
+                std::string hash = hashMat(img);
+                if (db.existsByHash(hash)) { fs::remove(u8path(outPath)); skipped++; continue; }
+                ImageRecord rec;
+                rec.filePath = outPath; rec.fileHash = hash;
+                rec.srcWidth = img.cols; rec.srcHeight = img.rows;
+                rec.aspectRatio = (rec.srcHeight > 0) ? (double)rec.srcWidth / rec.srcHeight : 0.0;
+                rec.fileSize = fs::file_size(u8path(outPath));
+                std::string ext = pathToUtf8(u8path(outPath).extension());
+                if (!ext.empty() && ext[0] == '.') ext = ext.substr(1);
+                rec.format = ext;
+                extractor.compute(img, rec, featDir, pathToUtf8(u8path(outPath).stem()));
+                if (db.insertImage(rec)) inserted++; else skipped++;
+            } catch (...) { skipped++; }
+            if ((i+1) % 2000 == 0 || i+1 == files.size()) {
+                std::cout << "\r  features " << (i+1) << "/" << files.size()
+                          << " (ok:" << inserted << " skip:" << skipped << ")" << std::flush;
+            }
+        }
+        std::cout << std::endl;
+    }
+
+    if (normOnly) {
         std::cout << "Normalize only: " << (normDone.load()) << " images written to " << outputDir << std::endl;
         return 0;
     }
-    FeatureExtractor extractor;
-    bool gpuOk = cuda::isCudaAvailable();
-    constexpr int GPU_BATCH = 256;  // 批量增大减少 kernel launch 开销
-    if (gpuOk) std::cout << "Features: GPU (batch " << GPU_BATCH << ")" << std::endl;
-    else       std::cout << "Features: CPU" << std::endl;
-
-    int inserted = 0, skipped = 0;
-    std::vector<cv::Mat> gpuImgs; gpuImgs.reserve(GPU_BATCH);
-    std::vector<ImageRecord> gpuRecs; gpuRecs.reserve(GPU_BATCH);
-    std::vector<std::string> gpuStems; gpuStems.reserve(GPU_BATCH);
-
-    auto flushGpu = [&]() {
-        if (gpuImgs.empty()) return;
-        int done = cuda::extractBatch(gpuImgs, gpuRecs, featDir, gpuStems);
-        if (done <= 0) {
-            // GPU 批量失败，��张 CPU 重试
-            for (size_t bi = 0; bi < gpuImgs.size(); ++bi)
-                extractor.compute(gpuImgs[bi], gpuRecs[bi], featDir, gpuStems[bi]);
-        }
-        db.beginTransaction();
-        for (auto& rec : gpuRecs) {
-            if (db.insertImage(rec)) inserted++; else skipped++;
-        }
-        db.commitTransaction();
-        gpuImgs.clear(); gpuRecs.clear(); gpuStems.clear();
-    };
-
-    for (std::size_t i = 0; i < files.size(); ++i) {
-        if (!okFlags[i]) { skipped++; continue; }
-        const std::string& outPath = outPaths[i];
-        try {
-            cv::Mat img = imreadUnicode(outPath, cv::IMREAD_COLOR);
-            if (img.empty()) { skipped++; continue; }
-            std::string hash = hashMat(img);
-            if (db.existsByHash(hash)) { fs::remove(u8path(outPath)); skipped++; continue; }
-
-            ImageRecord rec;
-            rec.filePath = outPath;
-            rec.fileHash = hash;
-            rec.srcWidth = img.cols; rec.srcHeight = img.rows;
-            rec.aspectRatio = (rec.srcHeight > 0) ? (double)rec.srcWidth / rec.srcHeight : 0.0;
-            rec.fileSize = fs::file_size(u8path(outPath));
-            std::string ext = pathToUtf8(u8path(outPath).extension());
-            if (!ext.empty() && ext[0] == '.') ext = ext.substr(1);
-            rec.format = ext;
-
-            if (gpuOk) {
-                gpuImgs.push_back(img); gpuRecs.push_back(rec);
-                gpuStems.push_back(pathToUtf8(u8path(outPath).stem()));
-                if ((int)gpuImgs.size() >= GPU_BATCH) flushGpu();
-            } else {
-                extractor.compute(img, rec, featDir, pathToUtf8(u8path(outPath).stem()));
-                if (db.insertImage(rec)) inserted++; else skipped++;
-            }
-        } catch (...) { skipped++; }
-        if ((i+1) % 200 == 0 || i+1 == files.size()) {
-            if (gpuOk) flushGpu();
-            std::cout << "\r  " << (i+1) << "/" << files.size()
-                      << " (ok:" << inserted << " skip:" << skipped << ")" << std::flush;
-        }
-    }
-    if (gpuOk) flushGpu();
 
     std::cout << std::endl;
     std::cout << "Done: " << inserted << " images indexed, "
