@@ -58,6 +58,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
   <button class="tab" data-cmd="inspect">🔍 查询</button>
   <button class="tab" data-cmd="db-stats">📊 统计</button>
   <button class="tab" data-cmd="db-purge">🧹 清理</button>
+  <button class="tab" data-cmd="db-health">🩺 健康</button>
   <button class="tab" data-cmd="db-usage">📋 使用记录</button>
 </nav>
 <main>
@@ -117,6 +118,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-analyze"> 质量分析 --analyze</label>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-benchmark"> 性能分析 --benchmark</label>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-nocolor"> 禁用颜色校正 --no-color-adjust</label>
+      <div class="field"><label>颜色强度 --color-strength</label><input type="number" id="m-colorstr" value="0.04" step="0.01" style="width:120px"></div>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-cpu"> 仅 CPU --cpu</label>
     </div>
   </div>
@@ -172,6 +174,16 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
     <h3>参数</h3>
     <div class="row">
       <div class="field"><label>数据库 -d</label><input type="text" id="p-db" value="mosaicraft.db"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ DB-HEALTH ============ -->
+<div class="panel" id="panel-dbhealth">
+  <div class="card">
+    <h3>参数</h3>
+    <div class="row">
+      <div class="field"><label>数据库 -d</label><input type="text" id="h-db" value="mosaicraft.db"></div>
     </div>
   </div>
 </div>
@@ -268,6 +280,7 @@ function generateCommand() {
     if (val('m-analyze')) lines.push('--analyze');
     if (val('m-benchmark')) lines.push('--benchmark');
     if (val('m-nocolor')) lines.push('--no-color-adjust');
+    const cs = val('m-colorstr'); if (cs && cs !== '0.04') lines.push('--color-strength ' + cs);
     if (val('m-cpu')) lines.push('--cpu');
   }
   else if (tab === 'build') {
@@ -288,6 +301,9 @@ function generateCommand() {
   }
   else if (tab === 'db-purge') {
     const db = val('p-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
+  }
+  else if (tab === 'db-health') {
+    const db = val('h-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
   }
   else if (tab === 'db-usage') {
     const db = val('u-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
