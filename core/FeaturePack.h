@@ -183,6 +183,10 @@ public:
         if (!ft) return false;
         FILE* fl = fopen(lbpPath.c_str(), "rb");
         if (!fl) { fclose(ft); return false; }
+        // 大缓冲区加速顺序读取（45K条记录 ~11MB tiny + ~45MB lbp）
+        constexpr size_t BIG_BUF = 2 * 1024 * 1024;
+        setvbuf(ft, nullptr, _IOFBF, BIG_BUF);
+        setvbuf(fl, nullptr, _IOFBF, BIG_BUF);
 
         // 校验计数
         uint32_t tinyCount = 0, lbpCount = 0;
