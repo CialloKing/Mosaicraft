@@ -450,7 +450,7 @@ static int cmdBuild(int argc, char* argv[])
                         if (ext == ".jpg" || ext == ".jpeg")
                             writeParams = {cv::IMWRITE_JPEG_QUALITY, 90};
                         else if (ext == ".png")
-                            writeParams = {cv::IMWRITE_PNG_COMPRESSION, 3};
+                            writeParams = {cv::IMWRITE_PNG_COMPRESSION, 9};
                         imwriteUnicode(pathToUtf8(outPath), result, writeParams);
                         okFlags[fi] = true;
                         if (gpuOk && !normOnly) {
