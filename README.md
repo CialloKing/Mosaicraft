@@ -23,7 +23,7 @@ mosaicraft mosaic -i target.jpg -d ./lib.db -o output.jpg  # 生成
 - **图库诊断** — `db-stats` 亮度直方图 + 覆盖缺口；`db-usage` 全局热点图统计
 - **数据库管理** — `db-purge` 减量清理；`build --append` 增量建库；`build --recursive` 递归扫描
 - **FeaturePack** — 50K 文件 → 2 次 fread，加载 <300ms
-- **智能格式** — 默认 JPG，超限自动 TIFF/等比缩放
+- **Web 命令生成器** — `tools/command-builder/index.html` 双击即用，可视化拼装 CLI 命令
 - **参数自适应** — candidates 默认 150，neighborWindow O(√N) 动态缩放
 - **Deep Zoom** — 金字塔 + HTML viewer
 - **Unicode 路径** — 中文或其他语言文件名
@@ -185,6 +185,8 @@ Mosaicraft/
 │   └── FeatureExtractorCuda.cu # GPU 建库特征提取
 ├── docs/
 │   └── ENCYCLOPEDIA.md       # 项目百科全书
+├── tools/
+│   └── command-builder/      # Web 命令生成器（双击 index.html）
 ├── tests/
 │   └── regression.ps1        # 回归测试
 ├── CMakeLists.txt
@@ -206,6 +208,8 @@ Mosaicraft/
 | v1.8 | 增量建库、动态Window、HTML报告 | ✅ |
 | v1.9 | db-health 健康度诊断 | ✅ |
 | v1.10 | WorstTile对照、--unused、Unicode全链路 | ✅ |
+| **v1.11** | **Web 命令生成器** | ✅ |
+| v1.12 | 本地 Web UI（cpp-httplib 启动服务） | 计划中 |
 | v2.0 |  GUI | 计划中 |
 
 ## 许可证
