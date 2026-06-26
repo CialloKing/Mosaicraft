@@ -98,7 +98,7 @@ Usage:
 Build options:
   -i, --input  <dir>     Source image directory (required)
   -o, --output <dir>     Output directory (default: library, DB stored inside)
-  -d, --db     <path>    Database path (default: library/mosaicraft.db)
+  -d, --db     <path>    Database path (default: <output>/mosaicraft.db)
   -t, --threads <n>      Worker threads (default: auto)
       --normalize-size <WxH>  Normalized image size (default: 180x320)
       --append           Append mode: add new images without rebuilding
@@ -107,7 +107,7 @@ Build options:
 
 Mosaic options:
   -i, --input  <path>    Target image to mosaicify (required)
-  -d, --db     <path>    Database path (default: library/mosaicraft.db)
+  -d, --db     <path>    Database path (default: <output>/mosaicraft.db)
   -o, --output <path>    Output path or directory (default: output/output.jpg)
       --tile-w     <n>   Tile width in pixels (default: 9)
       --tile-h     <n>   Tile height in pixels (default: 16)
@@ -149,7 +149,7 @@ Common options:
 
 Inspect options:
   -i, --input  <path>    Image to inspect (required)
-  -d, --db     <path>    Database path (default: library/mosaicraft.db)
+  -d, --db     <path>    Database path (default: <output>/mosaicraft.db)
 
 Exit status:
   0  success
@@ -167,7 +167,7 @@ static int cmdBuild(int argc, char* argv[])
 {
     std::string inputDir;
     std::string outputDir = "library";
-    std::string dbPath = "library/mosaicraft.db";  // auto-set to outputDir/mosaicraft.db
+    std::string dbPath = "mosaicraft.db";  // 哨兵值，见下方替换
     int threads = 0;
     bool appendMode = false;
     bool normOnly = false;
@@ -722,7 +722,7 @@ static int cmdMosaic(int argc, char* argv[])
         {
             std::cout << "Usage: mosaicraft mosaic -i <image> -d <db> [options]" << std::endl;
             std::cout << "  -i, --input <path>    Target image (required)" << std::endl;
-            std::cout << "  -d, --db <path>       Database (default: library/mosaicraft.db)" << std::endl;
+            std::cout << "  -d, --db <path>       Database (default: <output>/mosaicraft.db)" << std::endl;
             std::cout << "  -o, --output <path>   Output path (default: output/output.jpg)" << std::endl;
             std::cout << "  --tile-w <n>          Tile width (default: 9, min: 4)" << std::endl;
             std::cout << "  --tile-h <n>          Tile height (default: 16, min: 4)" << std::endl;
