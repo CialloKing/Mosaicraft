@@ -9,6 +9,10 @@ if (MSVC)
     add_compile_options("/utf-8")
 endif()
 
+# --- 跨平台依赖 ---
+# Windows (vcpkg): 保持默认
+# Linux (apt):  1) unofficial-sqlite3 → SQLite3  2) CUDAToolkit REQUIRED → QUIET
+#               3) nvcc.exe → nvcc  4) 删除 -Xcompiler "/utf-8" --compiler-options "/MD"
 find_package(OpenCV REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(TIFF REQUIRED)
