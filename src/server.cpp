@@ -5,7 +5,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
+#ifdef _WIN32
 #include <windows.h>
+#endif
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -158,7 +160,7 @@ int main(int argc, char* argv[])
         std::string output;
         try {
             std::cout << "[RUN] " << mosaicPath << " " << subCmd << std::endl;
-
+#ifdef _WIN32
             HANDLE hReadPipe, hWritePipe;
             SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
             if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 0)) {
@@ -213,6 +215,27 @@ int main(int argc, char* argv[])
                 res.set_content(output.empty() ? "OK" : output, "text/plain; charset=utf-8");
             else
                 res.set_content("EXIT " + std::to_string(exitCode) + "\n" + output, "text/plain; charset=utf-8");
+#else
+            // Linux/macOS: popen 可以正确处理 UTF-8 路径
+            std::string fullCmd = "\"" + mosaicPath + "\" " + subCmd;
+            FILE* pipe = popen((fullCmd + " 2>&1").c_str(), "r");
+            if (!pipe) {
+                std::cerr << "[ERROR] popen failed: " << fullCmd << std::endl;
+                res.set_content("ERROR: failed to start process", "text/plain");
+                return;
+            }
+            setvbuf(pipe, nullptr, _IONBF, 0);
+            char ch;
+            while (fread(&ch, 1, 1, pipe) == 1) {
+                std::cout << ch;
+                output += ch;
+            }
+            int rc = pclose(pipe);
+            if (rc == 0)
+                res.set_content(output.empty() ? "OK" : output, "text/plain; charset=utf-8");
+            else
+                res.set_content("EXIT " + std::to_string(rc) + "\n" + output, "text/plain; charset=utf-8");
+#endif
         } catch (const std::exception& e) {
             std::cerr << "[ERROR] Exception in /api/run: " << e.what() << std::endl;
             res.set_content(std::string("ERROR: ") + e.what(), "text/plain");
