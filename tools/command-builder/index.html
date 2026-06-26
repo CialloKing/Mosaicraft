@@ -6,45 +6,54 @@
 <title>Mosaicraft 命令生成器</title>
 <style>
 :root {
-  --bg: #1a1a2e;
-  --panel: #16213e;
-  --accent: #e94560;
-  --fg: #eee;
-  --fg2: #aaa;
-  --input-bg: #0f3460;
-  --border: #533483;
-  --hover: #1a1a4e;
+  --bg: #0f1117;
+  --panel: #161b22;
+  --accent: #f78166;
+  --accent2: #7ee787;
+  --fg: #e6edf3;
+  --fg2: #8b949e;
+  --input-bg: #0d1117;
+  --border: #30363d;
+  --hover: #1c2129;
+  --drop-highlight: #1f3623;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--fg); min-height: 100vh; }
-header { background: var(--panel); padding: 18px 32px; border-bottom: 2px solid var(--accent); display: flex; align-items: center; gap: 16px; }
-header h1 { font-size: 1.4rem; color: var(--accent); }
-header span { color: var(--fg2); font-size: 0.85rem; }
-.tabs { display: flex; background: var(--panel); border-bottom: 1px solid var(--border); padding: 0 24px; }
-.tab { padding: 12px 20px; cursor: pointer; color: var(--fg2); border: none; background: none; font-size: 0.95rem; transition: .2s; }
-.tab:hover { color: var(--fg); background: var(--hover); }
-.tab.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
-main { max-width: 900px; margin: 24px auto; padding: 0 20px; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--fg); min-height: 100vh; line-height: 1.5; }
+header { background: var(--panel); padding: 20px 36px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px; }
+header h1 { font-size: 1.3rem; color: var(--accent); font-weight: 700; }
+header span { color: var(--fg2); font-size: 0.8rem; background: var(--border); padding: 3px 10px; border-radius: 20px; }
+.tabs { display: flex; background: var(--panel); border-bottom: 1px solid var(--border); padding: 0 28px; gap: 2px; }
+.tab { padding: 11px 18px; cursor: pointer; color: var(--fg2); border: none; background: none; font-size: 0.88rem; transition: .15s; border-radius: 6px 6px 0 0; position: relative; top: 1px; }
+.tab:hover { color: var(--fg); }
+.tab.active { color: var(--accent); background: var(--bg); border: 1px solid var(--border); border-bottom-color: var(--bg); }
+main { max-width: 920px; margin: 28px auto; padding: 0 20px; }
 .panel { display: none; }
 .panel.active { display: block; }
-.card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
-.card h3 { font-size: 0.95rem; color: var(--accent); margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
-.row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
-.field { display: flex; flex-direction: column; min-width: 180px; flex: 1; }
-.field label { font-size: 0.82rem; color: var(--fg2); margin-bottom: 4px; }
-.field input, .field select { padding: 8px 10px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 4px; color: var(--fg); font-size: 0.9rem; }
-.field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 22px; margin-bottom: 14px; }
+.card h3 { font-size: 0.88rem; color: var(--accent2); margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); font-weight: 600; }
+.row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+.field { display: flex; flex-direction: column; min-width: 170px; flex: 1; }
+.field label { font-size: 0.78rem; color: var(--fg2); margin-bottom: 4px; font-weight: 500; }
+.field input, .field select { padding: 9px 11px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); font-size: 0.88rem; transition: border-color .2s; }
+.field input:focus, .field select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(247,129,102,0.15); }
+.field input[type=text].dropzone { cursor: default; }
+.field input[type=text].dropzone.dragover { border-color: var(--accent2); background: var(--drop-highlight); }
 .field input[type=checkbox] { width: auto; margin-top: 6px; }
-.field .hint { font-size: 0.72rem; color: var(--fg2); margin-top: 2px; }
-.output-area { background: #0d1117; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-top: 20px; }
-.output-area .cmd { font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.85rem; color: #58a6ff; white-space: pre-wrap; word-break: break-all; line-height: 1.7; }
+.field .hint { font-size: 0.7rem; color: var(--fg2); margin-top: 2px; }
+.chk-row { display: flex; flex-wrap: wrap; gap: 6px 20px; }
+.chk-row label { display: flex; align-items: center; gap: 7px; cursor: pointer; font-size: 0.85rem; color: var(--fg2); user-select: none; }
+.chk-row label:hover { color: var(--fg); }
+.output-area { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-top: 20px; }
+.output-area .cmd { font-family: 'Cascadia Code', 'Consolas', 'JetBrains Mono', monospace; font-size: 0.82rem; color: #79c0ff; white-space: pre-wrap; word-break: break-all; line-height: 1.7; background: #0d1117; padding: 14px; border-radius: 6px; min-height: 3em; }
+.cmd-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.cmd-bar span { color: var(--fg2); font-size: 0.8rem; }
 .btns { display: flex; gap: 10px; margin-top: 12px; }
-.btn { padding: 10px 24px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: .2s; }
-.btn-primary { background: var(--accent); color: #fff; }
-.btn-primary:hover { filter: brightness(1.15); }
+.btn { padding: 10px 22px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.88rem; font-weight: 600; transition: .15s; }
+.btn-primary { background: var(--accent); color: #000; }
+.btn-primary:hover { filter: brightness(1.1); }
 .btn-secondary { background: var(--border); color: var(--fg); }
-.btn-secondary:hover { background: #6a4c93; }
-footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75rem; }
+.btn-secondary:hover { background: #484f58; }
+footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72rem; }
 </style>
 </head>
 <body>
@@ -66,15 +75,15 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
 <!-- ============ MOSAIC ============ -->
 <div class="panel active" id="panel-mosaic">
   <div class="card">
-    <h3>必需参数</h3>
+    <h3>📂 必需参数（支持拖入文件/文件夹）</h3>
     <div class="row">
-      <div class="field"><label>目标图片 -i</label><input type="text" id="m-input" placeholder="target.jpg"></div>
-      <div class="field"><label>数据库 -d</label><input type="text" id="m-db" value="mosaicraft.db"></div>
-      <div class="field"><label>输出路径 -o</label><input type="text" id="m-output" value="mosaic.jpg"></div>
+      <div class="field"><label>目标图片 -i</label><input type="text" id="m-input" class="dropzone" placeholder="拖入图片 或 输入路径 (如 D:\photos\target.jpg)"></div>
+      <div class="field"><label>数据库 -d</label><input type="text" id="m-db" class="dropzone" value="library/360x640" placeholder="拖入 .db 或目录"></div>
+      <div class="field"><label>输出路径 -o</label><input type="text" id="m-output" value="output.jpg" placeholder="output.jpg"></div>
     </div>
   </div>
   <div class="card">
-    <h3>格式与质量</h3>
+    <h3>🎨 格式与质量</h3>
     <div class="row">
       <div class="field"><label>输出格式 --format</label><select id="m-format"><option value="">由扩展名决定</option><option value="jpg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option><option value="tiff">TIFF</option></select></div>
       <div class="field"><label>JPEG/WebP 质量 --quality</label><input type="number" id="m-quality" value="100" min="1" max="100"></div>
@@ -83,7 +92,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
     </div>
   </div>
   <div class="card">
-    <h3>Tile 参数</h3>
+    <h3>📐 Tile 参数</h3>
     <div class="row">
       <div class="field"><label>Tile 宽度 --tile-w</label><input type="number" id="m-tilew" value="9" min="1"></div>
       <div class="field"><label>Tile 高度 --tile-h</label><input type="number" id="m-tileh" value="16" min="1"></div>
@@ -103,7 +112,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
     </div>
   </div>
   <div class="card">
-    <h3>特征权重</h3>
+    <h3>⚖️ 特征权重</h3>
     <div class="row">
       <div class="field"><label>LAB --lab-weight</label><input type="number" id="m-labw" value="0.20" step="0.01"></div>
       <div class="field"><label>Grid --grid-weight</label><input type="number" id="m-gridw" value="0.45" step="0.01"></div>
@@ -116,16 +125,18 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
     </div>
   </div>
   <div class="card">
-    <h3>开关选项</h3>
-    <div class="row">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-tiled"> 分块输出 --tiled</label>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-deepzoom"> DeepZoom --deepzoom</label>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-analyze"> 质量分析 --analyze</label>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-adaptive"> 自适应权重 --adaptive-weights</label>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-benchmark"> 性能分析 --benchmark</label>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-coloradj"> 启用颜色校正 --color-adjust</label>
-      <div class="field"><label>颜色强度 --color-strength</label><input type="number" id="m-colorstr" value="0.04" step="0.01" style="width:120px"></div>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-cpu"> 仅 CPU --cpu</label>
+    <h3>🔘 开关选项</h3>
+    <div class="chk-row">
+      <label><input type="checkbox" id="m-tiled"> 分块输出 --tiled</label>
+      <label><input type="checkbox" id="m-deepzoom"> DeepZoom --deepzoom</label>
+      <label><input type="checkbox" id="m-analyze"> 质量分析 --analyze</label>
+      <label><input type="checkbox" id="m-adaptive"> 自适应权重 --adaptive-weights</label>
+      <label><input type="checkbox" id="m-benchmark"> 性能分析 --benchmark</label>
+      <label><input type="checkbox" id="m-coloradj"> 启用颜色校正 --color-adjust</label>
+      <label><input type="checkbox" id="m-cpu"> 仅 CPU --cpu</label>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div class="field"><label>颜色强度 --color-strength</label><input type="number" id="m-colorstr" value="0.04" step="0.01" style="max-width:150px"></div>
     </div>
   </div>
 </div>
@@ -133,24 +144,24 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
 <!-- ============ BUILD ============ -->
 <div class="panel" id="panel-build">
   <div class="card">
-    <h3>必需参数</h3>
+    <h3>📂 必需参数（支持拖入文件夹）</h3>
     <div class="row">
-      <div class="field"><label>图片目录 -i *</label><input type="text" id="b-input" placeholder="./photos"></div>
-      <div class="field"><label>输出目录 -o</label><input type="text" id="b-output" value="normalized"></div>
-      <div class="field"><label>数据库 -d</label><input type="text" id="b-db" value="mosaicraft.db"></div>
+      <div class="field"><label>图片目录 -i *</label><input type="text" id="b-input" class="dropzone" placeholder="拖入文件夹 或 输入路径 (如 D:\photos)"></div>
+      <div class="field"><label>输出目录 -o</label><input type="text" id="b-output" class="dropzone" value="library/360x640" placeholder="拖入目录"></div>
+      <div class="field"><label>数据库 -d</label><input type="text" id="b-db" value="mosaicraft.db" placeholder="默认在输出目录内"></div>
     </div>
   </div>
   <div class="card">
-    <h3>选项</h3>
+    <h3>⚙️ 选项</h3>
     <div class="row">
       <div class="field"><label>归一化尺寸 --normalize-size</label><input type="text" id="b-normsize" value="180x320" placeholder="180x320"></div>
       <div class="field"><label>线程数 -t</label><input type="number" id="b-threads" placeholder="auto"></div>
     </div>
-    <div class="row">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="b-append"> 增量模式 --append</label>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="b-recursive"> 递归扫描子目录 -r</label>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="b-normonly"> 仅归一化 --normalize-only</label>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="b-force"> 强制覆盖 -y</label>
+    <div class="chk-row">
+      <label><input type="checkbox" id="b-append"> 增量模式 --append</label>
+      <label><input type="checkbox" id="b-recursive"> 递归扫描子目录 -r</label>
+      <label><input type="checkbox" id="b-normonly"> 仅归一化 --normalize-only</label>
+      <label><input type="checkbox" id="b-force"> 强制覆盖 -y</label>
     </div>
   </div>
 </div>
@@ -158,66 +169,41 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
 <!-- ============ INSPECT ============ -->
 <div class="panel" id="panel-inspect">
   <div class="card">
-    <h3>查询参数</h3>
+    <h3>📂 查询参数</h3>
     <div class="row">
-      <div class="field"><label>图片路径 -i *</label><input type="text" id="i-input" placeholder="image.jpg"></div>
-      <div class="field"><label>数据库 -d</label><input type="text" id="i-db" value="mosaicraft.db"></div>
+      <div class="field"><label>图片路径 -i *</label><input type="text" id="i-input" class="dropzone" placeholder="拖入图片"></div>
+      <div class="field"><label>数据库 -d</label><input type="text" id="i-db" class="dropzone" value="library/360x640" placeholder="拖入 .db 或目录"></div>
     </div>
   </div>
 </div>
 
 <!-- ============ DB-STATS ============ -->
 <div class="panel" id="panel-dbstats">
-  <div class="card">
-    <h3>参数</h3>
-    <div class="row">
-      <div class="field"><label>数据库 -d</label><input type="text" id="s-db" value="mosaicraft.db"></div>
-    </div>
-  </div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="s-db" class="dropzone" value="library/360x640" placeholder="拖入 .db 或目录"></div></div></div>
 </div>
 
 <!-- ============ DB-PURGE ============ -->
 <div class="panel" id="panel-dbpurge">
-  <div class="card">
-    <h3>参数</h3>
-    <div class="row">
-      <div class="field"><label>数据库 -d</label><input type="text" id="p-db" value="mosaicraft.db"></div>
-    </div>
-    <div class="row">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="p-force"> 跳过确认 -y</label>
-    </div>
-  </div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="p-db" class="dropzone" value="library/360x640" placeholder="拖入 .db 或目录"></div></div><div class="chk-row" style="margin-top:8px"><label><input type="checkbox" id="p-force"> 跳过确认 -y</label></div></div>
 </div>
 
 <!-- ============ DB-HEALTH ============ -->
 <div class="panel" id="panel-dbhealth">
-  <div class="card">
-    <h3>参数</h3>
-    <div class="row">
-      <div class="field"><label>数据库 -d</label><input type="text" id="h-db" value="mosaicraft.db"></div>
-    </div>
-  </div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="h-db" class="dropzone" value="library/360x640" placeholder="拖入 .db 或目录"></div></div></div>
 </div>
 
 <!-- ============ DB-USAGE ============ -->
 <div class="panel" id="panel-dbusage">
-  <div class="card">
-    <h3>参数</h3>
-    <div class="row">
-      <div class="field"><label>数据库 -d</label><input type="text" id="u-db" value="mosaicraft.db"></div>
-      <div class="field"><label>Top N -n</label><input type="number" id="u-n" value="50" min="1"></div>
-      <div class="field"><label>导出目录 --export</label><input type="text" id="u-export" placeholder="不导出"></div>
-    </div>
-  </div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="u-db" class="dropzone" value="library/360x640" placeholder="拖入 .db 或目录"></div><div class="field"><label>Top N -n</label><input type="number" id="u-n" value="50" min="1"></div><div class="field"><label>导出目录 --export</label><input type="text" id="u-export" placeholder="不导出"></div></div></div>
 </div>
 
 <!-- ============ OUTPUT ============ -->
 <div class="output-area">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-    <span style="color:var(--fg2);font-size:0.85rem">生成的命令 (PowerShell)</span>
-    <span id="copy-feedback" style="color:#58a6ff;font-size:0.8rem;display:none">✅ 已复制!</span>
+  <div class="cmd-bar">
+    <span>生成的命令 (PowerShell)</span>
+    <span id="copy-feedback" style="color:var(--accent2);display:none">✅ 已复制!</span>
   </div>
-  <div class="cmd" id="cmd-output">mosaicraft mosaic -i target.jpg -d mosaicraft.db -o output.jpg</div>
+  <div class="cmd" id="cmd-output">mosaicraft mosaic -i target.jpg -d library/360x640 -o output.jpg</div>
   <div class="btns">
     <button class="btn btn-primary" onclick="generateCommand()">🔄 生成命令</button>
     <button class="btn btn-secondary" onclick="copyCommand()">📋 复制到剪贴板</button>
@@ -225,7 +211,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.75re
 </div>
 
 </main>
-<footer>Mosaicraft Command Builder — 双击 index.html 即可使用，无需安装任何依赖</footer>
+<footer>将文件或文件夹拖入输入框即可自动填入绝对路径 · 双击 index.html 即可使用，无需安装任何依赖</footer>
 
 <script>
 // Tab switching
@@ -236,6 +222,26 @@ document.querySelectorAll('.tab').forEach(t => {
     t.classList.add('active');
     document.getElementById('panel-' + t.dataset.cmd).classList.add('active');
     generateCommand();
+  });
+});
+
+// Drag & drop for path inputs
+document.querySelectorAll('input.dropzone').forEach(el => {
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('dragover'); });
+  el.addEventListener('dragleave', () => { el.classList.remove('dragover'); });
+  el.addEventListener('drop', e => {
+    e.preventDefault();
+    el.classList.remove('dragover');
+    const items = e.dataTransfer.items || e.dataTransfer.files;
+    if (items.length > 0) {
+      const file = items[0].getAsFile ? items[0].getAsFile() : items[0];
+      // WebkitRelativePath for folder, name for file
+      const path = file.webkitRelativePath || file.path || file.name;
+      if (path) {
+        el.value = path.replace(/\\/g, '/');  // normalize to forward slashes
+        generateCommand();
+      }
+    }
   });
 });
 
@@ -252,16 +258,8 @@ function val(id) {
   return el.value.trim();
 }
 
-function opt(flag, value, cond) {
-  if (cond === undefined) cond = !!value;
-  if (!cond) return '';
-  if (value === true || value === 'on' || value === '1') return '  ' + flag;
-  return '  ' + flag + ' ' + value;
-}
-
 function generateCommand() {
   const tab = document.querySelector('.tab.active').dataset.cmd;
-  let cmd = 'mosaicraft ' + tab;
   let lines = [];
 
   if (tab === 'mosaic') {
@@ -329,11 +327,9 @@ function generateCommand() {
     const exp = val('u-export'); if (exp) lines.push('--export ' + exp);
   }
 
-  if (lines.length === 0) {
-    cmd = 'mosaicraft ' + tab + '  (请填写参数)';
-  } else {
-    cmd = 'mosaicraft ' + tab + ' ' + lines.join(' ');
-  }
+  const cmd = lines.length > 0
+    ? 'mosaicraft ' + tab + ' ' + lines.join(' ')
+    : 'mosaicraft ' + tab + '  (请填写参数)';
   document.getElementById('cmd-output').textContent = cmd;
 }
 
@@ -344,20 +340,15 @@ function copyCommand() {
     fb.style.display = 'inline';
     setTimeout(() => { fb.style.display = 'none'; }, 2000);
   }).catch(() => {
-    // Fallback for older browsers
     const ta = document.createElement('textarea');
     ta.value = cmd;
     document.body.appendChild(ta);
     ta.select();
     document.execCommand('copy');
     document.body.removeChild(ta);
-    const fb = document.getElementById('copy-feedback');
-    fb.style.display = 'inline';
-    setTimeout(() => { fb.style.display = 'none'; }, 2000);
   });
 }
 
-// Initial generation
 generateCommand();
 </script>
 </body>
