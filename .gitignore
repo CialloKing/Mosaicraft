@@ -19,6 +19,8 @@ build_check/
 
 # Generated data
 normalized/
+normalized_*/
+*.ann
 test_photos/
 batch_tmp/
 
