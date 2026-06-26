@@ -119,3 +119,16 @@ target_link_libraries(mosaicraft PRIVATE
     mosaicraft_core
     mosaicraft_cuda
 )
+
+# ============================================================
+# Web UI 服务器（独立进程，调用 mosaicraft.exe）
+# ============================================================
+add_executable(mosaicraftwebui
+    src/server.cpp
+)
+target_link_libraries(mosaicraftwebui PRIVATE
+    mosaicraft_core
+)
+target_include_directories(mosaicraftwebui PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)

@@ -209,7 +209,9 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="btns">
     <button class="btn btn-primary" onclick="generateCommand()">🔄 生成命令</button>
     <button class="btn btn-secondary" onclick="copyCommand()">📋 复制到剪贴板</button>
+    <button class="btn btn-primary" id="btn-run" onclick="runCommand()" style="display:none">▶ 运行</button>
   </div>
+  <div id="run-status" style="margin-top:10px;font-size:0.82rem;color:var(--fg2);display:none"></div>
 </div>
 
 </main>
@@ -350,6 +352,46 @@ function copyCommand() {
     document.body.removeChild(ta);
   });
 }
+
+// Server detection: check if mosaicraftwebui is running
+let serverAvailable = false;
+const SERVER_URL = 'http://localhost:8080';
+
+async function checkServer() {
+  try {
+    const res = await fetch(SERVER_URL + '/api/ping');
+    if (res.ok) {
+      serverAvailable = true;
+      document.getElementById('btn-run').style.display = '';
+      return;
+    }
+  } catch(e) {}
+  serverAvailable = false;
+}
+
+async function runCommand() {
+  const cmd = document.getElementById('cmd-output').textContent;
+  const status = document.getElementById('run-status');
+  status.style.display = '';
+  status.textContent = 'Running...';
+  try {
+    const res = await fetch(SERVER_URL + '/api/run', { method: 'POST', body: cmd });
+    const text = await res.text();
+    if (res.ok) {
+      status.innerHTML = '<span style="color:#7ee787">✅ Done</span>';
+    } else {
+      status.innerHTML = '<span style="color:#f78166">❌ Failed (exit ' + text.split('\n')[0].replace('EXIT ','') + ')</span>';
+      if (text.length > 50) {
+        status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + text + '</pre>';
+      }
+    }
+  } catch(e) {
+    status.innerHTML = '<span style="color:#f78166">⚠ 未检测到 Web UI 服务器</span><br><small>请先运行 mosaicraftwebui.exe，或使用复制按钮手动执行命令</small>';
+  }
+}
+
+// Try to detect server on load
+checkServer();
 
 generateCommand();
 </script>
