@@ -22,6 +22,8 @@
 #ifdef _WIN32
 #include <io.h>
 #include <conio.h>
+#else
+#include <unistd.h>
 #endif
 #include <cstdint>
 #include <cstdio>
@@ -1253,6 +1255,11 @@ int main(int argc, char* argv[])
             if (_isatty(_fileno(stdin))) {
                 std::cout << std::endl << "Press any key to exit..." << std::flush;
                 _getch();
+            }
+#else
+            if (isatty(fileno(stdin))) {
+                std::cout << std::endl << "Press any key to exit..." << std::flush;
+                getchar();
             }
 #endif
         }
