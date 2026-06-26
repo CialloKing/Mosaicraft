@@ -56,7 +56,7 @@ public:
     {
         if (!m_fp) return false;
         JSAMPROW row = const_cast<JSAMPROW>(rgb);
-        jpeg_write_scanlines(&m_cinfo, &row, 1);
+        if (jpeg_write_scanlines(&m_cinfo, &row, 1) != 1) return false;
         m_rowsWritten++;
         return true;
     }

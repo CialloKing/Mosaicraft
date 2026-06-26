@@ -31,11 +31,9 @@ public:
     {
         namespace fs = std::filesystem;
 
-        // level0Dir 形如 "output_files/0" → 提取基础名 "output"
+        // level0Dir 形如 "output_files/0" → 提取基础路径
         fs::path l0Path(level0Dir);
         fs::path pyramidDir = l0Path.parent_path();  // "output_files"
-        std::string baseName = pyramidDir.parent_path().string() + "/"
-                             + pyramidDir.stem().string();  // 去掉 "_files" 后缀?
 
         // 实际 base: 去掉 "_files" 后缀
         std::string stem = pyramidDir.stem().string();
@@ -85,10 +83,9 @@ public:
                             if (srcR >= curRows || srcC >= curCols) continue;
 
                             std::string srcLevel = std::to_string(maxLevel - 1);
-                            char srcPath[512];
-                            snprintf(srcPath, sizeof(srcPath), "%s/%s/%d_%d.jpg",
-                                     pyramidDir.string().c_str(), srcLevel.c_str(), srcC, srcR);
-                            cv::Mat tile = imreadUnicode(srcPath, cv::IMREAD_COLOR);
+                            std::string srcPath = pyramidDir.string() + "/" + srcLevel + "/"
+                                                + std::to_string(srcC) + "_" + std::to_string(srcR) + ".jpg";
+                            cv::Mat tile = imreadUnicode(srcPath.c_str(), cv::IMREAD_COLOR);
                             if (tile.empty()) continue;
 
                             cv::Rect roi(dc * curW, dr * curH, curW, curH);
@@ -101,10 +98,9 @@ public:
 
                     if (hasAny)
                     {
-                        char dstPath[512];
-                        snprintf(dstPath, sizeof(dstPath), "%s/%d/%d_%d.jpg",
-                                 pyramidDir.string().c_str(), maxLevel, c, r);
-                        imwriteUnicode(dstPath, canvas,
+                        std::string dstPath = pyramidDir.string() + "/" + std::to_string(maxLevel)
+                                            + "/" + std::to_string(c) + "_" + std::to_string(r) + ".jpg";
+                        imwriteUnicode(dstPath.c_str(), canvas,
                                        {cv::IMWRITE_JPEG_QUALITY, quality});
                         written++;
                     }

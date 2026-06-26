@@ -79,7 +79,13 @@ static std::string findMosaicraft()
 int main(int argc, char* argv[])
 {
     int port = 8080;
-    if (argc > 1) port = std::atoi(argv[1]);
+    if (argc > 1) {
+        port = std::atoi(argv[1]);
+        if (port < 1 || port > 65535) {
+            std::cerr << "ERROR: Invalid port " << argv[1] << " (1-65535)" << std::endl;
+            return 1;
+        }
+    }
 
     std::string mosaicPath = findMosaicraft();
     std::string htmlPath = findHtml();
