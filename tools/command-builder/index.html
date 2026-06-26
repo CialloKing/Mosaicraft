@@ -85,7 +85,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <div class="row">
       <div class="field field-full"><label>目标图片 -i（必填）</label><input type="text" id="m-input" placeholder="粘贴绝对路径，如 D:\photos\target.jpg"></div>
       <div class="field field-full"><label>数据库 -d（可选，默认 ./mosaicraft.db）</label><input type="text" id="m-db" placeholder="留空则使用默认值，或粘贴目录路径如 D:\library\360x640"></div>
-      <div class="field field-full"><label>输出路径 -o</label><input type="text" id="m-output" value="output.jpg"></div>
+      <div class="field field-full"><label>输出路径 -o（可选，默认 .output/output.jpg）</label><input type="text" id="m-output" value=".output/output.jpg" placeholder="留空使用默认值，或粘贴绝对路径"></div>
     </div>
   </div>
   <div class="card">
@@ -209,7 +209,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <span>生成的命令 (PowerShell)</span>
     <span id="copy-feedback" style="color:var(--accent2);display:none">✅ 已复制!</span>
   </div>
-  <div class="cmd" id="cmd-output">mosaicraft mosaic -i target.jpg -d library -o output.jpg</div>
+  <div class="cmd" id="cmd-output">mosaicraft mosaic -i target.jpg -d library -o .output/output.jpg</div>
   <div class="btns">
     <button class="btn btn-primary" onclick="generateCommand()">🔄 生成命令</button>
     <button class="btn btn-secondary" onclick="copyCommand()">📋 复制到剪贴板</button>
@@ -253,7 +253,7 @@ function generateCommand() {
   if (tab === 'mosaic') {
     const inp = val('m-input'); if (inp) lines.push('-i ' + inp);
     const db = val('m-db'); if (db) lines.push('-d ' + db);
-    const out = val('m-output'); if (out) lines.push('-o ' + out);
+    const out = val('m-output'); if (out && out !== 'output.jpg' && out !== '.output/output.jpg') lines.push('-o ' + out);
     const fmt = val('m-format'); if (fmt) lines.push('--format ' + fmt);
     const q = val('m-quality'); if (q && q !== '100') lines.push('--quality ' + q);
     const pl = val('m-pnglevel'); if (pl) lines.push('--png-level ' + pl);
