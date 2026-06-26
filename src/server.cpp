@@ -1,6 +1,6 @@
 // Mosaicraft Web UI — 本地 HTTP 服务器
 // 提供命令生成页面 + 后端执行 mosaicraft.exe
-#include "core/httplib.h"
+#include <httplib.h>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>

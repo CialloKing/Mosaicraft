@@ -5,6 +5,27 @@ project(Mosaicraft VERSION 0.2.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ============================================================
+# FetchContent — 第三方单头库自动拉取
+# ============================================================
+include(FetchContent)
+
+# cpp-httplib (HTTP 服务)
+FetchContent_Declare(
+    httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG        v0.20.0
+)
+FetchContent_MakeAvailable(httplib)
+
+# doctest (单元测试)
+FetchContent_Declare(
+    doctest
+    GIT_REPOSITORY https://github.com/doctest/doctest.git
+    GIT_TAG        v2.4.11
+)
+FetchContent_MakeAvailable(doctest)
+
 # 输出目录：Release/bin/ (exe+dll)  Release/lib/ (.lib)
 # $<CONFIG> 让 Debug/Release 各自独立，CMake 不会重复追加
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/$<CONFIG>/bin)
@@ -153,6 +174,7 @@ add_executable(MosaicraftWebUI
 )
 target_link_libraries(MosaicraftWebUI PRIVATE
     mosaicraft_core
+    httplib::httplib
 )
 target_include_directories(MosaicraftWebUI PRIVATE
     ${CMAKE_SOURCE_DIR}
@@ -165,17 +187,17 @@ add_custom_command(TARGET MosaicraftWebUI POST_BUILD
 )
 
 # ============================================================
-# 单元测试 (doctest — 单头文件，跨平台)
+# 单元测试 (doctest)
 # ============================================================
 add_executable(mosaicraft_tests
     tests/test_core.cpp
 )
 target_link_libraries(mosaicraft_tests PRIVATE
     mosaicraft_core
+    doctest::doctest
 )
 target_include_directories(mosaicraft_tests PRIVATE
     ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/tests
 )
 
 # CTest 集成
