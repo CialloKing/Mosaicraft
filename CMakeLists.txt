@@ -185,7 +185,7 @@ add_custom_command(TARGET MosaicraftWebUI POST_BUILD
 # ============================================================
 # 单元测试 (doctest — 单头文件，跨平台)
 # ============================================================
-add_executable(mosaicraft_tests
+add_executable(mosaicraft_tests EXCLUDE_FROM_ALL
     tests/test_core.cpp
 )
 target_link_libraries(mosaicraft_tests PRIVATE
