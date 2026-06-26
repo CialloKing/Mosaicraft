@@ -463,7 +463,7 @@ static int cmdBuild(int argc, char* argv[])
                     } catch (...) {}
                     int d = ++normDone;
                     if (d % 200 == 0 || d == (int)files.size())
-                        std::cout << "\r  normalize " << d << "/" << files.size() << std::flush;
+                        std::cout << "\r  normalize " << d << "/" << files.size() << "                    " << std::flush;
                 }
             });
         }
