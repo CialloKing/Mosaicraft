@@ -1,6 +1,7 @@
 // Mosaicraft Web UI — 本地 HTTP 服务器
 // 提供命令生成页面 + 后端执行 mosaicraft.exe
 #include "core/httplib.h"
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -162,7 +163,12 @@ int main(int argc, char* argv[])
 
     if (!svr.listen("localhost", port)) {
         std::cerr << "ERROR: Failed to start server on port " << port << std::endl;
+        std::cerr << "  (port may be in use. Try: MosaicraftWebUI " << (port+1) << ")" << std::endl;
+        std::this_thread::sleep_for(std::chrono::seconds(10));
         return 1;
     }
+    // listen() 只在出错或 Ctrl+C 时返回
+    std::cout << std::endl << "Server stopped." << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(30));
     return 0;
 }
