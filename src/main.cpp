@@ -1,4 +1,4 @@
-#include "core/Database.h"
+﻿#include "core/Database.h"
 #include "core/Database.h"
 #include "core/FeatureExtractor.h"
 #include "core/FeaturePack.h"
@@ -9,7 +9,9 @@
 #include "core/UnicodeIO.h"
 #include "core/UnicodeIO.h"
 #include "compute/CudaBackend.h"
+#ifdef MOSAICRAFT_CUDA
 #include "compute/FeatureExtractorCuda.h"
+#endif
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/core.hpp>
@@ -357,7 +359,10 @@ static int cmdBuild(int argc, char* argv[])
     std::atomic<int> gpuDone{0};
 
     FeatureExtractor extractor;
-    bool gpuOk = cuda::isCudaAvailable();
+    bool gpuOk = false;
+#ifdef MOSAICRAFT_CUDA
+    gpuOk = cuda::isCudaAvailable();
+#endif
     constexpr int GPU_BATCH = 256;
     int inserted = 0, skipped = 0;
 
@@ -373,7 +378,11 @@ static int cmdBuild(int argc, char* argv[])
             auto flush = [&]() {
                 if (imgs.empty()) return;
                 if (firstBatch) { tGpuStart = std::chrono::steady_clock::now(); firstBatch = false; }
+                #ifdef MOSAICRAFT_CUDA
                 int done = cuda::extractBatch(imgs, recs, featDir, stems);
+#else
+                int done = 0;
+#endif
                 if (done <= 0) {
                     for (size_t bi = 0; bi < imgs.size(); ++bi)
                         extractor.compute(imgs[bi], recs[bi], featDir, stems[bi]);

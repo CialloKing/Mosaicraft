@@ -18,7 +18,17 @@ find_package(unofficial-sqlite3 CONFIG REQUIRED)
 find_package(TIFF REQUIRED)
 find_package(PNG REQUIRED)
 find_package(JPEG REQUIRED)
-find_package(CUDAToolkit REQUIRED)
+# ============================================================
+# CUDA 选项
+# ============================================================
+option(MOSAICRAFT_CUDA "Enable CUDA GPU acceleration (requires NVIDIA GPU + CUDA Toolkit)" ON)
+
+if (MOSAICRAFT_CUDA)
+    find_package(CUDAToolkit REQUIRED)
+    message(STATUS "CUDA: enabled (${CUDAToolkit_VERSION})")
+else()
+    message(STATUS "CUDA: disabled (MOSAICRAFT_CUDA=OFF)")
+endif()
 
 # CUDA 架构（可通过 -DCUDA_ARCH=sm_xx 覆盖，默认 RTX 4060 / sm_89）
 set(CUDA_ARCH "sm_89" CACHE STRING "Target CUDA compute capability")
@@ -34,6 +44,7 @@ endif()
 # ============================================================
 # 手动编译 CUDA 源文件
 # ============================================================
+if (MOSAICRAFT_CUDA)
 set(CUDA_OBJ1 "${CMAKE_BINARY_DIR}/CudaBackend.obj")
 set(CUDA_OBJ2 "${CMAKE_BINARY_DIR}/FeatureExtractorCuda.obj")
 
@@ -71,6 +82,7 @@ add_custom_command(
     COMMENT "Compiling FeatureExtractorCuda.cu..."
 )
 
+endif()  # MOSAICRAFT_CUDA
 # ============================================================
 # 核心静态库（CPU）
 # ============================================================
@@ -81,6 +93,9 @@ add_library(mosaicraft_core STATIC
     core/FeatureExtractor.cpp
     core/MosaicEngine.cpp
 )
+if (NOT MOSAICRAFT_CUDA)
+    target_sources(mosaicraft_core PRIVATE core/CudaStubs.cpp)
+endif()
 
 target_include_directories(mosaicraft_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -95,22 +110,22 @@ target_link_libraries(mosaicraft_core PUBLIC
     JPEG::JPEG
 )
 
-# ============================================================
-# CUDA 后端（预编译 .obj）
-# ============================================================
+if (MOSAICRAFT_CUDA)
 add_library(mosaicraft_cuda STATIC
     ${CUDA_OBJ1}
     ${CUDA_OBJ2}
 )
-
 target_include_directories(mosaicraft_cuda PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
-
 target_link_libraries(mosaicraft_cuda PUBLIC
     CUDA::cudart
     mosaicraft_core
 )
+else()
+add_library(mosaicraft_cuda INTERFACE)
+target_link_libraries(mosaicraft_cuda INTERFACE mosaicraft_core)
+endif()
 
 # ============================================================
 # 可执行文件
