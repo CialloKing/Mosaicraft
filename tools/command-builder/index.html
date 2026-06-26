@@ -378,13 +378,6 @@ async function runCommand() {
 checkServer();
 
 
-  try {
-    const handle = await window.showDirectoryPicker();
-    document.getElementById(inputId).value = handle.name;
-    document.getElementById(inputId).title = '已选择目录 "' + handle.name + '"，浏览器无法获取绝对路径，请手动补充完整路径';
-    generateCommand();
-  } catch(e) {}
-}
 
 generateCommand();
 </script>
