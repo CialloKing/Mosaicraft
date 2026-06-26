@@ -43,3 +43,6 @@ batch_tmp/
 # Mosaicraft libraries
 library/
 build_nocuda/
+
+# Release packages
+Mosaicraft_*.zip
