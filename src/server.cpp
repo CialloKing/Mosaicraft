@@ -158,6 +158,7 @@ int main(int argc, char* argv[])
         std::cout << "[RUN] " << fullCmd << std::endl;
 
         std::string output;
+        try {
 #ifdef _WIN32
         // Windows: 用 CreateProcess 获取实时输出（简单起见用 popen）
         FILE* pipe = popen((fullCmd + " 2>&1").c_str(), "r");
@@ -165,6 +166,7 @@ int main(int argc, char* argv[])
         FILE* pipe = popen((fullCmd + " 2>&1").c_str(), "r");
 #endif
         if (!pipe) {
+            std::cerr << "[ERROR] popen failed for: " << fullCmd << std::endl;
             res.set_content("ERROR: failed to start process", "text/plain");
             return;
         }
@@ -181,6 +183,13 @@ int main(int argc, char* argv[])
             res.set_content(output.empty() ? "OK" : output, "text/plain; charset=utf-8");
         else
             res.set_content("EXIT " + std::to_string(rc) + "\n" + output, "text/plain; charset=utf-8");
+        } catch (const std::exception& e) {
+            std::cerr << "[ERROR] Exception in /api/run: " << e.what() << std::endl;
+            res.set_content(std::string("ERROR: ") + e.what(), "text/plain");
+        } catch (...) {
+            std::cerr << "[ERROR] Unknown exception in /api/run" << std::endl;
+            res.set_content("ERROR: internal error", "text/plain");
+        }
     });
 
     // 健康检查
