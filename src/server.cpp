@@ -25,23 +25,34 @@ static std::string readFile(const std::string& path)
 
 static std::string findHtml()
 {
-    // 查找顺序：当前目录 > exe 所在目录 > ../tools/command-builder/
-    std::vector<std::string> candidates = {
-        "index.html",
-        "tools/command-builder/index.html",
-        "../tools/command-builder/index.html"
-    };
+    std::vector<std::string> candidates;
+
 #ifdef _WIN32
     char exePath[MAX_PATH];
     GetModuleFileNameA(nullptr, exePath, MAX_PATH);
     std::filesystem::path exeDir = std::filesystem::path(exePath).parent_path();
-    candidates.insert(candidates.begin(), (exeDir / "index.html").string());
-    candidates.insert(candidates.begin() + 1, (exeDir / "tools/command-builder/index.html").string());
+    // exe 同目录（发布版）
+    candidates.push_back((exeDir / "index.html").string());
+    candidates.push_back((exeDir / "tools/command-builder/index.html").string());
+    // 开发目录：build/Release → ../../tools/command-builder/
+    candidates.push_back((exeDir / "../../tools/command-builder/index.html").string());
+    // 开发目录：build → ../tools/command-builder/
+    candidates.push_back((exeDir / "../tools/command-builder/index.html").string());
 #endif
+    // 当前工作目录下的常见路径
+    candidates.push_back("index.html");
+    candidates.push_back("tools/command-builder/index.html");
+    candidates.push_back("../tools/command-builder/index.html");
+    candidates.push_back("../../tools/command-builder/index.html");
+
     for (const auto& c : candidates) {
-        if (std::filesystem::exists(c)) return c;
+        try {
+            if (std::filesystem::exists(c)) {
+                return std::filesystem::canonical(c).string();
+            }
+        } catch (...) {}
     }
-    return "tools/command-builder/index.html";  // fallback
+    return "";  // not found
 }
 
 static std::string findMosaicraft()
@@ -63,6 +74,12 @@ int main(int argc, char* argv[])
 
     std::string mosaicPath = findMosaicraft();
     std::string htmlPath = findHtml();
+    if (htmlPath.empty()) {
+        std::cerr << "ERROR: Cannot find index.html" << std::endl;
+        std::cerr << "  Place index.html next to mosaicraftwebui.exe, or" << std::endl;
+        std::cerr << "  run from the Mosaicraft project root directory." << std::endl;
+        return 1;
+    }
 
     std::cout << "Mosaicraft Web UI" << std::endl;
     std::cout << "  Server: http://localhost:" << port << std::endl;
