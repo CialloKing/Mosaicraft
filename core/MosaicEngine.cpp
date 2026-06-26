@@ -439,7 +439,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     double srcRatio = static_cast<double>(target.cols) / target.rows;
     double outRatio = static_cast<double>(outW) / outH;
     std::cout << "  Aspect: src=" << std::fixed << std::setprecision(3) << srcRatio
-              << " out=" << outRatio << " (, " << std::abs(srcRatio - outRatio) << ")"
+              << " out=" << outRatio << " (diff=" << std::abs(srcRatio - outRatio) << ")"
               << std::endl;
 
     // , , ,  , �߳�Ԥ, , , ,  tile , ,  , , , 
