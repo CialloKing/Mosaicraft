@@ -78,7 +78,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <h3>📂 必需参数（支持拖入文件/文件夹）</h3>
     <div class="row">
       <div class="field"><label>目标图片 -i</label><input type="text" id="m-input" class="dropzone" placeholder="拖入图片 或 输入路径 (如 D:\photos\target.jpg)"></div>
-      <div class="field"><label>数据库 -d</label><input type="text" id="m-db" class="dropzone" value="library/360x640" placeholder="拖入 .db 或目录"></div>
+      <div class="field"><label>数据库 -d</label><input type="text" id="m-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div>
       <div class="field"><label>输出路径 -o</label><input type="text" id="m-output" value="output.jpg" placeholder="output.jpg"></div>
     </div>
   </div>
@@ -147,8 +147,8 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <h3>📂 必需参数（支持拖入文件夹）</h3>
     <div class="row">
       <div class="field"><label>图片目录 -i *</label><input type="text" id="b-input" class="dropzone" placeholder="拖入文件夹 或 输入路径 (如 D:\photos)"></div>
-      <div class="field"><label>输出目录 -o</label><input type="text" id="b-output" class="dropzone" value="library/360x640" placeholder="拖入目录"></div>
-      <div class="field"><label>数据库 -d</label><input type="text" id="b-db" value="mosaicraft.db" placeholder="默认在输出目录内"></div>
+      <div class="field"><label>输出目录 -o</label><input type="text" id="b-output" class="dropzone" placeholder="拖入文件夹 (如 D:\mylib)"></div>
+      <div class="field"><label>数据库 -d</label><input type="text" id="b-db" placeholder="默认放在输出目录内"></div>
     </div>
   </div>
   <div class="card">
@@ -172,29 +172,29 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <h3>📂 查询参数</h3>
     <div class="row">
       <div class="field"><label>图片路径 -i *</label><input type="text" id="i-input" class="dropzone" placeholder="拖入图片"></div>
-      <div class="field"><label>数据库 -d</label><input type="text" id="i-db" class="dropzone" value="library/360x640" placeholder="拖入 .db 或目录"></div>
+      <div class="field"><label>数据库 -d</label><input type="text" id="i-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div>
     </div>
   </div>
 </div>
 
 <!-- ============ DB-STATS ============ -->
 <div class="panel" id="panel-dbstats">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="s-db" class="dropzone" value="library/360x640" placeholder="拖入 .db 或目录"></div></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="s-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div></div></div>
 </div>
 
 <!-- ============ DB-PURGE ============ -->
 <div class="panel" id="panel-dbpurge">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="p-db" class="dropzone" value="library/360x640" placeholder="拖入 .db 或目录"></div></div><div class="chk-row" style="margin-top:8px"><label><input type="checkbox" id="p-force"> 跳过确认 -y</label></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="p-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div></div><div class="chk-row" style="margin-top:8px"><label><input type="checkbox" id="p-force"> 跳过确认 -y</label></div></div>
 </div>
 
 <!-- ============ DB-HEALTH ============ -->
 <div class="panel" id="panel-dbhealth">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="h-db" class="dropzone" value="library/360x640" placeholder="拖入 .db 或目录"></div></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="h-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div></div></div>
 </div>
 
 <!-- ============ DB-USAGE ============ -->
 <div class="panel" id="panel-dbusage">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="u-db" class="dropzone" value="library/360x640" placeholder="拖入 .db 或目录"></div><div class="field"><label>Top N -n</label><input type="number" id="u-n" value="50" min="1"></div><div class="field"><label>导出目录 --export</label><input type="text" id="u-export" placeholder="不导出"></div></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="u-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div><div class="field"><label>Top N -n</label><input type="number" id="u-n" value="50" min="1"></div><div class="field"><label>导出目录 --export</label><input type="text" id="u-export" placeholder="不导出"></div></div></div>
 </div>
 
 <!-- ============ OUTPUT ============ -->
@@ -203,7 +203,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <span>生成的命令 (PowerShell)</span>
     <span id="copy-feedback" style="color:var(--accent2);display:none">✅ 已复制!</span>
   </div>
-  <div class="cmd" id="cmd-output">mosaicraft mosaic -i target.jpg -d library/360x640 -o output.jpg</div>
+  <div class="cmd" id="cmd-output">mosaicraft mosaic -i target.jpg -d library -o output.jpg</div>
   <div class="btns">
     <button class="btn btn-primary" onclick="generateCommand()">🔄 生成命令</button>
     <button class="btn btn-secondary" onclick="copyCommand()">📋 复制到剪贴板</button>
@@ -299,7 +299,7 @@ function generateCommand() {
   else if (tab === 'build') {
     const inp = val('b-input'); if (inp) lines.push('-i ' + inp);
     const out = val('b-output'); if (out && out !== 'normalized') lines.push('-o ' + out);
-    const db = val('b-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
+    const db = val('b-db'); if (db) lines.push('-d ' + db);
     const thr = val('b-threads'); if (thr) lines.push('-t ' + thr);
     const ns = val('b-normsize'); if (ns && ns !== '180x320') lines.push('--normalize-size ' + ns);
     if (val('b-append')) lines.push('--append');
