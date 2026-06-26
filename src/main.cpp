@@ -21,6 +21,7 @@
 #include <cctype>
 #ifdef _WIN32
 #include <io.h>
+#include <conio.h>
 #endif
 #include <cstdint>
 #include <cstdio>
@@ -1244,6 +1245,18 @@ static int cmdDbHealth(int argc, char* argv[])
 int main(int argc, char* argv[])
 {
     srand(static_cast<unsigned>(time(nullptr)) ^ static_cast<unsigned>(reinterpret_cast<uintptr_t>(&argc)));
+
+    // 交互式终端退出前暂停，双击exe时不闪退
+    struct AutoPause {
+        ~AutoPause() {
+#ifdef _WIN32
+            if (_isatty(_fileno(stdin))) {
+                std::cout << std::endl << "Press any key to exit..." << std::flush;
+                _getch();
+            }
+#endif
+        }
+    } autoPause;
 
     // Windows: argv ʹ��ϵͳ ANSI ���루����ϵͳΪ GBK����תΪ UTF-8 ԭ���滻
     static std::vector<std::string> utf8Args(argc);
