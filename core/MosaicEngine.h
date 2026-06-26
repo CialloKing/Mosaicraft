@@ -73,7 +73,6 @@ public:
                       << "  quality: " << jpegQuality
                       << "  format: " << outputFormat;
             if (outputFormat == "png")
-            if (outputFormat == "png")
                 std::cout << "(z" << pngCompressionLevel;
             if (writeMode != "auto")
                 std::cout << "/" << writeMode;

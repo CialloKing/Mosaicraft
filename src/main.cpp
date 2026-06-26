@@ -7,7 +7,6 @@
 #include "core/MosaicEngine.h"
 #include <unordered_set>
 #include "core/UnicodeIO.h"
-#include "core/UnicodeIO.h"
 #include "compute/CudaBackend.h"
 #ifdef MOSAICRAFT_CUDA
 #include "compute/FeatureExtractorCuda.h"
@@ -885,9 +884,9 @@ static int cmdInspect(int argc, char* argv[])
             else if (r.avgL < 70) mid++;
             else bright++;
         }
-        std::cout << "Distribution: dark=" << dark << " (" << (100.0*dark/total)
-                  << "%)  mid=" << mid << " (" << (100.0*mid/total)
-                  << "%)  bright=" << bright << " (" << (100.0*bright/total) << "%)" << std::endl;
+        std::cout << "Distribution: dark=" << dark << " (" << (total > 0 ? 100.0*dark/total : 0)
+                  << "%)  mid=" << mid << " (" << (total > 0 ? 100.0*mid/total : 0)
+                  << "%)  bright=" << bright << " (" << (total > 0 ? 100.0*bright/total : 0) << "%)" << std::endl;
     }
 
     return 0;

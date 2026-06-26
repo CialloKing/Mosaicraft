@@ -110,8 +110,9 @@ public:
                         oldIds[i] = static_cast<int>(tid);
                     }
                 }
-                fclose(ft); fclose(fl);
             }
+            if (ft) fclose(ft);
+            if (fl) fclose(fl);
         }
         std::unordered_map<int,int> oldPos;
         for (int i = 0; i < static_cast<int>(oldIds.size()); ++i)

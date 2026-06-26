@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdio>
+#include <csetjmp>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -24,6 +25,17 @@ public:
 #endif
         if (!m_fp) throw std::runtime_error("Jpg open");
         m_cinfo.err = jpeg_std_error(&m_jerr);
+        // 覆盖默认exit()行为：致命错误通过setjmp/longjmp处理
+        m_cinfo.client_data = &m_jmpBuf;
+        m_jerr.error_exit = [](j_common_ptr cinfo) {
+            longjmp(*(jmp_buf*)cinfo->client_data, 1);
+        };
+        if (setjmp(m_jmpBuf)) {
+            // libjpeg 致命错误时跳转至此
+            jpeg_destroy_compress(&m_cinfo);
+            if (m_fp) { fclose(m_fp); m_fp = nullptr; }
+            return;
+        }
         jpeg_create_compress(&m_cinfo);
         jpeg_stdio_dest(&m_cinfo, m_fp);
         m_cinfo.image_width = w;
@@ -66,6 +78,7 @@ private:
     FILE* m_fp = nullptr;
     struct jpeg_compress_struct m_cinfo = {};
     struct jpeg_error_mgr m_jerr = {};
+    jmp_buf m_jmpBuf = {};
     int m_w, m_h;
     int m_rowsWritten = 0;
 };

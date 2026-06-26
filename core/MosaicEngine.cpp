@@ -1562,6 +1562,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             });
         }
         for (auto& w : pWorkers) w.join();
+        loadFail = pFail.load();
     }
 
     std::cout << std::endl;
@@ -1593,7 +1594,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
 
     // Ð´ï¿½ï¿½ï¿½ï¿½ï¿?
-write_streaming_tiff:
     if (fmt == "tiff")
     {
         if (output.empty())
