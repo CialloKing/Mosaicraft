@@ -85,7 +85,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <div class="row">
       <div class="field field-full"><label>目标图片 -i（必填）</label><input type="text" id="m-input" placeholder="粘贴绝对路径，如 D:\photos\target.jpg"></div>
       <div class="field field-full"><label>数据库 -d（默认情况下不需要填，默认 ./library/mosaicraft.db）</label><input type="text" id="m-db" placeholder="留空使用默认值，或粘贴目录路径如 D:\my_library"></div>
-      <div class="field field-full"><label>输出路径 -o（可选，默认 ./output/output.jpg）</label><input type="text" id="m-output" value="" placeholder="留空使用默认值，或粘贴文件路径如 D:\results\mosaic.jpg"></div>
+      <div class="field field-full"><label>输出路径 -o（文件路径，默认 ./output/output.jpg）⚠ 注意：--format 选择会覆盖 -o 的后缀名</label><input type="text" id="m-output" value="" placeholder="留空使用默认值，或粘贴文件路径如 D:\results\mosaic.jpg"></div>
     </div>
   </div>
   <div class="card">

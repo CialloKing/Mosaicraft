@@ -791,6 +791,15 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  Note: --tiled/--deepzoom outputs to " << outputPath << "_files/" << std::endl;
     }
 
+    // 输出路径校验：拒绝已存在的目录，提示应为文件路径
+    std::error_code ec;
+    if (!outputPath.empty() && fs::is_directory(u8path(outputPath), ec)) {
+        std::cerr << "ERROR: -o is a directory, not a file path: " << outputPath << std::endl;
+        std::cerr << "  Hint: append a filename, e.g. " << outputPath << "/output.jpg" << std::endl;
+        std::cerr << "  Note: --format overrides the file extension from -o" << std::endl;
+        return 1;
+    }
+
     MosaicEngine engine;
     bool ok = engine.generate(inputPath, resolveDbPath(dbPath), outputPath, cfg);
 
