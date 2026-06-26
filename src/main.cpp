@@ -1270,15 +1270,16 @@ int main(int argc, char* argv[])
     srand(static_cast<unsigned>(time(nullptr)) ^ static_cast<unsigned>(reinterpret_cast<uintptr_t>(&argc)));
 
     // 交互式终端退出前暂停，双击exe时不闪退
+    // 注意：仅当stdin和stdout都是TTY时才暂停（popen管道不会触发）
     struct AutoPause {
         ~AutoPause() {
 #ifdef _WIN32
-            if (_isatty(_fileno(stdin))) {
+            if (_isatty(_fileno(stdin)) && _isatty(_fileno(stdout))) {
                 std::cout << std::endl << "Press any key to exit..." << std::flush;
                 _getch();
             }
 #else
-            if (isatty(fileno(stdin))) {
+            if (isatty(fileno(stdin)) && isatty(fileno(stdout))) {
                 std::cout << std::endl << "Press any key to exit..." << std::flush;
                 getchar();
             }
