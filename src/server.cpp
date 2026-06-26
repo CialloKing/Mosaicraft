@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
+#include <windows.h>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -153,36 +154,65 @@ int main(int argc, char* argv[])
             return;
         }
 
-        // 确保使用绝对路径的 mosaicraft
-        std::string fullCmd = "\"" + mosaicPath + "\" " + subCmd;
-        std::cout << "[RUN] " << fullCmd << std::endl;
-
+        // 使用 CreateProcess 替代 popen，避免 cmd.exe 对 Unicode 路径的编码问题
         std::string output;
         try {
-#ifdef _WIN32
-        // Windows: 用 CreateProcess 获取实时输出（简单起见用 popen）
-        FILE* pipe = popen((fullCmd + " 2>&1").c_str(), "r");
-#else
-        FILE* pipe = popen((fullCmd + " 2>&1").c_str(), "r");
-#endif
-        if (!pipe) {
-            std::cerr << "[ERROR] popen failed for: " << fullCmd << std::endl;
-            res.set_content("ERROR: failed to start process", "text/plain");
-            return;
-        }
-        // 用 fread 逐字节读取——mosaicraft 进度用 \r 而非 \n，fgets 不触发
-        setvbuf(pipe, nullptr, _IONBF, 0);
-        char ch;
-        while (fread(&ch, 1, 1, pipe) == 1) {
-            std::cout << ch;      // 逐字输出到控制台
-            output += ch;
-        }
-        int rc = pclose(pipe);
+            std::cout << "[RUN] " << mosaicPath << " " << subCmd << std::endl;
 
-        if (rc == 0)
-            res.set_content(output.empty() ? "OK" : output, "text/plain; charset=utf-8");
-        else
-            res.set_content("EXIT " + std::to_string(rc) + "\n" + output, "text/plain; charset=utf-8");
+            HANDLE hReadPipe, hWritePipe;
+            SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+            if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 0)) {
+                res.set_content("ERROR: CreatePipe failed", "text/plain");
+                return;
+            }
+            SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
+
+            PROCESS_INFORMATION pi = {};
+            STARTUPINFOW si = {sizeof(STARTUPINFOW)};
+            si.dwFlags = STARTF_USESTDHANDLES;
+            si.hStdOutput = hWritePipe;
+            si.hStdError = hWritePipe;
+
+            std::wstring wCmd = std::wstring(mosaicPath.begin(), mosaicPath.end());
+            // subCmd 是 ASCII/UTF-8，转为宽字符
+            int wLen = MultiByteToWideChar(CP_UTF8, 0, subCmd.c_str(), -1, nullptr, 0);
+            std::wstring wArgs(wLen, L'\0');
+            MultiByteToWideChar(CP_UTF8, 0, subCmd.c_str(), -1, &wArgs[0], wLen);
+            std::wstring cmdLine = L"\"" + wCmd + L"\" " + wArgs;
+
+            // 确保命令行缓冲区足够大
+            std::vector<wchar_t> cmdBuf(cmdLine.size() + 1);
+            wcscpy(cmdBuf.data(), cmdLine.c_str());
+
+            if (!CreateProcessW(wCmd.c_str(), cmdBuf.data(),
+                               nullptr, nullptr, TRUE,
+                               CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+                CloseHandle(hReadPipe);
+                CloseHandle(hWritePipe);
+                std::cerr << "[ERROR] CreateProcess failed (" << GetLastError() << ")" << std::endl;
+                res.set_content("ERROR: failed to start process", "text/plain");
+                return;
+            }
+            CloseHandle(hWritePipe);
+            CloseHandle(pi.hThread);
+
+            char buf[4096];
+            DWORD bytesRead;
+            while (ReadFile(hReadPipe, buf, sizeof(buf), &bytesRead, nullptr) && bytesRead > 0) {
+                std::cout.write(buf, bytesRead);
+                output.append(buf, bytesRead);
+            }
+            CloseHandle(hReadPipe);
+
+            WaitForSingleObject(pi.hProcess, INFINITE);
+            DWORD exitCode = 0;
+            GetExitCodeProcess(pi.hProcess, &exitCode);
+            CloseHandle(pi.hProcess);
+
+            if (exitCode == 0)
+                res.set_content(output.empty() ? "OK" : output, "text/plain; charset=utf-8");
+            else
+                res.set_content("EXIT " + std::to_string(exitCode) + "\n" + output, "text/plain; charset=utf-8");
         } catch (const std::exception& e) {
             std::cerr << "[ERROR] Exception in /api/run: " << e.what() << std::endl;
             res.set_content(std::string("ERROR: ") + e.what(), "text/plain");
