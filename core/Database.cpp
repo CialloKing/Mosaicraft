@@ -432,7 +432,7 @@ std::vector<int> Database::queryIdsByLRange(double minL, double maxL, int limit,
         )SQL";
 
     sqlite3_stmt* stmt = nullptr;
-    sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return results;
     sqlite3_bind_double(stmt, 1, minL);
     sqlite3_bind_double(stmt, 2, maxL);
     sqlite3_bind_int(stmt, 3, limit);
@@ -454,7 +454,7 @@ int Database::totalCount()
 
     const char* sql = "SELECT COUNT(*) FROM images";
     sqlite3_stmt* stmt = nullptr;
-    sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return 0;
 
     int count = 0;
     if (sqlite3_step(stmt) == SQLITE_ROW)
@@ -474,7 +474,7 @@ bool Database::columnExists(const std::string& table, const std::string& column)
     // PRAGMA table_info 返回每列：cid, name, type, notnull, dflt_value, pk
     std::string sql = "PRAGMA table_info(" + table + ")";
     sqlite3_stmt* stmt = nullptr;
-    sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr);
+    if (sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return false;
 
     bool found = false;
     while (sqlite3_step(stmt) == SQLITE_ROW)
@@ -581,28 +581,36 @@ void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
     // 检查目标图内容哈希是否已存在（改名去重）
     bool isNewTarget = true;
     if (!targetHash.empty() && m_db) {
-        std::string checkSql = "SELECT 1 FROM target_runs WHERE target_hash = '"
-                               + targetHash + "'";
+        const char* checkSql = "SELECT 1 FROM target_runs WHERE target_hash = ?";
         sqlite3_stmt* stmt = nullptr;
-        if (sqlite3_prepare_v2(m_db, checkSql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+        if (sqlite3_prepare_v2(m_db, checkSql, -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, targetHash.c_str(), -1, SQLITE_TRANSIENT);
             isNewTarget = (sqlite3_step(stmt) != SQLITE_ROW);
             sqlite3_finalize(stmt);
         }
     }
     // 更新 target_runs
     if (!targetHash.empty()) {
-        // SQL 安全：转义路径中的单引号
-        std::string safePath = targetPath;
-        size_t pos = 0;
-        while ((pos = safePath.find('\'', pos)) != std::string::npos) {
-            safePath.insert(pos, "'"); pos += 2;
+        if (isNewTarget) {
+            const char* insSql = "INSERT INTO target_runs (target_hash, first_path, run_count, last_used) "
+                                 "VALUES (?, ?, 1, datetime('now'))";
+            sqlite3_stmt* stmt = nullptr;
+            if (sqlite3_prepare_v2(m_db, insSql, -1, &stmt, nullptr) == SQLITE_OK) {
+                sqlite3_bind_text(stmt, 1, targetHash.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmt, 2, targetPath.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_step(stmt);
+                sqlite3_finalize(stmt);
+            }
+        } else {
+            const char* updSql = "UPDATE target_runs SET run_count = run_count + 1, "
+                                 "last_used = datetime('now') WHERE target_hash = ?";
+            sqlite3_stmt* stmt = nullptr;
+            if (sqlite3_prepare_v2(m_db, updSql, -1, &stmt, nullptr) == SQLITE_OK) {
+                sqlite3_bind_text(stmt, 1, targetHash.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_step(stmt);
+                sqlite3_finalize(stmt);
+            }
         }
-        if (isNewTarget)
-            exec("INSERT INTO target_runs (target_hash, first_path, run_count, last_used) "
-                 "VALUES ('" + targetHash + "', '" + safePath + "', 1, datetime('now'))");
-        else
-            exec("UPDATE target_runs SET run_count = run_count + 1, "
-                 "last_used = datetime('now') WHERE target_hash = '" + targetHash + "'");
     }
 
     // 更新图片使用统计

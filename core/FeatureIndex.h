@@ -25,10 +25,14 @@ class FeatureIndex
 public:
     FeatureIndex() : m_index(nullptr), m_space(nullptr) {}
 
+    // 禁止拷贝（管理原始指针，拷贝会导致double-free）
+    FeatureIndex(const FeatureIndex&) = delete;
+    FeatureIndex& operator=(const FeatureIndex&) = delete;
+
     ~FeatureIndex()
     {
-        if (m_index) { delete m_index; }
-        if (m_space) { delete m_space; }
+        delete m_index; m_index = nullptr;
+        delete m_space; m_space = nullptr;
     }
 
     // 从 records 构建索引（label = image_id）
@@ -36,6 +40,11 @@ public:
     {
         int count = static_cast<int>(records.size());
         if (count == 0) return false;
+
+        // 释放旧索引
+        delete m_index; m_index = nullptr;
+        delete m_space; m_space = nullptr;
+        m_idToIndex.clear();
 
         constexpr int dim = 708;
         m_dim = dim;
@@ -97,6 +106,11 @@ public:
 
         int count = static_cast<int>(records.size());
         if (count == 0) return false;
+
+        // 释放旧索引
+        delete m_index; m_index = nullptr;
+        delete m_space; m_space = nullptr;
+        m_idToIndex.clear();
 
         // 构建 id→index 映射
         m_idToIndex.reserve(count);

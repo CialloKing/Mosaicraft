@@ -429,8 +429,7 @@ namespace {
         cudaMemcpy(h_grid, d_grid, N*192*sizeof(float), cudaMemcpyDeviceToHost);
         cudaMemcpy(h_tiny, d_tiny, N*256, cudaMemcpyDeviceToHost);
         cudaMemcpy(h_lbp, d_lbp, N*256*sizeof(float), cudaMemcpyDeviceToHost);
-        double hostEdge; cudaMemcpy(&hostEdge, d_edge, sizeof(double), cudaMemcpyDeviceToHost);
-        *h_edge = hostEdge;
+        cudaMemcpy(h_edge, d_edge, N*sizeof(double), cudaMemcpyDeviceToHost);
     cu_cleanup:
         cudaFree(d_img); cudaFree(d_grid); cudaFree(d_tiny); cudaFree(d_lbp);
         cudaFree(d_lab); cudaFree(d_bright); cudaFree(d_contrast); cudaFree(d_edge);

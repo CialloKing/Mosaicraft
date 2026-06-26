@@ -119,14 +119,32 @@ int main(int argc, char* argv[])
             res.set_content("ERROR: empty command", "text/plain");
             return;
         }
-        // 确保使用绝对路径的 mosaicraft
-        std::string fullCmd = "\"" + mosaicPath + "\" ";
-        // Web 端命令已包含 "mosaicraft" 前缀，去掉重复
+        // 安全检查：拒绝含shell元字符的命令，防注入
+        const std::string forbidden = "&|;$`(){}<>";
+        if (cmd.find_first_of(forbidden) != std::string::npos) {
+            res.set_content("ERROR: invalid characters in command", "text/plain");
+            return;
+        }
+        // 只允许已知的mosaicraft子命令
         const std::string prefix = "mosaicraft ";
-        if (cmd.compare(0, prefix.size(), prefix) == 0)
-            fullCmd += cmd.substr(prefix.size());
-        else
-            fullCmd += cmd;
+        if (cmd.compare(0, prefix.size(), prefix) != 0) {
+            res.set_content("ERROR: command must start with 'mosaicraft'", "text/plain");
+            return;
+        }
+        std::string subCmd = cmd.substr(prefix.size());
+        // 提取子命令名（第一个空格前的词）
+        auto spacePos = subCmd.find(' ');
+        std::string cmdName = (spacePos != std::string::npos) ? subCmd.substr(0, spacePos) : subCmd;
+        const std::string validCmds[] = {"build","mosaic","inspect","db-stats","db-purge","db-usage","db-health"};
+        bool valid = false;
+        for (const auto& vc : validCmds) { if (cmdName == vc) { valid = true; break; } }
+        if (!valid) {
+            res.set_content("ERROR: unknown command: " + cmdName, "text/plain");
+            return;
+        }
+
+        // 确保使用绝对路径的 mosaicraft
+        std::string fullCmd = "\"" + mosaicPath + "\" " + subCmd;
         std::cout << "[RUN] " << fullCmd << std::endl;
 
         std::string output;

@@ -337,7 +337,7 @@ static int cmdBuild(int argc, char* argv[])
     // Phase 1 & 2: pipelined — normalize (CPU) + feature extraction (GPU) run concurrently
     auto tBuildStart = std::chrono::steady_clock::now();
     auto tNormStart = tBuildStart;
-    std::chrono::steady_clock::time_point tGpuStart, tCacheStart, tNormEnd = tBuildStart;
+    std::chrono::steady_clock::time_point tGpuStart = tBuildStart, tCacheStart = tBuildStart, tNormEnd = tBuildStart;
     ImageNormalizer normalizer(normW, normH);
     std::vector<std::string> outPaths(files.size());
     std::vector<bool> okFlags(files.size(), false);
@@ -1014,18 +1014,15 @@ static int cmdDbPurge(int argc, char* argv[])
     auto all = db.allRecords();
     int total = static_cast<int>(all.size());
     int removed = 0;
+
+    // 先检查有多少孤儿记录，再决定是否删除
+    std::vector<int> orphanIds;
     for (const auto& r : all)
     {
         if (!r.filePath.empty() && !std::filesystem::exists(u8path(r.filePath)))
-        {
-            if (!r.tinyPath.empty() && std::filesystem::exists(u8path(r.tinyPath)))
-                std::filesystem::remove(u8path(r.tinyPath));
-            if (!r.histPath.empty() && std::filesystem::exists(u8path(r.histPath)))
-                std::filesystem::remove(u8path(r.histPath));
-            db.removeImage(r.id);
-            removed++;
-        }
+            orphanIds.push_back(r.id);
     }
+    removed = static_cast<int>(orphanIds.size());
 
     if (removed == 0)
     {
@@ -1048,6 +1045,22 @@ static int cmdDbPurge(int argc, char* argv[])
         std::cout << "Found " << removed << " orphan records. Purge? [y/N] " << std::flush;
         char answer = static_cast<char>(std::getchar());
         if (answer != 'y' && answer != 'Y') { std::cout << "Aborted." << std::endl; return 0; }
+    }
+
+    // 确认后才执行删除
+    for (int id : orphanIds)
+    {
+        // 找到对应记录以删除关联文件
+        for (const auto& r : all)
+        {
+            if (r.id != id) continue;
+            if (!r.tinyPath.empty() && std::filesystem::exists(u8path(r.tinyPath)))
+                std::filesystem::remove(u8path(r.tinyPath));
+            if (!r.histPath.empty() && std::filesystem::exists(u8path(r.histPath)))
+                std::filesystem::remove(u8path(r.histPath));
+            break;
+        }
+        db.removeImage(id);
     }
 
     std::cout << "Purged " << removed << " / " << total << " orphan records." << std::endl;
