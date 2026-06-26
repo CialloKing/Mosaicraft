@@ -475,3 +475,9 @@ Compress-Archive -Path release_pkg\* -Destination Mosaicraft_release.zip
 - `--normalize-size`/`--output-tile`/`--write-mode` 参数校验
 - `\r` 进度清除 + 控制台暂停(AutoPause)
 - 归一化压缩质量控制 (JPEG q90, PNG lv9)
+
+### v1.12.1: 编译宏 MOSAICRAFT_CUDA
+- `cmake -D MOSAICRAFT_CUDA=OFF` 纯 CPU 编译
+- 编译宏守卫所有 CUDA 头文件/函数调用
+- `core/CudaStubs.cpp`: 无 CUDA 时的空实现
+- Windows/Linux 均可用

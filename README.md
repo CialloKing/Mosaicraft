@@ -213,6 +213,19 @@ Mosaicraft/
 | v1.13 | **Linux/WSL 支持** | 🚧 条件编译已补，待实测 |
 | v2.0 | GUI | 计划中 |
 
+## 编译选项
+
+| 选项 | 默认 | 说明 |
+|:---|:---|:---|
+| `-D MOSAICRAFT_CUDA=ON` | ✅ | 启用 CUDA GPU 加速（需要 NVIDIA GPU + CUDA Toolkit） |
+| `-D MOSAICRAFT_CUDA=OFF` | — | 纯 CPU 编译（无 NVIDIA GPU 的平台） |
+
+```bash
+# 无 GPU 编译
+cmake -S . -B build -D MOSAICRAFT_CUDA=OFF
+cmake --build build --config Release
+```
+
 ## 许可证
 
 GPL — 详见 [LICENSE](LICENSE)
