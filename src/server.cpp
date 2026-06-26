@@ -124,7 +124,10 @@ int main(int argc, char* argv[])
             return;
         }
         char buf[4096];
-        while (fgets(buf, sizeof(buf), pipe)) output += buf;
+        while (fgets(buf, sizeof(buf), pipe)) {
+            std::cout << buf;     // 实时输出到服务器控制台
+            output += buf;
+        }
         int rc = pclose(pipe);
 
         if (rc == 0)
