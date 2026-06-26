@@ -132,3 +132,9 @@ target_link_libraries(mosaicraftwebui PRIVATE
 target_include_directories(mosaicraftwebui PRIVATE
     ${CMAKE_SOURCE_DIR}
 )
+# 发布时自动复制 HTML 到 exe 同目录
+add_custom_command(TARGET mosaicraftwebui POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/tools/command-builder/index.html"
+        "$<TARGET_FILE_DIR:mosaicraftwebui>/index.html"
+)
