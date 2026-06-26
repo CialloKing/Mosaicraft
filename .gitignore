@@ -40,10 +40,6 @@ batch_tmp/
 # Tools
 .reasonix/
 
-# Temporary / debug files
-check_*.cpp
-test_*.cpp
-
 # Mosaicraft libraries
 library/
 build_nocuda/

@@ -163,3 +163,29 @@ add_custom_command(TARGET MosaicraftWebUI POST_BUILD
         "${CMAKE_SOURCE_DIR}/tools/command-builder/index.html"
         "$<TARGET_FILE_DIR:MosaicraftWebUI>/index.html"
 )
+
+# ============================================================
+# 单元测试 (doctest)
+# ============================================================
+include(FetchContent)
+FetchContent_Declare(
+    doctest
+    GIT_REPOSITORY https://github.com/doctest/doctest.git
+    GIT_TAG        v2.4.11
+)
+FetchContent_MakeAvailable(doctest)
+
+add_executable(mosaicraft_tests
+    tests/test_core.cpp
+)
+target_link_libraries(mosaicraft_tests PRIVATE
+    mosaicraft_core
+    doctest::doctest
+)
+target_include_directories(mosaicraft_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}
+)
+
+# CTest 集成
+enable_testing()
+add_test(NAME mosaicraft_tests COMMAND mosaicraft_tests)
