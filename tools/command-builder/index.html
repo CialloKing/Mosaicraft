@@ -71,10 +71,10 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <button class="tab active" data-cmd="mosaic">🎨 生成马赛克</button>
   <button class="tab" data-cmd="build">📦 建库</button>
   <button class="tab" data-cmd="inspect">🔍 查询</button>
-  <button class="tab" data-cmd="db-stats">📊 统计</button>
-  <button class="tab" data-cmd="db-purge">🧹 清理</button>
-  <button class="tab" data-cmd="db-health">🩺 健康</button>
-  <button class="tab" data-cmd="db-usage">📋 使用记录</button>
+  <button class="tab" data-cmd="dbstats">📊 统计</button>
+  <button class="tab" data-cmd="dbpurge">🧹 清理</button>
+  <button class="tab" data-cmd="dbhealth">🩺 健康</button>
+  <button class="tab" data-cmd="dbusage">📋 使用记录</button>
 </nav>
 <main>
 
@@ -299,17 +299,17 @@ function generateCommand() {
     const inp = val('i-input'); if (inp) lines.push('-i ' + inp);
     const db = val('i-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
   }
-  else if (tab === 'db-stats') {
+  else if (tab === 'dbstats') {
     const db = val('s-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
   }
-  else if (tab === 'db-purge') {
+  else if (tab === 'dbpurge') {
     const db = val('p-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
     if (val('p-force')) lines.push('-y');
   }
-  else if (tab === 'db-health') {
+  else if (tab === 'dbhealth') {
     const db = val('h-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
   }
-  else if (tab === 'db-usage') {
+  else if (tab === 'dbusage') {
     const db = val('u-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
     const n = val('u-n'); if (n && n !== '50') lines.push('-n ' + n);
     const exp = val('u-export'); if (exp) lines.push('--export ' + exp);
