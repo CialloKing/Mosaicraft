@@ -1,12 +1,19 @@
 # Mosaicraft v1.10.0
 
-GPU 加速的照片马赛克拼贴生成器。将数千张图片建立特征索引，目标图分割为小格后逐格匹配图库中最相似的图片，拼接输出超大分辨率马赛克。
+**v1.12.1** | Windows + Linux(预览) | CUDA GPU 加速 | 78 commits from v1.10
 
 ## 快速开始
 
 ```powershell
-mosaicraft build -i ./photos -o ./normalized -d ./lib.db   # 建库（一次）
-mosaicraft mosaic -i target.jpg -d ./lib.db -o output.jpg  # 生成
+# 建库（一次, DB 自动放在 library/mosaicraft.db）
+mosaicraft build -i ./photos -r
+
+# 生成马赛克
+mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
+
+# 或使用 Web UI
+MosaicraftWebUI.exe  # 浏览器打开 http://localhost:8080
+```
 ```
 
 ## 特性
