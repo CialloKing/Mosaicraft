@@ -238,14 +238,37 @@ document.querySelectorAll('input.dropzone').forEach(el => {
     el.classList.remove('dragover');
     const items = e.dataTransfer.items || e.dataTransfer.files;
     if (items.length > 0) {
-      const file = items[0].getAsFile ? items[0].getAsFile() : items[0];
-      // WebkitRelativePath for folder, name for file
-      const path = file.webkitRelativePath || file.path || file.name;
-      if (path) {
-        el.value = path.replace(/\\/g, '/');  // normalize to forward slashes
-        generateCommand();
+      // Check if it's a directory
+      let isDir = false;
+      if (e.dataTransfer.items && e.dataTransfer.items[0].webkitGetAsEntry) {
+        const entry = e.dataTransfer.items[0].webkitGetAsEntry();
+        isDir = entry && entry.isDirectory;
       }
+      const file = items[0].getAsFile ? items[0].getAsFile() : items[0];
+      // Browsers do NOT expose absolute file paths for security.
+      // file.path is empty in Chrome/Edge; webkitRelativePath is relative.
+      let path = file.path || file.webkitRelativePath || '';
+      if (!path || path === file.name) {
+        // Fallback: just use filename + hint
+        el.value = file.name;
+        el.title = '浏览器限制：拖入文件无法获取完整路径。请手动输入或粘贴绝对路径（如 D:\\photos\\target.jpg）';
+      } else {
+        el.value = path.replace(/\\/g, '/');
+      }
+      if (isDir) {
+        el.title = '已拖入文件夹 "' + file.name + '"。浏览器无法获取文件夹的绝对路径，请手动输入（如 D:\\photos）';
+      }
+      generateCommand();
     }
+  });
+  // Click to browse using File System Access API (Chrome/Edge 86+)
+  el.addEventListener('click', async () => {
+    if (!window.showOpenFilePicker) return;  // not supported
+    try {
+      const [handle] = await window.showOpenFilePicker();
+      el.value = handle.name;
+      generateCommand();
+    } catch(e) { /* user cancelled */ }
   });
 });
 
