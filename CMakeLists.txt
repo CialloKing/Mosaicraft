@@ -140,10 +140,28 @@ add_executable(mosaicraft
     src/main.cpp
 )
 
+target_compile_definitions(mosaicraft PRIVATE
+    $<$<BOOL:${MOSAICRAFT_CUDA}>:MOSAICRAFT_CUDA>
+)
+
 target_link_libraries(mosaicraft PRIVATE
     mosaicraft_core
     mosaicraft_cuda
 )
+
+# CUDA 运行时 DLL 自动部署（vcpkg 不管 CUDA DLL）
+if (MOSAICRAFT_CUDA)
+    file(GLOB CUDA_RUNTIME_DLL "${CUDAToolkit_BIN_DIR}/../bin/x64/cudart64_*.dll")
+    if (CUDA_RUNTIME_DLL)
+        list(GET CUDA_RUNTIME_DLL 0 CUDA_RUNTIME_DLL_FIRST)
+        add_custom_command(TARGET mosaicraft POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CUDA_RUNTIME_DLL_FIRST}"
+                "$<TARGET_FILE_DIR:mosaicraft>"
+            COMMENT "Deploying CUDA runtime DLL..."
+        )
+    endif()
+endif()
 
 # ============================================================
 # Web UI 服务器（独立进程，调用 mosaicraft.exe）
