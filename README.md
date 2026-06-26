@@ -1,12 +1,23 @@
 # Mosaicraft v1.12.1
 
-> GPU 加速的照片马赛克拼贴生成器 — 数千张图库图片智能匹配，输出超大分辨率马赛克拼图
+> GPU 加速的照片马赛克拼贴生成器 — 本地创建图库图片精准匹配，输出超大分辨率马赛克拼图
 
-**Windows** · Linux (预览) · **CUDA GPU 加速** · 236 commits
+**Windows** · Linux (预览) · **CUDA GPU 加速** 
 
 ---
 
 ## 快速开始
+
+### 🖥️ Web UI（推荐）
+
+```powershell
+# 双击或命令行启动，浏览器自动打开 http://localhost:8080
+MosaicraftWebUI.exe
+```
+
+可视化操作：建库 → 选图 → 一键生成，无需记忆命令。
+
+### ⌨️ 命令行
 
 ```powershell
 # 1. 建库（一次，图库 → 特征数据库）
@@ -14,9 +25,6 @@ mosaicraft build -i ./photos -r
 
 # 2. 生成马赛克
 mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
-
-# 3. 或使用 Web UI（浏览器操作，无需命令行）
-MosaicraftWebUI.exe
 ```
 
 ---
@@ -241,4 +249,4 @@ Mosaicraft/
 
 ## 许可证
 
-[GPL v3](LICENSE)
+[GPL v2](LICENSE)
