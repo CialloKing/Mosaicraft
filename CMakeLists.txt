@@ -165,25 +165,17 @@ add_custom_command(TARGET MosaicraftWebUI POST_BUILD
 )
 
 # ============================================================
-# 单元测试 (doctest)
+# 单元测试 (doctest — 单头文件，跨平台)
 # ============================================================
-include(FetchContent)
-FetchContent_Declare(
-    doctest
-    GIT_REPOSITORY https://github.com/doctest/doctest.git
-    GIT_TAG        v2.4.11
-)
-FetchContent_MakeAvailable(doctest)
-
 add_executable(mosaicraft_tests
     tests/test_core.cpp
 )
 target_link_libraries(mosaicraft_tests PRIVATE
     mosaicraft_core
-    doctest::doctest
 )
 target_include_directories(mosaicraft_tests PRIVATE
     ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/tests
 )
 
 # CTest 集成
