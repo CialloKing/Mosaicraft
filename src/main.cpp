@@ -97,8 +97,8 @@ Usage:
 
 Build options:
   -i, --input  <dir>     Source image directory (required)
-  -o, --output <dir>     Output directory (default: normalized, DB stored inside)
-  -d, --db     <path>    Database path (default: <output>/mosaicraft.db)
+  -o, --output <dir>     Output directory (default: library, DB stored inside)
+  -d, --db     <path>    Database path (default: library/mosaicraft.db)
   -t, --threads <n>      Worker threads (default: auto)
       --normalize-size <WxH>  Normalized image size (default: 180x320)
       --append           Append mode: add new images without rebuilding
