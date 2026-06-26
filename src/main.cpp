@@ -65,6 +65,7 @@ using namespace mosaicraft;
 
 static std::string hashMat(const cv::Mat& mat)
 {
+    if (mat.empty()) return "0";  // 空 Mat 的 data 为 nullptr
     const uint8_t* data = mat.data;
     const std::size_t len = mat.total() * mat.elemSize();
 

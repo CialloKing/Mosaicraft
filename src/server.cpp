@@ -208,6 +208,9 @@ int main(int argc, char* argv[])
     }
     // listen() 只在出错或 Ctrl+C 时返回
     std::cout << std::endl << "Server stopped." << std::endl;
-    std::this_thread::sleep_for(std::chrono::seconds(30));
+    // 短暂暂停让用户看到停止信息（Windows 双击启动时控制台会立即关闭）
+#ifdef _WIN32
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+#endif
     return 0;
 }

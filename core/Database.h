@@ -102,8 +102,8 @@ public:
     std::vector<int> queryIdsByLRange(double minL, double maxL, int limit = 200,
                                        bool sortByUse = true);
 
-    // 查询全部记录
-    std::vector<ImageRecord> allRecords() { return queryByLRange(0.0, 255.0, 999999); }
+    // 查询全部记录（使用实际总数+1作为上限，避免硬编码限制）
+    std::vector<ImageRecord> allRecords() { return queryByLRange(0.0, 255.0, totalCount() + 1); }
 
     // 获取图库总数
     int totalCount();

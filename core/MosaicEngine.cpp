@@ -387,8 +387,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
                   << " to fit WebP 16383px limit)" << std::endl;
     }
 
-    int outW = tilesX * outTileW;
-    int outH = tilesY * outTileH;
+    // 溢出检查：大型马赛克可能超过 int32 范围
+    int64_t outW64 = static_cast<int64_t>(tilesX) * outTileW;
+    int64_t outH64 = static_cast<int64_t>(tilesY) * outTileH;
+    if (outW64 > INT_MAX || outH64 > INT_MAX) {
+        std::cerr << "ERROR: Output too large (" << outW64 << "x" << outH64 << ")" << std::endl;
+        return false;
+    }
+    int outW = static_cast<int>(outW64);
+    int outH = static_cast<int>(outH64);
 
     // 宽高比校验：DB 特征空间 vs 输出 tile，featW/featH 从meta解析而来
     if (featH <= 0 || featW <= 0) {
