@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)  # doctest v2.4.11 兼容 cmake 4.0+
 project(Mosaicraft VERSION 0.2.0 LANGUAGES CXX)
 
 # C++17
