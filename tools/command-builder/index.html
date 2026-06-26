@@ -38,12 +38,12 @@ main { max-width: 920px; margin: 28px auto; padding: 0 20px; }
 .field-full label { font-size: 0.78rem; color: var(--fg2); margin-bottom: 4px; font-weight: 500; }
 .field input, .field select { padding: 9px 11px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); font-size: 0.88rem; transition: border-color .2s; }
 .field input:focus, .field select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(247,129,102,0.15); }
-.path-wrap { position: relative; display: flex; }
-.path-wrap input { flex: 1; padding-right: 30px; }
-.path-wrap .browse-btn { position: absolute; right: 2px; top: 2px; bottom: 2px; width: 28px; border: none; background: transparent; color: var(--fg2); cursor: pointer; font-size: 1rem; border-radius: 4px; display: flex; align-items: center; justify-content: center; }
-.path-wrap .browse-btn:hover { color: var(--fg); background: var(--border); }
-.field input[type=text].dropzone { cursor: default; }
-.field input[type=text].dropzone.dragover { border-color: var(--accent2); background: var(--drop-highlight); }
+
+
+
+
+
+
 .field input[type=checkbox] { width: auto; margin-top: 6px; }
 .field .hint { font-size: 0.7rem; color: var(--fg2); margin-top: 2px; }
 .chk-row { display: flex; flex-wrap: wrap; gap: 6px 20px; }
@@ -81,11 +81,11 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 <!-- ============ MOSAIC ============ -->
 <div class="panel active" id="panel-mosaic">
   <div class="card">
-    <h3>📂 必需参数（支持拖入文件/文件夹）</h3>
+    <h3>📂 必需参数（从文件管理器复制路径粘贴）</h3>
     <div class="row">
-      <div class="field field-full"><label>目标图片 -i（拖入 / 点击📂 / 粘贴路径）</label><div class="path-wrap"><input type="text" id="m-input" class="dropzone" placeholder="如 D:\photos\target.jpg"><button class="browse-btn" title="选择文件" onclick="browseFile('m-input')">📂</button></div></div>
-      <div class="field field-full"><label>数据库 -d（目录或 .db 文件）</label><div class="path-wrap"><input type="text" id="m-db" class="dropzone" placeholder="如 library/360x640（目录）或 path/to/mosaicraft.db"><button class="browse-btn" title="选择目录" onclick="browseDir('m-db')">📁</button></div></div>
-      <div class="field field-full"><label>输出路径 -o</label><input type="text" id="m-output" value="output.jpg" placeholder="output.jpg"></div>
+      <div class="field field-full"><label>目标图片 -i</label><input type="text" id="m-input" placeholder="粘贴绝对路径，如 D:\photos\target.jpg"></div>
+      <div class="field field-full"><label>数据库 -d（目录或 .db）</label><input type="text" id="m-db" placeholder="粘贴目录路径，如 D:\library\360x640"></div>
+      <div class="field field-full"><label>输出路径 -o</label><input type="text" id="m-output" value="output.jpg"></div>
     </div>
   </div>
   <div class="card">
@@ -152,8 +152,8 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>📂 必需参数（支持拖入文件夹）</h3>
     <div class="row">
-      <div class="field field-full"><label>图片目录 -i *</label><input type="text" id="b-input" class="dropzone" placeholder="拖入文件夹 或 输入路径 (如 D:\photos)"></div>
-      <div class="field field-full"><label>输出目录 -o</label><input type="text" id="b-output" class="dropzone" placeholder="拖入文件夹 (如 D:\mylib)"></div>
+      <div class="field field-full"><label>图片目录 -i *</label><input type="text" id="b-input" placeholder="粘贴文件夹路径，如 D:\photos"></div>
+      <div class="field field-full"><label>输出目录 -o</label><input type="text" id="b-output" placeholder="粘贴目录路径，如 D:\mylib"></div>
       <div class="field field-full"><label>数据库 -d</label><input type="text" id="b-db" placeholder="默认放在输出目录内"></div>
     </div>
   </div>
@@ -177,30 +177,30 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>📂 查询参数</h3>
     <div class="row">
-      <div class="field field-full"><label>图片路径 -i *</label><input type="text" id="i-input" class="dropzone" placeholder="拖入图片"></div>
-      <div class="field field-full"><label>数据库 -d</label><input type="text" id="i-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div>
+      <div class="field field-full"><label>图片路径 -i *</label><input type="text" id="i-input" placeholder="粘贴图片路径"></div>
+      <div class="field field-full"><label>数据库 -d</label><input type="text" id="i-db" placeholder="粘贴目录或.db文件路径"></div>
     </div>
   </div>
 </div>
 
 <!-- ============ DB-STATS ============ -->
 <div class="panel" id="panel-dbstats">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="s-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="s-db" placeholder="粘贴目录或.db文件路径"></div></div></div>
 </div>
 
 <!-- ============ DB-PURGE ============ -->
 <div class="panel" id="panel-dbpurge">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="p-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div></div><div class="chk-row" style="margin-top:8px"><label><input type="checkbox" id="p-force"> 跳过确认 -y</label></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="p-db" placeholder="粘贴目录或.db文件路径"></div></div><div class="chk-row" style="margin-top:8px"><label><input type="checkbox" id="p-force"> 跳过确认 -y</label></div></div>
 </div>
 
 <!-- ============ DB-HEALTH ============ -->
 <div class="panel" id="panel-dbhealth">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="h-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="h-db" placeholder="粘贴目录或.db文件路径"></div></div></div>
 </div>
 
 <!-- ============ DB-USAGE ============ -->
 <div class="panel" id="panel-dbusage">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="u-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div><div class="field"><label>Top N -n</label><input type="number" id="u-n" value="50" min="1"></div><div class="field field-full"><label>导出目录 --export</label><input type="text" id="u-export" placeholder="不导出"></div></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="u-db" placeholder="粘贴目录或.db文件路径"></div><div class="field"><label>Top N -n</label><input type="number" id="u-n" value="50" min="1"></div><div class="field field-full"><label>导出目录 --export</label><input type="text" id="u-export" placeholder="不导出"></div></div></div>
 </div>
 
 <!-- ============ OUTPUT ============ -->
@@ -219,7 +219,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 </div>
 
 </main>
-<footer>将文件或文件夹拖入输入框即可自动填入绝对路径 · 双击 index.html 即可使用，无需安装任何依赖</footer>
+<footer>从文件管理器复制路径(Ctrl+C)粘贴到输入框 · 双击 index.html 即可使用</footer>
 
 <script>
 // Tab switching
@@ -230,49 +230,6 @@ document.querySelectorAll('.tab').forEach(t => {
     t.classList.add('active');
     document.getElementById('panel-' + t.dataset.cmd).classList.add('active');
     generateCommand();
-  });
-});
-
-// Drag & drop for path inputs
-document.querySelectorAll('input.dropzone').forEach(el => {
-  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('dragover'); });
-  el.addEventListener('dragleave', () => { el.classList.remove('dragover'); });
-  el.addEventListener('drop', e => {
-    e.preventDefault();
-    el.classList.remove('dragover');
-    const items = e.dataTransfer.items || e.dataTransfer.files;
-    if (items.length > 0) {
-      // Check if it's a directory
-      let isDir = false;
-      if (e.dataTransfer.items && e.dataTransfer.items[0].webkitGetAsEntry) {
-        const entry = e.dataTransfer.items[0].webkitGetAsEntry();
-        isDir = entry && entry.isDirectory;
-      }
-      const file = items[0].getAsFile ? items[0].getAsFile() : items[0];
-      // Browsers do NOT expose absolute file paths for security.
-      // file.path is empty in Chrome/Edge; webkitRelativePath is relative.
-      let path = file.path || file.webkitRelativePath || '';
-      if (!path || path === file.name) {
-        // Fallback: just use filename + hint
-        el.value = file.name;
-        el.title = '浏览器限制：拖入文件无法获取完整路径。请手动输入或粘贴绝对路径（如 D:\\photos\\target.jpg）';
-      } else {
-        el.value = path.replace(/\\/g, '/');
-      }
-      if (isDir) {
-        el.title = '已拖入文件夹 "' + file.name + '"。浏览器无法获取文件夹的绝对路径，请手动输入（如 D:\\photos）';
-      }
-      generateCommand();
-    }
-  });
-  // Click to browse using File System Access API (Chrome/Edge 86+)
-  el.addEventListener('click', async () => {
-    if (!window.showOpenFilePicker) return;  // not supported
-    try {
-      const [handle] = await window.showOpenFilePicker();
-      el.value = handle.name;
-      generateCommand();
-    } catch(e) { /* user cancelled */ }
   });
 });
 
@@ -420,17 +377,7 @@ async function runCommand() {
 // Try to detect server on load
 checkServer();
 
-// Browse buttons (File System Access API — filename only, no full path)
-async function browseFile(inputId) {
-  if (!window.showOpenFilePicker) { alert('浏览器不支持，请手动输入路径'); return; }
-  try {
-    const [handle] = await window.showOpenFilePicker();
-    document.getElementById(inputId).value = handle.name;
-    generateCommand();
-  } catch(e) {}
-}
-async function browseDir(inputId) {
-  if (!window.showDirectoryPicker) { alert('浏览器不支持，请手动输入目录路径'); return; }
+
   try {
     const handle = await window.showDirectoryPicker();
     document.getElementById(inputId).value = handle.name;
