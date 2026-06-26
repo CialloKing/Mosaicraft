@@ -1,5 +1,4 @@
 ﻿#include "core/Database.h"
-#include "core/Database.h"
 #include "core/FeatureExtractor.h"
 #include "core/FeaturePack.h"
 #include "core/FeatureUtils.h"
