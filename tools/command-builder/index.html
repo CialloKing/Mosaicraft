@@ -33,7 +33,9 @@ main { max-width: 920px; margin: 28px auto; padding: 0 20px; }
 .card h3 { font-size: 0.88rem; color: var(--accent2); margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); font-weight: 600; }
 .row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
 .field { display: flex; flex-direction: column; min-width: 170px; flex: 1; }
+.field-full { display: flex; flex-direction: column; flex: 1 1 100%; }  /* path fields take full row */
 .field label { font-size: 0.78rem; color: var(--fg2); margin-bottom: 4px; font-weight: 500; }
+.field-full label { font-size: 0.78rem; color: var(--fg2); margin-bottom: 4px; font-weight: 500; }
 .field input, .field select { padding: 9px 11px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); font-size: 0.88rem; transition: border-color .2s; }
 .field input:focus, .field select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(247,129,102,0.15); }
 .field input[type=text].dropzone { cursor: default; }
@@ -77,9 +79,9 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>📂 必需参数（支持拖入文件/文件夹）</h3>
     <div class="row">
-      <div class="field"><label>目标图片 -i</label><input type="text" id="m-input" class="dropzone" placeholder="拖入图片 或 输入路径 (如 D:\photos\target.jpg)"></div>
-      <div class="field"><label>数据库 -d</label><input type="text" id="m-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div>
-      <div class="field"><label>输出路径 -o</label><input type="text" id="m-output" value="output.jpg" placeholder="output.jpg"></div>
+      <div class="field field-full"><label>目标图片 -i</label><input type="text" id="m-input" class="dropzone" placeholder="拖入图片 或 输入路径 (如 D:\photos\target.jpg)"></div>
+      <div class="field field-full"><label>数据库 -d</label><input type="text" id="m-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div>
+      <div class="field field-full"><label>输出路径 -o</label><input type="text" id="m-output" value="output.jpg" placeholder="output.jpg"></div>
     </div>
   </div>
   <div class="card">
@@ -146,9 +148,9 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>📂 必需参数（支持拖入文件夹）</h3>
     <div class="row">
-      <div class="field"><label>图片目录 -i *</label><input type="text" id="b-input" class="dropzone" placeholder="拖入文件夹 或 输入路径 (如 D:\photos)"></div>
-      <div class="field"><label>输出目录 -o</label><input type="text" id="b-output" class="dropzone" placeholder="拖入文件夹 (如 D:\mylib)"></div>
-      <div class="field"><label>数据库 -d</label><input type="text" id="b-db" placeholder="默认放在输出目录内"></div>
+      <div class="field field-full"><label>图片目录 -i *</label><input type="text" id="b-input" class="dropzone" placeholder="拖入文件夹 或 输入路径 (如 D:\photos)"></div>
+      <div class="field field-full"><label>输出目录 -o</label><input type="text" id="b-output" class="dropzone" placeholder="拖入文件夹 (如 D:\mylib)"></div>
+      <div class="field field-full"><label>数据库 -d</label><input type="text" id="b-db" placeholder="默认放在输出目录内"></div>
     </div>
   </div>
   <div class="card">
@@ -171,30 +173,30 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>📂 查询参数</h3>
     <div class="row">
-      <div class="field"><label>图片路径 -i *</label><input type="text" id="i-input" class="dropzone" placeholder="拖入图片"></div>
-      <div class="field"><label>数据库 -d</label><input type="text" id="i-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div>
+      <div class="field field-full"><label>图片路径 -i *</label><input type="text" id="i-input" class="dropzone" placeholder="拖入图片"></div>
+      <div class="field field-full"><label>数据库 -d</label><input type="text" id="i-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div>
     </div>
   </div>
 </div>
 
 <!-- ============ DB-STATS ============ -->
 <div class="panel" id="panel-dbstats">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="s-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="s-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div></div></div>
 </div>
 
 <!-- ============ DB-PURGE ============ -->
 <div class="panel" id="panel-dbpurge">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="p-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div></div><div class="chk-row" style="margin-top:8px"><label><input type="checkbox" id="p-force"> 跳过确认 -y</label></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="p-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div></div><div class="chk-row" style="margin-top:8px"><label><input type="checkbox" id="p-force"> 跳过确认 -y</label></div></div>
 </div>
 
 <!-- ============ DB-HEALTH ============ -->
 <div class="panel" id="panel-dbhealth">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="h-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="h-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div></div></div>
 </div>
 
 <!-- ============ DB-USAGE ============ -->
 <div class="panel" id="panel-dbusage">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field"><label>数据库 -d</label><input type="text" id="u-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div><div class="field"><label>Top N -n</label><input type="number" id="u-n" value="50" min="1"></div><div class="field"><label>导出目录 --export</label><input type="text" id="u-export" placeholder="不导出"></div></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="u-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div><div class="field"><label>Top N -n</label><input type="number" id="u-n" value="50" min="1"></div><div class="field field-full"><label>导出目录 --export</label><input type="text" id="u-export" placeholder="不导出"></div></div></div>
 </div>
 
 <!-- ============ OUTPUT ============ -->
