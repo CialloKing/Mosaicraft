@@ -5,6 +5,8 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -13,17 +15,9 @@
 namespace mosaicraft
 {
 
-// ============================================================
-// Deep Zoom 金字塔生成器
-// 输入: level 0 目录 (已包含 {col}_{row}.jpg 全分辨率 tiles)
-// 输出: 更高级别 + .dzi 清单，兼容 OpenSeadragon
-// ============================================================
 class DeepZoomWriter
 {
 public:
-    // level0Dir: {name}_files/0/ (已包含 level 0 tiles)
-    // tileW/H: level 0 单 tile 像素尺寸
-    // cols/rows: level 0 列/行 tile 数
     static void buildPyramid(const std::string& level0Dir,
                              int tileW, int tileH,
                              int cols, int rows,
@@ -31,112 +25,218 @@ public:
     {
         namespace fs = std::filesystem;
 
-        // level0Dir 形如 "output_files/0" → 提取基础路径
-        fs::path l0Path(level0Dir);
-        fs::path pyramidDir = l0Path.parent_path();  // "output_files"
+        fs::path sourceLevelPath = u8path(level0Dir);
+        fs::path pyramidDir = sourceLevelPath.parent_path();
+        fs::path outputDir = pyramidDir.parent_path();
 
-        // 实际 base: 去掉 "_files" 后缀
-        std::string stem = pyramidDir.stem().string();
+        std::string filesStem = pathToUtf8(pyramidDir.filename());
+        std::string stem = filesStem;
         if (stem.size() > 6 && stem.substr(stem.size() - 6) == "_files")
             stem = stem.substr(0, stem.size() - 6);
-        std::string basePath = pyramidDir.parent_path().string() + "/" + stem;
+
+        std::string basePath = pathToUtf8(outputDir / stem);
+        std::string filesDir = pathToUtf8(pyramidDir.filename());
         std::error_code ec;
 
-        std::cout << "  DZI level 0: " << cols << "x" << rows << " tiles (" << tileW << "x" << tileH << ")" << std::endl;
+        const int totalW = cols * tileW;
+        const int totalH = rows * tileH;
+        const int dziTileSize = 256;
+        auto ceilDiv = [](int a, int b) { return (a + b - 1) / b; };
 
-        // 生成更高层级
-        int curCols = cols;
-        int curRows = rows;
-        int curW = tileW;
-        int curH = tileH;
         int maxLevel = 0;
+        for (int dim = std::max(totalW, totalH); dim > 1; dim = (dim + 1) / 2)
+            ++maxLevel;
 
-        while (curCols > 1 || curRows > 1)
+        auto levelWidth = [&](int level) {
+            return std::max(1, static_cast<int>(
+                std::ceil(totalW / std::pow(2.0, maxLevel - level))));
+        };
+        auto levelHeight = [&](int level) {
+            return std::max(1, static_cast<int>(
+                std::ceil(totalH / std::pow(2.0, maxLevel - level))));
+        };
+
+        fs::path sourceTilesDir = pyramidDir / "_source_tiles";
+        fs::remove_all(sourceTilesDir, ec);
+        ec.clear();
+        fs::rename(sourceLevelPath, sourceTilesDir, ec);
+        if (ec)
         {
-            maxLevel++;
-            int nextCols = std::max(1, (curCols + 1) / 2);
-            int nextRows = std::max(1, (curRows + 1) / 2);
-            int nextW = curW * 2;
-            int nextH = curH * 2;
-            std::string levelDir = pyramidDir.string() + "/" + std::to_string(maxLevel);
-            fs::create_directories(levelDir, ec);
-
-            std::cout << "  DZI level " << maxLevel << ": " << nextCols << "x" << nextRows
-                      << " tiles (" << nextW << "x" << nextH << ")" << std::flush;
-
-            int written = 0;
-            cv::Mat canvas(nextH, nextW, CV_8UC3);
-
-            for (int r = 0; r < nextRows; ++r)
-            {
-                for (int c = 0; c < nextCols; ++c)
-                {
-                    bool hasAny = false;
-                    canvas.setTo(cv::Scalar(0, 0, 0));
-
-                    for (int dr = 0; dr < 2; ++dr)
-                    {
-                        for (int dc = 0; dc < 2; ++dc)
-                        {
-                            int srcR = r * 2 + dr;
-                            int srcC = c * 2 + dc;
-                            if (srcR >= curRows || srcC >= curCols) continue;
-
-                            std::string srcLevel = std::to_string(maxLevel - 1);
-                            std::string srcPath = pyramidDir.string() + "/" + srcLevel + "/"
-                                                + std::to_string(srcC) + "_" + std::to_string(srcR) + ".jpg";
-                            cv::Mat tile = imreadUnicode(srcPath.c_str(), cv::IMREAD_COLOR);
-                            if (tile.empty()) continue;
-
-                            cv::Rect roi(dc * curW, dr * curH, curW, curH);
-                            if (tile.cols != curW || tile.rows != curH)
-                                cv::resize(tile, tile, cv::Size(curW, curH), 0, 0, cv::INTER_AREA);
-                            tile.copyTo(canvas(roi));
-                            hasAny = true;
-                        }
-                    }
-
-                    if (hasAny)
-                    {
-                        std::string dstPath = pyramidDir.string() + "/" + std::to_string(maxLevel)
-                                            + "/" + std::to_string(c) + "_" + std::to_string(r) + ".jpg";
-                        imwriteUnicode(dstPath.c_str(), canvas,
-                                       {cv::IMWRITE_JPEG_QUALITY, quality});
-                        written++;
-                    }
-                }
-            }
-            std::cout << " (" << written << " tiles)" << std::endl;
-
-            curCols = nextCols;
-            curRows = nextRows;
-            curW = nextW;
-            curH = nextH;
+            std::cerr << "ERROR: DeepZoom cannot prepare source tiles: "
+                      << ec.message() << std::endl;
+            return;
         }
 
-        // 生成 .dzi 清单
+        for (int level = 0; level <= maxLevel; ++level)
+        {
+            fs::path levelDir = pyramidDir / std::to_string(level);
+            fs::remove_all(levelDir, ec);
+            fs::create_directories(levelDir, ec);
+        }
+
+        auto readSourceTile = [&](int c, int r) {
+            fs::path p = sourceTilesDir /
+                         (std::to_string(c) + "_" + std::to_string(r) + ".jpg");
+            cv::Mat tile = imreadUnicode(pathToUtf8(p), cv::IMREAD_COLOR);
+            if (!tile.empty() && (tile.cols != tileW || tile.rows != tileH))
+                cv::resize(tile, tile, cv::Size(tileW, tileH), 0, 0, cv::INTER_AREA);
+            return tile;
+        };
+
+        auto renderFullRegion = [&](int x0, int y0, int w, int h) {
+            cv::Mat canvas(h, w, CV_8UC3, cv::Scalar(0, 0, 0));
+            int c0 = x0 / tileW;
+            int c1 = (x0 + w - 1) / tileW;
+            int r0 = y0 / tileH;
+            int r1 = (y0 + h - 1) / tileH;
+
+            for (int r = r0; r <= r1; ++r)
+            {
+                for (int c = c0; c <= c1; ++c)
+                {
+                    cv::Mat tile = readSourceTile(c, r);
+                    if (tile.empty()) continue;
+
+                    int sx0 = c * tileW;
+                    int sy0 = r * tileH;
+                    int ox0 = std::max(x0, sx0);
+                    int oy0 = std::max(y0, sy0);
+                    int ox1 = std::min(x0 + w, sx0 + tileW);
+                    int oy1 = std::min(y0 + h, sy0 + tileH);
+                    if (ox1 <= ox0 || oy1 <= oy0) continue;
+
+                    cv::Rect src(ox0 - sx0, oy0 - sy0, ox1 - ox0, oy1 - oy0);
+                    cv::Rect dst(ox0 - x0, oy0 - y0, ox1 - ox0, oy1 - oy0);
+                    tile(src).copyTo(canvas(dst));
+                }
+            }
+
+            return canvas;
+        };
+
+        auto renderLevelRegion = [&](int level, int x0, int y0, int w, int h) {
+            cv::Mat canvas(h, w, CV_8UC3, cv::Scalar(0, 0, 0));
+            int c0 = x0 / dziTileSize;
+            int c1 = (x0 + w - 1) / dziTileSize;
+            int r0 = y0 / dziTileSize;
+            int r1 = (y0 + h - 1) / dziTileSize;
+
+            for (int r = r0; r <= r1; ++r)
+            {
+                for (int c = c0; c <= c1; ++c)
+                {
+                    fs::path p = pyramidDir / std::to_string(level) /
+                                 (std::to_string(c) + "_" + std::to_string(r) + ".jpg");
+                    cv::Mat tile = imreadUnicode(pathToUtf8(p), cv::IMREAD_COLOR);
+                    if (tile.empty()) continue;
+
+                    int sx0 = c * dziTileSize;
+                    int sy0 = r * dziTileSize;
+                    int ox0 = std::max(x0, sx0);
+                    int oy0 = std::max(y0, sy0);
+                    int ox1 = std::min(x0 + w, sx0 + tile.cols);
+                    int oy1 = std::min(y0 + h, sy0 + tile.rows);
+                    if (ox1 <= ox0 || oy1 <= oy0) continue;
+
+                    cv::Rect src(ox0 - sx0, oy0 - sy0, ox1 - ox0, oy1 - oy0);
+                    cv::Rect dst(ox0 - x0, oy0 - y0, ox1 - ox0, oy1 - oy0);
+                    tile(src).copyTo(canvas(dst));
+                }
+            }
+
+            return canvas;
+        };
+
+        std::cout << "  DZI source: " << cols << "x" << rows
+                  << " mosaic tiles (" << tileW << "x" << tileH << ")"
+                  << std::endl;
+
+        int fullCols = ceilDiv(totalW, dziTileSize);
+        int fullRows = ceilDiv(totalH, dziTileSize);
+        std::cout << "  DZI level " << maxLevel << ": " << fullCols << "x" << fullRows
+                  << " tiles (" << totalW << "x" << totalH << ")" << std::flush;
+
+        int written = 0;
+        for (int r = 0; r < fullRows; ++r)
+        {
+            for (int c = 0; c < fullCols; ++c)
+            {
+                int x = c * dziTileSize;
+                int y = r * dziTileSize;
+                int w = std::min(dziTileSize, totalW - x);
+                int h = std::min(dziTileSize, totalH - y);
+                cv::Mat tile = renderFullRegion(x, y, w, h);
+                fs::path dst = pyramidDir / std::to_string(maxLevel) /
+                               (std::to_string(c) + "_" + std::to_string(r) + ".jpg");
+                if (imwriteUnicode(pathToUtf8(dst), tile,
+                                   {cv::IMWRITE_JPEG_QUALITY, quality}))
+                    ++written;
+            }
+        }
+        std::cout << " (" << written << " tiles)" << std::endl;
+
+        for (int level = maxLevel - 1; level >= 0; --level)
+        {
+            int levelW = levelWidth(level);
+            int levelH = levelHeight(level);
+            int prevW = levelWidth(level + 1);
+            int prevH = levelHeight(level + 1);
+            int levelCols = ceilDiv(levelW, dziTileSize);
+            int levelRows = ceilDiv(levelH, dziTileSize);
+
+            std::cout << "  DZI level " << level << ": " << levelCols << "x" << levelRows
+                      << " tiles (" << levelW << "x" << levelH << ")" << std::flush;
+            written = 0;
+
+            for (int r = 0; r < levelRows; ++r)
+            {
+                for (int c = 0; c < levelCols; ++c)
+                {
+                    int x = c * dziTileSize;
+                    int y = r * dziTileSize;
+                    int w = std::min(dziTileSize, levelW - x);
+                    int h = std::min(dziTileSize, levelH - y);
+                    int srcX = x * 2;
+                    int srcY = y * 2;
+                    int srcW = std::min(w * 2, prevW - srcX);
+                    int srcH = std::min(h * 2, prevH - srcY);
+
+                    cv::Mat high = renderLevelRegion(level + 1, srcX, srcY, srcW, srcH);
+                    cv::Mat tile;
+                    cv::resize(high, tile, cv::Size(w, h), 0, 0, cv::INTER_AREA);
+
+                    fs::path dst = pyramidDir / std::to_string(level) /
+                                   (std::to_string(c) + "_" + std::to_string(r) + ".jpg");
+                    if (imwriteUnicode(pathToUtf8(dst), tile,
+                                       {cv::IMWRITE_JPEG_QUALITY, quality}))
+                        ++written;
+                }
+            }
+
+            std::cout << " (" << written << " tiles)" << std::endl;
+        }
+
+        fs::remove_all(sourceTilesDir, ec);
+
         std::string dziPath = basePath + ".dzi";
-        std::ofstream dzi(dziPath);
-        int totalW = cols * tileW;
-        int totalH = rows * tileH;
+        std::ofstream dzi(u8path(dziPath));
         dzi << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
         dzi << "<Image xmlns=\"http://schemas.microsoft.com/deepzoom/2008\"\n";
-        dzi << "       Format=\"jpg\" Overlap=\"0\" TileSize=\"" << tileW << "\">\n";
+        dzi << "       Format=\"jpg\" Overlap=\"0\" TileSize=\"" << dziTileSize << "\">\n";
         dzi << "  <Size Width=\"" << totalW << "\" Height=\"" << totalH << "\"/>\n";
         dzi << "</Image>\n";
         dzi.close();
-        std::cout << "  DZI manifest: " << dziPath << " (" << (maxLevel + 1) << " levels)" << std::endl;
+        std::cout << "  DZI manifest: " << dziPath
+                  << " (" << (maxLevel + 1) << " levels)" << std::endl;
 
-        // 生成 index.html — 使用内嵌 tileSource 避免 file:// 下 XHR 被拦截
         std::string htmlPath = basePath + ".html";
-        std::ofstream html(htmlPath);
-        std::string filesDir = stem + "_files";
+        std::ofstream html(u8path(htmlPath));
         html << R"(<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mosaicraft — )" << stem << R"(</title>
+<title>Mosaicraft - )" << stem << R"(</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #1a1a1a; font-family: system-ui, sans-serif; }
@@ -157,7 +257,7 @@ public:
 </head>
 <body>
 <div id="viewer"></div>
-<div id="info">)" << totalW << " × " << totalH << R"( px  |  Level 0: <span>)" << cols << "×" << rows << R"(</span> tiles  |  Scroll to zoom</div>
+<div id="info">)" << totalW << " x " << totalH << R"( px  |  Levels: <span>)" << (maxLevel + 1) << R"(</span>  |  Scroll to zoom</div>
 <div id="fallback">
   <p>OpenSeadragon failed to load.</p>
   <p>Run a local server in the output directory:</p>
@@ -175,7 +275,7 @@ public:
         Url: ")" << filesDir << R"(/",
         Format: "jpg",
         Overlap: "0",
-        TileSize: { Width: ")" << tileW << R"(", Height: ")" << tileH << R"(" },
+        TileSize: )" << dziTileSize << R"(,
         Size: { Width: ")" << totalW << R"(", Height: ")" << totalH << R"(" }
       }
     },
