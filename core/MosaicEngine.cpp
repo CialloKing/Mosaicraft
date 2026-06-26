@@ -1341,11 +1341,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
             auto dp = anaDir.rfind('.');
             if (dp != std::string::npos) anaDir = anaDir.substr(0, dp) + "_analysis";
             else anaDir += "_analysis";
-            std::filesystem::create_directories(anaDir);
+            std::filesystem::create_directories(u8path(anaDir));
 
             // , , 频, , , 图片, topUsed 锟窖帮拷使锟矫达拷, , , , 锟叫ｏ拷
             std::string freqDir = anaDir + "/freq_rank";
-            std::filesystem::create_directories(freqDir);
+            std::filesystem::create_directories(u8path(freqDir));
             int exported = 0;
             for (const auto& [cnt, id] : topUsed)
             {
@@ -1355,7 +1355,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 {
                     if (allRecords[i].id == id && !allRecords[i].filePath.empty())
                     {
-                        cv::Mat img = cv::imread(allRecords[i].filePath, cv::IMREAD_COLOR);
+                        cv::Mat img = imreadUnicode(allRecords[i].filePath, cv::IMREAD_COLOR);
                         if (!img.empty())
                         {
                             char fn[256];
@@ -1363,7 +1363,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                             std::string normFile = std::filesystem::path(allRecords[i].filePath).filename().string();
                             snprintf(fn, sizeof(fn), "%s/rank%02d_%dx_id%d_%s",
                                      freqDir.c_str(), exported + 1, cnt, id, normFile.c_str());
-                            cv::imwrite(fn, img);
+                            imwriteUnicode(fn, img);
                             exported++;
                         }
                         break;
@@ -1389,15 +1389,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
                                  (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==2)?"T":"N";
                 snprintf(fname, sizeof(fname), "%s/worst_%02d_s%.4f_%s_tile.png",
                          anaDir.c_str(), k, worstIdx[k].first, cn);
-                cv::imwrite(fname, tileBig);
+                imwriteUnicode(fname, tileBig);
                 // 匹, 图
                 if (ti < static_cast<int>(bestRecords.size()) && !bestRecords[ti].filePath.empty())
                 {
-                    cv::Mat match = cv::imread(bestRecords[ti].filePath, cv::IMREAD_COLOR);
+                    cv::Mat match = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
                     if (!match.empty())
                     {
                         snprintf(fname, sizeof(fname), "%s/worst_%02d_match.png", anaDir.c_str(), k);
-                        cv::imwrite(fname, match);
+                        imwriteUnicode(fname, match);
                     }
                 }
             }
@@ -1406,7 +1406,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             // , 锟?tile , 媳, 锟?
             {
                 std::string rptPath = anaDir + "/worst_report.txt";
-                std::ofstream rpt(rptPath);
+                std::ofstream rpt(u8path(rptPath));
                 rpt << "=== Worst Tile Analysis ===\n";
                 for (int k = 0; k < std::min(kExport, n); ++k) {
                     int ti = worstIdx[k].second, tx = ti % tilesX, ty = ti / tilesX;
@@ -1456,12 +1456,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         cv::Rect(tx*4, ty*4, 4, 4), color, cv::FILLED);
                 }
             }
-            cv::imwrite(heatPath, heat);
+            imwriteUnicode(heatPath, heat);
             std::cout << "  Heatmap: " << heatPath << "\n";
 
             // , , ,  HTML , , , ,  , , ,
             std::string htmlPath = anaDir + "/report.html";
-            std::ofstream html(htmlPath);
+            std::ofstream html(u8path(htmlPath));
             if (html.is_open())
             {
                 html << "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">\n";
@@ -2311,11 +2311,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
         auto dp = anaDir.rfind('.');
         if (dp != std::string::npos) anaDir = anaDir.substr(0, dp) + "_analysis";
         else anaDir += "_analysis";
-        std::filesystem::create_directories(anaDir);
+        std::filesystem::create_directories(u8path(anaDir));
 
         // , , 频, , , 图片, topUsed 锟窖帮拷使锟矫达拷, , , , 锟叫ｏ拷
         std::string freqDir = anaDir + "/freq_rank";
-        std::filesystem::create_directories(freqDir);
+        std::filesystem::create_directories(u8path(freqDir));
         int exported = 0;
         for (const auto& [cnt, id] : topUsed)
         {
@@ -2325,7 +2325,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             {
                 if (allRecords[i].id == id && !allRecords[i].filePath.empty())
                 {
-                    cv::Mat img = cv::imread(allRecords[i].filePath, cv::IMREAD_COLOR);
+                    cv::Mat img = imreadUnicode(allRecords[i].filePath, cv::IMREAD_COLOR);
                     if (!img.empty())
                     {
                         char fn[256];
@@ -2333,7 +2333,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         std::string normFile = std::filesystem::path(allRecords[i].filePath).filename().string();
                         snprintf(fn, sizeof(fn), "%s/rank%02d_%dx_id%d_%s",
                                  freqDir.c_str(), exported + 1, cnt, id, normFile.c_str());
-                        cv::imwrite(fn, img);
+                        imwriteUnicode(fn, img);
                         exported++;
                     }
                     break;
@@ -2359,15 +2359,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
                              (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==2)?"T":"N";
             snprintf(fname, sizeof(fname), "%s/worst_%02d_s%.4f_%s_tile.png",
                      anaDir.c_str(), k, worstIdx[k].first, cn);
-            cv::imwrite(fname, tileBig);
+            imwriteUnicode(fname, tileBig);
             // 匹, 图
             if (ti < static_cast<int>(bestRecords.size()) && !bestRecords[ti].filePath.empty())
             {
-                cv::Mat match = cv::imread(bestRecords[ti].filePath, cv::IMREAD_COLOR);
+                cv::Mat match = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
                 if (!match.empty())
                 {
                     snprintf(fname, sizeof(fname), "%s/worst_%02d_match.png", anaDir.c_str(), k);
-                    cv::imwrite(fname, match);
+                    imwriteUnicode(fname, match);
                 }
             }
         }
@@ -2376,7 +2376,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         // , 锟?tile , 媳, 锟?
         {
             std::string rptPath = anaDir + "/worst_report.txt";
-            std::ofstream rpt(rptPath);
+            std::ofstream rpt(u8path(rptPath));
             rpt << "=== Worst Tile Analysis ===\n";
             for (int k = 0; k < std::min(kExport, n); ++k) {
                 int ti = worstIdx[k].second, tx = ti % tilesX, ty = ti / tilesX;
@@ -2426,12 +2426,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     cv::Rect(tx*4, ty*4, 4, 4), color, cv::FILLED);
             }
         }
-        cv::imwrite(heatPath, heat);
+        imwriteUnicode(heatPath, heat);
         std::cout << "  Heatmap: " << heatPath << "\n";
 
         // , , ,  HTML , , , ,  , , ,
         std::string htmlPath = anaDir + "/report.html";
-        std::ofstream html(htmlPath);
+        std::ofstream html(u8path(htmlPath));
         if (html.is_open())
         {
             html << "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">\n";
