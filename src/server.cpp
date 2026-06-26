@@ -76,23 +76,8 @@ int main(int argc, char* argv[])
     std::string htmlPath = findHtml();
     if (htmlPath.empty()) {
         std::cerr << "ERROR: Cannot find index.html" << std::endl;
-        std::cerr << "  Place index.html next to mosaicraftwebui.exe, or" << std::endl;
-        std::cerr << "  run from the Mosaicraft project root directory." << std::endl;
         return 1;
     }
-
-    // 切换到项目根目录，使相对路径正常工作
-    std::filesystem::path htmlDir = std::filesystem::path(htmlPath).parent_path();
-    std::filesystem::path projRoot = htmlDir;
-    // 如果在 tools/command-builder/ 下，往上两级到项目根
-    if (htmlDir.filename() == "command-builder")
-        projRoot = htmlDir.parent_path().parent_path();
-    else if (htmlDir.filename() == "Release" || htmlDir.filename() == "Debug")
-        projRoot = htmlDir.parent_path().parent_path().parent_path();
-    try {
-        std::filesystem::current_path(projRoot);
-        std::cout << "  Working directory: " << std::filesystem::current_path().string() << std::endl;
-    } catch (...) {}
 
     std::cout << "Mosaicraft Web UI" << std::endl;
     std::cout << "  Server: http://localhost:" << port << std::endl;
