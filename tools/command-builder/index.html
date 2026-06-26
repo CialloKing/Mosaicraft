@@ -81,9 +81,9 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 <!-- ============ MOSAIC ============ -->
 <div class="panel active" id="panel-mosaic">
   <div class="card">
-    <h3>📂 必需参数（从文件管理器复制路径粘贴）</h3>
+    <h3>📂 必需参数（绝对路径从盘符开始，相对路径相对于运行目录）</h3>
     <div class="row">
-      <div class="field field-full"><label>目标图片 -i</label><input type="text" id="m-input" placeholder="粘贴绝对路径，如 D:\photos\target.jpg"></div>
+      <div class="field field-full"><label>目标图片 -i（必填）</label><input type="text" id="m-input" placeholder="粘贴绝对路径，如 D:\photos\target.jpg"></div>
       <div class="field field-full"><label>数据库 -d（可选，默认 ./mosaicraft.db）</label><input type="text" id="m-db" placeholder="留空则使用默认值，或粘贴目录路径如 D:\library\360x640"></div>
       <div class="field field-full"><label>输出路径 -o</label><input type="text" id="m-output" value="output.jpg"></div>
     </div>
@@ -152,9 +152,9 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>📂 必需参数（支持拖入文件夹）</h3>
     <div class="row">
-      <div class="field field-full"><label>图片目录 -i *</label><input type="text" id="b-input" placeholder="粘贴文件夹路径，如 D:\photos"></div>
-      <div class="field field-full"><label>输出目录 -o</label><input type="text" id="b-output" placeholder="粘贴目录路径，如 D:\mylib"></div>
-      <div class="field field-full"><label>数据库 -d</label><input type="text" id="b-db" placeholder="默认放在输出目录内"></div>
+      <div class="field field-full"><label>图片目录 -i（必填）</label><input type="text" id="b-input" placeholder="粘贴文件夹路径，如 D:\photos"></div>
+      <div class="field field-full"><label>输出目录 -o（默认 ./normalized）</label><input type="text" id="b-output" placeholder="粘贴目录路径，如 D:\mylib"></div>
+      <div class="field field-full"><label>数据库 -d（默认放在输出目录内）</label><input type="text" id="b-db" placeholder="默认放在输出目录内"></div>
     </div>
   </div>
   <div class="card">
@@ -177,30 +177,30 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>📂 查询参数</h3>
     <div class="row">
-      <div class="field field-full"><label>图片路径 -i *</label><input type="text" id="i-input" placeholder="粘贴图片路径"></div>
-      <div class="field field-full"><label>数据库 -d</label><input type="text" id="i-db" placeholder="粘贴目录或.db文件路径"></div>
+      <div class="field field-full"><label>图片路径 -i（必填）</label><input type="text" id="i-input" placeholder="粘贴图片路径"></div>
+      <div class="field field-full"><label>数据库 -d（默认放在输出目录内）</label><input type="text" id="i-db" placeholder="粘贴目录或.db文件路径"></div>
     </div>
   </div>
 </div>
 
 <!-- ============ DB-STATS ============ -->
 <div class="panel" id="panel-dbstats">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="s-db" placeholder="粘贴目录或.db文件路径"></div></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d（默认放在输出目录内）</label><input type="text" id="s-db" placeholder="粘贴目录或.db文件路径"></div></div></div>
 </div>
 
 <!-- ============ DB-PURGE ============ -->
 <div class="panel" id="panel-dbpurge">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="p-db" placeholder="粘贴目录或.db文件路径"></div></div><div class="chk-row" style="margin-top:8px"><label><input type="checkbox" id="p-force"> 跳过确认 -y</label></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d（默认放在输出目录内）</label><input type="text" id="p-db" placeholder="粘贴目录或.db文件路径"></div></div><div class="chk-row" style="margin-top:8px"><label><input type="checkbox" id="p-force"> 跳过确认 -y</label></div></div>
 </div>
 
 <!-- ============ DB-HEALTH ============ -->
 <div class="panel" id="panel-dbhealth">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="h-db" placeholder="粘贴目录或.db文件路径"></div></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d（默认放在输出目录内）</label><input type="text" id="h-db" placeholder="粘贴目录或.db文件路径"></div></div></div>
 </div>
 
 <!-- ============ DB-USAGE ============ -->
 <div class="panel" id="panel-dbusage">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d</label><input type="text" id="u-db" placeholder="粘贴目录或.db文件路径"></div><div class="field"><label>Top N -n</label><input type="number" id="u-n" value="50" min="1"></div><div class="field field-full"><label>导出目录 --export</label><input type="text" id="u-export" placeholder="不导出"></div></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d（默认放在输出目录内）</label><input type="text" id="u-db" placeholder="粘贴目录或.db文件路径"></div><div class="field"><label>Top N -n</label><input type="number" id="u-n" value="50" min="1"></div><div class="field field-full"><label>导出目录 --export</label><input type="text" id="u-export" placeholder="不导出"></div></div></div>
 </div>
 
 <!-- ============ OUTPUT ============ -->
