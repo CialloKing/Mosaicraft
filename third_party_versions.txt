@@ -1,0 +1,13 @@
+# Mosaicraft 第三方依赖版本追踪
+# 更新方法：下载对应版本的单头文件覆盖本地路径
+# ============================================================
+
+cpp-httplib   v0.20.0    https://github.com/yhirose/cpp-httplib      core/httplib.h
+hnswlib       PR #508    https://github.com/nmslib/hnswlib/pull/508  core/hnswlib.h core/hnswalg.h core/space_l2.h core/space_ip.h core/bruteforce.h core/visited_list_pool.h core/stop_condition.h
+doctest       v2.4.11    https://github.com/doctest/doctest          tests/doctest.h
+
+# hnswlib 说明：
+#   PR #508 添加了 HNSWLIB_ERR_OVERRIDE 宏（自定义错误流），主分支未合并。
+#   且 core/stop_condition.h 为项目自行扩展（多向量搜索停止条件），
+#   官方 hnswlib 不包含此文件。因此 hnswlib 无法直接用 FetchContent，
+#   必须保留本地魔改版。
