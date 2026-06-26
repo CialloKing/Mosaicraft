@@ -32,6 +32,9 @@ static std::string findHtml()
     char exePath[MAX_PATH];
     GetModuleFileNameA(nullptr, exePath, MAX_PATH);
     std::filesystem::path exeDir = std::filesystem::path(exePath).parent_path();
+#else
+    std::filesystem::path exeDir = std::filesystem::canonical("/proc/self/exe").parent_path();
+#endif
     // exe 同目录（发布版）
     candidates.push_back((exeDir / "index.html").string());
     candidates.push_back((exeDir / "tools/command-builder/index.html").string());
@@ -39,7 +42,6 @@ static std::string findHtml()
     candidates.push_back((exeDir / "../../tools/command-builder/index.html").string());
     // 开发目录：build → ../tools/command-builder/
     candidates.push_back((exeDir / "../tools/command-builder/index.html").string());
-#endif
     // 当前工作目录下的常见路径
     candidates.push_back("index.html");
     candidates.push_back("tools/command-builder/index.html");
@@ -63,6 +65,12 @@ static std::string findMosaicraft()
     GetModuleFileNameA(nullptr, exePath, MAX_PATH);
     std::filesystem::path exeDir = std::filesystem::path(exePath).parent_path();
     std::filesystem::path candidate = exeDir / "mosaicraft.exe";
+    if (std::filesystem::exists(candidate)) return candidate.string();
+#else
+    // Linux: /proc/self/exe → exe directory
+    std::filesystem::path exePath = std::filesystem::canonical("/proc/self/exe");
+    std::filesystem::path exeDir = exePath.parent_path();
+    std::filesystem::path candidate = exeDir / "mosaicraft";
     if (std::filesystem::exists(candidate)) return candidate.string();
 #endif
     return "mosaicraft";  // hope it's in PATH
@@ -159,6 +167,9 @@ int main(int argc, char* argv[])
 #ifdef _WIN32
     std::string url = "http://localhost:" + std::to_string(port);
     ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#else
+    std::string url = "http://localhost:" + std::to_string(port);
+    std::system(("xdg-open " + url + " &").c_str());
 #endif
 
     if (!svr.listen("localhost", port)) {
