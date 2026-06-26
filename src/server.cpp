@@ -160,6 +160,9 @@ int main(int argc, char* argv[])
     ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 #endif
 
-    svr.listen("localhost", port);
+    if (!svr.listen("localhost", port)) {
+        std::cerr << "ERROR: Failed to start server on port " << port << std::endl;
+        return 1;
+    }
     return 0;
 }
