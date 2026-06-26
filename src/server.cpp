@@ -88,6 +88,10 @@ int main(int argc, char* argv[])
 
     httplib::Server svr;
 
+    // 长任务超时设置（建库可能需要数分钟）
+    svr.set_read_timeout(1800);   // 30 min
+    svr.set_write_timeout(1800);
+
     // 主页
     svr.Get("/", [&](const httplib::Request&, httplib::Response& res) {
         res.set_content(htmlContent, "text/html; charset=utf-8");
