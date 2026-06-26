@@ -109,7 +109,13 @@ int main(int argc, char* argv[])
             return;
         }
         // 确保使用绝对路径的 mosaicraft
-        std::string fullCmd = "\"" + mosaicPath + "\" " + cmd;
+        std::string fullCmd = "\"" + mosaicPath + "\" ";
+        // Web 端命令已包含 "mosaicraft" 前缀，去掉重复
+        const std::string prefix = "mosaicraft ";
+        if (cmd.compare(0, prefix.size(), prefix) == 0)
+            fullCmd += cmd.substr(prefix.size());
+        else
+            fullCmd += cmd;
         std::cout << "[RUN] " << fullCmd << std::endl;
 
         std::string output;
