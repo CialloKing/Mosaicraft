@@ -131,10 +131,12 @@ int main(int argc, char* argv[])
             res.set_content("ERROR: failed to start process", "text/plain");
             return;
         }
-        char buf[4096];
-        while (fgets(buf, sizeof(buf), pipe)) {
-            std::cout << buf;     // 实时输出到服务器控制台
-            output += buf;
+        // 用 fread 逐字节读取——mosaicraft 进度用 \r 而非 \n，fgets 不触发
+        setvbuf(pipe, nullptr, _IONBF, 0);
+        char ch;
+        while (fread(&ch, 1, 1, pipe) == 1) {
+            std::cout << ch;      // 逐字输出到控制台
+            output += ch;
         }
         int rc = pclose(pipe);
 
