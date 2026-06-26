@@ -123,18 +123,18 @@ target_link_libraries(mosaicraft PRIVATE
 # ============================================================
 # Web UI 服务器（独立进程，调用 mosaicraft.exe）
 # ============================================================
-add_executable(mosaicraftwebui
+add_executable(MosaicraftWebUI
     src/server.cpp
 )
-target_link_libraries(mosaicraftwebui PRIVATE
+target_link_libraries(MosaicraftWebUI PRIVATE
     mosaicraft_core
 )
-target_include_directories(mosaicraftwebui PRIVATE
+target_include_directories(MosaicraftWebUI PRIVATE
     ${CMAKE_SOURCE_DIR}
 )
 # 发布时自动复制 HTML 到 exe 同目录
-add_custom_command(TARGET mosaicraftwebui POST_BUILD
+add_custom_command(TARGET MosaicraftWebUI POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/tools/command-builder/index.html"
-        "$<TARGET_FILE_DIR:mosaicraftwebui>/index.html"
+        "$<TARGET_FILE_DIR:MosaicraftWebUI>/index.html"
 )
