@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <mutex>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -100,6 +101,7 @@ int main(int argc, char* argv[])
     std::cout << "  HTML: " << htmlPath << std::endl;
 
     std::string htmlContent = readFile(htmlPath);
+    std::mutex htmlMutex;
 
     httplib::Server svr;
 
@@ -109,11 +111,13 @@ int main(int argc, char* argv[])
 
     // 主页
     svr.Get("/", [&](const httplib::Request&, httplib::Response& res) {
+        std::lock_guard<std::mutex> lock(htmlMutex);
         res.set_content(htmlContent, "text/html; charset=utf-8");
     });
 
     // 重启时重新加载 HTML（开发用）
     svr.Get("/reload", [&](const httplib::Request&, httplib::Response& res) {
+        std::lock_guard<std::mutex> lock(htmlMutex);
         htmlContent = readFile(htmlPath);
         res.set_content("HTML reloaded", "text/plain");
     });

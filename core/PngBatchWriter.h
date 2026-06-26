@@ -13,6 +13,9 @@ namespace mosaicraft {
 class PngBatchWriter
 {
 public:
+    PngBatchWriter(const PngBatchWriter&) = delete;
+    PngBatchWriter& operator=(const PngBatchWriter&) = delete;
+
     PngBatchWriter(const std::string& path, int w, int h, int compressionLevel = 1) : m_w(w), m_h(h)
     {
 #ifdef _WIN32

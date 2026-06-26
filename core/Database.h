@@ -41,7 +41,7 @@ struct ImageRecord
     double colorVariance = 0.0;     // 颜色方差
 
     // ——— 区域结构特征（V2） ———
-    // 8×8 LAB Grid：64 格 × 3 通道 = 192 个 float（768 字节 BLOB）
+    // 4×4 LAB Grid：16 格 × 3 通道 = 48 个 float（192 字节 BLOB）
     // 为空表示尚未计算
     std::vector<float> grid4x4;
 

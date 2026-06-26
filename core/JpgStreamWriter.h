@@ -15,6 +15,9 @@ namespace mosaicraft {
 class JpgStreamWriter
 {
 public:
+    JpgStreamWriter(const JpgStreamWriter&) = delete;
+    JpgStreamWriter& operator=(const JpgStreamWriter&) = delete;
+
     JpgStreamWriter(const std::string& path, int w, int h, int quality = 100) : m_w(w), m_h(h)
     {
 #ifdef _WIN32

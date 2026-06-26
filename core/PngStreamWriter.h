@@ -14,6 +14,9 @@ namespace mosaicraft {
 class PngStreamWriter
 {
 public:
+    PngStreamWriter(const PngStreamWriter&) = delete;
+    PngStreamWriter& operator=(const PngStreamWriter&) = delete;
+
     PngStreamWriter(const std::string& path, int w, int h, int compressionLevel = 1) : m_w(w), m_h(h)
     {
 #ifdef _WIN32
@@ -43,7 +46,10 @@ public:
     bool writeRow(const uint8_t* rgb)
     {
         if (!m_png) return false;
-        if (setjmp(png_jmpbuf(m_png))) return false;
+        if (setjmp(png_jmpbuf(m_png))) {
+            m_png = nullptr;  // libpng 错误后 struct 处于未定义状态
+            return false;
+        }
         png_write_row(m_png, const_cast<png_bytep>(rgb));
         m_rowsWritten++;
         // 每 1000 行刷新一次，防止 libpng 内部压缩缓冲区无限增长

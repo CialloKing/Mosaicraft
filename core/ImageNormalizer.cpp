@@ -75,7 +75,7 @@ cv::Mat ImageNormalizer::resizeToCover(const cv::Mat& src)
     }
 
     cv::Mat result;
-    // INTER_AREA 对缩小图像质量最好；对放大则退化为 INTER_LINEAR 行为
+    // INTER_AREA 对缩小图像质量最好；对放大退化为 INTER_NEAREST（一般不应放大）
     cv::resize(src, result, cv::Size(newW, newH), 0, 0, cv::INTER_AREA);
 
     return result;

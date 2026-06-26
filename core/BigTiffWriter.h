@@ -19,6 +19,9 @@ namespace mosaicraft
 class BigTiffWriter
 {
 public:
+    BigTiffWriter(const BigTiffWriter&) = delete;
+    BigTiffWriter& operator=(const BigTiffWriter&) = delete;
+
     BigTiffWriter(const std::string& path, int width, int height)
         : m_w(width), m_h(height)
     {
