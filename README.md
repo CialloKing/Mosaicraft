@@ -209,8 +209,9 @@ Mosaicraft/
 | v1.9 | db-health 健康度诊断 | ✅ |
 | v1.10 | WorstTile对照、--unused、Unicode全链路 | ✅ |
 | **v1.11** | **Web 命令生成器** | ✅ |
-| v1.12 | 本地 Web UI（cpp-httplib 启动服务） | 计划中 |
-| v2.0 |  GUI | 计划中 |
+| v1.12 | MosaicraftWebUI 本地服务器 + 一键运行 | ✅ |
+| v1.13 | **Linux/WSL 支持** | 🚧 条件编译已补，待实测 |
+| v2.0 | GUI | 计划中 |
 
 ## 许可证
 
