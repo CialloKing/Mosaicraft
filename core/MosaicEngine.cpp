@@ -88,12 +88,12 @@ private:
 };
 
 // ============================================================
-// 锟街诧拷锟斤拷色校锟斤拷锟斤拷锟斤拷锟轿�拷锟斤拷锟斤拷投锟斤拷锟斤拷锟斤拷龋锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷馗锟斤拷锟?
+// 锟街诧拷锟斤拷色校锟斤拷锟斤拷锟斤拷锟轿??拷锟斤拷锟斤拷投锟斤拷锟斤拷锟斤拷龋锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷馗锟斤拷锟?
 // 锟斤拷 HSV 锟秸硷拷锟斤拷锟斤拷锟紿 通锟斤拷锟斤拷锟戒，S/V 通锟斤拷锟斤拷 [1-strength, 1+strength] 锟斤拷围锟斤拷锟斤拷锟斤拷锟斤拷锟?
 // ============================================================
-// 锟街诧拷锟斤拷色微锟斤拷锟斤拷锟斤拷 LAB 锟秸硷拷锟轿�拷锟?L锟斤拷锟斤拷锟饺ｏ拷通锟斤拷
+// 锟街诧拷锟斤拷色微锟斤拷锟斤拷锟斤拷 LAB 锟秸硷拷锟轿??拷锟?L锟斤拷锟斤拷锟饺ｏ拷通锟斤拷
 // LAB 锟斤拷知锟斤拷锟饺ｏ拷锟斤拷锟斤拷 L 锟斤拷锟斤拷 AB 锟斤拷 锟斤拷色锟斤拷锟戒、锟斤拷摩锟斤拷锟斤拷
-// L 锟斤拷围锟斤拷[-strength, +strength] 偏锟斤拷锟斤拷锟斤拷锟斤拷浒碉拷锟街�拷锟?
+// L 锟斤拷围锟斤拷[-strength, +strength] 偏锟斤拷锟斤拷锟斤拷锟斤拷浒碉拷锟街??拷锟?
 static void adjustColor(cv::Mat& img, double strength)
 {
     cv::Mat lab;
@@ -225,10 +225,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int featBytes = featPixels * 3;
     std::cout << "  (feature space: " << featW << "x" << featH << ")" << std::endl;
 
-    // 鑷�姩鎺ㄥ�杈撳嚭 tile锛氭í骞?鈫?320脳180锛岀珫骞?鏂瑰舰 鈫?180脳320
+    // 鑷??姩鎺ㄥ??杈撳嚭 tile锛氭í骞?鈫?320脳180锛岀珫骞?鏂瑰舰 鈫?180脳320
     if (cfg.nativeTileW == 180 && cfg.nativeTileH == 320)
     {
-        if (featW > featH)  // 妯�箙
+        if (featW > featH)  // 妯??箙
         {
             cfg.nativeTileW = 320;
             cfg.nativeTileH = 180;
@@ -319,7 +319,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
             for (auto& w : uploadWorkers) w.join();
 
-            // 锟斤拷锟斤拷锟斤拷桑锟剿筹拷锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷苹锟斤拷妫�拷麓锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷锟叫ｏ拷
+            // 锟斤拷锟斤拷锟斤拷桑锟剿筹拷锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷苹锟斤拷妫??拷麓锟斤拷锟斤拷锟斤拷锟斤拷锟斤拷锟叫ｏ拷
             if (!featDirCache.empty())
                 FeaturePack::buildCache(featDirCache, allRecords);
         }
@@ -682,7 +682,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::unordered_map<int, int> lastUsedAt;   // imageId 锟斤拷 锟斤拷锟绞癸拷玫锟?tile 锟斤拷锟?
     std::deque<std::vector<float>> recentGrids;  // 锟斤拷锟酵硷拷锟解（锟斤拷锟斤拷锟斤拷锟斤拷锟?00锟斤拷锟斤拷
     constexpr double GRID_DUP_THRESHOLD = 0.010;  // 锟斤拷锟较格：革拷小锟侥撅拷锟诫即锟斤拷为锟截革拷
-    constexpr double GRID_DUP_PENALTY = 200.0;     // 锟斤拷锟酵硷拷胤锟斤拷锟斤拷锟叫�癸拷锟?00锟斤拷
+    constexpr double GRID_DUP_PENALTY = 200.0;     // 锟斤拷锟酵硷拷胤锟斤拷锟斤拷锟叫??癸拷锟?00锟斤拷
     constexpr int GRID_DUP_WINDOW = 50;            // 锟教讹拷锟斤拷锟节ｏ拷锟斤拷锟斤拷锟斤拷锟脚ｏ拷锟斤拷锟斤拷一锟斤拷锟斤拷 tile 锟斤拷锟斤拷锟斤拷
 
     // 权锟截癸拷一锟斤拷锟斤拷锟斤拷锟斤拷 tile 锟斤拷锟矫ｏ拷
@@ -802,7 +802,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
                 if (e < 0.005 && lVar < 100.0)
                 {
-                    // Smooth: 锟斤拷 LAB 锟斤拷色锟斤拷锟斤拷锟斤拷 Grid锟斤拷锟斤拷战锟斤拷锟斤拷锟揭�拷占锟结构锟斤拷
+                    // Smooth: 锟斤拷 LAB 锟斤拷色锟斤拷锟斤拷锟斤拷 Grid锟斤拷锟斤拷战锟斤拷锟斤拷锟揭??拷占锟结构锟斤拷
                     tileLabW[ti] = 0.25;
                     tileGridW[ti] = 0.45;
                     tileTinyW[ti] = 0.20;
@@ -1300,7 +1300,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       for (int tx = nx++; tx < tilesX; tx = nx++) {
                           int ti = ty * tilesX + tx; if (ti >= totalTiles) { imgs[tx] = cv::Mat(); continue; }
                           cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                          if (!m.empty()) cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                          if (m.empty()) { imgs[tx] = cv::Mat(); continue; } cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
                       }});
                   for (auto& w : ld) w.join(); }
                 for (int y = 0; y < outTileH; ++y) {
@@ -1336,7 +1336,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       for (int tx = nx++; tx < tilesX; tx = nx++) {
                           int ti = ty * tilesX + tx; if (ti >= totalTiles) { imgs[tx] = cv::Mat(); continue; }
                           cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                          if (!m.empty()) cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                          if (m.empty()) { imgs[tx] = cv::Mat(); continue; } cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
                       }});
                   for (auto& w : ld) w.join(); }
                 for (int y = 0; y < outTileH; ++y) {
@@ -1381,7 +1381,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       for (int tx = nx++; tx < tilesX; tx = nx++) {
                           int ti = ty * tilesX + tx; if (ti >= totalTiles) { imgs[tx] = cv::Mat(); continue; }
                           cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                          if (!m.empty()) cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                          if (m.empty()) { imgs[tx] = cv::Mat(); continue; } cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
                       }});
                   for (auto& w : ld) w.join(); }
                 for (int y = 0; y < outTileH; ++y) {
@@ -1466,7 +1466,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     else
     {
         // 锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋
-        // CPU 路锟斤拷锟斤拷锟斤拷 tile 顺锟斤拷锟斤拷锟斤拷锟斤拷锟皆�拷锟斤拷呒锟斤拷锟?
+        // CPU 路锟斤拷锟斤拷锟斤拷 tile 顺锟斤拷锟斤拷锟斤拷锟斤拷锟皆??拷锟斤拷呒锟斤拷锟?
         // 锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋
         FeatureIndex annCpu;
         std::string annPath = featDirCache.empty() ? "lib.ann" : (featDirCache + "/lib.ann");
@@ -1937,7 +1937,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 rpt << "  Match LAB=" << rec.avgL << "," << rec.avgA << "," << rec.avgB
                     << " Edge=" << rec.edgeDensity << "\n";
                 rpt << "  Dists: LAB=" << labD << " Grid=" << gridD << " Edge=" << edgeD << "\n";
-                // 锟斤拷锟皆�拷锟?
+                // 锟斤拷锟皆??拷锟?
                 std::string cause;
                 if (labD > 0.3) cause = "color mismatch (LAB dist " + std::to_string(labD).substr(0,4) + ")";
                 else if (gridD > 0.5) cause = "spatial mismatch (Grid dist " + std::to_string(gridD).substr(0,4) + ")";

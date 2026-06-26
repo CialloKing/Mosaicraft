@@ -151,8 +151,8 @@ bool Database::setMeta(const std::string& key, const std::string& value)
         "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
         -1, &stmt, nullptr);
     if (!stmt) return false;
-    sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_STATIC);
-    sqlite3_bind_text(stmt, 2, value.c_str(), -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, value.c_str(), -1, SQLITE_TRANSIENT);
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     return rc == SQLITE_DONE;
@@ -289,7 +289,7 @@ bool Database::removeImage(int id)
     if (!m_db) return false;
     const char* sql = "DELETE FROM images WHERE id = ?";
     sqlite3_stmt* stmt = nullptr;
-    sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
     sqlite3_bind_int(stmt, 1, id);
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -309,7 +309,7 @@ bool Database::existsByHash(const std::string& hash)
 
     const char* sql = "SELECT COUNT(*) FROM images WHERE file_hash = ?";
     sqlite3_stmt* stmt = nullptr;
-    sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
     sqlite3_bind_text(stmt, 1, hash.c_str(), -1, SQLITE_TRANSIENT);
 
     bool exists = false;
@@ -348,7 +348,7 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
     )SQL";
 
     sqlite3_stmt* stmt = nullptr;
-    sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return results;
     sqlite3_bind_double(stmt, 1, minL);
     sqlite3_bind_double(stmt, 2, maxL);
     sqlite3_bind_int(stmt, 3, limit);
