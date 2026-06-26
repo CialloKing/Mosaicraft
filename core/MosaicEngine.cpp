@@ -1144,6 +1144,45 @@ bool MosaicEngine::generate(const std::string& targetPath,
         int nThreads = std::thread::hardware_concurrency();
         if (nThreads < 2) nThreads = 2;
 
+        // ·ÖÎöÊä³ö£¨lambda²¶»ñËùÓÐ¾Ö²¿±äÁ¿£¬¸÷Â·¾¶µ÷ÓÃ£©
+        auto writeAnalysis = [&]() {
+            if (!cfg.analyze || analyzeScores.empty()) return;
+            std::string anaDir = outputPath;
+            auto adp = anaDir.rfind('.');
+            if (adp != std::string::npos) anaDir = anaDir.substr(0, adp) + "_analysis";
+            else anaDir += "_analysis";
+            std::filesystem::create_directories(anaDir);
+            int n = (int)analyzeScores.size();
+            std::string hp = anaDir + "/report.html";
+            std::ofstream html(hp);
+            if (html.is_open()) {
+                std::vector<double> ss = analyzeScores;
+                std::sort(ss.begin(), ss.end());
+                double mean = 0; for (double s : analyzeScores) mean += s; mean /= n;
+                html << "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Analysis</title></head><body>\n";
+                html << "<h1>Mosaicraft Analysis</h1>\n<table>\n";
+                html << "<tr><th>Tiles</th><td>" << totalTiles << "</td></tr>\n";
+                html << "<tr><th>Mean</th><td>" << mean << "</td></tr>\n";
+                html << "<tr><th>P50</th><td>" << ss[n/2] << "</td></tr>\n";
+                html << "<tr><th>P90</th><td>" << ss[n*9/10] << "</td></tr>\n";
+                html << "</table></body></html>\n";
+                html.close();
+                std::cout << "  Analysis: " << hp << std::endl;
+            }
+            std::string wd = anaDir + "/worst_tiles";
+            std::filesystem::create_directories(wd);
+            std::vector<std::pair<double,int>> wi;
+            for (int i = 0; i < n; ++i) wi.push_back({analyzeScores[i], i});
+            std::sort(wi.rbegin(), wi.rend());
+            for (int i = 0; i < std::min(20, n); ++i) {
+                char fn[256];
+                snprintf(fn, sizeof(fn), "%s/rank%02d_tile%05d.txt", wd.c_str(), i+1, wi[i].second);
+                std::ofstream f(fn);
+                if (f.is_open()) { f << "score=" << wi[i].first << " image=" << analyzeImageIds[wi[i].second] << std::endl; }
+            }
+            std::cout << "  Worst: " << wd << std::endl;
+        };
+
         if (cfg.tiledOutput)
         {
             // ï¿½Ö¿ï¿½, , ï¿½Ã?tile , , ï¿½Ä¼ï¿½, ï¿½Þ³ß´ï¿½, ï¿½Æ£ï¿½, , ï¿?Mat
@@ -1201,7 +1240,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             // , Í¼, Ê±
             msPlace = Ms(Clock::now() - tLast).count();
             printBenchmark("tiled");
-            return true;
+            writeAnalysis();
+        return true;
         }
 
         // , Í¼, ï¿?
@@ -1292,7 +1332,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
                       << " / " << totalTiles << " tiles)" << std::endl;
             printBenchmark("single");
-            return true;
+            writeAnalysis();
+        return true;
         }  // if (tiff streaming)
         else if (cfg.outputFormat == "png" && !useStream)
         {
@@ -1327,7 +1368,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
                       << " / " << totalTiles << " tiles)" << std::endl;
             printBenchmark("single");
-            return true;
+            writeAnalysis();
+        return true;
         }
         else if (cfg.outputFormat == "png")
         {
@@ -1371,7 +1413,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
                       << " / " << totalTiles << " tiles)" << std::endl;
             printBenchmark("single");
-            return true;
+            writeAnalysis();
+        return true;
         }
 
         // --- , Ê½ JPG ---
@@ -1414,7 +1457,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
                       << " / " << totalTiles << " tiles)" << std::endl;
             printBenchmark("single");
-            return true;
+            writeAnalysis();
+        return true;
         }
 
         output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
