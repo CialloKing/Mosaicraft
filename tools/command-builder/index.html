@@ -347,10 +347,15 @@ async function checkServer() {
     if (res.ok) {
       serverAvailable = true;
       document.getElementById('btn-run').style.display = '';
+      document.getElementById('run-status').style.display = '';
+      document.getElementById('run-status').innerHTML = '<span style="color:#7ee787">🟢 已连接服务器</span>';
       return;
     }
   } catch(e) {}
   serverAvailable = false;
+  document.getElementById('btn-run').style.display = 'none';
+  document.getElementById('run-status').style.display = '';
+  document.getElementById('run-status').innerHTML = '<span style="color:#f78166">⚠ 独立模式</span> — 请通过 Web UI (<code>MosaicraftWebUI.exe</code>) 访问以使用运行功能，或复制命令手动执行';
 }
 
 async function runCommand() {
@@ -370,7 +375,7 @@ async function runCommand() {
       }
     }
   } catch(e) {
-    status.innerHTML = '<span style="color:#f78166">⚠ 未检测到 Web UI 服务器</span><br><small>请先运行 mosaicraftwebui.exe，或使用复制按钮手动执行命令</small>';
+    status.innerHTML = '<span style="color:#f78166">⚠ 请求失败</span> — 请确认 Web UI 服务器已启动';
   }
 }
 
