@@ -107,23 +107,22 @@ TEST_CASE("upsampleGrid4x4to8x8 — correct output size")
 
 TEST_CASE("upsampleGrid4x4to8x8 — nearest-neighbor duplication")
 {
-    // Each 4x4 cell maps to a 2x2 block in 8x8.
-    // Cell (0,0) with LAB=(10,20,30) should appear at positions
-    // (0,0), (0,1), (1,0), (1,1) in 8x8.
+    // Each 4x4 cell maps to a 2x2 block in 8x8 via srcR=r/2, srcC=c/2.
+    // 8x8 rows 0-1 map to 4x4 row 0; 8x8 cols 0-1 map to 4x4 col 0
+    // 8x8 cols 2-3 map to 4x4 col 1, etc.
     std::vector<float> src(48, 0.0f);
-    // Fill cell (0,0) = LAB(10,20,30), (0,1) = LAB(40,50,60)
+    // Cell (0,0) = LAB(10,20,30), Cell (0,1) = LAB(40,50,60)
     src[0] = 10; src[1] = 20; src[2] = 30;   // cell 0
     src[3] = 40; src[4] = 50; src[5] = 60;   // cell 1
 
     std::vector<float> dst;
     upsampleGrid4x4to8x8(src, dst);
 
-    // Check cell (0,0) maps to 8x8 positions (0,0) and (0,1), (1,0), (1,1)
-    // (0,0) → idx 0
+    // 8x8 (0,0) → 4x4 (0,0) → idx 0
     CHECK(dst[0] == 10); CHECK(dst[1] == 20); CHECK(dst[2] == 30);
-    // (0,1) → idx 3
-    CHECK(dst[3] == 40); CHECK(dst[4] == 50); CHECK(dst[5] == 60);
-    // (1,0) → idx 24 (row 1 * 8 * 3 = 24)
+    // 8x8 (0,2) → 4x4 (0,1) → idx (0*8+2)*3 = 6
+    CHECK(dst[6] == 40); CHECK(dst[7] == 50); CHECK(dst[8] == 60);
+    // 8x8 (1,0) → 4x4 (0,0) → idx (1*8+0)*3 = 24
     CHECK(dst[24] == 10); CHECK(dst[25] == 20); CHECK(dst[26] == 30);
 }
 
