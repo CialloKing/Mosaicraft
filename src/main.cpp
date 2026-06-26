@@ -107,8 +107,8 @@ Build options:
 
 Mosaic options:
   -i, --input  <path>    Target image to mosaicify (required)
-  -d, --db     <path>    Database path (default: mosaicraft.db)
-  -o, --output <path>    Output path or directory (default: mosaic.jpg)
+  -d, --db     <path>    Database path (default: library/mosaicraft.db)
+  -o, --output <path>    Output path or directory (default: output/output.jpg)
       --tile-w     <n>   Tile width in pixels (default: 9)
       --tile-h     <n>   Tile height in pixels (default: 16)
       --candidates <n>   ANN query candidates (default: 150)
@@ -149,7 +149,7 @@ Common options:
 
 Inspect options:
   -i, --input  <path>    Image to inspect (required)
-  -d, --db     <path>    Database path (default: mosaicraft.db)
+  -d, --db     <path>    Database path (default: library/mosaicraft.db)
 
 Exit status:
   0  success
@@ -166,8 +166,8 @@ Exit status:
 static int cmdBuild(int argc, char* argv[])
 {
     std::string inputDir;
-    std::string outputDir = "normalized";
-    std::string dbPath = "mosaicraft.db";
+    std::string outputDir = "library";
+    std::string dbPath = "library/mosaicraft.db";  // auto-set to outputDir/mosaicraft.db
     int threads = 0;
     bool appendMode = false;
     bool normOnly = false;
@@ -562,8 +562,8 @@ static int cmdBuild(int argc, char* argv[])
 static int cmdMosaic(int argc, char* argv[])
 {
     std::string inputPath;
-    std::string dbPath = "mosaicraft.db";
-    std::string outputPath = "mosaic.jpg";
+    std::string dbPath = "library/mosaicraft.db";
+    std::string outputPath = "output/output.jpg";
     MosaicEngine::Config cfg;
 
     for (int i = 2; i < argc; ++i)
@@ -722,8 +722,8 @@ static int cmdMosaic(int argc, char* argv[])
         {
             std::cout << "Usage: mosaicraft mosaic -i <image> -d <db> [options]" << std::endl;
             std::cout << "  -i, --input <path>    Target image (required)" << std::endl;
-            std::cout << "  -d, --db <path>       Database (default: mosaicraft.db)" << std::endl;
-            std::cout << "  -o, --output <path>   Output path (default: mosaic.jpg)" << std::endl;
+            std::cout << "  -d, --db <path>       Database (default: library/mosaicraft.db)" << std::endl;
+            std::cout << "  -o, --output <path>   Output path (default: output/output.jpg)" << std::endl;
             std::cout << "  --tile-w <n>          Tile width (default: 9, min: 4)" << std::endl;
             std::cout << "  --tile-h <n>          Tile height (default: 16, min: 4)" << std::endl;
             std::cout << "  --candidates <n>      ANN query candidates (default: 150)" << std::endl;
@@ -792,7 +792,7 @@ static int cmdMosaic(int argc, char* argv[])
 static int cmdInspect(int argc, char* argv[])
 {
     std::string imagePath;
-    std::string dbPath = "mosaicraft.db";
+    std::string dbPath = "library/mosaicraft.db";
 
     for (int i = 2; i < argc; ++i)
     {
@@ -886,7 +886,7 @@ static int cmdInspect(int argc, char* argv[])
 // ============================================================
 static int cmdDbStats(int argc, char* argv[])
 {
-    std::string dbPath = "mosaicraft.db";
+    std::string dbPath = "library/mosaicraft.db";
 
     for (int i = 2; i < argc; ++i)
     {
@@ -984,7 +984,7 @@ static int cmdDbStats(int argc, char* argv[])
 // db-purge 子命令：清除归一化目录中不存在的孤儿记录
 static int cmdDbPurge(int argc, char* argv[])
 {
-    std::string dbPath = "mosaicraft.db";
+    std::string dbPath = "library/mosaicraft.db";
     bool forceMode = false;
 
     for (int i = 2; i < argc; ++i)
@@ -1049,7 +1049,7 @@ static int cmdDbPurge(int argc, char* argv[])
 // ============================================================
 static int cmdDbUsage(int argc, char* argv[])
 {
-    std::string dbPath = "mosaicraft.db";
+    std::string dbPath = "library/mosaicraft.db";
     int limit = 50;
     std::string exportDir;
     bool showUnused = false;
@@ -1154,7 +1154,7 @@ static int cmdDbUsage(int argc, char* argv[])
 // ============================================================
 static int cmdDbHealth(int argc, char* argv[])
 {
-    std::string dbPath = "mosaicraft.db";
+    std::string dbPath = "library/mosaicraft.db";
     for (int i = 2; i < argc; ++i)
         if ((std::string(argv[i]) == "-d" || std::string(argv[i]) == "--db") && i + 1 < argc)
             dbPath = argv[++i];
