@@ -38,6 +38,10 @@ main { max-width: 920px; margin: 28px auto; padding: 0 20px; }
 .field-full label { font-size: 0.78rem; color: var(--fg2); margin-bottom: 4px; font-weight: 500; }
 .field input, .field select { padding: 9px 11px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); font-size: 0.88rem; transition: border-color .2s; }
 .field input:focus, .field select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(247,129,102,0.15); }
+.path-wrap { position: relative; display: flex; }
+.path-wrap input { flex: 1; padding-right: 30px; }
+.path-wrap .browse-btn { position: absolute; right: 2px; top: 2px; bottom: 2px; width: 28px; border: none; background: transparent; color: var(--fg2); cursor: pointer; font-size: 1rem; border-radius: 4px; display: flex; align-items: center; justify-content: center; }
+.path-wrap .browse-btn:hover { color: var(--fg); background: var(--border); }
 .field input[type=text].dropzone { cursor: default; }
 .field input[type=text].dropzone.dragover { border-color: var(--accent2); background: var(--drop-highlight); }
 .field input[type=checkbox] { width: auto; margin-top: 6px; }
@@ -79,8 +83,8 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>📂 必需参数（支持拖入文件/文件夹）</h3>
     <div class="row">
-      <div class="field field-full"><label>目标图片 -i</label><input type="text" id="m-input" class="dropzone" placeholder="拖入图片 或 输入路径 (如 D:\photos\target.jpg)"></div>
-      <div class="field field-full"><label>数据库 -d</label><input type="text" id="m-db" class="dropzone" placeholder="拖入 .db 文件或库目录"></div>
+      <div class="field field-full"><label>目标图片 -i（拖入 / 点击📂 / 粘贴路径）</label><div class="path-wrap"><input type="text" id="m-input" class="dropzone" placeholder="如 D:\photos\target.jpg"><button class="browse-btn" title="选择文件" onclick="browseFile('m-input')">📂</button></div></div>
+      <div class="field field-full"><label>数据库 -d（目录或 .db 文件）</label><div class="path-wrap"><input type="text" id="m-db" class="dropzone" placeholder="如 library/360x640（目录）或 path/to/mosaicraft.db"><button class="browse-btn" title="选择目录" onclick="browseDir('m-db')">📁</button></div></div>
       <div class="field field-full"><label>输出路径 -o</label><input type="text" id="m-output" value="output.jpg" placeholder="output.jpg"></div>
     </div>
   </div>
@@ -415,6 +419,25 @@ async function runCommand() {
 
 // Try to detect server on load
 checkServer();
+
+// Browse buttons (File System Access API — filename only, no full path)
+async function browseFile(inputId) {
+  if (!window.showOpenFilePicker) { alert('浏览器不支持，请手动输入路径'); return; }
+  try {
+    const [handle] = await window.showOpenFilePicker();
+    document.getElementById(inputId).value = handle.name;
+    generateCommand();
+  } catch(e) {}
+}
+async function browseDir(inputId) {
+  if (!window.showDirectoryPicker) { alert('浏览器不支持，请手动输入目录路径'); return; }
+  try {
+    const handle = await window.showDirectoryPicker();
+    document.getElementById(inputId).value = handle.name;
+    document.getElementById(inputId).title = '已选择目录 "' + handle.name + '"，浏览器无法获取绝对路径，请手动补充完整路径';
+    generateCommand();
+  } catch(e) {}
+}
 
 generateCommand();
 </script>
