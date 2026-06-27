@@ -1,6 +1,6 @@
 ﻿# Mosaicraft 项目百科全书
 
-> 最后更新：2026-06-26 | 版本：v1.12.2
+> 最后更新：2026-06-26 | 版本：v1.12.3
 
 ## 目录
 
@@ -476,7 +476,7 @@ Compress-Archive -Path release_pkg\* -Destination Mosaicraft_release.zip
 - `\r` ������� + ����̨��ͣ(AutoPause)
 - ��һ��ѹ���������� (JPEG q90, PNG lv9)
 
-### v1.12.2: ����� MOSAICRAFT_CUDA
+### v1.12.3: ����� MOSAICRAFT_CUDA
 - `cmake -D MOSAICRAFT_CUDA=OFF` �� CPU ����
 - ������������� CUDA ͷ�ļ�/��������
 - `core/CudaStubs.cpp`: �� CUDA ʱ�Ŀ�ʵ��
