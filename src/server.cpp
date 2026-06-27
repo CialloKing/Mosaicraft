@@ -13,11 +13,32 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
 #define popen _popen
 #define pclose _pclose
+#endif
+
+#ifdef _WIN32
+static std::string wideToUtf8(const std::wstring& wide)
+{
+    int len = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (len <= 0) return {};
+    std::string out(len - 1, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), -1, out.data(), len, nullptr, nullptr);
+    return out;
+}
+
+static std::wstring utf8ToWide(const std::string& utf8)
+{
+    int len = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0);
+    if (len <= 0) return {};
+    std::wstring out(len - 1, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, out.data(), len);
+    return out;
+}
 #endif
 
 static std::string readFile(const std::string& path)
@@ -33,8 +54,8 @@ static std::string findHtml()
     std::vector<std::string> candidates;
 
 #ifdef _WIN32
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
     std::filesystem::path exeDir = std::filesystem::path(exePath).parent_path();
 #else
     std::filesystem::path exeDir = std::filesystem::canonical("/proc/self/exe").parent_path();
@@ -65,11 +86,11 @@ static std::string findHtml()
 static std::string findMosaicraft()
 {
 #ifdef _WIN32
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(nullptr, exePath, MAX_PATH);
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
     std::filesystem::path exeDir = std::filesystem::path(exePath).parent_path();
     std::filesystem::path candidate = exeDir / "mosaicraft.exe";
-    if (std::filesystem::exists(candidate)) return candidate.string();
+    if (std::filesystem::exists(candidate)) return wideToUtf8(candidate.wstring());
 #else
     // Linux: /proc/self/exe → exe directory
     std::filesystem::path exePath = std::filesystem::canonical("/proc/self/exe");
@@ -105,6 +126,7 @@ int main(int argc, char* argv[])
 
     std::string htmlContent = readFile(htmlPath);
     std::mutex htmlMutex;
+    std::mutex runMutex;
 
     httplib::Server svr;
 
@@ -127,6 +149,13 @@ int main(int argc, char* argv[])
 
     // 执行命令
     svr.Post("/api/run", [&](const httplib::Request& req, httplib::Response& res) {
+        std::unique_lock<std::mutex> runLock(runMutex, std::try_to_lock);
+        if (!runLock.owns_lock()) {
+            res.status = 429;
+            res.set_content("ERROR: another mosaicraft job is already running", "text/plain");
+            return;
+        }
+
         std::string cmd = req.body;
         if (cmd.empty()) {
             res.set_content("ERROR: empty command", "text/plain");
@@ -175,11 +204,15 @@ int main(int argc, char* argv[])
             si.hStdOutput = hWritePipe;
             si.hStdError = hWritePipe;
 
-            std::wstring wCmd = std::wstring(mosaicPath.begin(), mosaicPath.end());
-            // subCmd 是 ASCII/UTF-8，转为宽字符
-            int wLen = MultiByteToWideChar(CP_UTF8, 0, subCmd.c_str(), -1, nullptr, 0);
-            std::wstring wArgs(wLen, L'\0');
-            MultiByteToWideChar(CP_UTF8, 0, subCmd.c_str(), -1, &wArgs[0], wLen);
+            std::wstring wCmd = utf8ToWide(mosaicPath);
+            if (wCmd.empty()) {
+                CloseHandle(hReadPipe);
+                CloseHandle(hWritePipe);
+                res.set_content("ERROR: invalid executable path", "text/plain");
+                return;
+            }
+            // subCmd is UTF-8 from the browser request.
+            std::wstring wArgs = utf8ToWide(subCmd);
             std::wstring cmdLine = L"\"" + wCmd + L"\" " + wArgs;
 
             // 确保命令行缓冲区足够大

@@ -400,6 +400,7 @@ namespace {
         size_t imgBytes = PIX * 3;
         uint8_t *d_img=nullptr; float *d_grid=nullptr; uint8_t *d_tiny=nullptr;
         float *d_lbp=nullptr; double *d_lab=nullptr, *d_bright=nullptr, *d_contrast=nullptr, *d_edge=nullptr;
+        bool ok = false;
 
         auto cudaCheck = [](cudaError_t e, const char* name, int W, int H) {
             if (e != cudaSuccess) {
@@ -425,15 +426,16 @@ namespace {
             fprintf(stderr, "GPU kernel error (%dx%d)\n", W, H);
             goto cu_cleanup;
         }
-        cudaMemcpy(h_avgLAB, d_lab, N*3*sizeof(double), cudaMemcpyDeviceToHost);
-        cudaMemcpy(h_grid, d_grid, N*192*sizeof(float), cudaMemcpyDeviceToHost);
-        cudaMemcpy(h_tiny, d_tiny, N*256, cudaMemcpyDeviceToHost);
-        cudaMemcpy(h_lbp, d_lbp, N*256*sizeof(float), cudaMemcpyDeviceToHost);
-        cudaMemcpy(h_edge, d_edge, N*sizeof(double), cudaMemcpyDeviceToHost);
+        if (cudaMemcpy(h_avgLAB, d_lab, N*3*sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) goto cu_cleanup;
+        if (cudaMemcpy(h_grid, d_grid, N*192*sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) goto cu_cleanup;
+        if (cudaMemcpy(h_tiny, d_tiny, N*256, cudaMemcpyDeviceToHost) != cudaSuccess) goto cu_cleanup;
+        if (cudaMemcpy(h_lbp, d_lbp, N*256*sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) goto cu_cleanup;
+        if (cudaMemcpy(h_edge, d_edge, N*sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) goto cu_cleanup;
+        ok = true;
     cu_cleanup:
         cudaFree(d_img); cudaFree(d_grid); cudaFree(d_tiny); cudaFree(d_lbp);
         cudaFree(d_lab); cudaFree(d_bright); cudaFree(d_contrast); cudaFree(d_edge);
-        return (d_img && d_grid && d_tiny && d_lbp && d_lab && d_bright && d_contrast && d_edge) ? 0 : -1;
+        return ok ? 0 : -1;
     }
 } // anonymous namespace
 

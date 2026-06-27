@@ -930,6 +930,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::vector<int>    analyzeAnnRanks;  // winner ,  ANN Top200 锟叫碉拷位, (0=, , )
     std::vector<int>    analyzeCat;       // 0=Smooth, 1=Edge, 2=Texture, 3=Normal
     double analyzeGridCellSum[64] = {0};   // 每,  cell 锟侥撅拷, 锟桔计ｏ拷, 锟节癸拷锟阶凤拷, ,
+    FeatureCache analysisFeatureCache;
 
     int N = cfg.candidates;  // , 选, , GPU 路, , , ,  benchmark,
 
@@ -1522,9 +1523,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 const auto& rec = allRecords[chosenLibIdx];
                 double labD  = labDistance(allTL[ti], allTA[ti], allTB[ti], rec.avgL, rec.avgA, rec.avgB);
                 double gridD = gridDistance8x8(allGrid[ti], rec.grid4x4, true);
+                const auto* recTiny = rec.tinyPath.empty() ? nullptr : analysisFeatureCache.loadTiny(rec.id, rec.tinyPath);
+                const auto* recLBP = rec.histPath.empty() ? nullptr : analysisFeatureCache.loadLBP(rec.id, rec.histPath);
+                double tinyD = recTiny ? tinyMSE(allTiny[ti], *recTiny) : 1.0;
                 double edgeD = std::abs(allEdge[ti] - rec.edgeDensity);
+                double lbpD = recLBP ? lbpDistance(allLBP[ti], *recLBP) : 1.0;
                 double totalW = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight + cfg.edgeWeight + cfg.lbpWeight;
-                double featScore = (cfg.labWeight*labD + cfg.gridWeight*gridD + cfg.edgeWeight*edgeD) / totalW;
+                double featScore = (cfg.labWeight*labD + cfg.gridWeight*gridD + cfg.tinyWeight*tinyD
+                                  + cfg.edgeWeight*edgeD + cfg.lbpWeight*lbpD) / totalW;
                 analyzeScores.push_back(featScore);
                 analyzeImageIds.push_back(rec.id);
                 analyzeLabD.push_back(labD);
@@ -1539,7 +1545,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     if (rankPos == 0)  // winner , , ,
                         gap = scores[idxs[1]] - winnerScore;
                     else               // , , 未, 选,
-                        gap = scores[idxs[0]] - winnerScore;  // , 值=winner, ,
+                        gap = winnerScore - scores[idxs[0]];
                 }
                 analyzeGaps.push_back(gap);
                 analyzeRanks.push_back(rankPos + 1);  // 1-based rank in sorted Top-N
@@ -1978,6 +1984,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << " done" << std::endl;
 
         ImageCache imgCache;
+        FeatureCache cpuFeatureCache;
         output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
         int noCandidateCount = 0;
 
@@ -2004,9 +2011,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 int li = annCpu.idToAllRecordsIndex(imgIds[j]);
                 if (li < 0) continue;
                 const auto& r = allRecords[li];
+                const auto* recTiny = r.tinyPath.empty() ? nullptr : cpuFeatureCache.loadTiny(r.id, r.tinyPath);
+                const auto* recLBP = r.histPath.empty() ? nullptr : cpuFeatureCache.loadLBP(r.id, r.histPath);
                 double s = cfg.labWeight*labDistance(allTL[ti],allTA[ti],allTB[ti],r.avgL,r.avgA,r.avgB)
                          + cfg.gridWeight*gridDistance8x8(allGrid[ti], r.grid4x4)
-                         + cfg.edgeWeight*std::abs(allEdge[ti]-r.edgeDensity);
+                         + cfg.tinyWeight*(recTiny ? tinyMSE(allTiny[ti], *recTiny) : 1.0)
+                         + cfg.edgeWeight*std::abs(allEdge[ti]-r.edgeDensity)
+                         + cfg.lbpWeight*(recLBP ? lbpDistance(allLBP[ti], *recLBP) : 1.0);
                 auto it = freq.find(r.id);
                 int cnt = (it != freq.end()) ? it->second : 0;
                 if (cnt >= 3) s += cfg.neighborPenalty;

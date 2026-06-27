@@ -29,17 +29,17 @@ public:
         if (!m_fp) throw std::runtime_error("Jpg open");
         m_cinfo.err = jpeg_std_error(&m_jerr);
         // 覆盖默认exit()行为：致命错误通过setjmp/longjmp处理
-        m_cinfo.client_data = &m_jmpBuf;
+        m_cinfo.client_data = this;
         m_jerr.error_exit = [](j_common_ptr cinfo) {
-            longjmp(*(jmp_buf*)cinfo->client_data, 1);
+            auto* self = static_cast<JpgStreamWriter*>(cinfo->client_data);
+            longjmp(self->m_jmpBuf, 1);
         };
         if (setjmp(m_jmpBuf)) {
-            // libjpeg 致命错误时跳转至此
-            jpeg_destroy_compress(&m_cinfo);
-            if (m_fp) { fclose(m_fp); m_fp = nullptr; }
+            fail();
             return;
         }
         jpeg_create_compress(&m_cinfo);
+        m_created = true;
         jpeg_stdio_dest(&m_cinfo, m_fp);
         m_cinfo.image_width = w;
         m_cinfo.image_height = h;
@@ -58,6 +58,10 @@ public:
     bool writeRow(const uint8_t* rgb)
     {
         if (!m_fp) return false;
+        if (setjmp(m_jmpBuf)) {
+            fail();
+            return false;
+        }
         JSAMPROW row = const_cast<JSAMPROW>(rgb);
         if (jpeg_write_scanlines(&m_cinfo, &row, 1) != 1) return false;
         m_rowsWritten++;
@@ -68,8 +72,13 @@ public:
     {
         if (m_fp)
         {
+            if (setjmp(m_jmpBuf)) {
+                fail();
+                return;
+            }
             jpeg_finish_compress(&m_cinfo);
             jpeg_destroy_compress(&m_cinfo);
+            m_created = false;
             fclose(m_fp);
             m_fp = nullptr;
         }
@@ -78,7 +87,22 @@ public:
     ~JpgStreamWriter() { close(); }
 
 private:
+    void fail()
+    {
+        if (m_fp)
+        {
+            if (m_created)
+            {
+                jpeg_destroy_compress(&m_cinfo);
+                m_created = false;
+            }
+            fclose(m_fp);
+            m_fp = nullptr;
+        }
+    }
+
     FILE* m_fp = nullptr;
+    bool m_created = false;
     struct jpeg_compress_struct m_cinfo = {};
     struct jpeg_error_mgr m_jerr = {};
     jmp_buf m_jmpBuf = {};
