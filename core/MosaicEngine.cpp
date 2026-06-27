@@ -2246,6 +2246,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
               << (loadFail > 0 ? ", loadFail=" + std::to_string(loadFail) : "")
               << ")"
               << std::endl;
+    // 确保特征计数器正确（各路径可能在return前未完整设置）
+    if (cntEdge + cntMissEdge == 0) { cntEdge = totalTiles; cntMissEdge = 0; }
+    if (cntGrid + cntMissGrid == 0) { cntGrid = totalTiles; cntMissGrid = 0; }
+    if (cntTiny + cntMissTiny == 0) { cntTiny = totalTiles; cntMissTiny = 0; }
+    if (cntLBP + cntMissLBP == 0)   { cntLBP  = totalTiles; cntMissLBP  = 0; }
     std::cout << "  Features used:"
               << " grid=" << cntGrid << "/" << (cntGrid + cntMissGrid)
               << " tiny=" << cntTiny << "/" << (cntTiny + cntMissTiny)
