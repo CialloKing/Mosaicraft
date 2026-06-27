@@ -109,6 +109,482 @@ static void adjustColor(cv::Mat& img, double strength)
     cv::cvtColor(lab, img, cv::COLOR_Lab2BGR);
 }
 
+struct AnalysisReportContext
+{
+    const MosaicEngine::Config& cfg;
+    Database& db;
+    const std::string& outputPath;
+    const std::string& targetPath;
+    const std::string& targetHash;
+    const cv::Mat& target;
+    int totalTiles = 0;
+    int tilesX = 0;
+    int tilesY = 0;
+    int outTileW = 0;
+    int outTileH = 0;
+    int featW = 0;
+    int featH = 0;
+    int dbCount = 0;
+    int matchedTiles = 0;
+    const std::vector<double>& analyzeScores;
+    const std::vector<int>& analyzeImageIds;
+    const std::vector<double>& analyzeLabD;
+    const std::vector<double>& analyzeGridD;
+    const std::vector<double>& analyzeEdgeD;
+    const std::vector<double>& analyzeGaps;
+    const std::vector<int>& analyzeRanks;
+    const std::vector<int>& analyzeAnnRanks;
+    const std::vector<int>& analyzeCat;
+    const double* analyzeGridCellSum = nullptr;
+    const std::vector<double>& allTL;
+    const std::vector<double>& allTA;
+    const std::vector<double>& allTB;
+    const std::vector<double>& allEdge;
+    const std::vector<std::vector<float>>& allGrid;
+    const std::vector<ImageRecord>& allRecords;
+    const std::vector<ImageRecord>& bestRecords;
+};
+
+static void writeAnalysisReport(const AnalysisReportContext& ctx)
+{
+    const auto& cfg = ctx.cfg;
+    auto& db = ctx.db;
+    const auto& outputPath = ctx.outputPath;
+    const auto& targetPath = ctx.targetPath;
+    const auto& targetHash = ctx.targetHash;
+    const auto& target = ctx.target;
+    const int totalTiles = ctx.totalTiles;
+    const int tilesX = ctx.tilesX;
+    const int tilesY = ctx.tilesY;
+    const int outTileW = ctx.outTileW;
+    const int outTileH = ctx.outTileH;
+    const int featW = ctx.featW;
+    const int featH = ctx.featH;
+    const int dbCount = ctx.dbCount;
+    const int matched = ctx.matchedTiles > 0 ? ctx.matchedTiles : totalTiles;
+    const auto& analyzeScores = ctx.analyzeScores;
+    const auto& analyzeImageIds = ctx.analyzeImageIds;
+    const auto& analyzeLabD = ctx.analyzeLabD;
+    const auto& analyzeGridD = ctx.analyzeGridD;
+    const auto& analyzeEdgeD = ctx.analyzeEdgeD;
+    const auto& analyzeGaps = ctx.analyzeGaps;
+    const auto& analyzeRanks = ctx.analyzeRanks;
+    const auto& analyzeAnnRanks = ctx.analyzeAnnRanks;
+    const auto& analyzeCat = ctx.analyzeCat;
+    const double* analyzeGridCellSum = ctx.analyzeGridCellSum;
+    const auto& allTL = ctx.allTL;
+    const auto& allTA = ctx.allTA;
+    const auto& allTB = ctx.allTB;
+    const auto& allEdge = ctx.allEdge;
+    const auto& allGrid = ctx.allGrid;
+    const auto& allRecords = ctx.allRecords;
+    const auto& bestRecords = ctx.bestRecords;
+
+    if (!cfg.analyze || analyzeScores.empty() || analyzeGridCellSum == nullptr)
+        return;
+
+    int n = static_cast<int>(analyzeScores.size());
+    std::vector<double> sortedScores = analyzeScores;
+    std::sort(sortedScores.begin(), sortedScores.end());
+    double scoreMean = 0, scoreMin = 1e30, scoreMax = 0;
+    for (double s : analyzeScores) { scoreMean += s; if (s < scoreMin) scoreMin = s; if (s > scoreMax) scoreMax = s; }
+    scoreMean /= n;
+    double scoreP50 = sortedScores[n/2];
+    double scoreP90 = sortedScores[n*9/10];
+    double scoreP99 = sortedScores[n*99/100];
+
+    double labSum = 0, gridSum = 0, edgeSum = 0;
+    double labW = cfg.labWeight, gridW = cfg.gridWeight, edgeW = cfg.edgeWeight;
+    double totalW = labW + gridW + cfg.tinyWeight + edgeW + cfg.lbpWeight;
+    labW /= totalW; gridW /= totalW; edgeW /= totalW;
+    for (int i = 0; i < n; ++i)
+    {
+        labSum  += labW  * analyzeLabD[i];
+        gridSum += gridW * analyzeGridD[i];
+        edgeSum += edgeW * analyzeEdgeD[i];
+    }
+    double contribTotal = labSum + gridSum + edgeSum;
+
+    std::unordered_map<int, int> useCount;
+    for (int id : analyzeImageIds) useCount[id]++;
+    std::vector<std::pair<int,int>> topUsed;
+    for (auto& [id, cnt] : useCount) topUsed.push_back({cnt, id});
+    std::sort(topUsed.rbegin(), topUsed.rend());
+
+    std::cout << "\n=== Match Quality Analysis ===\n";
+    std::cout << "  Tiles: " << n << "\n";
+    std::cout << "  Score: mean=" << std::fixed << std::setprecision(4) << scoreMean
+              << " median=" << scoreP50 << " p90=" << scoreP90
+              << " p99=" << scoreP99 << " max=" << scoreMax << "\n";
+    std::cout << "  Feature contribution (LAB/Grid/Edge only):\n";
+    if (contribTotal > 0)
+        std::cout << "    LAB="  << std::setprecision(1) << (labSum*100/contribTotal)
+                  << "%  Grid=" << (gridSum*100/contribTotal)
+                  << "%  Edge=" << (edgeSum*100/contribTotal) << "%\n";
+    if (!analyzeGaps.empty())
+    {
+        auto sortedGaps = analyzeGaps;
+        std::sort(sortedGaps.begin(), sortedGaps.end());
+        double gapMean = 0;
+        for (double g : analyzeGaps) gapMean += g;
+        gapMean /= analyzeGaps.size();
+        std::cout << "  Winner-RunnerUp gap: mean=" << std::setprecision(4) << gapMean
+                  << " median=" << sortedGaps[analyzeGaps.size()/2]
+                  << " p90=" << sortedGaps[analyzeGaps.size()*9/10] << "\n";
+    }
+    if (!analyzeRanks.empty())
+    {
+        int rankBuckets[4] = {0, 0, 0, 0};
+        for (int r : analyzeRanks)
+        {
+            if (r <= 3) rankBuckets[r-1]++;
+            else rankBuckets[3]++;
+        }
+        double total = static_cast<double>(analyzeRanks.size());
+        std::cout << "  Winner rank in TopN: #1=" << std::setprecision(1) << (rankBuckets[0]*100/total)
+                  << "% #2=" << (rankBuckets[1]*100/total) << "% #3=" << (rankBuckets[2]*100/total) << "%\n";
+    }
+    if (!analyzeAnnRanks.empty())
+    {
+        int annTop1=0, annTop5=0, annTop10=0, annTop20=0, annTop50=0;
+        for (int r : analyzeAnnRanks)
+        {
+            if (r == 0) annTop1++;
+            if (r < 5) annTop5++;
+            if (r < 10) annTop10++;
+            if (r < 20) annTop20++;
+            if (r < 50) annTop50++;
+        }
+        double t = static_cast<double>(analyzeAnnRanks.size());
+        std::cout << "  ANN recall: Top1=" << std::setprecision(1) << (annTop1*100/t)
+                  << "% Top5=" << (annTop5*100/t) << "% Top10=" << (annTop10*100/t)
+                  << "% Top20=" << (annTop20*100/t) << "%\n";
+    }
+    if (!analyzeCat.empty())
+    {
+        double catScores[4] = {0, 0, 0, 0};
+        int catCounts[4] = {0, 0, 0, 0};
+        const char* catNames[] = {"Smooth", "Edge", "Texture", "Normal"};
+        for (int i = 0; i < static_cast<int>(analyzeCat.size()); ++i)
+        {
+            int c = analyzeCat[i];
+            if (c >= 0 && c < 4) { catScores[c] += analyzeScores[i]; catCounts[c]++; }
+        }
+        std::cout << "  Score by category:\n";
+        for (int c = 0; c < 4; ++c)
+            if (catCounts[c] > 0)
+                std::cout << "    " << catNames[c] << "(" << catCounts[c] << "): "
+                          << std::setprecision(4) << (catScores[c]/catCounts[c]) << "\n";
+    }
+
+    std::cout << "  Worst 5 tiles:\n";
+    std::vector<std::pair<double,int>> worstIdx;
+    for (int i = 0; i < n; ++i)
+        worstIdx.push_back({analyzeScores[i], i});
+    std::sort(worstIdx.rbegin(), worstIdx.rend());
+    for (int k = 0; k < std::min(5, n); ++k)
+    {
+        int ti = worstIdx[k].second;
+        int tx = ti % tilesX, ty = ti / tilesX;
+        std::cout << "    (" << tx << "," << ty << ") score="
+                  << std::fixed << std::setprecision(4) << worstIdx[k].first;
+        if (ti < static_cast<int>(analyzeCat.size()))
+        {
+            const char* cn = (analyzeCat[ti]==0)?"Smooth":
+                             (analyzeCat[ti]==1)?"Edge":
+                             (analyzeCat[ti]==2)?"Texture":"Normal";
+            std::cout << " [" << cn << "]";
+        }
+        std::cout << "\n";
+    }
+    {
+        double cellSum = 0;
+        for (int i = 0; i < 64; ++i) cellSum += analyzeGridCellSum[i];
+        if (cellSum > 0)
+        {
+            std::cout << "  Grid 8x8 cell contribution (avg distance, lower=more important):\n";
+            for (int r = 0; r < 8; ++r)
+            {
+                std::cout << "    ";
+                for (int c = 0; c < 8; ++c)
+                {
+                    double val = analyzeGridCellSum[r * 8 + c] / n * 100.0;
+                    std::cout << std::fixed << std::setprecision(1) << std::setw(5) << val;
+                }
+                std::cout << "\n";
+            }
+            double wTotal = 0;
+            for (int i = 0; i < 64; ++i)
+            {
+                double d = analyzeGridCellSum[i] / n;
+                if (d < 0.001) d = 0.001;
+                wTotal += 1.0 / d;
+            }
+            std::cout << "  Grid weights (auto-tuned): {";
+            for (int r = 0; r < 8; ++r)
+            {
+                if (r > 0) std::cout << "   ";
+                for (int c = 0; c < 8; ++c)
+                {
+                    double w = (1.0 / (analyzeGridCellSum[r*8+c] / n)) / wTotal * 64.0;
+                    std::cout << std::fixed << std::setprecision(2) << w;
+                    if (r*8+c < 63) std::cout << ",";
+                }
+                std::cout << (r < 7 ? "\n" : "}\n");
+            }
+        }
+    }
+    std::cout << "  Reuse: unique=" << useCount.size() << "/" << n
+              << " ratio=" << std::setprecision(2) << (static_cast<double>(n)/useCount.size()) << "x\n";
+    std::cout << "  Top 10 most used:\n";
+    int top10Total = 0;
+    for (int i = 0; i < std::min(10, static_cast<int>(topUsed.size())); ++i)
+    {
+        std::cout << "    id=" << topUsed[i].second << " : " << topUsed[i].first << " times\n";
+        top10Total += topUsed[i].first;
+    }
+    std::cout << "  Top10 share: " << std::fixed << std::setprecision(1)
+              << (100.0 * top10Total / n) << "% of all tiles\n";
+
+    int freqDist[6] = {0};
+    for (const auto& [id, cnt] : useCount)
+    {
+        if (cnt == 1) freqDist[0]++;
+        else if (cnt == 2) freqDist[1]++;
+        else if (cnt == 3) freqDist[2]++;
+        else if (cnt <= 5) freqDist[3]++;
+        else if (cnt <= 10) freqDist[4]++;
+        else freqDist[5]++;
+    }
+    std::cout << "  Freq dist: 1x=" << freqDist[0] << " 2x=" << freqDist[1]
+              << " 3x=" << freqDist[2] << " 4-5x=" << freqDist[3]
+              << " 6-10x=" << freqDist[4] << " 10x+=" << freqDist[5] << "\n";
+
+    std::string anaDir = outputPath;
+    auto dp = anaDir.rfind('.');
+    if (dp != std::string::npos) anaDir = anaDir.substr(0, dp) + "_analysis";
+    else anaDir += "_analysis";
+    std::filesystem::create_directories(u8path(anaDir));
+
+    std::string freqDir = anaDir + "/freq_rank";
+    std::filesystem::create_directories(u8path(freqDir));
+    int exported = 0;
+    for (const auto& [cnt, id] : topUsed)
+    {
+        if (cnt < 2) break;
+        for (int i = 0; i < dbCount; ++i)
+        {
+            if (allRecords[i].id == id && !allRecords[i].filePath.empty())
+            {
+                cv::Mat img = imreadUnicode(allRecords[i].filePath, cv::IMREAD_COLOR);
+                if (!img.empty())
+                {
+                    char fn[256];
+                    std::string normFile = std::filesystem::path(allRecords[i].filePath).filename().string();
+                    snprintf(fn, sizeof(fn), "%s/rank%02d_%dx_id%d_%s",
+                             freqDir.c_str(), exported + 1, cnt, id, normFile.c_str());
+                    imwriteUnicode(fn, img);
+                    exported++;
+                }
+                break;
+            }
+        }
+    }
+    if (exported > 0)
+        std::cout << "  Frequency ranking: " << freqDir << "/ (x" << exported << ")\n";
+
+    constexpr int kExport = 20;
+    for (int k = 0; k < std::min(kExport, n); ++k)
+    {
+        int ti = worstIdx[k].second;
+        int tx = ti % tilesX, ty = ti / tilesX;
+        char fname[256];
+        cv::Mat tileROI = target(cv::Rect(tx*cfg.tileW, ty*cfg.tileH, cfg.tileW, cfg.tileH));
+        cv::Mat tileBig;
+        cv::resize(tileROI, tileBig, cv::Size(featW, featH), 0, 0, cv::INTER_NEAREST);
+        const char* cn = (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==0)?"S":
+                         (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==1)?"E":
+                         (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==2)?"T":"N";
+        snprintf(fname, sizeof(fname), "%s/worst_%02d_s%.4f_%s_tile.png",
+                 anaDir.c_str(), k, worstIdx[k].first, cn);
+        imwriteUnicode(fname, tileBig);
+        if (ti < static_cast<int>(bestRecords.size()) && !bestRecords[ti].filePath.empty())
+        {
+            cv::Mat match = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
+            if (!match.empty())
+            {
+                snprintf(fname, sizeof(fname), "%s/worst_%02d_match.png", anaDir.c_str(), k);
+                imwriteUnicode(fname, match);
+            }
+        }
+    }
+    std::cout << "  Worst tiles exported: " << anaDir << "/ (x" << kExport << ")\n";
+
+    {
+        std::string rptPath = anaDir + "/worst_report.txt";
+        std::ofstream rpt(u8path(rptPath));
+        rpt << "=== Worst Tile Analysis ===\n";
+        for (int k = 0; k < std::min(kExport, n); ++k) {
+            int ti = worstIdx[k].second, tx = ti % tilesX, ty = ti / tilesX;
+            const auto& rec = bestRecords[ti];
+            double labD = labDistance(allTL[ti],allTA[ti],allTB[ti],rec.avgL,rec.avgA,rec.avgB);
+            double gridD = gridDistance8x8(allGrid[ti], rec.grid4x4, true);
+            double edgeD = std::abs(allEdge[ti] - rec.edgeDensity);
+            rpt << "\n#" << (k+1) << " tile(" << tx << "," << ty << ") score=" << worstIdx[k].first << "\n";
+            rpt << "  Tile  LAB=" << allTL[ti] << "," << allTA[ti] << "," << allTB[ti]
+                << " Edge=" << allEdge[ti] << "\n";
+            rpt << "  Match LAB=" << rec.avgL << "," << rec.avgA << "," << rec.avgB
+                << " Edge=" << rec.edgeDensity << "\n";
+            rpt << "  Dists: LAB=" << labD << " Grid=" << gridD << " Edge=" << edgeD << "\n";
+            std::string cause;
+            if (labD > 0.3) cause = "color mismatch (LAB dist " + std::to_string(labD).substr(0,4) + ")";
+            else if (gridD > 0.5) cause = "spatial mismatch (Grid dist " + std::to_string(gridD).substr(0,4) + ")";
+            else if (allTL[ti] < 60) cause = "dark region (tile L=" + std::to_string((int)allTL[ti]) + ")";
+            else if (rec.useCount > 10) cause = "popular image penalty (used " + std::to_string(rec.useCount) + "x)";
+            else cause = "combined mismatch";
+            rpt << "  Cause: " << cause << "\n";
+        }
+        std::cout << "  Diagnosis report: " << rptPath << "\n";
+    }
+
+    std::string heatPath = anaDir + "/heatmap.png";
+    double sMin = sortedScores.front(), sRange = sortedScores.back() - sMin;
+    if (sRange < 0.001) sRange = 0.001;
+    cv::Mat heat(tilesY * 4, tilesX * 4, CV_8UC3);
+    for (int ty = 0; ty < tilesY; ++ty)
+    {
+        for (int tx = 0; tx < tilesX; ++tx)
+        {
+            int ti = ty * tilesX + tx;
+            if (ti >= n) continue;
+            double s = analyzeScores[ti];
+            double t = (s - sMin) / sRange;
+            cv::Vec3b color;
+            if (t < 0.5)
+                color = cv::Vec3b(0, static_cast<uchar>(255*t*2), static_cast<uchar>(255*(1-t*2)));
+            else
+                color = cv::Vec3b(0, static_cast<uchar>(255*(1-(t-0.5)*2)), static_cast<uchar>(255));
+            cv::rectangle(heat, cv::Rect(tx*4, ty*4, 4, 4), color, cv::FILLED);
+        }
+    }
+    imwriteUnicode(heatPath, heat);
+    std::cout << "  Heatmap: " << heatPath << "\n";
+
+    std::string htmlPath = anaDir + "/report.html";
+    std::ofstream html(u8path(htmlPath));
+    if (html.is_open())
+    {
+        html << "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">\n";
+        html << "<title>Mosaicraft Analysis</title>\n";
+        html << "<style>body{font-family:system-ui,sans-serif;max-width:960px;margin:0 auto;padding:20px;"
+             << "background:#1a1a2e;color:#e0e0e0}h1{color:#e94560}h2{color:#f0a500;border-bottom:1px solid #333}"
+             << "table{border-collapse:collapse;width:100%;margin:10px 0}"
+             << "th,td{border:1px solid #444;padding:8px;text-align:right}th{background:#16213e;color:#f0a500}"
+             << "tr:nth-child(even){background:#0f3460}.good{color:#4ecca3}.warn{color:#f0a500}.bad{color:#e94560}"
+             << ".bar{display:inline-block;height:12px;background:#e94560;border-radius:2px}"
+             << "</style></head><body>\n";
+        html << "<h1>&#55356;&#57211; Mosaicraft Analysis Report</h1>\n";
+
+        html << "<h2>Overview</h2><table>\n";
+        html << "<tr><th>Tiles</th><td>" << totalTiles << "</td></tr>\n";
+        html << "<tr><th>Output</th><td>" << (tilesX*outTileW) << " x " << (tilesY*outTileH) << "</td></tr>\n";
+        html << "<tr><th>Matched</th><td>" << matched << " / " << totalTiles << "</td></tr>\n";
+        html << "</table>\n";
+
+        html << "<h2>Match Quality</h2><table>\n";
+        html << "<tr><th>Score Mean</th><td>" << scoreMean << "</td></tr>\n";
+        html << "<tr><th>Score Median</th><td>" << scoreP50 << "</td></tr>\n";
+        html << "<tr><th>Score P90</th><td>" << scoreP90 << "</td></tr>\n";
+        html << "<tr><th>Score P99</th><td>" << scoreP99 << "</td></tr>\n";
+        html << "<tr><th>Score Max</th><td class=\"warn\">" << scoreMax << "</td></tr>\n";
+        html << "</table>\n";
+
+        {
+            int histBins[10] = {0};
+            for (double s : analyzeScores) {
+                int bi = static_cast<int>(s * 30);
+                if (bi < 0) bi = 0; if (bi > 9) bi = 9;
+                histBins[bi]++;
+            }
+            int histMax = 1; for (int h : histBins) if (h > histMax) histMax = h;
+            html << "<h2>Score Distribution</h2>\n";
+            html << "<div style=\"font-family:monospace;font-size:12px;line-height:1.4\">\n";
+            for (int i = 0; i < 10; ++i) {
+                int w = (int)(60.0 * histBins[i] / histMax);
+                double lo = i * 0.033;
+                html << "<span style=\"color:#888\">" << std::fixed << std::setprecision(2) << lo << "</span> "
+                     << "<span style=\"background:#e94560;display:inline-block;width:" << w << "px;height:12px\" "
+                     << "title=\"" << histBins[i] << " tiles\"></span> "
+                     << histBins[i] << "<br>\n";
+            }
+            html << "</div>\n";
+        }
+
+        html << "<h2>Diversity</h2><table>\n";
+        html << "<tr><th>Unique Images</th><td>" << useCount.size() << " / " << n << "</td></tr>\n";
+        html << "<tr><th>Reuse Ratio</th><td>" << std::fixed << std::setprecision(2) << (double)n/useCount.size() << "x</td></tr>\n";
+        html << "<tr><th>Top10 Share</th><td>" << std::setprecision(1) << (100.0*top10Total/n) << "%</td></tr>\n";
+        html << "</table>\n";
+
+        html << "<h2>Top 10 Most Used</h2><table>\n";
+        html << "<tr><th>Rank</th><th>Image ID</th><th>Uses</th><th>Bar</th></tr>\n";
+        int topMax = topUsed.empty() ? 1 : topUsed[0].first;
+        for (int i = 0; i < std::min(10, (int)topUsed.size()); ++i)
+        {
+            int w = (int)(100.0 * topUsed[i].first / topMax);
+            html << "<tr><td>" << (i+1) << "</td><td>" << topUsed[i].second
+                 << "</td><td>" << topUsed[i].first
+                 << "</td><td><span class=\"bar\" style=\"width:" << w << "px\"></span></td></tr>\n";
+        }
+        html << "</table>\n";
+
+        html << "<h2>Frequency Distribution</h2><table>\n";
+        html << "<tr><th>Category</th><th>Count</th><th>%</th></tr>\n";
+        const char* catNames[] = {"1x","2x","3x","4-5x","6-10x","10x+"};
+        int htmlFreqDist[6] = {0};
+        for (const auto& [id, cnt] : useCount) {
+            if (cnt == 1) htmlFreqDist[0]++; else if (cnt == 2) htmlFreqDist[1]++;
+            else if (cnt == 3) htmlFreqDist[2]++; else if (cnt <= 5) htmlFreqDist[3]++;
+            else if (cnt <= 10) htmlFreqDist[4]++; else htmlFreqDist[5]++;
+        }
+        for (int i = 0; i < 6; ++i)
+            html << "<tr><td>" << catNames[i] << "</td><td>" << htmlFreqDist[i]
+                 << "</td><td>" << std::setprecision(1) << (100.0*htmlFreqDist[i]/n) << "%</td></tr>\n";
+        html << "</table>\n";
+
+        html << "<h2>Worst Tiles Gallery (Top 10)</h2>\n";
+        html << "<div style=\"display:grid;grid-template-columns:repeat(5,1fr);gap:8px\">\n";
+        constexpr int kShowWorst = 10;
+        for (int k = 0; k < std::min(kShowWorst, n); ++k)
+        {
+            int ti = worstIdx[k].second;
+            int tx = ti % tilesX, ty = ti / tilesX;
+            const char* cn = (ti < (int)analyzeCat.size() && analyzeCat[ti]==0)?"S":
+                             (ti < (int)analyzeCat.size() && analyzeCat[ti]==1)?"E":
+                             (ti < (int)analyzeCat.size() && analyzeCat[ti]==2)?"T":"N";
+            const char* cnFull = cn[0]=='S'?"Smooth":cn[0]=='E'?"Edge":cn[0]=='T'?"Texture":"Normal";
+            html << "<div style=\"background:#0f3460;padding:4px;text-align:center\">\n";
+            html << "<img src=\"worst_" << std::setfill('0') << std::setw(2) << k
+                 << "_s" << std::fixed << std::setprecision(4) << worstIdx[k].first
+                 << "_" << cn << "_tile.png\" style=\"width:90px;height:160px\"><br>\n";
+            html << "<img src=\"worst_" << std::setfill('0') << std::setw(2) << k
+                 << "_match.png\" style=\"width:90px;height:160px;margin-top:2px\"><br>\n";
+            html << "<span style=\"font-size:10px;color:#aaa\">(" << tx << "," << ty << ") "
+                 << std::setprecision(3) << worstIdx[k].first << " " << cnFull << "</span>\n";
+            html << "</div>\n";
+        }
+        html << "</div>\n";
+
+        html << "<p>Heatmap: <a href=\"heatmap.png\">heatmap.png</a></p>\n";
+        html << "</body></html>";
+        html.close();
+        std::cout << "  HTML report: " << htmlPath << "\n";
+    }
+
+    if (db.isOpen() && !useCount.empty())
+        db.recordRunUsage(useCount, targetHash, targetPath);
+}
+
 // ============================================================
 // , ,
 // ============================================================
@@ -710,6 +1186,17 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // , 图, 锟绞憋拷拇锟?Mat, 锟街匡拷模式, , 要, , , 锟节达拷锟皆憋拷, 支使锟矫ｏ拷
     cv::Mat output;
 
+    auto runAnalysis = [&](const std::string& analysisOutputPath) {
+        writeAnalysisReport(AnalysisReportContext{
+            cfg, db, analysisOutputPath, targetPath, targetHash, target,
+            totalTiles, tilesX, tilesY, outTileW, outTileH, featW, featH,
+            dbCount, matched.load(), analyzeScores, analyzeImageIds,
+            analyzeLabD, analyzeGridD, analyzeEdgeD, analyzeGaps,
+            analyzeRanks, analyzeAnnRanks, analyzeCat, analyzeGridCellSum,
+            allTL, allTA, allTB, allEdge, allGrid, allRecords, bestRecords
+        });
+    };
+
     if (cfg.useGpu && gpuLib.count > 0)
     {
         // 锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋
@@ -1144,447 +1631,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
         int nThreads = std::thread::hardware_concurrency();
         if (nThreads < 2) nThreads = 2;
 
-        // 分析输出（lambda捕获所有局部变量，各路径调用）
-        auto writeAnalysis = [&]() {
-            // Full analysis output shared by stream/batch/tiled early-return paths.
-        if (cfg.analyze && !analyzeScores.empty())
-        {
-            int n = static_cast<int>(analyzeScores.size());
-            // , , 统,
-            std::vector<double> sortedScores = analyzeScores;
-            std::sort(sortedScores.begin(), sortedScores.end());
-            double scoreMean = 0, scoreMin = 1e30, scoreMax = 0;
-            for (double s : analyzeScores) { scoreMean += s; if (s < scoreMin) scoreMin = s; if (s > scoreMax) scoreMax = s; }
-            scoreMean /= n;
-            double scoreP50 = sortedScores[n/2];
-            double scoreP90 = sortedScores[n*9/10];
-            double scoreP99 = sortedScores[n*99/100];
-
-            // , , , 锟阶ｏ拷,  LAB/Grid/Edge , , 锟节达拷, 锟捷ｏ拷
-            double labSum = 0, gridSum = 0, edgeSum = 0;
-            double labW = cfg.labWeight, gridW = cfg.gridWeight, edgeW = cfg.edgeWeight;
-            // , 一, 权锟截ｏ拷,  scoring 一锟铰ｏ拷
-            double totalW = labW + gridW + cfg.tinyWeight + edgeW + cfg.lbpWeight;
-            labW /= totalW; gridW /= totalW; edgeW /= totalW;
-            for (int i = 0; i < n; ++i)
-            {
-                labSum  += labW  * analyzeLabD[i];
-                gridSum += gridW * analyzeGridD[i];
-                edgeSum += edgeW * analyzeEdgeD[i];
-            }
-            double contribTotal = labSum + gridSum + edgeSum;
-
-            // , , 统,
-            std::unordered_map<int, int> useCount;
-            for (int id : analyzeImageIds) useCount[id]++;
-            std::vector<std::pair<int,int>> topUsed;
-            for (auto& [id, cnt] : useCount) topUsed.push_back({cnt, id});
-            std::sort(topUsed.rbegin(), topUsed.rend());
-
-            std::cout << "\n=== Match Quality Analysis ===\n";
-            std::cout << "  Tiles: " << n << "\n";
-            std::cout << "  Score: mean=" << std::fixed << std::setprecision(4) << scoreMean
-                      << " median=" << scoreP50 << " p90=" << scoreP90
-                      << " p99=" << scoreP99 << " max=" << scoreMax << "\n";
-            std::cout << "  Feature contribution (LAB/Grid/Edge only):\n";
-            if (contribTotal > 0)
-                std::cout << "    LAB="  << std::setprecision(1) << (labSum*100/contribTotal)
-                          << "%  Grid=" << (gridSum*100/contribTotal)
-                          << "%  Edge=" << (edgeSum*100/contribTotal) << "%\n";
-            // Top-K Gap 统,
-            if (!analyzeGaps.empty())
-            {
-                auto sortedGaps = analyzeGaps;
-                std::sort(sortedGaps.begin(), sortedGaps.end());
-                double gapMean = 0;
-                for (double g : analyzeGaps) gapMean += g;
-                gapMean /= analyzeGaps.size();
-                std::cout << "  Winner-RunnerUp gap: mean=" << std::setprecision(4) << gapMean
-                          << " median=" << sortedGaps[analyzeGaps.size()/2]
-                          << " p90=" << sortedGaps[analyzeGaps.size()*9/10] << "\n";
-            }
-            // , 选, , 锟街诧拷, winner , , ,  Top-N 锟叫碉拷位锟矫ｏ拷
-            if (!analyzeRanks.empty())
-            {
-                int rankBuckets[4] = {0, 0, 0, 0};  // 1, 2, 3, 4+
-                for (int r : analyzeRanks)
-                {
-                    if (r <= 3) rankBuckets[r-1]++;
-                    else rankBuckets[3]++;
-                }
-                double total = static_cast<double>(analyzeRanks.size());
-                std::cout << "  Winner rank in TopN: #1=" << std::setprecision(1) << (rankBuckets[0]*100/total)
-                          << "% #2=" << (rankBuckets[1]*100/total) << "% #3=" << (rankBuckets[2]*100/total) << "%\n";
-            }
-            // ANN , 选, , 锟街诧拷, winner ,  ANN 200 , 选锟叫碉拷位锟矫ｏ拷
-            if (!analyzeAnnRanks.empty())
-            {
-                int annTop1=0, annTop5=0, annTop10=0, annTop20=0, annTop50=0;
-                for (int r : analyzeAnnRanks)
-                {
-                    if (r == 0) annTop1++;
-                    if (r < 5) annTop5++;
-                    if (r < 10) annTop10++;
-                    if (r < 20) annTop20++;
-                    if (r < 50) annTop50++;
-                }
-                double t = static_cast<double>(analyzeAnnRanks.size());
-                std::cout << "  ANN recall: Top1=" << std::setprecision(1) << (annTop1*100/t)
-                          << "% Top5=" << (annTop5*100/t) << "% Top10=" << (annTop10*100/t)
-                          << "% Top20=" << (annTop20*100/t) << "%\n";
-            }
-            // , , , 锟?
-            if (!analyzeCat.empty())
-            {
-                double catScores[4] = {0, 0, 0, 0};
-                int catCounts[4] = {0, 0, 0, 0};
-                const char* catNames[] = {"Smooth", "Edge", "Texture", "Normal"};
-                for (int i = 0; i < static_cast<int>(analyzeCat.size()); ++i)
-                {
-                    int c = analyzeCat[i];
-                    if (c >= 0 && c < 4) { catScores[c] += analyzeScores[i]; catCounts[c]++; }
-                }
-                std::cout << "  Score by category:\n";
-                for (int c = 0; c < 4; ++c)
-                    if (catCounts[c] > 0)
-                        std::cout << "    " << catNames[c] << "(" << catCounts[c] << "): "
-                                  << std::setprecision(4) << (catScores[c]/catCounts[c]) << "\n";
-            }
-            // , 锟狡ワ拷锟?tile , 位
-            std::cout << "  Worst 5 tiles:\n";
-            std::vector<std::pair<double,int>> worstIdx;
-            for (int i = 0; i < n; ++i)
-                worstIdx.push_back({analyzeScores[i], i});
-            std::sort(worstIdx.rbegin(), worstIdx.rend());  // , , , , 锟角?
-            for (int k = 0; k < std::min(5, n); ++k)
-            {
-                int ti = worstIdx[k].second;
-                int tx = ti % tilesX, ty = ti / tilesX;
-                std::cout << "    (" << tx << "," << ty << ") score="
-                          << std::fixed << std::setprecision(4) << worstIdx[k].first;
-                if (ti < static_cast<int>(analyzeCat.size()))
-                {
-                    const char* cn = (analyzeCat[ti]==0)?"Smooth":
-                                     (analyzeCat[ti]==1)?"Edge":
-                                     (analyzeCat[ti]==2)?"Texture":"Normal";
-                    std::cout << " [" << cn << "]";
-                }
-                std::cout << "\n";
-            }
-            // Grid 8, 8 cell , 锟阶凤拷, , 每 cell , 平,  LAB , 锟诫，越小=越, 要,
-            {
-                double cellSum = 0;
-                for (int i = 0; i < 64; ++i) cellSum += analyzeGridCellSum[i];
-                if (cellSum > 0)
-                {
-                    std::cout << "  Grid 8x8 cell contribution (avg distance, lower=more important):\n";
-                    for (int r = 0; r < 8; ++r)
-                    {
-                        std::cout << "    ";
-                        for (int c = 0; c < 8; ++c)
-                        {
-                            double val = analyzeGridCellSum[r * 8 + c] / n * 100.0;
-                            std::cout << std::fixed << std::setprecision(1) << std::setw(5) << val;
-                        }
-                        std::cout << "\n";
-                    }
-                    // 锟皆讹拷, , 权锟截ｏ拷, , 越, 锟?cell 权, 越,
-                    double wTotal = 0;
-                    for (int i = 0; i < 64; ++i)
-                    {
-                        double d = analyzeGridCellSum[i] / n;
-                        if (d < 0.001) d = 0.001;
-                        wTotal += 1.0 / d;
-                    }
-                    std::cout << "  Grid weights (auto-tuned): {";
-                    for (int r = 0; r < 8; ++r)
-                    {
-                        if (r > 0) std::cout << "   ";
-                        for (int c = 0; c < 8; ++c)
-                        {
-                            double w = (1.0 / (analyzeGridCellSum[r*8+c] / n)) / wTotal * 64.0;
-                            std::cout << std::fixed << std::setprecision(2) << w;
-                            if (r*8+c < 63) std::cout << ",";
-                        }
-                        std::cout << (r < 7 ? "\n" : "}\n");
-                    }
-                }
-            }
-            std::cout << "  Reuse: unique=" << useCount.size() << "/" << n
-                      << " ratio=" << std::setprecision(2) << (static_cast<double>(n)/useCount.size()) << "x\n";
-            std::cout << "  Top 10 most used:\n";
-            int top10Total = 0;
-            for (int i = 0; i < std::min(10, static_cast<int>(topUsed.size())); ++i)
-            {
-                std::cout << "    id=" << topUsed[i].second << " : " << topUsed[i].first << " times\n";
-                top10Total += topUsed[i].first;
-            }
-            std::cout << "  Top10 share: " << std::fixed << std::setprecision(1)
-                      << (100.0 * top10Total / n) << "% of all tiles\n";
-            // 使, 频锟绞分诧拷
-            int freqDist[6] = {0};  // 1x, 2x, 3x, 4-5x, 6-10x, 10x+
-            for (const auto& [id, cnt] : useCount)
-            {
-                if (cnt == 1) freqDist[0]++;
-                else if (cnt == 2) freqDist[1]++;
-                else if (cnt == 3) freqDist[2]++;
-                else if (cnt <= 5) freqDist[3]++;
-                else if (cnt <= 10) freqDist[4]++;
-                else freqDist[5]++;
-            }
-            std::cout << "  Freq dist: 1x=" << freqDist[0] << " 2x=" << freqDist[1]
-                      << " 3x=" << freqDist[2] << " 4-5x=" << freqDist[3]
-                      << " 6-10x=" << freqDist[4] << " 10x+=" << freqDist[5] << "\n";
-
-            // ---- , , , 锟?tile, 目, 锟?+ 匹, 图, ----
-            std::string anaDir = outputPath;
-            auto dp = anaDir.rfind('.');
-            if (dp != std::string::npos) anaDir = anaDir.substr(0, dp) + "_analysis";
-            else anaDir += "_analysis";
-            std::filesystem::create_directories(u8path(anaDir));
-
-            // , , 频, , , 图片, topUsed 锟窖帮拷使锟矫达拷, , , , 锟叫ｏ拷
-            std::string freqDir = anaDir + "/freq_rank";
-            std::filesystem::create_directories(u8path(freqDir));
-            int exported = 0;
-            for (const auto& [cnt, id] : topUsed)
-            {
-                if (cnt < 2) break;  // 只, , , ,  2 锟轿硷拷, 锟较碉拷图
-                // , 锟揭革拷 id , 应,  filePath
-                for (int i = 0; i < dbCount; ++i)
-                {
-                    if (allRecords[i].id == id && !allRecords[i].filePath.empty())
-                    {
-                        cv::Mat img = imreadUnicode(allRecords[i].filePath, cv::IMREAD_COLOR);
-                        if (!img.empty())
-                        {
-                            char fn[256];
-                            // 锟侥硷拷, , , , _, , _id_, 一, 锟侥硷拷,
-                            std::string normFile = std::filesystem::path(allRecords[i].filePath).filename().string();
-                            snprintf(fn, sizeof(fn), "%s/rank%02d_%dx_id%d_%s",
-                                     freqDir.c_str(), exported + 1, cnt, id, normFile.c_str());
-                            imwriteUnicode(fn, img);
-                            exported++;
-                        }
-                        break;
-                    }
-                }
-            }
-            if (exported > 0)
-                std::cout << "  Frequency ranking: " << freqDir << "/ (x" << exported << ")\n";
-
-            // ---- , 锟?tile , ,  ----
-            constexpr int kExport = 20;
-            for (int k = 0; k < std::min(kExport, n); ++k)
-            {
-                int ti = worstIdx[k].second;
-                int tx = ti % tilesX, ty = ti / tilesX;
-                char fname[256];
-                // Read feature resolution from DB meta (required; old DBs must be rebuilt) , 锟节对比ｏ拷
-                cv::Mat tileROI = target(cv::Rect(tx*cfg.tileW, ty*cfg.tileH, cfg.tileW, cfg.tileH));
-                cv::Mat tileBig;
-                cv::resize(tileROI, tileBig, cv::Size(featW, featH), 0, 0, cv::INTER_NEAREST);  // 锟脚达拷
-                const char* cn = (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==0)?"S":
-                                 (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==1)?"E":
-                                 (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==2)?"T":"N";
-                snprintf(fname, sizeof(fname), "%s/worst_%02d_s%.4f_%s_tile.png",
-                         anaDir.c_str(), k, worstIdx[k].first, cn);
-                imwriteUnicode(fname, tileBig);
-                // 匹, 图
-                if (ti < static_cast<int>(bestRecords.size()) && !bestRecords[ti].filePath.empty())
-                {
-                    cv::Mat match = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                    if (!match.empty())
-                    {
-                        snprintf(fname, sizeof(fname), "%s/worst_%02d_match.png", anaDir.c_str(), k);
-                        imwriteUnicode(fname, match);
-                    }
-                }
-            }
-            std::cout << "  Worst tiles exported: " << anaDir << "/ (x" << kExport << ")\n";
-
-            // , 锟?tile , 媳, 锟?
-            {
-                std::string rptPath = anaDir + "/worst_report.txt";
-                std::ofstream rpt(u8path(rptPath));
-                rpt << "=== Worst Tile Analysis ===\n";
-                for (int k = 0; k < std::min(kExport, n); ++k) {
-                    int ti = worstIdx[k].second, tx = ti % tilesX, ty = ti / tilesX;
-                    const auto& rec = bestRecords[ti];
-                    double labD = labDistance(allTL[ti],allTA[ti],allTB[ti],rec.avgL,rec.avgA,rec.avgB);
-                    double gridD = gridDistance8x8(allGrid[ti], rec.grid4x4, true);
-                    double edgeD = std::abs(allEdge[ti] - rec.edgeDensity);
-                    rpt << "\n#" << (k+1) << " tile(" << tx << "," << ty << ") score=" << worstIdx[k].first << "\n";
-                    rpt << "  Tile  LAB=" << allTL[ti] << "," << allTA[ti] << "," << allTB[ti]
-                        << " Edge=" << allEdge[ti] << "\n";
-                    rpt << "  Match LAB=" << rec.avgL << "," << rec.avgA << "," << rec.avgB
-                        << " Edge=" << rec.edgeDensity << "\n";
-                    rpt << "  Dists: LAB=" << labD << " Grid=" << gridD << " Edge=" << edgeD << "\n";
-                    // , 锟皆??拷锟?
-                    std::string cause;
-                    if (labD > 0.3) cause = "color mismatch (LAB dist " + std::to_string(labD).substr(0,4) + ")";
-                    else if (gridD > 0.5) cause = "spatial mismatch (Grid dist " + std::to_string(gridD).substr(0,4) + ")";
-                    else if (allTL[ti] < 60) cause = "dark region (tile L=" + std::to_string((int)allTL[ti]) + ")";
-                    else if (rec.useCount > 10) cause = "popular image penalty (used " + std::to_string(rec.useCount) + "x)";
-                    else cause = "combined mismatch";
-                    rpt << "  Cause: " << cause << "\n";
-                }
-                std::cout << "  Diagnosis report: " << rptPath << "\n";
-            }
-
-            // , , 图, 统一, ,  _analysis 目录,
-            std::string heatPath = anaDir + "/heatmap.png";
-
-            double sMin = sortedScores.front(), sRange = sortedScores.back() - sMin;
-            if (sRange < 0.001) sRange = 0.001;
-            cv::Mat heat(tilesY * 4, tilesX * 4, CV_8UC3);
-            for (int ty = 0; ty < tilesY; ++ty)
-            {
-                for (int tx = 0; tx < tilesX; ++tx)
-                {
-                    int ti = ty * tilesX + tx;
-                    if (ti >= n) continue;
-                    double s = analyzeScores[ti];
-                    double t = (s - sMin) / sRange;  // 0=best, 1=worst
-                    // , (, ), 锟狡★拷, (, )
-                    cv::Vec3b color;
-                    if (t < 0.5)  // 锟教★拷,
-                        color = cv::Vec3b(0, static_cast<uchar>(255*t*2), static_cast<uchar>(255*(1-t*2)));
-                    else          // 锟狡★拷,
-                        color = cv::Vec3b(0, static_cast<uchar>(255*(1-(t-0.5)*2)), static_cast<uchar>(255));
-                    cv::rectangle(heat,
-                        cv::Rect(tx*4, ty*4, 4, 4), color, cv::FILLED);
-                }
-            }
-            imwriteUnicode(heatPath, heat);
-            std::cout << "  Heatmap: " << heatPath << "\n";
-
-            // , , ,  HTML , , , ,  , , ,
-            std::string htmlPath = anaDir + "/report.html";
-            std::ofstream html(u8path(htmlPath));
-            if (html.is_open())
-            {
-                html << "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">\n";
-                html << "<title>Mosaicraft Analysis</title>\n";
-                html << "<style>body{font-family:system-ui,sans-serif;max-width:960px;margin:0 auto;padding:20px;"
-                     << "background:#1a1a2e;color:#e0e0e0}h1{color:#e94560}h2{color:#f0a500;border-bottom:1px solid #333}"
-                     << "table{border-collapse:collapse;width:100%;margin:10px 0}"
-                     << "th,td{border:1px solid #444;padding:8px;text-align:right}th{background:#16213e;color:#f0a500}"
-                     << "tr:nth-child(even){background:#0f3460}.good{color:#4ecca3}.warn{color:#f0a500}.bad{color:#e94560}"
-                     << ".bar{display:inline-block;height:12px;background:#e94560;border-radius:2px}"
-                     << "</style></head><body>\n";
-                html << "<h1>&#55356;&#57211; Mosaicraft Analysis Report</h1>\n";
-
-                // , ,
-                html << "<h2>Overview</h2><table>\n";
-                html << "<tr><th>Tiles</th><td>" << totalTiles << "</td></tr>\n";
-                html << "<tr><th>Output</th><td>" << (tilesX*outTileW) << " x " << (tilesY*outTileH) << "</td></tr>\n";
-                html << "<tr><th>Matched</th><td>" << (matched.load() > 0 ? matched.load() : totalTiles) << " / " << totalTiles << "</td></tr>\n";
-                html << "</table>\n";
-
-                // Score
-                html << "<h2>Match Quality</h2><table>\n";
-                html << "<tr><th>Score Mean</th><td>" << scoreMean << "</td></tr>\n";
-                html << "<tr><th>Score Median</th><td>" << scoreP50 << "</td></tr>\n";
-                html << "<tr><th>Score P90</th><td>" << scoreP90 << "</td></tr>\n";
-                html << "<tr><th>Score P99</th><td>" << scoreP99 << "</td></tr>\n";
-                html << "<tr><th>Score Max</th><td class=\"warn\">" << scoreMax << "</td></tr>\n";
-                html << "</table>\n";
-
-                // Score 锟街诧拷, 状图
-                {
-                    int histBins[10] = {0};
-                    for (double s : analyzeScores) {
-                        int bi = static_cast<int>(s * 30);
-                        if (bi < 0) bi = 0; if (bi > 9) bi = 9;
-                        histBins[bi]++;
-                    }
-                    int histMax = 1; for (int h : histBins) if (h > histMax) histMax = h;
-                    html << "<h2>Score Distribution</h2>\n";
-                    html << "<div style=\"font-family:monospace;font-size:12px;line-height:1.4\">\n";
-                    for (int i = 0; i < 10; ++i) {
-                        int w = (int)(60.0 * histBins[i] / histMax);
-                        double lo = i * 0.033;
-                        html << "<span style=\"color:#888\">" << std::fixed << std::setprecision(2) << lo << "</span> "
-                             << "<span style=\"background:#e94560;display:inline-block;width:" << w << "px;height:12px\" "
-                             << "title=\"" << histBins[i] << " tiles\"></span> "
-                             << histBins[i] << "<br>\n";
-                    }
-                    html << "</div>\n";
-                }
-
-                // , , ,
-                html << "<h2>Diversity</h2><table>\n";
-                html << "<tr><th>Unique Images</th><td>" << useCount.size() << " / " << n << "</td></tr>\n";
-                html << "<tr><th>Reuse Ratio</th><td>" << std::fixed << std::setprecision(2) << (double)n/useCount.size() << "x</td></tr>\n";
-                html << "<tr><th>Top10 Share</th><td>" << std::setprecision(1) << (100.0*top10Total/n) << "%</td></tr>\n";
-                html << "</table>\n";
-
-                // Top10
-                html << "<h2>Top 10 Most Used</h2><table>\n";
-                html << "<tr><th>Rank</th><th>Image ID</th><th>Uses</th><th>Bar</th></tr>\n";
-                int topMax = topUsed.empty() ? 1 : topUsed[0].first;
-                for (int i = 0; i < std::min(10, (int)topUsed.size()); ++i)
-                {
-                    int w = (int)(100.0 * topUsed[i].first / topMax);
-                    html << "<tr><td>" << (i+1) << "</td><td>" << topUsed[i].second
-                         << "</td><td>" << topUsed[i].first
-                         << "</td><td><span class=\"bar\" style=\"width:" << w << "px\"></span></td></tr>\n";
-                }
-                html << "</table>\n";
-
-                // 频锟绞分诧拷
-                html << "<h2>Frequency Distribution</h2><table>\n";
-                html << "<tr><th>Category</th><th>Count</th><th>%</th></tr>\n";
-                const char* catNames[] = {"1x","2x","3x","4-5x","6-10x","10x+"};
-                int freqDist[6] = {0};
-                for (const auto& [id, cnt] : useCount) {
-                    if (cnt == 1) freqDist[0]++; else if (cnt == 2) freqDist[1]++;
-                    else if (cnt == 3) freqDist[2]++; else if (cnt <= 5) freqDist[3]++;
-                    else if (cnt <= 10) freqDist[4]++; else freqDist[5]++;
-                }
-                for (int i = 0; i < 6; ++i)
-                    html << "<tr><td>" << catNames[i] << "</td><td>" << freqDist[i]
-                         << "</td><td>" << std::setprecision(1) << (100.0*freqDist[i]/n) << "%</td></tr>\n";
-                html << "</table>\n";
-
-                // Worst Tiles , , 图
-                html << "<h2>Worst Tiles Gallery (Top 10)</h2>\n";
-                html << "<div style=\"display:grid;grid-template-columns:repeat(5,1fr);gap:8px\">\n";
-                constexpr int kShowWorst = 10;
-                for (int k = 0; k < std::min(kShowWorst, n); ++k)
-                {
-                    int ti = worstIdx[k].second;
-                    int tx = ti % tilesX, ty = ti / tilesX;
-                    const char* cn = (ti < (int)analyzeCat.size() && analyzeCat[ti]==0)?"S":
-                                     (ti < (int)analyzeCat.size() && analyzeCat[ti]==1)?"E":
-                                     (ti < (int)analyzeCat.size() && analyzeCat[ti]==2)?"T":"N";
-                    const char* cnFull = cn[0]=='S'?"Smooth":cn[0]=='E'?"Edge":cn[0]=='T'?"Texture":"Normal";
-                    html << "<div style=\"background:#0f3460;padding:4px;text-align:center\">\n";
-                    html << "<img src=\"worst_" << std::setfill('0') << std::setw(2) << k
-                         << "_s" << std::fixed << std::setprecision(4) << worstIdx[k].first
-                         << "_" << cn << "_tile.png\" style=\"width:90px;height:160px\"><br>\n";
-                    html << "<img src=\"worst_" << std::setfill('0') << std::setw(2) << k
-                         << "_match.png\" style=\"width:90px;height:160px;margin-top:2px\"><br>\n";
-                    html << "<span style=\"font-size:10px;color:#aaa\">(" << tx << "," << ty << ") "
-                         << std::setprecision(3) << worstIdx[k].first << " " << cnFull << "</span>\n";
-                    html << "</div>\n";
-                }
-                html << "</div>\n";
-
-                html << "<p>Heatmap: <a href=\"heatmap.png\">heatmap.png</a></p>\n";
-                html << "</body></html>";
-                html.close();
-                std::cout << "  HTML report: " << htmlPath << "\n";
-            }
-
-            // , 录使, 统锟狡碉拷 SQLite
-            if (db.isOpen() && !useCount.empty())
-                db.recordRunUsage(useCount, targetHash, targetPath);
-        }
-
-        };
-
         if (cfg.tiledOutput)
         {
             // 锟街匡拷, , 锟矫?tile , , 锟侥硷拷, 锟睫尺达拷, 锟狡ｏ拷, , 锟?Mat
@@ -1642,7 +1688,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             // , 图, 时
             msPlace = Ms(Clock::now() - tLast).count();
             printBenchmark("tiled");
-            writeAnalysis();
+            runAnalysis(outputPath);
         return true;
         }
 
@@ -1734,7 +1780,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
                       << " / " << totalTiles << " tiles)" << std::endl;
             printBenchmark("single");
-            writeAnalysis();
+            runAnalysis(outputPath);
         return true;
         }  // if (tiff streaming)
         else if (cfg.outputFormat == "png" && !useStream)
@@ -1770,7 +1816,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
                       << " / " << totalTiles << " tiles)" << std::endl;
             printBenchmark("single");
-            writeAnalysis();
+            runAnalysis(outputPath);
         return true;
         }
         else if (cfg.outputFormat == "png")
@@ -1815,7 +1861,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
                       << " / " << totalTiles << " tiles)" << std::endl;
             printBenchmark("single");
-            writeAnalysis();
+            runAnalysis(outputPath);
         return true;
         }
 
@@ -1859,7 +1905,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
                       << " / " << totalTiles << " tiles)" << std::endl;
             printBenchmark("single");
-            writeAnalysis();
+            runAnalysis(outputPath);
         return true;
         }
 
@@ -2116,442 +2162,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
               << " lbp=" << cntLBP << "/" << (cntLBP + cntMissLBP)
               << std::endl;
 
-    // , ,  匹, , , , , , ,  , ,
-    if (cfg.analyze && !analyzeScores.empty())
-    {
-        int n = static_cast<int>(analyzeScores.size());
-        // , , 统,
-        std::vector<double> sortedScores = analyzeScores;
-        std::sort(sortedScores.begin(), sortedScores.end());
-        double scoreMean = 0, scoreMin = 1e30, scoreMax = 0;
-        for (double s : analyzeScores) { scoreMean += s; if (s < scoreMin) scoreMin = s; if (s > scoreMax) scoreMax = s; }
-        scoreMean /= n;
-        double scoreP50 = sortedScores[n/2];
-        double scoreP90 = sortedScores[n*9/10];
-        double scoreP99 = sortedScores[n*99/100];
-
-        // , , , 锟阶ｏ拷,  LAB/Grid/Edge , , 锟节达拷, 锟捷ｏ拷
-        double labSum = 0, gridSum = 0, edgeSum = 0;
-        double labW = cfg.labWeight, gridW = cfg.gridWeight, edgeW = cfg.edgeWeight;
-        // , 一, 权锟截ｏ拷,  scoring 一锟铰ｏ拷
-        double totalW = labW + gridW + cfg.tinyWeight + edgeW + cfg.lbpWeight;
-        labW /= totalW; gridW /= totalW; edgeW /= totalW;
-        for (int i = 0; i < n; ++i)
-        {
-            labSum  += labW  * analyzeLabD[i];
-            gridSum += gridW * analyzeGridD[i];
-            edgeSum += edgeW * analyzeEdgeD[i];
-        }
-        double contribTotal = labSum + gridSum + edgeSum;
-
-        // , , 统,
-        std::unordered_map<int, int> useCount;
-        for (int id : analyzeImageIds) useCount[id]++;
-        std::vector<std::pair<int,int>> topUsed;
-        for (auto& [id, cnt] : useCount) topUsed.push_back({cnt, id});
-        std::sort(topUsed.rbegin(), topUsed.rend());
-
-        std::cout << "\n=== Match Quality Analysis ===\n";
-        std::cout << "  Tiles: " << n << "\n";
-        std::cout << "  Score: mean=" << std::fixed << std::setprecision(4) << scoreMean
-                  << " median=" << scoreP50 << " p90=" << scoreP90
-                  << " p99=" << scoreP99 << " max=" << scoreMax << "\n";
-        std::cout << "  Feature contribution (LAB/Grid/Edge only):\n";
-        if (contribTotal > 0)
-            std::cout << "    LAB="  << std::setprecision(1) << (labSum*100/contribTotal)
-                      << "%  Grid=" << (gridSum*100/contribTotal)
-                      << "%  Edge=" << (edgeSum*100/contribTotal) << "%\n";
-        // Top-K Gap 统,
-        if (!analyzeGaps.empty())
-        {
-            auto sortedGaps = analyzeGaps;
-            std::sort(sortedGaps.begin(), sortedGaps.end());
-            double gapMean = 0;
-            for (double g : analyzeGaps) gapMean += g;
-            gapMean /= analyzeGaps.size();
-            std::cout << "  Winner-RunnerUp gap: mean=" << std::setprecision(4) << gapMean
-                      << " median=" << sortedGaps[analyzeGaps.size()/2]
-                      << " p90=" << sortedGaps[analyzeGaps.size()*9/10] << "\n";
-        }
-        // , 选, , 锟街诧拷, winner , , ,  Top-N 锟叫碉拷位锟矫ｏ拷
-        if (!analyzeRanks.empty())
-        {
-            int rankBuckets[4] = {0, 0, 0, 0};  // 1, 2, 3, 4+
-            for (int r : analyzeRanks)
-            {
-                if (r <= 3) rankBuckets[r-1]++;
-                else rankBuckets[3]++;
-            }
-            double total = static_cast<double>(analyzeRanks.size());
-            std::cout << "  Winner rank in TopN: #1=" << std::setprecision(1) << (rankBuckets[0]*100/total)
-                      << "% #2=" << (rankBuckets[1]*100/total) << "% #3=" << (rankBuckets[2]*100/total) << "%\n";
-        }
-        // ANN , 选, , 锟街诧拷, winner ,  ANN 200 , 选锟叫碉拷位锟矫ｏ拷
-        if (!analyzeAnnRanks.empty())
-        {
-            int annTop1=0, annTop5=0, annTop10=0, annTop20=0, annTop50=0;
-            for (int r : analyzeAnnRanks)
-            {
-                if (r == 0) annTop1++;
-                if (r < 5) annTop5++;
-                if (r < 10) annTop10++;
-                if (r < 20) annTop20++;
-                if (r < 50) annTop50++;
-            }
-            double t = static_cast<double>(analyzeAnnRanks.size());
-            std::cout << "  ANN recall: Top1=" << std::setprecision(1) << (annTop1*100/t)
-                      << "% Top5=" << (annTop5*100/t) << "% Top10=" << (annTop10*100/t)
-                      << "% Top20=" << (annTop20*100/t) << "%\n";
-        }
-        // , , , 锟?
-        if (!analyzeCat.empty())
-        {
-            double catScores[4] = {0, 0, 0, 0};
-            int catCounts[4] = {0, 0, 0, 0};
-            const char* catNames[] = {"Smooth", "Edge", "Texture", "Normal"};
-            for (int i = 0; i < static_cast<int>(analyzeCat.size()); ++i)
-            {
-                int c = analyzeCat[i];
-                if (c >= 0 && c < 4) { catScores[c] += analyzeScores[i]; catCounts[c]++; }
-            }
-            std::cout << "  Score by category:\n";
-            for (int c = 0; c < 4; ++c)
-                if (catCounts[c] > 0)
-                    std::cout << "    " << catNames[c] << "(" << catCounts[c] << "): "
-                              << std::setprecision(4) << (catScores[c]/catCounts[c]) << "\n";
-        }
-        // , 锟狡ワ拷锟?tile , 位
-        std::cout << "  Worst 5 tiles:\n";
-        std::vector<std::pair<double,int>> worstIdx;
-        for (int i = 0; i < n; ++i)
-            worstIdx.push_back({analyzeScores[i], i});
-        std::sort(worstIdx.rbegin(), worstIdx.rend());  // , , , , 锟角?
-        for (int k = 0; k < std::min(5, n); ++k)
-        {
-            int ti = worstIdx[k].second;
-            int tx = ti % tilesX, ty = ti / tilesX;
-            std::cout << "    (" << tx << "," << ty << ") score="
-                      << std::fixed << std::setprecision(4) << worstIdx[k].first;
-            if (ti < static_cast<int>(analyzeCat.size()))
-            {
-                const char* cn = (analyzeCat[ti]==0)?"Smooth":
-                                 (analyzeCat[ti]==1)?"Edge":
-                                 (analyzeCat[ti]==2)?"Texture":"Normal";
-                std::cout << " [" << cn << "]";
-            }
-            std::cout << "\n";
-        }
-        // Grid 8, 8 cell , 锟阶凤拷, , 每 cell , 平,  LAB , 锟诫，越小=越, 要,
-        {
-            double cellSum = 0;
-            for (int i = 0; i < 64; ++i) cellSum += analyzeGridCellSum[i];
-            if (cellSum > 0)
-            {
-                std::cout << "  Grid 8x8 cell contribution (avg distance, lower=more important):\n";
-                for (int r = 0; r < 8; ++r)
-                {
-                    std::cout << "    ";
-                    for (int c = 0; c < 8; ++c)
-                    {
-                        double val = analyzeGridCellSum[r * 8 + c] / n * 100.0;
-                        std::cout << std::fixed << std::setprecision(1) << std::setw(5) << val;
-                    }
-                    std::cout << "\n";
-                }
-                // 锟皆讹拷, , 权锟截ｏ拷, , 越, 锟?cell 权, 越,
-                double wTotal = 0;
-                for (int i = 0; i < 64; ++i)
-                {
-                    double d = analyzeGridCellSum[i] / n;
-                    if (d < 0.001) d = 0.001;
-                    wTotal += 1.0 / d;
-                }
-                std::cout << "  Grid weights (auto-tuned): {";
-                for (int r = 0; r < 8; ++r)
-                {
-                    if (r > 0) std::cout << "   ";
-                    for (int c = 0; c < 8; ++c)
-                    {
-                        double w = (1.0 / (analyzeGridCellSum[r*8+c] / n)) / wTotal * 64.0;
-                        std::cout << std::fixed << std::setprecision(2) << w;
-                        if (r*8+c < 63) std::cout << ",";
-                    }
-                    std::cout << (r < 7 ? "\n" : "}\n");
-                }
-            }
-        }
-        std::cout << "  Reuse: unique=" << useCount.size() << "/" << n
-                  << " ratio=" << std::setprecision(2) << (static_cast<double>(n)/useCount.size()) << "x\n";
-        std::cout << "  Top 10 most used:\n";
-        int top10Total = 0;
-        for (int i = 0; i < std::min(10, static_cast<int>(topUsed.size())); ++i)
-        {
-            std::cout << "    id=" << topUsed[i].second << " : " << topUsed[i].first << " times\n";
-            top10Total += topUsed[i].first;
-        }
-        std::cout << "  Top10 share: " << std::fixed << std::setprecision(1)
-                  << (100.0 * top10Total / n) << "% of all tiles\n";
-        // 使, 频锟绞分诧拷
-        int freqDist[6] = {0};  // 1x, 2x, 3x, 4-5x, 6-10x, 10x+
-        for (const auto& [id, cnt] : useCount)
-        {
-            if (cnt == 1) freqDist[0]++;
-            else if (cnt == 2) freqDist[1]++;
-            else if (cnt == 3) freqDist[2]++;
-            else if (cnt <= 5) freqDist[3]++;
-            else if (cnt <= 10) freqDist[4]++;
-            else freqDist[5]++;
-        }
-        std::cout << "  Freq dist: 1x=" << freqDist[0] << " 2x=" << freqDist[1]
-                  << " 3x=" << freqDist[2] << " 4-5x=" << freqDist[3]
-                  << " 6-10x=" << freqDist[4] << " 10x+=" << freqDist[5] << "\n";
-
-        // ---- , , , 锟?tile, 目, 锟?+ 匹, 图, ----
-        std::string anaDir = outPath;
-        auto dp = anaDir.rfind('.');
-        if (dp != std::string::npos) anaDir = anaDir.substr(0, dp) + "_analysis";
-        else anaDir += "_analysis";
-        std::filesystem::create_directories(u8path(anaDir));
-
-        // , , 频, , , 图片, topUsed 锟窖帮拷使锟矫达拷, , , , 锟叫ｏ拷
-        std::string freqDir = anaDir + "/freq_rank";
-        std::filesystem::create_directories(u8path(freqDir));
-        int exported = 0;
-        for (const auto& [cnt, id] : topUsed)
-        {
-            if (cnt < 2) break;  // 只, , , ,  2 锟轿硷拷, 锟较碉拷图
-            // , 锟揭革拷 id , 应,  filePath
-            for (int i = 0; i < dbCount; ++i)
-            {
-                if (allRecords[i].id == id && !allRecords[i].filePath.empty())
-                {
-                    cv::Mat img = imreadUnicode(allRecords[i].filePath, cv::IMREAD_COLOR);
-                    if (!img.empty())
-                    {
-                        char fn[256];
-                        // 锟侥硷拷, , , , _, , _id_, 一, 锟侥硷拷,
-                        std::string normFile = std::filesystem::path(allRecords[i].filePath).filename().string();
-                        snprintf(fn, sizeof(fn), "%s/rank%02d_%dx_id%d_%s",
-                                 freqDir.c_str(), exported + 1, cnt, id, normFile.c_str());
-                        imwriteUnicode(fn, img);
-                        exported++;
-                    }
-                    break;
-                }
-            }
-        }
-        if (exported > 0)
-            std::cout << "  Frequency ranking: " << freqDir << "/ (x" << exported << ")\n";
-
-        // ---- , 锟?tile , ,  ----
-        constexpr int kExport = 20;
-        for (int k = 0; k < std::min(kExport, n); ++k)
-        {
-            int ti = worstIdx[k].second;
-            int tx = ti % tilesX, ty = ti / tilesX;
-            char fname[256];
-            // Read feature resolution from DB meta (required; old DBs must be rebuilt) , 锟节对比ｏ拷
-            cv::Mat tileROI = target(cv::Rect(tx*cfg.tileW, ty*cfg.tileH, cfg.tileW, cfg.tileH));
-            cv::Mat tileBig;
-            cv::resize(tileROI, tileBig, cv::Size(featW, featH), 0, 0, cv::INTER_NEAREST);  // 锟脚达拷
-            const char* cn = (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==0)?"S":
-                             (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==1)?"E":
-                             (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==2)?"T":"N";
-            snprintf(fname, sizeof(fname), "%s/worst_%02d_s%.4f_%s_tile.png",
-                     anaDir.c_str(), k, worstIdx[k].first, cn);
-            imwriteUnicode(fname, tileBig);
-            // 匹, 图
-            if (ti < static_cast<int>(bestRecords.size()) && !bestRecords[ti].filePath.empty())
-            {
-                cv::Mat match = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                if (!match.empty())
-                {
-                    snprintf(fname, sizeof(fname), "%s/worst_%02d_match.png", anaDir.c_str(), k);
-                    imwriteUnicode(fname, match);
-                }
-            }
-        }
-        std::cout << "  Worst tiles exported: " << anaDir << "/ (x" << kExport << ")\n";
-
-        // , 锟?tile , 媳, 锟?
-        {
-            std::string rptPath = anaDir + "/worst_report.txt";
-            std::ofstream rpt(u8path(rptPath));
-            rpt << "=== Worst Tile Analysis ===\n";
-            for (int k = 0; k < std::min(kExport, n); ++k) {
-                int ti = worstIdx[k].second, tx = ti % tilesX, ty = ti / tilesX;
-                const auto& rec = bestRecords[ti];
-                double labD = labDistance(allTL[ti],allTA[ti],allTB[ti],rec.avgL,rec.avgA,rec.avgB);
-                double gridD = gridDistance8x8(allGrid[ti], rec.grid4x4, true);
-                double edgeD = std::abs(allEdge[ti] - rec.edgeDensity);
-                rpt << "\n#" << (k+1) << " tile(" << tx << "," << ty << ") score=" << worstIdx[k].first << "\n";
-                rpt << "  Tile  LAB=" << allTL[ti] << "," << allTA[ti] << "," << allTB[ti]
-                    << " Edge=" << allEdge[ti] << "\n";
-                rpt << "  Match LAB=" << rec.avgL << "," << rec.avgA << "," << rec.avgB
-                    << " Edge=" << rec.edgeDensity << "\n";
-                rpt << "  Dists: LAB=" << labD << " Grid=" << gridD << " Edge=" << edgeD << "\n";
-                // , 锟皆??拷锟?
-                std::string cause;
-                if (labD > 0.3) cause = "color mismatch (LAB dist " + std::to_string(labD).substr(0,4) + ")";
-                else if (gridD > 0.5) cause = "spatial mismatch (Grid dist " + std::to_string(gridD).substr(0,4) + ")";
-                else if (allTL[ti] < 60) cause = "dark region (tile L=" + std::to_string((int)allTL[ti]) + ")";
-                else if (rec.useCount > 10) cause = "popular image penalty (used " + std::to_string(rec.useCount) + "x)";
-                else cause = "combined mismatch";
-                rpt << "  Cause: " << cause << "\n";
-            }
-            std::cout << "  Diagnosis report: " << rptPath << "\n";
-        }
-
-        // , , 图, 统一, ,  _analysis 目录,
-        std::string heatPath = anaDir + "/heatmap.png";
-
-        double sMin = sortedScores.front(), sRange = sortedScores.back() - sMin;
-        if (sRange < 0.001) sRange = 0.001;
-        cv::Mat heat(tilesY * 4, tilesX * 4, CV_8UC3);
-        for (int ty = 0; ty < tilesY; ++ty)
-        {
-            for (int tx = 0; tx < tilesX; ++tx)
-            {
-                int ti = ty * tilesX + tx;
-                if (ti >= n) continue;
-                double s = analyzeScores[ti];
-                double t = (s - sMin) / sRange;  // 0=best, 1=worst
-                // , (, ), 锟狡★拷, (, )
-                cv::Vec3b color;
-                if (t < 0.5)  // 锟教★拷,
-                    color = cv::Vec3b(0, static_cast<uchar>(255*t*2), static_cast<uchar>(255*(1-t*2)));
-                else          // 锟狡★拷,
-                    color = cv::Vec3b(0, static_cast<uchar>(255*(1-(t-0.5)*2)), static_cast<uchar>(255));
-                cv::rectangle(heat,
-                    cv::Rect(tx*4, ty*4, 4, 4), color, cv::FILLED);
-            }
-        }
-        imwriteUnicode(heatPath, heat);
-        std::cout << "  Heatmap: " << heatPath << "\n";
-
-        // , , ,  HTML , , , ,  , , ,
-        std::string htmlPath = anaDir + "/report.html";
-        std::ofstream html(u8path(htmlPath));
-        if (html.is_open())
-        {
-            html << "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">\n";
-            html << "<title>Mosaicraft Analysis</title>\n";
-            html << "<style>body{font-family:system-ui,sans-serif;max-width:960px;margin:0 auto;padding:20px;"
-                 << "background:#1a1a2e;color:#e0e0e0}h1{color:#e94560}h2{color:#f0a500;border-bottom:1px solid #333}"
-                 << "table{border-collapse:collapse;width:100%;margin:10px 0}"
-                 << "th,td{border:1px solid #444;padding:8px;text-align:right}th{background:#16213e;color:#f0a500}"
-                 << "tr:nth-child(even){background:#0f3460}.good{color:#4ecca3}.warn{color:#f0a500}.bad{color:#e94560}"
-                 << ".bar{display:inline-block;height:12px;background:#e94560;border-radius:2px}"
-                 << "</style></head><body>\n";
-            html << "<h1>&#55356;&#57211; Mosaicraft Analysis Report</h1>\n";
-
-            // , ,
-            html << "<h2>Overview</h2><table>\n";
-            html << "<tr><th>Tiles</th><td>" << totalTiles << "</td></tr>\n";
-            html << "<tr><th>Output</th><td>" << (tilesX*outTileW) << " x " << (tilesY*outTileH) << "</td></tr>\n";
-            html << "<tr><th>Matched</th><td>" << matched << " / " << totalTiles << "</td></tr>\n";
-            html << "</table>\n";
-
-            // Score
-            html << "<h2>Match Quality</h2><table>\n";
-            html << "<tr><th>Score Mean</th><td>" << scoreMean << "</td></tr>\n";
-            html << "<tr><th>Score Median</th><td>" << scoreP50 << "</td></tr>\n";
-            html << "<tr><th>Score P90</th><td>" << scoreP90 << "</td></tr>\n";
-            html << "<tr><th>Score P99</th><td>" << scoreP99 << "</td></tr>\n";
-            html << "<tr><th>Score Max</th><td class=\"warn\">" << scoreMax << "</td></tr>\n";
-            html << "</table>\n";
-
-            // Score 锟街诧拷, 状图
-            {
-                int histBins[10] = {0};
-                for (double s : analyzeScores) {
-                    int bi = static_cast<int>(s * 30);
-                    if (bi < 0) bi = 0; if (bi > 9) bi = 9;
-                    histBins[bi]++;
-                }
-                int histMax = 1; for (int h : histBins) if (h > histMax) histMax = h;
-                html << "<h2>Score Distribution</h2>\n";
-                html << "<div style=\"font-family:monospace;font-size:12px;line-height:1.4\">\n";
-                for (int i = 0; i < 10; ++i) {
-                    int w = (int)(60.0 * histBins[i] / histMax);
-                    double lo = i * 0.033;
-                    html << "<span style=\"color:#888\">" << std::fixed << std::setprecision(2) << lo << "</span> "
-                         << "<span style=\"background:#e94560;display:inline-block;width:" << w << "px;height:12px\" "
-                         << "title=\"" << histBins[i] << " tiles\"></span> "
-                         << histBins[i] << "<br>\n";
-                }
-                html << "</div>\n";
-            }
-
-            // , , ,
-            html << "<h2>Diversity</h2><table>\n";
-            html << "<tr><th>Unique Images</th><td>" << useCount.size() << " / " << n << "</td></tr>\n";
-            html << "<tr><th>Reuse Ratio</th><td>" << std::fixed << std::setprecision(2) << (double)n/useCount.size() << "x</td></tr>\n";
-            html << "<tr><th>Top10 Share</th><td>" << std::setprecision(1) << (100.0*top10Total/n) << "%</td></tr>\n";
-            html << "</table>\n";
-
-            // Top10
-            html << "<h2>Top 10 Most Used</h2><table>\n";
-            html << "<tr><th>Rank</th><th>Image ID</th><th>Uses</th><th>Bar</th></tr>\n";
-            int topMax = topUsed.empty() ? 1 : topUsed[0].first;
-            for (int i = 0; i < std::min(10, (int)topUsed.size()); ++i)
-            {
-                int w = (int)(100.0 * topUsed[i].first / topMax);
-                html << "<tr><td>" << (i+1) << "</td><td>" << topUsed[i].second
-                     << "</td><td>" << topUsed[i].first
-                     << "</td><td><span class=\"bar\" style=\"width:" << w << "px\"></span></td></tr>\n";
-            }
-            html << "</table>\n";
-
-            // 频锟绞分诧拷
-            html << "<h2>Frequency Distribution</h2><table>\n";
-            html << "<tr><th>Category</th><th>Count</th><th>%</th></tr>\n";
-            const char* catNames[] = {"1x","2x","3x","4-5x","6-10x","10x+"};
-            int freqDist[6] = {0};
-            for (const auto& [id, cnt] : useCount) {
-                if (cnt == 1) freqDist[0]++; else if (cnt == 2) freqDist[1]++;
-                else if (cnt == 3) freqDist[2]++; else if (cnt <= 5) freqDist[3]++;
-                else if (cnt <= 10) freqDist[4]++; else freqDist[5]++;
-            }
-            for (int i = 0; i < 6; ++i)
-                html << "<tr><td>" << catNames[i] << "</td><td>" << freqDist[i]
-                     << "</td><td>" << std::setprecision(1) << (100.0*freqDist[i]/n) << "%</td></tr>\n";
-            html << "</table>\n";
-
-            // Worst Tiles , , 图
-            html << "<h2>Worst Tiles Gallery (Top 10)</h2>\n";
-            html << "<div style=\"display:grid;grid-template-columns:repeat(5,1fr);gap:8px\">\n";
-            constexpr int kShowWorst = 10;
-            for (int k = 0; k < std::min(kShowWorst, n); ++k)
-            {
-                int ti = worstIdx[k].second;
-                int tx = ti % tilesX, ty = ti / tilesX;
-                const char* cn = (ti < (int)analyzeCat.size() && analyzeCat[ti]==0)?"S":
-                                 (ti < (int)analyzeCat.size() && analyzeCat[ti]==1)?"E":
-                                 (ti < (int)analyzeCat.size() && analyzeCat[ti]==2)?"T":"N";
-                const char* cnFull = cn[0]=='S'?"Smooth":cn[0]=='E'?"Edge":cn[0]=='T'?"Texture":"Normal";
-                html << "<div style=\"background:#0f3460;padding:4px;text-align:center\">\n";
-                html << "<img src=\"worst_" << std::setfill('0') << std::setw(2) << k
-                     << "_s" << std::fixed << std::setprecision(4) << worstIdx[k].first
-                     << "_" << cn << "_tile.png\" style=\"width:90px;height:160px\"><br>\n";
-                html << "<img src=\"worst_" << std::setfill('0') << std::setw(2) << k
-                     << "_match.png\" style=\"width:90px;height:160px;margin-top:2px\"><br>\n";
-                html << "<span style=\"font-size:10px;color:#aaa\">(" << tx << "," << ty << ") "
-                     << std::setprecision(3) << worstIdx[k].first << " " << cnFull << "</span>\n";
-                html << "</div>\n";
-            }
-            html << "</div>\n";
-
-            html << "<p>Heatmap: <a href=\"heatmap.png\">heatmap.png</a></p>\n";
-            html << "</body></html>";
-            html.close();
-            std::cout << "  HTML report: " << htmlPath << "\n";
-        }
-
-        // , 录使, 统锟狡碉拷 SQLite
-        if (db.isOpen() && !useCount.empty())
-            db.recordRunUsage(useCount, targetHash, targetPath);
-    }
+    // , ,  ?? , , , , , ,  , ,
+    runAnalysis(outPath);
 
     if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);
 
