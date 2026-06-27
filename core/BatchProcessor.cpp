@@ -1,4 +1,5 @@
 #include "BatchProcessor.h"
+#include "UnicodeIO.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -41,7 +42,7 @@ int BatchProcessor::process(const std::string& inputDir, const std::string& outp
 
     // 2. 确保输出目录存在
     std::error_code ec;
-    fs::create_directories(outputDir, ec);
+    fs::create_directories(u8path(outputDir), ec);
     if (ec)
     {
         std::cerr << "Cannot create output directory: " << outputDir << std::endl;
@@ -61,7 +62,7 @@ std::vector<std::string> BatchProcessor::collectFiles(const std::string& dir)
     const auto& exts = supportedExtensions();
 
     std::error_code ec;
-    for (const auto& entry : fs::directory_iterator(dir, ec))
+    for (const auto& entry : fs::directory_iterator(u8path(dir), ec))
     {
         if (!entry.is_regular_file())
         {
@@ -75,7 +76,7 @@ std::vector<std::string> BatchProcessor::collectFiles(const std::string& dir)
 
         if (std::find(exts.begin(), exts.end(), ext) != exts.end())
         {
-            files.push_back(entry.path().string());
+            files.push_back(pathToUtf8(entry.path()));
         }
     }
 
@@ -107,9 +108,9 @@ int BatchProcessor::processFiles(const std::vector<std::string>& files,
                     const std::string& inputPath = files[static_cast<std::size_t>(i)];
 
                     // 构造输出路径：保留原文件名
-                    fs::path outPath = fs::path(outputDir) / fs::path(inputPath).filename();
+                    fs::path outPath = u8path(outputDir) / u8path(inputPath).filename();
 
-                    if (m_normalizer.process(inputPath, outPath.string()))
+                    if (m_normalizer.process(inputPath, pathToUtf8(outPath)))
                     {
                         ++results[static_cast<std::size_t>(t)];
                     }

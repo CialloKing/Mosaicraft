@@ -11,6 +11,41 @@
 namespace mosaicraft {
 namespace cuda {
 
+namespace {
+
+template <typename T>
+class DeviceBuffer
+{
+public:
+    DeviceBuffer() = default;
+    ~DeviceBuffer() { reset(); }
+
+    DeviceBuffer(const DeviceBuffer&) = delete;
+    DeviceBuffer& operator=(const DeviceBuffer&) = delete;
+
+    cudaError_t allocate(std::size_t bytes)
+    {
+        reset();
+        return cudaMalloc(reinterpret_cast<void**>(&m_ptr), bytes);
+    }
+
+    void reset()
+    {
+        if (m_ptr)
+        {
+            cudaFree(m_ptr);
+            m_ptr = nullptr;
+        }
+    }
+
+    T* get() const { return m_ptr; }
+
+private:
+    T* m_ptr = nullptr;
+};
+
+} // namespace
+
 // ============================================================
 // GPU 常量：归一化图尺寸 — 模板化以支持常见分辨率
 // ============================================================
@@ -24,8 +59,6 @@ template<int W, int H> struct GpuParams {
     static constexpr int TINY_SX = W / 16;   // TinyImage 采样步长 X
     static constexpr int TINY_SY = H / 16;   // TinyImage 采样步长 Y
 };
-static constexpr int TINY_W = 16;
-static constexpr int TINY_H = 16;
 static constexpr int LBP_BINS = 256;
 
 // ============================================================
@@ -89,8 +122,6 @@ __global__ void featureKernel(
     if (imgIdx >= batchSize) return;
 
     int tx = threadIdx.x;
-    int stride = blockDim.x;
-
     const uint8_t* img = d_images + imgIdx * IMG_PIX * 3;
 
     __shared__ float s_gridLab[GRID_CELLS * 3];
@@ -266,58 +297,56 @@ int extractBatch(
         std::memcpy(&h_images[i * imgBytes], bgr.data, imgBytes);
     }
 
-    uint8_t* d_images = nullptr;
-    float*   d_grid = nullptr;
-    uint8_t* d_tiny = nullptr;
-    float*   d_lbp = nullptr;
-    double*  d_avgLAB = nullptr;
-    double*  d_bright = nullptr;
-    double*  d_contrast = nullptr;
-    double*  d_edge = nullptr;
+    DeviceBuffer<uint8_t> d_images;
+    DeviceBuffer<float> d_grid;
+    DeviceBuffer<uint8_t> d_tiny;
+    DeviceBuffer<float> d_lbp;
+    DeviceBuffer<double> d_avgLAB;
+    DeviceBuffer<double> d_bright;
+    DeviceBuffer<double> d_contrast;
+    DeviceBuffer<double> d_edge;
 
-    #define CUF(p, sz, lbl) if (cudaMalloc(&(p), (sz)) != cudaSuccess) { \
-        fprintf(stderr, "GPU OOM (%dx%d): %s\n", imgW, imgH, lbl); goto cu_cleanup; }
-    CUF(d_images, N * imgBytes, "image");
-    CUF(d_grid, N * 192 * sizeof(float), "grid");
-    CUF(d_tiny, N * 256, "tiny");
-    CUF(d_lbp, N * 256 * sizeof(float), "lbp");
-    CUF(d_avgLAB, N * 3 * sizeof(double), "lab");
-    CUF(d_bright, N * sizeof(double), "bright");
-    CUF(d_contrast, N * sizeof(double), "contrast");
-    CUF(d_edge, N * sizeof(double), "edge");
-    #undef CUF
+    auto allocOrFail = [&](auto& buf, size_t bytes, const char* label) {
+        if (buf.allocate(bytes) == cudaSuccess) return true;
+        fprintf(stderr, "GPU OOM (%dx%d): %s\n", imgW, imgH, label);
+        return false;
+    };
+    if (!allocOrFail(d_images, N * imgBytes, "image")) return 0;
+    if (!allocOrFail(d_grid, N * 192 * sizeof(float), "grid")) return 0;
+    if (!allocOrFail(d_tiny, N * 256, "tiny")) return 0;
+    if (!allocOrFail(d_lbp, N * 256 * sizeof(float), "lbp")) return 0;
+    if (!allocOrFail(d_avgLAB, N * 3 * sizeof(double), "lab")) return 0;
+    if (!allocOrFail(d_bright, N * sizeof(double), "bright")) return 0;
+    if (!allocOrFail(d_contrast, N * sizeof(double), "contrast")) return 0;
+    if (!allocOrFail(d_edge, N * sizeof(double), "edge")) return 0;
 
-    if (cudaMemcpy(d_images, h_images.data(), N * imgBytes, cudaMemcpyHostToDevice) != cudaSuccess)
-        goto cu_cleanup;
+    if (cudaMemcpy(d_images.get(), h_images.data(), N * imgBytes, cudaMemcpyHostToDevice) != cudaSuccess)
+        return 0;
     if (imgW == 180 && imgH == 320)
         featureKernel<180, 320><<<N, 180>>>(
-            d_images, d_grid, d_tiny, d_lbp,
-            d_avgLAB, d_bright, d_contrast, d_edge, N);
+            d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(),
+            d_avgLAB.get(), d_bright.get(), d_contrast.get(), d_edge.get(), N);
     else if (imgW == 320 && imgH == 180)
         featureKernel<320, 180><<<N, 320>>>(
-            d_images, d_grid, d_tiny, d_lbp,
-            d_avgLAB, d_bright, d_contrast, d_edge, N);
+            d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(),
+            d_avgLAB.get(), d_bright.get(), d_contrast.get(), d_edge.get(), N);
     else if (imgW == 360 && imgH == 640)
         featureKernel<360, 640><<<N, 360>>>(
-            d_images, d_grid, d_tiny, d_lbp,
-            d_avgLAB, d_bright, d_contrast, d_edge, N);
+            d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(),
+            d_avgLAB.get(), d_bright.get(), d_contrast.get(), d_edge.get(), N);
     else if (imgW == 640 && imgH == 360)
         featureKernel<640, 360><<<N, 640>>>(
-            d_images, d_grid, d_tiny, d_lbp,
-            d_avgLAB, d_bright, d_contrast, d_edge, N);
+            d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(),
+            d_avgLAB.get(), d_bright.get(), d_contrast.get(), d_edge.get(), N);
     else {
         fprintf(stderr, "GPU build: unsupported size %dx%d\n", imgW, imgH);
-        goto cu_cleanup;
+        return 0;
     }
 cudaDeviceSynchronize();
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess)
     {
         fprintf(stderr, "GPU feature error: %s\n", cudaGetErrorString(err));
-    cu_cleanup:
-        cudaFree(d_images); cudaFree(d_grid); cudaFree(d_tiny);
-        cudaFree(d_lbp); cudaFree(d_avgLAB); cudaFree(d_bright);
-        cudaFree(d_contrast); cudaFree(d_edge);
         return 0;
     }
 
@@ -330,17 +359,13 @@ cudaDeviceSynchronize();
     std::vector<double> h_contrast(N);
     std::vector<double> h_edge(N);
 
-    cudaMemcpy(h_grid.data(), d_grid, N * 192 * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_tiny.data(), d_tiny, N * 256, cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_lbp.data(), d_lbp, N * 256 * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_avgLAB.data(), d_avgLAB, N * 3 * sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_bright.data(), d_bright, N * sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_contrast.data(), d_contrast, N * sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_edge.data(), d_edge, N * sizeof(double), cudaMemcpyDeviceToHost);
-
-    cudaFree(d_images); cudaFree(d_grid); cudaFree(d_tiny);
-    cudaFree(d_lbp); cudaFree(d_avgLAB); cudaFree(d_bright);
-    cudaFree(d_contrast); cudaFree(d_edge);
+    cudaMemcpy(h_grid.data(), d_grid.get(), N * 192 * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_tiny.data(), d_tiny.get(), N * 256, cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_lbp.data(), d_lbp.get(), N * 256 * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_avgLAB.data(), d_avgLAB.get(), N * 3 * sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_bright.data(), d_bright.get(), N * sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_contrast.data(), d_contrast.get(), N * sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_edge.data(), d_edge.get(), N * sizeof(double), cudaMemcpyDeviceToHost);
 
     // 填充 ImageRecord
     for (int i = 0; i < N; ++i)
@@ -398,9 +423,14 @@ namespace {
     {
         constexpr int PIX = W * H;
         size_t imgBytes = PIX * 3;
-        uint8_t *d_img=nullptr; float *d_grid=nullptr; uint8_t *d_tiny=nullptr;
-        float *d_lbp=nullptr; double *d_lab=nullptr, *d_bright=nullptr, *d_contrast=nullptr, *d_edge=nullptr;
-        bool ok = false;
+        DeviceBuffer<uint8_t> d_img;
+        DeviceBuffer<float> d_grid;
+        DeviceBuffer<uint8_t> d_tiny;
+        DeviceBuffer<float> d_lbp;
+        DeviceBuffer<double> d_lab;
+        DeviceBuffer<double> d_bright;
+        DeviceBuffer<double> d_contrast;
+        DeviceBuffer<double> d_edge;
 
         auto cudaCheck = [](cudaError_t e, const char* name, int W, int H) {
             if (e != cudaSuccess) {
@@ -409,33 +439,28 @@ namespace {
             }
             return true;
         };
-        #define ALLOC(p, sz, lbl) if (!cudaCheck(cudaMalloc(&(p), (sz)), lbl, W, H)) goto cu_cleanup
-        ALLOC(d_img, N * imgBytes, "image");
-        ALLOC(d_grid, N * 192 * sizeof(float), "grid");
-        ALLOC(d_tiny, N * 256, "tiny");
-        ALLOC(d_lbp, N * 256 * sizeof(float), "lbp");
-        ALLOC(d_lab, N * 3 * sizeof(double), "lab");
-        ALLOC(d_bright, N * sizeof(double), "bright");
-        ALLOC(d_contrast, N * sizeof(double), "contrast");
-        ALLOC(d_edge, N * sizeof(double), "edge");
-        #undef ALLOC
+        if (!cudaCheck(d_img.allocate(N * imgBytes), "image", W, H)) return -1;
+        if (!cudaCheck(d_grid.allocate(N * 192 * sizeof(float)), "grid", W, H)) return -1;
+        if (!cudaCheck(d_tiny.allocate(N * 256), "tiny", W, H)) return -1;
+        if (!cudaCheck(d_lbp.allocate(N * 256 * sizeof(float)), "lbp", W, H)) return -1;
+        if (!cudaCheck(d_lab.allocate(N * 3 * sizeof(double)), "lab", W, H)) return -1;
+        if (!cudaCheck(d_bright.allocate(N * sizeof(double)), "bright", W, H)) return -1;
+        if (!cudaCheck(d_contrast.allocate(N * sizeof(double)), "contrast", W, H)) return -1;
+        if (!cudaCheck(d_edge.allocate(N * sizeof(double)), "edge", W, H)) return -1;
 
-        if (cudaMemcpy(d_img, h_images, N * imgBytes, cudaMemcpyHostToDevice) != cudaSuccess) goto cu_cleanup;
-        featureKernel<W, H><<<N, W>>>(d_img, d_grid, d_tiny, d_lbp, d_lab, d_bright, d_contrast, d_edge, N);
+        if (cudaMemcpy(d_img.get(), h_images, N * imgBytes, cudaMemcpyHostToDevice) != cudaSuccess) return -1;
+        featureKernel<W, H><<<N, W>>>(d_img.get(), d_grid.get(), d_tiny.get(), d_lbp.get(),
+                                      d_lab.get(), d_bright.get(), d_contrast.get(), d_edge.get(), N);
         if (cudaDeviceSynchronize() != cudaSuccess || cudaGetLastError() != cudaSuccess) {
             fprintf(stderr, "GPU kernel error (%dx%d)\n", W, H);
-            goto cu_cleanup;
+            return -1;
         }
-        if (cudaMemcpy(h_avgLAB, d_lab, N*3*sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) goto cu_cleanup;
-        if (cudaMemcpy(h_grid, d_grid, N*192*sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) goto cu_cleanup;
-        if (cudaMemcpy(h_tiny, d_tiny, N*256, cudaMemcpyDeviceToHost) != cudaSuccess) goto cu_cleanup;
-        if (cudaMemcpy(h_lbp, d_lbp, N*256*sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) goto cu_cleanup;
-        if (cudaMemcpy(h_edge, d_edge, N*sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) goto cu_cleanup;
-        ok = true;
-    cu_cleanup:
-        cudaFree(d_img); cudaFree(d_grid); cudaFree(d_tiny); cudaFree(d_lbp);
-        cudaFree(d_lab); cudaFree(d_bright); cudaFree(d_contrast); cudaFree(d_edge);
-        return ok ? 0 : -1;
+        if (cudaMemcpy(h_avgLAB, d_lab.get(), N*3*sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) return -1;
+        if (cudaMemcpy(h_grid, d_grid.get(), N*192*sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) return -1;
+        if (cudaMemcpy(h_tiny, d_tiny.get(), N*256, cudaMemcpyDeviceToHost) != cudaSuccess) return -1;
+        if (cudaMemcpy(h_lbp, d_lbp.get(), N*256*sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) return -1;
+        if (cudaMemcpy(h_edge, d_edge.get(), N*sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) return -1;
+        return 0;
     }
 } // anonymous namespace
 

@@ -1148,13 +1148,18 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int cntLBP  = 0, cntMissLBP  = 0;
 
     // , 锟津窗匡拷锟皆讹拷, , 锟劫革拷,  2 ,  tile, , 直, 锟津）猴拷默,  300, 水平, ,
+    auto autoNeighborWindow = [&]() {
+        int base = std::max(300, tilesX * 2);
+        int dynamic = static_cast<int>(std::sqrt(static_cast<double>(allRecords.size())) * 1.5);
+        return std::max(base, std::min(dynamic, 400));
+    };
+
     if (cfg.neighborWindow <= 0)
     {
         // , , , , ,  2 ,  tile
-        int base = std::max(300, tilesX * 2);
         // , 态, , , 小, , , , O(, N), , , 飧诧拷歉, , 选
         int dynamic = static_cast<int>(std::sqrt(static_cast<double>(allRecords.size())) * 1.5);
-        cfg.neighborWindow = std::max(base, std::min(dynamic, 400));
+        cfg.neighborWindow = autoNeighborWindow();
         // 46K, 323, 200K, 400(cap), sweep: 300-400, ,
     }
 
@@ -1746,6 +1751,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         if (isHeavyFormat && useStream && cfg.outputFormat == "tiff") {
             BigTiffWriter tiff(outputPath, outW, outH, true);
             std::vector<uint8_t> rowBuf(outW * 3);
+            int streamFail = 0;
             int nLoaders = std::min(8, static_cast<int>(std::thread::hardware_concurrency()));
             for (int ty = 0; ty < tilesY; ++ty)
             {
@@ -1768,13 +1774,19 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     for (auto& w : loaders) w.join();
                 }
                 // , , , , 写,
+                for (int tx = 0; tx < tilesX; ++tx)
+                    if (tileRowImgs[tx].empty()) streamFail++;
                 for (int y = 0; y < outTileH; ++y)
                 {
                     for (int tx = 0; tx < tilesX; ++tx)
                     {
-                        if (tileRowImgs[tx].empty()) continue;
-                        cv::Mat tr = tileRowImgs[tx].row(y);
-                        std::memcpy(&rowBuf[tx * outTileW * 3], tr.data, outTileW * 3);
+                        uint8_t* dst = &rowBuf[tx * outTileW * 3];
+                        if (tileRowImgs[tx].empty()) {
+                            std::memset(dst, 0, outTileW * 3);
+                        } else {
+                            cv::Mat tr = tileRowImgs[tx].row(y);
+                            std::memcpy(dst, tr.data, outTileW * 3);
+                        }
                     }
                     tiff.writeRow(ty * outTileH + y, rowBuf.data());
                 }
@@ -1782,9 +1794,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     std::cout << "\r  streaming row " << (ty * outTileH) << "/" << outH << std::flush;
             }
             tiff.close();
+            matched = totalTiles - streamFail;
+            loadFail = streamFail;
             std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
-            std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
-                      << " / " << totalTiles << " tiles)" << std::endl;
+            std::cout << "Mosaic saved: " << outputPath << "  (" << matched
+                      << " / " << totalTiles << " tiles"
+                      << (loadFail > 0 ? ", loadFail=" + std::to_string(loadFail) : "")
+                      << ")" << std::endl;
             printBenchmark("single");
             runAnalysis(outputPath);
         return true;
@@ -1795,6 +1811,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "  (batch mode ,  full buffer " << (rawBytes / 1024 / 1024) << " MB)" << std::endl;
             mosaicraft::PngBatchWriter png(outputPath, outW, outH, cfg.pngCompressionLevel);
             std::vector<cv::Mat> imgs(tilesX);
+            int streamFail = 0;
             int nLd = std::min(8, (int)std::thread::hardware_concurrency());
             for (int ty = 0; ty < tilesY; ++ty) {
                 { std::atomic<int> nx{0}; std::vector<std::thread> ld;
@@ -1805,11 +1822,17 @@ bool MosaicEngine::generate(const std::string& targetPath,
                           if (m.empty()) { imgs[tx] = cv::Mat(); continue; } cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
                       }});
                   for (auto& w : ld) w.join(); }
+                for (int tx = 0; tx < tilesX; ++tx)
+                    if (imgs[tx].empty()) streamFail++;
                 for (int y = 0; y < outTileH; ++y) {
                     uint8_t* dst = png.rowData(ty * outTileH + y);
                     for (int tx = 0; tx < tilesX; ++tx) {
-                        if (imgs[tx].empty()) continue;
-                        std::memcpy(dst + tx * outTileW * 3, imgs[tx].ptr<const uint8_t>(y), outTileW * 3);
+                        uint8_t* tileDst = dst + tx * outTileW * 3;
+                        if (imgs[tx].empty()) {
+                            std::memset(tileDst, 0, outTileW * 3);
+                        } else {
+                            std::memcpy(tileDst, imgs[tx].ptr<const uint8_t>(y), outTileW * 3);
+                        }
                     }
                 }
                 if (ty % 10 == 0) std::cout << "\r  batching " << (ty+1) << "/" << tilesY << std::flush;
@@ -1818,9 +1841,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 std::cerr << "\n  PNG writeAll failed" << std::endl;
                 return false;
             }
+            matched = totalTiles - streamFail;
+            loadFail = streamFail;
             std::cout << "\r  batch done: " << outH << " rows" << std::endl;
-            std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
-                      << " / " << totalTiles << " tiles)" << std::endl;
+            std::cout << "Mosaic saved: " << outputPath << "  (" << matched
+                      << " / " << totalTiles << " tiles"
+                      << (loadFail > 0 ? ", loadFail=" + std::to_string(loadFail) : "")
+                      << ")" << std::endl;
             printBenchmark("single");
             runAnalysis(outputPath);
         return true;
@@ -1832,6 +1859,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             mosaicraft::PngStreamWriter png(outputPath, outW, outH, cfg.pngCompressionLevel);
             std::vector<cv::Mat> imgs(tilesX);
             std::vector<uint8_t> rowBuf(outW * 3);
+            int streamFail = 0;
             int nLd = std::min(8, (int)std::thread::hardware_concurrency());
             for (int ty = 0; ty < tilesY; ++ty) {
                 { std::atomic<int> nx{0}; std::vector<std::thread> ld;
@@ -1842,6 +1870,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                           if (m.empty()) { imgs[tx] = cv::Mat(); continue; } cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
                       }});
                   for (auto& w : ld) w.join(); }
+                for (int tx = 0; tx < tilesX; ++tx)
+                    if (imgs[tx].empty()) streamFail++;
                 for (int y = 0; y < outTileH; ++y) {
                     uint8_t* dst = rowBuf.data();
                     for (int tx = 0; tx < tilesX; ++tx) {
@@ -1863,9 +1893,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 if (ty % 10 == 0) std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
             }
             png.close();
+            matched = totalTiles - streamFail;
+            loadFail = streamFail;
             std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
-            std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
-                      << " / " << totalTiles << " tiles)" << std::endl;
+            std::cout << "Mosaic saved: " << outputPath << "  (" << matched
+                      << " / " << totalTiles << " tiles"
+                      << (loadFail > 0 ? ", loadFail=" + std::to_string(loadFail) : "")
+                      << ")" << std::endl;
             printBenchmark("single");
             runAnalysis(outputPath);
         return true;
@@ -1878,6 +1912,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             mosaicraft::JpgStreamWriter jpg(outputPath, outW, outH, cfg.jpegQuality);
             std::vector<cv::Mat> imgs(tilesX);
             std::vector<uint8_t> rowBuf(outW * 3);
+            int streamFail = 0;
             int nLd = std::min(8, (int)std::thread::hardware_concurrency());
             for (int ty = 0; ty < tilesY; ++ty) {
                 { std::atomic<int> nx{0}; std::vector<std::thread> ld;
@@ -1888,6 +1923,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                           if (m.empty()) { imgs[tx] = cv::Mat(); continue; } cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
                       }});
                   for (auto& w : ld) w.join(); }
+                for (int tx = 0; tx < tilesX; ++tx)
+                    if (imgs[tx].empty()) streamFail++;
                 for (int y = 0; y < outTileH; ++y) {
                     uint8_t* dst = rowBuf.data();
                     for (int tx = 0; tx < tilesX; ++tx) {
@@ -1907,9 +1944,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 if (ty % 10 == 0) std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
             }
             jpg.close();
+            matched = totalTiles - streamFail;
+            loadFail = streamFail;
             std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
-            std::cout << "Mosaic saved: " << outputPath << "  (" << totalTiles
-                      << " / " << totalTiles << " tiles)" << std::endl;
+            std::cout << "Mosaic saved: " << outputPath << "  (" << matched
+                      << " / " << totalTiles << " tiles"
+                      << (loadFail > 0 ? ", loadFail=" + std::to_string(loadFail) : "")
+                      << ")" << std::endl;
             printBenchmark("single");
             runAnalysis(outputPath);
         return true;
@@ -1995,7 +2036,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::unordered_map<int, int> freq;
         std::unordered_map<int, int> lastUsedAt;
         const int MIN_GAP = std::max(50, tilesX);
-        if (cfg.neighborWindow <= 0) cfg.neighborWindow = std::max(300, tilesX * 2);
+        if (cfg.neighborWindow <= 0) cfg.neighborWindow = autoNeighborWindow();
 
         std::cout << "  selecting best..." << std::flush;
         for (int ti = 0; ti < totalTiles; ++ti)
@@ -2110,6 +2151,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         {
             BigTiffWriter tiff(outPath, outW, outH);
             std::vector<uint8_t> rowBuf(outW * 3);
+            std::vector<char> failedTiles(totalTiles, 0);
             for (int ty = 0; ty < tilesY; ++ty)
             {
                 for (int y = 0; y < outTileH; ++y)
@@ -2117,12 +2159,20 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     for (int tx = 0; tx < tilesX; ++tx)
                     {
                         int ti = ty * tilesX + tx;
-                        if (ti >= totalTiles) continue;
+                        uint8_t* dst = &rowBuf[tx * outTileW * 3];
+                        if (ti >= totalTiles) {
+                            std::memset(dst, 0, outTileW * 3);
+                            continue;
+                        }
                         cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                        if (m.empty()) continue;
+                        if (m.empty()) {
+                            failedTiles[ti] = 1;
+                            std::memset(dst, 0, outTileW * 3);
+                            continue;
+                        }
                         cv::resize(m, m, cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
                         cv::Mat tileRow = m.row(y);
-                        std::memcpy(&rowBuf[tx * outTileW * 3], tileRow.data, outTileW * 3);
+                        std::memcpy(dst, tileRow.data, outTileW * 3);
                     }
                     tiff.writeRow(ty * outTileH + y, rowBuf.data());
                 }
@@ -2130,7 +2180,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
             }
             tiff.close();
-            matched = totalTiles;
+            loadFail = static_cast<int>(std::count(failedTiles.begin(), failedTiles.end(), 1));
+            matched = totalTiles - loadFail;
             std::cout << std::endl;
         }
         else

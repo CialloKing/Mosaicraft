@@ -163,7 +163,14 @@ int main(int argc, char* argv[])
         }
         // 安全检查：拒绝含shell元字符的命令，防注入
         const std::string forbidden = "&|;$`(){}<>";
-        if (cmd.find_first_of(forbidden) != std::string::npos) {
+        bool hasControlChar = false;
+        for (unsigned char ch : cmd) {
+            if (ch < 0x20 || ch == 0x7f) {
+                hasControlChar = true;
+                break;
+            }
+        }
+        if (cmd.find_first_of(forbidden) != std::string::npos || hasControlChar) {
             res.set_content("ERROR: invalid characters in command", "text/plain");
             return;
         }

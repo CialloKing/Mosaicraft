@@ -10,6 +10,53 @@
 namespace mosaicraft {
 namespace cuda {
 
+namespace {
+
+template <typename T>
+class DeviceBuffer
+{
+public:
+    DeviceBuffer() = default;
+    ~DeviceBuffer() { reset(); }
+
+    DeviceBuffer(const DeviceBuffer&) = delete;
+    DeviceBuffer& operator=(const DeviceBuffer&) = delete;
+
+    cudaError_t allocate(std::size_t bytes)
+    {
+        reset();
+        return cudaMalloc(reinterpret_cast<void**>(&m_ptr), bytes);
+    }
+
+    void reset()
+    {
+        if (m_ptr)
+        {
+            cudaFree(m_ptr);
+            m_ptr = nullptr;
+        }
+    }
+
+    T* get() const { return m_ptr; }
+
+private:
+    T* m_ptr = nullptr;
+};
+
+bool checkCuda(cudaError_t err, const char* file, int line)
+{
+    if (err == cudaSuccess)
+    {
+        return true;
+    }
+    fprintf(stderr, "CUDA error at %s:%d: %s\n", file, line, cudaGetErrorString(err));
+    return false;
+}
+
+} // namespace
+
+#define CUDA_OK(call) checkCuda((call), __FILE__, __LINE__)
+
 // ============================================================
 // GPU kernel: 每个线程计算一个候选的加权距离
 // ============================================================
@@ -359,25 +406,14 @@ int findBestMatch(
     double labW, double gridW, double tinyW, double edgeW, double lbpW,
     double usePenalty)
 {
-    // alloc scores
-    double* d_scores = nullptr;
-    std::vector<double> scores;
-
     if (numCandidates <= 0)
     {
         return -1;
     }
 
-#define CUDA_CHECK(call) do { \
-    cudaError_t _e = (call); \
-    if (_e != cudaSuccess) { \
-        fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, \
-                cudaGetErrorString(_e)); \
-        goto cleanup2; \
-    } \
-} while(0)
-
-    CUDA_CHECK(cudaMalloc(&d_scores, static_cast<std::size_t>(numCandidates) * sizeof(double)));
+    DeviceBuffer<double> d_scores;
+    if (!CUDA_OK(d_scores.allocate(static_cast<std::size_t>(numCandidates) * sizeof(double))))
+        return -1;
 
     // 启动 kernel：256 线程/块
     int blockSize = 256;
@@ -389,17 +425,16 @@ int findBestMatch(
         d_candLAB, d_candGrid, d_candTiny, d_candEdge, d_candLBP,
         d_candUseCount, numCandidates,
         labW, gridW, tinyW, edgeW, lbpW, usePenalty,
-        d_scores);
+        d_scores.get());
 
-    CUDA_CHECK(cudaDeviceSynchronize());
-    CUDA_CHECK(cudaGetLastError());
+    if (!CUDA_OK(cudaDeviceSynchronize())) return -1;
+    if (!CUDA_OK(cudaGetLastError())) return -1;
 
     // CPU 侧找 argmin
-    scores.resize(static_cast<std::size_t>(numCandidates));
-    CUDA_CHECK(cudaMemcpy(scores.data(), d_scores,
+    std::vector<double> scores(static_cast<std::size_t>(numCandidates));
+    if (!CUDA_OK(cudaMemcpy(scores.data(), d_scores.get(),
                static_cast<std::size_t>(numCandidates) * sizeof(double),
-               cudaMemcpyDeviceToHost));
-    cudaFree(d_scores);
+               cudaMemcpyDeviceToHost))) return -1;
 
     int bestIdx = 0;
     double bestScore = scores[0];
@@ -413,11 +448,6 @@ int findBestMatch(
     }
 
     return bestIdx;
-
-cleanup2:
-    if (d_scores) cudaFree(d_scores);
-#undef CUDA_CHECK
-    return -1;
 }
 
 // ============================================================
@@ -436,66 +466,45 @@ int matchOnGpu(
     int N = cd.count;
     if (N <= 0) { return -1; }
 
-    double*  d_lab = nullptr;
-    float*   d_grid = nullptr;
-    std::uint8_t* d_tiny = nullptr;
-    double*  d_edge = nullptr;
-    float*   d_lbp = nullptr;
-    int*     d_use = nullptr;
+    DeviceBuffer<double> d_lab;
+    DeviceBuffer<float> d_grid;
+    DeviceBuffer<std::uint8_t> d_tiny;
+    DeviceBuffer<double> d_edge;
+    DeviceBuffer<float> d_lbp;
+    DeviceBuffer<int> d_use;
 
-#define CUDA_CHECK(call) do { \
-    cudaError_t _e = (call); \
-    if (_e != cudaSuccess) { \
-        fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, \
-                cudaGetErrorString(_e)); \
-        goto cleanup; \
-    } \
-} while(0)
+    if (!CUDA_OK(d_lab.allocate(N * 3 * sizeof(double)))) return -1;
+    if (!CUDA_OK(d_grid.allocate(N * 192 * sizeof(float)))) return -1;
+    if (!CUDA_OK(d_tiny.allocate(N * 256))) return -1;
+    if (!CUDA_OK(d_edge.allocate(N * sizeof(double)))) return -1;
+    if (!CUDA_OK(d_lbp.allocate(N * 256 * sizeof(float)))) return -1;
+    if (!CUDA_OK(d_use.allocate(N * sizeof(int)))) return -1;
 
-    CUDA_CHECK(cudaMalloc(&d_lab,  N * 3 * sizeof(double)));
-    CUDA_CHECK(cudaMalloc(&d_grid, N * 192 * sizeof(float)));
-    CUDA_CHECK(cudaMalloc(&d_tiny, N * 256));
-    CUDA_CHECK(cudaMalloc(&d_edge, N * sizeof(double)));
-    CUDA_CHECK(cudaMalloc(&d_lbp,  N * 256 * sizeof(float)));
-    CUDA_CHECK(cudaMalloc(&d_use,  N * sizeof(int)));
-
-    CUDA_CHECK(cudaMemcpy(d_lab,  cd.lab,  N * 3 * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_grid, cd.grid, N * 192 * sizeof(float), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_tiny, cd.tiny, N * 256, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_edge, cd.edge, N * sizeof(double), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_lbp,  cd.lbp,  N * 256 * sizeof(float), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_use,  cd.use,  N * sizeof(int), cudaMemcpyHostToDevice));
+    if (!CUDA_OK(cudaMemcpy(d_lab.get(), cd.lab, N * 3 * sizeof(double), cudaMemcpyHostToDevice))) return -1;
+    if (!CUDA_OK(cudaMemcpy(d_grid.get(), cd.grid, N * 192 * sizeof(float), cudaMemcpyHostToDevice))) return -1;
+    if (!CUDA_OK(cudaMemcpy(d_tiny.get(), cd.tiny, N * 256, cudaMemcpyHostToDevice))) return -1;
+    if (!CUDA_OK(cudaMemcpy(d_edge.get(), cd.edge, N * sizeof(double), cudaMemcpyHostToDevice))) return -1;
+    if (!CUDA_OK(cudaMemcpy(d_lbp.get(), cd.lbp, N * 256 * sizeof(float), cudaMemcpyHostToDevice))) return -1;
+    if (!CUDA_OK(cudaMemcpy(d_use.get(), cd.use, N * sizeof(int), cudaMemcpyHostToDevice))) return -1;
 
     // 上传 tile 特征到 GPU（kernel 只能访问 device memory）
-    float*   d_tileGrid = nullptr;
-    std::uint8_t* d_tileTiny = nullptr;
-    float*   d_tileLBP = nullptr;
+    DeviceBuffer<float> d_tileGrid;
+    DeviceBuffer<std::uint8_t> d_tileTiny;
+    DeviceBuffer<float> d_tileLBP;
 
-    CUDA_CHECK(cudaMalloc(&d_tileGrid, 192 * sizeof(float)));
-    CUDA_CHECK(cudaMalloc(&d_tileTiny, 256));
-    CUDA_CHECK(cudaMalloc(&d_tileLBP,  256 * sizeof(float)));
+    if (!CUDA_OK(d_tileGrid.allocate(192 * sizeof(float)))) return -1;
+    if (!CUDA_OK(d_tileTiny.allocate(256))) return -1;
+    if (!CUDA_OK(d_tileLBP.allocate(256 * sizeof(float)))) return -1;
 
-    CUDA_CHECK(cudaMemcpy(d_tileGrid, tileGrid, 192 * sizeof(float), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_tileTiny, tileTiny, 256, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_tileLBP,  tileLBP,  256 * sizeof(float), cudaMemcpyHostToDevice));
+    if (!CUDA_OK(cudaMemcpy(d_tileGrid.get(), tileGrid, 192 * sizeof(float), cudaMemcpyHostToDevice))) return -1;
+    if (!CUDA_OK(cudaMemcpy(d_tileTiny.get(), tileTiny, 256, cudaMemcpyHostToDevice))) return -1;
+    if (!CUDA_OK(cudaMemcpy(d_tileLBP.get(), tileLBP, 256 * sizeof(float), cudaMemcpyHostToDevice))) return -1;
 
     int bestIdx = findBestMatch(
         tL, tA, tB,
-        d_tileGrid, d_tileTiny, tileEdge, d_tileLBP,
-        d_lab, d_grid, d_tiny, d_edge, d_lbp, d_use, N,
+        d_tileGrid.get(), d_tileTiny.get(), tileEdge, d_tileLBP.get(),
+        d_lab.get(), d_grid.get(), d_tiny.get(), d_edge.get(), d_lbp.get(), d_use.get(), N,
         labW, gridW, tinyW, edgeW, lbpW, usePenalty);
-
-cleanup:
-    if (d_tileGrid) cudaFree(d_tileGrid);
-    if (d_tileTiny) cudaFree(d_tileTiny);
-    if (d_tileLBP)  cudaFree(d_tileLBP);
-    if (d_lab)  cudaFree(d_lab);
-    if (d_grid) cudaFree(d_grid);
-    if (d_tiny) cudaFree(d_tiny);
-    if (d_edge) cudaFree(d_edge);
-    if (d_lbp)  cudaFree(d_lbp);
-    if (d_use)  cudaFree(d_use);
-#undef CUDA_CHECK
 
     return bestIdx;
 }

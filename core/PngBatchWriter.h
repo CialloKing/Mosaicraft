@@ -68,7 +68,12 @@ public:
         {
             int batchH = kFlushInterval;
             if (batchH > m_h - y) batchH = m_h - y;
-            if (setjmp(png_jmpbuf(m_png))) return false;
+            if (setjmp(png_jmpbuf(m_png))) {
+                m_png = nullptr;
+                m_info = nullptr;
+                if (m_fp) { fclose(m_fp); m_fp = nullptr; }
+                return false;
+            }
             png_write_rows(m_png, &m_rows[y], batchH);
             png_write_flush(m_png);
         }
@@ -79,7 +84,11 @@ public:
         return true;
     }
 
-    ~PngBatchWriter() { if (m_png) { png_destroy_write_struct(&m_png, &m_info); fclose(m_fp); } }
+    ~PngBatchWriter()
+    {
+        if (m_png) { png_destroy_write_struct(&m_png, &m_info); }
+        if (m_fp) { fclose(m_fp); }
+    }
 
 private:
     FILE* m_fp=nullptr; png_structp m_png=nullptr; png_infop m_info=nullptr;
