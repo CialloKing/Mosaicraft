@@ -47,7 +47,7 @@ public:
     {
         if (!m_png) return false;
         if (setjmp(png_jmpbuf(m_png))) {
-            m_png = nullptr;  // libpng 错误后 struct 处于未定义状态
+            destroyAfterError();
             return false;
         }
         png_write_row(m_png, const_cast<png_bytep>(rgb));
@@ -74,6 +74,17 @@ public:
     ~PngStreamWriter() { close(); }
 
 private:
+    void destroyAfterError()
+    {
+        if (m_png)
+        {
+            png_destroy_write_struct(&m_png, &m_info);
+            m_png = nullptr;
+            m_info = nullptr;
+        }
+        if (m_fp) { fclose(m_fp); m_fp = nullptr; }
+    }
+
     FILE* m_fp = nullptr;
     png_structp m_png = nullptr;
     png_infop m_info = nullptr;

@@ -64,16 +64,14 @@ public:
         // png_write_image 一次性写入全部行无 flush，超大图(~4GB 原始数据)会导致
         // libpng 内部 ZLIB 缓冲区在写入中途耗尽内存而 longjmp，留下截断的 PNG 文件
         const int kFlushInterval = 1000;
+        if (setjmp(png_jmpbuf(m_png))) {
+            destroyAfterError();
+            return false;
+        }
         for (int y = 0; y < m_h; y += kFlushInterval)
         {
             int batchH = kFlushInterval;
             if (batchH > m_h - y) batchH = m_h - y;
-            if (setjmp(png_jmpbuf(m_png))) {
-                m_png = nullptr;
-                m_info = nullptr;
-                if (m_fp) { fclose(m_fp); m_fp = nullptr; }
-                return false;
-            }
             png_write_rows(m_png, &m_rows[y], batchH);
             png_write_flush(m_png);
         }
@@ -91,6 +89,17 @@ public:
     }
 
 private:
+    void destroyAfterError()
+    {
+        if (m_png)
+        {
+            png_destroy_write_struct(&m_png, &m_info);
+            m_png = nullptr;
+            m_info = nullptr;
+        }
+        if (m_fp) { fclose(m_fp); m_fp = nullptr; }
+    }
+
     FILE* m_fp=nullptr; png_structp m_png=nullptr; png_infop m_info=nullptr;
     int m_w, m_h;
     std::vector<uint8_t> m_image;

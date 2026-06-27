@@ -733,6 +733,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     // , , ,  图, , , , 驻 GPU, , 锟竭程诧拷锟叫硷拷,  tiny/LBP 锟侥硷拷,  , , ,
     cuda::GpuLibrary gpuLib;
+    auto releaseGpuLib = [&]() {
+        if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);
+    };
     if (cfg.useGpu && cuda::isCudaAvailable())
     {
         std::vector<double>  h_lab(dbCount * 3);
@@ -868,6 +871,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int64_t outH64 = static_cast<int64_t>(tilesY) * outTileH;
     if (outW64 > INT_MAX || outH64 > INT_MAX) {
         std::cerr << "ERROR: Output too large (" << outW64 << "x" << outH64 << ")" << std::endl;
+        releaseGpuLib();
         return false;
     }
     int outW = static_cast<int>(outW64);
@@ -876,6 +880,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // 宽高比校验：DB 特征空间 vs 输出 tile，featW/featH 从meta解析而来
     if (featH <= 0 || featW <= 0) {
         std::cerr << "ERROR: Invalid DB feature dimensions (" << featW << "x" << featH << ")" << std::endl;
+        releaseGpuLib();
         return false;
     }
     float dbAspect = static_cast<float>(featW) / featH;
@@ -899,6 +904,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     if (tilesX == 0 || tilesY == 0)
     {
         std::cerr << "ERROR: Image too small for tile size." << std::endl;
+        releaseGpuLib();
         return false;
     }
 
@@ -1687,7 +1693,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "Level 0: " << matched << " / " << totalTiles << " tiles";
             if (loadFail > 0) std::cout << "  (failed: " << loadFail << ")";
             std::cout << std::endl;
-            if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);
+            releaseGpuLib();
 
             if (cfg.deepZoom)
             {
@@ -1788,7 +1794,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
                             std::memcpy(dst, tr.data, outTileW * 3);
                         }
                     }
-                    tiff.writeRow(ty * outTileH + y, rowBuf.data());
+                    if (!tiff.writeRow(ty * outTileH + y, rowBuf.data())) {
+                        std::cerr << "\n  TIFF writeRow failed at row " << (ty * outTileH + y) << std::endl;
+                        tiff.close();
+                        releaseGpuLib();
+                        return false;
+                    }
                 }
                 if (ty % 50 == 0)
                     std::cout << "\r  streaming row " << (ty * outTileH) << "/" << outH << std::flush;
@@ -1803,6 +1814,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << ")" << std::endl;
             printBenchmark("single");
             runAnalysis(outputPath);
+            releaseGpuLib();
         return true;
         }  // if (tiff streaming)
         else if (cfg.outputFormat == "png" && !useStream)
@@ -1839,6 +1851,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
             if (!png.writeAll()) {
                 std::cerr << "\n  PNG writeAll failed" << std::endl;
+                releaseGpuLib();
                 return false;
             }
             matched = totalTiles - streamFail;
@@ -1850,6 +1863,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << ")" << std::endl;
             printBenchmark("single");
             runAnalysis(outputPath);
+            releaseGpuLib();
         return true;
         }
         else if (cfg.outputFormat == "png")
@@ -1887,6 +1901,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     }
                     if (!png.writeRow(rowBuf.data())) {
                         std::cerr << "\n  PNG writeRow failed at row " << (ty * outTileH + y) << std::endl;
+                        releaseGpuLib();
                         return false;
                     }
                 }
@@ -1902,6 +1917,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << ")" << std::endl;
             printBenchmark("single");
             runAnalysis(outputPath);
+            releaseGpuLib();
         return true;
         }
 
@@ -1939,7 +1955,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     for (int x = 0; x < outW; ++x) {
                         std::swap(rowBuf[x * 3], rowBuf[x * 3 + 2]);
                     }
-                    jpg.writeRow(rowBuf.data());
+                    if (!jpg.writeRow(rowBuf.data())) {
+                        std::cerr << "\n  JPG writeRow failed at row " << (ty * outTileH + y) << std::endl;
+                        releaseGpuLib();
+                        return false;
+                    }
                 }
                 if (ty % 10 == 0) std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
             }
@@ -1953,6 +1973,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << ")" << std::endl;
             printBenchmark("single");
             runAnalysis(outputPath);
+            releaseGpuLib();
         return true;
         }
 
@@ -2174,7 +2195,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         cv::Mat tileRow = m.row(y);
                         std::memcpy(dst, tileRow.data, outTileW * 3);
                     }
-                    tiff.writeRow(ty * outTileH + y, rowBuf.data());
+                    if (!tiff.writeRow(ty * outTileH + y, rowBuf.data()))
+                    {
+                        std::cerr << "ERROR: BigTiffWriter failed at row "
+                                  << (ty * outTileH + y) << std::endl;
+                        releaseGpuLib();
+                        return false;
+                    }
                 }
                 if (ty % 20 == 0)
                     std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
@@ -2190,6 +2217,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             if (!tiff.writeMat(output.data, static_cast<int>(output.step)))
             {
                 std::cerr << "ERROR: BigTiffWriter failed" << std::endl;
+                releaseGpuLib();
                 return false;
             }
             tiff.close();
@@ -2208,6 +2236,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         if (!imwriteUnicode(outputPath, output, writeParams))
         {
             std::cerr << "ERROR: Cannot write output: " << outputPath << std::endl;
+            releaseGpuLib();
             return false;
         }
     }
@@ -2227,7 +2256,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // , ,  ?? , , , , , ,  , ,
     runAnalysis(outPath);
 
-    if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);
+    releaseGpuLib();
 
     // , 图, 时
     msPlace = Ms(Clock::now() - tLast).count();

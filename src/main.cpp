@@ -1159,7 +1159,7 @@ static int cmdDbUsage(int argc, char* argv[])
                 return std::get<2>(a) > std::get<2>(b);
             });
 
-        std::filesystem::create_directories(exportDir);
+        std::filesystem::create_directories(u8path(exportDir));
         int exported = 0;
         for (size_t i = 0; i < allUsed.size(); ++i)
         {
@@ -1167,13 +1167,14 @@ static int cmdDbUsage(int argc, char* argv[])
             auto it = pathMap.find(id);
             if (it == pathMap.end()) continue;
             std::string srcPath = it->second;
-            if (!std::filesystem::exists(srcPath)) continue;
+            if (!std::filesystem::exists(u8path(srcPath))) continue;
             auto dotPos = srcPath.find_last_of('.');
             std::string ext = (dotPos != std::string::npos) ? srcPath.substr(dotPos) : "";
-            char fname[512];
-            snprintf(fname, sizeof(fname), "%s/rank%04zu_%druns_%dtiles_id%d%s",
-                     exportDir.c_str(), i+1, runs, tiles, id, ext.c_str());
-            std::filesystem::copy_file(srcPath, fname,
+            char fileName[512];
+            snprintf(fileName, sizeof(fileName), "rank%04zu_%druns_%dtiles_id%d%s",
+                     i+1, runs, tiles, id, ext.c_str());
+            auto dstPath = u8path(exportDir) / u8path(fileName);
+            std::filesystem::copy_file(u8path(srcPath), dstPath,
                 std::filesystem::copy_options::overwrite_existing);
             exported++;
         }

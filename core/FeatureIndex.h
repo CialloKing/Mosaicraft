@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <queue>
 #include <unordered_map>
 #include <vector>
 
@@ -140,9 +141,18 @@ public:
     std::vector<int> query(const float* tileVec, int k)
     {
         std::vector<int> result;
-        if (!m_index) return result;
+        if (!m_index || !tileVec || k <= 0 || m_count <= 0) return result;
+        k = std::min(k, m_count);
 
-        auto pq = m_index->searchKnn(tileVec, k);
+        std::priority_queue<std::pair<float, hnswlib::labeltype>> pq;
+        try
+        {
+            pq = m_index->searchKnn(tileVec, static_cast<size_t>(k));
+        }
+        catch (...)
+        {
+            return result;
+        }
         while (!pq.empty())
         {
             result.push_back(static_cast<int>(pq.top().second));

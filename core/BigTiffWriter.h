@@ -83,6 +83,7 @@ public:
     // 逐行写入（输入为 OpenCV BGR，逐行 cvtColor→RGB 后写 TIFF）
     bool writeMat(const uint8_t* data, int step)
     {
+        if (!m_tif || !data) return false;
         for (int y = 0; y < m_h; ++y)
         {
             cv::Mat rowBGR(1, m_w, CV_8UC3,
@@ -101,6 +102,7 @@ public:
     // 逐行写入 BGR→RGB（流式用，无需完整 cv::Mat）
     bool writeRow(int y, const uint8_t* bgrRow)
     {
+        if (!m_tif || !bgrRow || y < 0 || y >= m_h) return false;
         cv::Mat rowRGB;
         cv::Mat rowBGR(1, m_w, CV_8UC3, const_cast<uint8_t*>(bgrRow));
         cv::cvtColor(rowBGR, rowRGB, cv::COLOR_BGR2RGB);
