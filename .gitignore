@@ -23,6 +23,8 @@ normalized_*/
 *.ann
 test_photos/
 batch_tmp/
+output/
+*_analysis/
 
 # IDE
 .vs/
