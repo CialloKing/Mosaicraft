@@ -13,6 +13,7 @@
 #include "../core/ApiRequestParser.h"
 #include "../core/FeatureUtils.h"
 #include "../core/JobManager.h"
+#include "../core/LegacyRun.h"
 #include "../core/Version.h"
 #include <vector>
 #include <cmath>
@@ -369,6 +370,22 @@ TEST_CASE("API request parser applies database and inspect requests")
         error));
     CHECK(inspect.imagePath == "target.jpg");
     CHECK(inspect.dbPath == "library.db");
+}
+
+TEST_CASE("Legacy run command validation is shared")
+{
+    auto valid = validateLegacyRunCommand("mosaicraft db-health -d library.db");
+    CHECK(valid.ok);
+    CHECK(valid.commandName == "db-health");
+    CHECK(valid.subCommand == "db-health -d library.db");
+
+    auto injected = validateLegacyRunCommand("mosaicraft mosaic\nrm -rf home");
+    CHECK_FALSE(injected.ok);
+    CHECK(injected.error == "ERROR: invalid characters in command");
+
+    auto unknown = validateLegacyRunCommand("mosaicraft shell");
+    CHECK_FALSE(unknown.ok);
+    CHECK(unknown.error == "ERROR: unknown command: shell");
 }
 
 TEST_CASE("JobManager can cancel queued jobs and clear finished jobs")

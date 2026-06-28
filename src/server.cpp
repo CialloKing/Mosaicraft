@@ -7,6 +7,7 @@
 #include "core/JobManager.h"
 #include "core/json.hpp"
 #include "core/InspectService.h"
+#include "core/LegacyRun.h"
 #include "core/MosaicService.h"
 #include <algorithm>
 #include <chrono>
@@ -524,41 +525,12 @@ int main(int argc, char* argv[])
             return;
         }
 
-        std::string cmd = req.body;
-        if (cmd.empty()) {
-            res.set_content("ERROR: empty command", "text/plain");
+        auto validation = mosaicraft::validateLegacyRunCommand(req.body);
+        if (!validation.ok) {
+            res.set_content(validation.error, "text/plain");
             return;
         }
-        // Reject shell metacharacters and control characters.
-        const std::string forbidden = "&|;$`(){}<>";
-        bool hasControlChar = false;
-        for (unsigned char ch : cmd) {
-            if (ch < 0x20 || ch == 0x7f) {
-                hasControlChar = true;
-                break;
-            }
-        }
-        if (cmd.find_first_of(forbidden) != std::string::npos || hasControlChar) {
-            res.set_content("ERROR: invalid characters in command", "text/plain");
-            return;
-        }
-        // Only allow known mosaicraft subcommands.
-        const std::string prefix = "mosaicraft ";
-        if (cmd.compare(0, prefix.size(), prefix) != 0) {
-            res.set_content("ERROR: command must start with 'mosaicraft'", "text/plain");
-            return;
-        }
-        std::string subCmd = cmd.substr(prefix.size());
-        // Extract the subcommand name before the first space.
-        auto spacePos = subCmd.find(' ');
-        std::string cmdName = (spacePos != std::string::npos) ? subCmd.substr(0, spacePos) : subCmd;
-        const std::string validCmds[] = {"build","mosaic","inspect","db-stats","db-purge","db-usage","db-health"};
-        bool valid = false;
-        for (const auto& vc : validCmds) { if (cmdName == vc) { valid = true; break; } }
-        if (!valid) {
-            res.set_content("ERROR: unknown command: " + cmdName, "text/plain");
-            return;
-        }
+        const std::string& subCmd = validation.subCommand;
 
         // Use CreateProcess on Windows to preserve Unicode paths.
         std::string output;

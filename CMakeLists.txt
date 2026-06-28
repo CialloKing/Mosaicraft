@@ -104,6 +104,7 @@ add_library(mosaicraft_core STATIC
     core/FeatureExtractor.cpp
     core/InspectService.cpp
     core/JobManager.cpp
+    core/LegacyRun.cpp
     core/MosaicEngine.cpp
     core/MosaicService.cpp
 )
