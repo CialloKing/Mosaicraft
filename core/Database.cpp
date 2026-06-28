@@ -590,7 +590,7 @@ void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
         }
     }
     // 更新 target_runs
-    if (!targetHash.empty()) {
+    if (!targetHash.empty() && m_db) {
         if (isNewTarget) {
             const char* insSql = "INSERT INTO target_runs (target_hash, first_path, run_count, last_used) "
                                  "VALUES (?, ?, 1, datetime('now'))";
@@ -636,6 +636,7 @@ void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
 std::vector<std::tuple<int, int, int>> Database::topUsedImages(int limit)
 {
     std::vector<std::tuple<int, int, int>> result;
+    if (!m_db) return result;
     initUsageStats();
     // 使用 exec 回调模式
     std::string sql = "SELECT image_id, total_runs, total_tiles FROM usage_stats "
