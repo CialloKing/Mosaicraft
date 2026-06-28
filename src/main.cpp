@@ -1,5 +1,6 @@
 ﻿#include "core/Database.h"
 #include "core/BuildService.h"
+#include "core/DatabaseService.h"
 #include "core/FeatureUtils.h"
 #include "core/MosaicEngine.h"
 #include "core/MosaicService.h"
@@ -597,86 +598,50 @@ static int cmdDbStats(int argc, char* argv[])
             dbPath = argv[++i];
     }
 
-    Database db(resolveDbPath(dbPath));
-    if (!db.isOpen())
+    DatabaseService service;
+    auto result = service.stats({dbPath});
+    if (!result.status.ok)
     {
-        std::cerr << "ERROR: Cannot open database: " << dbPath << std::endl;
-        return EXIT_ERR_DB;
+        std::cerr << "ERROR: " << result.status.message << std::endl;
+        return result.status.exitCode;
     }
 
-    auto all = db.allRecords();
-    int total = static_cast<int>(all.size());
-    if (total == 0)
+    const auto& stats = result.stats;
+    int total = stats.total;
+    if (stats.empty)
     {
         std::cout << "Database is empty." << std::endl;
         return 0;
     }
 
-    std::string fw = db.getMeta("feature_w");
-    std::string fh = db.getMeta("feature_h");
-    if (!fw.empty() && !fh.empty())
-        std::cout << "Normalized size: " << fw << "x" << fh << std::endl;
-
-    // LAB 分布
-    double minL=255, maxL=0, sumL=0, sumA=0, sumB=0;
-    double minA=255, maxA=0, minB=255, maxB=0;
-    for (const auto& r : all)
-    {
-        if (r.avgL < minL) minL = r.avgL; if (r.avgL > maxL) maxL = r.avgL;
-        if (r.avgA < minA) minA = r.avgA; if (r.avgA > maxA) maxA = r.avgA;
-        if (r.avgB < minB) minB = r.avgB; if (r.avgB > maxB) maxB = r.avgB;
-        sumL += r.avgL; sumA += r.avgA; sumB += r.avgB;
-    }
-
-    // �??��分布
-    int dark=0, mid=0, bright=0;
-    for (const auto& r : all)
-    {
-        if (r.avgL < 30) dark++;
-        else if (r.avgL < 70) mid++;
-        else bright++;
-    }
-
-    // Grid 维度
-    int gridDim = all[0].grid4x4.size();
+    if (!stats.featureWidth.empty() && !stats.featureHeight.empty())
+        std::cout << "Normalized size: " << stats.featureWidth << "x" << stats.featureHeight << std::endl;
 
     std::cout << "=== Database Statistics ===\n";
     std::cout << "  Images: " << total << "\n";
-    std::cout << "  Grid dim: " << gridDim << " (" << (gridDim/3) << " cells)\n";
-    std::cout << "  LAB: L[" << std::fixed << std::setprecision(1) << minL
-              << "," << maxL << "] avg=" << (sumL/total)
-              << "  A[" << minA << "," << maxA << "] avg=" << (sumA/total)
-              << "  B[" << minB << "," << maxB << "] avg=" << (sumB/total) << "\n";
-    std::cout << "  Brightness: dark=" << dark << " (" << (100.0*dark/total)
-              << "%) mid=" << mid << " (" << (100.0*mid/total)
-              << "%) bright=" << bright << " (" << (100.0*bright/total) << "%)\n";
+    std::cout << "  Grid dim: " << stats.gridDim << " (" << (stats.gridDim/3) << " cells)\n";
+    std::cout << "  LAB: L[" << std::fixed << std::setprecision(1) << stats.minL
+              << "," << stats.maxL << "] avg=" << stats.avgL
+              << "  A[" << stats.minA << "," << stats.maxA << "] avg=" << stats.avgA
+              << "  B[" << stats.minB << "," << stats.maxB << "] avg=" << stats.avgB << "\n";
+    std::cout << "  Brightness: dark=" << stats.dark << " (" << (100.0*stats.dark/total)
+              << "%) mid=" << stats.mid << " (" << (100.0*stats.mid/total)
+              << "%) bright=" << stats.bright << " (" << (100.0*stats.bright/total) << "%)\n";
 
-    // �??��直方�?(8 bins: 0-32, 32-64, 64-96, 96-128, 128-160, 160-192, 192-224, 224-256)
-    int hist[8] = {0};
-    for (const auto& r : all)
-    {
-        int b = static_cast<int>(r.avgL) / 32;
-        if (b < 0) b = 0; if (b > 7) b = 7;
-        hist[b]++;
-    }
     std::cout << "  L-histogram:\n";
-    for (int i = 0; i < 8; ++i)
+    for (const auto& bin : stats.lHistogram)
     {
-        int lo = i * 32, hi = (i == 7) ? 255 : (i + 1) * 32 - 1;
-        std::string bar(hist[i] * 50 / total, '#');
-        std::cout << "    " << std::setw(3) << lo << "-" << std::setw(3) << hi
-                  << " | " << bar << " " << hist[i] << "\n";
+        std::string bar(bin.count * 50 / total, '#');
+        std::cout << "    " << std::setw(3) << bin.lo << "-" << std::setw(3) << bin.hi
+                  << " | " << bar << " " << bin.count << "\n";
     }
 
-    // 覆盖缺口分析（基于已有统计量�?
     std::cout << "  Coverage gaps:";
-    int gaps = 0;
-    if (dark + mid < total / 100)   { std::cout << " dark(" << (dark+mid) << ")"; gaps++; }
-    if (minA > 110.0)               { std::cout << " green-biased"; gaps++; }
-    if (maxA < 145.0)               { std::cout << " red-deficient"; gaps++; }
-    if (minB > 110.0)               { std::cout << " blue-biased"; gaps++; }
-    if (maxB < 145.0)               { std::cout << " yellow-deficient"; gaps++; }
-    if (gaps == 0)                  { std::cout << " none significant"; }
+    if (stats.coverageGaps.empty()) {
+        std::cout << " none significant";
+    } else {
+        for (const auto& gap : stats.coverageGaps) std::cout << " " << gap;
+    }
     std::cout << "\n";
 
     return 0;
@@ -875,81 +840,66 @@ static int cmdDbHealth(int argc, char* argv[])
         if ((std::string(argv[i]) == "-d" || std::string(argv[i]) == "--db") && i + 1 < argc)
             dbPath = argv[++i];
 
-    Database db(resolveDbPath(dbPath));
-    if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return EXIT_ERR_DB; }
+    DatabaseService service;
+    auto result = service.health({dbPath});
+    if (!result.status.ok)
+    {
+        std::cerr << "ERROR: " << result.status.message << std::endl;
+        return result.status.exitCode;
+    }
 
-    auto all = db.allRecords();
-    int total = static_cast<int>(all.size());
-    if (total == 0) { std::cout << "Database is empty.\n"; return 0; }
+    const auto& health = result.health;
+    int total = health.total;
+    if (health.empty) { std::cout << "Database is empty.\n"; return 0; }
 
     std::cout << "=== Database Health ===\n\n";
     std::cout << "Images: " << total << "\n";
 
-    // ������ ���ȸ��� ������
-    int dark = 0, mid = 0, bright = 0;
-    for (const auto& r : all) {
-        if (r.avgL < 50) dark++;
-        else if (r.avgL < 150) mid++;
-        else bright++;
-    }
-    double dPct = 100.0 * dark / total, mPct = 100.0 * mid / total, bPct = 100.0 * bright / total;
-
     std::cout << "\n--- Brightness Coverage ---\n";
-    std::cout << "  Dark  (<50L):  " << std::fixed << std::setprecision(1) << dPct << "% (" << dark << ")\n";
-    std::cout << "  Mid   (50-150L): " << mPct << "% (" << mid << ")\n";
-    std::cout << "  Bright(>150L): " << bPct << "% (" << bright << ")\n";
-    if (dPct < 5.0)  std::cout << "  WARN: Dark images severely underrepresented\n";
-    if (mPct < 15.0) std::cout << "  WARN: Mid-tone images underrepresented\n";
-
-    // ������ ɫ�򸲸� ������
-    double minA = 255, maxA = 0, minB = 255, maxB = 0;
-    for (const auto& r : all) {
-        if (r.avgA < minA) minA = r.avgA; if (r.avgA > maxA) maxA = r.avgA;
-        if (r.avgB < minB) minB = r.avgB; if (r.avgB > maxB) maxB = r.avgB;
+    std::cout << "  Dark  (<50L):  " << std::fixed << std::setprecision(1) << health.darkPct << "% (" << health.dark << ")\n";
+    std::cout << "  Mid   (50-150L): " << health.midPct << "% (" << health.mid << ")\n";
+    std::cout << "  Bright(>150L): " << health.brightPct << "% (" << health.bright << ")\n";
+    for (const auto& warning : health.warnings)
+    {
+        if (warning.find("Dark") != std::string::npos || warning.find("Mid") != std::string::npos)
+            std::cout << "  WARN: " << warning << "\n";
     }
-    std::cout << "\n--- Color Gamut ---\n";
-    std::cout << "  A (green-red): " << std::setprecision(0) << minA << "-" << maxA << "\n";
-    std::cout << "  B (blue-yellow): " << std::setprecision(0) << minB << "-" << maxB << "\n";
-    if (minA > 115) std::cout << "  WARN: Lacking green-toned images\n";
-    if (maxA < 140) std::cout << "  WARN: Lacking red/warm-toned images\n";
-    if (minB > 115) std::cout << "  WARN: Lacking blue/cool-toned images\n";
-    if (maxB < 140) std::cout << "  WARN: Lacking yellow-toned images\n";
 
-    // ������ ʹ��ͳ�� ������
-    auto used = db.topUsedImages(999999);
-    int usedCount = static_cast<int>(used.size());
-    int unusedCount = total - usedCount;
+    std::cout << "\n--- Color Gamut ---\n";
+    std::cout << "  A (green-red): " << std::setprecision(0) << health.minA << "-" << health.maxA << "\n";
+    std::cout << "  B (blue-yellow): " << std::setprecision(0) << health.minB << "-" << health.maxB << "\n";
+    for (const auto& warning : health.warnings)
+    {
+        if (warning.find("Lacking") != std::string::npos)
+            std::cout << "  WARN: " << warning << "\n";
+    }
 
     std::cout << "\n--- Usage ---\n";
-    std::cout << "  Used:   " << usedCount << " (" << std::setprecision(1) << (100.0*usedCount/total) << "%)\n";
-    std::cout << "  Unused: " << unusedCount << " (" << (100.0*unusedCount/total) << "%)\n";
-    if (unusedCount > total / 2)
-        std::cout << "  WARN: >50% images never used - consider pruning\n";
-
-    // ������ �ȵ㼯�ж� ������
-    if (!used.empty()) {
-        int64_t totalTiles = 0;
-        for (const auto& [id, runs, tiles] : used) totalTiles += tiles;
-        int top1pct = std::max(1, usedCount / 100);
-        int64_t top1Tiles = 0;
-        for (int i = 0; i < top1pct && i < usedCount; ++i)
-            top1Tiles += std::get<2>(used[i]);
-        std::cout << "\n--- Hotspot Concentration ---\n";
-        std::cout << "  Top 1% (" << top1pct << " images): " << std::setprecision(1)
-                  << (100.0*top1Tiles/totalTiles) << "% of all tiles\n";
-        if (100.0*top1Tiles/totalTiles > 20.0)
-            std::cout << "  WARN: Small subset dominates matching\n";
+    std::cout << "  Used:   " << health.usedCount << " (" << std::setprecision(1) << health.usedPct << "%)\n";
+    std::cout << "  Unused: " << health.unusedCount << " (" << health.unusedPct << "%)\n";
+    for (const auto& warning : health.warnings)
+    {
+        if (warning.find("never used") != std::string::npos)
+            std::cout << "  WARN: " << warning << "\n";
     }
 
-    // ������ ���� ������
+    if (health.topHotspotCount > 0) {
+        std::cout << "\n--- Hotspot Concentration ---\n";
+        std::cout << "  Top 1% (" << health.topHotspotCount << " images): " << std::setprecision(1)
+                  << health.topHotspotTilePct << "% of all tiles\n";
+        for (const auto& warning : health.warnings)
+        {
+            if (warning.find("dominates") != std::string::npos)
+                std::cout << "  WARN: " << warning << "\n";
+        }
+    }
+
     std::cout << "\n--- Recommendations ---\n";
-    int recs = 0;
-    if (dPct < 5.0)  { std::cout << "  + Add night / indoor / low-light photos\n"; recs++; }
-    if (mPct < 15.0) { std::cout << "  + Add overcast / shadow / twilight scenes\n"; recs++; }
-    if (minA > 115 || maxA < 140) { std::cout << "  + Diversify green-red color range\n"; recs++; }
-    if (minB > 115 || maxB < 140) { std::cout << "  + Diversify blue-yellow color range\n"; recs++; }
-    if (unusedCount > total / 2) { std::cout << "  + Run db-usage to identify dead weight\n"; recs++; }
-    if (recs == 0) std::cout << "  Database looks well-balanced!\n";
+    if (health.recommendations.empty()) {
+        std::cout << "  Database looks well-balanced!\n";
+    } else {
+        for (const auto& rec : health.recommendations) std::cout << "  + " << rec << "\n";
+    }
 
     return 0;
 }

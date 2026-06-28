@@ -395,6 +395,26 @@ async function runCommand() {
       await pollJob(data.job.id, status);
       return;
     }
+    if (tab === 'dbstats') {
+      const data = await postJson('/api/db/stats', { dbPath: val('s-db') });
+      if (!data.ok) {
+        status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
+        if (data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+        return;
+      }
+      status.innerHTML = '<span style="color:#7ee787">✅ Done</span>' + renderDbStats(data.stats);
+      return;
+    }
+    if (tab === 'dbhealth') {
+      const data = await postJson('/api/db/health', { dbPath: val('h-db') });
+      if (!data.ok) {
+        status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
+        if (data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+        return;
+      }
+      status.innerHTML = '<span style="color:#7ee787">✅ Done</span>' + renderDbHealth(data.health);
+      return;
+    }
 
     const res = await fetch(SERVER_URL + '/api/run', { method: 'POST', body: cmd });
     const text = await res.text();
@@ -409,6 +429,15 @@ async function runCommand() {
   } catch(e) {
     status.innerHTML = '<span style="color:#f78166">⚠ 请求失败</span> — 请确认 Web UI 服务器已启动';
   }
+}
+
+async function postJson(path, payload) {
+  const res = await fetch(SERVER_URL + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return await res.json();
 }
 
 async function pollJob(jobId, status) {
@@ -438,6 +467,38 @@ async function pollJob(jobId, status) {
       return;
     }
   }
+}
+
+function renderDbStats(stats) {
+  if (!stats || stats.empty) return '<br><span style="font-size:0.76rem">数据库为空</span>';
+  const brightness = stats.brightness || {};
+  const lab = stats.lab || {};
+  const gaps = (stats.coverageGaps || []).length ? stats.coverageGaps.join(', ') : 'none significant';
+  return '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:260px;overflow:auto">' +
+    'Images: ' + escapeHtml(stats.total) + '\n' +
+    'Normalized: ' + escapeHtml(stats.featureWidth || '?') + 'x' + escapeHtml(stats.featureHeight || '?') + '\n' +
+    'Grid dim: ' + escapeHtml(stats.gridDim) + '\n' +
+    'LAB L: ' + Number(lab.minL || 0).toFixed(1) + '-' + Number(lab.maxL || 0).toFixed(1) + ' avg=' + Number(lab.avgL || 0).toFixed(1) + '\n' +
+    'Brightness: dark=' + escapeHtml(brightness.dark || 0) + ' mid=' + escapeHtml(brightness.mid || 0) + ' bright=' + escapeHtml(brightness.bright || 0) + '\n' +
+    'Coverage gaps: ' + escapeHtml(gaps) +
+    '</pre>';
+}
+
+function renderDbHealth(health) {
+  if (!health || health.empty) return '<br><span style="font-size:0.76rem">数据库为空</span>';
+  const b = health.brightness || {};
+  const u = health.usage || {};
+  const hotspot = health.hotspot || {};
+  const warnings = (health.warnings || []).length ? health.warnings.join('\nWARN: ') : 'none';
+  const recs = (health.recommendations || []).length ? health.recommendations.join('\n+ ') : 'Database looks well-balanced!';
+  return '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:260px;overflow:auto">' +
+    'Images: ' + escapeHtml(health.total) + '\n' +
+    'Brightness: dark=' + Number(b.darkPct || 0).toFixed(1) + '% mid=' + Number(b.midPct || 0).toFixed(1) + '% bright=' + Number(b.brightPct || 0).toFixed(1) + '%\n' +
+    'Usage: used=' + escapeHtml(u.usedCount || 0) + ' unused=' + escapeHtml(u.unusedCount || 0) + '\n' +
+    'Top hotspot: ' + Number(hotspot.topHotspotTilePct || 0).toFixed(1) + '% of tiles\n' +
+    'WARN: ' + escapeHtml(warnings) + '\n' +
+    '+ ' + escapeHtml(recs) +
+    '</pre>';
 }
 
 function setIfValue(payload, key, id, mapper) {

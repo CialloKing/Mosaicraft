@@ -97,6 +97,7 @@ add_library(mosaicraft_core STATIC
     core/BatchProcessor.cpp
     core/BuildService.cpp
     core/Database.cpp
+    core/DatabaseService.cpp
     core/FeatureExtractor.cpp
     core/JobManager.cpp
     core/MosaicEngine.cpp

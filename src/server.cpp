@@ -1,6 +1,7 @@
 // Mosaicraft Web UI — 本地 HTTP 服务器
 // 提供命令生成页面 + 结构化 API，兼容旧的 mosaicraft.exe 命令入口
 #include "core/httplib.h"
+#include "core/DatabaseService.h"
 #include "core/JobManager.h"
 #include "core/json.hpp"
 #include "core/MosaicService.h"
@@ -62,6 +63,55 @@ static json jobToJson(const mosaicraft::JobSnapshot& job)
         {"createdAt", toUnixSeconds(job.createdAt)},
         {"startedAt", toUnixSeconds(job.startedAt)},
         {"finishedAt", toUnixSeconds(job.finishedAt)}
+    };
+}
+
+static json statsToJson(const mosaicraft::DatabaseStats& stats)
+{
+    json histogram = json::array();
+    for (const auto& bin : stats.lHistogram) {
+        histogram.push_back({{"lo", bin.lo}, {"hi", bin.hi}, {"count", bin.count}});
+    }
+    return {
+        {"empty", stats.empty},
+        {"total", stats.total},
+        {"featureWidth", stats.featureWidth},
+        {"featureHeight", stats.featureHeight},
+        {"gridDim", stats.gridDim},
+        {"lab", {
+            {"minL", stats.minL}, {"maxL", stats.maxL}, {"avgL", stats.avgL},
+            {"minA", stats.minA}, {"maxA", stats.maxA}, {"avgA", stats.avgA},
+            {"minB", stats.minB}, {"maxB", stats.maxB}, {"avgB", stats.avgB}
+        }},
+        {"brightness", {{"dark", stats.dark}, {"mid", stats.mid}, {"bright", stats.bright}}},
+        {"lHistogram", histogram},
+        {"coverageGaps", stats.coverageGaps}
+    };
+}
+
+static json healthToJson(const mosaicraft::DatabaseHealth& health)
+{
+    return {
+        {"empty", health.empty},
+        {"total", health.total},
+        {"brightness", {
+            {"dark", health.dark}, {"mid", health.mid}, {"bright", health.bright},
+            {"darkPct", health.darkPct}, {"midPct", health.midPct}, {"brightPct", health.brightPct}
+        }},
+        {"colorGamut", {
+            {"minA", health.minA}, {"maxA", health.maxA},
+            {"minB", health.minB}, {"maxB", health.maxB}
+        }},
+        {"usage", {
+            {"usedCount", health.usedCount}, {"unusedCount", health.unusedCount},
+            {"usedPct", health.usedPct}, {"unusedPct", health.unusedPct}
+        }},
+        {"hotspot", {
+            {"topHotspotCount", health.topHotspotCount},
+            {"topHotspotTilePct", health.topHotspotTilePct}
+        }},
+        {"warnings", health.warnings},
+        {"recommendations", health.recommendations}
     };
 }
 
@@ -304,6 +354,26 @@ static bool buildBuildRequest(const std::string& body,
     return true;
 }
 
+static mosaicraft::DatabaseRequest buildDatabaseRequest(const httplib::Request& req)
+{
+    mosaicraft::DatabaseRequest request;
+    if (req.has_param("db")) {
+        request.dbPath = req.get_param_value("db");
+    }
+    if (!req.body.empty()) {
+        try {
+            json body = json::parse(req.body);
+            std::string text;
+            std::string error;
+            if (body.is_object() && getStringField(body, {"dbPath", "db"}, text, error)) {
+                request.dbPath = text;
+            }
+        } catch (...) {
+        }
+    }
+    return request;
+}
+
 } // namespace
 
 #ifdef _WIN32
@@ -529,6 +599,33 @@ int main(int argc, char* argv[])
         }
         setJsonBody(res, json{{"ok", true}, {"job", jobToJson(snapshot)}});
     });
+
+    auto handleDbStats = [&](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::DatabaseService service;
+        auto result = service.stats(buildDatabaseRequest(req));
+        if (!result.status.ok) {
+            res.status = 500;
+            setJsonResult(res, result.status);
+            return;
+        }
+        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"stats", statsToJson(result.stats)}});
+    };
+
+    auto handleDbHealth = [&](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::DatabaseService service;
+        auto result = service.health(buildDatabaseRequest(req));
+        if (!result.status.ok) {
+            res.status = 500;
+            setJsonResult(res, result.status);
+            return;
+        }
+        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"health", healthToJson(result.health)}});
+    };
+
+    svr.Get("/api/db/stats", handleDbStats);
+    svr.Post("/api/db/stats", handleDbStats);
+    svr.Get("/api/db/health", handleDbHealth);
+    svr.Post("/api/db/health", handleDbHealth);
 
     // 执行命令
     svr.Post("/api/run", [&](const httplib::Request& req, httplib::Response& res) {
