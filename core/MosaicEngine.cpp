@@ -88,12 +88,12 @@ private:
 };
 
 // ============================================================
-// 锟街诧拷, 色校, , , 锟轿??拷, , 投, , , 龋, , , , , , 馗, 锟?
-// ,  HSV 锟秸硷拷, , 锟紿 通, , 锟戒，S/V 通, ,  [1-strength, 1+strength] , 围, , , , 锟?
+// 锟�1�7诧拷, 色校, , , 锟轿??�? , �? , , �? , , , , , �? �?
+// ,  HSV 锟秸硷拷, , 锟紿 �? , 锟戒，S/V �? ,  [1-strength, 1+strength] , �? , , , �?
 // ============================================================
-// 锟街诧拷, 色微, , ,  LAB 锟秸硷拷锟轿??拷锟?L, , 锟饺ｏ拷通,
-// LAB , 知, 锟饺ｏ拷, ,  L , ,  AB ,  , 色, 锟戒、, 摩, ,
-// L , 围, [-strength, +strength] 偏, , , , 浒碉拷锟街??拷锟?
+// 锟�1�7诧拷, 色微, , ,  LAB 锟秸硷拷锟轿??拷锟?L, , 锟饺ｏ拷�?
+// LAB , �? 锟饺ｏ拷, ,  L , ,  AB ,  , �? 锟戒�? �? ,
+// L , �? [-strength, +strength] �? , , , 浒�1�7拷锟�??拷锟?
 static void adjustColor(cv::Mat& img, double strength)
 {
     cv::Mat lab;
@@ -101,7 +101,7 @@ static void adjustColor(cv::Mat& img, double strength)
     std::vector<cv::Mat> channels(3);
     cv::split(lab, channels);
     // channels[0]=L, [1]=A, [2]=B
-    // L , 锟接ｏ拷[-s, +s] 偏, , , , , 锟饺ｏ拷锟竭程帮拷全, thread_local , , , 妫?
+    // L , 锟接ｏ拷[-s, +s] �? , , , , 锟饺ｏ拷锟�1�7程帮拷全, thread_local , , , �?
     thread_local std::mt19937 rng(std::random_device{}());
     double lFactor = 1.0 + ((rng() % 1001 - 300) / 1000.0) * strength;
     channels[0] = channels[0] * lFactor;
@@ -593,22 +593,22 @@ bool MosaicEngine::generate(const std::string& targetPath,
                              const std::string& outputPath,
                              const Config& config)
 {
-    // , , 时, 锟?CUDA, ,  GPU , 默锟剿伙拷
+    // , , �? �?CUDA, ,  GPU , 默锟剿伙�?
     Config cfg = config;
     if (cfg.useGpu && !cuda::isCudaAvailable())
     {
         cfg.useGpu = false;
     }
 
-    // Benchmark , 时
+    // Benchmark , �?
     using Clock = std::chrono::steady_clock;
     using Ms = std::chrono::duration<double, std::milli>;
     auto tStart = Clock::now();
     auto tLast  = tStart;
     double msFeat = 0, msANNBuild = 0, msGPUScore = 0, msSelect = 0, msPlace = 0;
-    double msPrep = 0;  // DB, ,  + GPU library, , , , GPU路, ,
+    double msPrep = 0;  // DB, ,  + GPU library, , , , GPU�? ,
 
-    // , , , 取, , ,  profile, , 锟诫精锟饺碉拷原, 锟桔硷拷, ,
+    // , , , �? , ,  profile, , 锟�1�7精锟饺�1�7拷原, 锟�1�7硷拷, ,
     std::atomic<int64_t> opResizeNs{0};
     std::atomic<int64_t> opLabNs{0};
     std::atomic<int64_t> opGridNs{0};
@@ -631,10 +631,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
         return false;
     }
 
-    // , , 目, 图, 锟捷癸拷希, , 锟截诧拷, , , , 锟节革拷, 去锟截ｏ拷
+    // , , �? �? 锟捷癸拷�? , 锟截诧拷, , , , 锟节革拷, 去锟戄1�7���?
     std::string targetHash;
     {
-        // 每 100 , 锟截诧拷,  1 , , , 锟饺?10000 , ,  ,  3 通,  ,  30KB
+        // �?100 , 锟截诧拷,  1 , , , 锟饺?10000 , ,  ,  3 �?  ,  30KB
         int64_t totalPixels = static_cast<int64_t>(target.rows) * target.cols;
         int step = std::max(1LL, totalPixels / 10000);
         uint64_t h = 0x9e3779b97f4a7c15ULL;
@@ -649,7 +649,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         targetHash = ss.str();
     }
 
-    // 指, , , 叽锟绞憋拷, , , 锟侥匡拷锟酵硷拷, , 谋锟?tile , , , , 锟?tile 始, 原, 锟街憋拷锟绞ｏ拷
+    // �? , , 叽锟绞憋�? , , 锟侥匡拷锟酵硷拷, , 谋锟?tile , , , , �?tile �? �? 锟�1�7憋拷锟绞ｏ拷
     if (cfg.outW > 0 && cfg.outH > 0)
     {
         cv::Mat resized;
@@ -658,7 +658,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << "Target resized to: " << cfg.outW << "x" << cfg.outH << std::endl;
     }
 
-    // --upscale, 锟脚达拷原图, 取, ,  tile, 同, , 直, 剩, , , 芏龋锟?
+    // --upscale, 锟脚达拷原图, �? ,  tile, �? , �? �? , , 芏龋�?
     if (cfg.upscale > 1)
     {
         cv::Mat up;
@@ -684,7 +684,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
     std::cout << "Database: " << dbCount << " images" << std::endl;
 
-    // Read feature resolution from DB meta (required; old DBs must be rebuilt) , 锟捷旧库）
+    // Read feature resolution from DB meta (required; old DBs must be rebuilt) , 锟捷旧库�?
     std::string fw = db.getMeta("feature_w");
     std::string fh = db.getMeta("feature_h");
     if (fw.empty() || fh.empty())
@@ -701,10 +701,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int featBytes = featPixels * 3;
     std::cout << "  (feature space: " << featW << "x" << featH << ")" << std::endl;
 
-    // 鑷??姩鎺ㄥ??杈撳嚭 tile锛氭í骞?鈫?320脳180锛岀珫骞?鏂瑰舰 鈫?180脳320
+    // �??姩鎺�??杈撳�?tile锛氭í�?�?320�?80锛岀珄1�7��?鏂瑰�?�?180�?20
     if (cfg.nativeTileW == 180 && cfg.nativeTileH == 320)
     {
-        if (featW > featH)  // 妯??箙
+        if (featW > featH)  // �??�?
         {
             cfg.nativeTileW = 320;
             cfg.nativeTileH = 180;
@@ -713,12 +713,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
 
 
-    // , 取, , 目录, ,  FeaturePack / ANN 锟街久伙拷使锟矫ｏ拷
+    // , �? , 盄1�7��, ,  FeaturePack / ANN 锟�1�7久伙拷使锟矫ｏ拷
     std::string featDirCache;
-    auto allRecords = db.allRecords();  // 全, 锟铰硷拷, 锟?GPU 路, 锟叫帮拷, , 取
+    auto allRecords = db.allRecords();  // �? 锟铰硷拷, �?GPU �? 锟叫帄1�7��, , �?
     dbCount = static_cast<int>(allRecords.size());
 
-    // , , , , 录, 取, , 目录
+    // , , , , �? �? , 盄1�7��
     if (!allRecords.empty() && !allRecords[0].tinyPath.empty())
     {
         std::string firstTiny = allRecords[0].tinyPath;
@@ -731,7 +731,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             featDirCache = firstTiny.substr(0, dirEnd);
     }
 
-    // , , ,  图, , , , 驻 GPU, , 锟竭程诧拷锟叫硷拷,  tiny/LBP 锟侥硷拷,  , , ,
+    // , , ,  �? , , , �?GPU, , 锟�1�7程�1�7拷锟叄1�7���?  tiny/LBP 锟侥硷拷,  , , ,
     cuda::GpuLibrary gpuLib;
     auto releaseGpuLib = [&]() {
         if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);
@@ -745,7 +745,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::vector<float>   h_lbp(dbCount * 256);
         std::vector<int>     h_use(dbCount);
 
-        // , , , , , , , , 锟?I/O, , 锟竭程硷拷锟缴ｏ拷
+        // , , , , , , , , �?I/O, , 锟�1�7程硷拷锟缴ｏ�?
         for (int i = 0; i < dbCount; ++i)
         {
             const auto& rec = allRecords[i];
@@ -757,7 +757,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
 
         // , 锟皆硷拷锟截讹拷, , , , , 锟芥（tiny.bin + lbp.bin,
-        // , , , 效时,  2 ,  fread , 锟?50K , 锟侥硷拷 I/O
+        // , , , 效时,  2 ,  fread , �?50K , 锟侥硷拷 I/O
         bool cacheLoaded = false;
         if (!allRecords.empty() && !allRecords[0].tinyPath.empty())
         {
@@ -770,16 +770,16 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
         if (!cacheLoaded)
         {
-            // , 锟芥不, 锟节伙拷失效 ,  , 锟剿碉拷, 锟竭筹拷, 锟侥硷拷, 取
+            // , 锟芥�? 锟节伙拷失效 ,  , 锟剿碉拷, 锟�1�7筹拷, 锟侥硷拷, �?
             std::cout << "  (feature cache miss, reading individual files)" << std::endl;
             int nUploadThreads = std::thread::hardware_concurrency();
             if (nUploadThreads < 2) nUploadThreads = 2;
-            if (nUploadThreads > 16) nUploadThreads = 16;  // , ,  I/O 锟竭程癸拷锟洁反, 锟剿伙拷
+            if (nUploadThreads > 16) nUploadThreads = 16;  // , ,  I/O 锟�1�7程癸拷锟洁反, 锟剿伙拷
             std::vector<std::thread> uploadWorkers;
             for (int t = 0; t < nUploadThreads; ++t)
             {
                 uploadWorkers.emplace_back([&, t]() {
-                    FeatureCache cache;  // 每, 锟竭程讹拷, , 锟芥，, , , 锟?
+                    FeatureCache cache;  // �? 锟�1�7程�1�7�? , 锟芥�? , , �?
                     for (int i = t; i < dbCount; i += nUploadThreads)
                     {
                         const auto& rec = allRecords[i];
@@ -798,7 +798,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
             for (auto& w : uploadWorkers) w.join();
 
-            // , , , 桑锟剿筹拷, , , , , 苹, 妫??拷麓, , , , , 锟叫ｏ拷
+            // , , , 桑锟剿�1�7�? , , , , �? �??拷麓, , , , , 锟叫ｏ拷
             if (!featDirCache.empty())
                 FeaturePack::buildCache(featDirCache, allRecords);
         }
@@ -815,12 +815,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
     }
 
-    // , , 取, ,  tile, , 缘, , , 洳谷?
+    // , , �? ,  tile, , �? , , 洳谷?
     int tilesX = (target.cols + cfg.tileW - 1) / cfg.tileW;
     int tilesY = (target.rows + cfg.tileH - 1) / cfg.tileH;
 
     // Read feature resolution from DB meta (required; old DBs must be rebuilt),
-    // , 图模式锟铰筹拷 65500px , 锟?
+    // , 图模式锟铰�1�7�?65500px , �?
     int outTileW = cfg.nativeTileW;
     int outTileH = cfg.nativeTileH;
     const int MAX_DIM = 65500;
@@ -829,7 +829,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     {
         if (cfg.outputFormat == "jpg" && cfg.formatExplicit)
         {
-            // , 式指,  jpg , ,  ,  锟饺憋拷, , , 锟?tile , , 全, 围
+            // , 式指,  jpg , ,  ,  锟饺憋拷, , , �?tile , , �? �?
             double scaleW = (tilesX * outTileW > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesX * outTileW) : 1.0;
             double scaleH = (tilesY * outTileH > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesY * outTileH) : 1.0;
             double scale = std::min(scaleW, scaleH);
@@ -840,19 +840,19 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         else if (cfg.outputFormat == "jpg")
         {
-            // 未, 式指, , 式, 默,  jpg , ,  ,  锟皆讹拷,  tiff
+            // �? 式指, , �? �?  jpg , ,  ,  锟皆讹拷,  tiff
             cfg.outputFormat = "tiff";
             std::cout << "  (auto-switched to TIFF: output exceeds JPEG 65500px limit)" << std::endl;
         }
         else if (cfg.outputFormat != "tiff" && cfg.outputFormat != "webp")
         {
-            // , , , 式, ,  ,  锟皆讹拷,  tiled
+            // , , , �? ,  ,  锟皆讹拷,  tiled
             cfg.tiledOutput = true;
             std::cout << "  (auto-switched to tiled: output exceeds 65500px encoder limit)" << std::endl;
         }
     }
 
-    // WebP , ,  16383px ,  锟饺憋拷, 锟脚ｏ拷, , 式 JPG 锟竭硷拷一,
+    // WebP , ,  16383px ,  锟饺憋拷, 锟脚ｏ拷, , �?JPG 锟�1�7硷拷丢�,
     const int WEBP_MAX = 16383;
     if (!cfg.tiledOutput && cfg.outputFormat == "webp"
         && (tilesX * outTileW > WEBP_MAX || tilesY * outTileH > WEBP_MAX))
@@ -866,7 +866,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                   << " to fit WebP 16383px limit)" << std::endl;
     }
 
-    // 溢出检查：大型马赛克可能超过 int32 范围
+    // 溢出棢�查：大型驄1�7��克可能超�?int32 范围
     int64_t outW64 = static_cast<int64_t>(tilesX) * outTileW;
     int64_t outH64 = static_cast<int64_t>(tilesY) * outTileH;
     if (outW64 > INT_MAX || outH64 > INT_MAX) {
@@ -892,7 +892,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                   << "). Output may be distorted." << std::endl;
     }
 
-    // , 缘, 全, , 目,  tile 锟竭达拷,  pad, , , , 锟?tile 锟竭寸）
+    // , �? �? , �?  tile 锟�1�7达拷,  pad, , , , �?tile 锟�1�7寸）
     int padRight  = tilesX * cfg.tileW - target.cols;
     int padBottom = tilesY * cfg.tileH - target.rows;
     if (padRight > 0 || padBottom > 0)
@@ -924,23 +924,23 @@ bool MosaicEngine::generate(const std::string& targetPath,
               << " out=" << outRatio << " (diff=" << std::abs(srcRatio - outRatio) << ")"
               << std::endl;
 
-    // , , ,  , 锟竭筹拷预, , , ,  tile , ,  , , ,
+    // , , ,  , 锟�1�7筹拷�? , , ,  tile , ,  , , ,
     int totalTiles = tilesX * tilesY;
 
-    // --analyze: 匹, , , , , , , , ,
+    // --analyze: �? , , , , , , , ,
     std::vector<double> analyzeScores;
     std::vector<int>    analyzeImageIds;
     std::vector<double> analyzeLabD, analyzeGridD, analyzeEdgeD;
     std::vector<double> analyzeGaps;      // winner-runnerUp , , ,
-    std::vector<int>    analyzeRanks;     // winner 锟节猴拷选, , 锟叫碉拷位, (1-based)
-    std::vector<int>    analyzeAnnRanks;  // winner ,  ANN Top200 锟叫碉拷位, (0=, , )
+    std::vector<int>    analyzeRanks;     // winner 锟节猴拷�? , 锟叫碉拷�? (1-based)
+    std::vector<int>    analyzeAnnRanks;  // winner ,  ANN Top200 锟叫碉拷�? (0=, , )
     std::vector<int>    analyzeCat;       // 0=Smooth, 1=Edge, 2=Texture, 3=Normal
-    double analyzeGridCellSum[64] = {0};   // 每,  cell 锟侥撅拷, 锟桔计ｏ拷, 锟节癸拷锟阶凤拷, ,
+    double analyzeGridCellSum[64] = {0};   // �?  cell 锟侥撅拷, 锟�1�7计ｏ�? 锟节癸拷锟阶凤拷, ,
     FeatureCache analysisFeatureCache;
 
-    int N = cfg.candidates;  // , 选, , GPU 路, , , ,  benchmark,
+    int N = cfg.candidates;  // , �? , GPU �? , , ,  benchmark,
 
-    // Benchmark , ,  lambda, 锟节斤拷, 时, 锟矫ｏ拷, , ,  totalTiles/N 之, 锟藉）
+    // Benchmark , ,  lambda, 锟节斤拷, �? 锟矫ｏ拷, , ,  totalTiles/N �? 锟藉�?
     auto printBenchmark = [&](const char* label) {
         if (!cfg.benchmark) return;
         double msTotal = Ms(Clock::now() - tStart).count();
@@ -995,12 +995,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int nThreads = std::thread::hardware_concurrency();
     if (nThreads < 2) nThreads = 2;
 
-    // 准, 锟阶段硷拷时, DB, 锟截★拷GPU library, , , 锟剿斤拷,
+    // �? 锟阶段硷拷时, DB, 锟截★拷GPU library, , , 锟剿斤拷,
     auto tPreFeat = Clock::now();
     msPrep = Ms(tPreFeat - tLast).count();
     tLast = tPreFeat;
 
-    // Phase 0: , , , 取, GPU , , , 锟劫ｏ拷CPU , 锟剿ｏ拷
+    // Phase 0: , , , �? GPU , , , 锟劫ｏ拷CPU , 锟剿ｏ拷
     if (cfg.useGpu)
     {
         const int BATCH = 256;
@@ -1016,7 +1016,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         {
             int batchN = BATCH;
 
-            // CPU resize: tile ,  featW, featH, , 锟竭程ｏ拷
+            // CPU resize: tile ,  featW, featH, , 锟�1�7程ｏ�?
             #pragma omp parallel for
             for (int i = 0; i < batchN; ++i)
             {
@@ -1028,14 +1028,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 std::memcpy(&batchFeat[i * featBytes], roiFeat.data, featBytes);
             }
 
-            // GPU , , , 取, ,
+            // GPU , , , �? ,
             int ret = mosaicraft::cuda::extractFeaturesRaw(
                 batchFeat.data(), batchN, featW, featH,
                 batchLAB.data(), batchGrid.data(), batchTiny.data(),
                 batchEdgeArr.data(), batchLBP.data());
             if (ret < 0) { cfg.useGpu = false; break; }
 
-            // 锟截讹拷, 锟?
+            // 锟截讹拷, �?
             for (int i = 0; i < batchN; ++i)
             {
                 int ti = batchStart + i;
@@ -1054,7 +1054,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << " | ETA " << static_cast<int>(eta) << "s" << std::flush;
         }
 
-        // 剩锟洁不,  256 , 尾,
+        // 剩锟洁不,  256 , �?
         if (batchStart < totalTiles)
         {
             int tailN = totalTiles - batchStart;
@@ -1104,7 +1104,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
     }
 
-    if (!cfg.useGpu)  // CPU , 锟剿ｏ拷, ,  16 锟竭筹拷, 取,
+    if (!cfg.useGpu)  // CPU , 锟剿ｏ拷, ,  16 锟�1�7筹拷, �?
     {
         std::atomic<int> featDone{0};
         std::vector<std::thread> featWorkers;
@@ -1153,7 +1153,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     double smoothSum = 0, edgeSum = 0, textureSum = 0, normalSum = 0;
     int cntLBP  = 0, cntMissLBP  = 0;
 
-    // , 锟津窗匡拷锟皆讹拷, , 锟劫革拷,  2 ,  tile, , 直, 锟津）猴拷默,  300, 水平, ,
+    // , 锟津窗匡拷锟皆�1�7�? , 锟劫革拷,  2 ,  tile, , �? 锟津）猴拷默,  300, 水平, ,
     auto autoNeighborWindow = [&]() {
         int base = std::max(300, tilesX * 2);
         int dynamic = static_cast<int>(std::sqrt(static_cast<double>(allRecords.size())) * 1.5);
@@ -1163,24 +1163,24 @@ bool MosaicEngine::generate(const std::string& targetPath,
     if (cfg.neighborWindow <= 0)
     {
         // , , , , ,  2 ,  tile
-        // , 态, , , 小, , , , O(, N), , , 飧诧拷歉, , 选
+        // , �? , , �? , , , O(, N), , , 飧�1�7拷歉, , �?
         int dynamic = static_cast<int>(std::sqrt(static_cast<double>(allRecords.size())) * 1.5);
         cfg.neighborWindow = autoNeighborWindow();
         // 46K, 323, 200K, 400(cap), sweep: 300-400, ,
     }
 
-    // , , , ,  + 频锟绞硷拷, , , , , , , 锟矫碉拷, 止, ,
+    // , , , ,  + 频锟绞硷�? , , , , , , 锟矫碉拷, �? ,
     std::deque<int> recentIds;
     std::unordered_map<int, int> freqInWindow;
-    // 强锟狡硷拷, 同一图片, 锟劫硷拷锟?minGap ,  tile , , 锟劫达拷使,
-    const int MIN_GAP = std::max(50, tilesX);  // , , 一,
-    std::unordered_map<int, int> lastUsedAt;   // imageId ,  , 锟绞癸拷玫锟?tile , 锟?
-    std::deque<std::vector<float>> recentGrids;  // , 锟酵硷拷锟解（, , , , 锟?00, ,
-    constexpr double GRID_DUP_THRESHOLD = 0.010;  // , 锟较格：革拷小锟侥撅拷锟诫即, 为锟截革拷
-    constexpr double GRID_DUP_PENALTY = 200.0;     // , 锟酵硷拷胤, , 锟叫??癸拷锟?00,
-    constexpr int GRID_DUP_WINDOW = 50;            // 锟教讹拷, 锟节ｏ拷, , , 锟脚ｏ拷, , 一, ,  tile , , ,
+    // 强锟狡硷�? 同一图片, 锟劫硷拷�?minGap ,  tile , , 锟劫达拷�?
+    const int MIN_GAP = std::max(50, tilesX);  // , , 丢�,
+    std::unordered_map<int, int> lastUsedAt;   // imageId ,  , 锟绞癸拷玄1�7��?tile , �?
+    std::deque<std::vector<float>> recentGrids;  // , 锟酵硷拷锟解�? , , , �?00, ,
+    constexpr double GRID_DUP_THRESHOLD = 0.010;  // , 锟较格：革拷小锟侥撅拷锟评1�7��, 为锟戄1�7���?
+    constexpr double GRID_DUP_PENALTY = 200.0;     // , 锟酵硷拷�? , 锟叫??癸拷�?00,
+    constexpr int GRID_DUP_WINDOW = 50;            // 锟教讹拷, 锟节ｏ拷, , , 锟脚ｏ拷, , 丢�, ,  tile , , ,
 
-    // 权锟截癸拷一, , , ,  tile , 锟矫ｏ拷
+    // 权锟戄1�7��拷一, , , ,  tile , 锟矫ｏ拷
     double wSum = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight;
     if (cfg.edgeWeight > 0) wSum += cfg.edgeWeight;
     if (cfg.lbpWeight > 0)  wSum += cfg.lbpWeight;
@@ -1191,11 +1191,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
     double nLbpW  = cfg.lbpWeight / wSum;
     N = cfg.candidates;
 
-    // 每,  tile , , 选锟叫的硷拷录, GPU 路, 预锟芥，CPU 路, , , , , 锟?
+    // �?  tile , , 选锟叄1�7��硷拷�? GPU �? 预锟芥，CPU �? , , , , �?
     std::vector<ImageRecord> bestRecords(totalTiles);
     std::vector<int> bestLibIdx(totalTiles, -1);
 
-    // , 图, 锟绞憋拷拇锟?Mat, 锟街匡拷模式, , 要, , , 锟节达拷锟皆憋拷, 支使锟矫ｏ拷
+    // , �? 锟绞憋拷拇锟?Mat, 锟�1�7匡拷模式, , �? , , 锟节达拷锟皆憋拷, 攄1�7��锟矫ｏ拷
     cv::Mat output;
 
     auto runAnalysis = [&](const std::string& analysisOutputPath) {
@@ -1212,11 +1212,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
     if (cfg.useGpu && gpuLib.count > 0)
     {
         // 锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋
-        // GPU , , , 水锟竭ｏ拷SQLite 预,  ,  一,  GPU ,  顺, 选,  ,  , 锟竭筹拷, 图
+        // GPU , , , 水锟竄1�7��拷SQLite �?  ,  丢�,  GPU ,  �? �?  ,  , 锟�1�7筹拷, �?
         // 锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋
 
-        // , ,  Phase A: ANN , , , , , , 锟?, ,
-        // , 锟饺硷拷锟截持久伙拷, , , build 时, 锟芥）, , , , 锟津构斤拷, , ,
+        // , ,  Phase A: ANN , , , , , , �?, ,
+        // , 锟饺硷拷锟截持久伙拷, , , build �? 锟芥�? , , , 锟津构斤�? , ,
         FeatureIndex annIndex;
         std::string annPath = featDirCache.empty() ? "lib.ann"
                              : (featDirCache + "/lib.ann");
@@ -1263,12 +1263,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         std::cout << " done" << std::endl;
 
-        // Phase A , 时, ANN , ,  + , 询,
+        // Phase A , �? ANN , ,  + , �?
         auto tANN = Clock::now();
         msANNBuild = Ms(tANN - tLast).count();
         tLast = tANN;
 
-        // , ,  Phase B: , 平,  tile , , , GPU , 要, , 锟节存布锟街ｏ拷 , ,
+        // , ,  Phase B: , �?  tile , , , GPU , �? , 锟节存布锟�1�7ｏ拷 , ,
         std::vector<float>   flatGrid(totalTiles * 192);
         std::vector<uint8_t> flatTiny(totalTiles * 256);
         std::vector<float>   flatLBP(totalTiles * 256);
@@ -1280,7 +1280,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
 
         // , ,  Phase C: , ,  GPU , ,  , ,
-        // , , 应权锟截ｏ拷, ,  tile , , 选, , , 预锟借（实, 选,  --adaptive-weights,
+        // , , 应权锟截ｏ拷, ,  tile , , �? , , 预锟借（�? �?  --adaptive-weights,
         std::vector<double> tileLabW(totalTiles, nLabW);
         std::vector<double> tileGridW(totalTiles, nGridW);
         std::vector<double> tileTinyW(totalTiles, nTinyW);
@@ -1308,7 +1308,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
                 if (e < 0.005 && lVar < 100.0)
                 {
-                    // Smooth: ,  LAB , 色, , ,  Grid, , 战, , 锟揭??拷占锟结构,
+                    // Smooth: ,  LAB , �? , ,  Grid, , �? , 锟揭??拷占锟结�?
                     tileLabW[ti] = 0.25;
                     tileGridW[ti] = 0.45;
                     tileTinyW[ti] = 0.20;
@@ -1318,7 +1318,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
                 else if (e > 0.01)
                 {
-                    // Edge-heavy: , , 锟结构 > , 色, , 值 0.01 , ,  9, 16 小 ROI,
+                    // Edge-heavy: , , 锟结�?> , �? , �?0.01 , ,  9, 16 �?ROI,
                     tileLabW[ti] = 0.15;
                     tileGridW[ti] = 0.40;
                     tileTinyW[ti] = 0.25;
@@ -1328,7 +1328,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
                 else if (lbpEnt > 3.0)
                 {
-                    // Texture-heavy: , ,  > , 色
+                    // Texture-heavy: , ,  > , �?
                     tileLabW[ti] = 0.15;
                     tileGridW[ti] = 0.40;
                     tileTinyW[ti] = 0.20;
@@ -1346,7 +1346,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << "  GPU scoring " << totalTiles << " x " << N;
         if (cfg.adaptiveWeights)
         {
-            // 锟秸硷拷锟街诧拷统, , 校准, 值
+            // 锟秸硷拷锟�1�7诧拷�? , 校准, �?
             std::vector<double> edgeVals(totalTiles), lbpVals(totalTiles);
             for (int ti = 0; ti < totalTiles; ++ti)
             {
@@ -1384,19 +1384,19 @@ bool MosaicEngine::generate(const std::string& targetPath,
             allScores.data());
         std::cout << " done" << std::endl;
 
-        // Phase C , 时
+        // Phase C , �?
         auto tGPU = Clock::now();
         msGPUScore = Ms(tGPU - tLast).count();
         tLast = tGPU;
 
-        // , ,  Phase D: 顺, 选,  + , , 去,  , ,
-        // 8, 8 vs 4, 4 锟皆比ｏ拷,  --analyze 时, ,
+        // , ,  Phase D: �? �?  + , , �?  , ,
+        // 8, 8 vs 4, 4 锟皆比ｏ�?  --analyze �? ,
         std::vector<std::vector<float>> libGrid4x4, tileGrid4x4;
         if (cfg.analyze)
         {
             libGrid4x4.resize(dbCount);
             tileGrid4x4.resize(totalTiles);
-            // 预, , 锟酵?4, 4
+            // �? , 锟酵?4, 4
         for (int i = 0; i < dbCount; ++i)
         {
             const auto& g8 = allRecords[i].grid4x4;
@@ -1416,7 +1416,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
             }
         }
-        // 预, ,  tile 4, 4
+        // �? ,  tile 4, 4
         for (int ti = 0; ti < totalTiles; ++ti)
         {
             const auto& g8 = allGrid[ti];
@@ -1436,7 +1436,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
             }
         }
-        } // if (cfg.analyze) ,  预, , , 锟?
+        } // if (cfg.analyze) ,  �? , , �?
 
         int grid4Top1 = 0, grid8Top1 = 0, top1Differ = 0;
 
@@ -1454,12 +1454,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
 
         std::cout << "  selecting best..." << std::flush;
-        int noCandidateCount = 0;  // , 希锟酵筹拷, 藓锟窖★拷锟?tile
+        int noCandidateCount = 0;  // , 希锟酵�1�7�? 藓锟窖★拷锟?tile
         for (int ti = 0; ti < totalTiles; ++ti)
         {
             double* scores = &allScores[ti * N];
             const int* indices = &allIndices[ti * N];
-            // 统, , 效, 选, , 锟脚筹拷 -1 , 洌?
+            // �? , �? �? , 锟脚筹拷 -1 , �?
             int validCount = 0;
             for (int j = 0; j < N; ++j)
                 if (indices[j] >= 0) validCount++;
@@ -1468,7 +1468,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 noCandidateCount++;
                 continue;
             }
-            // 频锟绞分硷拷锟酵凤拷, 1, 锟结罚(, , , 锟?, 2, 锟叫凤拷, 3+, 锟截凤拷(, , , )
+            // 频锟绞分硷拷锟酵凤拷, 1, 锟结�?, , , �?, 2, 锟叫凤拷, 3+, 锟截凤拷(, , , )
             for (int j = 0; j < N; ++j)
             {
                 int libIdx = indices[j];
@@ -1479,13 +1479,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 if (cnt >= 3)      { scores[j] += cfg.neighborPenalty; }
                 else if (cnt == 2) { scores[j] += cfg.neighborPenalty * 0.4; }
                 else if (cnt == 1) { scores[j] += cfg.neighborPenalty * 0.1; }
-                // 强锟狡硷拷, 同一图片,  MIN_GAP , 锟截革拷 ,  ,  500, 远, , 锟酵硷拷头, 锟?
+                // 强锟狡硷�? 同一图片,  MIN_GAP , 锟截革拷 ,  ,  500, �? , 锟酵硷拷�? �?
                 auto gapIt = lastUsedAt.find(imgId);
                 if (gapIt != lastUsedAt.end() && (ti - gapIt->second) < MIN_GAP)
                 {
                     scores[j] += 500.0;
                 }
-                // , 锟酵硷拷锟解：, 选, , 锟?tile ,  Grid , 位 ,  锟接凤拷
+                // , 锟酵硷拷锟解�? �? , �?tile ,  Grid , �?,  锟接凤拷
                 const auto& candGrid = allRecords[indices[j]].grid4x4;
                 for (const auto& rg : recentGrids)
                 {
@@ -1496,8 +1496,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     }
                 }
             }
-            // Top-N , 锟窖★拷锟絫opN , , , , 效, 选, ,
-            // , ,  8, 8 vs , , , 4, 4 锟皆比ｏ拷,  --analyze,  , ,
+            // Top-N , 锟窖★拷锟絫opN , , , , �? �? ,
+            // , ,  8, 8 vs , , , 4, 4 锟皆比ｏ�?  --analyze,  , ,
             if (cfg.analyze && validCount > 0)
             {
                 double best4 = 1e30, best8 = 1e30;
@@ -1505,7 +1505,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 for (int j = 0; j < N; ++j)
                 {
                     if (indices[j] < 0) continue;
-                    // GPU scores 锟窖猴拷 8, 8 grid, 4, 4 , ,  = , 去 8, 8 , ,  + 4, 4 , ,
+                    // GPU scores 锟窖猴拷 8, 8 grid, 4, 4 , ,  = , �?8, 8 , ,  + 4, 4 , ,
                     double grid8d = gridDistance8x8(allGrid[ti], allRecords[indices[j]].grid4x4);
                     double grid4d = gridDistance(tileGrid4x4[ti], libGrid4x4[indices[j]]);
                     double score4 = scores[j] - nGridW * grid8d + nGridW * grid4d;
@@ -1523,12 +1523,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
             int topN = std::min(cfg.topNrandom, std::min(N, validCount));
             std::partial_sort(idxs.begin(), idxs.begin() + topN, idxs.end(),
                 [&](int a, int b) { return scores[a] < scores[b]; });
-            int rankPos = rand() % topN;       // 选, 位,  0-based, ,  rank-1
+            int rankPos = rand() % topN;       // �? �?  0-based, ,  rank-1
             int pick = idxs[rankPos];
             int chosenLibIdx = indices[pick];
             bestLibIdx[ti] = chosenLibIdx;
             bestRecords[ti] = allRecords[chosenLibIdx];
-            // --analyze: , 录选,  tile , , , , 锟诫（, , , , 头, , 锟狡ワ拷, , , 锟?
+            // --analyze: , 录��?  tile , , , , 锟�1�7�? , , , �? , 锟狡ツ1�7��, , , �?
             if (cfg.analyze)
             {
                 const auto& rec = allRecords[chosenLibIdx];
@@ -1548,20 +1548,20 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 analyzeGridD.push_back(gridD);
                 analyzeEdgeD.push_back(edgeD);
 
-                // Top-K Gap: winner vs true best, , 锟酵凤拷, 原始, , 锟筋）
+                // Top-K Gap: winner vs true best, , 锟酵凤拷, 原�1�7, , 锟筋�?
                 double winnerScore = scores[pick];
                 double gap = 0.0;
                 if (validCount >= 2)
                 {
                     if (rankPos == 0)  // winner , , ,
                         gap = scores[idxs[1]] - winnerScore;
-                    else               // , , 未, 选,
+                    else               // , , �? �?
                         gap = winnerScore - scores[idxs[0]];
                 }
                 analyzeGaps.push_back(gap);
                 analyzeRanks.push_back(rankPos + 1);  // 1-based rank in sorted Top-N
 
-                // ANN rank: winner ,  ANN , 询, , 械锟轿伙拷锟?(0=, , )
+                // ANN rank: winner ,  ANN , �? , 械锟轿伙拷锟?(0=, , )
                 int annRank = -1;
                 for (int j = 0; j < N; ++j)
                 {
@@ -1569,7 +1569,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
                 analyzeAnnRanks.push_back(annRank);
 
-                // , 锟洁：, , , 应权, , 同, 统, ,
+                // , 锟洁�? , , 应权, , �? �? ,
                 int cat = 3;  // Normal
                 if (allEdge[ti] < 0.005)
                 {
@@ -1595,7 +1595,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
                 analyzeCat.push_back(cat);
 
-                // Grid 8, 8 每 cell , 锟阶ｏ拷锟桔硷拷选锟叫对碉拷 cell LAB , ,
+                // Grid 8, 8 �?cell , 锟阶ｏ拷锟�1�7硷拷选锟叄1�7�1�7碉拷 cell LAB , ,
                 for (int ci = 0; ci < 64; ++ci)
                 {
                     int off = ci * 3;
@@ -1605,11 +1605,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     analyzeGridCellSum[ci] += std::sqrt(dl*dl + da*da + db*db);
                 }
             }
-            // 维, , , , 锟节猴拷频锟绞硷拷,
+            // �? , , , 锟节猴拷频锟绞硷�?
             int chosenId = bestRecords[ti].id;
             recentIds.push_back(chosenId);
             freqInWindow[chosenId]++;
-            lastUsedAt[chosenId] = ti;       // , 录, 锟绞癸拷锟轿伙拷锟?
+            lastUsedAt[chosenId] = ti;       // , �? 锟绞癸拷锟轿伙拷�?
             recentGrids.push_back(allRecords[chosenLibIdx].grid4x4);
             while (static_cast<int>(recentGrids.size()) > GRID_DUP_WINDOW)
                 recentGrids.pop_front();
@@ -1625,7 +1625,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         cntEdge = totalTiles; cntLBP  = totalTiles;
         if (noCandidateCount > 0)
             std::cout << " (" << noCandidateCount << " tiles had no candidates!)";
-        // 8, 8 Grid 锟皆憋拷统,
+        // 8, 8 Grid 锟皆憋拷�?
         if (totalTiles > 0)
         {
             int validTiles = totalTiles - noCandidateCount;
@@ -1639,18 +1639,18 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         std::cout << " done" << std::endl;
 
-        // Phase D , 时
+        // Phase D , �?
         auto tSelect = Clock::now();
         msSelect = Ms(tSelect - tLast).count();
         tLast = tSelect;
 
-        // , ,  Phase E: , 图 , ,
+        // , ,  Phase E: , �?, ,
         int nThreads = std::thread::hardware_concurrency();
         if (nThreads < 2) nThreads = 2;
 
         if (cfg.tiledOutput)
         {
-            // 锟街匡拷, , 锟矫?tile , , 锟侥硷拷, 锟睫尺达拷, 锟狡ｏ拷, , 锟?Mat
+            // 锟�1�7匡拷, , 锟矫?tile , , 锟侥硷拷, 锟睫尺达�? 锟狡ｏ拷, , �?Mat
             std::error_code ec;
             std::string level0Dir = outputPath + "_files/0";
             std::filesystem::create_directories(level0Dir, ec);
@@ -1659,7 +1659,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::atomic<int> tileDone{0};
             std::atomic<int> tileFail{0};
             std::vector<std::thread> tileWorkers;
-            ImageCache imgCache;  // 锟竭程帮拷全, ,
+            ImageCache imgCache;  // 锟�1�7程帮拷全, ,
             for (int t = 0; t < nThreads; ++t) {
                 tileWorkers.emplace_back([&, t]() {
                     using Ns = std::chrono::nanoseconds;
@@ -1676,7 +1676,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         auto t1 = Clock::now();
                         opPlaceDecodeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
                         if (cfg.colorAdjust) { adjustColor(r, cfg.colorStrength); }
-                        // DZI , 式: {name}_files/{level}/{col}_{row}.jpg
+                        // DZI , �? {name}_files/{level}/{col}_{row}.jpg
                         snprintf(fname, sizeof(fname), "%s/%d_%d.jpg",
                                  level0Dir.c_str(), tx, ty);
                         imwriteUnicode(fname, r, {cv::IMWRITE_JPEG_QUALITY, cfg.jpegQuality});
@@ -1702,21 +1702,21 @@ bool MosaicEngine::generate(const std::string& targetPath,
                                              tilesX, tilesY, cfg.jpegQuality);
             }
 
-            // , 图, 时
+            // , �? �?
             msPlace = Ms(Clock::now() - tLast).count();
             printBenchmark("tiled");
             runAnalysis(outputPath);
         return true;
         }
 
-        // , 图, 锟?
+        // , �? �?
         int64_t rawBytes = static_cast<int64_t>(outW) * outH * 3;
 
-        // --- 统一写, 模式, 锟竭ｏ拷,  PNG/TIFF , 效, JPG ,  stream , 式, , , ---
-        // auto, PNG/TIFF , 锟捷匡拷, 锟节达拷 ,  batch/stream, JPG 默, 全,
-        // stream, 强, , 式, , 写锟教ｏ拷, 锟节存）
-        // batch, 强, 全, , , 锟揭伙拷锟叫达拷锟?
-        bool useStream = false;   // true=, 式, false=全,
+        // --- 统一�? 模式, 锟�1�7ｏ拷,  PNG/TIFF , �? JPG ,  stream , �? , , ---
+        // auto, PNG/TIFF , 锟捷匡拷, 锟节达拷 ,  batch/stream, JPG �? �?
+        // stream, �? , �? , 写锟教ｏ�? 锟节存）
+        // batch, �? �? , , 锟揭伙拷锟叫达拷�?
+        bool useStream = false;   // true=, �? false=�?
         bool isHeavyFormat = (cfg.outputFormat == "png" || cfg.outputFormat == "tiff" || cfg.outputFormat == "jpg");
         bool isJpg = (cfg.outputFormat == "jpg");
         if (isHeavyFormat && rawBytes > 500LL * 1024 * 1024)
@@ -1731,9 +1731,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
             else if (isJpg)
             {
-                useStream = false;  // JPG 默, 全, , , 锟皆讹拷锟叫伙拷
+                useStream = false;  // JPG �? �? , , 锟皆讹拷锟叫伙拷
             }
-            else // auto, PNG/TIFF , 锟捷匡拷, 锟节达拷锟皆讹拷选,
+            else // auto, PNG/TIFF , 锟捷匡拷, 锟节达拷锟皆讹拷�?
             {
 #ifdef _WIN32
                 MEMORYSTATUSEX mem = { sizeof(mem) };
@@ -1746,14 +1746,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
 #endif
             }
         }
-        // else: <500MB , 锟?PNG/TIFF ,  锟竭憋拷准路,
+        // else: <500MB , �?PNG/TIFF ,  锟�1�7憋拷准路,
 
         if (isHeavyFormat && useStream)
             std::cout << "  (streaming mode ,  low memory)" << std::endl;
         else if (isHeavyFormat && rawBytes > 500LL * 1024 * 1024)
             std::cout << "  (batch mode ,  full buffer " << (rawBytes / 1024 / 1024) << " MB)" << std::endl;
 
-        // --- , 式 TIFF ---
+        // --- , �?TIFF ---
         if (isHeavyFormat && useStream && cfg.outputFormat == "tiff") {
             BigTiffWriter tiff(outputPath, outW, outH, true);
             std::vector<uint8_t> rowBuf(outW * 3);
@@ -1761,7 +1761,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             int nLoaders = std::min(8, static_cast<int>(std::thread::hardware_concurrency()));
             for (int ty = 0; ty < tilesY; ++ty)
             {
-                // , 锟竭筹拷预, , , , ,  tile
+                // , 锟�1�7筹拷�? , , , ,  tile
                 std::vector<cv::Mat> tileRowImgs(tilesX);
                 {
                     std::atomic<int> nextTx{0};
@@ -1775,11 +1775,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
                                 cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
                                 if (!m.empty())
                                     cv::resize(m, tileRowImgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                                if (!m.empty() && cfg.colorAdjust) adjustColor(tileRowImgs[tx], cfg.colorStrength);
                             }
                         });
                     for (auto& w : loaders) w.join();
                 }
-                // , , , , 写,
+                // , , , , �?
                 for (int tx = 0; tx < tilesX; ++tx)
                     if (tileRowImgs[tx].empty()) streamFail++;
                 for (int y = 0; y < outTileH; ++y)
@@ -1819,7 +1820,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }  // if (tiff streaming)
         else if (cfg.outputFormat == "png" && !useStream)
         {
-            // PNG batch 模式, 全, , 锟藉，一, 写,
+            // PNG batch 模式, �? , 锟藉，一, �?
             std::cout << "  (batch mode ,  full buffer " << (rawBytes / 1024 / 1024) << " MB)" << std::endl;
             mosaicraft::PngBatchWriter png(outputPath, outW, outH, cfg.pngCompressionLevel);
             std::vector<cv::Mat> imgs(tilesX);
@@ -1831,7 +1832,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       for (int tx = nx++; tx < tilesX; tx = nx++) {
                           int ti = ty * tilesX + tx; if (ti >= totalTiles) { imgs[tx] = cv::Mat(); continue; }
                           cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                          if (m.empty()) { imgs[tx] = cv::Mat(); continue; } cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                          if (m.empty()) { imgs[tx] = cv::Mat(); continue; } cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA); if (cfg.colorAdjust) adjustColor(imgs[tx], cfg.colorStrength);
                       }});
                   for (auto& w : ld) w.join(); }
                 for (int tx = 0; tx < tilesX; ++tx)
@@ -1881,7 +1882,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       for (int tx = nx++; tx < tilesX; tx = nx++) {
                           int ti = ty * tilesX + tx; if (ti >= totalTiles) { imgs[tx] = cv::Mat(); continue; }
                           cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                          if (m.empty()) { imgs[tx] = cv::Mat(); continue; } cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                          if (m.empty()) { imgs[tx] = cv::Mat(); continue; } cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA); if (cfg.colorAdjust) adjustColor(imgs[tx], cfg.colorStrength);
                       }});
                   for (auto& w : ld) w.join(); }
                 for (int tx = 0; tx < tilesX; ++tx)
@@ -1921,7 +1922,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         return true;
         }
 
-        // --- , 式 JPG ---
+        // --- , �?JPG ---
         if (isHeavyFormat && useStream && cfg.outputFormat == "jpg")
         {
             std::cout << "  (streaming mode ,  JPG low memory)" << std::endl;
@@ -1936,7 +1937,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       for (int tx = nx++; tx < tilesX; tx = nx++) {
                           int ti = ty * tilesX + tx; if (ti >= totalTiles) { imgs[tx] = cv::Mat(); continue; }
                           cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                          if (m.empty()) { imgs[tx] = cv::Mat(); continue; } cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
+                          if (m.empty()) { imgs[tx] = cv::Mat(); continue; } cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA); if (cfg.colorAdjust) adjustColor(imgs[tx], cfg.colorStrength);
                       }});
                   for (auto& w : ld) w.join(); }
                 for (int tx = 0; tx < tilesX; ++tx)
@@ -1951,7 +1952,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         }
                         dst += outTileW * 3;
                     }
-                    // BGR, RGB 原锟截斤拷,
+                    // BGR, RGB 原锟戄1�7���?
                     for (int x = 0; x < outW; ++x) {
                         std::swap(rowBuf[x * 3], rowBuf[x * 3 + 2]);
                     }
@@ -1982,10 +1983,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
                   << std::flush;
         std::atomic<int> placeDone{0};
         std::atomic<int> placeFail{0};
-        std::atomic<int> placeNoCand{0};  // , 效, 选, 锟铰碉拷失,
+        std::atomic<int> placeNoCand{0};  // , �? �? 锟铰碉拷�?
         std::atomic<int> placeLoadErr{0}; // 锟侥硷拷, 取失,
         std::vector<std::thread> placeWorkers;
-        ImageCache imgCache;  // 锟竭程帮拷全, 锟芥，, , 锟截革拷 imread
+        ImageCache imgCache;  // 锟�1�7程帮拷全, 锟芥�? , 锟截革拷 imread
         for (int t = 0; t < nThreads; ++t)
         {
             placeWorkers.emplace_back([&, t]() {
@@ -2010,7 +2011,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     opPlaceDecodeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
 
                     if (cfg.colorAdjust) { adjustColor(resized, cfg.colorStrength); }
-                    // 每, 锟竭筹拷写, 锟截碉拷,  ROI, , , , 锟?
+                    // �? 锟�1�7筹拷�? 锟截碉拷,  ROI, , , , �?
                     resized.copyTo(output(cv::Rect(tx * outTileW, ty * outTileH,
                                                   outTileW, outTileH)));
                     auto t2 = Clock::now();
@@ -2033,7 +2034,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     else
     {
         // 锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋
-        // CPU 路, , ,  tile 顺, , , , 锟皆??拷, 呒, 锟?
+        // CPU �? , ,  tile �? , , , 锟皆??�? �? �?
         // 锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋
         FeatureIndex annCpu;
         std::string annPath = featDirCache.empty() ? "lib.ann" : (featDirCache + "/lib.ann");
@@ -2050,7 +2051,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
         int noCandidateCount = 0;
 
-        // Phase 1: ANN , 询 + , , 去, 选, 顺, 同 GPU 路, ,
+        // Phase 1: ANN , �?+ , , �? �? �? �?GPU �? ,
         std::vector<int> bestLibIdxCpu(totalTiles, -1);
         std::vector<ImageRecord> bestRecsCpu(totalTiles);
         std::deque<int> recentIds;
@@ -2067,7 +2068,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                             allTiny[ti],allEdge[ti],allLBP[ti], tileVec);
             auto imgIds = annCpu.query(tileVec.data(), N);
             if (imgIds.empty()) { noCandidateCount++; continue; }
-            // , , , 锟?+ , , 头锟?
+            // , , , �?+ , , 头锟?
             std::vector<std::pair<double,int>> scored;
             for (int j = 0; j < (int)imgIds.size(); ++j) {
                 int li = annCpu.idToAllRecordsIndex(imgIds[j]);
@@ -2095,7 +2096,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             int pickIdx = scored[rand() % topN].second;
             bestLibIdxCpu[ti] = pickIdx;
             bestRecsCpu[ti] = allRecords[pickIdx];
-            // 维, , , , ,
+            // �? , , , ,
             int chosenId = bestRecsCpu[ti].id;
             recentIds.push_back(chosenId); freq[chosenId]++; lastUsedAt[chosenId] = ti;
             if ((int)recentIds.size() > cfg.neighborWindow) {
@@ -2110,7 +2111,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << " (" << noCandidateCount << " tiles no candidates!)";
         std::cout << " done" << std::endl;
 
-        // Phase 2: , 锟竭筹拷, 图
+        // Phase 2: , 锟�1�7筹拷, �?
         int nT = std::thread::hardware_concurrency();
         if (nT < 2) nT = 2; if (nT > 16) nT = 16;
         std::atomic<int> placed{0}, pFail{0};
@@ -2139,11 +2140,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     std::cout << std::endl;
 
-    // , , , , 式
+    // , , , , �?
     std::string fmt = cfg.outputFormat;
     if (fmt == "jpg" || fmt.empty())
     {
-        // , 锟皆达拷 outputPath , 展, 锟狡讹拷
+        // , 锟皆达拷 outputPath , �? 锟狡讹拷
         auto dotPos = outputPath.rfind('.');
         if (dotPos != std::string::npos)
         {
@@ -2155,7 +2156,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
     if (fmt != "jpg" && fmt != "png" && fmt != "webp" && fmt != "tiff") fmt = "jpg";
 
-    // 锟皆讹拷, , , 展, , , 式锟叫伙拷, , 锟铰凤拷, , 式, ,
+    // 锟皆讹拷, , , �? , , 式锟叄1�7���? , 锟铰凤拷, , �? ,
     std::string outPath = outputPath;
     auto outDot = outPath.rfind('.');
     if (outDot != std::string::npos)
@@ -2165,7 +2166,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             outPath = outPath.substr(0, outDot) + ".tiff";
     }
 
-    // 写, , 锟?
+    // �? , �?
     if (fmt == "tiff")
     {
         if (output.empty())
@@ -2246,7 +2247,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
               << (loadFail > 0 ? ", loadFail=" + std::to_string(loadFail) : "")
               << ")"
               << std::endl;
-    // 确保特征计数器正确（各路径可能在return前未完整设置）
+    // 硄1�7��特征计数器�1�7硄1�7��各路径可能在return前未完整设置�?
     if (cntEdge + cntMissEdge == 0) { cntEdge = totalTiles; cntMissEdge = 0; }
     if (cntGrid + cntMissGrid == 0) { cntGrid = totalTiles; cntMissGrid = 0; }
     if (cntTiny + cntMissTiny == 0) { cntTiny = totalTiles; cntMissTiny = 0; }
@@ -2263,7 +2264,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     releaseGpuLib();
 
-    // , 图, 时
+    // , �? �?
     msPlace = Ms(Clock::now() - tLast).count();
     printBenchmark("single");
     return true;

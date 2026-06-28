@@ -614,6 +614,7 @@ void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
     }
 
     // 更新图片使用统计
+    if (!m_db) return;
     exec("BEGIN TRANSACTION");
     for (const auto& [imgId, tileCount] : imageUseCount)
     {
