@@ -250,6 +250,15 @@ function val(id) {
 
 function generateCommand() {
   const tab = document.querySelector('.tab.active').dataset.cmd;
+  const cliCommand = {
+    mosaic: 'mosaic',
+    build: 'build',
+    inspect: 'inspect',
+    dbstats: 'db-stats',
+    dbpurge: 'db-purge',
+    dbhealth: 'db-health',
+    dbusage: 'db-usage'
+  }[tab] || tab;
   let lines = [];
 
   if (tab === 'mosaic') {
@@ -318,8 +327,8 @@ function generateCommand() {
   }
 
   const cmd = lines.length > 0
-    ? 'mosaicraft ' + tab + ' ' + lines.join(' ')
-    : 'mosaicraft ' + tab + '  (请填写参数)';
+    ? 'mosaicraft ' + cliCommand + ' ' + lines.join(' ')
+    : 'mosaicraft ' + cliCommand + '  (请填写参数)';
   document.getElementById('cmd-output').textContent = cmd;
 }
 
@@ -342,7 +351,9 @@ function copyCommand() {
 // Server detection: check if mosaicraftwebui is running
 let serverAvailable = false;
 let currentJobId = '';
-const SERVER_URL = 'http://localhost:8080';
+const SERVER_URL = window.location.protocol === 'http:' || window.location.protocol === 'https:'
+  ? window.location.origin
+  : 'http://localhost:8080';
 
 async function checkServer() {
   try {
