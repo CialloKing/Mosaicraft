@@ -1,10 +1,9 @@
 ﻿#include "core/Database.h"
 #include "core/BuildService.h"
 #include "core/DatabaseService.h"
-#include "core/FeatureUtils.h"
+#include "core/InspectService.h"
 #include "core/MosaicEngine.h"
 #include "core/MosaicService.h"
-#include <unordered_set>
 #include "core/UnicodeIO.h"
 
 #include <opencv2/imgcodecs.hpp>
@@ -26,6 +25,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // 退出码
@@ -512,73 +512,33 @@ static int cmdInspect(int argc, char* argv[])
         return 1;
     }
 
-    // 加载并归丢�化图�?
-    cv::Mat img = imreadUnicode(imagePath, cv::IMREAD_COLOR);
-    if (img.empty())
+    InspectService service;
+    auto result = service.inspect({imagePath, dbPath});
+    if (!result.status.ok)
     {
-        std::cerr << "ERROR: Cannot read: " << imagePath << std::endl;
-        return 1;
+        std::cerr << "ERROR: " << result.status.message << std::endl;
+        return result.status.exitCode;
     }
-    std::cout << "Image: " << imagePath << " (" << img.cols << "x" << img.rows << ")" << std::endl;
+    const auto& info = result;
+    std::cout << "Image: " << info.imagePath << " (" << info.width << "x" << info.height << ")" << std::endl;
 
-    cv::Mat native;
-    cv::resize(img, native, cv::Size(180, 320), 0, 0, cv::INTER_LINEAR);
+    std::cout << "\nAvgLAB:  L=" << std::fixed << std::setprecision(1) << info.avgL
+              << "  A=" << info.avgA << "  B=" << info.avgB << std::endl;
+    std::cout << "Edge density: " << std::setprecision(4) << info.edgeDensity << std::endl;
+    std::cout << "LBP entropy:  " << std::setprecision(4) << info.lbpEntropy << std::endl;
 
-    // 提取特征
-    cv::Mat lab;
-    cv::cvtColor(native, lab, cv::COLOR_BGR2Lab);
-    cv::Scalar m = cv::mean(lab);
-    double tL = m[0], tA = m[1], tB = m[2];
-
-    auto grid = computeGrid4x4(native);
-    auto tiny = computeTinyImage(native);
-    double edge = computeEdgeDensity(native);
-    auto lbp = computeLBPHistogram(native);
-
-    // 显示
-    std::cout << "\nAvgLAB:  L=" << std::fixed << std::setprecision(1) << tL
-              << "  A=" << tA << "  B=" << tB << std::endl;
-    std::cout << "Edge density: " << std::setprecision(4) << edge << std::endl;
-    std::cout << "LBP entropy:  " << std::setprecision(4);
-    double lbpEntropy = 0.0;
-    for (float v : lbp) { if (v > 0) lbpEntropy -= v * std::log2(v); }
-    std::cout << lbpEntropy << std::endl;
-
-    // 查�??数据�?
-    Database db(resolveDbPath(dbPath));
-    if (db.isOpen())
+    if (info.databaseAvailable)
     {
-        int total = db.totalCount();
-        auto candidates = db.queryIdsByLRange(tL - 20, tL + 20, 200, false);
-        std::cout << "\nDatabase: " << total << " images" << std::endl;
-        std::cout << "L-range [" << (tL - 20) << ", " << (tL + 20) << "]: "
-                  << candidates.size() << " candidates"
-                  << (total > 0 ? " (" + std::to_string(100 * candidates.size() / total) + "%)" : "")
+        std::cout << "\nDatabase: " << info.databaseTotal << " images" << std::endl;
+        std::cout << "L-range [" << info.candidateMinL << ", " << info.candidateMaxL << "]: "
+                  << info.candidateCount << " candidates"
+                  << (info.databaseTotal > 0 ? " (" + std::to_string(100 * info.candidateCount / info.databaseTotal) + "%)" : "")
                   << std::endl;
-
-        // 统�?? L 分布（从 allRecords�?
-        auto all = db.allRecords();
-        double minL = 255, maxL = 0, sumL = 0;
-        for (const auto& r : all)
-        {
-            if (r.avgL < minL) minL = r.avgL;
-            if (r.avgL > maxL) maxL = r.avgL;
-            sumL += r.avgL;
-        }
-        std::cout << "Library L range: [" << std::setprecision(1) << minL
-                  << ", " << maxL << "]  avg=" << (total > 0 ? sumL/total : 0) << std::endl;
-
-        // 覆盖�?
-        int dark = 0, mid = 0, bright = 0;
-        for (const auto& r : all)
-        {
-            if (r.avgL < 30) dark++;
-            else if (r.avgL < 70) mid++;
-            else bright++;
-        }
-        std::cout << "Distribution: dark=" << dark << " (" << (total > 0 ? 100.0*dark/total : 0)
-                  << "%)  mid=" << mid << " (" << (total > 0 ? 100.0*mid/total : 0)
-                  << "%)  bright=" << bright << " (" << (total > 0 ? 100.0*bright/total : 0) << "%)" << std::endl;
+        std::cout << "Library L range: [" << std::setprecision(1) << info.libraryMinL
+                  << ", " << info.libraryMaxL << "]  avg=" << info.libraryAvgL << std::endl;
+        std::cout << "Distribution: dark=" << info.libraryDark << " (" << (info.databaseTotal > 0 ? 100.0*info.libraryDark/info.databaseTotal : 0)
+                  << "%)  mid=" << info.libraryMid << " (" << (info.databaseTotal > 0 ? 100.0*info.libraryMid/info.databaseTotal : 0)
+                  << "%)  bright=" << info.libraryBright << " (" << (info.databaseTotal > 0 ? 100.0*info.libraryBright/info.databaseTotal : 0) << "%)" << std::endl;
     }
 
     return 0;
@@ -747,54 +707,51 @@ static int cmdDbUsage(int argc, char* argv[])
             exportDir = argv[++i];
     }
 
-    Database db(resolveDbPath(dbPath));
-    if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return EXIT_ERR_DB; }
+    DatabaseService usageService;
+    auto usageResult = usageService.usage({dbPath, limit, showUnused});
+    if (!usageResult.status.ok)
+    {
+        std::cerr << "ERROR: " << usageResult.status.message << std::endl;
+        return usageResult.status.exitCode;
+    }
 
-    auto top = db.topUsedImages(limit);
-    if (top.empty())
+    const auto& usage = usageResult.usage;
+    if (usage.top.empty())
     {
         std::cout << "No usage data yet. Run a mosaic with --analyze to start tracking." << std::endl;
         return 0;
     }
 
-    std::cout << "Top " << top.size() << " most used images (by mosaic runs):\n";
+    std::cout << "Top " << usage.top.size() << " most used images (by mosaic runs):\n";
     std::cout << "  Rank  Image ID    Runs    Tiles\n";
-    for (size_t i = 0; i < top.size(); ++i)
+    for (size_t i = 0; i < usage.top.size(); ++i)
     {
-        auto [id, runs, tiles] = top[i];
+        const auto& item = usage.top[i];
         std::cout << "  " << std::setw(4) << (i+1) << "  "
-                  << std::setw(8) << id << "  "
-                  << std::setw(6) << runs << "  "
-                  << std::setw(8) << tiles << "\n";
+                  << std::setw(8) << item.id << "  "
+                  << std::setw(6) << item.runs << "  "
+                  << std::setw(8) << item.tiles << "\n";
     }
 
     // --unused: �г���δʹ�õ�ͼƬ
     if (showUnused)
     {
-        auto allRecs = db.allRecords();
-        auto used = db.topUsedImages(999999);
-        std::unordered_set<int> usedIds;
-        for (const auto& [id, runs, tiles] : used) usedIds.insert(id);
-
-        int unused = 0;
-        for (const auto& r : allRecs)
+        for (const auto& item : usage.unusedPreview)
         {
-            if (!usedIds.count(r.id))
-            {
-                if (unused < 50)  // ֻ��ʾǰ50��
-                    std::cout << "  unused: id=" << r.id << "  " << r.filePath << "\n";
-                unused++;
-            }
+            std::cout << "  unused: id=" << item.id << "  " << item.filePath << "\n";
         }
-        std::cout << "\n  Total unused: " << unused << " / " << allRecs.size()
-                  << " (" << std::fixed << std::setprecision(1) << (100.0*unused/allRecs.size()) << "%)\n";
-        if (unused > 0 && exportDir.empty())
+        std::cout << "\n  Total unused: " << usage.unusedCount << " / " << usage.total
+                  << " (" << std::fixed << std::setprecision(1) << (usage.total > 0 ? 100.0*usage.unusedCount/usage.total : 0) << "%)\n";
+        if (usage.unusedCount > 0 && exportDir.empty())
             std::cout << "  Tip: use --export <dir> to export used images\n";
     }
 
     // ��������ȫ�� tile ʹ�������򣬸��ƹ�һ��ͼ������Ŀ¼
     if (!exportDir.empty())
     {
+        Database db(resolveDbPath(dbPath));
+        if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return EXIT_ERR_DB; }
+
         auto allRecs = db.allRecords();
         std::unordered_map<int, std::string> pathMap;
         for (const auto& r : allRecs) pathMap[r.id] = r.filePath;

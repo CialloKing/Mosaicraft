@@ -415,6 +415,30 @@ async function runCommand() {
       status.innerHTML = '<span style="color:#7ee787">✅ Done</span>' + renderDbHealth(data.health);
       return;
     }
+    if (tab === 'inspect') {
+      const data = await postJson('/api/inspect', { imagePath: val('i-input'), dbPath: val('i-db') });
+      if (!data.ok) {
+        status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
+        if (data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+        return;
+      }
+      status.innerHTML = '<span style="color:#7ee787">✅ Done</span>' + renderInspect(data.inspect);
+      return;
+    }
+    if (tab === 'dbusage' && !val('u-export')) {
+      const data = await postJson('/api/db/usage', {
+        dbPath: val('u-db'),
+        limit: Number(val('u-n') || 50),
+        showUnused: false
+      });
+      if (!data.ok) {
+        status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
+        if (data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+        return;
+      }
+      status.innerHTML = '<span style="color:#7ee787">✅ Done</span>' + renderDbUsage(data.usage);
+      return;
+    }
 
     const res = await fetch(SERVER_URL + '/api/run', { method: 'POST', body: cmd });
     const text = await res.text();
@@ -499,6 +523,34 @@ function renderDbHealth(health) {
     'WARN: ' + escapeHtml(warnings) + '\n' +
     '+ ' + escapeHtml(recs) +
     '</pre>';
+}
+
+function renderInspect(info) {
+  if (!info) return '';
+  let text = 'Image: ' + info.imagePath + ' (' + info.width + 'x' + info.height + ')\n' +
+    'AvgLAB: L=' + Number(info.avgL || 0).toFixed(1) + ' A=' + Number(info.avgA || 0).toFixed(1) + ' B=' + Number(info.avgB || 0).toFixed(1) + '\n' +
+    'Edge density: ' + Number(info.edgeDensity || 0).toFixed(4) + '\n' +
+    'LBP entropy: ' + Number(info.lbpEntropy || 0).toFixed(4);
+  if (info.databaseAvailable) {
+    const pct = info.databaseTotal > 0 ? Math.floor(100 * info.candidateCount / info.databaseTotal) : 0;
+    text += '\n\nDatabase: ' + info.databaseTotal + ' images\n' +
+      'L-range [' + Number(info.candidateMinL || 0).toFixed(1) + ', ' + Number(info.candidateMaxL || 0).toFixed(1) + ']: ' + info.candidateCount + ' candidates (' + pct + '%)\n' +
+      'Library L range: [' + Number(info.libraryMinL || 0).toFixed(1) + ', ' + Number(info.libraryMaxL || 0).toFixed(1) + '] avg=' + Number(info.libraryAvgL || 0).toFixed(1) + '\n' +
+      'Distribution: dark=' + info.libraryDark + ' mid=' + info.libraryMid + ' bright=' + info.libraryBright;
+  }
+  return '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:260px;overflow:auto">' + escapeHtml(text) + '</pre>';
+}
+
+function renderDbUsage(usage) {
+  if (!usage || usage.empty) return '<br><span style="font-size:0.76rem">暂无使用统计</span>';
+  let text = 'Top ' + usage.top.length + ' most used images\nRank  Image ID  Runs  Tiles';
+  usage.top.forEach((item, idx) => {
+    text += '\n' + String(idx + 1).padStart(4, ' ') + '  ' +
+      String(item.id).padStart(8, ' ') + '  ' +
+      String(item.runs).padStart(4, ' ') + '  ' +
+      String(item.tiles).padStart(6, ' ');
+  });
+  return '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:260px;overflow:auto">' + escapeHtml(text) + '</pre>';
 }
 
 function setIfValue(payload, key, id, mapper) {

@@ -4,6 +4,7 @@
 #include "core/DatabaseService.h"
 #include "core/JobManager.h"
 #include "core/json.hpp"
+#include "core/InspectService.h"
 #include "core/MosaicService.h"
 #include <algorithm>
 #include <chrono>
@@ -112,6 +113,50 @@ static json healthToJson(const mosaicraft::DatabaseHealth& health)
         }},
         {"warnings", health.warnings},
         {"recommendations", health.recommendations}
+    };
+}
+
+static json usageToJson(const mosaicraft::DatabaseUsage& usage)
+{
+    json top = json::array();
+    for (const auto& item : usage.top) {
+        top.push_back({{"id", item.id}, {"runs", item.runs}, {"tiles", item.tiles}});
+    }
+    json unused = json::array();
+    for (const auto& item : usage.unusedPreview) {
+        unused.push_back({{"id", item.id}, {"filePath", item.filePath}});
+    }
+    return {
+        {"empty", usage.empty},
+        {"total", usage.total},
+        {"top", top},
+        {"unusedCount", usage.unusedCount},
+        {"unusedPreview", unused}
+    };
+}
+
+static json inspectToJson(const mosaicraft::InspectResult& info)
+{
+    return {
+        {"imagePath", info.imagePath},
+        {"width", info.width},
+        {"height", info.height},
+        {"avgL", info.avgL},
+        {"avgA", info.avgA},
+        {"avgB", info.avgB},
+        {"edgeDensity", info.edgeDensity},
+        {"lbpEntropy", info.lbpEntropy},
+        {"databaseAvailable", info.databaseAvailable},
+        {"databaseTotal", info.databaseTotal},
+        {"candidateMinL", info.candidateMinL},
+        {"candidateMaxL", info.candidateMaxL},
+        {"candidateCount", info.candidateCount},
+        {"libraryMinL", info.libraryMinL},
+        {"libraryMaxL", info.libraryMaxL},
+        {"libraryAvgL", info.libraryAvgL},
+        {"libraryDark", info.libraryDark},
+        {"libraryMid", info.libraryMid},
+        {"libraryBright", info.libraryBright}
     };
 }
 
@@ -374,6 +419,46 @@ static mosaicraft::DatabaseRequest buildDatabaseRequest(const httplib::Request& 
     return request;
 }
 
+static mosaicraft::DatabaseUsageRequest buildDatabaseUsageRequest(const httplib::Request& req)
+{
+    mosaicraft::DatabaseUsageRequest request;
+    if (req.has_param("db")) request.dbPath = req.get_param_value("db");
+    if (req.has_param("limit")) request.limit = std::max(1, std::atoi(req.get_param_value("limit").c_str()));
+    if (req.has_param("unused")) request.showUnused = req.get_param_value("unused") == "1";
+    if (!req.body.empty()) {
+        try {
+            json body = json::parse(req.body);
+            std::string text;
+            std::string error;
+            int intValue = 0;
+            bool boolValue = false;
+            if (body.is_object() && getStringField(body, {"dbPath", "db"}, text, error)) request.dbPath = text;
+            if (body.is_object() && getIntField(body, {"limit"}, intValue, error)) request.limit = std::max(1, intValue);
+            if (body.is_object() && getBoolField(body, {"showUnused", "unused"}, boolValue, error)) request.showUnused = boolValue;
+        } catch (...) {
+        }
+    }
+    return request;
+}
+
+static mosaicraft::InspectRequest buildInspectRequest(const httplib::Request& req)
+{
+    mosaicraft::InspectRequest request;
+    if (req.has_param("input")) request.imagePath = req.get_param_value("input");
+    if (req.has_param("db")) request.dbPath = req.get_param_value("db");
+    if (!req.body.empty()) {
+        try {
+            json body = json::parse(req.body);
+            std::string text;
+            std::string error;
+            if (body.is_object() && getStringField(body, {"imagePath", "input"}, text, error)) request.imagePath = text;
+            if (body.is_object() && getStringField(body, {"dbPath", "db"}, text, error)) request.dbPath = text;
+        } catch (...) {
+        }
+    }
+    return request;
+}
+
 } // namespace
 
 #ifdef _WIN32
@@ -626,6 +711,33 @@ int main(int argc, char* argv[])
     svr.Post("/api/db/stats", handleDbStats);
     svr.Get("/api/db/health", handleDbHealth);
     svr.Post("/api/db/health", handleDbHealth);
+
+    auto handleDbUsage = [&](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::DatabaseService service;
+        auto result = service.usage(buildDatabaseUsageRequest(req));
+        if (!result.status.ok) {
+            res.status = 500;
+            setJsonResult(res, result.status);
+            return;
+        }
+        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"usage", usageToJson(result.usage)}});
+    };
+
+    auto handleInspect = [&](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::InspectService service;
+        auto result = service.inspect(buildInspectRequest(req));
+        if (!result.status.ok) {
+            res.status = 400;
+            setJsonResult(res, result.status);
+            return;
+        }
+        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"inspect", inspectToJson(result)}});
+    };
+
+    svr.Get("/api/db/usage", handleDbUsage);
+    svr.Post("/api/db/usage", handleDbUsage);
+    svr.Get("/api/inspect", handleInspect);
+    svr.Post("/api/inspect", handleInspect);
 
     // 执行命令
     svr.Post("/api/run", [&](const httplib::Request& req, httplib::Response& res) {

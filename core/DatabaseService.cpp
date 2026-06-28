@@ -4,6 +4,7 @@
 #include "MosaicService.h"
 
 #include <algorithm>
+#include <unordered_set>
 #include <tuple>
 
 namespace mosaicraft
@@ -153,6 +154,48 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
         out.health.recommendations.push_back("Run db-usage to identify dead weight");
 
     out.status = ServiceResult::success("database health generated");
+    return out;
+}
+
+DatabaseUsageResult DatabaseService::usage(const DatabaseUsageRequest& request) const
+{
+    DatabaseUsageResult out;
+    Database db(resolveDbPathForService(request.dbPath));
+    if (!db.isOpen())
+    {
+        out.status = ServiceResult::failure(2, "cannot open database: " + request.dbPath);
+        return out;
+    }
+
+    auto all = db.allRecords();
+    out.usage.total = static_cast<int>(all.size());
+    auto top = db.topUsedImages(std::max(1, request.limit));
+    out.usage.empty = top.empty();
+    for (const auto& item : top)
+    {
+        out.usage.top.push_back({std::get<0>(item), std::get<1>(item), std::get<2>(item)});
+    }
+
+    if (request.showUnused)
+    {
+        auto used = db.topUsedImages(999999);
+        std::unordered_set<int> usedIds;
+        for (const auto& item : used) usedIds.insert(std::get<0>(item));
+
+        for (const auto& rec : all)
+        {
+            if (usedIds.count(rec.id)) continue;
+            out.usage.unusedCount++;
+            if (out.usage.unusedPreview.size() < 50)
+            {
+                out.usage.unusedPreview.push_back({rec.id, rec.filePath});
+            }
+        }
+    }
+
+    out.status = ServiceResult::success(out.usage.empty
+        ? "no usage data yet"
+        : "database usage generated");
     return out;
 }
 

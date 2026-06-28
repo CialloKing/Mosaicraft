@@ -14,6 +14,13 @@ struct DatabaseRequest
     std::string dbPath = "library/mosaicraft.db";
 };
 
+struct DatabaseUsageRequest
+{
+    std::string dbPath = "library/mosaicraft.db";
+    int limit = 50;
+    bool showUnused = false;
+};
+
 struct HistogramBin
 {
     int lo = 0;
@@ -53,6 +60,28 @@ struct DatabaseHealth
     std::vector<std::string> recommendations;
 };
 
+struct UsageItem
+{
+    int id = 0;
+    int runs = 0;
+    int tiles = 0;
+};
+
+struct UnusedItem
+{
+    int id = 0;
+    std::string filePath;
+};
+
+struct DatabaseUsage
+{
+    bool empty = true;
+    int total = 0;
+    std::vector<UsageItem> top;
+    int unusedCount = 0;
+    std::vector<UnusedItem> unusedPreview;
+};
+
 struct DatabaseStatsResult
 {
     ServiceResult status;
@@ -65,11 +94,18 @@ struct DatabaseHealthResult
     DatabaseHealth health;
 };
 
+struct DatabaseUsageResult
+{
+    ServiceResult status;
+    DatabaseUsage usage;
+};
+
 class DatabaseService
 {
 public:
     DatabaseStatsResult stats(const DatabaseRequest& request) const;
     DatabaseHealthResult health(const DatabaseRequest& request) const;
+    DatabaseUsageResult usage(const DatabaseUsageRequest& request) const;
 };
 
 } // namespace mosaicraft

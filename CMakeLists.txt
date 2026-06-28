@@ -99,6 +99,7 @@ add_library(mosaicraft_core STATIC
     core/Database.cpp
     core/DatabaseService.cpp
     core/FeatureExtractor.cpp
+    core/InspectService.cpp
     core/JobManager.cpp
     core/MosaicEngine.cpp
     core/MosaicService.cpp
