@@ -21,6 +21,13 @@ struct DatabaseUsageRequest
     bool showUnused = false;
 };
 
+struct DatabasePurgeRequest
+{
+    std::string dbPath = "library/mosaicraft.db";
+    bool dryRun = true;
+    bool confirm = false;
+};
+
 struct HistogramBin
 {
     int lo = 0;
@@ -82,6 +89,26 @@ struct DatabaseUsage
     std::vector<UnusedItem> unusedPreview;
 };
 
+struct OrphanRecord
+{
+    int id = 0;
+    std::string filePath;
+    std::string tinyPath;
+    std::string histPath;
+};
+
+struct DatabasePurge
+{
+    bool dryRun = true;
+    int total = 0;
+    int orphanCount = 0;
+    int removedCount = 0;
+    int failedCount = 0;
+    std::vector<OrphanRecord> orphanPreview;
+    std::vector<std::string> errors;
+    std::vector<std::string> recommendations;
+};
+
 struct DatabaseStatsResult
 {
     ServiceResult status;
@@ -100,12 +127,19 @@ struct DatabaseUsageResult
     DatabaseUsage usage;
 };
 
+struct DatabasePurgeResult
+{
+    ServiceResult status;
+    DatabasePurge purge;
+};
+
 class DatabaseService
 {
 public:
     DatabaseStatsResult stats(const DatabaseRequest& request) const;
     DatabaseHealthResult health(const DatabaseRequest& request) const;
     DatabaseUsageResult usage(const DatabaseUsageRequest& request) const;
+    DatabasePurgeResult purge(const DatabasePurgeRequest& request) const;
 };
 
 } // namespace mosaicraft

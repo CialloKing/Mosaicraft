@@ -439,6 +439,22 @@ async function runCommand() {
       status.innerHTML = '<span style="color:#7ee787">✅ Done</span>' + renderDbUsage(data.usage);
       return;
     }
+    if (tab === 'dbpurge') {
+      const execute = !!val('p-force');
+      const data = await postJson('/api/db/purge', {
+        dbPath: val('p-db'),
+        dryRun: !execute,
+        confirm: execute
+      });
+      if (!data.ok) {
+        status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
+        if (data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+        if (data.purge) status.innerHTML += renderDbPurge(data.purge);
+        return;
+      }
+      status.innerHTML = '<span style="color:#7ee787">✅ Done</span>' + renderDbPurge(data.purge);
+      return;
+    }
 
     const res = await fetch(SERVER_URL + '/api/run', { method: 'POST', body: cmd });
     const text = await res.text();
@@ -550,6 +566,30 @@ function renderDbUsage(usage) {
       String(item.runs).padStart(4, ' ') + '  ' +
       String(item.tiles).padStart(6, ' ');
   });
+  return '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:260px;overflow:auto">' + escapeHtml(text) + '</pre>';
+}
+
+function renderDbPurge(purge) {
+  if (!purge) return '';
+  let text = purge.dryRun ? 'Preview only\n' : 'Purged\n';
+  text += 'Total records: ' + purge.total + '\n' +
+    'Orphan records: ' + purge.orphanCount + '\n' +
+    'Removed: ' + purge.removedCount + '\n' +
+    'Failed: ' + purge.failedCount;
+  if (purge.orphanPreview && purge.orphanPreview.length) {
+    text += '\n\nPreview';
+    purge.orphanPreview.forEach(item => {
+      text += '\n  id=' + item.id + '  ' + item.filePath;
+    });
+  }
+  if (purge.recommendations && purge.recommendations.length) {
+    text += '\n\nRecommendations';
+    purge.recommendations.forEach(item => { text += '\n  ' + item; });
+  }
+  if (purge.errors && purge.errors.length) {
+    text += '\n\nErrors';
+    purge.errors.forEach(item => { text += '\n  ' + item; });
+  }
   return '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:260px;overflow:auto">' + escapeHtml(text) + '</pre>';
 }
 

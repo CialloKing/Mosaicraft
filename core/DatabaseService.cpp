@@ -2,8 +2,10 @@
 
 #include "Database.h"
 #include "MosaicService.h"
+#include "UnicodeIO.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <unordered_set>
 #include <tuple>
 
@@ -196,6 +198,97 @@ DatabaseUsageResult DatabaseService::usage(const DatabaseUsageRequest& request) 
     out.status = ServiceResult::success(out.usage.empty
         ? "no usage data yet"
         : "database usage generated");
+    return out;
+}
+
+DatabasePurgeResult DatabaseService::purge(const DatabasePurgeRequest& request) const
+{
+    DatabasePurgeResult out;
+    out.purge.dryRun = request.dryRun;
+
+    Database db(resolveDbPathForService(request.dbPath));
+    if (!db.isOpen())
+    {
+        out.status = ServiceResult::failure(2, "cannot open database: " + request.dbPath);
+        return out;
+    }
+
+    auto all = db.allRecords();
+    out.purge.total = static_cast<int>(all.size());
+
+    std::vector<OrphanRecord> orphans;
+    for (const auto& rec : all)
+    {
+        if (!rec.filePath.empty() && !std::filesystem::exists(u8path(rec.filePath)))
+        {
+            orphans.push_back({rec.id, rec.filePath, rec.tinyPath, rec.histPath});
+        }
+    }
+
+    out.purge.orphanCount = static_cast<int>(orphans.size());
+    for (const auto& orphan : orphans)
+    {
+        if (out.purge.orphanPreview.size() >= 50) break;
+        out.purge.orphanPreview.push_back(orphan);
+    }
+
+    if (orphans.empty())
+    {
+        out.status = ServiceResult::success("no orphan records found");
+        return out;
+    }
+
+    out.purge.recommendations.push_back("delete normalized/features/*.bin and lib.ann, then re-run mosaic to rebuild caches");
+
+    if (request.dryRun)
+    {
+        out.status = ServiceResult::success("orphan records found");
+        return out;
+    }
+
+    if (!request.confirm)
+    {
+        out.status = ServiceResult::failure(1, "confirm is required to purge orphan records");
+        return out;
+    }
+
+    for (const auto& orphan : orphans)
+    {
+        try
+        {
+            if (!orphan.tinyPath.empty() && std::filesystem::exists(u8path(orphan.tinyPath)))
+            {
+                std::filesystem::remove(u8path(orphan.tinyPath));
+            }
+            if (!orphan.histPath.empty() && std::filesystem::exists(u8path(orphan.histPath)))
+            {
+                std::filesystem::remove(u8path(orphan.histPath));
+            }
+
+            if (db.removeImage(orphan.id))
+            {
+                out.purge.removedCount++;
+            }
+            else
+            {
+                out.purge.failedCount++;
+                out.purge.errors.push_back("failed to remove database record id=" + std::to_string(orphan.id));
+            }
+        }
+        catch (const std::exception& e)
+        {
+            out.purge.failedCount++;
+            out.purge.errors.push_back("failed to purge id=" + std::to_string(orphan.id) + ": " + e.what());
+        }
+    }
+
+    if (out.purge.failedCount > 0)
+    {
+        out.status = ServiceResult::failure(1, "purge completed with errors");
+        return out;
+    }
+
+    out.status = ServiceResult::success("orphan records purged");
     return out;
 }
 

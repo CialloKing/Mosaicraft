@@ -623,23 +623,15 @@ static int cmdDbPurge(int argc, char* argv[])
             forceMode = true;
     }
 
-    Database db(resolveDbPath(dbPath));
-    if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return 2; }
-
-    auto all = db.allRecords();
-    int total = static_cast<int>(all.size());
-    int removed = 0;
-
-    // 先检查有多少孤儿记录，再决定是否删除
-    std::vector<int> orphanIds;
-    for (const auto& r : all)
+    DatabaseService service;
+    auto preview = service.purge({dbPath, true, false});
+    if (!preview.status.ok)
     {
-        if (!r.filePath.empty() && !std::filesystem::exists(u8path(r.filePath)))
-            orphanIds.push_back(r.id);
+        std::cerr << "ERROR: " << preview.status.message << std::endl;
+        return preview.status.exitCode;
     }
-    removed = static_cast<int>(orphanIds.size());
 
-    if (removed == 0)
+    if (preview.purge.orphanCount == 0)
     {
         std::cout << "No orphan records found." << std::endl;
         return 0;
@@ -654,34 +646,27 @@ static int cmdDbPurge(int argc, char* argv[])
 #endif
         if (!isTTY)
         {
-            std::cerr << "ERROR: " << removed << " orphan records. Use -y to purge." << std::endl;
+            std::cerr << "ERROR: " << preview.purge.orphanCount << " orphan records. Use -y to purge." << std::endl;
             return 1;
         }
-        std::cout << "Found " << removed << " orphan records. Purge? [y/N] " << std::flush;
+        std::cout << "Found " << preview.purge.orphanCount << " orphan records. Purge? [y/N] " << std::flush;
         char answer = static_cast<char>(std::getchar());
         if (answer != 'y' && answer != 'Y') { std::cout << "Aborted." << std::endl; return 0; }
     }
 
-    // 确认后才执行删除
-    for (int id : orphanIds)
+    auto result = service.purge({dbPath, false, true});
+    if (!result.status.ok && result.purge.failedCount == 0)
     {
-        // 找到对应记录以删除关联文件
-        for (const auto& r : all)
-        {
-            if (r.id != id) continue;
-            if (!r.tinyPath.empty() && std::filesystem::exists(u8path(r.tinyPath)))
-                std::filesystem::remove(u8path(r.tinyPath));
-            if (!r.histPath.empty() && std::filesystem::exists(u8path(r.histPath)))
-                std::filesystem::remove(u8path(r.histPath));
-            break;
-        }
-        db.removeImage(id);
+        std::cerr << "ERROR: " << result.status.message << std::endl;
+        return result.status.exitCode;
     }
 
-    std::cout << "Purged " << removed << " / " << total << " orphan records." << std::endl;
-    if (removed > 0)
-        std::cout << "  Note: delete normalized/features/*.bin and lib.ann, then re-run mosaic to rebuild caches." << std::endl;
-    return 0;
+    std::cout << "Purged " << result.purge.removedCount << " / " << result.purge.total << " orphan records." << std::endl;
+    for (const auto& recommendation : result.purge.recommendations)
+        std::cout << "  Note: " << recommendation << std::endl;
+    for (const auto& error : result.purge.errors)
+        std::cerr << "  ERROR: " << error << std::endl;
+    return result.status.ok ? 0 : result.status.exitCode;
 }
 
 // ============================================================
