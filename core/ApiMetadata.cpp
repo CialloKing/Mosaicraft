@@ -138,6 +138,60 @@ std::vector<std::string> endpointAcceptedQueryKeys(const std::vector<std::string
     return keys;
 }
 
+int endpointSuccessStatus(ApiOperation operation)
+{
+    switch (operation)
+    {
+    case ApiOperation::SubmitMosaicJob:
+    case ApiOperation::SubmitBuildJob:
+        return 202;
+    case ApiOperation::Endpoints:
+    case ApiOperation::Info:
+    case ApiOperation::Ping:
+    case ApiOperation::LegacyRunDisabled:
+    case ApiOperation::Mosaic:
+    case ApiOperation::ListJobs:
+    case ApiOperation::ClearFinishedJobs:
+    case ApiOperation::GetJob:
+    case ApiOperation::CancelJob:
+    case ApiOperation::DatabaseStats:
+    case ApiOperation::DatabaseHealth:
+    case ApiOperation::DatabaseUsage:
+    case ApiOperation::DatabaseUsageExport:
+    case ApiOperation::DatabasePurge:
+    case ApiOperation::Inspect:
+        return 200;
+    }
+    return 200;
+}
+
+std::string endpointResponseKey(ApiOperation operation)
+{
+    switch (operation)
+    {
+    case ApiOperation::Endpoints: return "endpoints";
+    case ApiOperation::Info: return "info";
+    case ApiOperation::Ping: return "message";
+    case ApiOperation::SubmitMosaicJob:
+    case ApiOperation::SubmitBuildJob:
+    case ApiOperation::GetJob:
+    case ApiOperation::CancelJob:
+        return "job";
+    case ApiOperation::ListJobs: return "jobs";
+    case ApiOperation::ClearFinishedJobs: return "removed";
+    case ApiOperation::DatabaseStats: return "stats";
+    case ApiOperation::DatabaseHealth: return "health";
+    case ApiOperation::DatabaseUsage: return "usage";
+    case ApiOperation::DatabaseUsageExport: return "export";
+    case ApiOperation::DatabasePurge: return "purge";
+    case ApiOperation::Inspect: return "inspect";
+    case ApiOperation::LegacyRunDisabled:
+    case ApiOperation::Mosaic:
+        return "";
+    }
+    return "";
+}
+
 ApiEndpointMetadata endpoint(const std::string& method,
                              const std::string& path,
                              const std::string& description,
@@ -162,6 +216,8 @@ ApiEndpointMetadata endpoint(const std::string& method,
     info.category = category;
     info.legacy = legacy;
     info.enabled = enabled;
+    info.successStatus = endpointSuccessStatus(operation);
+    info.responseKey = endpointResponseKey(operation);
     info.sideEffects = sideEffects;
     info.longRunning = longRunning;
     info.queryKeys = endpointQueryKeys(operation);
@@ -317,6 +373,9 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
         }
         if (endpoint.category.empty()) {
             errors.push_back("endpoint has empty category: " + operationName);
+        }
+        if (endpoint.successStatus < 200 || endpoint.successStatus > 299) {
+            errors.push_back("endpoint has non-success successStatus: " + operationName);
         }
         if (endpoint.requestShape == ApiRequestShape::Query && endpoint.queryKeys.empty()) {
             errors.push_back("query endpoint has no queryKeys: " + operationName);

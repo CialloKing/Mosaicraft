@@ -208,6 +208,8 @@ nlohmann::json apiEndpointToJson(const ApiEndpointMetadata& endpoint)
         {"fieldAliases", fieldAliases},
         {"queryKeys", endpoint.queryKeys},
         {"acceptedQueryKeys", endpoint.acceptedQueryKeys},
+        {"successStatus", endpoint.successStatus},
+        {"responseKey", endpoint.responseKey},
         {"sideEffects", endpoint.sideEffects},
         {"longRunning", endpoint.longRunning},
         {"legacy", endpoint.legacy},

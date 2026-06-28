@@ -37,6 +37,9 @@ Returns the structured API list. Each entry contains:
 - `queryKeys`: machine-readable query string keys accepted by the endpoint.
 - `acceptedQueryKeys`: complete query keys accepted by the HTTP adapter,
   including canonical field names and aliases.
+- `successStatus`: normal HTTP status code for a successful response.
+- `responseKey`: primary JSON payload key returned on success, when the
+  response has one.
 - `sideEffects`: whether the endpoint can modify files, jobs, or databases.
 - `longRunning`: whether callers should prefer asynchronous handling or polling.
 - `legacy`: whether this endpoint is only for compatibility.

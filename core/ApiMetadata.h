@@ -52,6 +52,8 @@ struct ApiEndpointMetadata
     std::vector<std::string> queryKeys;
     std::vector<std::string> acceptedQueryKeys;
     std::unordered_map<std::string, std::vector<std::string>> fieldAliases;
+    int successStatus = 200;
+    std::string responseKey;
     bool sideEffects = false;
     bool longRunning = false;
     bool legacy = false;

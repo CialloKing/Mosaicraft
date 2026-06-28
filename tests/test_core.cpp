@@ -260,6 +260,8 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(mosaicJob->fieldAliases.at("inputPath") == std::vector<std::string>{"input"});
     CHECK(mosaicJob->fieldAliases.at("dbPath") == std::vector<std::string>{"db"});
     CHECK(mosaicJob->fieldAliases.at("outputPath") == std::vector<std::string>{"output"});
+    CHECK(mosaicJob->successStatus == 202);
+    CHECK(mosaicJob->responseKey == "job");
     CHECK(mosaicJob->sideEffects);
     CHECK(mosaicJob->longRunning);
 
@@ -272,6 +274,8 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(std::find(dbStats->acceptedQueryKeys.begin(), dbStats->acceptedQueryKeys.end(),
         "dbPath") != dbStats->acceptedQueryKeys.end());
     CHECK(dbStats->fieldAliases.at("dbPath") == std::vector<std::string>{"db"});
+    CHECK(dbStats->successStatus == 200);
+    CHECK(dbStats->responseKey == "stats");
 
     auto jobStatus = findEndpoint("/api/jobs/{id}");
     REQUIRE(jobStatus != endpoints.end());
@@ -285,6 +289,8 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(legacyRun->operation == ApiOperation::LegacyRunDisabled);
     CHECK(legacyRun->requestShape == ApiRequestShape::LegacyCommand);
     CHECK(legacyRun->requiredFields == std::vector<std::string>{"command"});
+    CHECK(legacyRun->successStatus == 200);
+    CHECK(legacyRun->responseKey.empty());
     CHECK(legacyRun->sideEffects);
     CHECK(legacyRun->longRunning);
     CHECK(legacyRun->legacy);
@@ -326,6 +332,8 @@ TEST_CASE("API JSON serialization is shared")
     CHECK((*legacy)["httpPattern"].get<std::string>() == "/api/run");
     CHECK((*legacy)["queryKeys"].empty());
     CHECK((*legacy)["acceptedQueryKeys"].empty());
+    CHECK((*legacy)["successStatus"].get<int>() == 200);
+    CHECK((*legacy)["responseKey"].get<std::string>().empty());
     CHECK((*legacy)["fieldAliases"].empty());
     CHECK((*legacy)["requiredFields"].size() == 1);
     CHECK((*legacy)["requiredFields"][0].get<std::string>() == "command");
@@ -798,6 +806,7 @@ TEST_CASE("API endpoint metadata validation catches contract errors")
     bad.acceptedQueryKeys = {"other"};
     bad.requiredFields = {"missing"};
     bad.fieldAliases = {{"missing", {"alias"}}};
+    bad.successStatus = 500;
     auto badErrors = validateApiEndpointMetadata({bad});
     CHECK(std::find_if(badErrors.begin(), badErrors.end(),
         [](const std::string& error) { return error.find("unsupported method") != std::string::npos; }) != badErrors.end());
@@ -805,6 +814,8 @@ TEST_CASE("API endpoint metadata validation catches contract errors")
         [](const std::string& error) { return error.find("empty path") != std::string::npos; }) != badErrors.end());
     CHECK(std::find_if(badErrors.begin(), badErrors.end(),
         [](const std::string& error) { return error.find("non-query endpoint has queryKeys") != std::string::npos; }) != badErrors.end());
+    CHECK(std::find_if(badErrors.begin(), badErrors.end(),
+        [](const std::string& error) { return error.find("non-success successStatus") != std::string::npos; }) != badErrors.end());
     CHECK(std::find_if(badErrors.begin(), badErrors.end(),
         [](const std::string& error) { return error.find("non-query endpoint has acceptedQueryKeys") != std::string::npos; }) != badErrors.end());
     CHECK(std::find_if(badErrors.begin(), badErrors.end(),
