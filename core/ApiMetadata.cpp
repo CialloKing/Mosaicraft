@@ -344,6 +344,26 @@ const char* apiRequestShapeName(ApiRequestShape shape)
     return "unknown";
 }
 
+const char* apiContractVersion()
+{
+    return "1.0";
+}
+
+int apiContractMajorVersion()
+{
+    return 1;
+}
+
+const char* apiCompatibilityLevel()
+{
+    return "stable";
+}
+
+bool apiContractStable()
+{
+    return true;
+}
+
 std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled)
 {
     return {

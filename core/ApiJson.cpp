@@ -255,6 +255,10 @@ nlohmann::json apiInfoToJson(bool legacyRunEnabled, const char* entryName)
         {"entry", entryName},
         {"api", {
             {"structured", true},
+            {"contractVersion", apiContractVersion()},
+            {"contractMajorVersion", apiContractMajorVersion()},
+            {"compatibility", apiCompatibilityLevel()},
+            {"stable", apiContractStable()},
             {"legacyRunEnabled", legacyRunEnabled},
             {"endpointCount", static_cast<int>(endpoints.size())},
             {"enabledEndpointCount", enabledCount},

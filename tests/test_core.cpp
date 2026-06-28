@@ -334,6 +334,10 @@ TEST_CASE("API feature metadata is shared")
     const auto features = apiFeatureList();
     CHECK(std::find(features.begin(), features.end(), "mosaic-jobs") != features.end());
     CHECK(std::find(features.begin(), features.end(), "database-maintenance") != features.end());
+    CHECK(std::string(apiContractVersion()) == "1.0");
+    CHECK(apiContractMajorVersion() == 1);
+    CHECK(std::string(apiCompatibilityLevel()) == "stable");
+    CHECK(apiContractStable());
 }
 
 TEST_CASE("API JSON serialization is shared")
@@ -376,6 +380,10 @@ TEST_CASE("API JSON serialization is shared")
     auto infoJson = apiInfoToJson(false, "MosaicraftWebUI");
     CHECK(infoJson["version"].get<std::string>() == "1.12.3");
     CHECK(infoJson["entry"].get<std::string>() == "MosaicraftWebUI");
+    CHECK(infoJson["api"]["contractVersion"].get<std::string>() == "1.0");
+    CHECK(infoJson["api"]["contractMajorVersion"].get<int>() == 1);
+    CHECK(infoJson["api"]["compatibility"].get<std::string>() == "stable");
+    CHECK(infoJson["api"]["stable"].get<bool>());
     CHECK_FALSE(infoJson["api"]["legacyRunEnabled"].get<bool>());
     CHECK(infoJson["api"]["endpointCount"].get<int>() == 17);
     CHECK(infoJson["api"]["enabledEndpointCount"].get<int>() == 16);

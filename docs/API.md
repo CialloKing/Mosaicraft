@@ -13,8 +13,18 @@ image inspection, and database maintenance.
 `GET /api/info`
 
 Returns service version, entry name, structured API status, legacy `/api/run`
-status, endpoint counts, metadata validation status, and a compact feature
-list.
+status, API contract version, endpoint counts, metadata validation status, and
+a compact feature list.
+
+The structured API currently reports:
+
+- `contractVersion`: semantic version of the HTTP/service contract exposed by
+  discovery.
+- `contractMajorVersion`: major compatibility version. Additive metadata or
+  endpoint changes should keep this stable; breaking request/response changes
+  must increment it.
+- `compatibility`: stability label for generated clients and UI adapters.
+- `stable`: whether the current contract is intended for regular callers.
 
 `GET /api/endpoints`
 
