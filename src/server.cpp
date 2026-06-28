@@ -61,13 +61,19 @@ static void handleApi(httplib::Response& res,
 }
 
 static mosaicraft::ApiQueryParams queryParams(const httplib::Request& req,
-                                              std::initializer_list<const char*> keys)
+                                              const std::vector<const char*>& keys)
 {
     mosaicraft::ApiQueryParams query;
     for (const char* key : keys) {
         if (req.has_param(key)) query[key] = req.get_param_value(key);
     }
     return query;
+}
+
+static mosaicraft::ApiQueryParams queryParamsFor(const httplib::Request& req,
+                                                 mosaicraft::ApiOperation operation)
+{
+    return queryParams(req, mosaicraft::apiQueryKeys(operation));
 }
 
 } // namespace
@@ -242,11 +248,13 @@ int main(int argc, char* argv[])
     });
 
     auto handleDbStats = [&](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, mosaicraft::apiQueryRequest(mosaicraft::ApiOperation::DatabaseStats, queryParams(req, {"db"}), req.body));
+        auto op = mosaicraft::ApiOperation::DatabaseStats;
+        handleApi(res, jobManager, mosaicraft::apiQueryRequest(op, queryParamsFor(req, op), req.body));
     };
 
     auto handleDbHealth = [&](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, mosaicraft::apiQueryRequest(mosaicraft::ApiOperation::DatabaseHealth, queryParams(req, {"db"}), req.body));
+        auto op = mosaicraft::ApiOperation::DatabaseHealth;
+        handleApi(res, jobManager, mosaicraft::apiQueryRequest(op, queryParamsFor(req, op), req.body));
     };
 
     svr.Get("/api/db/stats", handleDbStats);
@@ -255,19 +263,23 @@ int main(int argc, char* argv[])
     svr.Post("/api/db/health", handleDbHealth);
 
     auto handleDbUsage = [&](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, mosaicraft::apiQueryRequest(mosaicraft::ApiOperation::DatabaseUsage, queryParams(req, {"db", "limit", "unused"}), req.body));
+        auto op = mosaicraft::ApiOperation::DatabaseUsage;
+        handleApi(res, jobManager, mosaicraft::apiQueryRequest(op, queryParamsFor(req, op), req.body));
     };
 
     auto handleDbUsageExport = [&](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, mosaicraft::apiQueryRequest(mosaicraft::ApiOperation::DatabaseUsageExport, queryParams(req, {"db", "output", "confirm"}), req.body));
+        auto op = mosaicraft::ApiOperation::DatabaseUsageExport;
+        handleApi(res, jobManager, mosaicraft::apiQueryRequest(op, queryParamsFor(req, op), req.body));
     };
 
     auto handleDbPurge = [&](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, mosaicraft::apiQueryRequest(mosaicraft::ApiOperation::DatabasePurge, queryParams(req, {"db", "dryRun", "confirm"}), req.body));
+        auto op = mosaicraft::ApiOperation::DatabasePurge;
+        handleApi(res, jobManager, mosaicraft::apiQueryRequest(op, queryParamsFor(req, op), req.body));
     };
 
     auto handleInspect = [&](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, mosaicraft::apiQueryRequest(mosaicraft::ApiOperation::Inspect, queryParams(req, {"input", "db"}), req.body));
+        auto op = mosaicraft::ApiOperation::Inspect;
+        handleApi(res, jobManager, mosaicraft::apiQueryRequest(op, queryParamsFor(req, op), req.body));
     };
 
     svr.Get("/api/db/usage", handleDbUsage);

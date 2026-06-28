@@ -524,6 +524,25 @@ TEST_CASE("API request factories set semantic fields")
     CHECK(std::string(info.entryName) == "MosaicraftWebUI");
 }
 
+TEST_CASE("API operation query keys are centralized")
+{
+    auto usageKeys = apiQueryKeys(ApiOperation::DatabaseUsage);
+    CHECK(std::find(usageKeys.begin(), usageKeys.end(), std::string("db")) != usageKeys.end());
+    CHECK(std::find(usageKeys.begin(), usageKeys.end(), std::string("limit")) != usageKeys.end());
+    CHECK(std::find(usageKeys.begin(), usageKeys.end(), std::string("unused")) != usageKeys.end());
+
+    auto exportKeys = apiQueryKeys(ApiOperation::DatabaseUsageExport);
+    CHECK(std::find(exportKeys.begin(), exportKeys.end(), std::string("output")) != exportKeys.end());
+    CHECK(std::find(exportKeys.begin(), exportKeys.end(), std::string("confirm")) != exportKeys.end());
+
+    auto inspectKeys = apiQueryKeys(ApiOperation::Inspect);
+    CHECK(std::find(inspectKeys.begin(), inspectKeys.end(), std::string("input")) != inspectKeys.end());
+    CHECK(std::find(inspectKeys.begin(), inspectKeys.end(), std::string("db")) != inspectKeys.end());
+
+    CHECK(apiQueryKeys(ApiOperation::Ping).empty());
+    CHECK(apiQueryKeys(ApiOperation::SubmitBuildJob).empty());
+}
+
 TEST_CASE("API handlers expose structured jobs without HTTP")
 {
     JobManager manager(false);
