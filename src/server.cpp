@@ -56,6 +56,16 @@ static void setJsonBody(httplib::Response& res, const json& body)
     res.set_content(body.dump(), "application/json; charset=utf-8");
 }
 
+static mosaicraft::ApiQueryParams queryParams(const httplib::Request& req,
+                                              std::initializer_list<const char*> keys)
+{
+    mosaicraft::ApiQueryParams query;
+    for (const char* key : keys) {
+        if (req.has_param(key)) query[key] = req.get_param_value(key);
+    }
+    return query;
+}
+
 static bool buildMosaicRequest(const std::string& body,
                                mosaicraft::MosaicRequest& request,
                                std::string& error)
@@ -74,49 +84,40 @@ static bool buildDatabaseRequest(const httplib::Request& req,
                                  mosaicraft::DatabaseRequest& request,
                                  std::string& error)
 {
-    if (req.has_param("db")) {
-        request.dbPath = req.get_param_value("db");
-    }
-    return mosaicraft::applyDatabaseRequestJson(req.body, request, error);
+    return mosaicraft::parseDatabaseRequestApi(
+        queryParams(req, {"db"}), req.body, request, error);
 }
 
 static bool buildDatabaseUsageRequest(const httplib::Request& req,
                                       mosaicraft::DatabaseUsageRequest& request,
                                       std::string& error)
 {
-    if (req.has_param("db")) request.dbPath = req.get_param_value("db");
-    if (req.has_param("limit")) request.limit = std::max(1, std::atoi(req.get_param_value("limit").c_str()));
-    if (req.has_param("unused")) request.showUnused = req.get_param_value("unused") == "1";
-    return mosaicraft::applyDatabaseUsageRequestJson(req.body, request, error);
+    return mosaicraft::parseDatabaseUsageRequestApi(
+        queryParams(req, {"db", "limit", "unused"}), req.body, request, error);
 }
 
 static bool buildDatabaseUsageExportRequest(const httplib::Request& req,
                                             mosaicraft::DatabaseUsageExportRequest& request,
                                             std::string& error)
 {
-    if (req.has_param("db")) request.dbPath = req.get_param_value("db");
-    if (req.has_param("output")) request.outputDir = req.get_param_value("output");
-    if (req.has_param("confirm")) request.confirm = req.get_param_value("confirm") == "1";
-    return mosaicraft::applyDatabaseUsageExportRequestJson(req.body, request, error);
+    return mosaicraft::parseDatabaseUsageExportRequestApi(
+        queryParams(req, {"db", "output", "confirm"}), req.body, request, error);
 }
 
 static bool buildDatabasePurgeRequest(const httplib::Request& req,
                                       mosaicraft::DatabasePurgeRequest& request,
                                       std::string& error)
 {
-    if (req.has_param("db")) request.dbPath = req.get_param_value("db");
-    if (req.has_param("dryRun")) request.dryRun = req.get_param_value("dryRun") != "0";
-    if (req.has_param("confirm")) request.confirm = req.get_param_value("confirm") == "1";
-    return mosaicraft::applyDatabasePurgeRequestJson(req.body, request, error);
+    return mosaicraft::parseDatabasePurgeRequestApi(
+        queryParams(req, {"db", "dryRun", "confirm"}), req.body, request, error);
 }
 
 static bool buildInspectRequest(const httplib::Request& req,
                                 mosaicraft::InspectRequest& request,
                                 std::string& error)
 {
-    if (req.has_param("input")) request.imagePath = req.get_param_value("input");
-    if (req.has_param("db")) request.dbPath = req.get_param_value("db");
-    return mosaicraft::applyInspectRequestJson(req.body, request, error);
+    return mosaicraft::parseInspectRequestApi(
+        queryParams(req, {"input", "db"}), req.body, request, error);
 }
 
 } // namespace

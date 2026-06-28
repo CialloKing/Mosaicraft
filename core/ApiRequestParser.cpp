@@ -119,6 +119,17 @@ bool getBoolField(const json& body,
     return false;
 }
 
+bool hasQuery(const ApiQueryParams& query, const std::string& key)
+{
+    return query.find(key) != query.end();
+}
+
+std::string getQuery(const ApiQueryParams& query, const std::string& key)
+{
+    auto it = query.find(key);
+    return it == query.end() ? std::string() : it->second;
+}
+
 } // namespace
 
 bool parseMosaicRequestJson(const std::string& body,
@@ -318,6 +329,58 @@ bool applyInspectRequestJson(const std::string& body,
     if (getStringField(values, {"imagePath", "input"}, text, error)) request.imagePath = text;
     if (getStringField(values, {"dbPath", "db"}, text, error)) request.dbPath = text;
     return error.empty();
+}
+
+bool parseDatabaseRequestApi(const ApiQueryParams& query,
+                             const std::string& body,
+                             DatabaseRequest& request,
+                             std::string& error)
+{
+    if (hasQuery(query, "db")) request.dbPath = getQuery(query, "db");
+    return applyDatabaseRequestJson(body, request, error);
+}
+
+bool parseDatabaseUsageRequestApi(const ApiQueryParams& query,
+                                  const std::string& body,
+                                  DatabaseUsageRequest& request,
+                                  std::string& error)
+{
+    if (hasQuery(query, "db")) request.dbPath = getQuery(query, "db");
+    if (hasQuery(query, "limit")) request.limit = std::max(1, std::atoi(getQuery(query, "limit").c_str()));
+    if (hasQuery(query, "unused")) request.showUnused = getQuery(query, "unused") == "1";
+    return applyDatabaseUsageRequestJson(body, request, error);
+}
+
+bool parseDatabaseUsageExportRequestApi(const ApiQueryParams& query,
+                                        const std::string& body,
+                                        DatabaseUsageExportRequest& request,
+                                        std::string& error)
+{
+    if (hasQuery(query, "db")) request.dbPath = getQuery(query, "db");
+    if (hasQuery(query, "output")) request.outputDir = getQuery(query, "output");
+    if (hasQuery(query, "confirm")) request.confirm = getQuery(query, "confirm") == "1";
+    return applyDatabaseUsageExportRequestJson(body, request, error);
+}
+
+bool parseDatabasePurgeRequestApi(const ApiQueryParams& query,
+                                  const std::string& body,
+                                  DatabasePurgeRequest& request,
+                                  std::string& error)
+{
+    if (hasQuery(query, "db")) request.dbPath = getQuery(query, "db");
+    if (hasQuery(query, "dryRun")) request.dryRun = getQuery(query, "dryRun") != "0";
+    if (hasQuery(query, "confirm")) request.confirm = getQuery(query, "confirm") == "1";
+    return applyDatabasePurgeRequestJson(body, request, error);
+}
+
+bool parseInspectRequestApi(const ApiQueryParams& query,
+                            const std::string& body,
+                            InspectRequest& request,
+                            std::string& error)
+{
+    if (hasQuery(query, "input")) request.imagePath = getQuery(query, "input");
+    if (hasQuery(query, "db")) request.dbPath = getQuery(query, "db");
+    return applyInspectRequestJson(body, request, error);
 }
 
 } // namespace mosaicraft

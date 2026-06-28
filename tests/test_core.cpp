@@ -372,6 +372,40 @@ TEST_CASE("API request parser applies database and inspect requests")
     CHECK(inspect.dbPath == "library.db");
 }
 
+TEST_CASE("API request parser merges query and JSON body")
+{
+    std::string error;
+
+    DatabaseUsageRequest usage;
+    CHECK(parseDatabaseUsageRequestApi(
+        {{"db", "query.db"}, {"limit", "0"}, {"unused", "1"}},
+        R"({"dbPath":"body.db","limit":12,"showUnused":false})",
+        usage,
+        error));
+    CHECK(usage.dbPath == "body.db");
+    CHECK(usage.limit == 12);
+    CHECK_FALSE(usage.showUnused);
+
+    DatabasePurgeRequest purge;
+    CHECK(parseDatabasePurgeRequestApi(
+        {{"db", "query.db"}, {"dryRun", "0"}, {"confirm", "1"}},
+        "",
+        purge,
+        error));
+    CHECK(purge.dbPath == "query.db");
+    CHECK_FALSE(purge.dryRun);
+    CHECK(purge.confirm);
+
+    InspectRequest inspect;
+    CHECK(parseInspectRequestApi(
+        {{"input", "query.jpg"}, {"db", "query.db"}},
+        R"({"imagePath":"body.jpg"})",
+        inspect,
+        error));
+    CHECK(inspect.imagePath == "body.jpg");
+    CHECK(inspect.dbPath == "query.db");
+}
+
 TEST_CASE("Legacy run command validation is shared")
 {
     auto valid = validateLegacyRunCommand("mosaicraft db-health -d library.db");
