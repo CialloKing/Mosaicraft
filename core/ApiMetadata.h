@@ -44,6 +44,13 @@ struct ApiErrorResponseMetadata
     std::string responseKey;
 };
 
+struct ApiEntryPointMetadata
+{
+    std::string name;
+    std::string executable;
+    std::string role;
+};
+
 struct ApiEndpointMetadata
 {
     ApiOperation operation = ApiOperation::Ping;
@@ -79,6 +86,7 @@ const char* apiCompatibilityLevel();
 bool apiContractStable();
 std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled);
 std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpointMetadata>& endpoints);
+std::vector<ApiEntryPointMetadata> apiEntryPointMetadata();
 std::vector<std::string> apiFeatureList();
 
 } // namespace mosaicraft

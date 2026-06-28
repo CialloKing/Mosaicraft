@@ -8,13 +8,16 @@ Mosaicraft now keeps two executable entry points:
 Both entries call the same core services for mosaic generation, library building,
 image inspection, and database maintenance.
 
+`/api/info` exposes the same entry point boundary in `entryPoints`, so callers
+can distinguish the current entry from the supported executable entry set.
+
 ## Discovery
 
 `GET /api/info`
 
 Returns service version, entry name, structured API status, legacy `/api/run`
-status, API contract version, endpoint counts, metadata validation status, and
-a compact feature list.
+status, API contract version, entry point list, endpoint counts, metadata
+validation status, and a compact feature list.
 
 The structured API currently reports:
 

@@ -557,4 +557,12 @@ std::vector<std::string> apiFeatureList()
     };
 }
 
+std::vector<ApiEntryPointMetadata> apiEntryPointMetadata()
+{
+    return {
+        {"cli", "mosaicraft.exe", "command line entry"},
+        {"webui", "MosaicraftWebUI.exe", "local Web UI and structured HTTP API entry"}
+    };
+}
+
 } // namespace mosaicraft

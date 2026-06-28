@@ -248,11 +248,20 @@ nlohmann::json apiInfoToJson(bool legacyRunEnabled, const char* entryName)
         if (endpoint.legacy) ++legacyCount;
         if (endpoint.enabled) ++enabledCount;
     }
+    nlohmann::json entryPoints = nlohmann::json::array();
+    for (const auto& entryPoint : apiEntryPointMetadata()) {
+        entryPoints.push_back({
+            {"name", entryPoint.name},
+            {"executable", entryPoint.executable},
+            {"role", entryPoint.role}
+        });
+    }
 
     return {
         {"name", "Mosaicraft"},
         {"version", kVersion},
         {"entry", entryName},
+        {"entryPoints", entryPoints},
         {"api", {
             {"structured", true},
             {"contractVersion", apiContractVersion()},

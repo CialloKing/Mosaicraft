@@ -331,6 +331,13 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
 
 TEST_CASE("API feature metadata is shared")
 {
+    const auto entryPoints = apiEntryPointMetadata();
+    CHECK(entryPoints.size() == 2);
+    CHECK(entryPoints[0].name == "cli");
+    CHECK(entryPoints[0].executable == "mosaicraft.exe");
+    CHECK(entryPoints[1].name == "webui");
+    CHECK(entryPoints[1].executable == "MosaicraftWebUI.exe");
+
     const auto features = apiFeatureList();
     CHECK(std::find(features.begin(), features.end(), "mosaic-jobs") != features.end());
     CHECK(std::find(features.begin(), features.end(), "database-maintenance") != features.end());
@@ -380,6 +387,10 @@ TEST_CASE("API JSON serialization is shared")
     auto infoJson = apiInfoToJson(false, "MosaicraftWebUI");
     CHECK(infoJson["version"].get<std::string>() == "1.12.3");
     CHECK(infoJson["entry"].get<std::string>() == "MosaicraftWebUI");
+    REQUIRE(infoJson["entryPoints"].is_array());
+    CHECK(infoJson["entryPoints"].size() == 2);
+    CHECK(infoJson["entryPoints"][0]["executable"].get<std::string>() == "mosaicraft.exe");
+    CHECK(infoJson["entryPoints"][1]["executable"].get<std::string>() == "MosaicraftWebUI.exe");
     CHECK(infoJson["api"]["contractVersion"].get<std::string>() == "1.0");
     CHECK(infoJson["api"]["contractMajorVersion"].get<int>() == 1);
     CHECK(infoJson["api"]["compatibility"].get<std::string>() == "stable");
