@@ -78,14 +78,6 @@ static mosaicraft::ApiQueryParams queryParamsFor(const httplib::Request& req,
     return queryParams(req, mosaicraft::apiQueryKeys(operation));
 }
 
-static std::string httpPatternForEndpoint(const mosaicraft::ApiEndpointMetadata& endpoint)
-{
-    if (endpoint.path == "/api/jobs/{id}") {
-        return R"(/api/jobs/([A-Za-z0-9_-]+))";
-    }
-    return endpoint.path;
-}
-
 static mosaicraft::ApiRequest apiRequestFromHttp(const httplib::Request& req,
                                                  const mosaicraft::ApiEndpointMetadata& endpoint,
                                                  mosaicraft::ApiRequestContext context = {})
@@ -133,7 +125,10 @@ static void registerApiMethod(httplib::Server& svr,
                               const mosaicraft::ApiEndpointMetadata& endpoint,
                               bool legacyRunEnabled)
 {
-    const std::string pattern = httpPatternForEndpoint(endpoint);
+    if (endpoint.httpPattern.empty()) {
+        throw std::logic_error("API endpoint has no HTTP pattern");
+    }
+    const std::string pattern = endpoint.httpPattern;
     auto handler = [&, endpoint, legacyRunEnabled](const httplib::Request& req, httplib::Response& res) {
         handleApi(res, jobManager,
             apiRequestFromHttp(req, endpoint, discoveryContext(endpoint.operation, legacyRunEnabled)));

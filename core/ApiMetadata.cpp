@@ -14,6 +14,14 @@ std::vector<std::string> endpointMethods(const std::string& method)
     return {method};
 }
 
+std::string endpointHttpPattern(const std::string& path)
+{
+    if (path == "/api/jobs/{id}") {
+        return R"(/api/jobs/([A-Za-z0-9_-]+))";
+    }
+    return path;
+}
+
 ApiEndpointMetadata endpoint(const std::string& method,
                              const std::string& path,
                              const std::string& description,
@@ -30,6 +38,7 @@ ApiEndpointMetadata endpoint(const std::string& method,
     info.method = method;
     info.methods = endpointMethods(method);
     info.path = path;
+    info.httpPattern = endpointHttpPattern(path);
     info.description = description;
     info.category = category;
     info.legacy = legacy;

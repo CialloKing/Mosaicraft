@@ -43,6 +43,7 @@ struct ApiEndpointMetadata
     std::string method;
     std::vector<std::string> methods;
     std::string path;
+    std::string httpPattern;
     std::string description;
     std::string category;
     std::vector<std::string> requestFields;

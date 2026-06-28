@@ -196,6 +196,7 @@ nlohmann::json apiEndpointToJson(const ApiEndpointMetadata& endpoint)
         {"method", endpoint.method},
         {"methods", endpoint.methods},
         {"path", endpoint.path},
+        {"httpPattern", endpoint.httpPattern},
         {"description", endpoint.description},
         {"category", endpoint.category},
         {"requestFields", fields},
