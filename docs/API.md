@@ -13,7 +13,8 @@ image inspection, and database maintenance.
 `GET /api/endpoints`
 
 Returns the structured API list. Entries marked `legacy: true` are compatibility
-endpoints and should not be used by new UI code.
+endpoints and should not be used by new UI code. The `enabled` field reports
+whether a compatibility endpoint is currently available.
 
 ## Health
 
@@ -125,4 +126,6 @@ deletion requires `dryRun: false` and `confirm: true`.
 `POST /api/run`
 
 Compatibility endpoint for old command-style callers. The Web UI no longer uses
-this endpoint. Keep it only while external callers still need command fallback.
+this endpoint. It is disabled by default; set
+`MOSAICRAFT_ENABLE_LEGACY_RUN=1` before starting `MosaicraftWebUI.exe` to enable
+compatibility mode.

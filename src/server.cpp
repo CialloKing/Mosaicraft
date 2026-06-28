@@ -8,6 +8,7 @@
 #include "core/MosaicService.h"
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <initializer_list>
@@ -32,6 +33,16 @@ namespace
 {
 
 using json = nlohmann::json;
+
+static bool envFlagEnabled(const char* name)
+{
+    const char* value = std::getenv(name);
+    if (!value) return false;
+    std::string text(value);
+    std::transform(text.begin(), text.end(), text.begin(),
+        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return text == "1" || text == "true" || text == "yes" || text == "on";
+}
 
 static void setJsonResult(httplib::Response& res, const mosaicraft::ServiceResult& result)
 {
@@ -209,17 +220,19 @@ static json inspectToJson(const mosaicraft::InspectResult& info)
 static json endpointInfo(const std::string& method,
                          const std::string& path,
                          const std::string& description,
-                         bool legacy = false)
+                         bool legacy = false,
+                         bool enabled = true)
 {
     return {
         {"method", method},
         {"path", path},
         {"description", description},
-        {"legacy", legacy}
+        {"legacy", legacy},
+        {"enabled", enabled}
     };
 }
 
-static json apiEndpointsJson()
+static json apiEndpointsJson(bool legacyRunEnabled)
 {
     return json::array({
         endpointInfo("GET", "/api/ping", "health check"),
@@ -236,7 +249,7 @@ static json apiEndpointsJson()
         endpointInfo("POST", "/api/db/usage/export", "export used images"),
         endpointInfo("GET|POST", "/api/db/purge", "preview or purge orphan records"),
         endpointInfo("GET|POST", "/api/inspect", "inspect a source image"),
-        endpointInfo("POST", "/api/run", "legacy command compatibility endpoint", true)
+        endpointInfo("POST", "/api/run", "legacy command compatibility endpoint", true, legacyRunEnabled)
     });
 }
 
@@ -674,6 +687,7 @@ int main(int argc, char* argv[])
         }
     }
 
+    const bool legacyRunEnabled = envFlagEnabled("MOSAICRAFT_ENABLE_LEGACY_RUN");
     std::string mosaicPath = findMosaicraft();
     std::string htmlPath = findHtml();
     if (htmlPath.empty()) {
@@ -685,6 +699,7 @@ int main(int argc, char* argv[])
     std::cout << "  Server: http://localhost:" << port << std::endl;
     std::cout << "  Mosaicraft: " << mosaicPath << std::endl;
     std::cout << "  HTML: " << htmlPath << std::endl;
+    std::cout << "  Legacy /api/run: " << (legacyRunEnabled ? "enabled" : "disabled") << std::endl;
 
     std::string htmlContent = readFile(htmlPath);
     std::mutex htmlMutex;
@@ -710,8 +725,8 @@ int main(int argc, char* argv[])
         res.set_content("HTML reloaded", "text/plain");
     });
 
-    svr.Get("/api/endpoints", [](const httplib::Request&, httplib::Response& res) {
-        setJsonBody(res, json{{"ok", true}, {"endpoints", apiEndpointsJson()}});
+    svr.Get("/api/endpoints", [legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
+        setJsonBody(res, json{{"ok", true}, {"endpoints", apiEndpointsJson(legacyRunEnabled)}});
     });
 
     svr.Post("/api/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
@@ -922,7 +937,16 @@ int main(int argc, char* argv[])
     svr.Post("/api/inspect", handleInspect);
 
     // 执行命令
-    svr.Post("/api/run", [&](const httplib::Request& req, httplib::Response& res) {
+    svr.Post("/api/run", [&, legacyRunEnabled](const httplib::Request& req, httplib::Response& res) {
+        if (!legacyRunEnabled) {
+            res.status = 404;
+            setJsonBody(res, json{
+                {"ok", false},
+                {"message", "legacy /api/run is disabled; set MOSAICRAFT_ENABLE_LEGACY_RUN=1 to enable compatibility mode"}
+            });
+            return;
+        }
+
         std::unique_lock<std::mutex> runLock(runMutex, std::try_to_lock);
         if (!runLock.owns_lock()) {
             res.status = 429;
