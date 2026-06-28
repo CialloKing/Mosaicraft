@@ -58,6 +58,27 @@ std::string JobManager::submitMosaic(MosaicRequest request)
     return record->snapshot.id;
 }
 
+std::string JobManager::submitBuild(BuildRequest request)
+{
+    auto record = std::make_shared<JobRecord>();
+    record->buildRequest = std::move(request);
+    record->snapshot.id = nextId();
+    record->snapshot.type = "build";
+    record->snapshot.state = JobState::Queued;
+    record->snapshot.inputPath = record->buildRequest.inputDir;
+    record->snapshot.outputPath = record->buildRequest.outputDir;
+    record->snapshot.createdAt = std::chrono::system_clock::now();
+
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_jobs.emplace(record->snapshot.id, record);
+        m_queue.push_back(record->snapshot.id);
+    }
+    m_cv.notify_one();
+
+    return record->snapshot.id;
+}
+
 bool JobManager::getJob(const std::string& id, JobSnapshot& out) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -117,7 +138,16 @@ void JobManager::workerLoop()
             id = m_queue.front();
             m_queue.pop_front();
         }
-        runMosaicJob(id);
+
+        std::string type;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            auto it = m_jobs.find(id);
+            if (it != m_jobs.end()) type = it->second->snapshot.type;
+        }
+
+        if (type == "build") runBuildJob(id);
+        else runMosaicJob(id);
     }
 }
 
@@ -149,6 +179,42 @@ void JobManager::runMosaicJob(const std::string& id)
         result = ServiceResult::failure(1, "internal error");
     }
 
+    finishJob(id, result);
+}
+
+void JobManager::runBuildJob(const std::string& id)
+{
+    BuildRequest request;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_jobs.find(id);
+        if (it == m_jobs.end()) return;
+        auto& record = it->second;
+        record->snapshot.state = JobState::Running;
+        record->snapshot.startedAt = std::chrono::system_clock::now();
+        request = record->buildRequest;
+    }
+
+    ServiceResult result;
+    try
+    {
+        BuildService service;
+        result = service.run(request);
+    }
+    catch (const std::exception& e)
+    {
+        result = ServiceResult::failure(1, e.what());
+    }
+    catch (...)
+    {
+        result = ServiceResult::failure(1, "internal error");
+    }
+
+    finishJob(id, result);
+}
+
+void JobManager::finishJob(const std::string& id, const ServiceResult& result)
+{
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_jobs.find(id);

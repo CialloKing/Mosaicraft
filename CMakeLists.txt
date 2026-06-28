@@ -95,6 +95,7 @@ endif()  # MOSAICRAFT_CUDA
 add_library(mosaicraft_core STATIC
     core/ImageNormalizer.cpp
     core/BatchProcessor.cpp
+    core/BuildService.cpp
     core/Database.cpp
     core/FeatureExtractor.cpp
     core/JobManager.cpp
@@ -104,6 +105,10 @@ add_library(mosaicraft_core STATIC
 if (NOT MOSAICRAFT_CUDA)
     target_sources(mosaicraft_core PRIVATE core/CudaStubs.cpp)
 endif()
+
+target_compile_definitions(mosaicraft_core PRIVATE
+    $<$<BOOL:${MOSAICRAFT_CUDA}>:MOSAICRAFT_CUDA>
+)
 
 target_include_directories(mosaicraft_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

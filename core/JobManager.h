@@ -1,5 +1,6 @@
 #pragma once
 
+#include "BuildService.h"
 #include "MosaicService.h"
 
 #include <chrono>
@@ -47,6 +48,7 @@ public:
     JobManager& operator=(const JobManager&) = delete;
 
     std::string submitMosaic(MosaicRequest request);
+    std::string submitBuild(BuildRequest request);
     bool getJob(const std::string& id, JobSnapshot& out) const;
     bool waitJob(const std::string& id, JobSnapshot& out);
     std::vector<JobSnapshot> listJobs() const;
@@ -56,11 +58,14 @@ private:
     {
         JobSnapshot snapshot;
         MosaicRequest request;
+        BuildRequest buildRequest;
     };
 
     std::string nextId();
     void workerLoop();
     void runMosaicJob(const std::string& id);
+    void runBuildJob(const std::string& id);
+    void finishJob(const std::string& id, const ServiceResult& result);
 
     mutable std::mutex m_mutex;
     std::condition_variable m_cv;

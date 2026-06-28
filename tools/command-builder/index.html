@@ -380,6 +380,21 @@ async function runCommand() {
       await pollJob(data.job.id, status);
       return;
     }
+    if (tab === 'build') {
+      const res = await fetch(SERVER_URL + '/api/jobs/build', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildBuildPayload())
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok || !data.job) {
+        status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
+        if (data && data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+        return;
+      }
+      await pollJob(data.job.id, status);
+      return;
+    }
 
     const res = await fetch(SERVER_URL + '/api/run', { method: 'POST', body: cmd });
     const text = await res.text();
@@ -475,6 +490,27 @@ function buildMosaicPayload() {
   if (match) {
     payload.nativeTileW = Number(match[1]);
     payload.nativeTileH = Number(match[2]);
+  }
+  return payload;
+}
+
+function buildBuildPayload() {
+  const payload = {};
+  setIfValue(payload, 'inputDir', 'b-input');
+  setIfValue(payload, 'outputDir', 'b-output');
+  setIfValue(payload, 'dbPath', 'b-db');
+  setIfValue(payload, 'threads', 'b-threads', Number);
+  setIfValue(payload, 'normalizeSize', 'b-normsize');
+  setIfChecked(payload, 'appendMode', 'b-append');
+  setIfChecked(payload, 'recursive', 'b-recursive');
+  setIfChecked(payload, 'normalizeOnly', 'b-normonly');
+  setIfChecked(payload, 'forceMode', 'b-force');
+
+  const normSize = val('b-normsize');
+  const match = normSize.match(/^(\d+)x(\d+)$/i);
+  if (match) {
+    payload.normalizeWidth = Number(match[1]);
+    payload.normalizeHeight = Number(match[2]);
   }
   return payload;
 }

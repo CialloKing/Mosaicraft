@@ -251,6 +251,59 @@ static bool buildMosaicRequest(const std::string& body,
     return true;
 }
 
+static bool buildBuildRequest(const std::string& body,
+                              mosaicraft::BuildRequest& request,
+                              std::string& error)
+{
+    json values;
+    try {
+        values = json::parse(body);
+    } catch (const json::parse_error& e) {
+        error = std::string("invalid JSON body: ") + e.what();
+        return false;
+    }
+    if (!values.is_object()) {
+        error = "JSON body must be an object";
+        return false;
+    }
+
+    std::string text;
+    int intValue = 0;
+    bool boolValue = false;
+
+    if (getStringField(values, {"inputDir", "input"}, text, error))
+        request.inputDir = text;
+    if (getStringField(values, {"outputDir", "output"}, text, error))
+        request.outputDir = text;
+    if (getStringField(values, {"dbPath", "db"}, text, error))
+        request.dbPath = text;
+    if (getStringField(values, {"normalizeSize"}, text, error)) {
+        if (!parseSize(text, request.normalizeWidth, request.normalizeHeight)) {
+            error = "normalizeSize must use WxH format";
+            return false;
+        }
+    }
+    if (getIntField(values, {"threads"}, intValue, error))
+        request.threads = std::max(0, intValue);
+    if (getIntField(values, {"normalizeWidth"}, intValue, error))
+        request.normalizeWidth = std::max(1, intValue);
+    if (getIntField(values, {"normalizeHeight"}, intValue, error))
+        request.normalizeHeight = std::max(1, intValue);
+
+    if (getBoolField(values, {"appendMode", "append"}, boolValue, error))
+        request.appendMode = boolValue;
+    if (getBoolField(values, {"normalizeOnly"}, boolValue, error))
+        request.normalizeOnly = boolValue;
+    if (getBoolField(values, {"forceMode", "force"}, boolValue, error))
+        request.forceMode = boolValue;
+    if (getBoolField(values, {"recursive"}, boolValue, error))
+        request.recursive = boolValue;
+
+    request.allowPrompt = false;
+    if (!error.empty()) return false;
+    return true;
+}
+
 } // namespace
 
 #ifdef _WIN32
@@ -421,6 +474,30 @@ int main(int argc, char* argv[])
 
         try {
             std::string jobId = jobManager.submitMosaic(request);
+            mosaicraft::JobSnapshot snapshot;
+            jobManager.getJob(jobId, snapshot);
+            res.status = 202;
+            setJsonBody(res, json{{"ok", true}, {"job", jobToJson(snapshot)}});
+        } catch (const std::exception& e) {
+            res.status = 500;
+            setJsonResult(res, mosaicraft::ServiceResult::failure(1, e.what()));
+        } catch (...) {
+            res.status = 500;
+            setJsonResult(res, mosaicraft::ServiceResult::failure(1, "internal error"));
+        }
+    });
+
+    svr.Post("/api/jobs/build", [&](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::BuildRequest request;
+        std::string error;
+        if (!buildBuildRequest(req.body, request, error)) {
+            res.status = 400;
+            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
+            return;
+        }
+
+        try {
+            std::string jobId = jobManager.submitBuild(request);
             mosaicraft::JobSnapshot snapshot;
             jobManager.getJob(jobId, snapshot);
             res.status = 202;
