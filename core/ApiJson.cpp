@@ -217,13 +217,27 @@ nlohmann::json apiEndpointsToJson(bool legacyRunEnabled)
 
 nlohmann::json apiInfoToJson(bool legacyRunEnabled, const char* entryName)
 {
+    const auto endpoints = apiEndpointMetadata(legacyRunEnabled);
+    const auto metadataErrors = validateApiEndpointMetadata(endpoints);
+    int legacyCount = 0;
+    int enabledCount = 0;
+    for (const auto& endpoint : endpoints) {
+        if (endpoint.legacy) ++legacyCount;
+        if (endpoint.enabled) ++enabledCount;
+    }
+
     return {
         {"name", "Mosaicraft"},
         {"version", kVersion},
         {"entry", entryName},
         {"api", {
             {"structured", true},
-            {"legacyRunEnabled", legacyRunEnabled}
+            {"legacyRunEnabled", legacyRunEnabled},
+            {"endpointCount", static_cast<int>(endpoints.size())},
+            {"enabledEndpointCount", enabledCount},
+            {"legacyEndpointCount", legacyCount},
+            {"metadataValid", metadataErrors.empty()},
+            {"metadataErrors", metadataErrors}
         }},
         {"features", apiFeatureList()}
     };

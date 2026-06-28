@@ -319,6 +319,17 @@ TEST_CASE("API JSON serialization is shared")
     CHECK(infoJson["version"].get<std::string>() == "1.12.3");
     CHECK(infoJson["entry"].get<std::string>() == "MosaicraftWebUI");
     CHECK_FALSE(infoJson["api"]["legacyRunEnabled"].get<bool>());
+    CHECK(infoJson["api"]["endpointCount"].get<int>() == 17);
+    CHECK(infoJson["api"]["enabledEndpointCount"].get<int>() == 16);
+    CHECK(infoJson["api"]["legacyEndpointCount"].get<int>() == 1);
+    CHECK(infoJson["api"]["metadataValid"].get<bool>());
+    CHECK(infoJson["api"]["metadataErrors"].empty());
+
+    auto enabledInfoJson = apiInfoToJson(true, "MosaicraftWebUI");
+    CHECK(enabledInfoJson["api"]["legacyRunEnabled"].get<bool>());
+    CHECK(enabledInfoJson["api"]["endpointCount"].get<int>() == 17);
+    CHECK(enabledInfoJson["api"]["enabledEndpointCount"].get<int>() == 17);
+    CHECK(enabledInfoJson["api"]["metadataValid"].get<bool>());
 }
 
 TEST_CASE("API JSON serialization covers jobs and database shapes")
