@@ -305,10 +305,8 @@ ApiResponse apiMosaic(const std::string& body, JobManager& jobs)
     try {
         const std::string jobId = jobs.submitMosaic(request);
         JobSnapshot snapshot;
-        if (!jobs.waitJob(jobId, snapshot)) {
-            return internalError("job not found");
-        }
-        return resultResponse(snapshot.result.ok ? 200 : 500, snapshot.result);
+        jobs.getJob(jobId, snapshot);
+        return {202, apiJobJson(snapshot)};
     } catch (const std::exception& e) {
         return internalError(e.what());
     } catch (...) {

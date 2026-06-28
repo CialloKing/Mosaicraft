@@ -348,15 +348,11 @@ int extractBatch(
         fprintf(stderr, "GPU build: unsupported size %dx%d\n", imgW, imgH);
         return 0;
     }
-cudaDeviceSynchronize();
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess)
+    if (cudaDeviceSynchronize() != cudaSuccess || cudaGetLastError() != cudaSuccess)
     {
-        fprintf(stderr, "GPU feature error: %s\n", cudaGetErrorString(err));
+        fprintf(stderr, "GPU feature error: kernel launch failed\n");
         return 0;
     }
-
-    // 下载结果
     std::vector<float> h_grid(N * 192);
     std::vector<uint8_t> h_tiny(N * 256);
     std::vector<float> h_lbp(N * 256);
