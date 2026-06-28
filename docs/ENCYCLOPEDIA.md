@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书
 
-> 最后更新：2026-06-28 | 版本：v1.13.1
+> 最后更新：2026-06-28 | 版本：v1.13.2
 
 ## 目录
 
@@ -437,6 +437,8 @@ Compress-Archive -Path release_pkg\* -Destination Mosaicraft_release.zip
 ## 12. v1.13 更新日志 (2026-06-28)
 
 ### v1.13.1: REST API · 异步任务 · 合约版本化
+
+### v1.13.2: Bug 修复 · CLI 校验 · PngStreamWriter 清理 (2026-07-01)
 - 15 端点 REST API: /api/jobs/*, /api/db/*, /api/mosaic, /api/inspect
 - 异步任务: POST /api/jobs/* 提交 → GET /api/jobs/{id} 轮询
 - 服务层解耦: MosaicService / BuildService, CLI 与 HTTP 共享 core
