@@ -13,12 +13,14 @@ ApiEndpointMetadata endpoint(const std::string& method,
                              const std::string& description,
                              const std::string& category,
                              ApiOperation operation,
+                             ApiRequestShape requestShape,
                              std::initializer_list<const char*> requestFields = {},
                              bool legacy = false,
                              bool enabled = true)
 {
     ApiEndpointMetadata info;
     info.operation = operation;
+    info.requestShape = requestShape;
     info.method = method;
     info.path = path;
     info.description = description;
@@ -58,48 +60,63 @@ const char* apiOperationName(ApiOperation operation)
     return "unknown";
 }
 
+const char* apiRequestShapeName(ApiRequestShape shape)
+{
+    switch (shape)
+    {
+    case ApiRequestShape::None: return "none";
+    case ApiRequestShape::Body: return "body";
+    case ApiRequestShape::Query: return "query";
+    case ApiRequestShape::JobId: return "jobId";
+    case ApiRequestShape::LegacyCommand: return "legacyCommand";
+    }
+    return "unknown";
+}
+
 std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled)
 {
     return {
+        endpoint("GET", "/api/endpoints", "structured API endpoint discovery", "discovery",
+            ApiOperation::Endpoints, ApiRequestShape::None),
         endpoint("GET", "/api/info", "service version and capability summary", "discovery",
-            ApiOperation::Info),
+            ApiOperation::Info, ApiRequestShape::None),
         endpoint("GET", "/api/ping", "health check", "health",
-            ApiOperation::Ping),
+            ApiOperation::Ping, ApiRequestShape::None),
         endpoint("POST", "/api/mosaic", "run mosaic synchronously", "mosaic",
-            ApiOperation::Mosaic,
+            ApiOperation::Mosaic, ApiRequestShape::Body,
             {"inputPath", "dbPath", "outputPath", "format", "quality", "writeMode"}),
         endpoint("POST", "/api/jobs/mosaic", "start mosaic job", "jobs",
-            ApiOperation::SubmitMosaicJob,
+            ApiOperation::SubmitMosaicJob, ApiRequestShape::Body,
             {"inputPath", "dbPath", "outputPath", "format", "quality", "writeMode"}),
         endpoint("POST", "/api/jobs/build", "start library build job", "jobs",
-            ApiOperation::SubmitBuildJob,
+            ApiOperation::SubmitBuildJob, ApiRequestShape::Body,
             {"inputDir", "outputDir", "dbPath", "threads", "recursive", "forceMode"}),
         endpoint("GET", "/api/jobs", "list jobs", "jobs",
-            ApiOperation::ListJobs),
+            ApiOperation::ListJobs, ApiRequestShape::None),
         endpoint("DELETE", "/api/jobs", "clear finished jobs", "jobs",
-            ApiOperation::ClearFinishedJobs),
+            ApiOperation::ClearFinishedJobs, ApiRequestShape::None),
         endpoint("GET", "/api/jobs/{id}", "get job status", "jobs",
-            ApiOperation::GetJob, {"id"}),
+            ApiOperation::GetJob, ApiRequestShape::JobId, {"id"}),
         endpoint("DELETE", "/api/jobs/{id}", "cancel queued job", "jobs",
-            ApiOperation::CancelJob, {"id"}),
+            ApiOperation::CancelJob, ApiRequestShape::JobId, {"id"}),
         endpoint("GET|POST", "/api/db/stats", "database statistics", "database",
-            ApiOperation::DatabaseStats, {"dbPath"}),
+            ApiOperation::DatabaseStats, ApiRequestShape::Query, {"dbPath"}),
         endpoint("GET|POST", "/api/db/health", "database health report", "database",
-            ApiOperation::DatabaseHealth, {"dbPath"}),
+            ApiOperation::DatabaseHealth, ApiRequestShape::Query, {"dbPath"}),
         endpoint("GET|POST", "/api/db/usage", "database usage report", "database",
-            ApiOperation::DatabaseUsage,
+            ApiOperation::DatabaseUsage, ApiRequestShape::Query,
             {"dbPath", "limit", "showUnused"}),
         endpoint("POST", "/api/db/usage/export", "export used images", "database",
-            ApiOperation::DatabaseUsageExport,
+            ApiOperation::DatabaseUsageExport, ApiRequestShape::Query,
             {"dbPath", "outputDir", "confirm"}),
         endpoint("GET|POST", "/api/db/purge", "preview or purge orphan records", "database",
-            ApiOperation::DatabasePurge,
+            ApiOperation::DatabasePurge, ApiRequestShape::Query,
             {"dbPath", "dryRun", "confirm"}),
         endpoint("GET|POST", "/api/inspect", "inspect a source image", "inspect",
-            ApiOperation::Inspect,
+            ApiOperation::Inspect, ApiRequestShape::Query,
             {"imagePath", "dbPath"}),
         endpoint("POST", "/api/run", "legacy command compatibility endpoint", "legacy",
-            ApiOperation::LegacyRunDisabled,
+            ApiOperation::LegacyRunDisabled, ApiRequestShape::LegacyCommand,
             {"command"}, true, legacyRunEnabled)
     };
 }

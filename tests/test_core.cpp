@@ -242,9 +242,15 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
             [&](const ApiEndpointMetadata& endpoint) { return endpoint.path == path; });
     };
 
+    auto endpointDiscovery = findEndpoint("/api/endpoints");
+    REQUIRE(endpointDiscovery != endpoints.end());
+    CHECK(endpointDiscovery->operation == ApiOperation::Endpoints);
+    CHECK(endpointDiscovery->requestShape == ApiRequestShape::None);
+
     auto mosaicJob = findEndpoint("/api/jobs/mosaic");
     REQUIRE(mosaicJob != endpoints.end());
     CHECK(mosaicJob->operation == ApiOperation::SubmitMosaicJob);
+    CHECK(mosaicJob->requestShape == ApiRequestShape::Body);
     CHECK(mosaicJob->category == "jobs");
     CHECK(std::find(mosaicJob->requestFields.begin(), mosaicJob->requestFields.end(),
         "inputPath") != mosaicJob->requestFields.end());
@@ -252,6 +258,7 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     auto legacyRun = findEndpoint("/api/run");
     REQUIRE(legacyRun != endpoints.end());
     CHECK(legacyRun->operation == ApiOperation::LegacyRunDisabled);
+    CHECK(legacyRun->requestShape == ApiRequestShape::LegacyCommand);
     CHECK(legacyRun->legacy);
     CHECK_FALSE(legacyRun->enabled);
 
@@ -262,6 +269,7 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(enabledLegacyRun->enabled);
 
     CHECK(std::string(apiOperationName(ApiOperation::DatabaseUsageExport)) == "databaseUsageExport");
+    CHECK(std::string(apiRequestShapeName(ApiRequestShape::JobId)) == "jobId");
 }
 
 TEST_CASE("API feature metadata is shared")
@@ -285,6 +293,7 @@ TEST_CASE("API JSON serialization is shared")
         [](const nlohmann::json& endpoint) { return endpoint["path"] == "/api/run"; });
     REQUIRE(legacy != endpointsJson.end());
     CHECK((*legacy)["operation"].get<std::string>() == "legacyRunDisabled");
+    CHECK((*legacy)["requestShape"].get<std::string>() == "legacyCommand");
     CHECK((*legacy)["legacy"].get<bool>());
     CHECK_FALSE((*legacy)["enabled"].get<bool>());
 
@@ -567,12 +576,18 @@ TEST_CASE("API endpoint metadata carries dispatch operations")
 {
     for (const auto& endpoint : apiEndpointMetadata(false)) {
         CHECK(std::string(apiOperationName(endpoint.operation)) != "unknown");
+        CHECK(std::string(apiRequestShapeName(endpoint.requestShape)) != "unknown");
         auto keys = apiQueryKeys(endpoint.operation);
         if (endpoint.path == "/api/db/usage") {
+            CHECK(endpoint.requestShape == ApiRequestShape::Query);
             CHECK(std::find(keys.begin(), keys.end(), std::string("limit")) != keys.end());
         }
         if (endpoint.path == "/api/inspect") {
+            CHECK(endpoint.requestShape == ApiRequestShape::Query);
             CHECK(std::find(keys.begin(), keys.end(), std::string("input")) != keys.end());
+        }
+        if (endpoint.path == "/api/jobs/{id}") {
+            CHECK(endpoint.requestShape == ApiRequestShape::JobId);
         }
     }
 }

@@ -27,9 +27,19 @@ enum class ApiOperation
     Inspect
 };
 
+enum class ApiRequestShape
+{
+    None,
+    Body,
+    Query,
+    JobId,
+    LegacyCommand
+};
+
 struct ApiEndpointMetadata
 {
     ApiOperation operation = ApiOperation::Ping;
+    ApiRequestShape requestShape = ApiRequestShape::None;
     std::string method;
     std::string path;
     std::string description;
@@ -40,6 +50,7 @@ struct ApiEndpointMetadata
 };
 
 const char* apiOperationName(ApiOperation operation);
+const char* apiRequestShapeName(ApiRequestShape shape);
 std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled);
 std::vector<std::string> apiFeatureList();
 

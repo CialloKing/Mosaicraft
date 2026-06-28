@@ -22,6 +22,8 @@ Returns the structured API list. Each entry contains:
 - `method`: HTTP method or method set.
 - `path`: endpoint path.
 - `operation`: stable core API operation name.
+- `requestShape`: how the endpoint maps HTTP data into the core request
+  (`none`, `body`, `query`, `jobId`, or `legacyCommand`).
 - `description`: short endpoint description.
 - `category`: functional group, such as `jobs`, `database`, or `inspect`.
 - `requestFields`: common request fields accepted by the endpoint.
