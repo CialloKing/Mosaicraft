@@ -35,9 +35,18 @@ Starts an asynchronous library build job.
 
 Lists known jobs.
 
+`DELETE /api/jobs`
+
+Removes finished jobs from the in-memory job list. Running and queued jobs are
+kept.
+
 `GET /api/jobs/{id}`
 
 Returns a single job snapshot.
+
+`DELETE /api/jobs/{id}`
+
+Cancels a queued job. Running jobs are not interrupted and return HTTP 409.
 
 ## Mosaic
 

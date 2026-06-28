@@ -15,6 +15,7 @@ const char* jobStateName(JobState state)
     case JobState::Running: return "running";
     case JobState::Succeeded: return "succeeded";
     case JobState::Failed: return "failed";
+    case JobState::Canceled: return "canceled";
     }
     return "unknown";
 }
@@ -95,7 +96,7 @@ bool JobManager::waitJob(const std::string& id, JobSnapshot& out)
         auto it = m_jobs.find(id);
         if (it == m_jobs.end()) return true;
         JobState state = it->second->snapshot.state;
-        return state == JobState::Succeeded || state == JobState::Failed;
+        return state == JobState::Succeeded || state == JobState::Failed || state == JobState::Canceled;
     });
 
     auto it = m_jobs.find(id);
@@ -114,6 +115,56 @@ std::vector<JobSnapshot> JobManager::listJobs() const
         jobs.push_back(item.second->snapshot);
     }
     return jobs;
+}
+
+bool JobManager::cancelQueuedJob(const std::string& id, JobSnapshot& out)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_jobs.find(id);
+    if (it == m_jobs.end()) return false;
+
+    auto& record = it->second;
+    if (record->snapshot.state != JobState::Queued)
+    {
+        out = record->snapshot;
+        return false;
+    }
+
+    for (auto q = m_queue.begin(); q != m_queue.end(); ++q)
+    {
+        if (*q == id)
+        {
+            m_queue.erase(q);
+            break;
+        }
+    }
+
+    record->snapshot.state = JobState::Canceled;
+    record->snapshot.result = ServiceResult::failure(1, "job canceled");
+    record->snapshot.finishedAt = std::chrono::system_clock::now();
+    out = record->snapshot;
+    m_cv.notify_all();
+    return true;
+}
+
+int JobManager::clearFinishedJobs()
+{
+    int removed = 0;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    for (auto it = m_jobs.begin(); it != m_jobs.end(); )
+    {
+        JobState state = it->second->snapshot.state;
+        if (state == JobState::Succeeded || state == JobState::Failed || state == JobState::Canceled)
+        {
+            it = m_jobs.erase(it);
+            removed++;
+        }
+        else
+        {
+            ++it;
+        }
+    }
+    return removed;
 }
 
 std::string JobManager::nextId()

@@ -22,7 +22,8 @@ enum class JobState
     Queued,
     Running,
     Succeeded,
-    Failed
+    Failed,
+    Canceled
 };
 
 struct JobSnapshot
@@ -52,6 +53,8 @@ public:
     bool getJob(const std::string& id, JobSnapshot& out) const;
     bool waitJob(const std::string& id, JobSnapshot& out);
     std::vector<JobSnapshot> listJobs() const;
+    bool cancelQueuedJob(const std::string& id, JobSnapshot& out);
+    int clearFinishedJobs();
 
 private:
     struct JobRecord

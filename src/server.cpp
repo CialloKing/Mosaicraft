@@ -227,7 +227,9 @@ static json apiEndpointsJson()
         endpointInfo("POST", "/api/jobs/mosaic", "start mosaic job"),
         endpointInfo("POST", "/api/jobs/build", "start library build job"),
         endpointInfo("GET", "/api/jobs", "list jobs"),
+        endpointInfo("DELETE", "/api/jobs", "clear finished jobs"),
         endpointInfo("GET", "/api/jobs/{id}", "get job status"),
+        endpointInfo("DELETE", "/api/jobs/{id}", "cancel queued job"),
         endpointInfo("GET|POST", "/api/db/stats", "database statistics"),
         endpointInfo("GET|POST", "/api/db/health", "database health report"),
         endpointInfo("GET|POST", "/api/db/usage", "database usage report"),
@@ -798,6 +800,11 @@ int main(int argc, char* argv[])
         setJsonBody(res, json{{"ok", true}, {"jobs", jobs}});
     });
 
+    svr.Delete("/api/jobs", [&](const httplib::Request&, httplib::Response& res) {
+        int removed = jobManager.clearFinishedJobs();
+        setJsonBody(res, json{{"ok", true}, {"removed", removed}});
+    });
+
     svr.Get(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
         mosaicraft::JobSnapshot snapshot;
         std::string jobId = req.matches.size() > 1 ? req.matches[1].str() : "";
@@ -807,6 +814,22 @@ int main(int argc, char* argv[])
             return;
         }
         setJsonBody(res, json{{"ok", true}, {"job", jobToJson(snapshot)}});
+    });
+
+    svr.Delete(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::JobSnapshot snapshot;
+        std::string jobId = req.matches.size() > 1 ? req.matches[1].str() : "";
+        if (jobManager.cancelQueuedJob(jobId, snapshot)) {
+            setJsonBody(res, json{{"ok", true}, {"job", jobToJson(snapshot)}});
+            return;
+        }
+        if (snapshot.id.empty()) {
+            res.status = 404;
+            setJsonBody(res, json{{"ok", false}, {"message", "job not found"}});
+            return;
+        }
+        res.status = 409;
+        setJsonBody(res, json{{"ok", false}, {"message", "only queued jobs can be canceled"}, {"job", jobToJson(snapshot)}});
     });
 
     auto handleDbStats = [&](const httplib::Request& req, httplib::Response& res) {
