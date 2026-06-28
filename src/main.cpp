@@ -44,6 +44,40 @@ static std::string resolveDbPath(const std::string& rawPath)
     return rawPath;
 }
 
+static bool isKnownOptionToken(const std::string& token)
+{
+    static const char* kOptions[] = {
+        "-i", "--input", "-o", "--output", "-d", "--db", "-t", "--threads",
+        "--append", "-r", "--recursive", "--normalize-size", "--normalize-only",
+        "-y", "--yes", "--force", "-h", "--help",
+        "--tile-w", "--tile-h", "-W", "--out-w", "-H", "--out-h",
+        "--lab-weight", "--grid-weight", "--tiny-weight", "--edge-weight",
+        "--lbp-weight", "--penalty", "--l-range", "--candidates",
+        "--topn-random", "-f", "--format", "--cpu", "-q", "--quality",
+        "--png-level", "--write-mode", "--tiled", "--deepzoom",
+        "--neighbor-window", "--neighbor-penalty", "-U", "--upscale",
+        "--output-tile", "--color-adjust", "--adaptive-weights", "--analyze",
+        "--color-strength", "--benchmark", "-n", "--unused", "--export"
+    };
+    for (const char* option : kOptions)
+    {
+        if (token == option)
+            return true;
+    }
+    return false;
+}
+
+static bool readOptionValue(int argc, char* argv[], int& i, const std::string& option, const char*& value)
+{
+    if (i + 1 >= argc || isKnownOptionToken(argv[i + 1]))
+    {
+        std::cerr << "ERROR: " << option << " requires a value." << std::endl;
+        return false;
+    }
+    value = argv[++i];
+    return true;
+}
+
 namespace fs = std::filesystem;
 
 using namespace mosaicraft;
@@ -150,21 +184,29 @@ static int cmdBuild(int argc, char* argv[])
     for (int i = 2; i < argc; ++i)
     {
         std::string arg = argv[i];
-        if ((arg == "-i" || arg == "--input") && i + 1 < argc)
+        if (arg == "-i" || arg == "--input")
         {
-            inputDir = argv[++i];
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            inputDir = value;
         }
-        else if ((arg == "-o" || arg == "--output") && i + 1 < argc)
+        else if (arg == "-o" || arg == "--output")
         {
-            outputDir = argv[++i];
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            outputDir = value;
         }
-        else if ((arg == "-d" || arg == "--db") && i + 1 < argc)
+        else if (arg == "-d" || arg == "--db")
         {
-            dbPath = argv[++i];
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            dbPath = value;
         }
-        else if ((arg == "-t" || arg == "--threads") && i + 1 < argc)
+        else if (arg == "-t" || arg == "--threads")
         {
-            threads = std::atoi(argv[++i]);
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            threads = std::atoi(value);
             if (threads < 0)
             {
                 threads = 0;
@@ -178,9 +220,10 @@ static int cmdBuild(int argc, char* argv[])
         {
             recursive = true;
         }
-        else if (arg == "--normalize-size" && i + 1 < argc)
+        else if (arg == "--normalize-size")
         {
-            const char* val = argv[++i];
+            const char* val = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, val)) return 1;
             const char* sep = strchr(val, 'x');
             if (sep && sep != val && *(sep+1) != '\0') {
                 normW = std::max(1, std::atoi(val));
@@ -251,93 +294,133 @@ static int cmdMosaic(int argc, char* argv[])
     for (int i = 2; i < argc; ++i)
     {
         std::string arg = argv[i];
-        if ((arg == "-i" || arg == "--input") && i + 1 < argc)
+        if (arg == "-i" || arg == "--input")
         {
-            inputPath = argv[++i];
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            inputPath = value;
         }
-        else if ((arg == "-d" || arg == "--db") && i + 1 < argc)
+        else if (arg == "-d" || arg == "--db")
         {
-            dbPath = argv[++i];
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            dbPath = value;
         }
-        else if ((arg == "-o" || arg == "--output") && i + 1 < argc)
+        else if (arg == "-o" || arg == "--output")
         {
-            outputPath = argv[++i];
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            outputPath = value;
         }
-        else if (arg == "--tile-w" && i + 1 < argc)
+        else if (arg == "--tile-w")
         {
-            cfg.tileW = std::max(4, std::atoi(argv[++i]));
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.tileW = std::max(4, std::atoi(value));
         }
-        else if (arg == "--tile-h" && i + 1 < argc)
+        else if (arg == "--tile-h")
         {
-            cfg.tileH = std::max(4, std::atoi(argv[++i]));
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.tileH = std::max(4, std::atoi(value));
         }
-        else if ((arg == "-W" || arg == "--out-w") && i + 1 < argc)
+        else if (arg == "-W" || arg == "--out-w")
         {
-            cfg.outW = std::max(1, std::atoi(argv[++i]));
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.outW = std::max(1, std::atoi(value));
         }
-        else if ((arg == "-H" || arg == "--out-h") && i + 1 < argc)
+        else if (arg == "-H" || arg == "--out-h")
         {
-            cfg.outH = std::max(1, std::atoi(argv[++i]));
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.outH = std::max(1, std::atoi(value));
         }
-        else if (arg == "--lab-weight" && i + 1 < argc)
+        else if (arg == "--lab-weight")
         {
-            cfg.labWeight = std::atof(argv[++i]);
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.labWeight = std::atof(value);
         }
-        else if (arg == "--grid-weight" && i + 1 < argc)
+        else if (arg == "--grid-weight")
         {
-            cfg.gridWeight = std::atof(argv[++i]);
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.gridWeight = std::atof(value);
         }
-        else if (arg == "--tiny-weight" && i + 1 < argc)
+        else if (arg == "--tiny-weight")
         {
-            cfg.tinyWeight = std::atof(argv[++i]);
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.tinyWeight = std::atof(value);
         }
-        else if (arg == "--edge-weight" && i + 1 < argc)
+        else if (arg == "--edge-weight")
         {
-            cfg.edgeWeight = std::atof(argv[++i]);
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.edgeWeight = std::atof(value);
         }
-        else if (arg == "--lbp-weight" && i + 1 < argc)
+        else if (arg == "--lbp-weight")
         {
-            cfg.lbpWeight = std::atof(argv[++i]);
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.lbpWeight = std::atof(value);
         }
-        else if (arg == "--penalty" && i + 1 < argc)
+        else if (arg == "--penalty")
         {
-            cfg.usePenalty = std::atof(argv[++i]);
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.usePenalty = std::atof(value);
         }
-        else if (arg == "--l-range" && i + 1 < argc)
+        else if (arg == "--l-range")
         {
-            cfg.lRange = std::atof(argv[++i]);
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.lRange = std::atof(value);
         }
-        else if (arg == "--candidates" && i + 1 < argc)
+        else if (arg == "--candidates")
         {
-            cfg.candidates = std::max(10, std::atoi(argv[++i]));
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.candidates = std::max(10, std::atoi(value));
         }
-        else if (arg == "--topn-random" && i + 1 < argc)
+        else if (arg == "--topn-random")
         {
-            int v = std::atoi(argv[++i]);
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            int v = std::atoi(value);
             cfg.topNrandom = std::max(1, v);
         }
-        else if ((arg == "-f" || arg == "--format") && i + 1 < argc)
+        else if (arg == "-f" || arg == "--format")
         {
-            cfg.outputFormat = argv[++i];
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.outputFormat = value;
             cfg.formatExplicit = true;
         }
         else if (arg == "--cpu")
         {
             cfg.useGpu = false;
         }
-        else if ((arg == "-q" || arg == "--quality") && i + 1 < argc)
+        else if (arg == "-q" || arg == "--quality")
         {
-            int q = std::atoi(argv[++i]);
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            int q = std::atoi(value);
             cfg.jpegQuality = std::max(1, std::min(100, q));
         }
-        else if (arg == "--png-level" && i + 1 < argc)
+        else if (arg == "--png-level")
         {
-            int lvl = std::atoi(argv[++i]);
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            int lvl = std::atoi(value);
             cfg.pngCompressionLevel = std::max(1, std::min(9, lvl));
         }
-        else if (arg == "--write-mode" && i + 1 < argc)
+        else if (arg == "--write-mode")
         {
-            std::string mode = argv[++i];
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            std::string mode = value;
             if (mode == "auto" || mode == "stream" || mode == "batch")
                 cfg.writeMode = mode;
             else {
@@ -354,22 +437,29 @@ static int cmdMosaic(int argc, char* argv[])
             cfg.tiledOutput = true;   // deepzoom 隐含 tiled
             cfg.deepZoom = true;
         }
-        else if (arg == "--neighbor-window" && i + 1 < argc)
+        else if (arg == "--neighbor-window")
         {
-            cfg.neighborWindow = std::atoi(argv[++i]);
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.neighborWindow = std::atoi(value);
         }
-        else if (arg == "--neighbor-penalty" && i + 1 < argc)
+        else if (arg == "--neighbor-penalty")
         {
-            cfg.neighborPenalty = std::atof(argv[++i]);
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.neighborPenalty = std::atof(value);
         }
-        else if ((arg == "-U" || arg == "--upscale") && i + 1 < argc)
+        else if (arg == "-U" || arg == "--upscale")
         {
-            cfg.upscale = std::max(1, std::atoi(argv[++i]));
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            cfg.upscale = std::max(1, std::atoi(value));
         }
-        else if (arg == "--output-tile" && i + 1 < argc)
+        else if (arg == "--output-tile")
         {
             // 格式: 180x320
-            const char* val = argv[++i];
+            const char* val = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, val)) return 1;
             const char* sep = strchr(val, 'x');
             if (sep && sep != val && *(sep+1) != '\0') {
                 cfg.nativeTileW = std::max(1, std::atoi(val));
@@ -391,9 +481,11 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.analyze = true;
         }
-        else if (arg == "--color-strength" && i + 1 < argc)
+        else if (arg == "--color-strength")
         {
-            double v = std::atof(argv[++i]);
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            double v = std::atof(value);
             cfg.colorStrength = std::max(0.0, std::min(0.5, v));
         }
         else if (arg == "--benchmark")
@@ -497,10 +589,18 @@ static int cmdInspect(int argc, char* argv[])
     for (int i = 2; i < argc; ++i)
     {
         std::string arg = argv[i];
-        if ((arg == "-i" || arg == "--input") && i + 1 < argc)
-            imagePath = argv[++i];
-        else if ((arg == "-d" || arg == "--db") && i + 1 < argc)
-            dbPath = argv[++i];
+        if (arg == "-i" || arg == "--input")
+        {
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            imagePath = value;
+        }
+        else if (arg == "-d" || arg == "--db")
+        {
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            dbPath = value;
+        }
     }
 
     if (imagePath.empty())
@@ -551,8 +651,12 @@ static int cmdDbStats(int argc, char* argv[])
     for (int i = 2; i < argc; ++i)
     {
         std::string arg = argv[i];
-        if ((arg == "-d" || arg == "--db") && i + 1 < argc)
-            dbPath = argv[++i];
+        if (arg == "-d" || arg == "--db")
+        {
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            dbPath = value;
+        }
     }
 
     DatabaseService service;
@@ -614,8 +718,12 @@ static int cmdDbPurge(int argc, char* argv[])
     for (int i = 2; i < argc; ++i)
     {
         std::string arg = argv[i];
-        if ((arg == "-d" || arg == "--db") && i + 1 < argc)
-            dbPath = argv[++i];
+        if (arg == "-d" || arg == "--db")
+        {
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            dbPath = value;
+        }
         else if (arg == "-y" || arg == "--yes" || arg == "--force")
             forceMode = true;
     }
@@ -679,14 +787,26 @@ static int cmdDbUsage(int argc, char* argv[])
     for (int i = 2; i < argc; ++i)
     {
         std::string arg = argv[i];
-        if ((arg == "-d" || arg == "--db") && i + 1 < argc)
-            dbPath = argv[++i];
-        else if (arg == "-n" && i + 1 < argc)
-            limit = std::atoi(argv[++i]);
+        if (arg == "-d" || arg == "--db")
+        {
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            dbPath = value;
+        }
+        else if (arg == "-n")
+        {
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            limit = std::atoi(value);
+        }
         else if (arg == "--unused")
             showUnused = true;
-        else if ((arg == "--export" || arg == "-o") && i + 1 < argc)
-            exportDir = argv[++i];
+        else if (arg == "--export" || arg == "-o")
+        {
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            exportDir = value;
+        }
     }
 
     DatabaseService usageService;
@@ -756,8 +876,15 @@ static int cmdDbHealth(int argc, char* argv[])
 {
     std::string dbPath = "library/mosaicraft.db";
     for (int i = 2; i < argc; ++i)
-        if ((std::string(argv[i]) == "-d" || std::string(argv[i]) == "--db") && i + 1 < argc)
-            dbPath = argv[++i];
+    {
+        std::string arg = argv[i];
+        if (arg == "-d" || arg == "--db")
+        {
+            const char* value = nullptr;
+            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
+            dbPath = value;
+        }
+    }
 
     DatabaseService service;
     auto result = service.health({dbPath});
