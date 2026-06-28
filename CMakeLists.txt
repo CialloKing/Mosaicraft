@@ -93,6 +93,7 @@ endif()  # MOSAICRAFT_CUDA
 # 核心静态库（CPU）
 # ============================================================
 add_library(mosaicraft_core STATIC
+    core/ApiMetadata.cpp
     core/ImageNormalizer.cpp
     core/BatchProcessor.cpp
     core/BuildService.cpp
@@ -173,7 +174,7 @@ if (MOSAICRAFT_CUDA)
 endif()
 
 # ============================================================
-# Web UI 服务器（独立进程，调用 mosaicraft.exe）
+# Web UI / HTTP API 入口（独立进程，复用 core 服务，保留旧命令兼容）
 # ============================================================
 add_executable(MosaicraftWebUI
     src/server.cpp

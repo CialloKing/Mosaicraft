@@ -8,6 +8,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
 
+#include "../core/ApiMetadata.h"
 #include "../core/FeatureUtils.h"
 #include "../core/JobManager.h"
 #include "../core/Version.h"
@@ -15,6 +16,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <algorithm>
 
 using namespace mosaicraft;
 
@@ -223,6 +225,42 @@ TEST_CASE("gridDistance8x8 — center cell has higher weight than corner")
 TEST_CASE("Version is shared by CLI and API")
 {
     CHECK(std::string(kVersion) == "1.12.3");
+}
+
+TEST_CASE("API endpoint metadata is shared and self-describing")
+{
+    auto endpoints = apiEndpointMetadata(false);
+
+    CHECK(endpoints.size() >= 16);
+
+    auto findEndpoint = [&](const std::string& path) {
+        return std::find_if(endpoints.begin(), endpoints.end(),
+            [&](const ApiEndpointMetadata& endpoint) { return endpoint.path == path; });
+    };
+
+    auto mosaicJob = findEndpoint("/api/jobs/mosaic");
+    REQUIRE(mosaicJob != endpoints.end());
+    CHECK(mosaicJob->category == "jobs");
+    CHECK(std::find(mosaicJob->requestFields.begin(), mosaicJob->requestFields.end(),
+        "inputPath") != mosaicJob->requestFields.end());
+
+    auto legacyRun = findEndpoint("/api/run");
+    REQUIRE(legacyRun != endpoints.end());
+    CHECK(legacyRun->legacy);
+    CHECK_FALSE(legacyRun->enabled);
+
+    auto enabledEndpoints = apiEndpointMetadata(true);
+    auto enabledLegacyRun = std::find_if(enabledEndpoints.begin(), enabledEndpoints.end(),
+        [](const ApiEndpointMetadata& endpoint) { return endpoint.path == "/api/run"; });
+    REQUIRE(enabledLegacyRun != enabledEndpoints.end());
+    CHECK(enabledLegacyRun->enabled);
+}
+
+TEST_CASE("API feature metadata is shared")
+{
+    const auto features = apiFeatureList();
+    CHECK(std::find(features.begin(), features.end(), "mosaic-jobs") != features.end());
+    CHECK(std::find(features.begin(), features.end(), "database-maintenance") != features.end());
 }
 
 TEST_CASE("JobManager can cancel queued jobs and clear finished jobs")

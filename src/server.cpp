@@ -1,6 +1,7 @@
 // Mosaicraft Web UI — 本地 HTTP 服务器
 // 提供命令生成页面 + 结构化 API，兼容旧的 mosaicraft.exe 命令入口
 #include "core/httplib.h"
+#include "core/ApiMetadata.h"
 #include "core/DatabaseService.h"
 #include "core/JobManager.h"
 #include "core/json.hpp"
@@ -12,7 +13,6 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
-#include <initializer_list>
 #include <mutex>
 #ifdef _WIN32
 #include <windows.h>
@@ -218,55 +218,28 @@ static json inspectToJson(const mosaicraft::InspectResult& info)
     };
 }
 
-static json endpointInfo(const std::string& method,
-                         const std::string& path,
-                         const std::string& description,
-                         const std::string& category,
-                         std::initializer_list<const char*> requestFields = {},
-                         bool legacy = false,
-                         bool enabled = true)
+static json endpointToJson(const mosaicraft::ApiEndpointMetadata& endpoint)
 {
     json fields = json::array();
-    for (const char* field : requestFields) fields.push_back(field);
+    for (const auto& field : endpoint.requestFields) fields.push_back(field);
     return {
-        {"method", method},
-        {"path", path},
-        {"description", description},
-        {"category", category},
+        {"method", endpoint.method},
+        {"path", endpoint.path},
+        {"description", endpoint.description},
+        {"category", endpoint.category},
         {"requestFields", fields},
-        {"legacy", legacy},
-        {"enabled", enabled}
+        {"legacy", endpoint.legacy},
+        {"enabled", endpoint.enabled}
     };
 }
 
 static json apiEndpointsJson(bool legacyRunEnabled)
 {
-    return json::array({
-        endpointInfo("GET", "/api/info", "service version and capability summary", "discovery"),
-        endpointInfo("GET", "/api/ping", "health check", "health"),
-        endpointInfo("POST", "/api/mosaic", "run mosaic synchronously", "mosaic",
-            {"inputPath", "dbPath", "outputPath", "format", "quality", "writeMode"}),
-        endpointInfo("POST", "/api/jobs/mosaic", "start mosaic job", "jobs",
-            {"inputPath", "dbPath", "outputPath", "format", "quality", "writeMode"}),
-        endpointInfo("POST", "/api/jobs/build", "start library build job", "jobs",
-            {"inputDir", "outputDir", "dbPath", "threads", "recursive", "forceMode"}),
-        endpointInfo("GET", "/api/jobs", "list jobs", "jobs"),
-        endpointInfo("DELETE", "/api/jobs", "clear finished jobs", "jobs"),
-        endpointInfo("GET", "/api/jobs/{id}", "get job status", "jobs", {"id"}),
-        endpointInfo("DELETE", "/api/jobs/{id}", "cancel queued job", "jobs", {"id"}),
-        endpointInfo("GET|POST", "/api/db/stats", "database statistics", "database", {"dbPath"}),
-        endpointInfo("GET|POST", "/api/db/health", "database health report", "database", {"dbPath"}),
-        endpointInfo("GET|POST", "/api/db/usage", "database usage report", "database",
-            {"dbPath", "limit", "showUnused"}),
-        endpointInfo("POST", "/api/db/usage/export", "export used images", "database",
-            {"dbPath", "outputDir", "confirm"}),
-        endpointInfo("GET|POST", "/api/db/purge", "preview or purge orphan records", "database",
-            {"dbPath", "dryRun", "confirm"}),
-        endpointInfo("GET|POST", "/api/inspect", "inspect a source image", "inspect",
-            {"imagePath", "dbPath"}),
-        endpointInfo("POST", "/api/run", "legacy command compatibility endpoint", "legacy",
-            {"command"}, true, legacyRunEnabled)
-    });
+    json endpoints = json::array();
+    for (const auto& endpoint : mosaicraft::apiEndpointMetadata(legacyRunEnabled)) {
+        endpoints.push_back(endpointToJson(endpoint));
+    }
+    return endpoints;
 }
 
 static json apiInfoJson(bool legacyRunEnabled)
@@ -279,16 +252,7 @@ static json apiInfoJson(bool legacyRunEnabled)
             {"structured", true},
             {"legacyRunEnabled", legacyRunEnabled}
         }},
-        {"features", {
-            "mosaic-jobs",
-            "build-jobs",
-            "job-management",
-            "inspect",
-            "database-stats",
-            "database-health",
-            "database-usage",
-            "database-maintenance"
-        }}
+        {"features", mosaicraft::apiFeatureList()}
     };
 }
 
