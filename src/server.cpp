@@ -78,18 +78,12 @@ static mosaicraft::ApiQueryParams queryParamsFor(const httplib::Request& req,
     return queryParams(req, mosaicraft::apiQueryKeys(operation));
 }
 
-static const mosaicraft::ApiEndpointMetadata& endpointForOperation(
-    const std::vector<mosaicraft::ApiEndpointMetadata>& endpoints,
-    mosaicraft::ApiOperation operation)
+static std::string httpPatternForEndpoint(const mosaicraft::ApiEndpointMetadata& endpoint)
 {
-    auto it = std::find_if(endpoints.begin(), endpoints.end(),
-        [operation](const mosaicraft::ApiEndpointMetadata& endpoint) {
-            return endpoint.operation == operation;
-        });
-    if (it == endpoints.end()) {
-        throw std::logic_error("missing API endpoint metadata");
+    if (endpoint.path == "/api/jobs/{id}") {
+        return R"(/api/jobs/([A-Za-z0-9_-]+))";
     }
-    return *it;
+    return endpoint.path;
 }
 
 static mosaicraft::ApiRequest apiRequestFromHttp(const httplib::Request& req,
@@ -119,34 +113,41 @@ static mosaicraft::ApiRequest apiRequestFromHttp(const httplib::Request& req,
     return mosaicraft::apiOperationRequest(endpoint.operation, std::move(context));
 }
 
-static void registerApiGet(httplib::Server& svr,
-                           const std::string& path,
-                           mosaicraft::JobManager& jobManager,
-                           const mosaicraft::ApiEndpointMetadata& endpoint)
+static mosaicraft::ApiRequestContext discoveryContext(mosaicraft::ApiOperation operation,
+                                                      bool legacyRunEnabled)
 {
-    svr.Get(path, [&, endpoint](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
-    });
+    mosaicraft::ApiRequestContext context;
+    if (operation == mosaicraft::ApiOperation::Endpoints ||
+        operation == mosaicraft::ApiOperation::Info) {
+        context.legacyRunEnabled = legacyRunEnabled;
+    }
+    if (operation == mosaicraft::ApiOperation::Info) {
+        context.entryName = "MosaicraftWebUI";
+    }
+    return context;
 }
 
-static void registerApiPost(httplib::Server& svr,
-                            const std::string& path,
-                            mosaicraft::JobManager& jobManager,
-                            const mosaicraft::ApiEndpointMetadata& endpoint)
-{
-    svr.Post(path, [&, endpoint](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
-    });
-}
-
-static void registerApiDelete(httplib::Server& svr,
-                              const std::string& path,
+static void registerApiMethod(httplib::Server& svr,
+                              const std::string& method,
                               mosaicraft::JobManager& jobManager,
-                              const mosaicraft::ApiEndpointMetadata& endpoint)
+                              const mosaicraft::ApiEndpointMetadata& endpoint,
+                              bool legacyRunEnabled)
 {
-    svr.Delete(path, [&, endpoint](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
-    });
+    const std::string pattern = httpPatternForEndpoint(endpoint);
+    auto handler = [&, endpoint, legacyRunEnabled](const httplib::Request& req, httplib::Response& res) {
+        handleApi(res, jobManager,
+            apiRequestFromHttp(req, endpoint, discoveryContext(endpoint.operation, legacyRunEnabled)));
+    };
+
+    if (method == "GET") {
+        svr.Get(pattern, handler);
+    } else if (method == "POST") {
+        svr.Post(pattern, handler);
+    } else if (method == "DELETE") {
+        svr.Delete(pattern, handler);
+    } else {
+        throw std::logic_error("unsupported API endpoint method");
+    }
 }
 
 static void registerStructuredApiRoutes(
@@ -155,62 +156,18 @@ static void registerStructuredApiRoutes(
     const std::vector<mosaicraft::ApiEndpointMetadata>& apiEndpoints,
     bool legacyRunEnabled)
 {
-    svr.Get("/api/endpoints", [&, legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
-        mosaicraft::ApiRequestContext context;
-        context.legacyRunEnabled = legacyRunEnabled;
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::Endpoints);
-        handleApi(res, jobManager, mosaicraft::apiOperationRequest(endpoint.operation, std::move(context)));
-    });
+    for (const auto& endpoint : apiEndpoints) {
+        if (endpoint.operation == mosaicraft::ApiOperation::LegacyRunDisabled) {
+            continue;
+        }
 
-    svr.Get("/api/info", [&, legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
-        mosaicraft::ApiRequestContext context;
-        context.legacyRunEnabled = legacyRunEnabled;
-        context.entryName = "MosaicraftWebUI";
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::Info);
-        handleApi(res, jobManager, mosaicraft::apiOperationRequest(endpoint.operation, std::move(context)));
-    });
-
-    registerApiPost(svr, "/api/mosaic", jobManager,
-        endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::Mosaic));
-    registerApiPost(svr, "/api/jobs/mosaic", jobManager,
-        endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::SubmitMosaicJob));
-    registerApiPost(svr, "/api/jobs/build", jobManager,
-        endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::SubmitBuildJob));
-
-    registerApiGet(svr, "/api/jobs", jobManager,
-        endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::ListJobs));
-    registerApiDelete(svr, "/api/jobs", jobManager,
-        endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::ClearFinishedJobs));
-    registerApiGet(svr, R"(/api/jobs/([A-Za-z0-9_-]+))", jobManager,
-        endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::GetJob));
-    registerApiDelete(svr, R"(/api/jobs/([A-Za-z0-9_-]+))", jobManager,
-        endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::CancelJob));
-
-    const auto& dbStats = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::DatabaseStats);
-    registerApiGet(svr, "/api/db/stats", jobManager, dbStats);
-    registerApiPost(svr, "/api/db/stats", jobManager, dbStats);
-
-    const auto& dbHealth = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::DatabaseHealth);
-    registerApiGet(svr, "/api/db/health", jobManager, dbHealth);
-    registerApiPost(svr, "/api/db/health", jobManager, dbHealth);
-
-    const auto& dbUsage = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::DatabaseUsage);
-    registerApiGet(svr, "/api/db/usage", jobManager, dbUsage);
-    registerApiPost(svr, "/api/db/usage", jobManager, dbUsage);
-
-    registerApiPost(svr, "/api/db/usage/export", jobManager,
-        endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::DatabaseUsageExport));
-
-    const auto& dbPurge = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::DatabasePurge);
-    registerApiGet(svr, "/api/db/purge", jobManager, dbPurge);
-    registerApiPost(svr, "/api/db/purge", jobManager, dbPurge);
-
-    const auto& inspect = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::Inspect);
-    registerApiGet(svr, "/api/inspect", jobManager, inspect);
-    registerApiPost(svr, "/api/inspect", jobManager, inspect);
-
-    registerApiGet(svr, "/api/ping", jobManager,
-        endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::Ping));
+        if (endpoint.method == "GET|POST") {
+            registerApiMethod(svr, "GET", jobManager, endpoint, legacyRunEnabled);
+            registerApiMethod(svr, "POST", jobManager, endpoint, legacyRunEnabled);
+        } else {
+            registerApiMethod(svr, endpoint.method, jobManager, endpoint, legacyRunEnabled);
+        }
+    }
 }
 
 } // namespace
