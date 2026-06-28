@@ -3,6 +3,7 @@
 #include "ApiJson.h"
 
 #include <exception>
+#include <sstream>
 #include <utility>
 
 namespace mosaicraft
@@ -29,6 +30,52 @@ ApiResponse internalError(const std::string& error)
 int databaseMaintenanceErrorStatus(const ServiceResult& status)
 {
     return status.exitCode == 2 ? 500 : 400;
+}
+
+bool hasBool(const nlohmann::json& body, const char* key)
+{
+    return body.contains(key) && body[key].is_boolean();
+}
+
+bool hasString(const nlohmann::json& body, const char* key)
+{
+    return body.contains(key) && body[key].is_string();
+}
+
+bool hasInteger(const nlohmann::json& body, const char* key)
+{
+    return body.contains(key) && body[key].is_number_integer();
+}
+
+bool matchesErrorShape(const nlohmann::json& body,
+                       const std::string& shape,
+                       const std::string& responseKey)
+{
+    if (!hasBool(body, "ok") || body["ok"].get<bool>()) return false;
+    if (!hasString(body, "message")) return false;
+
+    if (shape == "apiError") {
+        return true;
+    }
+    if (shape == "serviceResult") {
+        return hasInteger(body, "exitCode");
+    }
+    if (shape == "jobError") {
+        return body.contains("job");
+    }
+    if (shape == "payloadResult") {
+        return hasInteger(body, "exitCode") &&
+               !responseKey.empty() &&
+               body.contains(responseKey);
+    }
+    return false;
+}
+
+std::string statusText(int status)
+{
+    std::ostringstream oss;
+    oss << status;
+    return oss.str();
 }
 
 } // namespace
@@ -163,6 +210,67 @@ ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
         return apiInspect(request.query, request.body);
     }
     return internalError("unknown API operation");
+}
+
+std::vector<std::string> validateApiResponseContract(const ApiEndpointMetadata& endpoint,
+                                                      const ApiResponse& response)
+{
+    std::vector<std::string> errors;
+    const std::string operationName = apiOperationName(endpoint.operation);
+
+    if (!response.body.is_object()) {
+        errors.push_back("API response body is not an object: " + operationName);
+        return errors;
+    }
+    if (!hasBool(response.body, "ok")) {
+        errors.push_back("API response body missing boolean ok: " + operationName);
+        return errors;
+    }
+
+    const bool ok = response.body["ok"].get<bool>();
+    if (response.status >= 200 && response.status <= 299) {
+        if (response.status != endpoint.successStatus) {
+            errors.push_back("API response success status does not match metadata: " +
+                             operationName + " " + statusText(response.status));
+        }
+        if (!ok) {
+            errors.push_back("API success response has ok=false: " + operationName);
+        }
+        if (!endpoint.responseKey.empty() && !response.body.contains(endpoint.responseKey)) {
+            errors.push_back("API success response missing responseKey: " +
+                             operationName + " " + endpoint.responseKey);
+        }
+        return errors;
+    }
+
+    if (response.status < 400 || response.status > 599) {
+        errors.push_back("API response status is neither success nor error: " +
+                         operationName + " " + statusText(response.status));
+        return errors;
+    }
+    if (ok) {
+        errors.push_back("API error response has ok=true: " + operationName);
+    }
+
+    bool statusDeclared = false;
+    bool shapeMatched = false;
+    for (const auto& item : endpoint.errorResponses) {
+        if (item.status != response.status) continue;
+        statusDeclared = true;
+        if (matchesErrorShape(response.body, item.shape, item.responseKey)) {
+            shapeMatched = true;
+            break;
+        }
+    }
+    if (!statusDeclared) {
+        errors.push_back("API error status is not declared in metadata: " +
+                         operationName + " " + statusText(response.status));
+    } else if (!shapeMatched) {
+        errors.push_back("API error response shape does not match metadata: " +
+                         operationName + " " + statusText(response.status));
+    }
+
+    return errors;
 }
 
 ApiResponse apiEndpoints(bool legacyRunEnabled)

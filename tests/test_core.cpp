@@ -869,6 +869,81 @@ TEST_CASE("API endpoint metadata validation catches contract errors")
         [](const std::string& error) { return error.find("field alias target is not listed") != std::string::npos; }) != badErrors.end());
 }
 
+TEST_CASE("API response contract validation matches handlers")
+{
+    auto endpoints = apiEndpointMetadata(false);
+    auto findEndpoint = [&](ApiOperation operation) {
+        return std::find_if(endpoints.begin(), endpoints.end(),
+            [&](const ApiEndpointMetadata& endpoint) { return endpoint.operation == operation; });
+    };
+
+    JobManager manager(false);
+
+    auto pingEndpoint = findEndpoint(ApiOperation::Ping);
+    REQUIRE(pingEndpoint != endpoints.end());
+    CHECK(validateApiResponseContract(*pingEndpoint, apiPing()).empty());
+
+    auto mosaicEndpoint = findEndpoint(ApiOperation::SubmitMosaicJob);
+    REQUIRE(mosaicEndpoint != endpoints.end());
+    auto badMosaic = apiSubmitMosaicJob(R"({"writeMode":"invalid"})", manager);
+    CHECK(badMosaic.status == 400);
+    CHECK(validateApiResponseContract(*mosaicEndpoint, badMosaic).empty());
+
+    auto buildEndpoint = findEndpoint(ApiOperation::SubmitBuildJob);
+    REQUIRE(buildEndpoint != endpoints.end());
+    auto build = apiSubmitBuildJob(
+        R"({"inputDir":"__contract_input__","outputDir":"__contract_output__"})",
+        manager);
+    CHECK(build.status == 202);
+    CHECK(validateApiResponseContract(*buildEndpoint, build).empty());
+    std::string jobId = build.body["job"]["id"].get<std::string>();
+
+    auto cancelEndpoint = findEndpoint(ApiOperation::CancelJob);
+    REQUIRE(cancelEndpoint != endpoints.end());
+    auto canceled = apiCancelJob(jobId, manager);
+    CHECK(canceled.status == 200);
+    CHECK(validateApiResponseContract(*cancelEndpoint, canceled).empty());
+    auto cancelAgain = apiCancelJob(jobId, manager);
+    CHECK(cancelAgain.status == 409);
+    CHECK(validateApiResponseContract(*cancelEndpoint, cancelAgain).empty());
+
+    auto getEndpoint = findEndpoint(ApiOperation::GetJob);
+    REQUIRE(getEndpoint != endpoints.end());
+    auto missing = apiGetJob("missing", manager);
+    CHECK(missing.status == 404);
+    CHECK(validateApiResponseContract(*getEndpoint, missing).empty());
+
+    auto exportEndpoint = findEndpoint(ApiOperation::DatabaseUsageExport);
+    REQUIRE(exportEndpoint != endpoints.end());
+    auto missingExportConfirm = apiDatabaseUsageExport(
+        {{"db", "__contract_status_test__.db"}, {"output", "__contract_export__"}},
+        "");
+    CHECK(missingExportConfirm.status == 400);
+    CHECK(validateApiResponseContract(*exportEndpoint, missingExportConfirm).empty());
+
+    auto purgeEndpoint = findEndpoint(ApiOperation::DatabasePurge);
+    REQUIRE(purgeEndpoint != endpoints.end());
+    auto badPurge = apiDatabasePurge(
+        {{"db", "__contract_status_test__.db"}},
+        R"({"dryRun":"no"})");
+    CHECK(badPurge.status == 400);
+    CHECK(validateApiResponseContract(*purgeEndpoint, badPurge).empty());
+
+    ApiResponse undeclared{418, apiErrorJson("teapot")};
+    auto undeclaredErrors = validateApiResponseContract(*pingEndpoint, undeclared);
+    CHECK(std::find_if(undeclaredErrors.begin(), undeclaredErrors.end(),
+        [](const std::string& error) {
+            return error.find("not declared") != std::string::npos;
+        }) != undeclaredErrors.end());
+
+    ApiResponse missingPayload{409, apiErrorJson("only queued jobs can be canceled")};
+    auto shapeErrors = validateApiResponseContract(*cancelEndpoint, missingPayload);
+    CHECK(std::find_if(shapeErrors.begin(), shapeErrors.end(),
+        [](const std::string& error) {
+            return error.find("shape does not match") != std::string::npos;
+        }) != shapeErrors.end());
+}
+
 TEST_CASE("API handlers expose structured jobs without HTTP")
 {
     JobManager manager(false);

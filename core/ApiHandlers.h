@@ -49,6 +49,8 @@ std::vector<const char*> apiQueryKeys(ApiOperation operation);
 std::vector<std::string> apiAcceptedQueryKeyList(ApiOperation operation);
 
 ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs);
+std::vector<std::string> validateApiResponseContract(const ApiEndpointMetadata& endpoint,
+                                                      const ApiResponse& response);
 
 ApiResponse apiEndpoints(bool legacyRunEnabled);
 ApiResponse apiInfo(bool legacyRunEnabled, const char* entryName);
