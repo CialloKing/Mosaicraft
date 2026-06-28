@@ -434,6 +434,43 @@ TEST_CASE("API request parser builds mosaic requests")
     CHECK(request.config.nativeTileH == 160);
 }
 
+TEST_CASE("API request parser follows endpoint field aliases")
+{
+    MosaicRequest mosaic;
+    std::string error;
+    CHECK(parseMosaicRequestJson(
+        R"({"input":"target.jpg","db":"library.db","output":"out.webp","outputFormat":"webp","jpegQuality":75,"topNRandom":7,"penalty":0.2,"tiledOutput":true,"deepzoom":true})",
+        mosaic,
+        error));
+    CHECK(mosaic.inputPath == "target.jpg");
+    CHECK(mosaic.dbPath == "library.db");
+    CHECK(mosaic.outputPath == "out.webp");
+    CHECK(mosaic.config.outputFormat == "webp");
+    CHECK(mosaic.config.jpegQuality == 75);
+    CHECK(mosaic.config.topNrandom == 7);
+    CHECK(mosaic.config.usePenalty == doctest::Approx(0.2));
+    CHECK(mosaic.config.tiledOutput);
+    CHECK(mosaic.config.deepZoom);
+
+    BuildRequest build;
+    error.clear();
+    CHECK(parseBuildRequestJson(
+        R"({"input":"photos","output":"library-out","db":"library.db","append":true,"force":true})",
+        build,
+        error));
+    CHECK(build.inputDir == "photos");
+    CHECK(build.outputDir == "library-out");
+    CHECK(build.dbPath == "library.db");
+    CHECK(build.appendMode);
+    CHECK(build.forceMode);
+
+    DatabaseUsageRequest usage;
+    error.clear();
+    CHECK(applyDatabaseUsageRequestJson(R"({"db":"usage.db","unused":true})", usage, error));
+    CHECK(usage.dbPath == "usage.db");
+    CHECK(usage.showUnused);
+}
+
 TEST_CASE("API request parser reports invalid fields")
 {
     MosaicRequest request;

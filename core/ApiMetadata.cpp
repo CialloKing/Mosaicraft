@@ -84,8 +84,17 @@ std::unordered_map<std::string, std::vector<std::string>> endpointFieldAliases(A
         };
     case ApiOperation::DatabaseStats:
     case ApiOperation::DatabaseHealth:
+        return {{"dbPath", {"db"}}};
     case ApiOperation::DatabaseUsage:
+        return {
+            {"dbPath", {"db"}},
+            {"showUnused", {"unused"}}
+        };
     case ApiOperation::DatabaseUsageExport:
+        return {
+            {"dbPath", {"db"}},
+            {"outputDir", {"output"}}
+        };
     case ApiOperation::DatabasePurge:
         return {{"dbPath", {"db"}}};
     case ApiOperation::Inspect:
@@ -199,7 +208,7 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled)
              "upscale", "quality", "pngLevel", "lRange", "usePenalty", "labWeight",
              "gridWeight", "tinyWeight", "edgeWeight", "lbpWeight", "neighborPenalty",
              "colorStrength", "format", "writeMode", "outputTile", "useGpu", "tiled",
-             "deepZoom", "colorAdjust", "adaptiveWeights", "analyze", "benchmark"},
+             "deepZoom", "colorAdjust", "adaptiveWeights", "analyze", "benchmark", "cpu"},
             {"inputPath"}, true, true),
         endpoint("POST", "/api/jobs/mosaic", "start mosaic job", "jobs",
             ApiOperation::SubmitMosaicJob, ApiRequestShape::Body,
@@ -208,7 +217,7 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled)
              "upscale", "quality", "pngLevel", "lRange", "usePenalty", "labWeight",
              "gridWeight", "tinyWeight", "edgeWeight", "lbpWeight", "neighborPenalty",
              "colorStrength", "format", "writeMode", "outputTile", "useGpu", "tiled",
-             "deepZoom", "colorAdjust", "adaptiveWeights", "analyze", "benchmark"},
+             "deepZoom", "colorAdjust", "adaptiveWeights", "analyze", "benchmark", "cpu"},
             {"inputPath"}, true, true),
         endpoint("POST", "/api/jobs/build", "start library build job", "jobs",
             ApiOperation::SubmitBuildJob, ApiRequestShape::Body,
