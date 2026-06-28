@@ -103,7 +103,7 @@ static void adjustColor(cv::Mat& img, double strength)
     // channels[0]=L, [1]=A, [2]=B
     // L , 閿熸帴锝忔嫹[-s, +s] 鍋? , , , , 閿熼ズ锝忔嫹閿熺??绋嬪府鎷峰叏, thread_local , , , 濡?
     thread_local std::mt19937 rng(std::random_device{}());
-    double lFactor = 1.0 + ((rng() % 1001 - 300) / 1000.0) * strength;
+    double lFactor = 1.0 + ((static_cast<int>(rng() % 1001) - 300) / 1000.0) * strength;
     channels[0] = channels[0] * lFactor;
     cv::merge(channels, lab);
     cv::cvtColor(lab, img, cv::COLOR_Lab2BGR);
@@ -2083,13 +2083,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
                          + cfg.tinyWeight*(recTiny ? tinyMSE(allTiny[ti], *recTiny) : 1.0)
                          + edgeD
                          + cfg.lbpWeight*(recLBP ? lbpDistance(allLBP[ti], *recLBP) : 1.0);
-                if (cfg.analyze) {
-                    analyzeScores.push_back(s);
-                    analyzeImageIds.push_back(r.id);
-                    analyzeLabD.push_back(labD);
-                    analyzeGridD.push_back(gridD);
-                    analyzeEdgeD.push_back(edgeD);
-                }
                 auto it = freq.find(r.id);
                 int cnt = (it != freq.end()) ? it->second : 0;
                 if (cnt >= 3) s += cfg.neighborPenalty;
@@ -2105,6 +2098,23 @@ bool MosaicEngine::generate(const std::string& targetPath,
             int pickIdx = scored[rand() % topN].second;
             bestLibIdxCpu[ti] = pickIdx;
             bestRecsCpu[ti] = allRecords[pickIdx];
+            // --analyze: 只记录胜出者的特征数据（每个 tile 一条）
+            if (cfg.analyze) {
+                const auto& w = allRecords[pickIdx];
+                const auto* wTiny = w.tinyPath.empty() ? nullptr : cpuFeatureCache.loadTiny(w.id, w.tinyPath);
+                const auto* wLBP = w.histPath.empty() ? nullptr : cpuFeatureCache.loadLBP(w.id, w.histPath);
+                double wLabD  = cfg.labWeight*labDistance(allTL[ti],allTA[ti],allTB[ti],w.avgL,w.avgA,w.avgB);
+                double wGridD = cfg.gridWeight*gridDistance8x8(allGrid[ti], w.grid4x4);
+                double wEdgeD = cfg.edgeWeight*std::abs(allEdge[ti]-w.edgeDensity);
+                double wS = wLabD + wGridD + wEdgeD
+                    + cfg.tinyWeight*(wTiny ? tinyMSE(allTiny[ti], *wTiny) : 1.0)
+                    + cfg.lbpWeight*(wLBP ? lbpDistance(allLBP[ti], *wLBP) : 1.0);
+                analyzeScores.push_back(wS);
+                analyzeImageIds.push_back(w.id);
+                analyzeLabD.push_back(wLabD);
+                analyzeGridD.push_back(wGridD);
+                analyzeEdgeD.push_back(wEdgeD);
+            }
             // 缁? , , , ,
             int chosenId = bestRecsCpu[ti].id;
             recentIds.push_back(chosenId); freq[chosenId]++; lastUsedAt[chosenId] = ti;
@@ -2145,6 +2155,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         for (auto& w : pWorkers) w.join();
         loadFail = pFail.load();
+        bestRecords = bestRecsCpu;  // 同步到输出路径使用的数组
     }
 
     std::cout << std::endl;

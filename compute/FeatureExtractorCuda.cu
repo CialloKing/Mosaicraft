@@ -130,7 +130,8 @@ __global__ void featureKernel(
     __shared__ int   s_edgeCount;
     __shared__ uint32_t s_lbpHist[LBP_BINS];
 
-    if (tx < GRID_CELLS * 3) s_gridLab[tx] = 0.0f;
+    // 跨步清零全部 192 个 Grid cell LAB 累加器（block 可能少于 192 线程）
+    for (int i = tx; i < GRID_CELLS * 3; i += blockDim.x) s_gridLab[i] = 0.0f;
     if (tx == 0) { s_grayAcc = 0; s_graySqAcc = 0; s_edgeCount = 0; }
     // 跨步清零全部256个LBP bin（block可能少于256线程）
     for (int i = tx; i < LBP_BINS; i += blockDim.x) s_lbpHist[i] = 0;
