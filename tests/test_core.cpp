@@ -8,6 +8,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
 
+#include "../core/ApiJson.h"
 #include "../core/ApiMetadata.h"
 #include "../core/ApiRequestParser.h"
 #include "../core/FeatureUtils.h"
@@ -262,6 +263,54 @@ TEST_CASE("API feature metadata is shared")
     const auto features = apiFeatureList();
     CHECK(std::find(features.begin(), features.end(), "mosaic-jobs") != features.end());
     CHECK(std::find(features.begin(), features.end(), "database-maintenance") != features.end());
+}
+
+TEST_CASE("API JSON serialization is shared")
+{
+    ServiceResult result = ServiceResult::failure(7, "bad request");
+    auto resultJson = serviceResultToJson(result);
+    CHECK_FALSE(resultJson["ok"].get<bool>());
+    CHECK(resultJson["exitCode"].get<int>() == 7);
+    CHECK(resultJson["message"].get<std::string>() == "bad request");
+
+    auto endpointsJson = apiEndpointsToJson(false);
+    REQUIRE(endpointsJson.is_array());
+    auto legacy = std::find_if(endpointsJson.begin(), endpointsJson.end(),
+        [](const nlohmann::json& endpoint) { return endpoint["path"] == "/api/run"; });
+    REQUIRE(legacy != endpointsJson.end());
+    CHECK((*legacy)["legacy"].get<bool>());
+    CHECK_FALSE((*legacy)["enabled"].get<bool>());
+
+    auto infoJson = apiInfoToJson(false, "MosaicraftWebUI");
+    CHECK(infoJson["version"].get<std::string>() == "1.12.3");
+    CHECK(infoJson["entry"].get<std::string>() == "MosaicraftWebUI");
+    CHECK_FALSE(infoJson["api"]["legacyRunEnabled"].get<bool>());
+}
+
+TEST_CASE("API JSON serialization covers jobs and database shapes")
+{
+    JobSnapshot job;
+    job.id = "job-1";
+    job.type = "mosaic";
+    job.state = JobState::Succeeded;
+    job.result = ServiceResult::success("done");
+    job.inputPath = "in.jpg";
+    job.outputPath = "out.jpg";
+    auto jobJson = jobSnapshotToJson(job);
+    CHECK(jobJson["id"].get<std::string>() == "job-1");
+    CHECK(jobJson["state"].get<std::string>() == "succeeded");
+    CHECK(jobJson["ok"].get<bool>());
+
+    DatabaseUsage usage;
+    usage.empty = false;
+    usage.total = 3;
+    usage.unusedCount = 1;
+    usage.top.push_back({2, 5, 80});
+    usage.unusedPreview.push_back({3, "unused.jpg"});
+    auto usageJson = databaseUsageToJson(usage);
+    CHECK(usageJson["total"].get<int>() == 3);
+    CHECK(usageJson["top"][0]["tiles"].get<int>() == 80);
+    CHECK(usageJson["unusedPreview"][0]["filePath"].get<std::string>() == "unused.jpg");
 }
 
 TEST_CASE("API request parser builds mosaic requests")

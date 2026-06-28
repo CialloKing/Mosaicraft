@@ -1,14 +1,13 @@
-// Mosaicraft Web UI — 本地 HTTP 服务器
-// 提供命令生成页面 + 结构化 API，兼容旧的 mosaicraft.exe 命令入口
+// Mosaicraft Web UI local HTTP server.
+// Serves the Web UI and structured API while keeping legacy command compatibility.
 #include "core/httplib.h"
-#include "core/ApiMetadata.h"
+#include "core/ApiJson.h"
 #include "core/ApiRequestParser.h"
 #include "core/DatabaseService.h"
 #include "core/JobManager.h"
 #include "core/json.hpp"
 #include "core/InspectService.h"
 #include "core/MosaicService.h"
-#include "core/Version.h"
 #include <algorithm>
 #include <chrono>
 #include <cctype>
@@ -48,213 +47,7 @@ static bool envFlagEnabled(const char* name)
 
 static void setJsonResult(httplib::Response& res, const mosaicraft::ServiceResult& result)
 {
-    json body = {
-        {"ok", result.ok},
-        {"exitCode", result.exitCode},
-        {"message", result.message}
-    };
-    res.set_content(body.dump(), "application/json; charset=utf-8");
-}
-
-static int64_t toUnixSeconds(const std::chrono::system_clock::time_point& time)
-{
-    if (time == std::chrono::system_clock::time_point{}) return 0;
-    return std::chrono::duration_cast<std::chrono::seconds>(
-        time.time_since_epoch()).count();
-}
-
-static json jobToJson(const mosaicraft::JobSnapshot& job)
-{
-    return {
-        {"id", job.id},
-        {"type", job.type},
-        {"state", mosaicraft::jobStateName(job.state)},
-        {"ok", job.result.ok},
-        {"exitCode", job.result.exitCode},
-        {"message", job.result.message},
-        {"inputPath", job.inputPath},
-        {"outputPath", job.outputPath},
-        {"createdAt", toUnixSeconds(job.createdAt)},
-        {"startedAt", toUnixSeconds(job.startedAt)},
-        {"finishedAt", toUnixSeconds(job.finishedAt)}
-    };
-}
-
-static json statsToJson(const mosaicraft::DatabaseStats& stats)
-{
-    json histogram = json::array();
-    for (const auto& bin : stats.lHistogram) {
-        histogram.push_back({{"lo", bin.lo}, {"hi", bin.hi}, {"count", bin.count}});
-    }
-    return {
-        {"empty", stats.empty},
-        {"total", stats.total},
-        {"featureWidth", stats.featureWidth},
-        {"featureHeight", stats.featureHeight},
-        {"gridDim", stats.gridDim},
-        {"lab", {
-            {"minL", stats.minL}, {"maxL", stats.maxL}, {"avgL", stats.avgL},
-            {"minA", stats.minA}, {"maxA", stats.maxA}, {"avgA", stats.avgA},
-            {"minB", stats.minB}, {"maxB", stats.maxB}, {"avgB", stats.avgB}
-        }},
-        {"brightness", {{"dark", stats.dark}, {"mid", stats.mid}, {"bright", stats.bright}}},
-        {"lHistogram", histogram},
-        {"coverageGaps", stats.coverageGaps}
-    };
-}
-
-static json healthToJson(const mosaicraft::DatabaseHealth& health)
-{
-    return {
-        {"empty", health.empty},
-        {"total", health.total},
-        {"brightness", {
-            {"dark", health.dark}, {"mid", health.mid}, {"bright", health.bright},
-            {"darkPct", health.darkPct}, {"midPct", health.midPct}, {"brightPct", health.brightPct}
-        }},
-        {"colorGamut", {
-            {"minA", health.minA}, {"maxA", health.maxA},
-            {"minB", health.minB}, {"maxB", health.maxB}
-        }},
-        {"usage", {
-            {"usedCount", health.usedCount}, {"unusedCount", health.unusedCount},
-            {"usedPct", health.usedPct}, {"unusedPct", health.unusedPct}
-        }},
-        {"hotspot", {
-            {"topHotspotCount", health.topHotspotCount},
-            {"topHotspotTilePct", health.topHotspotTilePct}
-        }},
-        {"warnings", health.warnings},
-        {"recommendations", health.recommendations}
-    };
-}
-
-static json usageToJson(const mosaicraft::DatabaseUsage& usage)
-{
-    json top = json::array();
-    for (const auto& item : usage.top) {
-        top.push_back({{"id", item.id}, {"runs", item.runs}, {"tiles", item.tiles}});
-    }
-    json unused = json::array();
-    for (const auto& item : usage.unusedPreview) {
-        unused.push_back({{"id", item.id}, {"filePath", item.filePath}});
-    }
-    return {
-        {"empty", usage.empty},
-        {"total", usage.total},
-        {"top", top},
-        {"unusedCount", usage.unusedCount},
-        {"unusedPreview", unused}
-    };
-}
-
-static json usageExportToJson(const mosaicraft::DatabaseUsageExport& info)
-{
-    json exported = json::array();
-    for (const auto& item : info.exportedPreview) {
-        exported.push_back({
-            {"id", item.id},
-            {"runs", item.runs},
-            {"tiles", item.tiles},
-            {"sourcePath", item.sourcePath},
-            {"outputPath", item.outputPath}
-        });
-    }
-    return {
-        {"outputDir", info.outputDir},
-        {"usedCount", info.usedCount},
-        {"exportedCount", info.exportedCount},
-        {"skippedCount", info.skippedCount},
-        {"failedCount", info.failedCount},
-        {"exportedPreview", exported},
-        {"errors", info.errors}
-    };
-}
-
-static json purgeToJson(const mosaicraft::DatabasePurge& purge)
-{
-    json orphans = json::array();
-    for (const auto& item : purge.orphanPreview) {
-        orphans.push_back({
-            {"id", item.id},
-            {"filePath", item.filePath},
-            {"tinyPath", item.tinyPath},
-            {"histPath", item.histPath}
-        });
-    }
-    return {
-        {"dryRun", purge.dryRun},
-        {"total", purge.total},
-        {"orphanCount", purge.orphanCount},
-        {"removedCount", purge.removedCount},
-        {"failedCount", purge.failedCount},
-        {"orphanPreview", orphans},
-        {"errors", purge.errors},
-        {"recommendations", purge.recommendations}
-    };
-}
-
-static json inspectToJson(const mosaicraft::InspectResult& info)
-{
-    return {
-        {"imagePath", info.imagePath},
-        {"width", info.width},
-        {"height", info.height},
-        {"avgL", info.avgL},
-        {"avgA", info.avgA},
-        {"avgB", info.avgB},
-        {"edgeDensity", info.edgeDensity},
-        {"lbpEntropy", info.lbpEntropy},
-        {"databaseAvailable", info.databaseAvailable},
-        {"databaseTotal", info.databaseTotal},
-        {"candidateMinL", info.candidateMinL},
-        {"candidateMaxL", info.candidateMaxL},
-        {"candidateCount", info.candidateCount},
-        {"libraryMinL", info.libraryMinL},
-        {"libraryMaxL", info.libraryMaxL},
-        {"libraryAvgL", info.libraryAvgL},
-        {"libraryDark", info.libraryDark},
-        {"libraryMid", info.libraryMid},
-        {"libraryBright", info.libraryBright}
-    };
-}
-
-static json endpointToJson(const mosaicraft::ApiEndpointMetadata& endpoint)
-{
-    json fields = json::array();
-    for (const auto& field : endpoint.requestFields) fields.push_back(field);
-    return {
-        {"method", endpoint.method},
-        {"path", endpoint.path},
-        {"description", endpoint.description},
-        {"category", endpoint.category},
-        {"requestFields", fields},
-        {"legacy", endpoint.legacy},
-        {"enabled", endpoint.enabled}
-    };
-}
-
-static json apiEndpointsJson(bool legacyRunEnabled)
-{
-    json endpoints = json::array();
-    for (const auto& endpoint : mosaicraft::apiEndpointMetadata(legacyRunEnabled)) {
-        endpoints.push_back(endpointToJson(endpoint));
-    }
-    return endpoints;
-}
-
-static json apiInfoJson(bool legacyRunEnabled)
-{
-    return {
-        {"name", "Mosaicraft"},
-        {"version", mosaicraft::kVersion},
-        {"entry", "MosaicraftWebUI"},
-        {"api", {
-            {"structured", true},
-            {"legacyRunEnabled", legacyRunEnabled}
-        }},
-        {"features", mosaicraft::apiFeatureList()}
-    };
+    res.set_content(mosaicraft::serviceResultToJson(result).dump(), "application/json; charset=utf-8");
 }
 
 static void setJsonBody(httplib::Response& res, const json& body)
@@ -366,14 +159,14 @@ static std::string findHtml()
 #else
     std::filesystem::path exeDir = std::filesystem::canonical("/proc/self/exe").parent_path();
 #endif
-    // exe 同目录（发布版）
+    // Published layout: same directory as the executable.
     candidates.push_back((exeDir / "index.html").string());
     candidates.push_back((exeDir / "tools/command-builder/index.html").string());
-    // 开发目录：build/Release → ../../tools/command-builder/
+    // Development layout: build/Release to tools/command-builder.
     candidates.push_back((exeDir / "../../tools/command-builder/index.html").string());
-    // 开发目录：build → ../tools/command-builder/
+    // Development layout: build to tools/command-builder.
     candidates.push_back((exeDir / "../tools/command-builder/index.html").string());
-    // 当前工作目录下的常见路径
+    // Common paths relative to the current working directory.
     candidates.push_back("index.html");
     candidates.push_back("tools/command-builder/index.html");
     candidates.push_back("../tools/command-builder/index.html");
@@ -398,7 +191,7 @@ static std::string findMosaicraft()
     std::filesystem::path candidate = exeDir / "mosaicraft.exe";
     if (std::filesystem::exists(candidate)) return wideToUtf8(candidate.wstring());
 #else
-    // Linux: /proc/self/exe → exe directory
+    // Linux: resolve /proc/self/exe to the executable directory.
     std::filesystem::path exePath = std::filesystem::canonical("/proc/self/exe");
     std::filesystem::path exeDir = exePath.parent_path();
     std::filesystem::path candidate = exeDir / "mosaicraft";
@@ -439,17 +232,17 @@ int main(int argc, char* argv[])
 
     httplib::Server svr;
 
-    // 长任务超时设置（建库可能需要数分钟）
+    // Long-running build and mosaic jobs may take minutes.
     svr.set_read_timeout(1800);   // 30 min
     svr.set_write_timeout(1800);
 
-    // 主页
+    // Home page.
     svr.Get("/", [&](const httplib::Request&, httplib::Response& res) {
         std::lock_guard<std::mutex> lock(htmlMutex);
         res.set_content(htmlContent, "text/html; charset=utf-8");
     });
 
-    // 重启时重新加载 HTML（开发用）
+    // Reload HTML during local development.
     svr.Get("/reload", [&](const httplib::Request&, httplib::Response& res) {
         std::lock_guard<std::mutex> lock(htmlMutex);
         htmlContent = readFile(htmlPath);
@@ -457,11 +250,11 @@ int main(int argc, char* argv[])
     });
 
     svr.Get("/api/endpoints", [legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
-        setJsonBody(res, json{{"ok", true}, {"endpoints", apiEndpointsJson(legacyRunEnabled)}});
+        setJsonBody(res, json{{"ok", true}, {"endpoints", mosaicraft::apiEndpointsToJson(legacyRunEnabled)}});
     });
 
     svr.Get("/api/info", [legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
-        setJsonBody(res, json{{"ok", true}, {"info", apiInfoJson(legacyRunEnabled)}});
+        setJsonBody(res, json{{"ok", true}, {"info", mosaicraft::apiInfoToJson(legacyRunEnabled, "MosaicraftWebUI")}});
     });
 
     svr.Post("/api/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
@@ -508,7 +301,7 @@ int main(int argc, char* argv[])
             mosaicraft::JobSnapshot snapshot;
             jobManager.getJob(jobId, snapshot);
             res.status = 202;
-            setJsonBody(res, json{{"ok", true}, {"job", jobToJson(snapshot)}});
+            setJsonBody(res, json{{"ok", true}, {"job", mosaicraft::jobSnapshotToJson(snapshot)}});
         } catch (const std::exception& e) {
             res.status = 500;
             setJsonResult(res, mosaicraft::ServiceResult::failure(1, e.what()));
@@ -532,7 +325,7 @@ int main(int argc, char* argv[])
             mosaicraft::JobSnapshot snapshot;
             jobManager.getJob(jobId, snapshot);
             res.status = 202;
-            setJsonBody(res, json{{"ok", true}, {"job", jobToJson(snapshot)}});
+            setJsonBody(res, json{{"ok", true}, {"job", mosaicraft::jobSnapshotToJson(snapshot)}});
         } catch (const std::exception& e) {
             res.status = 500;
             setJsonResult(res, mosaicraft::ServiceResult::failure(1, e.what()));
@@ -545,7 +338,7 @@ int main(int argc, char* argv[])
     svr.Get("/api/jobs", [&](const httplib::Request&, httplib::Response& res) {
         json jobs = json::array();
         for (const auto& job : jobManager.listJobs()) {
-            jobs.push_back(jobToJson(job));
+            jobs.push_back(mosaicraft::jobSnapshotToJson(job));
         }
         setJsonBody(res, json{{"ok", true}, {"jobs", jobs}});
     });
@@ -563,14 +356,14 @@ int main(int argc, char* argv[])
             setJsonBody(res, json{{"ok", false}, {"message", "job not found"}});
             return;
         }
-        setJsonBody(res, json{{"ok", true}, {"job", jobToJson(snapshot)}});
+        setJsonBody(res, json{{"ok", true}, {"job", mosaicraft::jobSnapshotToJson(snapshot)}});
     });
 
     svr.Delete(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
         mosaicraft::JobSnapshot snapshot;
         std::string jobId = req.matches.size() > 1 ? req.matches[1].str() : "";
         if (jobManager.cancelQueuedJob(jobId, snapshot)) {
-            setJsonBody(res, json{{"ok", true}, {"job", jobToJson(snapshot)}});
+            setJsonBody(res, json{{"ok", true}, {"job", mosaicraft::jobSnapshotToJson(snapshot)}});
             return;
         }
         if (snapshot.id.empty()) {
@@ -579,7 +372,7 @@ int main(int argc, char* argv[])
             return;
         }
         res.status = 409;
-        setJsonBody(res, json{{"ok", false}, {"message", "only queued jobs can be canceled"}, {"job", jobToJson(snapshot)}});
+        setJsonBody(res, json{{"ok", false}, {"message", "only queued jobs can be canceled"}, {"job", mosaicraft::jobSnapshotToJson(snapshot)}});
     });
 
     auto handleDbStats = [&](const httplib::Request& req, httplib::Response& res) {
@@ -597,7 +390,7 @@ int main(int argc, char* argv[])
             setJsonResult(res, result.status);
             return;
         }
-        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"stats", statsToJson(result.stats)}});
+        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"stats", mosaicraft::databaseStatsToJson(result.stats)}});
     };
 
     auto handleDbHealth = [&](const httplib::Request& req, httplib::Response& res) {
@@ -615,7 +408,7 @@ int main(int argc, char* argv[])
             setJsonResult(res, result.status);
             return;
         }
-        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"health", healthToJson(result.health)}});
+        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"health", mosaicraft::databaseHealthToJson(result.health)}});
     };
 
     svr.Get("/api/db/stats", handleDbStats);
@@ -638,7 +431,7 @@ int main(int argc, char* argv[])
             setJsonResult(res, result.status);
             return;
         }
-        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"usage", usageToJson(result.usage)}});
+        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"usage", mosaicraft::databaseUsageToJson(result.usage)}});
     };
 
     auto handleDbUsageExport = [&](const httplib::Request& req, httplib::Response& res) {
@@ -657,11 +450,11 @@ int main(int argc, char* argv[])
                 {"ok", false},
                 {"exitCode", result.status.exitCode},
                 {"message", result.status.message},
-                {"export", usageExportToJson(result.exportInfo)}
+                {"export", mosaicraft::databaseUsageExportToJson(result.exportInfo)}
             });
             return;
         }
-        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"export", usageExportToJson(result.exportInfo)}});
+        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"export", mosaicraft::databaseUsageExportToJson(result.exportInfo)}});
     };
 
     auto handleDbPurge = [&](const httplib::Request& req, httplib::Response& res) {
@@ -680,11 +473,11 @@ int main(int argc, char* argv[])
                 {"ok", false},
                 {"exitCode", result.status.exitCode},
                 {"message", result.status.message},
-                {"purge", purgeToJson(result.purge)}
+                {"purge", mosaicraft::databasePurgeToJson(result.purge)}
             });
             return;
         }
-        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"purge", purgeToJson(result.purge)}});
+        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"purge", mosaicraft::databasePurgeToJson(result.purge)}});
     };
 
     auto handleInspect = [&](const httplib::Request& req, httplib::Response& res) {
@@ -702,7 +495,7 @@ int main(int argc, char* argv[])
             setJsonResult(res, result.status);
             return;
         }
-        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"inspect", inspectToJson(result)}});
+        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"inspect", mosaicraft::inspectResultToJson(result)}});
     };
 
     svr.Get("/api/db/usage", handleDbUsage);
@@ -713,7 +506,7 @@ int main(int argc, char* argv[])
     svr.Get("/api/inspect", handleInspect);
     svr.Post("/api/inspect", handleInspect);
 
-    // 执行命令
+    // Legacy command endpoint.
     svr.Post("/api/run", [&, legacyRunEnabled](const httplib::Request& req, httplib::Response& res) {
         if (!legacyRunEnabled) {
             res.status = 404;
@@ -736,7 +529,7 @@ int main(int argc, char* argv[])
             res.set_content("ERROR: empty command", "text/plain");
             return;
         }
-        // 安全检查：拒绝含shell元字符的命令，防注入
+        // Reject shell metacharacters and control characters.
         const std::string forbidden = "&|;$`(){}<>";
         bool hasControlChar = false;
         for (unsigned char ch : cmd) {
@@ -749,14 +542,14 @@ int main(int argc, char* argv[])
             res.set_content("ERROR: invalid characters in command", "text/plain");
             return;
         }
-        // 只允许已知的mosaicraft子命令
+        // Only allow known mosaicraft subcommands.
         const std::string prefix = "mosaicraft ";
         if (cmd.compare(0, prefix.size(), prefix) != 0) {
             res.set_content("ERROR: command must start with 'mosaicraft'", "text/plain");
             return;
         }
         std::string subCmd = cmd.substr(prefix.size());
-        // 提取子命令名（第一个空格前的词）
+        // Extract the subcommand name before the first space.
         auto spacePos = subCmd.find(' ');
         std::string cmdName = (spacePos != std::string::npos) ? subCmd.substr(0, spacePos) : subCmd;
         const std::string validCmds[] = {"build","mosaic","inspect","db-stats","db-purge","db-usage","db-health"};
@@ -767,7 +560,7 @@ int main(int argc, char* argv[])
             return;
         }
 
-        // 使用 CreateProcess 替代 popen，避免 cmd.exe 对 Unicode 路径的编码问题
+        // Use CreateProcess on Windows to preserve Unicode paths.
         std::string output;
         try {
             std::cout << "[RUN] " << mosaicPath << " " << subCmd << std::endl;
@@ -797,7 +590,7 @@ int main(int argc, char* argv[])
             std::wstring wArgs = utf8ToWide(subCmd);
             std::wstring cmdLine = L"\"" + wCmd + L"\" " + wArgs;
 
-            // 确保命令行缓冲区足够大
+            // Keep the command line buffer writable for CreateProcessW.
             std::vector<wchar_t> cmdBuf(cmdLine.size() + 1);
             wcscpy(cmdBuf.data(), cmdLine.c_str());
 
@@ -831,7 +624,7 @@ int main(int argc, char* argv[])
             else
                 res.set_content("EXIT " + std::to_string(exitCode) + "\n" + output, "text/plain; charset=utf-8");
 #else
-            // Linux/macOS: popen 可以正确处理 UTF-8 路径
+            // Linux/macOS fallback for the legacy command endpoint.
             std::string fullCmd = "\"" + mosaicPath + "\" " + subCmd;
             FILE* pipe = popen((fullCmd + " 2>&1").c_str(), "r");
             if (!pipe) {
@@ -860,7 +653,7 @@ int main(int argc, char* argv[])
         }
     });
 
-    // 健康检查
+    // Health check.
     svr.Get("/api/ping", [](const httplib::Request&, httplib::Response& res) {
         res.set_content("pong", "text/plain");
     });
@@ -868,7 +661,7 @@ int main(int argc, char* argv[])
     std::cout << "  Listening on http://localhost:" << port << std::endl;
     std::cout << "  Press Ctrl+C to stop" << std::endl;
 
-    // 尝试打开浏览器
+    // Try to open the browser.
 #ifdef _WIN32
     std::string url = "http://localhost:" + std::to_string(port);
     ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -883,9 +676,9 @@ int main(int argc, char* argv[])
         std::this_thread::sleep_for(std::chrono::seconds(10));
         return 1;
     }
-    // listen() 只在出错或 Ctrl+C 时返回
+    // listen() returns only on failure or shutdown.
     std::cout << std::endl << "Server stopped." << std::endl;
-    // 短暂暂停让用户看到停止信息（Windows 双击启动时控制台会立即关闭）
+    // Brief pause so double-click launches can show the stop message.
 #ifdef _WIN32
     std::this_thread::sleep_for(std::chrono::seconds(3));
 #endif
