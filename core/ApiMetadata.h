@@ -55,6 +55,7 @@ struct ApiEndpointMetadata
 const char* apiOperationName(ApiOperation operation);
 const char* apiRequestShapeName(ApiRequestShape shape);
 std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled);
+std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpointMetadata>& endpoints);
 std::vector<std::string> apiFeatureList();
 
 } // namespace mosaicraft

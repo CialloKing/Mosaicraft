@@ -621,6 +621,34 @@ TEST_CASE("API endpoint metadata carries dispatch operations")
     }
 }
 
+TEST_CASE("API endpoint metadata validation catches contract errors")
+{
+    CHECK(validateApiEndpointMetadata(apiEndpointMetadata(false)).empty());
+    CHECK(validateApiEndpointMetadata(apiEndpointMetadata(true)).empty());
+
+    auto endpoints = apiEndpointMetadata(false);
+    endpoints.push_back(endpoints.front());
+    auto duplicateErrors = validateApiEndpointMetadata(endpoints);
+    CHECK(std::find_if(duplicateErrors.begin(), duplicateErrors.end(),
+        [](const std::string& error) {
+            return error.find("duplicate API operation") != std::string::npos ||
+                   error.find("duplicate API route") != std::string::npos;
+        }) != duplicateErrors.end());
+
+    ApiEndpointMetadata bad;
+    bad.operation = ApiOperation::Ping;
+    bad.requestShape = ApiRequestShape::None;
+    bad.methods = {"PATCH"};
+    bad.queryKeys = {"db"};
+    auto badErrors = validateApiEndpointMetadata({bad});
+    CHECK(std::find_if(badErrors.begin(), badErrors.end(),
+        [](const std::string& error) { return error.find("unsupported method") != std::string::npos; }) != badErrors.end());
+    CHECK(std::find_if(badErrors.begin(), badErrors.end(),
+        [](const std::string& error) { return error.find("empty path") != std::string::npos; }) != badErrors.end());
+    CHECK(std::find_if(badErrors.begin(), badErrors.end(),
+        [](const std::string& error) { return error.find("non-query endpoint has queryKeys") != std::string::npos; }) != badErrors.end());
+}
+
 TEST_CASE("API handlers expose structured jobs without HTTP")
 {
     JobManager manager(false);

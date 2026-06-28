@@ -1,6 +1,7 @@
 #include "ApiMetadata.h"
 
 #include <initializer_list>
+#include <set>
 
 namespace mosaicraft
 {
@@ -167,6 +168,65 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled)
             ApiOperation::LegacyRunDisabled, ApiRequestShape::LegacyCommand,
             {"command"}, true, legacyRunEnabled)
     };
+}
+
+std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpointMetadata>& endpoints)
+{
+    std::vector<std::string> errors;
+    std::set<std::string> routes;
+    std::set<std::string> operations;
+
+    for (const auto& endpoint : endpoints) {
+        const std::string operationName = apiOperationName(endpoint.operation);
+        const std::string shapeName = apiRequestShapeName(endpoint.requestShape);
+
+        if (operationName == "unknown") {
+            errors.push_back("endpoint has unknown operation");
+        } else if (!operations.insert(operationName).second) {
+            errors.push_back("duplicate API operation: " + operationName);
+        }
+
+        if (shapeName == "unknown") {
+            errors.push_back("endpoint has unknown request shape: " + operationName);
+        }
+        if (endpoint.method.empty()) {
+            errors.push_back("endpoint has empty method: " + operationName);
+        }
+        if (endpoint.methods.empty()) {
+            errors.push_back("endpoint has no methods: " + operationName);
+        }
+        if (endpoint.path.empty()) {
+            errors.push_back("endpoint has empty path: " + operationName);
+        }
+        if (endpoint.httpPattern.empty()) {
+            errors.push_back("endpoint has empty httpPattern: " + operationName);
+        }
+        if (endpoint.description.empty()) {
+            errors.push_back("endpoint has empty description: " + operationName);
+        }
+        if (endpoint.category.empty()) {
+            errors.push_back("endpoint has empty category: " + operationName);
+        }
+        if (endpoint.requestShape == ApiRequestShape::Query && endpoint.queryKeys.empty()) {
+            errors.push_back("query endpoint has no queryKeys: " + operationName);
+        }
+        if (endpoint.requestShape != ApiRequestShape::Query && !endpoint.queryKeys.empty()) {
+            errors.push_back("non-query endpoint has queryKeys: " + operationName);
+        }
+
+        for (const auto& method : endpoint.methods) {
+            if (method != "GET" && method != "POST" && method != "DELETE") {
+                errors.push_back("endpoint has unsupported method: " + operationName + " " + method);
+                continue;
+            }
+            const std::string routeKey = method + " " + endpoint.httpPattern;
+            if (!routes.insert(routeKey).second) {
+                errors.push_back("duplicate API route: " + routeKey);
+            }
+        }
+    }
+
+    return errors;
 }
 
 std::vector<std::string> apiFeatureList()

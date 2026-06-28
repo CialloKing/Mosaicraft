@@ -271,6 +271,14 @@ int main(int argc, char* argv[])
     std::mutex runMutex;
     mosaicraft::JobManager jobManager;
     const auto apiEndpoints = mosaicraft::apiEndpointMetadata(legacyRunEnabled);
+    const auto endpointErrors = mosaicraft::validateApiEndpointMetadata(apiEndpoints);
+    if (!endpointErrors.empty()) {
+        std::cerr << "ERROR: Invalid API endpoint metadata" << std::endl;
+        for (const auto& error : endpointErrors) {
+            std::cerr << "  - " << error << std::endl;
+        }
+        return 1;
+    }
 
     httplib::Server svr;
 
