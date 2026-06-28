@@ -98,6 +98,7 @@ add_library(mosaicraft_core STATIC
     core/Database.cpp
     core/FeatureExtractor.cpp
     core/MosaicEngine.cpp
+    core/MosaicService.cpp
 )
 if (NOT MOSAICRAFT_CUDA)
     target_sources(mosaicraft_core PRIVATE core/CudaStubs.cpp)
@@ -171,6 +172,7 @@ add_executable(MosaicraftWebUI
 )
 target_link_libraries(MosaicraftWebUI PRIVATE
     mosaicraft_core
+    mosaicraft_cuda
 )
 target_include_directories(MosaicraftWebUI PRIVATE
     ${CMAKE_SOURCE_DIR}

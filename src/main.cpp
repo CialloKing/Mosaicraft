@@ -4,6 +4,7 @@
 #include "core/FeatureUtils.h"
 #include "core/ImageNormalizer.h"
 #include "core/MosaicEngine.h"
+#include "core/MosaicService.h"
 #include <unordered_set>
 #include "core/UnicodeIO.h"
 #include "compute/CudaBackend.h"
@@ -800,10 +801,19 @@ static int cmdMosaic(int argc, char* argv[])
         return 1;
     }
 
-    MosaicEngine engine;
-    bool ok = engine.generate(inputPath, resolveDbPath(dbPath), outputPath, cfg);
+    MosaicRequest request;
+    request.inputPath = inputPath;
+    request.dbPath = dbPath;
+    request.outputPath = outputPath;
+    request.config = cfg;
 
-    return ok ? 0 : 1;
+    MosaicService service;
+    ServiceResult result = service.run(request);
+    if (!result.ok && !result.message.empty())
+    {
+        std::cerr << "ERROR: " << result.message << std::endl;
+    }
+    return result.exitCode;
 }
 
 // ============================================================

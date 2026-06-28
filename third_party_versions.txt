@@ -3,6 +3,7 @@
 # ============================================================
 
 cpp-httplib   v0.20.0    https://github.com/yhirose/cpp-httplib      core/httplib.h
+nlohmann-json v3.12.0    https://github.com/nlohmann/json            core/json.hpp
 hnswlib       PR #508    https://github.com/nmslib/hnswlib/pull/508  core/hnswlib.h core/hnswalg.h core/space_l2.h core/space_ip.h core/bruteforce.h core/visited_list_pool.h core/stop_condition.h
 doctest       v2.4.11    https://github.com/doctest/doctest          tests/doctest.h
 
