@@ -345,7 +345,7 @@ int main(int argc, char* argv[])
             std::vector<wchar_t> cmdBuf(cmdLine.size() + 1);
             wcscpy(cmdBuf.data(), cmdLine.c_str());
 
-            if (!CreateProcessW(wCmd.c_str(), cmdBuf.data(),
+            if (!CreateProcessW(NULL, cmdBuf.data(),
                                nullptr, nullptr, TRUE,
                                CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
                 CloseHandle(hReadPipe);

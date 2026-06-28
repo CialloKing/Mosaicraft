@@ -214,6 +214,7 @@ __global__ void scoreIndexedKernel(
     // 候选索引
     const int* __restrict__ indices,
     int N,
+    int libCount,
     // 权重
     double labW, double gridW, double tinyW, double edgeW, double lbpW,
     double usePenalty,
@@ -227,6 +228,7 @@ __global__ void scoreIndexedKernel(
     }
 
     int libIdx = indices[idx];  // 映射到库中的实际偏移
+    if (libIdx < 0 || libIdx >= libCount) { d_scores[idx] = 1e30; return; }
 
     // --- LAB distance ---
     double labDist = 0.0;
@@ -660,6 +662,7 @@ void scoreIndices(
         tL, tA, tB, d_tileGrid.get(), d_tileTiny.get(), tileEdge, d_tileLBP.get(),
         lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use,
         d_indices.get(), N,
+        lib.count,
         labW, gridW, tinyW, edgeW, lbpW, usePenalty, d_scores.get());
 
     if (!CUDA_OK(cudaGetLastError())) return;
@@ -702,6 +705,7 @@ int matchWithIndices(
         tL, tA, tB, d_tileGrid.get(), d_tileTiny.get(), tileEdge, d_tileLBP.get(),
         lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use,
         d_indices.get(), N,
+        lib.count,
         labW, gridW, tinyW, edgeW, lbpW, usePenalty, d_scores.get());
 
     if (!CUDA_OK(cudaGetLastError())) return -1;
