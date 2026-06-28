@@ -269,6 +269,8 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(dbStats->methods == std::vector<std::string>{"GET", "POST"});
     CHECK(dbStats->httpPattern == "/api/db/stats");
     CHECK(dbStats->queryKeys == std::vector<std::string>{"db"});
+    CHECK(std::find(dbStats->acceptedQueryKeys.begin(), dbStats->acceptedQueryKeys.end(),
+        "dbPath") != dbStats->acceptedQueryKeys.end());
     CHECK(dbStats->fieldAliases.at("dbPath") == std::vector<std::string>{"db"});
 
     auto jobStatus = findEndpoint("/api/jobs/{id}");
@@ -323,6 +325,7 @@ TEST_CASE("API JSON serialization is shared")
     CHECK((*legacy)["methods"][0].get<std::string>() == "POST");
     CHECK((*legacy)["httpPattern"].get<std::string>() == "/api/run");
     CHECK((*legacy)["queryKeys"].empty());
+    CHECK((*legacy)["acceptedQueryKeys"].empty());
     CHECK((*legacy)["fieldAliases"].empty());
     CHECK((*legacy)["requiredFields"].size() == 1);
     CHECK((*legacy)["requiredFields"][0].get<std::string>() == "command");
@@ -738,6 +741,12 @@ TEST_CASE("API operation query keys are centralized")
     auto acceptedInspectKeys = apiAcceptedQueryKeyList(ApiOperation::Inspect);
     CHECK(std::find(acceptedInspectKeys.begin(), acceptedInspectKeys.end(), "input") != acceptedInspectKeys.end());
     CHECK(std::find(acceptedInspectKeys.begin(), acceptedInspectKeys.end(), "imagePath") != acceptedInspectKeys.end());
+
+    auto endpoints = apiEndpointMetadata(false);
+    auto usageEndpoint = std::find_if(endpoints.begin(), endpoints.end(),
+        [](const ApiEndpointMetadata& endpoint) { return endpoint.operation == ApiOperation::DatabaseUsage; });
+    REQUIRE(usageEndpoint != endpoints.end());
+    CHECK(usageEndpoint->acceptedQueryKeys == acceptedUsageKeys);
 }
 
 TEST_CASE("API endpoint metadata carries dispatch operations")
@@ -786,6 +795,7 @@ TEST_CASE("API endpoint metadata validation catches contract errors")
     bad.requestShape = ApiRequestShape::None;
     bad.methods = {"PATCH"};
     bad.queryKeys = {"db"};
+    bad.acceptedQueryKeys = {"other"};
     bad.requiredFields = {"missing"};
     bad.fieldAliases = {{"missing", {"alias"}}};
     auto badErrors = validateApiEndpointMetadata({bad});
@@ -795,6 +805,10 @@ TEST_CASE("API endpoint metadata validation catches contract errors")
         [](const std::string& error) { return error.find("empty path") != std::string::npos; }) != badErrors.end());
     CHECK(std::find_if(badErrors.begin(), badErrors.end(),
         [](const std::string& error) { return error.find("non-query endpoint has queryKeys") != std::string::npos; }) != badErrors.end());
+    CHECK(std::find_if(badErrors.begin(), badErrors.end(),
+        [](const std::string& error) { return error.find("non-query endpoint has acceptedQueryKeys") != std::string::npos; }) != badErrors.end());
+    CHECK(std::find_if(badErrors.begin(), badErrors.end(),
+        [](const std::string& error) { return error.find("acceptedQueryKeys missing query key") != std::string::npos; }) != badErrors.end());
     CHECK(std::find_if(badErrors.begin(), badErrors.end(),
         [](const std::string& error) { return error.find("required field is not listed") != std::string::npos; }) != badErrors.end());
     CHECK(std::find_if(badErrors.begin(), badErrors.end(),

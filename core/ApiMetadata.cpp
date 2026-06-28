@@ -115,6 +115,29 @@ std::unordered_map<std::string, std::vector<std::string>> endpointFieldAliases(A
     return {};
 }
 
+void addUnique(std::vector<std::string>& values, const std::string& value)
+{
+    if (!value.empty() && std::find(values.begin(), values.end(), value) == values.end()) {
+        values.push_back(value);
+    }
+}
+
+std::vector<std::string> endpointAcceptedQueryKeys(const std::vector<std::string>& queryKeys,
+                                                   const std::vector<std::string>& requestFields,
+                                                   const std::unordered_map<std::string, std::vector<std::string>>& fieldAliases,
+                                                   ApiRequestShape requestShape)
+{
+    std::vector<std::string> keys;
+    for (const auto& key : queryKeys) addUnique(keys, key);
+    if (requestShape == ApiRequestShape::Query) {
+        for (const auto& field : requestFields) addUnique(keys, field);
+        for (const auto& item : fieldAliases) {
+            for (const auto& alias : item.second) addUnique(keys, alias);
+        }
+    }
+    return keys;
+}
+
 ApiEndpointMetadata endpoint(const std::string& method,
                              const std::string& path,
                              const std::string& description,
@@ -149,6 +172,8 @@ ApiEndpointMetadata endpoint(const std::string& method,
     for (const char* field : requiredFields) {
         info.requiredFields.emplace_back(field);
     }
+    info.acceptedQueryKeys = endpointAcceptedQueryKeys(
+        info.queryKeys, info.requestFields, info.fieldAliases, info.requestShape);
     return info;
 }
 
@@ -296,8 +321,20 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
         if (endpoint.requestShape == ApiRequestShape::Query && endpoint.queryKeys.empty()) {
             errors.push_back("query endpoint has no queryKeys: " + operationName);
         }
+        if (endpoint.requestShape == ApiRequestShape::Query && endpoint.acceptedQueryKeys.empty()) {
+            errors.push_back("query endpoint has no acceptedQueryKeys: " + operationName);
+        }
         if (endpoint.requestShape != ApiRequestShape::Query && !endpoint.queryKeys.empty()) {
             errors.push_back("non-query endpoint has queryKeys: " + operationName);
+        }
+        if (endpoint.requestShape != ApiRequestShape::Query && !endpoint.acceptedQueryKeys.empty()) {
+            errors.push_back("non-query endpoint has acceptedQueryKeys: " + operationName);
+        }
+        for (const auto& key : endpoint.queryKeys) {
+            if (std::find(endpoint.acceptedQueryKeys.begin(), endpoint.acceptedQueryKeys.end(), key) ==
+                endpoint.acceptedQueryKeys.end()) {
+                errors.push_back("acceptedQueryKeys missing query key: " + operationName + " " + key);
+            }
         }
         for (const auto& field : endpoint.requiredFields) {
             if (std::find(endpoint.requestFields.begin(), endpoint.requestFields.end(), field) ==

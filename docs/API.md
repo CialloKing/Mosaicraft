@@ -35,6 +35,8 @@ Returns the structured API list. Each entry contains:
 - `fieldAliases`: accepted alternate JSON or query names for canonical request
   fields, for example `dbPath` also accepts `db`.
 - `queryKeys`: machine-readable query string keys accepted by the endpoint.
+- `acceptedQueryKeys`: complete query keys accepted by the HTTP adapter,
+  including canonical field names and aliases.
 - `sideEffects`: whether the endpoint can modify files, jobs, or databases.
 - `longRunning`: whether callers should prefer asynchronous handling or polling.
 - `legacy`: whether this endpoint is only for compatibility.
