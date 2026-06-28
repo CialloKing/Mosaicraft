@@ -119,6 +119,111 @@ static mosaicraft::ApiRequest apiRequestFromHttp(const httplib::Request& req,
     return mosaicraft::apiOperationRequest(endpoint.operation, std::move(context));
 }
 
+static void registerStructuredApiRoutes(
+    httplib::Server& svr,
+    mosaicraft::JobManager& jobManager,
+    const std::vector<mosaicraft::ApiEndpointMetadata>& apiEndpoints,
+    bool legacyRunEnabled)
+{
+    svr.Get("/api/endpoints", [&, legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
+        mosaicraft::ApiRequestContext context;
+        context.legacyRunEnabled = legacyRunEnabled;
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::Endpoints);
+        handleApi(res, jobManager, mosaicraft::apiOperationRequest(endpoint.operation, std::move(context)));
+    });
+
+    svr.Get("/api/info", [&, legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
+        mosaicraft::ApiRequestContext context;
+        context.legacyRunEnabled = legacyRunEnabled;
+        context.entryName = "MosaicraftWebUI";
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::Info);
+        handleApi(res, jobManager, mosaicraft::apiOperationRequest(endpoint.operation, std::move(context)));
+    });
+
+    svr.Post("/api/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::Mosaic);
+        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
+    });
+
+    svr.Post("/api/jobs/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::SubmitMosaicJob);
+        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
+    });
+
+    svr.Post("/api/jobs/build", [&](const httplib::Request& req, httplib::Response& res) {
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::SubmitBuildJob);
+        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
+    });
+
+    svr.Get("/api/jobs", [&](const httplib::Request&, httplib::Response& res) {
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::ListJobs);
+        handleApi(res, jobManager, mosaicraft::apiOperationRequest(endpoint.operation));
+    });
+
+    svr.Delete("/api/jobs", [&](const httplib::Request&, httplib::Response& res) {
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::ClearFinishedJobs);
+        handleApi(res, jobManager, mosaicraft::apiOperationRequest(endpoint.operation));
+    });
+
+    svr.Get(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::GetJob);
+        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
+    });
+
+    svr.Delete(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::CancelJob);
+        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
+    });
+
+    auto handleDbStats = [&](const httplib::Request& req, httplib::Response& res) {
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::DatabaseStats);
+        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
+    };
+
+    auto handleDbHealth = [&](const httplib::Request& req, httplib::Response& res) {
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::DatabaseHealth);
+        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
+    };
+
+    svr.Get("/api/db/stats", handleDbStats);
+    svr.Post("/api/db/stats", handleDbStats);
+    svr.Get("/api/db/health", handleDbHealth);
+    svr.Post("/api/db/health", handleDbHealth);
+
+    auto handleDbUsage = [&](const httplib::Request& req, httplib::Response& res) {
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::DatabaseUsage);
+        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
+    };
+
+    auto handleDbUsageExport = [&](const httplib::Request& req, httplib::Response& res) {
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::DatabaseUsageExport);
+        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
+    };
+
+    auto handleDbPurge = [&](const httplib::Request& req, httplib::Response& res) {
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::DatabasePurge);
+        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
+    };
+
+    auto handleInspect = [&](const httplib::Request& req, httplib::Response& res) {
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::Inspect);
+        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
+    };
+
+    svr.Get("/api/db/usage", handleDbUsage);
+    svr.Post("/api/db/usage", handleDbUsage);
+    svr.Post("/api/db/usage/export", handleDbUsageExport);
+    svr.Get("/api/db/purge", handleDbPurge);
+    svr.Post("/api/db/purge", handleDbPurge);
+    svr.Get("/api/inspect", handleInspect);
+    svr.Post("/api/inspect", handleInspect);
+
+    svr.Get("/api/ping", [&](const httplib::Request&, httplib::Response& res) {
+        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::Ping);
+        handleApi(res, jobManager, mosaicraft::apiOperationRequest(endpoint.operation));
+    });
+}
+
 } // namespace
 
 #ifdef _WIN32
@@ -251,98 +356,7 @@ int main(int argc, char* argv[])
         res.set_content("HTML reloaded", "text/plain");
     });
 
-    svr.Get("/api/endpoints", [&, legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
-        mosaicraft::ApiRequestContext context;
-        context.legacyRunEnabled = legacyRunEnabled;
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::Endpoints);
-        handleApi(res, jobManager, mosaicraft::apiOperationRequest(endpoint.operation, std::move(context)));
-    });
-
-    svr.Get("/api/info", [&, legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
-        mosaicraft::ApiRequestContext context;
-        context.legacyRunEnabled = legacyRunEnabled;
-        context.entryName = "MosaicraftWebUI";
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::Info);
-        handleApi(res, jobManager, mosaicraft::apiOperationRequest(endpoint.operation, std::move(context)));
-    });
-
-    svr.Post("/api/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::Mosaic);
-        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
-    });
-
-    svr.Post("/api/jobs/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::SubmitMosaicJob);
-        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
-    });
-
-    svr.Post("/api/jobs/build", [&](const httplib::Request& req, httplib::Response& res) {
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::SubmitBuildJob);
-        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
-    });
-
-    svr.Get("/api/jobs", [&](const httplib::Request&, httplib::Response& res) {
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::ListJobs);
-        handleApi(res, jobManager, mosaicraft::apiOperationRequest(endpoint.operation));
-    });
-
-    svr.Delete("/api/jobs", [&](const httplib::Request&, httplib::Response& res) {
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::ClearFinishedJobs);
-        handleApi(res, jobManager, mosaicraft::apiOperationRequest(endpoint.operation));
-    });
-
-    svr.Get(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::GetJob);
-        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
-    });
-
-    svr.Delete(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::CancelJob);
-        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
-    });
-
-    auto handleDbStats = [&](const httplib::Request& req, httplib::Response& res) {
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::DatabaseStats);
-        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
-    };
-
-    auto handleDbHealth = [&](const httplib::Request& req, httplib::Response& res) {
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::DatabaseHealth);
-        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
-    };
-
-    svr.Get("/api/db/stats", handleDbStats);
-    svr.Post("/api/db/stats", handleDbStats);
-    svr.Get("/api/db/health", handleDbHealth);
-    svr.Post("/api/db/health", handleDbHealth);
-
-    auto handleDbUsage = [&](const httplib::Request& req, httplib::Response& res) {
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::DatabaseUsage);
-        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
-    };
-
-    auto handleDbUsageExport = [&](const httplib::Request& req, httplib::Response& res) {
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::DatabaseUsageExport);
-        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
-    };
-
-    auto handleDbPurge = [&](const httplib::Request& req, httplib::Response& res) {
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::DatabasePurge);
-        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
-    };
-
-    auto handleInspect = [&](const httplib::Request& req, httplib::Response& res) {
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::Inspect);
-        handleApi(res, jobManager, apiRequestFromHttp(req, endpoint));
-    };
-
-    svr.Get("/api/db/usage", handleDbUsage);
-    svr.Post("/api/db/usage", handleDbUsage);
-    svr.Post("/api/db/usage/export", handleDbUsageExport);
-    svr.Get("/api/db/purge", handleDbPurge);
-    svr.Post("/api/db/purge", handleDbPurge);
-    svr.Get("/api/inspect", handleInspect);
-    svr.Post("/api/inspect", handleInspect);
+    registerStructuredApiRoutes(svr, jobManager, apiEndpoints, legacyRunEnabled);
 
     // Legacy command endpoint.
     svr.Post("/api/run", [&, legacyRunEnabled](const httplib::Request& req, httplib::Response& res) {
@@ -456,12 +470,6 @@ int main(int argc, char* argv[])
             std::cerr << "[ERROR] Unknown exception in /api/run" << std::endl;
             res.set_content("ERROR: internal error", "text/plain");
         }
-    });
-
-    // Health check.
-    svr.Get("/api/ping", [&](const httplib::Request&, httplib::Response& res) {
-        const auto& endpoint = endpointForOperation(apiEndpoints, mosaicraft::ApiOperation::Ping);
-        handleApi(res, jobManager, mosaicraft::apiOperationRequest(endpoint.operation));
     });
 
     std::cout << "  Listening on http://localhost:" << port << std::endl;
