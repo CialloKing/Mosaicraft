@@ -46,6 +46,13 @@ struct ApiResponse
     nlohmann::json body;
 };
 
+ApiRequest apiRequest(ApiOperation operation);
+ApiRequest apiBodyRequest(ApiOperation operation, std::string body);
+ApiRequest apiQueryRequest(ApiOperation operation, ApiQueryParams query, std::string body = {});
+ApiRequest apiJobRequest(ApiOperation operation, std::string id);
+ApiRequest apiInfoRequest(bool legacyRunEnabled, const char* entryName);
+ApiRequest apiLegacyRunDisabledRequest();
+
 ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs);
 
 ApiResponse apiEndpoints(bool legacyRunEnabled);

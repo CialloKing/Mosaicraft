@@ -475,40 +475,53 @@ TEST_CASE("API request dispatcher routes operations without HTTP")
 {
     JobManager manager(false);
 
-    ApiRequest pingRequest;
-    pingRequest.operation = ApiOperation::Ping;
-    auto ping = handleApiRequest(pingRequest, manager);
+    auto ping = handleApiRequest(apiRequest(ApiOperation::Ping), manager);
     CHECK(ping.status == 200);
     CHECK(ping.body["message"].get<std::string>() == "pong");
 
-    ApiRequest infoRequest;
-    infoRequest.operation = ApiOperation::Info;
-    infoRequest.entryName = "MosaicraftWebUI";
-    auto info = handleApiRequest(infoRequest, manager);
+    auto info = handleApiRequest(apiInfoRequest(false, "MosaicraftWebUI"), manager);
     CHECK(info.status == 200);
     CHECK(info.body["info"]["entry"].get<std::string>() == "MosaicraftWebUI");
 
-    ApiRequest buildRequest;
-    buildRequest.operation = ApiOperation::SubmitBuildJob;
-    buildRequest.body = R"({"inputDir":"__unused_dispatch_input__","outputDir":"__unused_dispatch_output__"})";
-    auto submitted = handleApiRequest(buildRequest, manager);
+    auto submitted = handleApiRequest(
+        apiBodyRequest(ApiOperation::SubmitBuildJob,
+            R"({"inputDir":"__unused_dispatch_input__","outputDir":"__unused_dispatch_output__"})"),
+        manager);
     CHECK(submitted.status == 202);
     std::string jobId = submitted.body["job"]["id"].get<std::string>();
 
-    ApiRequest getRequest;
-    getRequest.operation = ApiOperation::GetJob;
-    getRequest.id = jobId;
-    auto fetched = handleApiRequest(getRequest, manager);
+    auto fetched = handleApiRequest(apiJobRequest(ApiOperation::GetJob, jobId), manager);
     CHECK(fetched.status == 200);
     CHECK(fetched.body["job"]["type"].get<std::string>() == "build");
 
-    ApiRequest usageRequest;
-    usageRequest.operation = ApiOperation::DatabaseUsage;
-    usageRequest.query = {{"db", "__dispatch_status_test__.db"}};
-    usageRequest.body = R"({"limit":"bad"})";
-    auto badUsage = handleApiRequest(usageRequest, manager);
+    auto badUsage = handleApiRequest(
+        apiQueryRequest(ApiOperation::DatabaseUsage,
+            {{"db", "__dispatch_status_test__.db"}},
+            R"({"limit":"bad"})"),
+        manager);
     CHECK(badUsage.status == 400);
     CHECK(badUsage.body["message"].get<std::string>() == "limit must be a number");
+}
+
+TEST_CASE("API request factories set semantic fields")
+{
+    auto body = apiBodyRequest(ApiOperation::Mosaic, "body");
+    CHECK(body.operation == ApiOperation::Mosaic);
+    CHECK(body.body == "body");
+
+    auto query = apiQueryRequest(ApiOperation::DatabaseUsage, {{"db", "library.db"}}, "json");
+    CHECK(query.operation == ApiOperation::DatabaseUsage);
+    CHECK(query.query.at("db") == "library.db");
+    CHECK(query.body == "json");
+
+    auto job = apiJobRequest(ApiOperation::CancelJob, "job-1");
+    CHECK(job.operation == ApiOperation::CancelJob);
+    CHECK(job.id == "job-1");
+
+    auto info = apiInfoRequest(true, "MosaicraftWebUI");
+    CHECK(info.operation == ApiOperation::Info);
+    CHECK(info.legacyRunEnabled);
+    CHECK(std::string(info.entryName) == "MosaicraftWebUI");
 }
 
 TEST_CASE("API handlers expose structured jobs without HTTP")

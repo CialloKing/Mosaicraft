@@ -3,6 +3,7 @@
 #include "ApiJson.h"
 
 #include <exception>
+#include <utility>
 
 namespace mosaicraft
 {
@@ -31,6 +32,48 @@ int databaseMaintenanceErrorStatus(const ServiceResult& status)
 }
 
 } // namespace
+
+ApiRequest apiRequest(ApiOperation operation)
+{
+    ApiRequest request;
+    request.operation = operation;
+    return request;
+}
+
+ApiRequest apiBodyRequest(ApiOperation operation, std::string body)
+{
+    ApiRequest request = apiRequest(operation);
+    request.body = std::move(body);
+    return request;
+}
+
+ApiRequest apiQueryRequest(ApiOperation operation, ApiQueryParams query, std::string body)
+{
+    ApiRequest request = apiRequest(operation);
+    request.query = std::move(query);
+    request.body = std::move(body);
+    return request;
+}
+
+ApiRequest apiJobRequest(ApiOperation operation, std::string id)
+{
+    ApiRequest request = apiRequest(operation);
+    request.id = std::move(id);
+    return request;
+}
+
+ApiRequest apiInfoRequest(bool legacyRunEnabled, const char* entryName)
+{
+    ApiRequest request = apiRequest(ApiOperation::Info);
+    request.legacyRunEnabled = legacyRunEnabled;
+    request.entryName = entryName;
+    return request;
+}
+
+ApiRequest apiLegacyRunDisabledRequest()
+{
+    return apiRequest(ApiOperation::LegacyRunDisabled);
+}
 
 ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
 {

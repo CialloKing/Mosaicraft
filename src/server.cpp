@@ -202,49 +202,51 @@ int main(int argc, char* argv[])
     });
 
     svr.Get("/api/endpoints", [&, legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::Endpoints, {}, {}, {}, legacyRunEnabled});
+        auto request = mosaicraft::apiRequest(mosaicraft::ApiOperation::Endpoints);
+        request.legacyRunEnabled = legacyRunEnabled;
+        handleApi(res, jobManager, request);
     });
 
     svr.Get("/api/info", [&, legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::Info, {}, {}, {}, legacyRunEnabled, "MosaicraftWebUI"});
+        handleApi(res, jobManager, mosaicraft::apiInfoRequest(legacyRunEnabled, "MosaicraftWebUI"));
     });
 
     svr.Post("/api/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::Mosaic, {}, req.body});
+        handleApi(res, jobManager, mosaicraft::apiBodyRequest(mosaicraft::ApiOperation::Mosaic, req.body));
     });
 
     svr.Post("/api/jobs/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::SubmitMosaicJob, {}, req.body});
+        handleApi(res, jobManager, mosaicraft::apiBodyRequest(mosaicraft::ApiOperation::SubmitMosaicJob, req.body));
     });
 
     svr.Post("/api/jobs/build", [&](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::SubmitBuildJob, {}, req.body});
+        handleApi(res, jobManager, mosaicraft::apiBodyRequest(mosaicraft::ApiOperation::SubmitBuildJob, req.body));
     });
 
     svr.Get("/api/jobs", [&](const httplib::Request&, httplib::Response& res) {
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::ListJobs});
+        handleApi(res, jobManager, mosaicraft::apiRequest(mosaicraft::ApiOperation::ListJobs));
     });
 
     svr.Delete("/api/jobs", [&](const httplib::Request&, httplib::Response& res) {
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::ClearFinishedJobs});
+        handleApi(res, jobManager, mosaicraft::apiRequest(mosaicraft::ApiOperation::ClearFinishedJobs));
     });
 
     svr.Get(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
         std::string jobId = req.matches.size() > 1 ? req.matches[1].str() : "";
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::GetJob, {}, {}, jobId});
+        handleApi(res, jobManager, mosaicraft::apiJobRequest(mosaicraft::ApiOperation::GetJob, jobId));
     });
 
     svr.Delete(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
         std::string jobId = req.matches.size() > 1 ? req.matches[1].str() : "";
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::CancelJob, {}, {}, jobId});
+        handleApi(res, jobManager, mosaicraft::apiJobRequest(mosaicraft::ApiOperation::CancelJob, jobId));
     });
 
     auto handleDbStats = [&](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::DatabaseStats, queryParams(req, {"db"}), req.body});
+        handleApi(res, jobManager, mosaicraft::apiQueryRequest(mosaicraft::ApiOperation::DatabaseStats, queryParams(req, {"db"}), req.body));
     };
 
     auto handleDbHealth = [&](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::DatabaseHealth, queryParams(req, {"db"}), req.body});
+        handleApi(res, jobManager, mosaicraft::apiQueryRequest(mosaicraft::ApiOperation::DatabaseHealth, queryParams(req, {"db"}), req.body));
     };
 
     svr.Get("/api/db/stats", handleDbStats);
@@ -253,19 +255,19 @@ int main(int argc, char* argv[])
     svr.Post("/api/db/health", handleDbHealth);
 
     auto handleDbUsage = [&](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::DatabaseUsage, queryParams(req, {"db", "limit", "unused"}), req.body});
+        handleApi(res, jobManager, mosaicraft::apiQueryRequest(mosaicraft::ApiOperation::DatabaseUsage, queryParams(req, {"db", "limit", "unused"}), req.body));
     };
 
     auto handleDbUsageExport = [&](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::DatabaseUsageExport, queryParams(req, {"db", "output", "confirm"}), req.body});
+        handleApi(res, jobManager, mosaicraft::apiQueryRequest(mosaicraft::ApiOperation::DatabaseUsageExport, queryParams(req, {"db", "output", "confirm"}), req.body));
     };
 
     auto handleDbPurge = [&](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::DatabasePurge, queryParams(req, {"db", "dryRun", "confirm"}), req.body});
+        handleApi(res, jobManager, mosaicraft::apiQueryRequest(mosaicraft::ApiOperation::DatabasePurge, queryParams(req, {"db", "dryRun", "confirm"}), req.body));
     };
 
     auto handleInspect = [&](const httplib::Request& req, httplib::Response& res) {
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::Inspect, queryParams(req, {"input", "db"}), req.body});
+        handleApi(res, jobManager, mosaicraft::apiQueryRequest(mosaicraft::ApiOperation::Inspect, queryParams(req, {"input", "db"}), req.body));
     };
 
     svr.Get("/api/db/usage", handleDbUsage);
@@ -279,7 +281,7 @@ int main(int argc, char* argv[])
     // Legacy command endpoint.
     svr.Post("/api/run", [&, legacyRunEnabled](const httplib::Request& req, httplib::Response& res) {
         if (!legacyRunEnabled) {
-            handleApi(res, jobManager, {mosaicraft::ApiOperation::LegacyRunDisabled});
+            handleApi(res, jobManager, mosaicraft::apiLegacyRunDisabledRequest());
             return;
         }
 
@@ -392,7 +394,7 @@ int main(int argc, char* argv[])
 
     // Health check.
     svr.Get("/api/ping", [&](const httplib::Request&, httplib::Response& res) {
-        handleApi(res, jobManager, {mosaicraft::ApiOperation::Ping});
+        handleApi(res, jobManager, mosaicraft::apiRequest(mosaicraft::ApiOperation::Ping));
     });
 
     std::cout << "  Listening on http://localhost:" << port << std::endl;
