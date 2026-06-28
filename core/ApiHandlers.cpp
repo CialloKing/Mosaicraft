@@ -85,35 +85,28 @@ ApiRequest apiLegacyRunDisabledRequest()
     return apiRequest(ApiOperation::LegacyRunDisabled);
 }
 
-std::vector<const char*> apiQueryKeys(ApiOperation operation)
+std::vector<std::string> apiQueryKeyList(ApiOperation operation)
 {
-    switch (operation)
-    {
-    case ApiOperation::DatabaseStats:
-    case ApiOperation::DatabaseHealth:
-        return {"db"};
-    case ApiOperation::DatabaseUsage:
-        return {"db", "limit", "unused"};
-    case ApiOperation::DatabaseUsageExport:
-        return {"db", "output", "confirm"};
-    case ApiOperation::DatabasePurge:
-        return {"db", "dryRun", "confirm"};
-    case ApiOperation::Inspect:
-        return {"input", "db"};
-    case ApiOperation::Endpoints:
-    case ApiOperation::Info:
-    case ApiOperation::Ping:
-    case ApiOperation::LegacyRunDisabled:
-    case ApiOperation::Mosaic:
-    case ApiOperation::SubmitMosaicJob:
-    case ApiOperation::SubmitBuildJob:
-    case ApiOperation::ListJobs:
-    case ApiOperation::ClearFinishedJobs:
-    case ApiOperation::GetJob:
-    case ApiOperation::CancelJob:
-        return {};
+    static const auto endpoints = apiEndpointMetadata(false);
+    for (const auto& endpoint : endpoints) {
+        if (endpoint.operation == operation) {
+            return endpoint.queryKeys;
+        }
     }
     return {};
+}
+
+std::vector<const char*> apiQueryKeys(ApiOperation operation)
+{
+    static const auto endpoints = apiEndpointMetadata(false);
+    std::vector<const char*> keys;
+    for (const auto& endpoint : endpoints) {
+        if (endpoint.operation != operation) continue;
+        keys.reserve(endpoint.queryKeys.size());
+        for (const auto& key : endpoint.queryKeys) keys.push_back(key.c_str());
+        break;
+    }
+    return keys;
 }
 
 ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)

@@ -63,19 +63,13 @@ static void handleApi(httplib::Response& res,
 }
 
 static mosaicraft::ApiQueryParams queryParams(const httplib::Request& req,
-                                              const std::vector<const char*>& keys)
+                                              const std::vector<std::string>& keys)
 {
     mosaicraft::ApiQueryParams query;
-    for (const char* key : keys) {
+    for (const auto& key : keys) {
         if (req.has_param(key)) query[key] = req.get_param_value(key);
     }
     return query;
-}
-
-static mosaicraft::ApiQueryParams queryParamsFor(const httplib::Request& req,
-                                                 mosaicraft::ApiOperation operation)
-{
-    return queryParams(req, mosaicraft::apiQueryKeys(operation));
 }
 
 static mosaicraft::ApiRequest apiRequestFromHttp(const httplib::Request& req,
@@ -91,7 +85,7 @@ static mosaicraft::ApiRequest apiRequestFromHttp(const httplib::Request& req,
         break;
     case mosaicraft::ApiRequestShape::Query:
         context.body = req.body;
-        context.query = queryParamsFor(req, endpoint.operation);
+        context.query = queryParams(req, endpoint.queryKeys);
         break;
     case mosaicraft::ApiRequestShape::JobId:
         if (context.id.empty() && req.matches.size() > 1) {

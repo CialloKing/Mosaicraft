@@ -22,6 +22,37 @@ std::string endpointHttpPattern(const std::string& path)
     return path;
 }
 
+std::vector<std::string> endpointQueryKeys(ApiOperation operation)
+{
+    switch (operation)
+    {
+    case ApiOperation::DatabaseStats:
+    case ApiOperation::DatabaseHealth:
+        return {"db"};
+    case ApiOperation::DatabaseUsage:
+        return {"db", "limit", "unused"};
+    case ApiOperation::DatabaseUsageExport:
+        return {"db", "output", "confirm"};
+    case ApiOperation::DatabasePurge:
+        return {"db", "dryRun", "confirm"};
+    case ApiOperation::Inspect:
+        return {"input", "db"};
+    case ApiOperation::Endpoints:
+    case ApiOperation::Info:
+    case ApiOperation::Ping:
+    case ApiOperation::LegacyRunDisabled:
+    case ApiOperation::Mosaic:
+    case ApiOperation::SubmitMosaicJob:
+    case ApiOperation::SubmitBuildJob:
+    case ApiOperation::ListJobs:
+    case ApiOperation::ClearFinishedJobs:
+    case ApiOperation::GetJob:
+    case ApiOperation::CancelJob:
+        return {};
+    }
+    return {};
+}
+
 ApiEndpointMetadata endpoint(const std::string& method,
                              const std::string& path,
                              const std::string& description,
@@ -43,6 +74,7 @@ ApiEndpointMetadata endpoint(const std::string& method,
     info.category = category;
     info.legacy = legacy;
     info.enabled = enabled;
+    info.queryKeys = endpointQueryKeys(operation);
     for (const char* field : requestFields) {
         info.requestFields.emplace_back(field);
     }

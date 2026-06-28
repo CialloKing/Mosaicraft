@@ -43,6 +43,7 @@ ApiRequest apiQueryRequest(ApiOperation operation, ApiQueryParams query, std::st
 ApiRequest apiJobRequest(ApiOperation operation, std::string id);
 ApiRequest apiInfoRequest(bool legacyRunEnabled, const char* entryName);
 ApiRequest apiLegacyRunDisabledRequest();
+std::vector<std::string> apiQueryKeyList(ApiOperation operation);
 std::vector<const char*> apiQueryKeys(ApiOperation operation);
 
 ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs);

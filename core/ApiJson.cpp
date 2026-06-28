@@ -200,6 +200,7 @@ nlohmann::json apiEndpointToJson(const ApiEndpointMetadata& endpoint)
         {"description", endpoint.description},
         {"category", endpoint.category},
         {"requestFields", fields},
+        {"queryKeys", endpoint.queryKeys},
         {"legacy", endpoint.legacy},
         {"enabled", endpoint.enabled}
     };

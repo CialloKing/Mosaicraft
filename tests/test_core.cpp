@@ -262,10 +262,12 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(dbStats->method == "GET|POST");
     CHECK(dbStats->methods == std::vector<std::string>{"GET", "POST"});
     CHECK(dbStats->httpPattern == "/api/db/stats");
+    CHECK(dbStats->queryKeys == std::vector<std::string>{"db"});
 
     auto jobStatus = findEndpoint("/api/jobs/{id}");
     REQUIRE(jobStatus != endpoints.end());
     CHECK(jobStatus->httpPattern == R"(/api/jobs/([A-Za-z0-9_-]+))");
+    CHECK(jobStatus->queryKeys.empty());
 
     auto legacyRun = findEndpoint("/api/run");
     REQUIRE(legacyRun != endpoints.end());
@@ -308,6 +310,7 @@ TEST_CASE("API JSON serialization is shared")
     CHECK((*legacy)["methods"].size() == 1);
     CHECK((*legacy)["methods"][0].get<std::string>() == "POST");
     CHECK((*legacy)["httpPattern"].get<std::string>() == "/api/run");
+    CHECK((*legacy)["queryKeys"].empty());
     CHECK((*legacy)["requestShape"].get<std::string>() == "legacyCommand");
     CHECK((*legacy)["legacy"].get<bool>());
     CHECK_FALSE((*legacy)["enabled"].get<bool>());
@@ -570,6 +573,9 @@ TEST_CASE("API request factories set semantic fields")
 
 TEST_CASE("API operation query keys are centralized")
 {
+    auto usageKeyList = apiQueryKeyList(ApiOperation::DatabaseUsage);
+    CHECK(usageKeyList == std::vector<std::string>{"db", "limit", "unused"});
+
     auto usageKeys = apiQueryKeys(ApiOperation::DatabaseUsage);
     CHECK(std::find(usageKeys.begin(), usageKeys.end(), std::string("db")) != usageKeys.end());
     CHECK(std::find(usageKeys.begin(), usageKeys.end(), std::string("limit")) != usageKeys.end());
@@ -584,6 +590,7 @@ TEST_CASE("API operation query keys are centralized")
     CHECK(std::find(inspectKeys.begin(), inspectKeys.end(), std::string("db")) != inspectKeys.end());
 
     CHECK(apiQueryKeys(ApiOperation::Ping).empty());
+    CHECK(apiQueryKeyList(ApiOperation::Ping).empty());
     CHECK(apiQueryKeys(ApiOperation::SubmitBuildJob).empty());
 }
 
@@ -594,6 +601,11 @@ TEST_CASE("API endpoint metadata carries dispatch operations")
         CHECK(std::string(apiRequestShapeName(endpoint.requestShape)) != "unknown");
         CHECK_FALSE(endpoint.methods.empty());
         CHECK_FALSE(endpoint.httpPattern.empty());
+        if (endpoint.requestShape == ApiRequestShape::Query) {
+            CHECK_FALSE(endpoint.queryKeys.empty());
+        } else {
+            CHECK(endpoint.queryKeys.empty());
+        }
         auto keys = apiQueryKeys(endpoint.operation);
         if (endpoint.path == "/api/db/usage") {
             CHECK(endpoint.requestShape == ApiRequestShape::Query);

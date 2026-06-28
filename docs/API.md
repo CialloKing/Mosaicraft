@@ -29,6 +29,7 @@ Returns the structured API list. Each entry contains:
 - `description`: short endpoint description.
 - `category`: functional group, such as `jobs`, `database`, or `inspect`.
 - `requestFields`: common request fields accepted by the endpoint.
+- `queryKeys`: machine-readable query string keys accepted by the endpoint.
 - `legacy`: whether this endpoint is only for compatibility.
 - `enabled`: whether the endpoint is currently available.
 

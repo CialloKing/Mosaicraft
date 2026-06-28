@@ -47,6 +47,7 @@ struct ApiEndpointMetadata
     std::string description;
     std::string category;
     std::vector<std::string> requestFields;
+    std::vector<std::string> queryKeys;
     bool legacy = false;
     bool enabled = true;
 };
