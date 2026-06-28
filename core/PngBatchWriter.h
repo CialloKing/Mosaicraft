@@ -26,18 +26,26 @@ public:
 #endif
         if (!m_fp) throw std::runtime_error("PngBatchWriter: open");
         m_png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
-        if (!m_png) { fclose(m_fp); throw std::runtime_error("png_create_write_struct"); }
+        if (!m_png) { destroyAfterError(); throw std::runtime_error("png_create_write_struct"); }
         m_info = png_create_info_struct(m_png);
-        if (!m_info) { png_destroy_write_struct(&m_png,nullptr); fclose(m_fp); throw std::runtime_error("png_create_info_struct"); }
-        if (setjmp(png_jmpbuf(m_png))) { png_destroy_write_struct(&m_png,&m_info); fclose(m_fp); throw std::runtime_error("Png init"); }
+        if (!m_info) { destroyAfterError(); throw std::runtime_error("png_create_info_struct"); }
+        if (setjmp(png_jmpbuf(m_png))) { destroyAfterError(); throw std::runtime_error("Png init"); }
         png_init_io(m_png, m_fp);
         png_set_filter(m_png, PNG_FILTER_TYPE_BASE, PNG_ALL_FILTERS);
         png_set_compression_level(m_png, compressionLevel);
         png_set_IHDR(m_png, m_info, w, h, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
         png_write_info(m_png, m_info);
         // 预分配全部行缓冲区（BGR→RGB 在 writeAll 中转换）
-        m_image.resize(static_cast<size_t>(w) * h * 3);
-        m_rows.resize(h);
+        try
+        {
+            m_image.resize(static_cast<size_t>(w) * h * 3);
+            m_rows.resize(h);
+        }
+        catch (...)
+        {
+            destroyAfterError();
+            throw;
+        }
     }
 
     // 获取某行的写入指针（调用方直接写 BGR 数据到此）

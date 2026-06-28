@@ -4,7 +4,9 @@
 
 #include <cfloat>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace mosaicraft {
@@ -51,6 +53,25 @@ bool checkCuda(cudaError_t err, const char* file, int line)
     }
     fprintf(stderr, "CUDA error at %s:%d: %s\n", file, line, cudaGetErrorString(err));
     return false;
+}
+
+bool hasValidLibrary(const GpuLibrary& lib)
+{
+    return lib.count > 0 &&
+        lib.d_lab && lib.d_grid && lib.d_tiny &&
+        lib.d_edge && lib.d_lbp && lib.d_use;
+}
+
+void fillFailedScores(double* outScores, int count)
+{
+    if (!outScores || count <= 0)
+    {
+        return;
+    }
+    for (int i = 0; i < count; ++i)
+    {
+        outScores[i] = DBL_MAX;
+    }
 }
 
 } // namespace
@@ -561,38 +582,35 @@ int matchAgainstLibrary(
     double usePenalty)
 {
     int N = lib.count;
-    if (N <= 0) return -1;
+    if (!hasValidLibrary(lib)) return -1;
 
     // 上传 tile 特征
-    float*   d_tileGrid = nullptr;
-    std::uint8_t* d_tileTiny = nullptr;
-    float*   d_tileLBP = nullptr;
-    cudaMalloc(&d_tileGrid, 192 * sizeof(float));
-    cudaMalloc(&d_tileTiny, 256);
-    cudaMalloc(&d_tileLBP,  256 * sizeof(float));
-    cudaMemcpy(d_tileGrid, tileGrid, 192 * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_tileTiny, tileTiny, 256, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_tileLBP,  tileLBP,  256 * sizeof(float), cudaMemcpyHostToDevice);
+    DeviceBuffer<float> d_tileGrid;
+    DeviceBuffer<std::uint8_t> d_tileTiny;
+    DeviceBuffer<float> d_tileLBP;
+    if (!CUDA_OK(d_tileGrid.allocate(192 * sizeof(float)))) return -1;
+    if (!CUDA_OK(d_tileTiny.allocate(256))) return -1;
+    if (!CUDA_OK(d_tileLBP.allocate(256 * sizeof(float)))) return -1;
+    if (!CUDA_OK(cudaMemcpy(d_tileGrid.get(), tileGrid, 192 * sizeof(float), cudaMemcpyHostToDevice))) return -1;
+    if (!CUDA_OK(cudaMemcpy(d_tileTiny.get(), tileTiny, 256, cudaMemcpyHostToDevice))) return -1;
+    if (!CUDA_OK(cudaMemcpy(d_tileLBP.get(), tileLBP, 256 * sizeof(float), cudaMemcpyHostToDevice))) return -1;
 
-    double* d_scores = nullptr;
-    cudaMalloc(&d_scores, N * sizeof(double));
+    DeviceBuffer<double> d_scores;
+    if (!CUDA_OK(d_scores.allocate(static_cast<std::size_t>(N) * sizeof(double)))) return -1;
 
     int blockSize = 256;
     int gridSize = (N + blockSize - 1) / blockSize;
     scoreKernel<<<gridSize, blockSize>>>(
         tL, tA, tB,
-        d_tileGrid, d_tileTiny, tileEdge, d_tileLBP,
+        d_tileGrid.get(), d_tileTiny.get(), tileEdge, d_tileLBP.get(),
         lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use, N,
         labW, gridW, tinyW, edgeW, lbpW, usePenalty,
-        d_scores);
+        d_scores.get());
 
-    cudaDeviceSynchronize();
-
+    if (!CUDA_OK(cudaGetLastError())) return -1;
+    if (!CUDA_OK(cudaDeviceSynchronize())) return -1;
     std::vector<double> scores(N);
-    cudaMemcpy(scores.data(), d_scores, N * sizeof(double), cudaMemcpyDeviceToHost);
-
-    cudaFree(d_scores);
-    cudaFree(d_tileGrid); cudaFree(d_tileTiny); cudaFree(d_tileLBP);
+    if (!CUDA_OK(cudaMemcpy(scores.data(), d_scores.get(), static_cast<std::size_t>(N) * sizeof(double), cudaMemcpyDeviceToHost))) return -1;
 
     int bestIdx = 0;
     for (int i = 1; i < N; ++i)
@@ -611,39 +629,42 @@ void scoreIndices(
     double* outScores)
 {
     // 仅对 N 个候选评分，而非全库
-    if (N <= 0 || lib.count <= 0) { return; }
+    if (N <= 0) { return; }
+    if (!outScores || !indices) { return; }
+    fillFailedScores(outScores, N);
+    if (!hasValidLibrary(lib)) { return; }
 
     // 上传 tile 特征
-    float *d_tileGrid=nullptr, *d_tileLBP=nullptr;
-    uint8_t* d_tileTiny=nullptr;
-    cudaMalloc(&d_tileGrid, 192*sizeof(float)); cudaMalloc(&d_tileTiny, 256);
-    cudaMalloc(&d_tileLBP, 256*sizeof(float));
-    cudaMemcpy(d_tileGrid, tileGrid, 192*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_tileTiny, tileTiny, 256, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_tileLBP, tileLBP, 256*sizeof(float), cudaMemcpyHostToDevice);
+    DeviceBuffer<float> d_tileGrid;
+    DeviceBuffer<std::uint8_t> d_tileTiny;
+    DeviceBuffer<float> d_tileLBP;
+    if (!CUDA_OK(d_tileGrid.allocate(192 * sizeof(float)))) return;
+    if (!CUDA_OK(d_tileTiny.allocate(256))) return;
+    if (!CUDA_OK(d_tileLBP.allocate(256 * sizeof(float)))) return;
+    if (!CUDA_OK(cudaMemcpy(d_tileGrid.get(), tileGrid, 192 * sizeof(float), cudaMemcpyHostToDevice))) return;
+    if (!CUDA_OK(cudaMemcpy(d_tileTiny.get(), tileTiny, 256, cudaMemcpyHostToDevice))) return;
+    if (!CUDA_OK(cudaMemcpy(d_tileLBP.get(), tileLBP, 256 * sizeof(float), cudaMemcpyHostToDevice))) return;
 
     // 上传候选索引
-    int* d_indices = nullptr;
-    cudaMalloc(&d_indices, N * sizeof(int));
-    cudaMemcpy(d_indices, indices, N * sizeof(int), cudaMemcpyHostToDevice);
+    DeviceBuffer<int> d_indices;
+    if (!CUDA_OK(d_indices.allocate(static_cast<std::size_t>(N) * sizeof(int)))) return;
+    if (!CUDA_OK(cudaMemcpy(d_indices.get(), indices, static_cast<std::size_t>(N) * sizeof(int), cudaMemcpyHostToDevice))) return;
 
     // 仅分配 N 个评分的空间（而非 lib.count）
-    double* d_scores = nullptr;
-    cudaMalloc(&d_scores, N * sizeof(double));
+    DeviceBuffer<double> d_scores;
+    if (!CUDA_OK(d_scores.allocate(static_cast<std::size_t>(N) * sizeof(double)))) return;
 
     int blockSize = 256;
     int gridSize = (N + blockSize - 1) / blockSize;
     scoreIndexedKernel<<<gridSize, blockSize>>>(
-        tL, tA, tB, d_tileGrid, d_tileTiny, tileEdge, d_tileLBP,
+        tL, tA, tB, d_tileGrid.get(), d_tileTiny.get(), tileEdge, d_tileLBP.get(),
         lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use,
-        d_indices, N,
-        labW, gridW, tinyW, edgeW, lbpW, usePenalty, d_scores);
+        d_indices.get(), N,
+        labW, gridW, tinyW, edgeW, lbpW, usePenalty, d_scores.get());
 
-    cudaDeviceSynchronize();
-    cudaMemcpy(outScores, d_scores, N * sizeof(double), cudaMemcpyDeviceToHost);
-
-    cudaFree(d_scores); cudaFree(d_indices);
-    cudaFree(d_tileGrid); cudaFree(d_tileTiny); cudaFree(d_tileLBP);
+    if (!CUDA_OK(cudaGetLastError())) return;
+    if (!CUDA_OK(cudaDeviceSynchronize())) return;
+    CUDA_OK(cudaMemcpy(outScores, d_scores.get(), static_cast<std::size_t>(N) * sizeof(double), cudaMemcpyDeviceToHost));
 }
 
 int matchWithIndices(
@@ -656,35 +677,37 @@ int matchWithIndices(
     double usePenalty)
 {
     // 仅对 N 个候选评分
-    if (N <= 0 || lib.count <= 0) { return -1; }
+    if (N <= 0 || !indices || !hasValidLibrary(lib)) { return -1; }
 
-    float* d_tileGrid = nullptr; uint8_t* d_tileTiny = nullptr; float* d_tileLBP = nullptr;
-    int* d_indices = nullptr;
-    cudaMalloc(&d_tileGrid, 192*sizeof(float)); cudaMalloc(&d_tileTiny, 256);
-    cudaMalloc(&d_tileLBP, 256*sizeof(float)); cudaMalloc(&d_indices, N*sizeof(int));
-    cudaMemcpy(d_tileGrid, tileGrid, 192*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_tileTiny, tileTiny, 256, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_tileLBP, tileLBP, 256*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_indices, indices, N*sizeof(int), cudaMemcpyHostToDevice);
+    DeviceBuffer<float> d_tileGrid;
+    DeviceBuffer<std::uint8_t> d_tileTiny;
+    DeviceBuffer<float> d_tileLBP;
+    DeviceBuffer<int> d_indices;
+    if (!CUDA_OK(d_tileGrid.allocate(192 * sizeof(float)))) return -1;
+    if (!CUDA_OK(d_tileTiny.allocate(256))) return -1;
+    if (!CUDA_OK(d_tileLBP.allocate(256 * sizeof(float)))) return -1;
+    if (!CUDA_OK(d_indices.allocate(static_cast<std::size_t>(N) * sizeof(int)))) return -1;
+    if (!CUDA_OK(cudaMemcpy(d_tileGrid.get(), tileGrid, 192 * sizeof(float), cudaMemcpyHostToDevice))) return -1;
+    if (!CUDA_OK(cudaMemcpy(d_tileTiny.get(), tileTiny, 256, cudaMemcpyHostToDevice))) return -1;
+    if (!CUDA_OK(cudaMemcpy(d_tileLBP.get(), tileLBP, 256 * sizeof(float), cudaMemcpyHostToDevice))) return -1;
+    if (!CUDA_OK(cudaMemcpy(d_indices.get(), indices, static_cast<std::size_t>(N) * sizeof(int), cudaMemcpyHostToDevice))) return -1;
 
-    double* d_scores = nullptr;
-    cudaMalloc(&d_scores, N*sizeof(double));
+    DeviceBuffer<double> d_scores;
+    if (!CUDA_OK(d_scores.allocate(static_cast<std::size_t>(N) * sizeof(double)))) return -1;
 
     int blockSize = 256;
     int gridSize = (N + blockSize - 1) / blockSize;
     // 使用索引化 kernel，仅对候选集评分，不遍历全库
     scoreIndexedKernel<<<gridSize, blockSize>>>(
-        tL, tA, tB, d_tileGrid, d_tileTiny, tileEdge, d_tileLBP,
+        tL, tA, tB, d_tileGrid.get(), d_tileTiny.get(), tileEdge, d_tileLBP.get(),
         lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use,
-        d_indices, N,
-        labW, gridW, tinyW, edgeW, lbpW, usePenalty, d_scores);
+        d_indices.get(), N,
+        labW, gridW, tinyW, edgeW, lbpW, usePenalty, d_scores.get());
 
-    cudaDeviceSynchronize();
+    if (!CUDA_OK(cudaGetLastError())) return -1;
+    if (!CUDA_OK(cudaDeviceSynchronize())) return -1;
     std::vector<double> scores(N);
-    cudaMemcpy(scores.data(), d_scores, N*sizeof(double), cudaMemcpyDeviceToHost);
-
-    cudaFree(d_scores); cudaFree(d_tileGrid); cudaFree(d_tileTiny);
-    cudaFree(d_tileLBP); cudaFree(d_indices);
+    if (!CUDA_OK(cudaMemcpy(scores.data(), d_scores.get(), static_cast<std::size_t>(N) * sizeof(double), cudaMemcpyDeviceToHost))) return -1;
 
     // 在候选子集中找最优
     int bestSub = 0;
@@ -713,73 +736,79 @@ void scoreBatch(
     double usePenalty,
     double* outScores)            // [totalTiles * N]
 {
-    if (totalTiles <= 0 || N <= 0 || lib.count <= 0) { return; }
+    if (totalTiles <= 0 || N <= 0) { return; }
+    if (totalTiles > std::numeric_limits<int>::max() / N) { return; }
+    if (!outScores || !h_indices) { return; }
     int totalWork = totalTiles * N;
+    fillFailedScores(outScores, totalWork);
+    if (!hasValidLibrary(lib)) { return; }
 
     // ——— 上传 tile 特征（仅一次） ———
-    double*  d_tileL = nullptr; double* d_tileA = nullptr; double* d_tileB = nullptr;
-    float*   d_tileGrid = nullptr; uint8_t* d_tileTiny = nullptr;
-    double*  d_tileEdge = nullptr; float* d_tileLBP = nullptr;
+    DeviceBuffer<double> d_tileL;
+    DeviceBuffer<double> d_tileA;
+    DeviceBuffer<double> d_tileB;
+    DeviceBuffer<float> d_tileGrid;
+    DeviceBuffer<std::uint8_t> d_tileTiny;
+    DeviceBuffer<double> d_tileEdge;
+    DeviceBuffer<float> d_tileLBP;
 
-    cudaMalloc(&d_tileL,    totalTiles * sizeof(double));
-    cudaMalloc(&d_tileA,    totalTiles * sizeof(double));
-    cudaMalloc(&d_tileB,    totalTiles * sizeof(double));
-    cudaMalloc(&d_tileGrid, totalTiles * 192 * sizeof(float));
-    cudaMalloc(&d_tileTiny, totalTiles * 256);
-    cudaMalloc(&d_tileEdge, totalTiles * sizeof(double));
-    cudaMalloc(&d_tileLBP,  totalTiles * 256 * sizeof(float));
+    if (!CUDA_OK(d_tileL.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
+    if (!CUDA_OK(d_tileA.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
+    if (!CUDA_OK(d_tileB.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
+    if (!CUDA_OK(d_tileGrid.allocate(static_cast<std::size_t>(totalTiles) * 192 * sizeof(float)))) return;
+    if (!CUDA_OK(d_tileTiny.allocate(static_cast<std::size_t>(totalTiles) * 256))) return;
+    if (!CUDA_OK(d_tileEdge.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
+    if (!CUDA_OK(d_tileLBP.allocate(static_cast<std::size_t>(totalTiles) * 256 * sizeof(float)))) return;
 
-    cudaMemcpy(d_tileL,    h_tileL,    totalTiles * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_tileA,    h_tileA,    totalTiles * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_tileB,    h_tileB,    totalTiles * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_tileGrid, h_tileGrid, totalTiles * 192 * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_tileTiny, h_tileTiny, totalTiles * 256, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_tileEdge, h_tileEdge, totalTiles * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_tileLBP,  h_tileLBP,  totalTiles * 256 * sizeof(float), cudaMemcpyHostToDevice);
+    if (!CUDA_OK(cudaMemcpy(d_tileL.get(), h_tileL, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
+    if (!CUDA_OK(cudaMemcpy(d_tileA.get(), h_tileA, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
+    if (!CUDA_OK(cudaMemcpy(d_tileB.get(), h_tileB, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
+    if (!CUDA_OK(cudaMemcpy(d_tileGrid.get(), h_tileGrid, static_cast<std::size_t>(totalTiles) * 192 * sizeof(float), cudaMemcpyHostToDevice))) return;
+    if (!CUDA_OK(cudaMemcpy(d_tileTiny.get(), h_tileTiny, static_cast<std::size_t>(totalTiles) * 256, cudaMemcpyHostToDevice))) return;
+    if (!CUDA_OK(cudaMemcpy(d_tileEdge.get(), h_tileEdge, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
+    if (!CUDA_OK(cudaMemcpy(d_tileLBP.get(), h_tileLBP, static_cast<std::size_t>(totalTiles) * 256 * sizeof(float), cudaMemcpyHostToDevice))) return;
 
     // ——— 上传自适应权重（每 tile 一套） ———
-    double *d_labW = nullptr, *d_gridW = nullptr, *d_tinyW = nullptr, *d_edgeW = nullptr, *d_lbpW = nullptr;
-    cudaMalloc(&d_labW,  totalTiles * sizeof(double));
-    cudaMalloc(&d_gridW, totalTiles * sizeof(double));
-    cudaMalloc(&d_tinyW, totalTiles * sizeof(double));
-    cudaMalloc(&d_edgeW, totalTiles * sizeof(double));
-    cudaMalloc(&d_lbpW,  totalTiles * sizeof(double));
-    cudaMemcpy(d_labW,  h_labW,  totalTiles * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_gridW, h_gridW, totalTiles * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_tinyW, h_tinyW, totalTiles * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_edgeW, h_edgeW, totalTiles * sizeof(double), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_lbpW,  h_lbpW,  totalTiles * sizeof(double), cudaMemcpyHostToDevice);
+    DeviceBuffer<double> d_labW;
+    DeviceBuffer<double> d_gridW;
+    DeviceBuffer<double> d_tinyW;
+    DeviceBuffer<double> d_edgeW;
+    DeviceBuffer<double> d_lbpW;
+    if (!CUDA_OK(d_labW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
+    if (!CUDA_OK(d_gridW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
+    if (!CUDA_OK(d_tinyW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
+    if (!CUDA_OK(d_edgeW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
+    if (!CUDA_OK(d_lbpW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
+    if (!CUDA_OK(cudaMemcpy(d_labW.get(), h_labW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
+    if (!CUDA_OK(cudaMemcpy(d_gridW.get(), h_gridW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
+    if (!CUDA_OK(cudaMemcpy(d_tinyW.get(), h_tinyW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
+    if (!CUDA_OK(cudaMemcpy(d_edgeW.get(), h_edgeW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
+    if (!CUDA_OK(cudaMemcpy(d_lbpW.get(), h_lbpW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
 
     // ——— 上传候选索引 ———
-    int* d_indices = nullptr;
-    cudaMalloc(&d_indices, totalWork * sizeof(int));
-    cudaMemcpy(d_indices, h_indices, totalWork * sizeof(int), cudaMemcpyHostToDevice);
+    DeviceBuffer<int> d_indices;
+    if (!CUDA_OK(d_indices.allocate(static_cast<std::size_t>(totalWork) * sizeof(int)))) return;
+    if (!CUDA_OK(cudaMemcpy(d_indices.get(), h_indices, static_cast<std::size_t>(totalWork) * sizeof(int), cudaMemcpyHostToDevice))) return;
 
     // ——— 评分输出 ———
-    double* d_scores = nullptr;
-    cudaMalloc(&d_scores, totalWork * sizeof(double));
+    DeviceBuffer<double> d_scores;
+    if (!CUDA_OK(d_scores.allocate(static_cast<std::size_t>(totalWork) * sizeof(double)))) return;
 
     // ——— 启动 kernel（一次处理全部 tile） ———
     int blockSize = 256;
     int gridSize = (totalWork + blockSize - 1) / blockSize;
     scoreBatchKernel<<<gridSize, blockSize>>>(
         totalTiles,
-        d_tileL, d_tileA, d_tileB,
-        d_tileGrid, d_tileTiny, d_tileEdge, d_tileLBP,
-        d_indices, N,
+        d_tileL.get(), d_tileA.get(), d_tileB.get(),
+        d_tileGrid.get(), d_tileTiny.get(), d_tileEdge.get(), d_tileLBP.get(),
+        d_indices.get(), N,
         lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use,
-        d_labW, d_gridW, d_tinyW, d_edgeW, d_lbpW, usePenalty,
-        d_scores);
+        d_labW.get(), d_gridW.get(), d_tinyW.get(), d_edgeW.get(), d_lbpW.get(), usePenalty,
+        d_scores.get());
 
-    cudaDeviceSynchronize();
-    cudaMemcpy(outScores, d_scores, totalWork * sizeof(double), cudaMemcpyDeviceToHost);
-
-    // ——— 清理 ———
-    cudaFree(d_labW); cudaFree(d_gridW); cudaFree(d_tinyW); cudaFree(d_edgeW); cudaFree(d_lbpW);
-    cudaFree(d_scores); cudaFree(d_indices);
-    cudaFree(d_tileL); cudaFree(d_tileA); cudaFree(d_tileB);
-    cudaFree(d_tileGrid); cudaFree(d_tileTiny);
-    cudaFree(d_tileEdge); cudaFree(d_tileLBP);
+    if (!CUDA_OK(cudaGetLastError())) return;
+    if (!CUDA_OK(cudaDeviceSynchronize())) return;
+    CUDA_OK(cudaMemcpy(outScores, d_scores.get(), static_cast<std::size_t>(totalWork) * sizeof(double), cudaMemcpyDeviceToHost));
 }
 
 // ============================================================
