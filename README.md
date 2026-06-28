@@ -56,10 +56,13 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
 
 ### 🛠️ 工具链
 - **Web UI** — `MosaicraftWebUI.exe` 本地 HTTP 服务，浏览器一键运行
+- **REST API** — 15 个端点（`/api/jobs/*`, `/api/db/*`, `/api/mosaic`），JSON 交互，异步任务管理
 - **Web 命令生成器** — `tools/command-builder/index.html` 可视化拼装 CLI 命令
 - **图库诊断** — `db-stats` 亮度直方图 + 覆盖缺口；`db-usage` 全局热点图；`db-health` 健康检查
 - **数据库管理** — `db-purge` 减量清理；`build --append` 增量建库；`build --recursive` 递归扫描
 - **质量分析** — `--analyze` 量化报告 + 热力图 + HTML 报告 + 最差 tile 导出
+- **异步任务** — `POST /api/jobs/*` 提交长任务 → `GET /api/jobs/{id}` 轮询进度
+- **API 文档** — `docs/API.md` 完整端点目录
 
 ### 📦 工程优化
 - **FeaturePack** — 50K 文件 → 2 次 fread，加载 < 300ms
@@ -242,7 +245,7 @@ Mosaicraft/
 | v1.10 | WorstTile · Unicode 全链路 | ✅ |
 | v1.11 | Web 命令生成器 | ✅ |
 | v1.12 | MosaicraftWebUI · 多分辨率 GPU · CUDA 开关 | ✅ |
-| v1.13 | Linux/WSL 支持 | 🚧 条件编译已补，待实测 |
+| v1.13 | REST API · 异步任务 · 合约版本化 | ✅ |
 | v2.0 | GUI 桌面应用 | 📋 计划中 |
 
 ---
