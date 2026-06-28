@@ -37,6 +37,13 @@ enum class ApiRequestShape
     LegacyCommand
 };
 
+struct ApiErrorResponseMetadata
+{
+    int status = 500;
+    std::string shape;
+    std::string responseKey;
+};
+
 struct ApiEndpointMetadata
 {
     ApiOperation operation = ApiOperation::Ping;
@@ -54,6 +61,10 @@ struct ApiEndpointMetadata
     std::unordered_map<std::string, std::vector<std::string>> fieldAliases;
     int successStatus = 200;
     std::string responseKey;
+    std::vector<int> errorStatuses;
+    std::vector<std::string> errorShapes;
+    std::vector<std::string> errorResponseKeys;
+    std::vector<ApiErrorResponseMetadata> errorResponses;
     bool sideEffects = false;
     bool longRunning = false;
     bool legacy = false;

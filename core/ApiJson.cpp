@@ -194,6 +194,14 @@ nlohmann::json apiEndpointToJson(const ApiEndpointMetadata& endpoint)
     for (const auto& field : endpoint.requiredFields) requiredFields.push_back(field);
     nlohmann::json fieldAliases = nlohmann::json::object();
     for (const auto& item : endpoint.fieldAliases) fieldAliases[item.first] = item.second;
+    nlohmann::json errorResponses = nlohmann::json::array();
+    for (const auto& item : endpoint.errorResponses) {
+        errorResponses.push_back({
+            {"status", item.status},
+            {"shape", item.shape},
+            {"responseKey", item.responseKey}
+        });
+    }
     return {
         {"operation", apiOperationName(endpoint.operation)},
         {"requestShape", apiRequestShapeName(endpoint.requestShape)},
@@ -210,6 +218,10 @@ nlohmann::json apiEndpointToJson(const ApiEndpointMetadata& endpoint)
         {"acceptedQueryKeys", endpoint.acceptedQueryKeys},
         {"successStatus", endpoint.successStatus},
         {"responseKey", endpoint.responseKey},
+        {"errorStatuses", endpoint.errorStatuses},
+        {"errorShapes", endpoint.errorShapes},
+        {"errorResponseKeys", endpoint.errorResponseKeys},
+        {"errorResponses", errorResponses},
         {"sideEffects", endpoint.sideEffects},
         {"longRunning", endpoint.longRunning},
         {"legacy", endpoint.legacy},

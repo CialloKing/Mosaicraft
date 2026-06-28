@@ -40,6 +40,16 @@ Returns the structured API list. Each entry contains:
 - `successStatus`: normal HTTP status code for a successful response.
 - `responseKey`: primary JSON payload key returned on success, when the
   response has one.
+- `errorStatuses`: HTTP status codes the structured handler may return for
+  expected failures.
+- `errorShapes`: JSON error envelope variants used by the endpoint. Common
+  values are `serviceResult` (`ok`, `exitCode`, `message`), `apiError`
+  (`ok`, `message`), `jobError` (`ok`, `message`, `job`), and `payloadResult`
+  (`ok`, `message`, `exitCode`, plus the endpoint payload key).
+- `errorResponseKeys`: primary payload keys that may also appear in an error
+  response, such as `job`, `export`, or `purge`.
+- `errorResponses`: paired error response contracts containing `status`,
+  `shape`, and optional `responseKey`.
 - `sideEffects`: whether the endpoint can modify files, jobs, or databases.
 - `longRunning`: whether callers should prefer asynchronous handling or polling.
 - `legacy`: whether this endpoint is only for compatibility.

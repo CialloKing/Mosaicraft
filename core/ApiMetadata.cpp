@@ -192,6 +192,76 @@ std::string endpointResponseKey(ApiOperation operation)
     return "";
 }
 
+void addUniqueStatus(std::vector<int>& values, int value)
+{
+    if (std::find(values.begin(), values.end(), value) == values.end()) {
+        values.push_back(value);
+    }
+}
+
+void addErrorContract(ApiEndpointMetadata& info, int status, const std::string& shape,
+                      const std::string& responseKey = {})
+{
+    addUniqueStatus(info.errorStatuses, status);
+    addUnique(info.errorShapes, shape);
+    addUnique(info.errorResponseKeys, responseKey);
+    const auto duplicate = std::find_if(info.errorResponses.begin(), info.errorResponses.end(),
+        [&](const ApiErrorResponseMetadata& item) {
+            return item.status == status && item.shape == shape && item.responseKey == responseKey;
+        });
+    if (duplicate == info.errorResponses.end()) {
+        info.errorResponses.push_back({status, shape, responseKey});
+    }
+}
+
+void populateEndpointErrors(ApiEndpointMetadata& info)
+{
+    switch (info.operation)
+    {
+    case ApiOperation::LegacyRunDisabled:
+        addErrorContract(info, 404, "apiError");
+        break;
+    case ApiOperation::Mosaic:
+    case ApiOperation::SubmitMosaicJob:
+    case ApiOperation::SubmitBuildJob:
+        addErrorContract(info, 400, "serviceResult");
+        addErrorContract(info, 500, "serviceResult");
+        break;
+    case ApiOperation::GetJob:
+        addErrorContract(info, 404, "apiError");
+        break;
+    case ApiOperation::CancelJob:
+        addErrorContract(info, 404, "apiError");
+        addErrorContract(info, 409, "jobError", "job");
+        break;
+    case ApiOperation::DatabaseStats:
+    case ApiOperation::DatabaseHealth:
+    case ApiOperation::DatabaseUsage:
+        addErrorContract(info, 400, "serviceResult");
+        addErrorContract(info, 500, "serviceResult");
+        break;
+    case ApiOperation::DatabaseUsageExport:
+        addErrorContract(info, 400, "serviceResult");
+        addErrorContract(info, 400, "payloadResult", "export");
+        addErrorContract(info, 500, "payloadResult", "export");
+        break;
+    case ApiOperation::DatabasePurge:
+        addErrorContract(info, 400, "serviceResult");
+        addErrorContract(info, 400, "payloadResult", "purge");
+        addErrorContract(info, 500, "payloadResult", "purge");
+        break;
+    case ApiOperation::Inspect:
+        addErrorContract(info, 400, "serviceResult");
+        break;
+    case ApiOperation::Endpoints:
+    case ApiOperation::Info:
+    case ApiOperation::Ping:
+    case ApiOperation::ListJobs:
+    case ApiOperation::ClearFinishedJobs:
+        break;
+    }
+}
+
 ApiEndpointMetadata endpoint(const std::string& method,
                              const std::string& path,
                              const std::string& description,
@@ -230,6 +300,7 @@ ApiEndpointMetadata endpoint(const std::string& method,
     }
     info.acceptedQueryKeys = endpointAcceptedQueryKeys(
         info.queryKeys, info.requestFields, info.fieldAliases, info.requestShape);
+    populateEndpointErrors(info);
     return info;
 }
 
@@ -376,6 +447,35 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
         }
         if (endpoint.successStatus < 200 || endpoint.successStatus > 299) {
             errors.push_back("endpoint has non-success successStatus: " + operationName);
+        }
+        for (int status : endpoint.errorStatuses) {
+            if (status < 400 || status > 599) {
+                errors.push_back("endpoint has non-error errorStatus: " + operationName);
+            }
+        }
+        for (const auto& response : endpoint.errorResponses) {
+            if (response.status < 400 || response.status > 599) {
+                errors.push_back("endpoint has non-error errorResponse status: " + operationName);
+            }
+            if (std::find(endpoint.errorStatuses.begin(), endpoint.errorStatuses.end(), response.status) ==
+                endpoint.errorStatuses.end()) {
+                errors.push_back("endpoint errorResponses status missing from errorStatuses: " + operationName);
+            }
+            if (std::find(endpoint.errorShapes.begin(), endpoint.errorShapes.end(), response.shape) ==
+                endpoint.errorShapes.end()) {
+                errors.push_back("endpoint errorResponses shape missing from errorShapes: " + operationName);
+            }
+            if (!response.responseKey.empty() &&
+                std::find(endpoint.errorResponseKeys.begin(), endpoint.errorResponseKeys.end(), response.responseKey) ==
+                endpoint.errorResponseKeys.end()) {
+                errors.push_back("endpoint errorResponses key missing from errorResponseKeys: " + operationName);
+            }
+        }
+        for (const auto& shape : endpoint.errorShapes) {
+            if (shape != "serviceResult" && shape != "apiError" &&
+                shape != "jobError" && shape != "payloadResult") {
+                errors.push_back("endpoint has unsupported errorShape: " + operationName + " " + shape);
+            }
         }
         if (endpoint.requestShape == ApiRequestShape::Query && endpoint.queryKeys.empty()) {
             errors.push_back("query endpoint has no queryKeys: " + operationName);

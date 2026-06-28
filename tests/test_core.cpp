@@ -262,6 +262,12 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(mosaicJob->fieldAliases.at("outputPath") == std::vector<std::string>{"output"});
     CHECK(mosaicJob->successStatus == 202);
     CHECK(mosaicJob->responseKey == "job");
+    CHECK(mosaicJob->errorStatuses == std::vector<int>{400, 500});
+    CHECK(std::find(mosaicJob->errorShapes.begin(), mosaicJob->errorShapes.end(),
+        "serviceResult") != mosaicJob->errorShapes.end());
+    REQUIRE(mosaicJob->errorResponses.size() == 2);
+    CHECK(mosaicJob->errorResponses[0].status == 400);
+    CHECK(mosaicJob->errorResponses[0].shape == "serviceResult");
     CHECK(mosaicJob->sideEffects);
     CHECK(mosaicJob->longRunning);
 
@@ -276,13 +282,29 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(dbStats->fieldAliases.at("dbPath") == std::vector<std::string>{"db"});
     CHECK(dbStats->successStatus == 200);
     CHECK(dbStats->responseKey == "stats");
+    CHECK(dbStats->errorStatuses == std::vector<int>{400, 500});
 
     auto jobStatus = findEndpoint("/api/jobs/{id}");
     REQUIRE(jobStatus != endpoints.end());
     CHECK(jobStatus->httpPattern == R"(/api/jobs/([A-Za-z0-9_-]+))");
     CHECK(jobStatus->queryKeys.empty());
     CHECK(jobStatus->requiredFields == std::vector<std::string>{"id"});
+    CHECK(jobStatus->errorStatuses == std::vector<int>{404});
+    CHECK(jobStatus->errorShapes == std::vector<std::string>{"apiError"});
     CHECK_FALSE(jobStatus->sideEffects);
+
+    auto cancelJob = std::find_if(endpoints.begin(), endpoints.end(),
+        [](const ApiEndpointMetadata& endpoint) {
+            return endpoint.path == "/api/jobs/{id}" && endpoint.method == "DELETE";
+        });
+    REQUIRE(cancelJob != endpoints.end());
+    CHECK(cancelJob->errorStatuses == std::vector<int>{404, 409});
+    CHECK(std::find(cancelJob->errorShapes.begin(), cancelJob->errorShapes.end(),
+        "jobError") != cancelJob->errorShapes.end());
+    CHECK(cancelJob->errorResponseKeys == std::vector<std::string>{"job"});
+    REQUIRE(cancelJob->errorResponses.size() == 2);
+    CHECK(cancelJob->errorResponses[1].status == 409);
+    CHECK(cancelJob->errorResponses[1].responseKey == "job");
 
     auto legacyRun = findEndpoint("/api/run");
     REQUIRE(legacyRun != endpoints.end());
@@ -291,6 +313,7 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(legacyRun->requiredFields == std::vector<std::string>{"command"});
     CHECK(legacyRun->successStatus == 200);
     CHECK(legacyRun->responseKey.empty());
+    CHECK(legacyRun->errorStatuses == std::vector<int>{404});
     CHECK(legacyRun->sideEffects);
     CHECK(legacyRun->longRunning);
     CHECK(legacyRun->legacy);
@@ -334,6 +357,13 @@ TEST_CASE("API JSON serialization is shared")
     CHECK((*legacy)["acceptedQueryKeys"].empty());
     CHECK((*legacy)["successStatus"].get<int>() == 200);
     CHECK((*legacy)["responseKey"].get<std::string>().empty());
+    CHECK((*legacy)["errorStatuses"].size() == 1);
+    CHECK((*legacy)["errorStatuses"][0].get<int>() == 404);
+    CHECK((*legacy)["errorShapes"][0].get<std::string>() == "apiError");
+    CHECK((*legacy)["errorResponseKeys"].empty());
+    REQUIRE((*legacy)["errorResponses"].size() == 1);
+    CHECK((*legacy)["errorResponses"][0]["status"].get<int>() == 404);
+    CHECK((*legacy)["errorResponses"][0]["shape"].get<std::string>() == "apiError");
     CHECK((*legacy)["fieldAliases"].empty());
     CHECK((*legacy)["requiredFields"].size() == 1);
     CHECK((*legacy)["requiredFields"][0].get<std::string>() == "command");
@@ -807,6 +837,9 @@ TEST_CASE("API endpoint metadata validation catches contract errors")
     bad.requiredFields = {"missing"};
     bad.fieldAliases = {{"missing", {"alias"}}};
     bad.successStatus = 500;
+    bad.errorStatuses = {200};
+    bad.errorShapes = {"unknown"};
+    bad.errorResponses = {{200, "missing", "payload"}};
     auto badErrors = validateApiEndpointMetadata({bad});
     CHECK(std::find_if(badErrors.begin(), badErrors.end(),
         [](const std::string& error) { return error.find("unsupported method") != std::string::npos; }) != badErrors.end());
@@ -816,6 +849,16 @@ TEST_CASE("API endpoint metadata validation catches contract errors")
         [](const std::string& error) { return error.find("non-query endpoint has queryKeys") != std::string::npos; }) != badErrors.end());
     CHECK(std::find_if(badErrors.begin(), badErrors.end(),
         [](const std::string& error) { return error.find("non-success successStatus") != std::string::npos; }) != badErrors.end());
+    CHECK(std::find_if(badErrors.begin(), badErrors.end(),
+        [](const std::string& error) { return error.find("non-error errorStatus") != std::string::npos; }) != badErrors.end());
+    CHECK(std::find_if(badErrors.begin(), badErrors.end(),
+        [](const std::string& error) { return error.find("unsupported errorShape") != std::string::npos; }) != badErrors.end());
+    CHECK(std::find_if(badErrors.begin(), badErrors.end(),
+        [](const std::string& error) { return error.find("non-error errorResponse status") != std::string::npos; }) != badErrors.end());
+    CHECK(std::find_if(badErrors.begin(), badErrors.end(),
+        [](const std::string& error) { return error.find("errorResponses shape missing") != std::string::npos; }) != badErrors.end());
+    CHECK(std::find_if(badErrors.begin(), badErrors.end(),
+        [](const std::string& error) { return error.find("errorResponses key missing") != std::string::npos; }) != badErrors.end());
     CHECK(std::find_if(badErrors.begin(), badErrors.end(),
         [](const std::string& error) { return error.find("non-query endpoint has acceptedQueryKeys") != std::string::npos; }) != badErrors.end());
     CHECK(std::find_if(badErrors.begin(), badErrors.end(),
