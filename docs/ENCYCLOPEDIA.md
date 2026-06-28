@@ -463,7 +463,8 @@ Compress-Archive -Path release_pkg\* -Destination Mosaicraft_release.zip
 
 **Web UI ������**
 - `MosaicraftWebUI.exe`: cpp-httplib HTTP ����
-- `POST /api/run` ִ�� mosaicraft, ʵʱת������̨
+- Web UI ����ʹ�ýṹ�� API, API �б���� `docs/API.md`
+- `POST /api/run` 仅保留为旧命令兼容入口
 - 30min ��ʱ, ���ֽڶ�ȡ, �˿ڳ�ͻ���
 
 **Linux ֧�� (v1.13 Ŀ��)**

@@ -206,6 +206,38 @@ static json inspectToJson(const mosaicraft::InspectResult& info)
     };
 }
 
+static json endpointInfo(const std::string& method,
+                         const std::string& path,
+                         const std::string& description,
+                         bool legacy = false)
+{
+    return {
+        {"method", method},
+        {"path", path},
+        {"description", description},
+        {"legacy", legacy}
+    };
+}
+
+static json apiEndpointsJson()
+{
+    return json::array({
+        endpointInfo("GET", "/api/ping", "health check"),
+        endpointInfo("POST", "/api/mosaic", "run mosaic synchronously"),
+        endpointInfo("POST", "/api/jobs/mosaic", "start mosaic job"),
+        endpointInfo("POST", "/api/jobs/build", "start library build job"),
+        endpointInfo("GET", "/api/jobs", "list jobs"),
+        endpointInfo("GET", "/api/jobs/{id}", "get job status"),
+        endpointInfo("GET|POST", "/api/db/stats", "database statistics"),
+        endpointInfo("GET|POST", "/api/db/health", "database health report"),
+        endpointInfo("GET|POST", "/api/db/usage", "database usage report"),
+        endpointInfo("POST", "/api/db/usage/export", "export used images"),
+        endpointInfo("GET|POST", "/api/db/purge", "preview or purge orphan records"),
+        endpointInfo("GET|POST", "/api/inspect", "inspect a source image"),
+        endpointInfo("POST", "/api/run", "legacy command compatibility endpoint", true)
+    });
+}
+
 static void setJsonBody(httplib::Response& res, const json& body)
 {
     res.set_content(body.dump(), "application/json; charset=utf-8");
@@ -674,6 +706,10 @@ int main(int argc, char* argv[])
         std::lock_guard<std::mutex> lock(htmlMutex);
         htmlContent = readFile(htmlPath);
         res.set_content("HTML reloaded", "text/plain");
+    });
+
+    svr.Get("/api/endpoints", [](const httplib::Request&, httplib::Response& res) {
+        setJsonBody(res, json{{"ok", true}, {"endpoints", apiEndpointsJson()}});
     });
 
     svr.Post("/api/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
