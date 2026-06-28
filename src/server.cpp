@@ -1,6 +1,7 @@
 // Mosaicraft Web UI — 本地 HTTP 服务器
 // 提供命令生成页面 + 结构化 API，兼容旧的 mosaicraft.exe 命令入口
 #include "core/httplib.h"
+#include "core/JobManager.h"
 #include "core/json.hpp"
 #include "core/MosaicService.h"
 #include <algorithm>
@@ -37,6 +38,35 @@ static void setJsonResult(httplib::Response& res, const mosaicraft::ServiceResul
         {"exitCode", result.exitCode},
         {"message", result.message}
     };
+    res.set_content(body.dump(), "application/json; charset=utf-8");
+}
+
+static int64_t toUnixSeconds(const std::chrono::system_clock::time_point& time)
+{
+    if (time == std::chrono::system_clock::time_point{}) return 0;
+    return std::chrono::duration_cast<std::chrono::seconds>(
+        time.time_since_epoch()).count();
+}
+
+static json jobToJson(const mosaicraft::JobSnapshot& job)
+{
+    return {
+        {"id", job.id},
+        {"type", job.type},
+        {"state", mosaicraft::jobStateName(job.state)},
+        {"ok", job.result.ok},
+        {"exitCode", job.result.exitCode},
+        {"message", job.result.message},
+        {"inputPath", job.inputPath},
+        {"outputPath", job.outputPath},
+        {"createdAt", toUnixSeconds(job.createdAt)},
+        {"startedAt", toUnixSeconds(job.startedAt)},
+        {"finishedAt", toUnixSeconds(job.finishedAt)}
+    };
+}
+
+static void setJsonBody(httplib::Response& res, const json& body)
+{
     res.set_content(body.dump(), "application/json; charset=utf-8");
 }
 
@@ -329,6 +359,7 @@ int main(int argc, char* argv[])
     std::string htmlContent = readFile(htmlPath);
     std::mutex htmlMutex;
     std::mutex runMutex;
+    mosaicraft::JobManager jobManager;
 
     httplib::Server svr;
 
@@ -350,14 +381,6 @@ int main(int argc, char* argv[])
     });
 
     svr.Post("/api/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
-        std::unique_lock<std::mutex> runLock(runMutex, std::try_to_lock);
-        if (!runLock.owns_lock()) {
-            res.status = 429;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(
-                1, "another mosaicraft job is already running"));
-            return;
-        }
-
         mosaicraft::MosaicRequest request;
         std::string error;
         if (!buildMosaicRequest(req.body, request, error)) {
@@ -367,13 +390,15 @@ int main(int argc, char* argv[])
         }
 
         try {
-            std::cout << "[API] mosaic input=" << request.inputPath
-                      << " db=" << request.dbPath
-                      << " output=" << request.outputPath << std::endl;
-            mosaicraft::MosaicService service;
-            mosaicraft::ServiceResult result = service.run(request);
-            if (!result.ok) res.status = 500;
-            setJsonResult(res, result);
+            std::string jobId = jobManager.submitMosaic(request);
+            mosaicraft::JobSnapshot snapshot;
+            if (!jobManager.waitJob(jobId, snapshot)) {
+                res.status = 500;
+                setJsonResult(res, mosaicraft::ServiceResult::failure(1, "job not found"));
+                return;
+            }
+            if (!snapshot.result.ok) res.status = 500;
+            setJsonResult(res, snapshot.result);
         } catch (const std::exception& e) {
             std::cerr << "[ERROR] Exception in /api/mosaic: " << e.what() << std::endl;
             res.status = 500;
@@ -383,6 +408,49 @@ int main(int argc, char* argv[])
             res.status = 500;
             setJsonResult(res, mosaicraft::ServiceResult::failure(1, "internal error"));
         }
+    });
+
+    svr.Post("/api/jobs/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::MosaicRequest request;
+        std::string error;
+        if (!buildMosaicRequest(req.body, request, error)) {
+            res.status = 400;
+            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
+            return;
+        }
+
+        try {
+            std::string jobId = jobManager.submitMosaic(request);
+            mosaicraft::JobSnapshot snapshot;
+            jobManager.getJob(jobId, snapshot);
+            res.status = 202;
+            setJsonBody(res, json{{"ok", true}, {"job", jobToJson(snapshot)}});
+        } catch (const std::exception& e) {
+            res.status = 500;
+            setJsonResult(res, mosaicraft::ServiceResult::failure(1, e.what()));
+        } catch (...) {
+            res.status = 500;
+            setJsonResult(res, mosaicraft::ServiceResult::failure(1, "internal error"));
+        }
+    });
+
+    svr.Get("/api/jobs", [&](const httplib::Request&, httplib::Response& res) {
+        json jobs = json::array();
+        for (const auto& job : jobManager.listJobs()) {
+            jobs.push_back(jobToJson(job));
+        }
+        setJsonBody(res, json{{"ok", true}, {"jobs", jobs}});
+    });
+
+    svr.Get(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::JobSnapshot snapshot;
+        std::string jobId = req.matches.size() > 1 ? req.matches[1].str() : "";
+        if (!jobManager.getJob(jobId, snapshot)) {
+            res.status = 404;
+            setJsonBody(res, json{{"ok", false}, {"message", "job not found"}});
+            return;
+        }
+        setJsonBody(res, json{{"ok", true}, {"job", jobToJson(snapshot)}});
     });
 
     // 执行命令

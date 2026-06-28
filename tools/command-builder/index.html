@@ -366,20 +366,18 @@ async function runCommand() {
   status.textContent = 'Running...';
   try {
     if (tab === 'mosaic') {
-      const res = await fetch(SERVER_URL + '/api/mosaic', {
+      const res = await fetch(SERVER_URL + '/api/jobs/mosaic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildMosaicPayload())
       });
       const data = await res.json();
-      if (res.ok && data.ok) {
-        status.innerHTML = '<span style="color:#7ee787">✅ Done</span>';
-      } else {
+      if (!res.ok || !data.ok || !data.job) {
         status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
-        if (data && data.message) {
-          status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
-        }
+        if (data && data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+        return;
       }
+      await pollJob(data.job.id, status);
       return;
     }
 
@@ -395,6 +393,35 @@ async function runCommand() {
     }
   } catch(e) {
     status.innerHTML = '<span style="color:#f78166">⚠ 请求失败</span> — 请确认 Web UI 服务器已启动';
+  }
+}
+
+async function pollJob(jobId, status) {
+  status.innerHTML = '<span style="color:#79c0ff">⏳ Job ' + escapeHtml(jobId) + ' queued</span>';
+  while (true) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const res = await fetch(SERVER_URL + '/api/jobs/' + encodeURIComponent(jobId));
+    const data = await res.json();
+    if (!res.ok || !data.ok || !data.job) {
+      status.innerHTML = '<span style="color:#f78166">❌ Job 查询失败</span>';
+      if (data && data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+      return;
+    }
+
+    const job = data.job;
+    if (job.state === 'queued') {
+      status.innerHTML = '<span style="color:#79c0ff">⏳ Job ' + escapeHtml(job.id) + ' queued</span>';
+    } else if (job.state === 'running') {
+      status.innerHTML = '<span style="color:#79c0ff">▶ Job ' + escapeHtml(job.id) + ' running</span>';
+    } else if (job.state === 'succeeded') {
+      status.innerHTML = '<span style="color:#7ee787">✅ Done</span>';
+      if (job.outputPath) status.innerHTML += '<br><span style="font-size:0.76rem">输出：' + escapeHtml(job.outputPath) + '</span>';
+      return;
+    } else if (job.state === 'failed') {
+      status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
+      if (job.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(job.message) + '</pre>';
+      return;
+    }
   }
 }
 
