@@ -444,6 +444,33 @@ TEST_CASE("API request parser merges query and JSON body")
     CHECK(inspect.dbPath == "query.db");
 }
 
+TEST_CASE("API handlers expose discovery and health without HTTP")
+{
+    auto info = apiInfo(false, "MosaicraftWebUI");
+    CHECK(info.status == 200);
+    CHECK(info.body["ok"].get<bool>());
+    CHECK(info.body["info"]["entry"].get<std::string>() == "MosaicraftWebUI");
+    CHECK_FALSE(info.body["info"]["api"]["legacyRunEnabled"].get<bool>());
+
+    auto endpoints = apiEndpoints(true);
+    CHECK(endpoints.status == 200);
+    CHECK(endpoints.body["ok"].get<bool>());
+    auto legacy = std::find_if(endpoints.body["endpoints"].begin(), endpoints.body["endpoints"].end(),
+        [](const nlohmann::json& endpoint) { return endpoint["path"] == "/api/run"; });
+    REQUIRE(legacy != endpoints.body["endpoints"].end());
+    CHECK((*legacy)["enabled"].get<bool>());
+
+    auto ping = apiPing();
+    CHECK(ping.status == 200);
+    CHECK(ping.body["ok"].get<bool>());
+    CHECK(ping.body["message"].get<std::string>() == "pong");
+
+    auto legacyDisabled = apiLegacyRunDisabled();
+    CHECK(legacyDisabled.status == 404);
+    CHECK_FALSE(legacyDisabled.body["ok"].get<bool>());
+    CHECK(legacyDisabled.body["message"].get<std::string>().find("disabled") != std::string::npos);
+}
+
 TEST_CASE("API handlers expose structured jobs without HTTP")
 {
     JobManager manager(false);

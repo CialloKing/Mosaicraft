@@ -15,6 +15,11 @@ struct ApiResponse
     nlohmann::json body;
 };
 
+ApiResponse apiEndpoints(bool legacyRunEnabled);
+ApiResponse apiInfo(bool legacyRunEnabled, const char* entryName);
+ApiResponse apiPing();
+ApiResponse apiLegacyRunDisabled();
+
 ApiResponse apiMosaic(const std::string& body, JobManager& jobs);
 ApiResponse apiSubmitMosaicJob(const std::string& body, JobManager& jobs);
 ApiResponse apiSubmitBuildJob(const std::string& body, JobManager& jobs);

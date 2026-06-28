@@ -32,6 +32,29 @@ int databaseMaintenanceErrorStatus(const ServiceResult& status)
 
 } // namespace
 
+ApiResponse apiEndpoints(bool legacyRunEnabled)
+{
+    return {200, apiEndpointsResponseJson(legacyRunEnabled)};
+}
+
+ApiResponse apiInfo(bool legacyRunEnabled, const char* entryName)
+{
+    return {200, apiInfoResponseJson(legacyRunEnabled, entryName)};
+}
+
+ApiResponse apiPing()
+{
+    return {200, apiOkJson("message", "pong")};
+}
+
+ApiResponse apiLegacyRunDisabled()
+{
+    return {
+        404,
+        apiErrorJson("legacy /api/run is disabled; set MOSAICRAFT_ENABLE_LEGACY_RUN=1 to enable compatibility mode")
+    };
+}
+
 ApiResponse apiMosaic(const std::string& body, JobManager& jobs)
 {
     MosaicRequest request;

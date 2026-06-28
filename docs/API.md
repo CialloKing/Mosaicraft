@@ -35,7 +35,14 @@ currently available.
 
 `GET /api/ping`
 
-Returns `pong`.
+Returns the standard JSON health response:
+
+```json
+{
+  "ok": true,
+  "message": "pong"
+}
+```
 
 ## Errors
 

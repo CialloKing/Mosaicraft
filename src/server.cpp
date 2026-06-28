@@ -2,7 +2,6 @@
 // Serves the Web UI and structured API while keeping legacy command compatibility.
 #include "core/httplib.h"
 #include "core/ApiHandlers.h"
-#include "core/ApiJson.h"
 #include "core/JobManager.h"
 #include "core/json.hpp"
 #include "core/LegacyRun.h"
@@ -196,11 +195,11 @@ int main(int argc, char* argv[])
     });
 
     svr.Get("/api/endpoints", [legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
-        setJsonBody(res, mosaicraft::apiEndpointsResponseJson(legacyRunEnabled));
+        sendApiResponse(res, mosaicraft::apiEndpoints(legacyRunEnabled));
     });
 
     svr.Get("/api/info", [legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
-        setJsonBody(res, mosaicraft::apiInfoResponseJson(legacyRunEnabled, "MosaicraftWebUI"));
+        sendApiResponse(res, mosaicraft::apiInfo(legacyRunEnabled, "MosaicraftWebUI"));
     });
 
     svr.Post("/api/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
@@ -273,8 +272,7 @@ int main(int argc, char* argv[])
     // Legacy command endpoint.
     svr.Post("/api/run", [&, legacyRunEnabled](const httplib::Request& req, httplib::Response& res) {
         if (!legacyRunEnabled) {
-            res.status = 404;
-            setJsonBody(res, mosaicraft::apiErrorJson("legacy /api/run is disabled; set MOSAICRAFT_ENABLE_LEGACY_RUN=1 to enable compatibility mode"));
+            sendApiResponse(res, mosaicraft::apiLegacyRunDisabled());
             return;
         }
 
@@ -387,7 +385,7 @@ int main(int argc, char* argv[])
 
     // Health check.
     svr.Get("/api/ping", [](const httplib::Request&, httplib::Response& res) {
-        res.set_content("pong", "text/plain");
+        sendApiResponse(res, mosaicraft::apiPing());
     });
 
     std::cout << "  Listening on http://localhost:" << port << std::endl;
