@@ -214,6 +214,8 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <button class="btn btn-primary" onclick="generateCommand()">🔄 生成命令</button>
     <button class="btn btn-secondary" onclick="copyCommand()">📋 复制到剪贴板</button>
     <button class="btn btn-primary" id="btn-run" onclick="runCommand()" style="display:none">▶ 运行</button>
+    <button class="btn btn-secondary" id="btn-cancel-job" onclick="cancelCurrentJob()" style="display:none" disabled>取消任务</button>
+    <button class="btn btn-secondary" id="btn-clear-jobs" onclick="clearFinishedJobs()" style="display:none">清理完成任务</button>
   </div>
   <div id="run-status" style="margin-top:10px;font-size:0.82rem;color:var(--fg2);display:none"></div>
 </div>
@@ -339,6 +341,7 @@ function copyCommand() {
 
 // Server detection: check if mosaicraftwebui is running
 let serverAvailable = false;
+let currentJobId = '';
 const SERVER_URL = 'http://localhost:8080';
 
 async function checkServer() {
@@ -347,6 +350,8 @@ async function checkServer() {
     if (res.ok) {
       serverAvailable = true;
       document.getElementById('btn-run').style.display = '';
+      document.getElementById('btn-cancel-job').style.display = '';
+      document.getElementById('btn-clear-jobs').style.display = '';
       document.getElementById('run-status').style.display = '';
       document.getElementById('run-status').innerHTML = '<span style="color:#7ee787">🟢 已连接服务器</span>';
       return;
@@ -354,6 +359,8 @@ async function checkServer() {
   } catch(e) {}
   serverAvailable = false;
   document.getElementById('btn-run').style.display = 'none';
+  document.getElementById('btn-cancel-job').style.display = 'none';
+  document.getElementById('btn-clear-jobs').style.display = 'none';
   document.getElementById('run-status').style.display = '';
   document.getElementById('run-status').innerHTML = '<span style="color:#f78166">⚠ 独立模式</span> — 请通过 Web UI (<code>MosaicraftWebUI.exe</code>) 访问以使用运行功能，或复制命令手动执行';
 }
@@ -364,6 +371,7 @@ async function runCommand() {
   const status = document.getElementById('run-status');
   status.style.display = '';
   status.textContent = 'Running...';
+  setCurrentJob('');
   try {
     if (tab === 'mosaic') {
       const res = await fetch(SERVER_URL + '/api/jobs/mosaic', {
@@ -377,6 +385,7 @@ async function runCommand() {
         if (data && data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
         return;
       }
+      setCurrentJob(data.job.id);
       await pollJob(data.job.id, status);
       return;
     }
@@ -392,6 +401,7 @@ async function runCommand() {
         if (data && data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
         return;
       }
+      setCurrentJob(data.job.id);
       await pollJob(data.job.id, status);
       return;
     }
@@ -479,10 +489,54 @@ async function postJson(path, payload) {
   return await res.json();
 }
 
+function setCurrentJob(jobId) {
+  currentJobId = jobId || '';
+  const btn = document.getElementById('btn-cancel-job');
+  if (btn) btn.disabled = !currentJobId;
+}
+
+async function deleteJson(path) {
+  const res = await fetch(SERVER_URL + path, { method: 'DELETE' });
+  return await res.json();
+}
+
+async function cancelCurrentJob() {
+  const status = document.getElementById('run-status');
+  if (!currentJobId) return;
+  try {
+    const data = await deleteJson('/api/jobs/' + encodeURIComponent(currentJobId));
+    if (!data.ok) {
+      status.innerHTML = '<span style="color:#f78166">❌ 无法取消任务</span>';
+      if (data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+      return;
+    }
+    setCurrentJob('');
+    status.innerHTML = '<span style="color:#f78166">已取消任务</span>';
+  } catch(e) {
+    status.innerHTML = '<span style="color:#f78166">⚠ 取消请求失败</span>';
+  }
+}
+
+async function clearFinishedJobs() {
+  const status = document.getElementById('run-status');
+  try {
+    const data = await deleteJson('/api/jobs');
+    if (!data.ok) {
+      status.innerHTML = '<span style="color:#f78166">❌ 清理失败</span>';
+      if (data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+      return;
+    }
+    status.innerHTML = '<span style="color:#7ee787">已清理 ' + escapeHtml(data.removed || 0) + ' 个完成任务</span>';
+  } catch(e) {
+    status.innerHTML = '<span style="color:#f78166">⚠ 清理请求失败</span>';
+  }
+}
+
 async function pollJob(jobId, status) {
   status.innerHTML = '<span style="color:#79c0ff">⏳ Job ' + escapeHtml(jobId) + ' queued</span>';
   while (true) {
     await new Promise(resolve => setTimeout(resolve, 1000));
+    if (currentJobId !== jobId) return;
     const res = await fetch(SERVER_URL + '/api/jobs/' + encodeURIComponent(jobId));
     const data = await res.json();
     if (!res.ok || !data.ok || !data.job) {
@@ -499,10 +553,16 @@ async function pollJob(jobId, status) {
     } else if (job.state === 'succeeded') {
       status.innerHTML = '<span style="color:#7ee787">✅ Done</span>';
       if (job.outputPath) status.innerHTML += '<br><span style="font-size:0.76rem">输出：' + escapeHtml(job.outputPath) + '</span>';
+      setCurrentJob('');
       return;
     } else if (job.state === 'failed') {
       status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
       if (job.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(job.message) + '</pre>';
+      setCurrentJob('');
+      return;
+    } else if (job.state === 'canceled') {
+      status.innerHTML = '<span style="color:#f78166">任务已取消</span>';
+      setCurrentJob('');
       return;
     }
   }
