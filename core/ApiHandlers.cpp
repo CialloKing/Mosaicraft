@@ -33,41 +33,51 @@ int databaseMaintenanceErrorStatus(const ServiceResult& status)
 
 } // namespace
 
-ApiRequest apiRequest(ApiOperation operation)
+ApiRequest apiOperationRequest(ApiOperation operation, ApiRequestContext context)
 {
     ApiRequest request;
     request.operation = operation;
+    request.query = std::move(context.query);
+    request.body = std::move(context.body);
+    request.id = std::move(context.id);
+    request.legacyRunEnabled = context.legacyRunEnabled;
+    request.entryName = context.entryName;
     return request;
+}
+
+ApiRequest apiRequest(ApiOperation operation)
+{
+    return apiOperationRequest(operation);
 }
 
 ApiRequest apiBodyRequest(ApiOperation operation, std::string body)
 {
-    ApiRequest request = apiRequest(operation);
-    request.body = std::move(body);
-    return request;
+    ApiRequestContext context;
+    context.body = std::move(body);
+    return apiOperationRequest(operation, std::move(context));
 }
 
 ApiRequest apiQueryRequest(ApiOperation operation, ApiQueryParams query, std::string body)
 {
-    ApiRequest request = apiRequest(operation);
-    request.query = std::move(query);
-    request.body = std::move(body);
-    return request;
+    ApiRequestContext context;
+    context.query = std::move(query);
+    context.body = std::move(body);
+    return apiOperationRequest(operation, std::move(context));
 }
 
 ApiRequest apiJobRequest(ApiOperation operation, std::string id)
 {
-    ApiRequest request = apiRequest(operation);
-    request.id = std::move(id);
-    return request;
+    ApiRequestContext context;
+    context.id = std::move(id);
+    return apiOperationRequest(operation, std::move(context));
 }
 
 ApiRequest apiInfoRequest(bool legacyRunEnabled, const char* entryName)
 {
-    ApiRequest request = apiRequest(ApiOperation::Info);
-    request.legacyRunEnabled = legacyRunEnabled;
-    request.entryName = entryName;
-    return request;
+    ApiRequestContext context;
+    context.legacyRunEnabled = legacyRunEnabled;
+    context.entryName = entryName;
+    return apiOperationRequest(ApiOperation::Info, std::move(context));
 }
 
 ApiRequest apiLegacyRunDisabledRequest()

@@ -510,6 +510,21 @@ TEST_CASE("API request dispatcher routes operations without HTTP")
 
 TEST_CASE("API request factories set semantic fields")
 {
+    ApiRequestContext context;
+    context.query = {{"db", "library.db"}};
+    context.body = "body";
+    context.id = "job-1";
+    context.legacyRunEnabled = true;
+    context.entryName = "MosaicraftWebUI";
+
+    auto operation = apiOperationRequest(ApiOperation::DatabaseUsage, std::move(context));
+    CHECK(operation.operation == ApiOperation::DatabaseUsage);
+    CHECK(operation.query.at("db") == "library.db");
+    CHECK(operation.body == "body");
+    CHECK(operation.id == "job-1");
+    CHECK(operation.legacyRunEnabled);
+    CHECK(std::string(operation.entryName) == "MosaicraftWebUI");
+
     auto body = apiBodyRequest(ApiOperation::Mosaic, "body");
     CHECK(body.operation == ApiOperation::Mosaic);
     CHECK(body.body == "body");

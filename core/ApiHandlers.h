@@ -21,12 +21,22 @@ struct ApiRequest
     const char* entryName = "Mosaicraft";
 };
 
+struct ApiRequestContext
+{
+    ApiQueryParams query;
+    std::string body;
+    std::string id;
+    bool legacyRunEnabled = false;
+    const char* entryName = "Mosaicraft";
+};
+
 struct ApiResponse
 {
     int status = 200;
     nlohmann::json body;
 };
 
+ApiRequest apiOperationRequest(ApiOperation operation, ApiRequestContext context = {});
 ApiRequest apiRequest(ApiOperation operation);
 ApiRequest apiBodyRequest(ApiOperation operation, std::string body);
 ApiRequest apiQueryRequest(ApiOperation operation, ApiQueryParams query, std::string body = {});
