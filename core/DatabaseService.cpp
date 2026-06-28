@@ -5,7 +5,9 @@
 #include "UnicodeIO.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
+#include <unordered_map>
 #include <unordered_set>
 #include <tuple>
 
@@ -198,6 +200,111 @@ DatabaseUsageResult DatabaseService::usage(const DatabaseUsageRequest& request) 
     out.status = ServiceResult::success(out.usage.empty
         ? "no usage data yet"
         : "database usage generated");
+    return out;
+}
+
+DatabaseUsageExportResult DatabaseService::exportUsage(const DatabaseUsageExportRequest& request) const
+{
+    DatabaseUsageExportResult out;
+    out.exportInfo.outputDir = request.outputDir;
+    if (request.outputDir.empty())
+    {
+        out.status = ServiceResult::failure(1, "outputDir is required");
+        return out;
+    }
+    if (!request.confirm)
+    {
+        out.status = ServiceResult::failure(1, "confirm is required to export used images");
+        return out;
+    }
+
+    Database db(resolveDbPathForService(request.dbPath));
+    if (!db.isOpen())
+    {
+        out.status = ServiceResult::failure(2, "cannot open database: " + request.dbPath);
+        return out;
+    }
+
+    auto allRecs = db.allRecords();
+    std::unordered_map<int, std::string> pathMap;
+    for (const auto& rec : allRecs)
+    {
+        pathMap[rec.id] = rec.filePath;
+    }
+
+    auto allUsed = db.topUsedImages(999999);
+    std::sort(allUsed.begin(), allUsed.end(),
+        [](const auto& a, const auto& b) {
+            return std::get<2>(a) > std::get<2>(b);
+        });
+    out.exportInfo.usedCount = static_cast<int>(allUsed.size());
+
+    try
+    {
+        std::filesystem::create_directories(u8path(request.outputDir));
+    }
+    catch (const std::exception& e)
+    {
+        out.status = ServiceResult::failure(1, "cannot create output directory: " + std::string(e.what()));
+        return out;
+    }
+
+    for (size_t i = 0; i < allUsed.size(); ++i)
+    {
+        auto [id, runs, tiles] = allUsed[i];
+        auto it = pathMap.find(id);
+        if (it == pathMap.end())
+        {
+            out.exportInfo.skippedCount++;
+            out.exportInfo.errors.push_back("missing database path for id=" + std::to_string(id));
+            continue;
+        }
+
+        const std::string& srcPath = it->second;
+        if (!std::filesystem::exists(u8path(srcPath)))
+        {
+            out.exportInfo.skippedCount++;
+            out.exportInfo.errors.push_back("source file missing for id=" + std::to_string(id) + ": " + srcPath);
+            continue;
+        }
+
+        auto dotPos = srcPath.find_last_of('.');
+        std::string ext = (dotPos != std::string::npos) ? srcPath.substr(dotPos) : "";
+        char fileName[512];
+        std::snprintf(fileName, sizeof(fileName), "rank%04zu_%druns_%dtiles_id%d%s",
+                      i + 1, runs, tiles, id, ext.c_str());
+
+        auto dstPath = u8path(request.outputDir) / u8path(fileName);
+        try
+        {
+            std::filesystem::copy_file(u8path(srcPath), dstPath,
+                std::filesystem::copy_options::overwrite_existing);
+            out.exportInfo.exportedCount++;
+            if (out.exportInfo.exportedPreview.size() < 50)
+            {
+                out.exportInfo.exportedPreview.push_back({
+                    id,
+                    runs,
+                    tiles,
+                    srcPath,
+                    pathToUtf8(dstPath)
+                });
+            }
+        }
+        catch (const std::exception& e)
+        {
+            out.exportInfo.failedCount++;
+            out.exportInfo.errors.push_back("failed to export id=" + std::to_string(id) + ": " + e.what());
+        }
+    }
+
+    if (out.exportInfo.failedCount > 0)
+    {
+        out.status = ServiceResult::failure(1, "usage export completed with errors");
+        return out;
+    }
+
+    out.status = ServiceResult::success("used images exported");
     return out;
 }
 

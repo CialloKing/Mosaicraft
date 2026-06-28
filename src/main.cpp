@@ -25,7 +25,6 @@
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 // 退出码
@@ -734,40 +733,20 @@ static int cmdDbUsage(int argc, char* argv[])
     // ��������ȫ�� tile ʹ�������򣬸��ƹ�һ��ͼ������Ŀ¼
     if (!exportDir.empty())
     {
-        Database db(resolveDbPath(dbPath));
-        if (!db.isOpen()) { std::cerr << "ERROR: Cannot open DB" << std::endl; return EXIT_ERR_DB; }
-
-        auto allRecs = db.allRecords();
-        std::unordered_map<int, std::string> pathMap;
-        for (const auto& r : allRecs) pathMap[r.id] = r.filePath;
-
-        auto allUsed = db.topUsedImages(999999);  // ȫ��
-        // �� total_tiles �������У�topUsedImages ���ص��ǰ� total_runs ������Ҫ�����ţ�
-        std::sort(allUsed.begin(), allUsed.end(),
-            [](const auto& a, const auto& b) {
-                return std::get<2>(a) > std::get<2>(b);
-            });
-
-        std::filesystem::create_directories(u8path(exportDir));
-        int exported = 0;
-        for (size_t i = 0; i < allUsed.size(); ++i)
+        auto exportResult = usageService.exportUsage({dbPath, exportDir, true});
+        if (!exportResult.status.ok && exportResult.exportInfo.failedCount == 0)
         {
-            auto [id, runs, tiles] = allUsed[i];
-            auto it = pathMap.find(id);
-            if (it == pathMap.end()) continue;
-            std::string srcPath = it->second;
-            if (!std::filesystem::exists(u8path(srcPath))) continue;
-            auto dotPos = srcPath.find_last_of('.');
-            std::string ext = (dotPos != std::string::npos) ? srcPath.substr(dotPos) : "";
-            char fileName[512];
-            snprintf(fileName, sizeof(fileName), "rank%04zu_%druns_%dtiles_id%d%s",
-                     i+1, runs, tiles, id, ext.c_str());
-            auto dstPath = u8path(exportDir) / u8path(fileName);
-            std::filesystem::copy_file(u8path(srcPath), dstPath,
-                std::filesystem::copy_options::overwrite_existing);
-            exported++;
+            std::cerr << "ERROR: " << exportResult.status.message << std::endl;
+            return exportResult.status.exitCode;
         }
-        std::cout << "\n  Exported " << exported << " images to " << exportDir << "\n";
+        for (const auto& error : exportResult.exportInfo.errors)
+            std::cerr << "  WARN: " << error << "\n";
+        std::cout << "\n  Exported " << exportResult.exportInfo.exportedCount << " images to " << exportDir << "\n";
+        if (exportResult.exportInfo.skippedCount > 0 || exportResult.exportInfo.failedCount > 0)
+            std::cout << "  Skipped " << exportResult.exportInfo.skippedCount
+                      << ", failed " << exportResult.exportInfo.failedCount << "\n";
+        if (!exportResult.status.ok)
+            return exportResult.status.exitCode;
     }
     return 0;
 }

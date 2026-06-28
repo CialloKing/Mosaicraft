@@ -135,6 +135,29 @@ static json usageToJson(const mosaicraft::DatabaseUsage& usage)
     };
 }
 
+static json usageExportToJson(const mosaicraft::DatabaseUsageExport& info)
+{
+    json exported = json::array();
+    for (const auto& item : info.exportedPreview) {
+        exported.push_back({
+            {"id", item.id},
+            {"runs", item.runs},
+            {"tiles", item.tiles},
+            {"sourcePath", item.sourcePath},
+            {"outputPath", item.outputPath}
+        });
+    }
+    return {
+        {"outputDir", info.outputDir},
+        {"usedCount", info.usedCount},
+        {"exportedCount", info.exportedCount},
+        {"skippedCount", info.skippedCount},
+        {"failedCount", info.failedCount},
+        {"exportedPreview", exported},
+        {"errors", info.errors}
+    };
+}
+
 static json purgeToJson(const mosaicraft::DatabasePurge& purge)
 {
     json orphans = json::array();
@@ -464,6 +487,27 @@ static mosaicraft::DatabaseUsageRequest buildDatabaseUsageRequest(const httplib:
     return request;
 }
 
+static mosaicraft::DatabaseUsageExportRequest buildDatabaseUsageExportRequest(const httplib::Request& req)
+{
+    mosaicraft::DatabaseUsageExportRequest request;
+    if (req.has_param("db")) request.dbPath = req.get_param_value("db");
+    if (req.has_param("output")) request.outputDir = req.get_param_value("output");
+    if (req.has_param("confirm")) request.confirm = req.get_param_value("confirm") == "1";
+    if (!req.body.empty()) {
+        try {
+            json body = json::parse(req.body);
+            std::string text;
+            std::string error;
+            bool boolValue = false;
+            if (body.is_object() && getStringField(body, {"dbPath", "db"}, text, error)) request.dbPath = text;
+            if (body.is_object() && getStringField(body, {"outputDir", "output"}, text, error)) request.outputDir = text;
+            if (body.is_object() && getBoolField(body, {"confirm"}, boolValue, error)) request.confirm = boolValue;
+        } catch (...) {
+        }
+    }
+    return request;
+}
+
 static mosaicraft::DatabasePurgeRequest buildDatabasePurgeRequest(const httplib::Request& req)
 {
     mosaicraft::DatabasePurgeRequest request;
@@ -767,6 +811,22 @@ int main(int argc, char* argv[])
         setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"usage", usageToJson(result.usage)}});
     };
 
+    auto handleDbUsageExport = [&](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::DatabaseService service;
+        auto result = service.exportUsage(buildDatabaseUsageExportRequest(req));
+        if (!result.status.ok) {
+            res.status = result.status.exitCode == 2 ? 500 : 400;
+            setJsonBody(res, json{
+                {"ok", false},
+                {"exitCode", result.status.exitCode},
+                {"message", result.status.message},
+                {"export", usageExportToJson(result.exportInfo)}
+            });
+            return;
+        }
+        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"export", usageExportToJson(result.exportInfo)}});
+    };
+
     auto handleDbPurge = [&](const httplib::Request& req, httplib::Response& res) {
         mosaicraft::DatabaseService service;
         auto result = service.purge(buildDatabasePurgeRequest(req));
@@ -796,6 +856,7 @@ int main(int argc, char* argv[])
 
     svr.Get("/api/db/usage", handleDbUsage);
     svr.Post("/api/db/usage", handleDbUsage);
+    svr.Post("/api/db/usage/export", handleDbUsageExport);
     svr.Get("/api/db/purge", handleDbPurge);
     svr.Post("/api/db/purge", handleDbPurge);
     svr.Get("/api/inspect", handleInspect);

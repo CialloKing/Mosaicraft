@@ -21,6 +21,13 @@ struct DatabaseUsageRequest
     bool showUnused = false;
 };
 
+struct DatabaseUsageExportRequest
+{
+    std::string dbPath = "library/mosaicraft.db";
+    std::string outputDir;
+    bool confirm = false;
+};
+
 struct DatabasePurgeRequest
 {
     std::string dbPath = "library/mosaicraft.db";
@@ -89,6 +96,26 @@ struct DatabaseUsage
     std::vector<UnusedItem> unusedPreview;
 };
 
+struct ExportedUsageItem
+{
+    int id = 0;
+    int runs = 0;
+    int tiles = 0;
+    std::string sourcePath;
+    std::string outputPath;
+};
+
+struct DatabaseUsageExport
+{
+    std::string outputDir;
+    int usedCount = 0;
+    int exportedCount = 0;
+    int skippedCount = 0;
+    int failedCount = 0;
+    std::vector<ExportedUsageItem> exportedPreview;
+    std::vector<std::string> errors;
+};
+
 struct OrphanRecord
 {
     int id = 0;
@@ -127,6 +154,12 @@ struct DatabaseUsageResult
     DatabaseUsage usage;
 };
 
+struct DatabaseUsageExportResult
+{
+    ServiceResult status;
+    DatabaseUsageExport exportInfo;
+};
+
 struct DatabasePurgeResult
 {
     ServiceResult status;
@@ -139,6 +172,7 @@ public:
     DatabaseStatsResult stats(const DatabaseRequest& request) const;
     DatabaseHealthResult health(const DatabaseRequest& request) const;
     DatabaseUsageResult usage(const DatabaseUsageRequest& request) const;
+    DatabaseUsageExportResult exportUsage(const DatabaseUsageExportRequest& request) const;
     DatabasePurgeResult purge(const DatabasePurgeRequest& request) const;
 };
 
