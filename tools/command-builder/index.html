@@ -351,23 +351,43 @@ function copyCommand() {
 // Server detection: check if mosaicraftwebui is running
 let serverAvailable = false;
 let currentJobId = '';
+let apiInfo = null;
+const SUPPORTED_API_MAJOR = 1;
 const SERVER_URL = window.location.protocol === 'http:' || window.location.protocol === 'https:'
   ? window.location.origin
   : 'http://localhost:8080';
 
 async function checkServer() {
   try {
-    const res = await fetch(SERVER_URL + '/api/ping');
+    const res = await fetch(SERVER_URL + '/api/info');
     if (res.ok) {
+      const data = await res.json();
+      const api = data && data.info && data.info.api ? data.info.api : null;
+      if (!api || !api.structured) throw new Error('structured API unavailable');
+      apiInfo = api;
+      const major = Number(api.contractMajorVersion || 0);
+      if (major !== SUPPORTED_API_MAJOR || api.stable !== true) {
+        serverAvailable = false;
+        document.getElementById('btn-run').style.display = 'none';
+        document.getElementById('btn-cancel-job').style.display = 'none';
+        document.getElementById('btn-clear-jobs').style.display = 'none';
+        document.getElementById('run-status').style.display = '';
+        document.getElementById('run-status').innerHTML = '<span style="color:#f78166">⚠ API 合约不兼容</span> — 当前 API ' +
+          escapeHtml(api.contractVersion || 'unknown') + ' / ' + escapeHtml(api.compatibility || 'unknown') +
+          '，此界面支持 v' + SUPPORTED_API_MAJOR + '.x stable';
+        return;
+      }
       serverAvailable = true;
       document.getElementById('btn-run').style.display = '';
       document.getElementById('btn-cancel-job').style.display = '';
       document.getElementById('btn-clear-jobs').style.display = '';
       document.getElementById('run-status').style.display = '';
-      document.getElementById('run-status').innerHTML = '<span style="color:#7ee787">🟢 已连接服务器</span>';
+      document.getElementById('run-status').innerHTML = '<span style="color:#7ee787">🟢 已连接结构化 API</span> — contract ' +
+        escapeHtml(api.contractVersion || 'unknown') + ' / ' + escapeHtml(api.compatibility || 'unknown');
       return;
     }
   } catch(e) {}
+  apiInfo = null;
   serverAvailable = false;
   document.getElementById('btn-run').style.display = 'none';
   document.getElementById('btn-cancel-job').style.display = 'none';
