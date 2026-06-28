@@ -314,6 +314,43 @@ TEST_CASE("API JSON serialization covers jobs and database shapes")
     CHECK(usageJson["unusedPreview"][0]["filePath"].get<std::string>() == "unused.jpg");
 }
 
+TEST_CASE("API JSON response envelopes are shared")
+{
+    JobSnapshot job;
+    job.id = "job-42";
+    job.type = "build";
+    job.state = JobState::Running;
+    job.result = ServiceResult::success("running");
+
+    auto jobEnvelope = apiJobJson(job);
+    CHECK(jobEnvelope["ok"].get<bool>());
+    CHECK(jobEnvelope["job"]["id"].get<std::string>() == "job-42");
+
+    auto jobError = apiJobErrorJson("only queued jobs can be canceled", job);
+    CHECK_FALSE(jobError["ok"].get<bool>());
+    CHECK(jobError["message"].get<std::string>() == "only queued jobs can be canceled");
+    CHECK(jobError["job"]["state"].get<std::string>() == "running");
+
+    auto payloadOk = apiPayloadJson(ServiceResult::success("ok"), "usage", nlohmann::json{{"total", 3}});
+    CHECK(payloadOk["ok"].get<bool>());
+    CHECK(payloadOk["message"].get<std::string>() == "ok");
+    CHECK(payloadOk["usage"]["total"].get<int>() == 3);
+    CHECK_FALSE(payloadOk.contains("exitCode"));
+
+    auto payloadError = apiPayloadJson(ServiceResult::failure(2, "missing"), "purge", nlohmann::json{{"failedCount", 1}});
+    CHECK_FALSE(payloadError["ok"].get<bool>());
+    CHECK(payloadError["exitCode"].get<int>() == 2);
+    CHECK(payloadError["purge"]["failedCount"].get<int>() == 1);
+
+    auto endpoints = apiEndpointsResponseJson(false);
+    CHECK(endpoints["ok"].get<bool>());
+    CHECK(endpoints["endpoints"].is_array());
+
+    auto info = apiInfoResponseJson(false, "MosaicraftWebUI");
+    CHECK(info["ok"].get<bool>());
+    CHECK(info["info"]["entry"].get<std::string>() == "MosaicraftWebUI");
+}
+
 TEST_CASE("API request parser builds mosaic requests")
 {
     MosaicRequest request;

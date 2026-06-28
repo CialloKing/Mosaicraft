@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <utility>
 
 namespace mosaicraft
 {
@@ -221,6 +222,70 @@ nlohmann::json apiInfoToJson(bool legacyRunEnabled, const char* entryName)
         }},
         {"features", apiFeatureList()}
     };
+}
+
+nlohmann::json apiOkJson()
+{
+    return {{"ok", true}};
+}
+
+nlohmann::json apiOkJson(const std::string& key, nlohmann::json value)
+{
+    nlohmann::json body = apiOkJson();
+    body[key] = std::move(value);
+    return body;
+}
+
+nlohmann::json apiErrorJson(const std::string& message)
+{
+    return {{"ok", false}, {"message", message}};
+}
+
+nlohmann::json apiPayloadJson(const ServiceResult& status, const std::string& key, nlohmann::json value)
+{
+    nlohmann::json body = {
+        {"ok", status.ok},
+        {"message", status.message},
+        {key, std::move(value)}
+    };
+    if (!status.ok) body["exitCode"] = status.exitCode;
+    return body;
+}
+
+nlohmann::json apiJobJson(const JobSnapshot& job)
+{
+    return apiOkJson("job", jobSnapshotToJson(job));
+}
+
+nlohmann::json apiJobErrorJson(const std::string& message, const JobSnapshot& job)
+{
+    nlohmann::json body = apiErrorJson(message);
+    body["job"] = jobSnapshotToJson(job);
+    return body;
+}
+
+nlohmann::json apiJobsJson(const std::vector<JobSnapshot>& jobs)
+{
+    nlohmann::json items = nlohmann::json::array();
+    for (const auto& job : jobs) {
+        items.push_back(jobSnapshotToJson(job));
+    }
+    return apiOkJson("jobs", items);
+}
+
+nlohmann::json apiRemovedJobsJson(int removed)
+{
+    return apiOkJson("removed", removed);
+}
+
+nlohmann::json apiEndpointsResponseJson(bool legacyRunEnabled)
+{
+    return apiOkJson("endpoints", apiEndpointsToJson(legacyRunEnabled));
+}
+
+nlohmann::json apiInfoResponseJson(bool legacyRunEnabled, const char* entryName)
+{
+    return apiOkJson("info", apiInfoToJson(legacyRunEnabled, entryName));
 }
 
 } // namespace mosaicraft

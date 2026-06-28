@@ -252,11 +252,11 @@ int main(int argc, char* argv[])
     });
 
     svr.Get("/api/endpoints", [legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
-        setJsonBody(res, json{{"ok", true}, {"endpoints", mosaicraft::apiEndpointsToJson(legacyRunEnabled)}});
+        setJsonBody(res, mosaicraft::apiEndpointsResponseJson(legacyRunEnabled));
     });
 
     svr.Get("/api/info", [legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
-        setJsonBody(res, json{{"ok", true}, {"info", mosaicraft::apiInfoToJson(legacyRunEnabled, "MosaicraftWebUI")}});
+        setJsonBody(res, mosaicraft::apiInfoResponseJson(legacyRunEnabled, "MosaicraftWebUI"));
     });
 
     svr.Post("/api/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
@@ -303,7 +303,7 @@ int main(int argc, char* argv[])
             mosaicraft::JobSnapshot snapshot;
             jobManager.getJob(jobId, snapshot);
             res.status = 202;
-            setJsonBody(res, json{{"ok", true}, {"job", mosaicraft::jobSnapshotToJson(snapshot)}});
+            setJsonBody(res, mosaicraft::apiJobJson(snapshot));
         } catch (const std::exception& e) {
             res.status = 500;
             setJsonResult(res, mosaicraft::ServiceResult::failure(1, e.what()));
@@ -327,7 +327,7 @@ int main(int argc, char* argv[])
             mosaicraft::JobSnapshot snapshot;
             jobManager.getJob(jobId, snapshot);
             res.status = 202;
-            setJsonBody(res, json{{"ok", true}, {"job", mosaicraft::jobSnapshotToJson(snapshot)}});
+            setJsonBody(res, mosaicraft::apiJobJson(snapshot));
         } catch (const std::exception& e) {
             res.status = 500;
             setJsonResult(res, mosaicraft::ServiceResult::failure(1, e.what()));
@@ -338,16 +338,12 @@ int main(int argc, char* argv[])
     });
 
     svr.Get("/api/jobs", [&](const httplib::Request&, httplib::Response& res) {
-        json jobs = json::array();
-        for (const auto& job : jobManager.listJobs()) {
-            jobs.push_back(mosaicraft::jobSnapshotToJson(job));
-        }
-        setJsonBody(res, json{{"ok", true}, {"jobs", jobs}});
+        setJsonBody(res, mosaicraft::apiJobsJson(jobManager.listJobs()));
     });
 
     svr.Delete("/api/jobs", [&](const httplib::Request&, httplib::Response& res) {
         int removed = jobManager.clearFinishedJobs();
-        setJsonBody(res, json{{"ok", true}, {"removed", removed}});
+        setJsonBody(res, mosaicraft::apiRemovedJobsJson(removed));
     });
 
     svr.Get(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
@@ -355,26 +351,26 @@ int main(int argc, char* argv[])
         std::string jobId = req.matches.size() > 1 ? req.matches[1].str() : "";
         if (!jobManager.getJob(jobId, snapshot)) {
             res.status = 404;
-            setJsonBody(res, json{{"ok", false}, {"message", "job not found"}});
+            setJsonBody(res, mosaicraft::apiErrorJson("job not found"));
             return;
         }
-        setJsonBody(res, json{{"ok", true}, {"job", mosaicraft::jobSnapshotToJson(snapshot)}});
+        setJsonBody(res, mosaicraft::apiJobJson(snapshot));
     });
 
     svr.Delete(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
         mosaicraft::JobSnapshot snapshot;
         std::string jobId = req.matches.size() > 1 ? req.matches[1].str() : "";
         if (jobManager.cancelQueuedJob(jobId, snapshot)) {
-            setJsonBody(res, json{{"ok", true}, {"job", mosaicraft::jobSnapshotToJson(snapshot)}});
+            setJsonBody(res, mosaicraft::apiJobJson(snapshot));
             return;
         }
         if (snapshot.id.empty()) {
             res.status = 404;
-            setJsonBody(res, json{{"ok", false}, {"message", "job not found"}});
+            setJsonBody(res, mosaicraft::apiErrorJson("job not found"));
             return;
         }
         res.status = 409;
-        setJsonBody(res, json{{"ok", false}, {"message", "only queued jobs can be canceled"}, {"job", mosaicraft::jobSnapshotToJson(snapshot)}});
+        setJsonBody(res, mosaicraft::apiJobErrorJson("only queued jobs can be canceled", snapshot));
     });
 
     auto handleDbStats = [&](const httplib::Request& req, httplib::Response& res) {
@@ -392,7 +388,7 @@ int main(int argc, char* argv[])
             setJsonResult(res, result.status);
             return;
         }
-        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"stats", mosaicraft::databaseStatsToJson(result.stats)}});
+        setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "stats", mosaicraft::databaseStatsToJson(result.stats)));
     };
 
     auto handleDbHealth = [&](const httplib::Request& req, httplib::Response& res) {
@@ -410,7 +406,7 @@ int main(int argc, char* argv[])
             setJsonResult(res, result.status);
             return;
         }
-        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"health", mosaicraft::databaseHealthToJson(result.health)}});
+        setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "health", mosaicraft::databaseHealthToJson(result.health)));
     };
 
     svr.Get("/api/db/stats", handleDbStats);
@@ -433,7 +429,7 @@ int main(int argc, char* argv[])
             setJsonResult(res, result.status);
             return;
         }
-        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"usage", mosaicraft::databaseUsageToJson(result.usage)}});
+        setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "usage", mosaicraft::databaseUsageToJson(result.usage)));
     };
 
     auto handleDbUsageExport = [&](const httplib::Request& req, httplib::Response& res) {
@@ -448,15 +444,10 @@ int main(int argc, char* argv[])
         auto result = service.exportUsage(request);
         if (!result.status.ok) {
             res.status = result.status.exitCode == 2 ? 500 : 400;
-            setJsonBody(res, json{
-                {"ok", false},
-                {"exitCode", result.status.exitCode},
-                {"message", result.status.message},
-                {"export", mosaicraft::databaseUsageExportToJson(result.exportInfo)}
-            });
+            setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "export", mosaicraft::databaseUsageExportToJson(result.exportInfo)));
             return;
         }
-        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"export", mosaicraft::databaseUsageExportToJson(result.exportInfo)}});
+        setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "export", mosaicraft::databaseUsageExportToJson(result.exportInfo)));
     };
 
     auto handleDbPurge = [&](const httplib::Request& req, httplib::Response& res) {
@@ -471,15 +462,10 @@ int main(int argc, char* argv[])
         auto result = service.purge(request);
         if (!result.status.ok) {
             res.status = result.status.exitCode == 2 ? 500 : 400;
-            setJsonBody(res, json{
-                {"ok", false},
-                {"exitCode", result.status.exitCode},
-                {"message", result.status.message},
-                {"purge", mosaicraft::databasePurgeToJson(result.purge)}
-            });
+            setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "purge", mosaicraft::databasePurgeToJson(result.purge)));
             return;
         }
-        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"purge", mosaicraft::databasePurgeToJson(result.purge)}});
+        setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "purge", mosaicraft::databasePurgeToJson(result.purge)));
     };
 
     auto handleInspect = [&](const httplib::Request& req, httplib::Response& res) {
@@ -497,7 +483,7 @@ int main(int argc, char* argv[])
             setJsonResult(res, result.status);
             return;
         }
-        setJsonBody(res, json{{"ok", true}, {"message", result.status.message}, {"inspect", mosaicraft::inspectResultToJson(result)}});
+        setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "inspect", mosaicraft::inspectResultToJson(result)));
     };
 
     svr.Get("/api/db/usage", handleDbUsage);
@@ -512,10 +498,7 @@ int main(int argc, char* argv[])
     svr.Post("/api/run", [&, legacyRunEnabled](const httplib::Request& req, httplib::Response& res) {
         if (!legacyRunEnabled) {
             res.status = 404;
-            setJsonBody(res, json{
-                {"ok", false},
-                {"message", "legacy /api/run is disabled; set MOSAICRAFT_ENABLE_LEGACY_RUN=1 to enable compatibility mode"}
-            });
+            setJsonBody(res, mosaicraft::apiErrorJson("legacy /api/run is disabled; set MOSAICRAFT_ENABLE_LEGACY_RUN=1 to enable compatibility mode"));
             return;
         }
 
