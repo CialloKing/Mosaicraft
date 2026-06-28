@@ -2075,12 +2075,21 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 const auto& r = allRecords[li];
                 const auto* recTiny = r.tinyPath.empty() ? nullptr : cpuFeatureCache.loadTiny(r.id, r.tinyPath);
                 const auto* recLBP = r.histPath.empty() ? nullptr : cpuFeatureCache.loadLBP(r.id, r.histPath);
-                double s = cfg.labWeight*labDistance(allTL[ti],allTA[ti],allTB[ti],r.avgL,r.avgA,r.avgB)
-                         + cfg.gridWeight*gridDistance8x8(allGrid[ti], r.grid4x4)
+                double labD  = cfg.labWeight*labDistance(allTL[ti],allTA[ti],allTB[ti],r.avgL,r.avgA,r.avgB);
+                double gridD = cfg.gridWeight*gridDistance8x8(allGrid[ti], r.grid4x4);
+                double edgeD = cfg.edgeWeight*std::abs(allEdge[ti]-r.edgeDensity);
+                double s = labD
+                         + gridD
                          + cfg.tinyWeight*(recTiny ? tinyMSE(allTiny[ti], *recTiny) : 1.0)
-                         + cfg.edgeWeight*std::abs(allEdge[ti]-r.edgeDensity)
+                         + edgeD
                          + cfg.lbpWeight*(recLBP ? lbpDistance(allLBP[ti], *recLBP) : 1.0);
-                if (cfg.analyze) { analyzeScores.push_back(s); analyzeImageIds.push_back(r.id); }
+                if (cfg.analyze) {
+                    analyzeScores.push_back(s);
+                    analyzeImageIds.push_back(r.id);
+                    analyzeLabD.push_back(labD);
+                    analyzeGridD.push_back(gridD);
+                    analyzeEdgeD.push_back(edgeD);
+                }
                 auto it = freq.find(r.id);
                 int cnt = (it != freq.end()) ? it->second : 0;
                 if (cnt >= 3) s += cfg.neighborPenalty;
