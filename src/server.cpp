@@ -6,6 +6,7 @@
 #include "core/json.hpp"
 #include "core/InspectService.h"
 #include "core/MosaicService.h"
+#include "core/Version.h"
 #include <algorithm>
 #include <chrono>
 #include <cctype>
@@ -235,6 +236,7 @@ static json endpointInfo(const std::string& method,
 static json apiEndpointsJson(bool legacyRunEnabled)
 {
     return json::array({
+        endpointInfo("GET", "/api/info", "service version and capability summary"),
         endpointInfo("GET", "/api/ping", "health check"),
         endpointInfo("POST", "/api/mosaic", "run mosaic synchronously"),
         endpointInfo("POST", "/api/jobs/mosaic", "start mosaic job"),
@@ -251,6 +253,29 @@ static json apiEndpointsJson(bool legacyRunEnabled)
         endpointInfo("GET|POST", "/api/inspect", "inspect a source image"),
         endpointInfo("POST", "/api/run", "legacy command compatibility endpoint", true, legacyRunEnabled)
     });
+}
+
+static json apiInfoJson(bool legacyRunEnabled)
+{
+    return {
+        {"name", "Mosaicraft"},
+        {"version", mosaicraft::kVersion},
+        {"entry", "MosaicraftWebUI"},
+        {"api", {
+            {"structured", true},
+            {"legacyRunEnabled", legacyRunEnabled}
+        }},
+        {"features", {
+            "mosaic-jobs",
+            "build-jobs",
+            "job-management",
+            "inspect",
+            "database-stats",
+            "database-health",
+            "database-usage",
+            "database-maintenance"
+        }}
+    };
 }
 
 static void setJsonBody(httplib::Response& res, const json& body)
@@ -727,6 +752,10 @@ int main(int argc, char* argv[])
 
     svr.Get("/api/endpoints", [legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
         setJsonBody(res, json{{"ok", true}, {"endpoints", apiEndpointsJson(legacyRunEnabled)}});
+    });
+
+    svr.Get("/api/info", [legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
+        setJsonBody(res, json{{"ok", true}, {"info", apiInfoJson(legacyRunEnabled)}});
     });
 
     svr.Post("/api/mosaic", [&](const httplib::Request& req, httplib::Response& res) {

@@ -5,6 +5,7 @@
 #include "core/MosaicEngine.h"
 #include "core/MosaicService.h"
 #include "core/UnicodeIO.h"
+#include "core/Version.h"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/core.hpp>
@@ -50,9 +51,6 @@ using namespace mosaicraft;
 // ============================================================
 // 工具
 // ============================================================
-
-// 用法
-static constexpr const char* VERSION = "1.12.3";
 
 static void printHelp()
 {
@@ -867,7 +865,7 @@ int main(int argc, char* argv[])
 
     if (cmd == "-V" || cmd == "--version")
     {
-        std::cout << "Mosaicraft " << VERSION << "\n";
+        std::cout << "Mosaicraft " << mosaicraft::kVersion << "\n";
         return 0;
     }
     if (cmd == "build")

@@ -10,6 +10,11 @@ image inspection, and database maintenance.
 
 ## Discovery
 
+`GET /api/info`
+
+Returns service version, entry name, structured API status, legacy `/api/run`
+status, and a compact feature list.
+
 `GET /api/endpoints`
 
 Returns the structured API list. Entries marked `legacy: true` are compatibility

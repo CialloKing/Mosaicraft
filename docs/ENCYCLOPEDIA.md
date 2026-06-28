@@ -464,6 +464,7 @@ Compress-Archive -Path release_pkg\* -Destination Mosaicraft_release.zip
 **Web UI ������**
 - `MosaicraftWebUI.exe`: cpp-httplib HTTP ����
 - Web UI ����ʹ�ýṹ�� API, API �б���� `docs/API.md`
+- `GET /api/info` 返回版本和 API 能力摘要
 - `POST /api/run` 默认关闭，仅通过 `MOSAICRAFT_ENABLE_LEGACY_RUN=1` 作为旧命令兼容入口
 - 30min ��ʱ, ���ֽڶ�ȡ, �˿ڳ�ͻ���
 
