@@ -33,9 +33,12 @@ JobManager::~JobManager()
     }
 }
 
-JobManager::JobManager()
-    : m_worker([this]() { workerLoop(); })
+JobManager::JobManager(bool autoStartWorker)
 {
+    if (autoStartWorker)
+    {
+        m_worker = std::thread([this]() { workerLoop(); });
+    }
 }
 
 std::string JobManager::submitMosaic(MosaicRequest request)

@@ -200,6 +200,7 @@ add_executable(mosaicraft_tests EXCLUDE_FROM_ALL
 )
 target_link_libraries(mosaicraft_tests PRIVATE
     mosaicraft_core
+    mosaicraft_cuda
 )
 target_include_directories(mosaicraft_tests PRIVATE
     ${CMAKE_SOURCE_DIR}

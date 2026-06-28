@@ -9,9 +9,12 @@
 #include "doctest.h"
 
 #include "../core/FeatureUtils.h"
+#include "../core/JobManager.h"
+#include "../core/Version.h"
 #include <vector>
 #include <cmath>
 #include <cstdint>
+#include <string>
 
 using namespace mosaicraft;
 
@@ -211,4 +214,35 @@ TEST_CASE("gridDistance8x8 — center cell has higher weight than corner")
     // Center weight (w[27]=1.09) > corner weight (w[0]=0.85)
     // So distCenter should be > distCorner for the same LAB difference
     CHECK(distCenter > distCorner);
+}
+
+// ============================================================
+// API support classes
+// ============================================================
+
+TEST_CASE("Version is shared by CLI and API")
+{
+    CHECK(std::string(kVersion) == "1.12.3");
+}
+
+TEST_CASE("JobManager can cancel queued jobs and clear finished jobs")
+{
+    JobManager manager(false);
+
+    BuildRequest request;
+    request.inputDir = "__unused_input_for_job_test__";
+    request.outputDir = "__unused_output_for_job_test__";
+    request.allowPrompt = false;
+
+    const std::string jobId = manager.submitBuild(request);
+
+    JobSnapshot canceled;
+    CHECK(manager.cancelQueuedJob(jobId, canceled));
+    CHECK(canceled.id == jobId);
+    CHECK(canceled.state == JobState::Canceled);
+
+    CHECK(manager.clearFinishedJobs() == 1);
+
+    JobSnapshot afterClear;
+    CHECK_FALSE(manager.getJob(jobId, afterClear));
 }

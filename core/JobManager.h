@@ -42,7 +42,7 @@ struct JobSnapshot
 class JobManager
 {
 public:
-    JobManager();
+    explicit JobManager(bool autoStartWorker = true);
     ~JobManager();
 
     JobManager(const JobManager&) = delete;
