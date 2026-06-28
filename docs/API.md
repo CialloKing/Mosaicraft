@@ -17,9 +17,19 @@ status, and a compact feature list.
 
 `GET /api/endpoints`
 
-Returns the structured API list. Entries marked `legacy: true` are compatibility
-endpoints and should not be used by new UI code. The `enabled` field reports
-whether a compatibility endpoint is currently available.
+Returns the structured API list. Each entry contains:
+
+- `method`: HTTP method or method set.
+- `path`: endpoint path.
+- `description`: short endpoint description.
+- `category`: functional group, such as `jobs`, `database`, or `inspect`.
+- `requestFields`: common request fields accepted by the endpoint.
+- `legacy`: whether this endpoint is only for compatibility.
+- `enabled`: whether the endpoint is currently available.
+
+Entries marked `legacy: true` are compatibility endpoints and should not be used
+by new UI code. The `enabled` field reports whether a compatibility endpoint is
+currently available.
 
 ## Health
 
