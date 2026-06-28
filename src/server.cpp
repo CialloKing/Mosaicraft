@@ -53,6 +53,13 @@ static void sendApiResponse(httplib::Response& res, const mosaicraft::ApiRespons
     setJsonBody(res, response.body);
 }
 
+static void handleApi(httplib::Response& res,
+                      mosaicraft::JobManager& jobs,
+                      mosaicraft::ApiRequest request)
+{
+    sendApiResponse(res, mosaicraft::handleApiRequest(request, jobs));
+}
+
 static mosaicraft::ApiQueryParams queryParams(const httplib::Request& req,
                                               std::initializer_list<const char*> keys)
 {
@@ -194,50 +201,50 @@ int main(int argc, char* argv[])
         res.set_content("HTML reloaded", "text/plain");
     });
 
-    svr.Get("/api/endpoints", [legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
-        sendApiResponse(res, mosaicraft::apiEndpoints(legacyRunEnabled));
+    svr.Get("/api/endpoints", [&, legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::Endpoints, {}, {}, {}, legacyRunEnabled});
     });
 
-    svr.Get("/api/info", [legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
-        sendApiResponse(res, mosaicraft::apiInfo(legacyRunEnabled, "MosaicraftWebUI"));
+    svr.Get("/api/info", [&, legacyRunEnabled](const httplib::Request&, httplib::Response& res) {
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::Info, {}, {}, {}, legacyRunEnabled, "MosaicraftWebUI"});
     });
 
     svr.Post("/api/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
-        sendApiResponse(res, mosaicraft::apiMosaic(req.body, jobManager));
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::Mosaic, {}, req.body});
     });
 
     svr.Post("/api/jobs/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
-        sendApiResponse(res, mosaicraft::apiSubmitMosaicJob(req.body, jobManager));
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::SubmitMosaicJob, {}, req.body});
     });
 
     svr.Post("/api/jobs/build", [&](const httplib::Request& req, httplib::Response& res) {
-        sendApiResponse(res, mosaicraft::apiSubmitBuildJob(req.body, jobManager));
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::SubmitBuildJob, {}, req.body});
     });
 
     svr.Get("/api/jobs", [&](const httplib::Request&, httplib::Response& res) {
-        sendApiResponse(res, mosaicraft::apiListJobs(jobManager));
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::ListJobs});
     });
 
     svr.Delete("/api/jobs", [&](const httplib::Request&, httplib::Response& res) {
-        sendApiResponse(res, mosaicraft::apiClearFinishedJobs(jobManager));
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::ClearFinishedJobs});
     });
 
     svr.Get(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
         std::string jobId = req.matches.size() > 1 ? req.matches[1].str() : "";
-        sendApiResponse(res, mosaicraft::apiGetJob(jobId, jobManager));
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::GetJob, {}, {}, jobId});
     });
 
     svr.Delete(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
         std::string jobId = req.matches.size() > 1 ? req.matches[1].str() : "";
-        sendApiResponse(res, mosaicraft::apiCancelJob(jobId, jobManager));
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::CancelJob, {}, {}, jobId});
     });
 
     auto handleDbStats = [&](const httplib::Request& req, httplib::Response& res) {
-        sendApiResponse(res, mosaicraft::apiDatabaseStats(queryParams(req, {"db"}), req.body));
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::DatabaseStats, queryParams(req, {"db"}), req.body});
     };
 
     auto handleDbHealth = [&](const httplib::Request& req, httplib::Response& res) {
-        sendApiResponse(res, mosaicraft::apiDatabaseHealth(queryParams(req, {"db"}), req.body));
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::DatabaseHealth, queryParams(req, {"db"}), req.body});
     };
 
     svr.Get("/api/db/stats", handleDbStats);
@@ -246,19 +253,19 @@ int main(int argc, char* argv[])
     svr.Post("/api/db/health", handleDbHealth);
 
     auto handleDbUsage = [&](const httplib::Request& req, httplib::Response& res) {
-        sendApiResponse(res, mosaicraft::apiDatabaseUsage(queryParams(req, {"db", "limit", "unused"}), req.body));
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::DatabaseUsage, queryParams(req, {"db", "limit", "unused"}), req.body});
     };
 
     auto handleDbUsageExport = [&](const httplib::Request& req, httplib::Response& res) {
-        sendApiResponse(res, mosaicraft::apiDatabaseUsageExport(queryParams(req, {"db", "output", "confirm"}), req.body));
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::DatabaseUsageExport, queryParams(req, {"db", "output", "confirm"}), req.body});
     };
 
     auto handleDbPurge = [&](const httplib::Request& req, httplib::Response& res) {
-        sendApiResponse(res, mosaicraft::apiDatabasePurge(queryParams(req, {"db", "dryRun", "confirm"}), req.body));
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::DatabasePurge, queryParams(req, {"db", "dryRun", "confirm"}), req.body});
     };
 
     auto handleInspect = [&](const httplib::Request& req, httplib::Response& res) {
-        sendApiResponse(res, mosaicraft::apiInspect(queryParams(req, {"input", "db"}), req.body));
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::Inspect, queryParams(req, {"input", "db"}), req.body});
     };
 
     svr.Get("/api/db/usage", handleDbUsage);
@@ -272,7 +279,7 @@ int main(int argc, char* argv[])
     // Legacy command endpoint.
     svr.Post("/api/run", [&, legacyRunEnabled](const httplib::Request& req, httplib::Response& res) {
         if (!legacyRunEnabled) {
-            sendApiResponse(res, mosaicraft::apiLegacyRunDisabled());
+            handleApi(res, jobManager, {mosaicraft::ApiOperation::LegacyRunDisabled});
             return;
         }
 
@@ -384,8 +391,8 @@ int main(int argc, char* argv[])
     });
 
     // Health check.
-    svr.Get("/api/ping", [](const httplib::Request&, httplib::Response& res) {
-        sendApiResponse(res, mosaicraft::apiPing());
+    svr.Get("/api/ping", [&](const httplib::Request&, httplib::Response& res) {
+        handleApi(res, jobManager, {mosaicraft::ApiOperation::Ping});
     });
 
     std::cout << "  Listening on http://localhost:" << port << std::endl;

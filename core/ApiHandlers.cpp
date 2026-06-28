@@ -32,6 +32,48 @@ int databaseMaintenanceErrorStatus(const ServiceResult& status)
 
 } // namespace
 
+ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
+{
+    switch (request.operation)
+    {
+    case ApiOperation::Endpoints:
+        return apiEndpoints(request.legacyRunEnabled);
+    case ApiOperation::Info:
+        return apiInfo(request.legacyRunEnabled, request.entryName);
+    case ApiOperation::Ping:
+        return apiPing();
+    case ApiOperation::LegacyRunDisabled:
+        return apiLegacyRunDisabled();
+    case ApiOperation::Mosaic:
+        return apiMosaic(request.body, jobs);
+    case ApiOperation::SubmitMosaicJob:
+        return apiSubmitMosaicJob(request.body, jobs);
+    case ApiOperation::SubmitBuildJob:
+        return apiSubmitBuildJob(request.body, jobs);
+    case ApiOperation::ListJobs:
+        return apiListJobs(jobs);
+    case ApiOperation::ClearFinishedJobs:
+        return apiClearFinishedJobs(jobs);
+    case ApiOperation::GetJob:
+        return apiGetJob(request.id, jobs);
+    case ApiOperation::CancelJob:
+        return apiCancelJob(request.id, jobs);
+    case ApiOperation::DatabaseStats:
+        return apiDatabaseStats(request.query, request.body);
+    case ApiOperation::DatabaseHealth:
+        return apiDatabaseHealth(request.query, request.body);
+    case ApiOperation::DatabaseUsage:
+        return apiDatabaseUsage(request.query, request.body);
+    case ApiOperation::DatabaseUsageExport:
+        return apiDatabaseUsageExport(request.query, request.body);
+    case ApiOperation::DatabasePurge:
+        return apiDatabasePurge(request.query, request.body);
+    case ApiOperation::Inspect:
+        return apiInspect(request.query, request.body);
+    }
+    return internalError("unknown API operation");
+}
+
 ApiResponse apiEndpoints(bool legacyRunEnabled)
 {
     return {200, apiEndpointsResponseJson(legacyRunEnabled)};

@@ -471,6 +471,46 @@ TEST_CASE("API handlers expose discovery and health without HTTP")
     CHECK(legacyDisabled.body["message"].get<std::string>().find("disabled") != std::string::npos);
 }
 
+TEST_CASE("API request dispatcher routes operations without HTTP")
+{
+    JobManager manager(false);
+
+    ApiRequest pingRequest;
+    pingRequest.operation = ApiOperation::Ping;
+    auto ping = handleApiRequest(pingRequest, manager);
+    CHECK(ping.status == 200);
+    CHECK(ping.body["message"].get<std::string>() == "pong");
+
+    ApiRequest infoRequest;
+    infoRequest.operation = ApiOperation::Info;
+    infoRequest.entryName = "MosaicraftWebUI";
+    auto info = handleApiRequest(infoRequest, manager);
+    CHECK(info.status == 200);
+    CHECK(info.body["info"]["entry"].get<std::string>() == "MosaicraftWebUI");
+
+    ApiRequest buildRequest;
+    buildRequest.operation = ApiOperation::SubmitBuildJob;
+    buildRequest.body = R"({"inputDir":"__unused_dispatch_input__","outputDir":"__unused_dispatch_output__"})";
+    auto submitted = handleApiRequest(buildRequest, manager);
+    CHECK(submitted.status == 202);
+    std::string jobId = submitted.body["job"]["id"].get<std::string>();
+
+    ApiRequest getRequest;
+    getRequest.operation = ApiOperation::GetJob;
+    getRequest.id = jobId;
+    auto fetched = handleApiRequest(getRequest, manager);
+    CHECK(fetched.status == 200);
+    CHECK(fetched.body["job"]["type"].get<std::string>() == "build");
+
+    ApiRequest usageRequest;
+    usageRequest.operation = ApiOperation::DatabaseUsage;
+    usageRequest.query = {{"db", "__dispatch_status_test__.db"}};
+    usageRequest.body = R"({"limit":"bad"})";
+    auto badUsage = handleApiRequest(usageRequest, manager);
+    CHECK(badUsage.status == 400);
+    CHECK(badUsage.body["message"].get<std::string>() == "limit must be a number");
+}
+
 TEST_CASE("API handlers expose structured jobs without HTTP")
 {
     JobManager manager(false);

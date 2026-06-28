@@ -9,11 +9,44 @@
 namespace mosaicraft
 {
 
+enum class ApiOperation
+{
+    Endpoints,
+    Info,
+    Ping,
+    LegacyRunDisabled,
+    Mosaic,
+    SubmitMosaicJob,
+    SubmitBuildJob,
+    ListJobs,
+    ClearFinishedJobs,
+    GetJob,
+    CancelJob,
+    DatabaseStats,
+    DatabaseHealth,
+    DatabaseUsage,
+    DatabaseUsageExport,
+    DatabasePurge,
+    Inspect
+};
+
+struct ApiRequest
+{
+    ApiOperation operation = ApiOperation::Ping;
+    ApiQueryParams query;
+    std::string body;
+    std::string id;
+    bool legacyRunEnabled = false;
+    const char* entryName = "Mosaicraft";
+};
+
 struct ApiResponse
 {
     int status = 200;
     nlohmann::json body;
 };
+
+ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs);
 
 ApiResponse apiEndpoints(bool legacyRunEnabled);
 ApiResponse apiInfo(bool legacyRunEnabled, const char* entryName);
