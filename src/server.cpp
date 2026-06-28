@@ -161,11 +161,11 @@ static void registerStructuredApiRoutes(
             continue;
         }
 
-        if (endpoint.method == "GET|POST") {
-            registerApiMethod(svr, "GET", jobManager, endpoint, legacyRunEnabled);
-            registerApiMethod(svr, "POST", jobManager, endpoint, legacyRunEnabled);
-        } else {
-            registerApiMethod(svr, endpoint.method, jobManager, endpoint, legacyRunEnabled);
+        if (endpoint.methods.empty()) {
+            throw std::logic_error("API endpoint has no methods");
+        }
+        for (const auto& method : endpoint.methods) {
+            registerApiMethod(svr, method, jobManager, endpoint, legacyRunEnabled);
         }
     }
 }

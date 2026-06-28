@@ -41,6 +41,7 @@ struct ApiEndpointMetadata
     ApiOperation operation = ApiOperation::Ping;
     ApiRequestShape requestShape = ApiRequestShape::None;
     std::string method;
+    std::vector<std::string> methods;
     std::string path;
     std::string description;
     std::string category;

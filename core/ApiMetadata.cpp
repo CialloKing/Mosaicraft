@@ -8,6 +8,12 @@ namespace mosaicraft
 namespace
 {
 
+std::vector<std::string> endpointMethods(const std::string& method)
+{
+    if (method == "GET|POST") return {"GET", "POST"};
+    return {method};
+}
+
 ApiEndpointMetadata endpoint(const std::string& method,
                              const std::string& path,
                              const std::string& description,
@@ -22,6 +28,7 @@ ApiEndpointMetadata endpoint(const std::string& method,
     info.operation = operation;
     info.requestShape = requestShape;
     info.method = method;
+    info.methods = endpointMethods(method);
     info.path = path;
     info.description = description;
     info.category = category;

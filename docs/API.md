@@ -20,6 +20,7 @@ status, and a compact feature list.
 Returns the structured API list. Each entry contains:
 
 - `method`: HTTP method or method set.
+- `methods`: machine-readable HTTP method list.
 - `path`: endpoint path.
 - `operation`: stable core API operation name.
 - `requestShape`: how the endpoint maps HTTP data into the core request

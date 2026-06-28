@@ -251,9 +251,15 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     REQUIRE(mosaicJob != endpoints.end());
     CHECK(mosaicJob->operation == ApiOperation::SubmitMosaicJob);
     CHECK(mosaicJob->requestShape == ApiRequestShape::Body);
+    CHECK(mosaicJob->methods == std::vector<std::string>{"POST"});
     CHECK(mosaicJob->category == "jobs");
     CHECK(std::find(mosaicJob->requestFields.begin(), mosaicJob->requestFields.end(),
         "inputPath") != mosaicJob->requestFields.end());
+
+    auto dbStats = findEndpoint("/api/db/stats");
+    REQUIRE(dbStats != endpoints.end());
+    CHECK(dbStats->method == "GET|POST");
+    CHECK(dbStats->methods == std::vector<std::string>{"GET", "POST"});
 
     auto legacyRun = findEndpoint("/api/run");
     REQUIRE(legacyRun != endpoints.end());
@@ -293,6 +299,8 @@ TEST_CASE("API JSON serialization is shared")
         [](const nlohmann::json& endpoint) { return endpoint["path"] == "/api/run"; });
     REQUIRE(legacy != endpointsJson.end());
     CHECK((*legacy)["operation"].get<std::string>() == "legacyRunDisabled");
+    CHECK((*legacy)["methods"].size() == 1);
+    CHECK((*legacy)["methods"][0].get<std::string>() == "POST");
     CHECK((*legacy)["requestShape"].get<std::string>() == "legacyCommand");
     CHECK((*legacy)["legacy"].get<bool>());
     CHECK_FALSE((*legacy)["enabled"].get<bool>());
@@ -577,6 +585,7 @@ TEST_CASE("API endpoint metadata carries dispatch operations")
     for (const auto& endpoint : apiEndpointMetadata(false)) {
         CHECK(std::string(apiOperationName(endpoint.operation)) != "unknown");
         CHECK(std::string(apiRequestShapeName(endpoint.requestShape)) != "unknown");
+        CHECK_FALSE(endpoint.methods.empty());
         auto keys = apiQueryKeys(endpoint.operation);
         if (endpoint.path == "/api/db/usage") {
             CHECK(endpoint.requestShape == ApiRequestShape::Query);

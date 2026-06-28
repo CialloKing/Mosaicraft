@@ -194,6 +194,7 @@ nlohmann::json apiEndpointToJson(const ApiEndpointMetadata& endpoint)
         {"operation", apiOperationName(endpoint.operation)},
         {"requestShape", apiRequestShapeName(endpoint.requestShape)},
         {"method", endpoint.method},
+        {"methods", endpoint.methods},
         {"path", endpoint.path},
         {"description", endpoint.description},
         {"category", endpoint.category},
