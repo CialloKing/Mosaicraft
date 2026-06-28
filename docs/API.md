@@ -30,7 +30,11 @@ Returns the structured API list. Each entry contains:
 - `description`: short endpoint description.
 - `category`: functional group, such as `jobs`, `database`, or `inspect`.
 - `requestFields`: common request fields accepted by the endpoint.
+- `requiredFields`: fields that callers must provide for the operation to
+  succeed. Fields omitted from this list have core defaults or are optional.
 - `queryKeys`: machine-readable query string keys accepted by the endpoint.
+- `sideEffects`: whether the endpoint can modify files, jobs, or databases.
+- `longRunning`: whether callers should prefer asynchronous handling or polling.
 - `legacy`: whether this endpoint is only for compatibility.
 - `enabled`: whether the endpoint is currently available.
 

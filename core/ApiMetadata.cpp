@@ -1,5 +1,6 @@
 #include "ApiMetadata.h"
 
+#include <algorithm>
 #include <initializer_list>
 #include <set>
 
@@ -61,6 +62,9 @@ ApiEndpointMetadata endpoint(const std::string& method,
                              ApiOperation operation,
                              ApiRequestShape requestShape,
                              std::initializer_list<const char*> requestFields = {},
+                             std::initializer_list<const char*> requiredFields = {},
+                             bool sideEffects = false,
+                             bool longRunning = false,
                              bool legacy = false,
                              bool enabled = true)
 {
@@ -75,9 +79,14 @@ ApiEndpointMetadata endpoint(const std::string& method,
     info.category = category;
     info.legacy = legacy;
     info.enabled = enabled;
+    info.sideEffects = sideEffects;
+    info.longRunning = longRunning;
     info.queryKeys = endpointQueryKeys(operation);
     for (const char* field : requestFields) {
         info.requestFields.emplace_back(field);
+    }
+    for (const char* field : requiredFields) {
+        info.requiredFields.emplace_back(field);
     }
     return info;
 }
@@ -133,21 +142,25 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled)
             ApiOperation::Ping, ApiRequestShape::None),
         endpoint("POST", "/api/mosaic", "run mosaic synchronously", "mosaic",
             ApiOperation::Mosaic, ApiRequestShape::Body,
-            {"inputPath", "dbPath", "outputPath", "format", "quality", "writeMode"}),
+            {"inputPath", "dbPath", "outputPath", "format", "quality", "writeMode"},
+            {"inputPath"}, true, true),
         endpoint("POST", "/api/jobs/mosaic", "start mosaic job", "jobs",
             ApiOperation::SubmitMosaicJob, ApiRequestShape::Body,
-            {"inputPath", "dbPath", "outputPath", "format", "quality", "writeMode"}),
+            {"inputPath", "dbPath", "outputPath", "format", "quality", "writeMode"},
+            {"inputPath"}, true, true),
         endpoint("POST", "/api/jobs/build", "start library build job", "jobs",
             ApiOperation::SubmitBuildJob, ApiRequestShape::Body,
-            {"inputDir", "outputDir", "dbPath", "threads", "recursive", "forceMode"}),
+            {"inputDir", "outputDir", "dbPath", "threads", "recursive", "forceMode"},
+            {"inputDir"}, true, true),
         endpoint("GET", "/api/jobs", "list jobs", "jobs",
             ApiOperation::ListJobs, ApiRequestShape::None),
         endpoint("DELETE", "/api/jobs", "clear finished jobs", "jobs",
-            ApiOperation::ClearFinishedJobs, ApiRequestShape::None),
+            ApiOperation::ClearFinishedJobs, ApiRequestShape::None,
+            {}, {}, true),
         endpoint("GET", "/api/jobs/{id}", "get job status", "jobs",
-            ApiOperation::GetJob, ApiRequestShape::JobId, {"id"}),
+            ApiOperation::GetJob, ApiRequestShape::JobId, {"id"}, {"id"}),
         endpoint("DELETE", "/api/jobs/{id}", "cancel queued job", "jobs",
-            ApiOperation::CancelJob, ApiRequestShape::JobId, {"id"}),
+            ApiOperation::CancelJob, ApiRequestShape::JobId, {"id"}, {"id"}, true),
         endpoint("GET|POST", "/api/db/stats", "database statistics", "database",
             ApiOperation::DatabaseStats, ApiRequestShape::Query, {"dbPath"}),
         endpoint("GET|POST", "/api/db/health", "database health report", "database",
@@ -157,16 +170,16 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled)
             {"dbPath", "limit", "showUnused"}),
         endpoint("POST", "/api/db/usage/export", "export used images", "database",
             ApiOperation::DatabaseUsageExport, ApiRequestShape::Query,
-            {"dbPath", "outputDir", "confirm"}),
+            {"dbPath", "outputDir", "confirm"}, {"outputDir", "confirm"}, true),
         endpoint("GET|POST", "/api/db/purge", "preview or purge orphan records", "database",
             ApiOperation::DatabasePurge, ApiRequestShape::Query,
-            {"dbPath", "dryRun", "confirm"}),
+            {"dbPath", "dryRun", "confirm"}, {}, true),
         endpoint("GET|POST", "/api/inspect", "inspect a source image", "inspect",
             ApiOperation::Inspect, ApiRequestShape::Query,
-            {"imagePath", "dbPath"}),
+            {"imagePath", "dbPath"}, {"imagePath"}),
         endpoint("POST", "/api/run", "legacy command compatibility endpoint", "legacy",
             ApiOperation::LegacyRunDisabled, ApiRequestShape::LegacyCommand,
-            {"command"}, true, legacyRunEnabled)
+            {"command"}, {"command"}, true, true, true, legacyRunEnabled)
     };
 }
 
@@ -212,6 +225,12 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
         }
         if (endpoint.requestShape != ApiRequestShape::Query && !endpoint.queryKeys.empty()) {
             errors.push_back("non-query endpoint has queryKeys: " + operationName);
+        }
+        for (const auto& field : endpoint.requiredFields) {
+            if (std::find(endpoint.requestFields.begin(), endpoint.requestFields.end(), field) ==
+                endpoint.requestFields.end()) {
+                errors.push_back("required field is not listed in requestFields: " + operationName + " " + field);
+            }
         }
 
         for (const auto& method : endpoint.methods) {
