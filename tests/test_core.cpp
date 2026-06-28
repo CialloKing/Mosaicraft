@@ -8,6 +8,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
 
+#include "../core/ApiHandlers.h"
 #include "../core/ApiJson.h"
 #include "../core/ApiMetadata.h"
 #include "../core/ApiRequestParser.h"
@@ -441,6 +442,73 @@ TEST_CASE("API request parser merges query and JSON body")
         error));
     CHECK(inspect.imagePath == "body.jpg");
     CHECK(inspect.dbPath == "query.db");
+}
+
+TEST_CASE("API handlers expose structured jobs without HTTP")
+{
+    JobManager manager(false);
+
+    auto badMosaic = apiSubmitMosaicJob(R"({"writeMode":"invalid"})", manager);
+    CHECK(badMosaic.status == 400);
+    CHECK_FALSE(badMosaic.body["ok"].get<bool>());
+    CHECK(badMosaic.body["message"].get<std::string>() == "writeMode must be auto, stream, or batch");
+
+    auto submitted = apiSubmitBuildJob(
+        R"({"inputDir":"__unused_input_for_api_handler_test__","outputDir":"__unused_output_for_api_handler_test__"})",
+        manager);
+    CHECK(submitted.status == 202);
+    CHECK(submitted.body["ok"].get<bool>());
+    std::string jobId = submitted.body["job"]["id"].get<std::string>();
+
+    auto fetched = apiGetJob(jobId, manager);
+    CHECK(fetched.status == 200);
+    CHECK(fetched.body["job"]["type"].get<std::string>() == "build");
+
+    auto listed = apiListJobs(manager);
+    CHECK(listed.status == 200);
+    CHECK(listed.body["jobs"].is_array());
+    CHECK(listed.body["jobs"].size() == 1);
+
+    auto canceled = apiCancelJob(jobId, manager);
+    CHECK(canceled.status == 200);
+    CHECK(canceled.body["job"]["state"].get<std::string>() == "canceled");
+
+    auto missing = apiGetJob("missing", manager);
+    CHECK(missing.status == 404);
+    CHECK_FALSE(missing.body["ok"].get<bool>());
+
+    auto cleared = apiClearFinishedJobs(manager);
+    CHECK(cleared.status == 200);
+    CHECK(cleared.body["removed"].get<int>() == 1);
+}
+
+TEST_CASE("API handlers centralize database and inspect status mapping")
+{
+    auto badUsage = apiDatabaseUsage(
+        {{"db", "__api_handler_status_test__.db"}},
+        R"({"limit":"bad"})");
+    CHECK(badUsage.status == 400);
+    CHECK_FALSE(badUsage.body["ok"].get<bool>());
+    CHECK(badUsage.body["message"].get<std::string>() == "limit must be a number");
+
+    auto missingExportConfirm = apiDatabaseUsageExport(
+        {{"db", "__api_handler_status_test__.db"}, {"output", "__unused_export__"}},
+        "");
+    CHECK(missingExportConfirm.status == 400);
+    CHECK_FALSE(missingExportConfirm.body["ok"].get<bool>());
+    CHECK(missingExportConfirm.body["export"]["outputDir"].get<std::string>() == "__unused_export__");
+
+    auto badPurge = apiDatabasePurge(
+        {{"db", "__api_handler_status_test__.db"}},
+        R"({"dryRun":"no"})");
+    CHECK(badPurge.status == 400);
+    CHECK_FALSE(badPurge.body["ok"].get<bool>());
+    CHECK(badPurge.body["message"].get<std::string>() == "dryRun must be a boolean");
+
+    auto badInspect = apiInspect({{"input", ""}}, R"({"imagePath":123})");
+    CHECK(badInspect.status == 400);
+    CHECK_FALSE(badInspect.body["ok"].get<bool>());
+    CHECK(badInspect.body["message"].get<std::string>() == "imagePath must be a string");
 }
 
 TEST_CASE("Legacy run command validation is shared")

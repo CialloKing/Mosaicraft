@@ -1,14 +1,11 @@
 // Mosaicraft Web UI local HTTP server.
 // Serves the Web UI and structured API while keeping legacy command compatibility.
 #include "core/httplib.h"
+#include "core/ApiHandlers.h"
 #include "core/ApiJson.h"
-#include "core/ApiRequestParser.h"
-#include "core/DatabaseService.h"
 #include "core/JobManager.h"
 #include "core/json.hpp"
-#include "core/InspectService.h"
 #include "core/LegacyRun.h"
-#include "core/MosaicService.h"
 #include <algorithm>
 #include <chrono>
 #include <cctype>
@@ -46,14 +43,15 @@ static bool envFlagEnabled(const char* name)
     return text == "1" || text == "true" || text == "yes" || text == "on";
 }
 
-static void setJsonResult(httplib::Response& res, const mosaicraft::ServiceResult& result)
-{
-    res.set_content(mosaicraft::serviceResultToJson(result).dump(), "application/json; charset=utf-8");
-}
-
 static void setJsonBody(httplib::Response& res, const json& body)
 {
     res.set_content(body.dump(), "application/json; charset=utf-8");
+}
+
+static void sendApiResponse(httplib::Response& res, const mosaicraft::ApiResponse& response)
+{
+    res.status = response.status;
+    setJsonBody(res, response.body);
 }
 
 static mosaicraft::ApiQueryParams queryParams(const httplib::Request& req,
@@ -64,60 +62,6 @@ static mosaicraft::ApiQueryParams queryParams(const httplib::Request& req,
         if (req.has_param(key)) query[key] = req.get_param_value(key);
     }
     return query;
-}
-
-static bool buildMosaicRequest(const std::string& body,
-                               mosaicraft::MosaicRequest& request,
-                               std::string& error)
-{
-    return mosaicraft::parseMosaicRequestJson(body, request, error);
-}
-
-static bool buildBuildRequest(const std::string& body,
-                              mosaicraft::BuildRequest& request,
-                              std::string& error)
-{
-    return mosaicraft::parseBuildRequestJson(body, request, error);
-}
-
-static bool buildDatabaseRequest(const httplib::Request& req,
-                                 mosaicraft::DatabaseRequest& request,
-                                 std::string& error)
-{
-    return mosaicraft::parseDatabaseRequestApi(
-        queryParams(req, {"db"}), req.body, request, error);
-}
-
-static bool buildDatabaseUsageRequest(const httplib::Request& req,
-                                      mosaicraft::DatabaseUsageRequest& request,
-                                      std::string& error)
-{
-    return mosaicraft::parseDatabaseUsageRequestApi(
-        queryParams(req, {"db", "limit", "unused"}), req.body, request, error);
-}
-
-static bool buildDatabaseUsageExportRequest(const httplib::Request& req,
-                                            mosaicraft::DatabaseUsageExportRequest& request,
-                                            std::string& error)
-{
-    return mosaicraft::parseDatabaseUsageExportRequestApi(
-        queryParams(req, {"db", "output", "confirm"}), req.body, request, error);
-}
-
-static bool buildDatabasePurgeRequest(const httplib::Request& req,
-                                      mosaicraft::DatabasePurgeRequest& request,
-                                      std::string& error)
-{
-    return mosaicraft::parseDatabasePurgeRequestApi(
-        queryParams(req, {"db", "dryRun", "confirm"}), req.body, request, error);
-}
-
-static bool buildInspectRequest(const httplib::Request& req,
-                                mosaicraft::InspectRequest& request,
-                                std::string& error)
-{
-    return mosaicraft::parseInspectRequestApi(
-        queryParams(req, {"input", "db"}), req.body, request, error);
 }
 
 } // namespace
@@ -260,153 +204,41 @@ int main(int argc, char* argv[])
     });
 
     svr.Post("/api/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
-        mosaicraft::MosaicRequest request;
-        std::string error;
-        if (!buildMosaicRequest(req.body, request, error)) {
-            res.status = 400;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
-            return;
-        }
-
-        try {
-            std::string jobId = jobManager.submitMosaic(request);
-            mosaicraft::JobSnapshot snapshot;
-            if (!jobManager.waitJob(jobId, snapshot)) {
-                res.status = 500;
-                setJsonResult(res, mosaicraft::ServiceResult::failure(1, "job not found"));
-                return;
-            }
-            if (!snapshot.result.ok) res.status = 500;
-            setJsonResult(res, snapshot.result);
-        } catch (const std::exception& e) {
-            std::cerr << "[ERROR] Exception in /api/mosaic: " << e.what() << std::endl;
-            res.status = 500;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(1, e.what()));
-        } catch (...) {
-            std::cerr << "[ERROR] Unknown exception in /api/mosaic" << std::endl;
-            res.status = 500;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(1, "internal error"));
-        }
+        sendApiResponse(res, mosaicraft::apiMosaic(req.body, jobManager));
     });
 
     svr.Post("/api/jobs/mosaic", [&](const httplib::Request& req, httplib::Response& res) {
-        mosaicraft::MosaicRequest request;
-        std::string error;
-        if (!buildMosaicRequest(req.body, request, error)) {
-            res.status = 400;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
-            return;
-        }
-
-        try {
-            std::string jobId = jobManager.submitMosaic(request);
-            mosaicraft::JobSnapshot snapshot;
-            jobManager.getJob(jobId, snapshot);
-            res.status = 202;
-            setJsonBody(res, mosaicraft::apiJobJson(snapshot));
-        } catch (const std::exception& e) {
-            res.status = 500;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(1, e.what()));
-        } catch (...) {
-            res.status = 500;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(1, "internal error"));
-        }
+        sendApiResponse(res, mosaicraft::apiSubmitMosaicJob(req.body, jobManager));
     });
 
     svr.Post("/api/jobs/build", [&](const httplib::Request& req, httplib::Response& res) {
-        mosaicraft::BuildRequest request;
-        std::string error;
-        if (!buildBuildRequest(req.body, request, error)) {
-            res.status = 400;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
-            return;
-        }
-
-        try {
-            std::string jobId = jobManager.submitBuild(request);
-            mosaicraft::JobSnapshot snapshot;
-            jobManager.getJob(jobId, snapshot);
-            res.status = 202;
-            setJsonBody(res, mosaicraft::apiJobJson(snapshot));
-        } catch (const std::exception& e) {
-            res.status = 500;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(1, e.what()));
-        } catch (...) {
-            res.status = 500;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(1, "internal error"));
-        }
+        sendApiResponse(res, mosaicraft::apiSubmitBuildJob(req.body, jobManager));
     });
 
     svr.Get("/api/jobs", [&](const httplib::Request&, httplib::Response& res) {
-        setJsonBody(res, mosaicraft::apiJobsJson(jobManager.listJobs()));
+        sendApiResponse(res, mosaicraft::apiListJobs(jobManager));
     });
 
     svr.Delete("/api/jobs", [&](const httplib::Request&, httplib::Response& res) {
-        int removed = jobManager.clearFinishedJobs();
-        setJsonBody(res, mosaicraft::apiRemovedJobsJson(removed));
+        sendApiResponse(res, mosaicraft::apiClearFinishedJobs(jobManager));
     });
 
     svr.Get(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
-        mosaicraft::JobSnapshot snapshot;
         std::string jobId = req.matches.size() > 1 ? req.matches[1].str() : "";
-        if (!jobManager.getJob(jobId, snapshot)) {
-            res.status = 404;
-            setJsonBody(res, mosaicraft::apiErrorJson("job not found"));
-            return;
-        }
-        setJsonBody(res, mosaicraft::apiJobJson(snapshot));
+        sendApiResponse(res, mosaicraft::apiGetJob(jobId, jobManager));
     });
 
     svr.Delete(R"(/api/jobs/([A-Za-z0-9_-]+))", [&](const httplib::Request& req, httplib::Response& res) {
-        mosaicraft::JobSnapshot snapshot;
         std::string jobId = req.matches.size() > 1 ? req.matches[1].str() : "";
-        if (jobManager.cancelQueuedJob(jobId, snapshot)) {
-            setJsonBody(res, mosaicraft::apiJobJson(snapshot));
-            return;
-        }
-        if (snapshot.id.empty()) {
-            res.status = 404;
-            setJsonBody(res, mosaicraft::apiErrorJson("job not found"));
-            return;
-        }
-        res.status = 409;
-        setJsonBody(res, mosaicraft::apiJobErrorJson("only queued jobs can be canceled", snapshot));
+        sendApiResponse(res, mosaicraft::apiCancelJob(jobId, jobManager));
     });
 
     auto handleDbStats = [&](const httplib::Request& req, httplib::Response& res) {
-        mosaicraft::DatabaseRequest request;
-        std::string error;
-        if (!buildDatabaseRequest(req, request, error)) {
-            res.status = 400;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
-            return;
-        }
-        mosaicraft::DatabaseService service;
-        auto result = service.stats(request);
-        if (!result.status.ok) {
-            res.status = 500;
-            setJsonResult(res, result.status);
-            return;
-        }
-        setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "stats", mosaicraft::databaseStatsToJson(result.stats)));
+        sendApiResponse(res, mosaicraft::apiDatabaseStats(queryParams(req, {"db"}), req.body));
     };
 
     auto handleDbHealth = [&](const httplib::Request& req, httplib::Response& res) {
-        mosaicraft::DatabaseRequest request;
-        std::string error;
-        if (!buildDatabaseRequest(req, request, error)) {
-            res.status = 400;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
-            return;
-        }
-        mosaicraft::DatabaseService service;
-        auto result = service.health(request);
-        if (!result.status.ok) {
-            res.status = 500;
-            setJsonResult(res, result.status);
-            return;
-        }
-        setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "health", mosaicraft::databaseHealthToJson(result.health)));
+        sendApiResponse(res, mosaicraft::apiDatabaseHealth(queryParams(req, {"db"}), req.body));
     };
 
     svr.Get("/api/db/stats", handleDbStats);
@@ -415,75 +247,19 @@ int main(int argc, char* argv[])
     svr.Post("/api/db/health", handleDbHealth);
 
     auto handleDbUsage = [&](const httplib::Request& req, httplib::Response& res) {
-        mosaicraft::DatabaseUsageRequest request;
-        std::string error;
-        if (!buildDatabaseUsageRequest(req, request, error)) {
-            res.status = 400;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
-            return;
-        }
-        mosaicraft::DatabaseService service;
-        auto result = service.usage(request);
-        if (!result.status.ok) {
-            res.status = 500;
-            setJsonResult(res, result.status);
-            return;
-        }
-        setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "usage", mosaicraft::databaseUsageToJson(result.usage)));
+        sendApiResponse(res, mosaicraft::apiDatabaseUsage(queryParams(req, {"db", "limit", "unused"}), req.body));
     };
 
     auto handleDbUsageExport = [&](const httplib::Request& req, httplib::Response& res) {
-        mosaicraft::DatabaseUsageExportRequest request;
-        std::string error;
-        if (!buildDatabaseUsageExportRequest(req, request, error)) {
-            res.status = 400;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
-            return;
-        }
-        mosaicraft::DatabaseService service;
-        auto result = service.exportUsage(request);
-        if (!result.status.ok) {
-            res.status = result.status.exitCode == 2 ? 500 : 400;
-            setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "export", mosaicraft::databaseUsageExportToJson(result.exportInfo)));
-            return;
-        }
-        setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "export", mosaicraft::databaseUsageExportToJson(result.exportInfo)));
+        sendApiResponse(res, mosaicraft::apiDatabaseUsageExport(queryParams(req, {"db", "output", "confirm"}), req.body));
     };
 
     auto handleDbPurge = [&](const httplib::Request& req, httplib::Response& res) {
-        mosaicraft::DatabasePurgeRequest request;
-        std::string error;
-        if (!buildDatabasePurgeRequest(req, request, error)) {
-            res.status = 400;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
-            return;
-        }
-        mosaicraft::DatabaseService service;
-        auto result = service.purge(request);
-        if (!result.status.ok) {
-            res.status = result.status.exitCode == 2 ? 500 : 400;
-            setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "purge", mosaicraft::databasePurgeToJson(result.purge)));
-            return;
-        }
-        setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "purge", mosaicraft::databasePurgeToJson(result.purge)));
+        sendApiResponse(res, mosaicraft::apiDatabasePurge(queryParams(req, {"db", "dryRun", "confirm"}), req.body));
     };
 
     auto handleInspect = [&](const httplib::Request& req, httplib::Response& res) {
-        mosaicraft::InspectRequest request;
-        std::string error;
-        if (!buildInspectRequest(req, request, error)) {
-            res.status = 400;
-            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
-            return;
-        }
-        mosaicraft::InspectService service;
-        auto result = service.inspect(request);
-        if (!result.status.ok) {
-            res.status = 400;
-            setJsonResult(res, result.status);
-            return;
-        }
-        setJsonBody(res, mosaicraft::apiPayloadJson(result.status, "inspect", mosaicraft::inspectResultToJson(result)));
+        sendApiResponse(res, mosaicraft::apiInspect(queryParams(req, {"input", "db"}), req.body));
     };
 
     svr.Get("/api/db/usage", handleDbUsage);
