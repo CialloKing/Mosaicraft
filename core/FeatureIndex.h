@@ -133,6 +133,16 @@ public:
 
         m_dim = kDim;
         m_count = count;
+
+        // 校验：索引元素数须与当前 records 一致
+        if (static_cast<int>(m_index->cur_element_count) != count)
+        {
+            delete m_index; m_index = nullptr;
+            delete m_space; m_space = nullptr;
+            m_idToIndex.clear();
+            return false;  // 缓存不同步→触发重建
+        }
+
         return true;
     }
 
