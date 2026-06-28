@@ -3,13 +3,12 @@
 #include <filesystem>
 #include <stdexcept>
 #include <string>
-#include <vector>
 #include <png.h>
 
 namespace mosaicraft {
 
 // 真正流式 PNG 写出器：逐行接收 RGB 数据并立即写入 libpng
-// 不缓存全图，内存仅 ~m_w*3 字节（单行缓冲）
+// 不缓存全图，直接写入调用方提供的单行缓冲
 // 调用方负责 BGR→RGB 转换（在组装行时内联完成，消除独立遍历）
 class PngStreamWriter
 {
@@ -38,7 +37,6 @@ public:
         png_set_filter(m_png, PNG_FILTER_TYPE_BASE, PNG_ALL_FILTERS);
         png_set_IHDR(m_png, m_info, w, h, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
         png_write_info(m_png, m_info);
-        m_rowBuf.resize(m_w * 3);
     }
 
     // 写入一行 RGB 数据（每行 m_w*3 字节，R/G/B 顺序）
@@ -90,7 +88,6 @@ private:
     png_infop m_info = nullptr;
     int m_w, m_h;
     int m_rowsWritten = 0;
-    std::vector<uint8_t> m_rowBuf;  // 保留以备将来使用，目前 writeRow 直接使用调用方缓冲
 };
 
 }
