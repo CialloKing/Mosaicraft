@@ -37,6 +37,18 @@ currently available.
 
 Returns `pong`.
 
+## Errors
+
+Malformed JSON request bodies return HTTP 400 with the standard result shape:
+
+```json
+{
+  "ok": false,
+  "exitCode": 1,
+  "message": "invalid JSON body: ..."
+}
+```
+
 ## Jobs
 
 `POST /api/jobs/mosaic`

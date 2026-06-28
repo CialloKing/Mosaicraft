@@ -9,6 +9,7 @@
 #include "doctest.h"
 
 #include "../core/ApiMetadata.h"
+#include "../core/ApiRequestParser.h"
 #include "../core/FeatureUtils.h"
 #include "../core/JobManager.h"
 #include "../core/Version.h"
@@ -261,6 +262,64 @@ TEST_CASE("API feature metadata is shared")
     const auto features = apiFeatureList();
     CHECK(std::find(features.begin(), features.end(), "mosaic-jobs") != features.end());
     CHECK(std::find(features.begin(), features.end(), "database-maintenance") != features.end());
+}
+
+TEST_CASE("API request parser builds mosaic requests")
+{
+    MosaicRequest request;
+    std::string error;
+
+    CHECK(parseMosaicRequestJson(
+        R"({"inputPath":"in.jpg","dbPath":"db.sqlite","outputPath":"out.png","quality":120,"writeMode":"stream","deepZoom":true,"cpu":true,"outputTile":"90x160"})",
+        request,
+        error));
+
+    CHECK(request.inputPath == "in.jpg");
+    CHECK(request.dbPath == "db.sqlite");
+    CHECK(request.outputPath == "out.png");
+    CHECK(request.config.jpegQuality == 100);
+    CHECK(request.config.writeMode == "stream");
+    CHECK(request.config.deepZoom);
+    CHECK(request.config.tiledOutput);
+    CHECK_FALSE(request.config.useGpu);
+    CHECK(request.config.nativeTileW == 90);
+    CHECK(request.config.nativeTileH == 160);
+}
+
+TEST_CASE("API request parser reports invalid fields")
+{
+    MosaicRequest request;
+    std::string error;
+
+    CHECK_FALSE(parseMosaicRequestJson(R"({"writeMode":"invalid"})", request, error));
+    CHECK(error == "writeMode must be auto, stream, or batch");
+
+    error.clear();
+    BuildRequest build;
+    CHECK_FALSE(parseBuildRequestJson(R"({"threads":"many"})", build, error));
+    CHECK(error == "threads must be a number");
+}
+
+TEST_CASE("API request parser applies database and inspect requests")
+{
+    std::string error;
+
+    DatabaseUsageRequest usage;
+    CHECK(applyDatabaseUsageRequestJson(
+        R"({"dbPath":"library.db","limit":0,"showUnused":true})",
+        usage,
+        error));
+    CHECK(usage.dbPath == "library.db");
+    CHECK(usage.limit == 1);
+    CHECK(usage.showUnused);
+
+    InspectRequest inspect;
+    CHECK(applyInspectRequestJson(
+        R"({"imagePath":"target.jpg","dbPath":"library.db"})",
+        inspect,
+        error));
+    CHECK(inspect.imagePath == "target.jpg");
+    CHECK(inspect.dbPath == "library.db");
 }
 
 TEST_CASE("JobManager can cancel queued jobs and clear finished jobs")

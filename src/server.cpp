@@ -2,6 +2,7 @@
 // 提供命令生成页面 + 结构化 API，兼容旧的 mosaicraft.exe 命令入口
 #include "core/httplib.h"
 #include "core/ApiMetadata.h"
+#include "core/ApiRequestParser.h"
 #include "core/DatabaseService.h"
 #include "core/JobManager.h"
 #include "core/json.hpp"
@@ -261,340 +262,67 @@ static void setJsonBody(httplib::Response& res, const json& body)
     res.set_content(body.dump(), "application/json; charset=utf-8");
 }
 
-static bool parseSize(const std::string& text, int& w, int& h)
-{
-    size_t sep = text.find('x');
-    if (sep == std::string::npos) sep = text.find('X');
-    if (sep == std::string::npos || sep == 0 || sep + 1 >= text.size()) return false;
-    w = std::max(1, std::atoi(text.substr(0, sep).c_str()));
-    h = std::max(1, std::atoi(text.substr(sep + 1).c_str()));
-    return true;
-}
-
-static bool getStringField(const json& body,
-                           std::initializer_list<const char*> keys,
-                           std::string& out,
-                           std::string& error)
-{
-    if (!error.empty()) return false;
-    for (const char* key : keys) {
-        auto it = body.find(key);
-        if (it == body.end() || it->is_null()) continue;
-        if (!it->is_string()) {
-            error = std::string(key) + " must be a string";
-            return false;
-        }
-        out = it->get<std::string>();
-        return true;
-    }
-    return false;
-}
-
-static bool getIntField(const json& body,
-                        std::initializer_list<const char*> keys,
-                        int& out,
-                        std::string& error)
-{
-    if (!error.empty()) return false;
-    for (const char* key : keys) {
-        auto it = body.find(key);
-        if (it == body.end() || it->is_null()) continue;
-        if (!it->is_number()) {
-            error = std::string(key) + " must be a number";
-            return false;
-        }
-        out = static_cast<int>(it->get<double>());
-        return true;
-    }
-    return false;
-}
-
-static bool getDoubleField(const json& body,
-                           std::initializer_list<const char*> keys,
-                           double& out,
-                           std::string& error)
-{
-    if (!error.empty()) return false;
-    for (const char* key : keys) {
-        auto it = body.find(key);
-        if (it == body.end() || it->is_null()) continue;
-        if (!it->is_number()) {
-            error = std::string(key) + " must be a number";
-            return false;
-        }
-        out = it->get<double>();
-        return true;
-    }
-    return false;
-}
-
-static bool getBoolField(const json& body,
-                         std::initializer_list<const char*> keys,
-                         bool& out,
-                         std::string& error)
-{
-    if (!error.empty()) return false;
-    for (const char* key : keys) {
-        auto it = body.find(key);
-        if (it == body.end() || it->is_null()) continue;
-        if (!it->is_boolean()) {
-            error = std::string(key) + " must be a boolean";
-            return false;
-        }
-        out = it->get<bool>();
-        return true;
-    }
-    return false;
-}
-
 static bool buildMosaicRequest(const std::string& body,
                                mosaicraft::MosaicRequest& request,
                                std::string& error)
 {
-    json values;
-    try {
-        values = json::parse(body);
-    } catch (const json::parse_error& e) {
-        error = std::string("invalid JSON body: ") + e.what();
-        return false;
-    }
-    if (!values.is_object()) {
-        error = "JSON body must be an object";
-        return false;
-    }
-
-    std::string text;
-    int intValue = 0;
-    double doubleValue = 0.0;
-    bool boolValue = false;
-
-    if (getStringField(values, {"inputPath", "input"}, text, error))
-        request.inputPath = text;
-    if (getStringField(values, {"dbPath", "db"}, text, error))
-        request.dbPath = text;
-    if (getStringField(values, {"outputPath", "output"}, text, error))
-        request.outputPath = text;
-
-    auto& cfg = request.config;
-    if (getIntField(values, {"tileW"}, intValue, error)) cfg.tileW = std::max(4, intValue);
-    if (getIntField(values, {"tileH"}, intValue, error)) cfg.tileH = std::max(4, intValue);
-    if (getIntField(values, {"outW"}, intValue, error)) cfg.outW = intValue > 0 ? intValue : 0;
-    if (getIntField(values, {"outH"}, intValue, error)) cfg.outH = intValue > 0 ? intValue : 0;
-    if (getIntField(values, {"nativeTileW"}, intValue, error)) cfg.nativeTileW = std::max(1, intValue);
-    if (getIntField(values, {"nativeTileH"}, intValue, error)) cfg.nativeTileH = std::max(1, intValue);
-    if (getIntField(values, {"candidates"}, intValue, error)) cfg.candidates = std::max(10, intValue);
-    if (getIntField(values, {"topNrandom", "topNRandom"}, intValue, error))
-        cfg.topNrandom = std::max(1, intValue);
-    if (getIntField(values, {"neighborWindow"}, intValue, error)) cfg.neighborWindow = intValue;
-    if (getIntField(values, {"upscale"}, intValue, error)) cfg.upscale = std::max(1, intValue);
-    if (getIntField(values, {"quality", "jpegQuality"}, intValue, error))
-        cfg.jpegQuality = std::max(1, std::min(100, intValue));
-    if (getIntField(values, {"pngLevel", "pngCompressionLevel"}, intValue, error))
-        cfg.pngCompressionLevel = std::max(1, std::min(9, intValue));
-
-    if (getDoubleField(values, {"lRange"}, doubleValue, error)) cfg.lRange = doubleValue;
-    if (getDoubleField(values, {"usePenalty", "penalty"}, doubleValue, error))
-        cfg.usePenalty = doubleValue;
-    if (getDoubleField(values, {"labWeight"}, doubleValue, error)) cfg.labWeight = doubleValue;
-    if (getDoubleField(values, {"gridWeight"}, doubleValue, error)) cfg.gridWeight = doubleValue;
-    if (getDoubleField(values, {"tinyWeight"}, doubleValue, error)) cfg.tinyWeight = doubleValue;
-    if (getDoubleField(values, {"edgeWeight"}, doubleValue, error)) cfg.edgeWeight = doubleValue;
-    if (getDoubleField(values, {"lbpWeight"}, doubleValue, error)) cfg.lbpWeight = doubleValue;
-    if (getDoubleField(values, {"neighborPenalty"}, doubleValue, error)) cfg.neighborPenalty = doubleValue;
-    if (getDoubleField(values, {"colorStrength"}, doubleValue, error))
-        cfg.colorStrength = std::max(0.0, std::min(0.5, doubleValue));
-
-    if (getStringField(values, {"format", "outputFormat"}, text, error)) {
-        if (!text.empty()) {
-            cfg.outputFormat = text;
-            cfg.formatExplicit = true;
-        }
-    }
-    if (getStringField(values, {"writeMode"}, text, error)) {
-        if (text == "auto" || text == "stream" || text == "batch") {
-            cfg.writeMode = text;
-        } else {
-            error = "writeMode must be auto, stream, or batch";
-            return false;
-        }
-    }
-    if (getStringField(values, {"outputTile"}, text, error)) {
-        if (!parseSize(text, cfg.nativeTileW, cfg.nativeTileH)) {
-            error = "outputTile must use WxH format";
-            return false;
-        }
-    }
-
-    if (getBoolField(values, {"useGpu"}, boolValue, error)) cfg.useGpu = boolValue;
-    if (getBoolField(values, {"cpu"}, boolValue, error) && boolValue) cfg.useGpu = false;
-    if (getBoolField(values, {"tiled", "tiledOutput"}, boolValue, error))
-        cfg.tiledOutput = boolValue;
-    if (getBoolField(values, {"deepZoom", "deepzoom"}, boolValue, error)) {
-        cfg.deepZoom = boolValue;
-        if (boolValue) cfg.tiledOutput = true;
-    }
-    if (getBoolField(values, {"colorAdjust"}, boolValue, error)) cfg.colorAdjust = boolValue;
-    if (getBoolField(values, {"adaptiveWeights"}, boolValue, error)) cfg.adaptiveWeights = boolValue;
-    if (getBoolField(values, {"analyze"}, boolValue, error)) cfg.analyze = boolValue;
-    if (getBoolField(values, {"benchmark"}, boolValue, error)) cfg.benchmark = boolValue;
-
-    if (!error.empty()) return false;
-    return true;
+    return mosaicraft::parseMosaicRequestJson(body, request, error);
 }
 
 static bool buildBuildRequest(const std::string& body,
                               mosaicraft::BuildRequest& request,
                               std::string& error)
 {
-    json values;
-    try {
-        values = json::parse(body);
-    } catch (const json::parse_error& e) {
-        error = std::string("invalid JSON body: ") + e.what();
-        return false;
-    }
-    if (!values.is_object()) {
-        error = "JSON body must be an object";
-        return false;
-    }
-
-    std::string text;
-    int intValue = 0;
-    bool boolValue = false;
-
-    if (getStringField(values, {"inputDir", "input"}, text, error))
-        request.inputDir = text;
-    if (getStringField(values, {"outputDir", "output"}, text, error))
-        request.outputDir = text;
-    if (getStringField(values, {"dbPath", "db"}, text, error))
-        request.dbPath = text;
-    if (getStringField(values, {"normalizeSize"}, text, error)) {
-        if (!parseSize(text, request.normalizeWidth, request.normalizeHeight)) {
-            error = "normalizeSize must use WxH format";
-            return false;
-        }
-    }
-    if (getIntField(values, {"threads"}, intValue, error))
-        request.threads = std::max(0, intValue);
-    if (getIntField(values, {"normalizeWidth"}, intValue, error))
-        request.normalizeWidth = std::max(1, intValue);
-    if (getIntField(values, {"normalizeHeight"}, intValue, error))
-        request.normalizeHeight = std::max(1, intValue);
-
-    if (getBoolField(values, {"appendMode", "append"}, boolValue, error))
-        request.appendMode = boolValue;
-    if (getBoolField(values, {"normalizeOnly"}, boolValue, error))
-        request.normalizeOnly = boolValue;
-    if (getBoolField(values, {"forceMode", "force"}, boolValue, error))
-        request.forceMode = boolValue;
-    if (getBoolField(values, {"recursive"}, boolValue, error))
-        request.recursive = boolValue;
-
-    request.allowPrompt = false;
-    if (!error.empty()) return false;
-    return true;
+    return mosaicraft::parseBuildRequestJson(body, request, error);
 }
 
-static mosaicraft::DatabaseRequest buildDatabaseRequest(const httplib::Request& req)
+static bool buildDatabaseRequest(const httplib::Request& req,
+                                 mosaicraft::DatabaseRequest& request,
+                                 std::string& error)
 {
-    mosaicraft::DatabaseRequest request;
     if (req.has_param("db")) {
         request.dbPath = req.get_param_value("db");
     }
-    if (!req.body.empty()) {
-        try {
-            json body = json::parse(req.body);
-            std::string text;
-            std::string error;
-            if (body.is_object() && getStringField(body, {"dbPath", "db"}, text, error)) {
-                request.dbPath = text;
-            }
-        } catch (...) {
-        }
-    }
-    return request;
+    return mosaicraft::applyDatabaseRequestJson(req.body, request, error);
 }
 
-static mosaicraft::DatabaseUsageRequest buildDatabaseUsageRequest(const httplib::Request& req)
+static bool buildDatabaseUsageRequest(const httplib::Request& req,
+                                      mosaicraft::DatabaseUsageRequest& request,
+                                      std::string& error)
 {
-    mosaicraft::DatabaseUsageRequest request;
     if (req.has_param("db")) request.dbPath = req.get_param_value("db");
     if (req.has_param("limit")) request.limit = std::max(1, std::atoi(req.get_param_value("limit").c_str()));
     if (req.has_param("unused")) request.showUnused = req.get_param_value("unused") == "1";
-    if (!req.body.empty()) {
-        try {
-            json body = json::parse(req.body);
-            std::string text;
-            std::string error;
-            int intValue = 0;
-            bool boolValue = false;
-            if (body.is_object() && getStringField(body, {"dbPath", "db"}, text, error)) request.dbPath = text;
-            if (body.is_object() && getIntField(body, {"limit"}, intValue, error)) request.limit = std::max(1, intValue);
-            if (body.is_object() && getBoolField(body, {"showUnused", "unused"}, boolValue, error)) request.showUnused = boolValue;
-        } catch (...) {
-        }
-    }
-    return request;
+    return mosaicraft::applyDatabaseUsageRequestJson(req.body, request, error);
 }
 
-static mosaicraft::DatabaseUsageExportRequest buildDatabaseUsageExportRequest(const httplib::Request& req)
+static bool buildDatabaseUsageExportRequest(const httplib::Request& req,
+                                            mosaicraft::DatabaseUsageExportRequest& request,
+                                            std::string& error)
 {
-    mosaicraft::DatabaseUsageExportRequest request;
     if (req.has_param("db")) request.dbPath = req.get_param_value("db");
     if (req.has_param("output")) request.outputDir = req.get_param_value("output");
     if (req.has_param("confirm")) request.confirm = req.get_param_value("confirm") == "1";
-    if (!req.body.empty()) {
-        try {
-            json body = json::parse(req.body);
-            std::string text;
-            std::string error;
-            bool boolValue = false;
-            if (body.is_object() && getStringField(body, {"dbPath", "db"}, text, error)) request.dbPath = text;
-            if (body.is_object() && getStringField(body, {"outputDir", "output"}, text, error)) request.outputDir = text;
-            if (body.is_object() && getBoolField(body, {"confirm"}, boolValue, error)) request.confirm = boolValue;
-        } catch (...) {
-        }
-    }
-    return request;
+    return mosaicraft::applyDatabaseUsageExportRequestJson(req.body, request, error);
 }
 
-static mosaicraft::DatabasePurgeRequest buildDatabasePurgeRequest(const httplib::Request& req)
+static bool buildDatabasePurgeRequest(const httplib::Request& req,
+                                      mosaicraft::DatabasePurgeRequest& request,
+                                      std::string& error)
 {
-    mosaicraft::DatabasePurgeRequest request;
     if (req.has_param("db")) request.dbPath = req.get_param_value("db");
     if (req.has_param("dryRun")) request.dryRun = req.get_param_value("dryRun") != "0";
     if (req.has_param("confirm")) request.confirm = req.get_param_value("confirm") == "1";
-    if (!req.body.empty()) {
-        try {
-            json body = json::parse(req.body);
-            std::string text;
-            std::string error;
-            bool boolValue = false;
-            if (body.is_object() && getStringField(body, {"dbPath", "db"}, text, error)) request.dbPath = text;
-            if (body.is_object() && getBoolField(body, {"dryRun"}, boolValue, error)) request.dryRun = boolValue;
-            if (body.is_object() && getBoolField(body, {"confirm"}, boolValue, error)) request.confirm = boolValue;
-        } catch (...) {
-        }
-    }
-    return request;
+    return mosaicraft::applyDatabasePurgeRequestJson(req.body, request, error);
 }
 
-static mosaicraft::InspectRequest buildInspectRequest(const httplib::Request& req)
+static bool buildInspectRequest(const httplib::Request& req,
+                                mosaicraft::InspectRequest& request,
+                                std::string& error)
 {
-    mosaicraft::InspectRequest request;
     if (req.has_param("input")) request.imagePath = req.get_param_value("input");
     if (req.has_param("db")) request.dbPath = req.get_param_value("db");
-    if (!req.body.empty()) {
-        try {
-            json body = json::parse(req.body);
-            std::string text;
-            std::string error;
-            if (body.is_object() && getStringField(body, {"imagePath", "input"}, text, error)) request.imagePath = text;
-            if (body.is_object() && getStringField(body, {"dbPath", "db"}, text, error)) request.dbPath = text;
-        } catch (...) {
-        }
-    }
-    return request;
+    return mosaicraft::applyInspectRequestJson(req.body, request, error);
 }
 
 } // namespace
@@ -855,8 +583,15 @@ int main(int argc, char* argv[])
     });
 
     auto handleDbStats = [&](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::DatabaseRequest request;
+        std::string error;
+        if (!buildDatabaseRequest(req, request, error)) {
+            res.status = 400;
+            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
+            return;
+        }
         mosaicraft::DatabaseService service;
-        auto result = service.stats(buildDatabaseRequest(req));
+        auto result = service.stats(request);
         if (!result.status.ok) {
             res.status = 500;
             setJsonResult(res, result.status);
@@ -866,8 +601,15 @@ int main(int argc, char* argv[])
     };
 
     auto handleDbHealth = [&](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::DatabaseRequest request;
+        std::string error;
+        if (!buildDatabaseRequest(req, request, error)) {
+            res.status = 400;
+            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
+            return;
+        }
         mosaicraft::DatabaseService service;
-        auto result = service.health(buildDatabaseRequest(req));
+        auto result = service.health(request);
         if (!result.status.ok) {
             res.status = 500;
             setJsonResult(res, result.status);
@@ -882,8 +624,15 @@ int main(int argc, char* argv[])
     svr.Post("/api/db/health", handleDbHealth);
 
     auto handleDbUsage = [&](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::DatabaseUsageRequest request;
+        std::string error;
+        if (!buildDatabaseUsageRequest(req, request, error)) {
+            res.status = 400;
+            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
+            return;
+        }
         mosaicraft::DatabaseService service;
-        auto result = service.usage(buildDatabaseUsageRequest(req));
+        auto result = service.usage(request);
         if (!result.status.ok) {
             res.status = 500;
             setJsonResult(res, result.status);
@@ -893,8 +642,15 @@ int main(int argc, char* argv[])
     };
 
     auto handleDbUsageExport = [&](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::DatabaseUsageExportRequest request;
+        std::string error;
+        if (!buildDatabaseUsageExportRequest(req, request, error)) {
+            res.status = 400;
+            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
+            return;
+        }
         mosaicraft::DatabaseService service;
-        auto result = service.exportUsage(buildDatabaseUsageExportRequest(req));
+        auto result = service.exportUsage(request);
         if (!result.status.ok) {
             res.status = result.status.exitCode == 2 ? 500 : 400;
             setJsonBody(res, json{
@@ -909,8 +665,15 @@ int main(int argc, char* argv[])
     };
 
     auto handleDbPurge = [&](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::DatabasePurgeRequest request;
+        std::string error;
+        if (!buildDatabasePurgeRequest(req, request, error)) {
+            res.status = 400;
+            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
+            return;
+        }
         mosaicraft::DatabaseService service;
-        auto result = service.purge(buildDatabasePurgeRequest(req));
+        auto result = service.purge(request);
         if (!result.status.ok) {
             res.status = result.status.exitCode == 2 ? 500 : 400;
             setJsonBody(res, json{
@@ -925,8 +688,15 @@ int main(int argc, char* argv[])
     };
 
     auto handleInspect = [&](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::InspectRequest request;
+        std::string error;
+        if (!buildInspectRequest(req, request, error)) {
+            res.status = 400;
+            setJsonResult(res, mosaicraft::ServiceResult::failure(1, error));
+            return;
+        }
         mosaicraft::InspectService service;
-        auto result = service.inspect(buildInspectRequest(req));
+        auto result = service.inspect(request);
         if (!result.status.ok) {
             res.status = 400;
             setJsonResult(res, result.status);

@@ -94,6 +94,7 @@ endif()  # MOSAICRAFT_CUDA
 # ============================================================
 add_library(mosaicraft_core STATIC
     core/ApiMetadata.cpp
+    core/ApiRequestParser.cpp
     core/ImageNormalizer.cpp
     core/BatchProcessor.cpp
     core/BuildService.cpp
