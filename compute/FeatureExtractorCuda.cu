@@ -132,7 +132,8 @@ __global__ void featureKernel(
 
     if (tx < GRID_CELLS * 3) s_gridLab[tx] = 0.0f;
     if (tx == 0) { s_grayAcc = 0; s_graySqAcc = 0; s_edgeCount = 0; }
-    if (tx < LBP_BINS) s_lbpHist[tx] = 0;
+    // 跨步清零全部256个LBP bin（block可能少于256线程）
+    for (int i = tx; i < LBP_BINS; i += blockDim.x) s_lbpHist[i] = 0;
     __syncthreads();
 
     float localGrayAcc = 0, localGraySq = 0;
@@ -208,7 +209,11 @@ __global__ void featureKernel(
         int outOff = imgIdx * 192;
         for (int c = 0; c < GRID_CELLS; ++c)
         {
-            float cnt = GRID_CW * GRID_CH;
+            int cellCol = c % 8;
+            int cellRow = c / 8;
+            int cw = (cellCol == 7) ? (W - 7 * GRID_CW) : GRID_CW;
+            int ch = (cellRow == 7) ? (H - 7 * GRID_CH) : GRID_CH;
+            float cnt = cw * ch;
             d_grid[outOff + c * 3 + 0] = s_gridLab[c * 3 + 0] / cnt;
             d_grid[outOff + c * 3 + 1] = s_gridLab[c * 3 + 1] / cnt;
             d_grid[outOff + c * 3 + 2] = s_gridLab[c * 3 + 2] / cnt;

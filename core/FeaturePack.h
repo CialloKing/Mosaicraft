@@ -7,12 +7,25 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <string>
 #include <thread>
 #include <vector>
 
 namespace mosaicraft
 {
+
+// Unicode-safe fopen (Windows: UTF-8 → wchar)
+inline FILE* u8fopen(const std::string& path, const char* mode)
+{
+#ifdef _WIN32
+    std::wstring wp = std::filesystem::u8path(path).wstring();
+    std::wstring wm(mode, mode + strlen(mode));
+    return _wfopen(wp.c_str(), wm.c_str());
+#else
+    return fopen(path.c_str(), mode);
+#endif
+}
 
 // ============================================================
 // FeaturePack — 二进制特征缓存 (v2)
@@ -36,8 +49,8 @@ public:
         std::string tinyPath = featDir + "/tiny.bin";
         std::string lbpPath  = featDir + "/lbp.bin";
 
-        s_tinyFile = fopen(tinyPath.c_str(), "wb");
-        s_lbpFile  = fopen(lbpPath.c_str(), "wb");
+        s_tinyFile = u8fopen(tinyPath, "wb");
+        s_lbpFile  = u8fopen(lbpPath, "wb");
         if (!s_tinyFile || !s_lbpFile)
         {
             if (s_tinyFile) { fclose(s_tinyFile); s_tinyFile = nullptr; }
@@ -93,8 +106,8 @@ public:
         {
             std::string tp = featDir + "/tiny.bin";
             std::string lp = featDir + "/lbp.bin";
-            FILE* ft = fopen(tp.c_str(), "rb");
-            FILE* fl = fopen(lp.c_str(), "rb");
+            FILE* ft = u8fopen(tp, "rb");
+            FILE* fl = u8fopen(lp, "rb");
             if (ft && fl) {
                 uint32_t tc = 0, lc = 0;
                 if (fread(&tc,4,1,ft)==1 && fread(&lc,4,1,fl)==1 && tc==lc) {
@@ -137,12 +150,12 @@ public:
                     if (op != oldPos.end()) continue;
                     std::vector<uint8_t> tiny(256, 0);
                     if (!rec->tinyPath.empty()) {
-                        FILE* f = fopen(rec->tinyPath.c_str(), "rb");
+                        FILE* f = u8fopen(rec->tinyPath.c_str(), "rb");
                         if (f) { fread(tiny.data(), 1, 256, f); fclose(f); }
                     }
                     std::vector<float> lbp(256, 0.0f);
                     if (!rec->histPath.empty()) {
-                        FILE* f = fopen(rec->histPath.c_str(), "rb");
+                        FILE* f = u8fopen(rec->histPath.c_str(), "rb");
                         if (f) { fread(lbp.data(), sizeof(float), 256, f); fclose(f); }
                     }
                     allTiny[i] = std::move(tiny);
@@ -180,9 +193,9 @@ public:
         std::string tinyPath = featDir + "/tiny.bin";
         std::string lbpPath  = featDir + "/lbp.bin";
 
-        FILE* ft = fopen(tinyPath.c_str(), "rb");
+        FILE* ft = u8fopen(tinyPath, "rb");
         if (!ft) return false;
-        FILE* fl = fopen(lbpPath.c_str(), "rb");
+        FILE* fl = u8fopen(lbpPath, "rb");
         if (!fl) { fclose(ft); return false; }
         // 大缓冲区加速顺序读取（45K条记录 ~11MB tiny + ~45MB lbp）
         constexpr size_t BIG_BUF = 2 * 1024 * 1024;

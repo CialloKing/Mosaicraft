@@ -6,6 +6,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <opencv2/core.hpp>
+#include "UnicodeIO.h"
 
 namespace mosaicraft
 {
@@ -53,7 +54,7 @@ public:
             }
         }
 
-        cv::Mat img = cv::imread(filePath, cv::IMREAD_COLOR);
+        cv::Mat img = imreadUnicode(filePath, cv::IMREAD_COLOR);
         if (img.empty()) return img;
 
         cv::Mat toCache;

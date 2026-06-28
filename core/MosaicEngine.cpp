@@ -2229,7 +2229,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         if (fmt == "jpg")
             writeParams = {cv::IMWRITE_JPEG_QUALITY, cfg.jpegQuality};
         else if (fmt == "png")
-            writeParams = {cv::IMWRITE_PNG_COMPRESSION, 3};
+            writeParams = {cv::IMWRITE_PNG_COMPRESSION, cfg.pngCompressionLevel};
         else if (fmt == "webp")
             writeParams = {cv::IMWRITE_WEBP_QUALITY, cfg.jpegQuality};
 

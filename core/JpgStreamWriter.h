@@ -36,7 +36,7 @@ public:
         };
         if (setjmp(m_jmpBuf)) {
             fail();
-            return;
+            throw std::runtime_error("JpgStreamWriter: libjpeg initialization failed");
         }
         jpeg_create_compress(&m_cinfo);
         m_created = true;
