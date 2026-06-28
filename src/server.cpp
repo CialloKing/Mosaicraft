@@ -85,7 +85,7 @@ static mosaicraft::ApiRequest apiRequestFromHttp(const httplib::Request& req,
         break;
     case mosaicraft::ApiRequestShape::Query:
         context.body = req.body;
-        context.query = queryParams(req, endpoint.queryKeys);
+        context.query = queryParams(req, mosaicraft::apiAcceptedQueryKeyList(endpoint.operation));
         break;
     case mosaicraft::ApiRequestShape::JobId:
         if (context.id.empty() && req.matches.size() > 1) {

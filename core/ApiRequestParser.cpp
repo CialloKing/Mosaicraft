@@ -151,6 +151,32 @@ std::vector<std::string> keysFor(const FieldAliases& aliases, const std::string&
     return keys;
 }
 
+bool getQueryField(const ApiQueryParams& query,
+                   const FieldAliases& aliases,
+                   const std::string& field,
+                   std::string& out)
+{
+    for (const auto& key : keysFor(aliases, field)) {
+        if (hasQuery(query, key)) {
+            out = getQuery(query, key);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool getQueryBool(const ApiQueryParams& query,
+                  const FieldAliases& aliases,
+                  const std::string& field,
+                  bool defaultForPresence,
+                  bool& out)
+{
+    std::string value;
+    if (!getQueryField(query, aliases, field, value)) return false;
+    out = value.empty() ? defaultForPresence : value != "0";
+    return true;
+}
+
 } // namespace
 
 bool parseMosaicRequestJson(const std::string& body,
@@ -364,7 +390,9 @@ bool parseDatabaseRequestApi(const ApiQueryParams& query,
                              DatabaseRequest& request,
                              std::string& error)
 {
-    if (hasQuery(query, "db")) request.dbPath = getQuery(query, "db");
+    const auto aliases = aliasesFor(ApiOperation::DatabaseStats);
+    std::string text;
+    if (getQueryField(query, aliases, "dbPath", text)) request.dbPath = text;
     return applyDatabaseRequestJson(body, request, error);
 }
 
@@ -373,9 +401,12 @@ bool parseDatabaseUsageRequestApi(const ApiQueryParams& query,
                                   DatabaseUsageRequest& request,
                                   std::string& error)
 {
-    if (hasQuery(query, "db")) request.dbPath = getQuery(query, "db");
-    if (hasQuery(query, "limit")) request.limit = std::max(1, std::atoi(getQuery(query, "limit").c_str()));
-    if (hasQuery(query, "unused")) request.showUnused = getQuery(query, "unused") == "1";
+    const auto aliases = aliasesFor(ApiOperation::DatabaseUsage);
+    std::string text;
+    bool boolValue = false;
+    if (getQueryField(query, aliases, "dbPath", text)) request.dbPath = text;
+    if (getQueryField(query, aliases, "limit", text)) request.limit = std::max(1, std::atoi(text.c_str()));
+    if (getQueryBool(query, aliases, "showUnused", false, boolValue)) request.showUnused = boolValue;
     return applyDatabaseUsageRequestJson(body, request, error);
 }
 
@@ -384,9 +415,12 @@ bool parseDatabaseUsageExportRequestApi(const ApiQueryParams& query,
                                         DatabaseUsageExportRequest& request,
                                         std::string& error)
 {
-    if (hasQuery(query, "db")) request.dbPath = getQuery(query, "db");
-    if (hasQuery(query, "output")) request.outputDir = getQuery(query, "output");
-    if (hasQuery(query, "confirm")) request.confirm = getQuery(query, "confirm") == "1";
+    const auto aliases = aliasesFor(ApiOperation::DatabaseUsageExport);
+    std::string text;
+    bool boolValue = false;
+    if (getQueryField(query, aliases, "dbPath", text)) request.dbPath = text;
+    if (getQueryField(query, aliases, "outputDir", text)) request.outputDir = text;
+    if (getQueryBool(query, aliases, "confirm", false, boolValue)) request.confirm = boolValue;
     return applyDatabaseUsageExportRequestJson(body, request, error);
 }
 
@@ -395,9 +429,12 @@ bool parseDatabasePurgeRequestApi(const ApiQueryParams& query,
                                   DatabasePurgeRequest& request,
                                   std::string& error)
 {
-    if (hasQuery(query, "db")) request.dbPath = getQuery(query, "db");
-    if (hasQuery(query, "dryRun")) request.dryRun = getQuery(query, "dryRun") != "0";
-    if (hasQuery(query, "confirm")) request.confirm = getQuery(query, "confirm") == "1";
+    const auto aliases = aliasesFor(ApiOperation::DatabasePurge);
+    std::string text;
+    bool boolValue = false;
+    if (getQueryField(query, aliases, "dbPath", text)) request.dbPath = text;
+    if (getQueryBool(query, aliases, "dryRun", true, boolValue)) request.dryRun = boolValue;
+    if (getQueryBool(query, aliases, "confirm", false, boolValue)) request.confirm = boolValue;
     return applyDatabasePurgeRequestJson(body, request, error);
 }
 
@@ -406,8 +443,10 @@ bool parseInspectRequestApi(const ApiQueryParams& query,
                             InspectRequest& request,
                             std::string& error)
 {
-    if (hasQuery(query, "input")) request.imagePath = getQuery(query, "input");
-    if (hasQuery(query, "db")) request.dbPath = getQuery(query, "db");
+    const auto aliases = aliasesFor(ApiOperation::Inspect);
+    std::string text;
+    if (getQueryField(query, aliases, "imagePath", text)) request.imagePath = text;
+    if (getQueryField(query, aliases, "dbPath", text)) request.dbPath = text;
     return applyInspectRequestJson(body, request, error);
 }
 

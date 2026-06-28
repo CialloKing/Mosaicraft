@@ -541,6 +541,40 @@ TEST_CASE("API request parser merges query and JSON body")
     CHECK(inspect.dbPath == "query.db");
 }
 
+TEST_CASE("API request parser accepts canonical query keys from metadata")
+{
+    std::string error;
+
+    DatabaseUsageRequest usage;
+    CHECK(parseDatabaseUsageRequestApi(
+        {{"dbPath", "canonical.db"}, {"limit", "2"}, {"showUnused", "1"}},
+        "",
+        usage,
+        error));
+    CHECK(usage.dbPath == "canonical.db");
+    CHECK(usage.limit == 2);
+    CHECK(usage.showUnused);
+
+    DatabaseUsageExportRequest exportRequest;
+    CHECK(parseDatabaseUsageExportRequestApi(
+        {{"dbPath", "export.db"}, {"outputDir", "used"}, {"confirm", "1"}},
+        "",
+        exportRequest,
+        error));
+    CHECK(exportRequest.dbPath == "export.db");
+    CHECK(exportRequest.outputDir == "used");
+    CHECK(exportRequest.confirm);
+
+    InspectRequest inspect;
+    CHECK(parseInspectRequestApi(
+        {{"imagePath", "target.jpg"}, {"dbPath", "library.db"}},
+        "",
+        inspect,
+        error));
+    CHECK(inspect.imagePath == "target.jpg");
+    CHECK(inspect.dbPath == "library.db");
+}
+
 TEST_CASE("API handlers expose discovery and health without HTTP")
 {
     auto info = apiInfo(false, "MosaicraftWebUI");
@@ -694,6 +728,16 @@ TEST_CASE("API operation query keys are centralized")
     CHECK(apiQueryKeys(ApiOperation::Ping).empty());
     CHECK(apiQueryKeyList(ApiOperation::Ping).empty());
     CHECK(apiQueryKeys(ApiOperation::SubmitBuildJob).empty());
+
+    auto acceptedUsageKeys = apiAcceptedQueryKeyList(ApiOperation::DatabaseUsage);
+    CHECK(std::find(acceptedUsageKeys.begin(), acceptedUsageKeys.end(), "db") != acceptedUsageKeys.end());
+    CHECK(std::find(acceptedUsageKeys.begin(), acceptedUsageKeys.end(), "dbPath") != acceptedUsageKeys.end());
+    CHECK(std::find(acceptedUsageKeys.begin(), acceptedUsageKeys.end(), "unused") != acceptedUsageKeys.end());
+    CHECK(std::find(acceptedUsageKeys.begin(), acceptedUsageKeys.end(), "showUnused") != acceptedUsageKeys.end());
+
+    auto acceptedInspectKeys = apiAcceptedQueryKeyList(ApiOperation::Inspect);
+    CHECK(std::find(acceptedInspectKeys.begin(), acceptedInspectKeys.end(), "input") != acceptedInspectKeys.end());
+    CHECK(std::find(acceptedInspectKeys.begin(), acceptedInspectKeys.end(), "imagePath") != acceptedInspectKeys.end());
 }
 
 TEST_CASE("API endpoint metadata carries dispatch operations")

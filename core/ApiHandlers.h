@@ -46,6 +46,7 @@ ApiRequest apiInfoRequest(bool legacyRunEnabled, const char* entryName);
 ApiRequest apiLegacyRunDisabledRequest();
 std::vector<std::string> apiQueryKeyList(ApiOperation operation);
 std::vector<const char*> apiQueryKeys(ApiOperation operation);
+std::vector<std::string> apiAcceptedQueryKeyList(ApiOperation operation);
 
 ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs);
 

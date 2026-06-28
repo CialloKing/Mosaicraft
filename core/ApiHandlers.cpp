@@ -2,6 +2,7 @@
 
 #include "ApiJson.h"
 
+#include <algorithm>
 #include <exception>
 #include <utility>
 
@@ -109,6 +110,29 @@ std::vector<const char*> apiQueryKeys(ApiOperation operation)
         if (endpoint.operation != operation) continue;
         keys.reserve(endpoint.queryKeys.size());
         for (const auto& key : endpoint.queryKeys) keys.push_back(key.c_str());
+        break;
+    }
+    return keys;
+}
+
+std::vector<std::string> apiAcceptedQueryKeyList(ApiOperation operation)
+{
+    static const auto endpoints = apiEndpointMetadata(false);
+    std::vector<std::string> keys;
+    for (const auto& endpoint : endpoints) {
+        if (endpoint.operation != operation) continue;
+        auto addKey = [&](const std::string& key) {
+            if (!key.empty() && std::find(keys.begin(), keys.end(), key) == keys.end()) {
+                keys.push_back(key);
+            }
+        };
+        for (const auto& key : endpoint.queryKeys) addKey(key);
+        if (endpoint.requestShape == ApiRequestShape::Query) {
+            for (const auto& field : endpoint.requestFields) addKey(field);
+            for (const auto& item : endpoint.fieldAliases) {
+                for (const auto& alias : item.second) addKey(alias);
+            }
+        }
         break;
     }
     return keys;
