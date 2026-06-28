@@ -244,12 +244,14 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
 
     auto mosaicJob = findEndpoint("/api/jobs/mosaic");
     REQUIRE(mosaicJob != endpoints.end());
+    CHECK(mosaicJob->operation == ApiOperation::SubmitMosaicJob);
     CHECK(mosaicJob->category == "jobs");
     CHECK(std::find(mosaicJob->requestFields.begin(), mosaicJob->requestFields.end(),
         "inputPath") != mosaicJob->requestFields.end());
 
     auto legacyRun = findEndpoint("/api/run");
     REQUIRE(legacyRun != endpoints.end());
+    CHECK(legacyRun->operation == ApiOperation::LegacyRunDisabled);
     CHECK(legacyRun->legacy);
     CHECK_FALSE(legacyRun->enabled);
 
@@ -258,6 +260,8 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
         [](const ApiEndpointMetadata& endpoint) { return endpoint.path == "/api/run"; });
     REQUIRE(enabledLegacyRun != enabledEndpoints.end());
     CHECK(enabledLegacyRun->enabled);
+
+    CHECK(std::string(apiOperationName(ApiOperation::DatabaseUsageExport)) == "databaseUsageExport");
 }
 
 TEST_CASE("API feature metadata is shared")
@@ -280,6 +284,7 @@ TEST_CASE("API JSON serialization is shared")
     auto legacy = std::find_if(endpointsJson.begin(), endpointsJson.end(),
         [](const nlohmann::json& endpoint) { return endpoint["path"] == "/api/run"; });
     REQUIRE(legacy != endpointsJson.end());
+    CHECK((*legacy)["operation"].get<std::string>() == "legacyRunDisabled");
     CHECK((*legacy)["legacy"].get<bool>());
     CHECK_FALSE((*legacy)["enabled"].get<bool>());
 
@@ -541,6 +546,20 @@ TEST_CASE("API operation query keys are centralized")
 
     CHECK(apiQueryKeys(ApiOperation::Ping).empty());
     CHECK(apiQueryKeys(ApiOperation::SubmitBuildJob).empty());
+}
+
+TEST_CASE("API endpoint metadata carries dispatch operations")
+{
+    for (const auto& endpoint : apiEndpointMetadata(false)) {
+        CHECK(std::string(apiOperationName(endpoint.operation)) != "unknown");
+        auto keys = apiQueryKeys(endpoint.operation);
+        if (endpoint.path == "/api/db/usage") {
+            CHECK(std::find(keys.begin(), keys.end(), std::string("limit")) != keys.end());
+        }
+        if (endpoint.path == "/api/inspect") {
+            CHECK(std::find(keys.begin(), keys.end(), std::string("input")) != keys.end());
+        }
+    }
 }
 
 TEST_CASE("API handlers expose structured jobs without HTTP")

@@ -191,6 +191,7 @@ nlohmann::json apiEndpointToJson(const ApiEndpointMetadata& endpoint)
     nlohmann::json fields = nlohmann::json::array();
     for (const auto& field : endpoint.requestFields) fields.push_back(field);
     return {
+        {"operation", apiOperationName(endpoint.operation)},
         {"method", endpoint.method},
         {"path", endpoint.path},
         {"description", endpoint.description},

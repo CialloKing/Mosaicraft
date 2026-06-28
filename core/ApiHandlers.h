@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ApiMetadata.h"
 #include "ApiRequestParser.h"
 #include "JobManager.h"
 #include "json.hpp"
@@ -9,27 +10,6 @@
 
 namespace mosaicraft
 {
-
-enum class ApiOperation
-{
-    Endpoints,
-    Info,
-    Ping,
-    LegacyRunDisabled,
-    Mosaic,
-    SubmitMosaicJob,
-    SubmitBuildJob,
-    ListJobs,
-    ClearFinishedJobs,
-    GetJob,
-    CancelJob,
-    DatabaseStats,
-    DatabaseHealth,
-    DatabaseUsage,
-    DatabaseUsageExport,
-    DatabasePurge,
-    Inspect
-};
 
 struct ApiRequest
 {
