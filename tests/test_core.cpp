@@ -582,6 +582,43 @@ TEST_CASE("API request factories set semantic fields")
     CHECK(std::string(info.entryName) == "MosaicraftWebUI");
 }
 
+TEST_CASE("API endpoint request factory applies endpoint context")
+{
+    auto endpoints = apiEndpointMetadata(true);
+    auto findEndpoint = [&](const std::string& path) {
+        return std::find_if(endpoints.begin(), endpoints.end(),
+            [&](const ApiEndpointMetadata& endpoint) { return endpoint.path == path; });
+    };
+
+    auto infoEndpoint = findEndpoint("/api/info");
+    REQUIRE(infoEndpoint != endpoints.end());
+    ApiRequestContext infoContext;
+    infoContext.legacyRunEnabled = true;
+    infoContext.entryName = "CustomEntry";
+    auto info = apiEndpointRequest(*infoEndpoint, std::move(infoContext));
+    CHECK(info.operation == ApiOperation::Info);
+    CHECK(info.legacyRunEnabled);
+    CHECK(std::string(info.entryName) == "CustomEntry");
+
+    auto usageEndpoint = findEndpoint("/api/db/usage");
+    REQUIRE(usageEndpoint != endpoints.end());
+    ApiRequestContext usageContext;
+    usageContext.query = {{"db", "library.db"}};
+    usageContext.body = R"({"limit":3})";
+    auto usage = apiEndpointRequest(*usageEndpoint, std::move(usageContext));
+    CHECK(usage.operation == ApiOperation::DatabaseUsage);
+    CHECK(usage.query.at("db") == "library.db");
+    CHECK(usage.body == R"({"limit":3})");
+
+    auto jobEndpoint = findEndpoint("/api/jobs/{id}");
+    REQUIRE(jobEndpoint != endpoints.end());
+    ApiRequestContext jobContext;
+    jobContext.id = "job-7";
+    auto job = apiEndpointRequest(*jobEndpoint, std::move(jobContext));
+    CHECK(job.operation == ApiOperation::GetJob);
+    CHECK(job.id == "job-7");
+}
+
 TEST_CASE("API operation query keys are centralized")
 {
     auto usageKeyList = apiQueryKeyList(ApiOperation::DatabaseUsage);

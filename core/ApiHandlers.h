@@ -37,6 +37,7 @@ struct ApiResponse
 };
 
 ApiRequest apiOperationRequest(ApiOperation operation, ApiRequestContext context = {});
+ApiRequest apiEndpointRequest(const ApiEndpointMetadata& endpoint, ApiRequestContext context = {});
 ApiRequest apiRequest(ApiOperation operation);
 ApiRequest apiBodyRequest(ApiOperation operation, std::string body);
 ApiRequest apiQueryRequest(ApiOperation operation, ApiQueryParams query, std::string body = {});

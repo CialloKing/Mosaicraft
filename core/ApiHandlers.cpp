@@ -45,6 +45,11 @@ ApiRequest apiOperationRequest(ApiOperation operation, ApiRequestContext context
     return request;
 }
 
+ApiRequest apiEndpointRequest(const ApiEndpointMetadata& endpoint, ApiRequestContext context)
+{
+    return apiOperationRequest(endpoint.operation, std::move(context));
+}
+
 ApiRequest apiRequest(ApiOperation operation)
 {
     return apiOperationRequest(operation);

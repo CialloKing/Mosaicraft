@@ -96,21 +96,7 @@ static mosaicraft::ApiRequest apiRequestFromHttp(const httplib::Request& req,
         context.body = req.body;
         break;
     }
-    return mosaicraft::apiOperationRequest(endpoint.operation, std::move(context));
-}
-
-static mosaicraft::ApiRequestContext discoveryContext(mosaicraft::ApiOperation operation,
-                                                      bool legacyRunEnabled)
-{
-    mosaicraft::ApiRequestContext context;
-    if (operation == mosaicraft::ApiOperation::Endpoints ||
-        operation == mosaicraft::ApiOperation::Info) {
-        context.legacyRunEnabled = legacyRunEnabled;
-    }
-    if (operation == mosaicraft::ApiOperation::Info) {
-        context.entryName = "MosaicraftWebUI";
-    }
-    return context;
+    return mosaicraft::apiEndpointRequest(endpoint, std::move(context));
 }
 
 static void registerApiMethod(httplib::Server& svr,
@@ -124,8 +110,11 @@ static void registerApiMethod(httplib::Server& svr,
     }
     const std::string pattern = endpoint.httpPattern;
     auto handler = [&, endpoint, legacyRunEnabled](const httplib::Request& req, httplib::Response& res) {
+        mosaicraft::ApiRequestContext context;
+        context.legacyRunEnabled = legacyRunEnabled;
+        context.entryName = "MosaicraftWebUI";
         handleApi(res, jobManager,
-            apiRequestFromHttp(req, endpoint, discoveryContext(endpoint.operation, legacyRunEnabled)));
+            apiRequestFromHttp(req, endpoint, std::move(context)));
     };
 
     if (method == "GET") {
