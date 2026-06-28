@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <initializer_list>
 #include <set>
+#include <unordered_map>
 
 namespace mosaicraft
 {
@@ -55,6 +56,56 @@ std::vector<std::string> endpointQueryKeys(ApiOperation operation)
     return {};
 }
 
+std::unordered_map<std::string, std::vector<std::string>> endpointFieldAliases(ApiOperation operation)
+{
+    switch (operation)
+    {
+    case ApiOperation::Mosaic:
+    case ApiOperation::SubmitMosaicJob:
+        return {
+            {"inputPath", {"input"}},
+            {"dbPath", {"db"}},
+            {"outputPath", {"output"}},
+            {"format", {"outputFormat"}},
+            {"quality", {"jpegQuality"}},
+            {"pngLevel", {"pngCompressionLevel"}},
+            {"topNrandom", {"topNRandom"}},
+            {"usePenalty", {"penalty"}},
+            {"tiled", {"tiledOutput"}},
+            {"deepZoom", {"deepzoom"}}
+        };
+    case ApiOperation::SubmitBuildJob:
+        return {
+            {"inputDir", {"input"}},
+            {"outputDir", {"output"}},
+            {"dbPath", {"db"}},
+            {"appendMode", {"append"}},
+            {"forceMode", {"force"}}
+        };
+    case ApiOperation::DatabaseStats:
+    case ApiOperation::DatabaseHealth:
+    case ApiOperation::DatabaseUsage:
+    case ApiOperation::DatabaseUsageExport:
+    case ApiOperation::DatabasePurge:
+        return {{"dbPath", {"db"}}};
+    case ApiOperation::Inspect:
+        return {
+            {"imagePath", {"input"}},
+            {"dbPath", {"db"}}
+        };
+    case ApiOperation::Endpoints:
+    case ApiOperation::Info:
+    case ApiOperation::Ping:
+    case ApiOperation::LegacyRunDisabled:
+    case ApiOperation::ListJobs:
+    case ApiOperation::ClearFinishedJobs:
+    case ApiOperation::GetJob:
+    case ApiOperation::CancelJob:
+        return {};
+    }
+    return {};
+}
+
 ApiEndpointMetadata endpoint(const std::string& method,
                              const std::string& path,
                              const std::string& description,
@@ -82,6 +133,7 @@ ApiEndpointMetadata endpoint(const std::string& method,
     info.sideEffects = sideEffects;
     info.longRunning = longRunning;
     info.queryKeys = endpointQueryKeys(operation);
+    info.fieldAliases = endpointFieldAliases(operation);
     for (const char* field : requestFields) {
         info.requestFields.emplace_back(field);
     }
@@ -142,15 +194,27 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled)
             ApiOperation::Ping, ApiRequestShape::None),
         endpoint("POST", "/api/mosaic", "run mosaic synchronously", "mosaic",
             ApiOperation::Mosaic, ApiRequestShape::Body,
-            {"inputPath", "dbPath", "outputPath", "format", "quality", "writeMode"},
+            {"inputPath", "dbPath", "outputPath", "tileW", "tileH", "outW", "outH",
+             "nativeTileW", "nativeTileH", "candidates", "topNrandom", "neighborWindow",
+             "upscale", "quality", "pngLevel", "lRange", "usePenalty", "labWeight",
+             "gridWeight", "tinyWeight", "edgeWeight", "lbpWeight", "neighborPenalty",
+             "colorStrength", "format", "writeMode", "outputTile", "useGpu", "tiled",
+             "deepZoom", "colorAdjust", "adaptiveWeights", "analyze", "benchmark"},
             {"inputPath"}, true, true),
         endpoint("POST", "/api/jobs/mosaic", "start mosaic job", "jobs",
             ApiOperation::SubmitMosaicJob, ApiRequestShape::Body,
-            {"inputPath", "dbPath", "outputPath", "format", "quality", "writeMode"},
+            {"inputPath", "dbPath", "outputPath", "tileW", "tileH", "outW", "outH",
+             "nativeTileW", "nativeTileH", "candidates", "topNrandom", "neighborWindow",
+             "upscale", "quality", "pngLevel", "lRange", "usePenalty", "labWeight",
+             "gridWeight", "tinyWeight", "edgeWeight", "lbpWeight", "neighborPenalty",
+             "colorStrength", "format", "writeMode", "outputTile", "useGpu", "tiled",
+             "deepZoom", "colorAdjust", "adaptiveWeights", "analyze", "benchmark"},
             {"inputPath"}, true, true),
         endpoint("POST", "/api/jobs/build", "start library build job", "jobs",
             ApiOperation::SubmitBuildJob, ApiRequestShape::Body,
-            {"inputDir", "outputDir", "dbPath", "threads", "recursive", "forceMode"},
+            {"inputDir", "outputDir", "dbPath", "threads", "normalizeSize",
+             "normalizeWidth", "normalizeHeight", "appendMode", "recursive",
+             "normalizeOnly", "forceMode"},
             {"inputDir"}, true, true),
         endpoint("GET", "/api/jobs", "list jobs", "jobs",
             ApiOperation::ListJobs, ApiRequestShape::None),
@@ -230,6 +294,12 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
             if (std::find(endpoint.requestFields.begin(), endpoint.requestFields.end(), field) ==
                 endpoint.requestFields.end()) {
                 errors.push_back("required field is not listed in requestFields: " + operationName + " " + field);
+            }
+        }
+        for (const auto& item : endpoint.fieldAliases) {
+            if (std::find(endpoint.requestFields.begin(), endpoint.requestFields.end(), item.first) ==
+                endpoint.requestFields.end()) {
+                errors.push_back("field alias target is not listed in requestFields: " + operationName + " " + item.first);
             }
         }
 

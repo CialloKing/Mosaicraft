@@ -192,6 +192,8 @@ nlohmann::json apiEndpointToJson(const ApiEndpointMetadata& endpoint)
     for (const auto& field : endpoint.requestFields) fields.push_back(field);
     nlohmann::json requiredFields = nlohmann::json::array();
     for (const auto& field : endpoint.requiredFields) requiredFields.push_back(field);
+    nlohmann::json fieldAliases = nlohmann::json::object();
+    for (const auto& item : endpoint.fieldAliases) fieldAliases[item.first] = item.second;
     return {
         {"operation", apiOperationName(endpoint.operation)},
         {"requestShape", apiRequestShapeName(endpoint.requestShape)},
@@ -203,6 +205,7 @@ nlohmann::json apiEndpointToJson(const ApiEndpointMetadata& endpoint)
         {"category", endpoint.category},
         {"requestFields", fields},
         {"requiredFields", requiredFields},
+        {"fieldAliases", fieldAliases},
         {"queryKeys", endpoint.queryKeys},
         {"sideEffects", endpoint.sideEffects},
         {"longRunning", endpoint.longRunning},

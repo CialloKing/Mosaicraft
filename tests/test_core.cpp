@@ -257,6 +257,9 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(std::find(mosaicJob->requestFields.begin(), mosaicJob->requestFields.end(),
         "inputPath") != mosaicJob->requestFields.end());
     CHECK(mosaicJob->requiredFields == std::vector<std::string>{"inputPath"});
+    CHECK(mosaicJob->fieldAliases.at("inputPath") == std::vector<std::string>{"input"});
+    CHECK(mosaicJob->fieldAliases.at("dbPath") == std::vector<std::string>{"db"});
+    CHECK(mosaicJob->fieldAliases.at("outputPath") == std::vector<std::string>{"output"});
     CHECK(mosaicJob->sideEffects);
     CHECK(mosaicJob->longRunning);
 
@@ -266,6 +269,7 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(dbStats->methods == std::vector<std::string>{"GET", "POST"});
     CHECK(dbStats->httpPattern == "/api/db/stats");
     CHECK(dbStats->queryKeys == std::vector<std::string>{"db"});
+    CHECK(dbStats->fieldAliases.at("dbPath") == std::vector<std::string>{"db"});
 
     auto jobStatus = findEndpoint("/api/jobs/{id}");
     REQUIRE(jobStatus != endpoints.end());
@@ -319,6 +323,7 @@ TEST_CASE("API JSON serialization is shared")
     CHECK((*legacy)["methods"][0].get<std::string>() == "POST");
     CHECK((*legacy)["httpPattern"].get<std::string>() == "/api/run");
     CHECK((*legacy)["queryKeys"].empty());
+    CHECK((*legacy)["fieldAliases"].empty());
     CHECK((*legacy)["requiredFields"].size() == 1);
     CHECK((*legacy)["requiredFields"][0].get<std::string>() == "command");
     CHECK((*legacy)["sideEffects"].get<bool>());
@@ -701,6 +706,7 @@ TEST_CASE("API endpoint metadata validation catches contract errors")
     bad.methods = {"PATCH"};
     bad.queryKeys = {"db"};
     bad.requiredFields = {"missing"};
+    bad.fieldAliases = {{"missing", {"alias"}}};
     auto badErrors = validateApiEndpointMetadata({bad});
     CHECK(std::find_if(badErrors.begin(), badErrors.end(),
         [](const std::string& error) { return error.find("unsupported method") != std::string::npos; }) != badErrors.end());
@@ -710,6 +716,8 @@ TEST_CASE("API endpoint metadata validation catches contract errors")
         [](const std::string& error) { return error.find("non-query endpoint has queryKeys") != std::string::npos; }) != badErrors.end());
     CHECK(std::find_if(badErrors.begin(), badErrors.end(),
         [](const std::string& error) { return error.find("required field is not listed") != std::string::npos; }) != badErrors.end());
+    CHECK(std::find_if(badErrors.begin(), badErrors.end(),
+        [](const std::string& error) { return error.find("field alias target is not listed") != std::string::npos; }) != badErrors.end());
 }
 
 TEST_CASE("API handlers expose structured jobs without HTTP")

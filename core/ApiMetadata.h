@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace mosaicraft
@@ -49,6 +50,7 @@ struct ApiEndpointMetadata
     std::vector<std::string> requestFields;
     std::vector<std::string> requiredFields;
     std::vector<std::string> queryKeys;
+    std::unordered_map<std::string, std::vector<std::string>> fieldAliases;
     bool sideEffects = false;
     bool longRunning = false;
     bool legacy = false;
