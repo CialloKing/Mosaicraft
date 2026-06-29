@@ -1276,7 +1276,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 else
                     annMissCount++;
             }
-            if (ti % 5000 == 0 || ti == totalTiles - 1) {
+            if (ti % 500 == 0 || ti == totalTiles - 1) {
                 double e = std::chrono::duration<double>(Clock::now() - tStart).count();
                 double eta = (e / (ti+1)) * (totalTiles - (ti+1));
                 std::cout << "\r  collecting candidates " << (ti+1) << "/" << totalTiles
@@ -1643,6 +1643,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 recentIds.pop_front();
                 if (--freqInWindow[oldId] <= 0)
                     freqInWindow.erase(oldId);
+            }
+            if (ti % 2000 == 0 || ti == totalTiles - 1) {
+                double e = std::chrono::duration<double>(Clock::now() - tLast).count();
+                double eta = (e / (ti+1)) * (totalTiles - (ti+1));
+                std::cout << "\r  selecting best " << (ti+1) << "/" << totalTiles
+                          << " | ETA " << (eta < 1.0 ? "<1s" : std::to_string(static_cast<int>(eta)) + "s")
+                          << "   " << std::flush;
             }
         }
         cntGrid = totalTiles; cntTiny = totalTiles;
