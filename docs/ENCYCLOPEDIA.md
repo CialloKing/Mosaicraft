@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-06-29 | 版本 / Version：v1.13.4
+> 最后更新 / Last updated：2026-06-29 | 版本 / Version：v1.13.5
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
