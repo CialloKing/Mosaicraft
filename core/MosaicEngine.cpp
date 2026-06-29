@@ -468,8 +468,8 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
             cv::rectangle(heat, cv::Rect(tx*4, ty*4, 4, 4), color, cv::FILLED);
         }
     }
-    // 缩放到与原图相同比例（最大 800px）
-    double heatScale = std::min(800.0 / heat.cols, 800.0 / heat.rows);
+    // 缩放到与原图相同比例，最大不超过原图尺寸的 1/4
+    double heatScale = std::min(1.0, std::min(target.cols / 4.0 / heat.cols, target.rows / 4.0 / heat.rows));
     if (heatScale > 0 && heatScale < 10.0) {
         // 先按 tile grid 比例拉伸到与原图一致的比例
         double srcAspect = (double)target.cols / target.rows;
