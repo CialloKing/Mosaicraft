@@ -470,13 +470,13 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
             cv::rectangle(heat, cv::Rect(tx*cellW, ty*cellH, cellW, cellH), color, cv::FILLED);
         }
     }
-    // 保持与原图相同宽高比（仅在 tile 格比例与原图不一致时拉伸，维持 INTER_NEAREST 保持格块清晰）
+    // 缩放到与原图一致的比例
     double srcAspect = (double)target.cols / target.rows;
-    double tileAspect = (double)(tilesX) / tilesY;
-    if (std::abs(srcAspect - tileAspect) > 0.01) {
-        int newW = static_cast<int>(heat.cols * srcAspect / tileAspect);
+    double heatAspect = (double)heat.cols / heat.rows;
+    if (std::abs(srcAspect - heatAspect) > 0.01) {
+        int newW = static_cast<int>(heat.rows * srcAspect);
         int newH = heat.rows;
-        if (newW < 1) { newH = static_cast<int>(heat.rows * tileAspect / srcAspect); newW = heat.cols; }
+        if (newW > heat.cols) { newW = heat.cols; newH = static_cast<int>(heat.cols / srcAspect); }
         if (newW > 1 && newH > 1)
             cv::resize(heat, heat, cv::Size(newW, newH), 0, 0, cv::INTER_NEAREST);
     }
