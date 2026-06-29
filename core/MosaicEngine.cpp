@@ -1145,8 +1145,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     allLBP[idx] = computeLBPHistogram(roiNative);
                     auto t6 = Clock::now(); opLbpNs += std::chrono::duration_cast<Ns>(t6 - t5).count();
                     int d = ++featDone;
-                    if (d % 500 == 0 || d == totalTiles)
-                        std::cout << "\r  features " << d << "/" << totalTiles << std::flush;
+                    if (d % 500 == 0 || d == totalTiles) {
+                        double e = std::chrono::duration<double>(Clock::now() - tStart).count();
+                        double eta = (e / d) * (totalTiles - d);
+                        std::cout << "\r  features " << d << "/" << totalTiles
+                                  << " | ETA " << (eta < 1.0 ? "<1s" : std::to_string(static_cast<int>(eta)) + "s")
+                                  << "   " << std::flush;
+                    }
                 }
             });
         }
@@ -1271,8 +1276,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 else
                     annMissCount++;
             }
-            if (ti % 5000 == 0 || ti == totalTiles - 1)
-                std::cout << "\r  collecting candidates " << (ti+1) << "/" << totalTiles << std::flush;
+            if (ti % 5000 == 0 || ti == totalTiles - 1) {
+                double e = std::chrono::duration<double>(Clock::now() - tStart).count();
+                double eta = (e / (ti+1)) * (totalTiles - (ti+1));
+                std::cout << "\r  collecting candidates " << (ti+1) << "/" << totalTiles
+                          << " | ETA " << (eta < 1.0 ? "<1s" : std::to_string(static_cast<int>(eta)) + "s")
+                          << "   " << std::flush;
+            }
         }
         std::cout << " done" << std::endl;
 
@@ -2003,6 +2013,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
         std::cout << "  placing tiles (" << nThreads << " threads)..."
                   << std::flush;
+        auto tPlaceStart = Clock::now();
         std::atomic<int> placeDone{0};
         std::atomic<int> placeFail{0};
         std::atomic<int> placeNoCand{0};  // , �? �? 锟铰碉拷�?
@@ -2040,9 +2051,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     opPlaceCopyNs += std::chrono::duration_cast<Ns>(t2 - t1).count();
 
                     int d = ++placeDone;
-                    if (d % 500 == 0 || d == totalTiles)
+                    if (d % 500 == 0 || d == totalTiles) {
+                        double e = std::chrono::duration<double>(Clock::now() - tPlaceStart).count();
+                        double eta = (e / d) * (totalTiles - d);
                         std::cout << "\r  placing " << d << "/" << totalTiles
+                                  << " | ETA " << (eta < 1.0 ? "<1s" : std::to_string(static_cast<int>(eta)) + "s")
                                   << "   " << std::flush;
+                    }
                 }
             });
         }
@@ -2146,8 +2161,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 int old = recentIds.front(); recentIds.pop_front();
                 if (--freq[old] <= 0) freq.erase(old);
             }
-            if (ti % 5000 == 0 || ti == totalTiles-1)
-                std::cout << "\r  selecting " << (ti+1) << "/" << totalTiles << std::flush;
+            if (ti % 5000 == 0 || ti == totalTiles-1) {
+                double e = std::chrono::duration<double>(Clock::now() - tStart).count();
+                double eta = (e / (ti+1)) * (totalTiles - (ti+1));
+                std::cout << "\r  selecting " << (ti+1) << "/" << totalTiles
+                          << " | ETA " << (eta < 1.0 ? "<1s" : std::to_string(static_cast<int>(eta)) + "s")
+                          << "   " << std::flush;
+            }
         }
         cntGrid = cntTiny = cntEdge = cntLBP = totalTiles;
         if (noCandidateCount > 0)
@@ -2159,6 +2179,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         if (nT < 2) nT = 2; if (nT > 16) nT = 16;
         std::atomic<int> placed{0}, pFail{0};
         std::cout << "  placing (" << nT << " threads)..." << std::flush;
+        auto tCpuPlaceStart = Clock::now();
         std::vector<std::thread> pWorkers;
         for (int t = 0; t < nT; ++t) {
             pWorkers.emplace_back([&, t]() {
@@ -2172,8 +2193,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     m.copyTo(output(cv::Rect(tx*outTileW,ty*outTileH,outTileW,outTileH)));
                     matched++;
                     int d = ++placed;
-                    if (d % 2000 == 0 || d == totalTiles)
-                        std::cout << "\r  placing " << d << "/" << totalTiles << std::flush;
+                    if (d % 2000 == 0 || d == totalTiles) {
+                        double e = std::chrono::duration<double>(Clock::now() - tCpuPlaceStart).count();
+                        double eta = (e / d) * (totalTiles - d);
+                        std::cout << "\r  placing " << d << "/" << totalTiles
+                                  << " | ETA " << (eta < 1.0 ? "<1s" : std::to_string(static_cast<int>(eta)) + "s")
+                                  << "   " << std::flush;
+                    }
                 }
             });
         }
