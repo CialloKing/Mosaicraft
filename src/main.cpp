@@ -6,6 +6,7 @@
 #include "core/MosaicService.h"
 #include "core/UnicodeIO.h"
 #include "core/Version.h"
+#include "core/ConsoleGuard.h"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/core.hpp>
@@ -976,6 +977,10 @@ static int cmdDbHealth(int argc, char* argv[])
 int main(int argc, char* argv[])
 {
     srand(static_cast<unsigned>(time(nullptr)) ^ static_cast<unsigned>(reinterpret_cast<uintptr_t>(&argc)));
+
+    // Windows: 禁用控制台快速选择模式，防止鼠标误触导致程序挂起
+    // Guard 析构时自动恢复原模式
+    ConsoleQuickEditGuard quickEditGuard;
 
     // 交互式终端退出前暂停，双击exe时不闪退
     // 注意：仅当stdin和stdout都是TTY时才暂停（popen管道不会触发）

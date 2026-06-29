@@ -5,6 +5,7 @@
 #include "core/JobManager.h"
 #include "core/json.hpp"
 #include "core/LegacyRun.h"
+#include "core/ConsoleGuard.h"
 #include <algorithm>
 #include <chrono>
 #include <cctype>
@@ -242,6 +243,7 @@ int main(int argc, char* argv[])
     }
 
     const bool legacyRunEnabled = envFlagEnabled("MOSAICRAFT_ENABLE_LEGACY_RUN");
+    mosaicraft::ConsoleQuickEditGuard quickEditGuard;
     std::string mosaicPath = findMosaicraft();
     std::string htmlPath = findHtml();
     if (htmlPath.empty()) {
