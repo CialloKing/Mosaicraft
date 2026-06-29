@@ -939,6 +939,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     // , , ,  , 锟�??筹拷�? , , ,  tile , ,  , , ,
     int totalTiles = tilesX * tilesY;
+    int doneWidth = static_cast<int>(std::to_string(totalTiles).size());  // 计数器固定宽度，消除光标跳动
 
     // --analyze: �? , , , , , , , ,
     std::vector<double> analyzeScores;
@@ -1066,7 +1067,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::string etaStr = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
             // 固定宽度5字符，右对齐，确保行长度恒定
             if (etaStr.size() < 5) etaStr = std::string(5 - etaStr.size(), ' ') + etaStr;
-            std::cout << "\r  features " << done << "/" << totalTiles
+            std::cout << "\r  features " << std::setw(doneWidth) << done << "/" << totalTiles
                       << " | ETA" << etaStr << std::flush;
         }
 
@@ -1153,7 +1154,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         double eta = (e / d) * (totalTiles - d);
                         std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
                         if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
-                        std::cout << "\r  features " << d << "/" << totalTiles
+                        std::cout << "\r  features " << std::setw(doneWidth) << d << "/" << totalTiles
                                   << " | ETA" << etas << std::flush;
                     }
                 }
@@ -1286,7 +1287,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 double eta = (e / (ti+1)) * (totalTiles - (ti+1));
                 std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
                 if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
-                std::cout << "\r  collecting candidates " << (ti+1) << "/" << totalTiles
+                std::cout << "\r  collecting candidates " << std::setw(doneWidth) << (ti+1) << "/" << totalTiles
                           << " | ETA" << etas << std::flush;
             }
         }
@@ -1655,7 +1656,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 double eta = (e / (ti+1)) * (totalTiles - (ti+1));
                 std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
                 if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
-                std::cout << "\r  selecting best " << (ti+1) << "/" << totalTiles
+                std::cout << "\r  selecting best " << std::setw(doneWidth) << (ti+1) << "/" << totalTiles
                           << " | ETA" << etas << std::flush;
             }
         }
@@ -2182,7 +2183,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 double eta = (e / (ti+1)) * (totalTiles - (ti+1));
                 std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
                 if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
-                std::cout << "\r  selecting " << (ti+1) << "/" << totalTiles
+                std::cout << "\r  selecting " << std::setw(doneWidth) << (ti+1) << "/" << totalTiles
                           << " | ETA" << etas << std::flush;
             }
         }
@@ -2215,7 +2216,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         double eta = (e / d) * (totalTiles - d);
                         std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
                         if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
-                        std::cout << "\r  placing " << d << "/" << totalTiles
+                        std::cout << "\r  placing " << std::setw(doneWidth) << d << "/" << totalTiles
                                   << " | ETA" << etas << std::flush;
                     }
                 }
