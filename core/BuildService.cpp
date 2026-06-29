@@ -236,9 +236,15 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                         extractor.compute(imgs[bi], recs[bi], featDir, stems[bi]);
                     }
                 }
+                else if (done != static_cast<int>(imgs.size())) {
+                    for (size_t bi = static_cast<size_t>(std::max(0, done)); bi < imgs.size(); ++bi) {
+                        extractor.compute(imgs[bi], recs[bi], featDir, stems[bi]);
+                    }
+                }
                 db.beginTransaction();
-                for (auto& rec : recs) {
-                    if (db.insertImage(rec)) inserted++;
+                for (size_t bi = 0; bi < recs.size(); ++bi) {
+                    if (recs[bi].filePath.empty()) continue;
+                    if (db.insertImage(recs[bi])) inserted++;
                     else skipped++;
                 }
                 db.commitTransaction();
@@ -264,7 +270,8 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 if (item.img.empty()) continue;
                 std::string hash = hashMatForBuild(item.img);
                 if (db.existsByHash(hash)) {
-                    fs::remove(u8path(item.outPath));
+                    std::error_code removeEc;
+                    fs::remove(u8path(item.outPath), removeEc);
                     skipped++;
                     continue;
                 }
@@ -274,7 +281,15 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 rec.srcWidth = item.img.cols;
                 rec.srcHeight = item.img.rows;
                 rec.aspectRatio = (rec.srcHeight > 0) ? (double)rec.srcWidth / rec.srcHeight : 0.0;
-                rec.fileSize = fs::file_size(u8path(item.outPath));
+                std::error_code sizeEc;
+                rec.fileSize = static_cast<int64_t>(fs::file_size(u8path(item.outPath), sizeEc));
+                if (sizeEc)
+                {
+                    std::cerr << "WARN: cannot stat output file: " << item.outPath
+                              << " (" << sizeEc.message() << ")" << std::endl;
+                    skipped++;
+                    continue;
+                }
                 std::string ext = pathToUtf8(u8path(item.outPath).extension());
                 if (!ext.empty() && ext[0] == '.') ext = ext.substr(1);
                 rec.format = ext;

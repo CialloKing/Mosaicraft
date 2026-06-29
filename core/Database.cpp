@@ -615,7 +615,11 @@ void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
 
     // 更新图片使用统计
     if (!m_db) return;
-    exec("BEGIN TRANSACTION");
+    if (!exec("BEGIN TRANSACTION"))
+    {
+        return;
+    }
+    bool ok = true;
     for (const auto& [imgId, tileCount] : imageUseCount)
     {
         std::string runsExpr = isNewTarget ? "total_runs + 1" : "total_runs";
@@ -628,9 +632,17 @@ void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
                           "total_runs = " + runsExpr + ", "
                           "total_tiles = total_tiles + " + std::to_string(tileCount)
                           + ", last_used = datetime('now')";
-        exec(sql);
+        ok = exec(sql) && ok;
     }
-    exec("COMMIT");
+    if (!ok)
+    {
+        exec("ROLLBACK");
+        return;
+    }
+    if (!exec("COMMIT"))
+    {
+        exec("ROLLBACK");
+    }
 }
 
 std::vector<std::tuple<int, int, int>> Database::topUsedImages(int limit)

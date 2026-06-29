@@ -158,6 +158,9 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
         free(linkLists_);
         linkLists_ = nullptr;
         cur_element_count = 0;
+        num_deleted_ = 0;
+        label_lookup_.clear();
+        deleted_elements.clear();
         visited_list_pool_.reset(nullptr);
     }
 
@@ -744,6 +747,9 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
         readBinaryPOD(input, mult_);
         readBinaryPOD(input, ef_construction_);
 
+        if (enterpoint_node_ < 0 || static_cast<size_t>(enterpoint_node_) >= cur_element_count)
+            throw std::runtime_error("Index seems to be corrupted or unsupported");
+
         data_size_ = s->get_data_size();
         fstdistfunc_ = s->get_dist_func();
         dist_func_param_ = s->get_dist_func_param();
@@ -783,13 +789,13 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
         size_links_level0_ = maxM0_ * sizeof(tableint) + sizeof(linklistsizeint);
         std::vector<std::mutex>(max_elements).swap(link_list_locks_);
         std::vector<std::mutex>(MAX_LABEL_OPERATION_LOCKS).swap(label_op_locks_);
+        std::vector<int>(max_elements).swap(element_levels_);
 
         visited_list_pool_.reset(new VisitedListPool(1, max_elements));
 
         linkLists_ = (char **) malloc(sizeof(void *) * max_elements);
         if (linkLists_ == nullptr)
             throw std::runtime_error("Not enough memory: loadIndex failed to allocate linklists");
-        element_levels_ = std::vector<int>(max_elements);
         revSize_ = 1.0 / mult_;
         ef_ = 10;
         for (size_t i = 0; i < cur_element_count; i++) {

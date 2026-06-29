@@ -15,6 +15,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <climits>
+#include <cerrno>
 #ifdef _WIN32
 #include <conio.h>
 #include <io.h>
@@ -75,9 +77,10 @@ static bool readOptionInt(int argc, char* argv[], int& i, const std::string& opt
 {
     const char* raw = nullptr;
     if (!readOptionValue(argc, argv, i, option, raw)) return false;
+    errno = 0;
     char* end = nullptr;
     long v = std::strtol(raw, &end, 10);
-    if (end == raw || *end != '\0') {
+    if (errno == ERANGE || end == raw || *end != '\0' || v < INT_MIN || v > INT_MAX) {
         std::cerr << "ERROR: " << option << " expects an integer, got: " << raw << std::endl;
         return false;
     }
@@ -89,9 +92,10 @@ static bool readOptionDouble(int argc, char* argv[], int& i, const std::string& 
 {
     const char* raw = nullptr;
     if (!readOptionValue(argc, argv, i, option, raw)) return false;
+    errno = 0;
     char* end = nullptr;
     double v = std::strtod(raw, &end);
-    if (end == raw || *end != '\0') {
+    if (errno == ERANGE || end == raw || *end != '\0') {
         std::cerr << "ERROR: " << option << " expects a number, got: " << raw << std::endl;
         return false;
     }
@@ -247,8 +251,16 @@ static int cmdBuild(int argc, char* argv[])
             if (!readOptionValue(argc, argv, i, arg, val)) return 1;
             const char* sep = strchr(val, 'x');
             if (sep && sep != val && *(sep+1) != '\0' && !strchr(sep+1, 'x')) {
-                normW = std::max(1, std::atoi(val));
-                normH = std::max(1, std::atoi(sep + 1));
+                char* endW = nullptr;
+                char* endH = nullptr;
+                long w = std::strtol(val, &endW, 10);
+                long h = std::strtol(sep + 1, &endH, 10);
+                if (endW == val || *endW != 'x' || endH == sep + 1 || *endH != '\0' || w <= 0 || h <= 0) {
+                    std::cerr << "ERROR: --normalize-size expected WxH format (e.g. 180x320), got: " << val << std::endl;
+                    return 1;
+                }
+                normW = static_cast<int>(std::max<long>(1, w));
+                normH = static_cast<int>(std::max<long>(1, h));
             } else {
                 std::cerr << "ERROR: --normalize-size expected WxH format (e.g. 180x320), got: " << val << std::endl;
                 return 1;

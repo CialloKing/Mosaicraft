@@ -16,6 +16,23 @@
 
 namespace mosaicraft {
 
+struct JpegErrorManager
+{
+    jpeg_error_mgr pub;
+    jmp_buf jumpBuffer;
+};
+
+extern "C" {
+static void jpegErrorExit(j_common_ptr cinfo)
+{
+    auto* err = reinterpret_cast<JpegErrorManager*>(cinfo->err);
+    char buffer[JMSG_LENGTH_MAX];
+    (*cinfo->err->format_message)(cinfo, buffer);
+    fprintf(stderr, "JPEG error: %s\n", buffer);
+    longjmp(err->jumpBuffer, 1);
+}
+}
+
 class JpgStreamWriter
 {
 public:
@@ -34,8 +51,19 @@ public:
         if (!m_fp)
             throw std::runtime_error("Jpg open failed: " + path);
 
-        m_cinfo.err = jpeg_std_error(&m_jerr);
+        m_cinfo.err = jpeg_std_error(&m_jerr.pub);
+        m_jerr.pub.error_exit = jpegErrorExit;
+        if (setjmp(m_jerr.jumpBuffer))
+        {
+            if (m_created)
+            {
+                jpeg_destroy_compress(&m_cinfo);
+            }
+            if (m_fp) { fclose(m_fp); m_fp = nullptr; }
+            throw std::runtime_error("Jpg init failed: " + path);
+        }
         jpeg_create_compress(&m_cinfo);
+        m_created = true;
         jpeg_stdio_dest(&m_cinfo, m_fp);
 
         m_cinfo.image_width      = static_cast<JDIMENSION>(w);
@@ -55,7 +83,16 @@ public:
         if (m_closed) return false;
         JSAMPROW row[1];
         row[0] = const_cast<JSAMPROW>(rgb);
-        jpeg_write_scanlines(&m_cinfo, row, 1);
+        if (setjmp(m_jerr.jumpBuffer))
+        {
+            close();
+            return false;
+        }
+        if (jpeg_write_scanlines(&m_cinfo, row, 1) != 1)
+        {
+            close();
+            return false;
+        }
         m_rowsWritten++;
         return true;
     }
@@ -64,8 +101,26 @@ public:
     {
         if (m_closed) return;
         m_closed = true;
-        jpeg_finish_compress(&m_cinfo);
-        jpeg_destroy_compress(&m_cinfo);
+        if (m_fp)
+        {
+            if (setjmp(m_jerr.jumpBuffer))
+            {
+                if (m_created)
+                {
+                    jpeg_destroy_compress(&m_cinfo);
+                    m_created = false;
+                }
+                fclose(m_fp);
+                m_fp = nullptr;
+                return;
+            }
+            jpeg_finish_compress(&m_cinfo);
+        }
+        if (m_created)
+        {
+            jpeg_destroy_compress(&m_cinfo);
+            m_created = false;
+        }
         if (m_fp) { fclose(m_fp); m_fp = nullptr; }
     }
 
@@ -84,8 +139,9 @@ private:
     int               m_h;
     int               m_rowsWritten = 0;
     bool              m_closed = false;
+    bool              m_created = false;
     jpeg_compress_struct m_cinfo{};
-    jpeg_error_mgr       m_jerr{};
+    JpegErrorManager     m_jerr{};
 };
 
 } // namespace mosaicraft

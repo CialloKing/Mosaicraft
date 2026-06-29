@@ -8,8 +8,14 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
+#ifndef _WIN32
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 #include <mutex>
 #ifdef _WIN32
 #include <windows.h>
@@ -17,6 +23,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -25,8 +32,6 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#define popen _popen
-#define pclose _pclose
 #endif
 
 namespace
@@ -98,6 +103,28 @@ static mosaicraft::ApiRequest apiRequestFromHttp(const httplib::Request& req,
     }
     return mosaicraft::apiEndpointRequest(endpoint, std::move(context));
 }
+
+#ifndef _WIN32
+static std::vector<char*> buildExecArgv(const std::string& executable, const std::string& subCmd, std::vector<std::string>& storage)
+{
+    storage.clear();
+    storage.push_back(executable);
+    std::istringstream iss(subCmd);
+    std::string token;
+    while (iss >> token)
+    {
+        storage.push_back(token);
+    }
+    std::vector<char*> argv;
+    argv.reserve(storage.size() + 1);
+    for (auto& item : storage)
+    {
+        argv.push_back(item.data());
+    }
+    argv.push_back(nullptr);
+    return argv;
+}
+#endif
 
 static void registerApiMethod(httplib::Server& svr,
                               const std::string& method,
@@ -376,10 +403,34 @@ int main(int argc, char* argv[])
                 res.set_content("EXIT " + std::to_string(exitCode) + "\n" + output, "text/plain; charset=utf-8");
 #else
             // Linux/macOS fallback for the legacy command endpoint.
-            std::string fullCmd = "\"" + mosaicPath + "\" " + subCmd;
-            FILE* pipe = popen((fullCmd + " 2>&1").c_str(), "r");
+            int pipefd[2];
+            if (pipe(pipefd) != 0) {
+                std::cerr << "[ERROR] pipe failed: " << std::strerror(errno) << std::endl;
+                res.set_content("ERROR: failed to start process", "text/plain");
+                return;
+            }
+            pid_t pid = fork();
+            if (pid < 0) {
+                close(pipefd[0]);
+                close(pipefd[1]);
+                std::cerr << "[ERROR] fork failed: " << std::strerror(errno) << std::endl;
+                res.set_content("ERROR: failed to start process", "text/plain");
+                return;
+            }
+            if (pid == 0) {
+                dup2(pipefd[1], STDOUT_FILENO);
+                dup2(pipefd[1], STDERR_FILENO);
+                close(pipefd[0]);
+                close(pipefd[1]);
+                std::vector<std::string> argvStorage;
+                auto execArgv = buildExecArgv(mosaicPath, subCmd, argvStorage);
+                execvp(execArgv[0], execArgv.data());
+                _exit(127);
+            }
+            close(pipefd[1]);
+            FILE* pipe = fdopen(pipefd[0], "r");
             if (!pipe) {
-                std::cerr << "[ERROR] popen failed: " << fullCmd << std::endl;
+                close(pipefd[0]);
                 res.set_content("ERROR: failed to start process", "text/plain");
                 return;
             }
@@ -389,7 +440,10 @@ int main(int argc, char* argv[])
                 std::cout.write(buf, n);
                 output.append(buf, n);
             }
-            int rc = pclose(pipe);
+            int status = 0;
+            waitpid(pid, &status, 0);
+            int rc = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+            fclose(pipe);
             if (rc == 0)
                 res.set_content(output.empty() ? "OK" : output, "text/plain; charset=utf-8");
             else

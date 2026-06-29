@@ -11,7 +11,7 @@ LegacyCommandValidation validateLegacyRunCommand(const std::string& command)
         return result;
     }
 
-    const std::string forbidden = "&|;$`(){}<>";
+    const std::string forbidden = "&|;$`(){}<>\"'\\\n\r";
     bool hasControlChar = false;
     for (unsigned char ch : command) {
         if (ch < 0x20 || ch == 0x7f) {

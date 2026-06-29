@@ -220,17 +220,32 @@ public:
 
         std::string dziPath = basePath + ".dzi";
         std::ofstream dzi(u8path(dziPath));
+        if (!dzi)
+        {
+            std::cerr << "ERROR: cannot open " << dziPath << std::endl;
+            return;
+        }
         dzi << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
         dzi << "<Image xmlns=\"http://schemas.microsoft.com/deepzoom/2008\"\n";
         dzi << "       Format=\"jpg\" Overlap=\"0\" TileSize=\"" << dziTileSize << "\">\n";
         dzi << "  <Size Width=\"" << totalW << "\" Height=\"" << totalH << "\"/>\n";
         dzi << "</Image>\n";
         dzi.close();
+        if (!dzi)
+        {
+            std::cerr << "ERROR: failed to write " << dziPath << std::endl;
+            return;
+        }
         std::cout << "  DZI manifest: " << dziPath
                   << " (" << (maxLevel + 1) << " levels)" << std::endl;
 
         std::string htmlPath = basePath + ".html";
         std::ofstream html(u8path(htmlPath));
+        if (!html)
+        {
+            std::cerr << "ERROR: cannot open " << htmlPath << std::endl;
+            return;
+        }
         html << R"(<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -299,6 +314,11 @@ public:
 </html>
 )";
         html.close();
+        if (!html)
+        {
+            std::cerr << "ERROR: failed to write " << htmlPath << std::endl;
+            return;
+        }
         std::cout << "  HTML viewer: " << htmlPath << std::endl;
     }
 };

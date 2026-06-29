@@ -300,6 +300,12 @@ int extractBatch(
         {
             bgr = images[i];
         }
+        if (bgr.empty() || bgr.cols != imgW || bgr.rows != imgH)
+        {
+            fprintf(stderr, "GPU build: image size mismatch at index %d (%dx%d vs %dx%d)\n",
+                i, bgr.cols, bgr.rows, imgW, imgH);
+            return 0;
+        }
         std::memcpy(&h_images[i * imgBytes], bgr.data, imgBytes);
     }
 

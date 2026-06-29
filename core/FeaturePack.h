@@ -89,6 +89,12 @@ public:
     static bool buildCache(const std::string& featDir,
                            const std::vector<ImageRecord>& records)
     {
+        struct WriteGuard
+        {
+            bool armed = false;
+            ~WriteGuard() { if (armed) FeaturePack::endWrite(); }
+        } guard;
+
         std::vector<const ImageRecord*> sorted;
         sorted.reserve(records.size());
         for (const auto& r : records)
@@ -134,6 +140,7 @@ public:
 
         if (!beginWrite(featDir, static_cast<int>(sorted.size())))
             return false;
+        guard.armed = true;
 
         // Parallel read: multiple threads read tiny/lbp files concurrently
         int nTotal = static_cast<int>(sorted.size());
@@ -178,8 +185,8 @@ public:
                 appendImage(rec->id, allTiny[i], allLbp[i]);
             }
         }
-
         endWrite();
+        guard.armed = false;
         return true;
     }
 
