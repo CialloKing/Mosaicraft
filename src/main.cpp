@@ -417,6 +417,9 @@ static int cmdMosaic(int argc, char* argv[])
             const char* value = nullptr;
             if (!readOptionValue(argc, argv, i, arg, value)) return 1;
             cfg.outputFormat = value;
+            // 规范化: jpeg → jpg, tif → tiff
+            if (cfg.outputFormat == "jpeg") cfg.outputFormat = "jpg";
+            else if (cfg.outputFormat == "tif") cfg.outputFormat = "tiff";
             cfg.formatExplicit = true;
         }
         else if (arg == "--cpu")

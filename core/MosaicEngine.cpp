@@ -2183,6 +2183,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             if (ext == "png" || ext == "PNG") fmt = "png";
             else if (ext == "webp" || ext == "WEBP") fmt = "webp";
             else if (ext == "tiff" || ext == "tif" || ext == "TIFF" || ext == "TIF") fmt = "tiff";
+            else if (ext == "jpg" || ext == "jpeg" || ext == "JPG" || ext == "JPEG") fmt = "jpg";
         }
     }
     if (fmt != "jpg" && fmt != "png" && fmt != "webp" && fmt != "tiff") fmt = "jpg";
@@ -2194,14 +2195,17 @@ bool MosaicEngine::generate(const std::string& targetPath,
     if (outDot != std::string::npos)
     {
         std::string oldExt = lower(outPath.substr(outDot + 1));
+        // 规范化 jpeg → jpg, tif → tiff（format 已规范化，旧扩展名也需归一化比较）
+        if (oldExt == "jpeg") oldExt = "jpg";
+        if (oldExt == "tif")  oldExt = "tiff";
         // 显式 --format 时：扩展名与格式不匹配 → 纠正
         if (cfg.formatExplicit && oldExt != fmt)
             outPath = outPath.substr(0, outDot) + "." + fmt;
         // 自动切换到 TIFF（原 JPG/PNG/WebP 超大 → TIFF）→ 纠正
-        else if (fmt == "tiff" && (oldExt == "jpg" || oldExt == "jpeg" || oldExt == "png" || oldExt == "webp"))
+        else if (fmt == "tiff" && (oldExt == "jpg" || oldExt == "png" || oldExt == "webp"))
             outPath = outPath.substr(0, outDot) + ".tiff";
         // 自动切换到 PNG（原 JPG 超大 → PNG stream）→ 纠正
-        else if (fmt == "png" && (oldExt == "jpg" || oldExt == "jpeg"))
+        else if (fmt == "png" && oldExt == "jpg")
             outPath = outPath.substr(0, outDot) + ".png";
     }
     else if (cfg.formatExplicit)
