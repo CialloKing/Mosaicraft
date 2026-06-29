@@ -225,7 +225,7 @@ static int cmdBuild(int argc, char* argv[])
             const char* val = nullptr;
             if (!readOptionValue(argc, argv, i, arg, val)) return 1;
             const char* sep = strchr(val, 'x');
-            if (sep && sep != val && *(sep+1) != '\0') {
+            if (sep && sep != val && *(sep+1) != '\0' && !strchr(sep+1, 'x')) {
                 normW = std::max(1, std::atoi(val));
                 normH = std::max(1, std::atoi(sep + 1));
             } else {
@@ -461,7 +461,7 @@ static int cmdMosaic(int argc, char* argv[])
             const char* val = nullptr;
             if (!readOptionValue(argc, argv, i, arg, val)) return 1;
             const char* sep = strchr(val, 'x');
-            if (sep && sep != val && *(sep+1) != '\0') {
+            if (sep && sep != val && *(sep+1) != '\0' && !strchr(sep+1, 'x')) {
                 cfg.nativeTileW = std::max(1, std::atoi(val));
                 cfg.nativeTileH = std::max(1, std::atoi(sep + 1));
             } else {

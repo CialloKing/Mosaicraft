@@ -544,7 +544,7 @@ bool uploadLibrary(GpuLibrary& lib,
     lib.count = 0;  // 先清零，失败时 freeLibrary 不会释放垃圾指针
 
     #define CUDA_ALLOC(p, size) \
-        if (cudaMalloc(&p, size) != cudaSuccess) { freeLibrary(lib); return false; }
+        if (cudaMalloc((void**)&(p), size) != cudaSuccess) { freeLibrary(lib); return false; }
     #define CUDA_UPLOAD(p, h, size) \
         if (cudaMemcpy(p, h, size, cudaMemcpyHostToDevice) != cudaSuccess) { freeLibrary(lib); return false; }
 
