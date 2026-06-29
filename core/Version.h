@@ -3,6 +3,6 @@
 namespace mosaicraft
 {
 
-inline constexpr const char* kVersion = "1.13.2";
+inline constexpr const char* kVersion = "1.13.3";
 
 } // namespace mosaicraft
