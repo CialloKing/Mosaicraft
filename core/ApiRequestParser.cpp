@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cmath>
 #include <initializer_list>
+#include <limits>
 
 namespace mosaicraft
 {
@@ -78,7 +80,14 @@ bool getIntField(const json& body,
             error = key + " must be a number";
             return false;
         }
-        out = static_cast<int>(it->get<double>());
+        double value = it->get<double>();
+        if (!std::isfinite(value) ||
+            value < static_cast<double>(std::numeric_limits<int>::min()) ||
+            value > static_cast<double>(std::numeric_limits<int>::max())) {
+            error = key + " is out of range";
+            return false;
+        }
+        out = static_cast<int>(value);
         return true;
     }
     return false;

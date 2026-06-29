@@ -381,10 +381,12 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
                 cv::Mat img = imreadUnicode(allRecords[i].filePath, cv::IMREAD_COLOR);
                 if (!img.empty())
                 {
-                    char fn[256];
                     std::string normFile = std::filesystem::path(allRecords[i].filePath).filename().string();
-                    snprintf(fn, sizeof(fn), "%s/rank%02d_%dx_id%d_%s",
-                             freqDir.c_str(), exported + 1, cnt, id, normFile.c_str());
+                    std::string fn = freqDir + "/rank" + (exported + 1 < 10 ? "0" : "")
+                                   + std::to_string(exported + 1)
+                                   + "_" + std::to_string(cnt)
+                                   + "x_id" + std::to_string(id)
+                                   + "_" + normFile;
                     imwriteUnicode(fn, img);
                     exported++;
                 }
@@ -1405,7 +1407,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
             std::sort(edgeVals.begin(), edgeVals.end());
             std::sort(lbpVals.begin(), lbpVals.end());
-            auto pct = [&](const auto& v, double p) { return v[static_cast<size_t>(p * v.size())]; };
+            auto pct = [&](const auto& v, double p) {
+                size_t idx = static_cast<size_t>(p * static_cast<double>(v.size()));
+                if (idx >= v.size()) idx = v.size() - 1;
+                return v[idx];
+            };
             std::cout << "\n  Edge:  P50=" << std::fixed << std::setprecision(3) << pct(edgeVals, 0.50)
                       << " P90=" << pct(edgeVals, 0.90) << " P95=" << pct(edgeVals, 0.95)
                       << " P99=" << pct(edgeVals, 0.99);
@@ -2161,6 +2167,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 else if (cnt == 1) s += cfg.neighborPenalty * 0.1;
                 auto gapIt = lastUsedAt.find(r.id);  // 强锟狡硷拷锟?
                 if (gapIt != lastUsedAt.end() && (ti - gapIt->second) < MIN_GAP) s += 500.0;
+                const auto& candGrid = r.grid4x4;
+                for (const auto& rg : recentGrids)
+                {
+                    if (gridDistance8x8(candGrid, rg) < GRID_DUP_THRESHOLD)
+                    {
+                        s += GRID_DUP_PENALTY;
+                        break;
+                    }
+                }
                 scored.push_back({s, li});
             }
             if (scored.empty()) { noCandidateCount++; continue; }
@@ -2190,6 +2205,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
             // �? , , , ,
             int chosenId = bestRecsCpu[ti].id;
             recentIds.push_back(chosenId); freq[chosenId]++; lastUsedAt[chosenId] = ti;
+            recentGrids.push_back(bestRecsCpu[ti].grid4x4);
+            while (static_cast<int>(recentGrids.size()) > GRID_DUP_WINDOW)
+                recentGrids.pop_front();
             if ((int)recentIds.size() > cfg.neighborWindow) {
                 int old = recentIds.front(); recentIds.pop_front();
                 if (--freq[old] <= 0) freq.erase(old);

@@ -26,6 +26,7 @@
 #include <mutex>
 #include <queue>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <vector>
 
@@ -393,7 +394,13 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 if (img.empty()) { skipped++; continue; }
                 std::string hash = hashMatForBuild(img);
                 if (db.existsByHash(hash)) {
-                    fs::remove(u8path(outPath));
+                    std::error_code removeEc;
+                    fs::remove(u8path(outPath), removeEc);
+                    if (removeEc)
+                    {
+                        std::cerr << "WARN: cannot remove duplicate output file: " << outPath
+                                  << " (" << removeEc.message() << ")" << std::endl;
+                    }
                     skipped++;
                     continue;
                 }
@@ -403,7 +410,15 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 rec.srcWidth = img.cols;
                 rec.srcHeight = img.rows;
                 rec.aspectRatio = (rec.srcHeight > 0) ? (double)rec.srcWidth / rec.srcHeight : 0.0;
-                rec.fileSize = fs::file_size(u8path(outPath));
+                std::error_code sizeEc;
+                rec.fileSize = static_cast<int64_t>(fs::file_size(u8path(outPath), sizeEc));
+                if (sizeEc)
+                {
+                    std::cerr << "WARN: cannot stat output file: " << outPath
+                              << " (" << sizeEc.message() << ")" << std::endl;
+                    skipped++;
+                    continue;
+                }
                 std::string ext = pathToUtf8(u8path(outPath).extension());
                 if (!ext.empty() && ext[0] == '.') ext = ext.substr(1);
                 rec.format = ext;
