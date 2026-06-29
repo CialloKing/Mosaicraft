@@ -2187,17 +2187,27 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
     if (fmt != "jpg" && fmt != "png" && fmt != "webp" && fmt != "tiff") fmt = "jpg";
 
-    // 閿熺殕璁规嫹, , , 灞? , , 寮忛敓鍙??紮鎷? , 閿熼摪鍑ゆ嫹, , 寮? ,
+    // 输出路径扩展名纠正：显式 --format 或自动格式切换后保持路径与格式一致
     std::string outPath = outputPath;
     auto outDot = outPath.rfind('.');
+    auto lower = [](std::string s) { for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); return s; };
     if (outDot != std::string::npos)
     {
-        std::string oldExt = outPath.substr(outDot + 1);
-        // 显式 --format 时把输出路径扩展名纠正为匹配格式
+        std::string oldExt = lower(outPath.substr(outDot + 1));
+        // 显式 --format 时：扩展名与格式不匹配 → 纠正
         if (cfg.formatExplicit && oldExt != fmt)
             outPath = outPath.substr(0, outDot) + "." + fmt;
+        // 自动切换到 TIFF（原 JPG/PNG/WebP 超大 → TIFF）→ 纠正
         else if (fmt == "tiff" && (oldExt == "jpg" || oldExt == "jpeg" || oldExt == "png" || oldExt == "webp"))
             outPath = outPath.substr(0, outDot) + ".tiff";
+        // 自动切换到 PNG（原 JPG 超大 → PNG stream）→ 纠正
+        else if (fmt == "png" && (oldExt == "jpg" || oldExt == "jpeg"))
+            outPath = outPath.substr(0, outDot) + ".png";
+    }
+    else if (cfg.formatExplicit)
+    {
+        // 无扩展名但显式指定格式 → 追加扩展名
+        outPath += "." + fmt;
     }
 
     // 鍐? , 閿?
