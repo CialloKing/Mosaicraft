@@ -1052,7 +1052,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             double elapsed = std::chrono::duration<double>(Clock::now() - tPreFeat).count();
             double eta = (elapsed / done) * (totalTiles - done);
             std::cout << "\r  features " << done << "/" << totalTiles
-                      << " | ETA " << static_cast<int>(eta) << "s" << std::flush;
+                      << " | ETA " << (eta < 1.0 ? "<1s" : (std::to_string(static_cast<int>(eta)) + "s")) << std::flush;
         }
 
         // 剩锟洁不,  256 , �?
