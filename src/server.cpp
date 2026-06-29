@@ -365,7 +365,7 @@ int main(int argc, char* argv[])
             }
             CloseHandle(hReadPipe);
 
-            WaitForSingleObject(pi.hProcess, INFINITE);
+            WaitForSingleObject(pi.hProcess, 30 * 60 * 1000);  // 30 分钟超时
             DWORD exitCode = 0;
             GetExitCodeProcess(pi.hProcess, &exitCode);
             CloseHandle(pi.hProcess);
@@ -383,11 +383,11 @@ int main(int argc, char* argv[])
                 res.set_content("ERROR: failed to start process", "text/plain");
                 return;
             }
-            setvbuf(pipe, nullptr, _IONBF, 0);
-            char ch;
-            while (fread(&ch, 1, 1, pipe) == 1) {
-                std::cout << ch;
-                output += ch;
+            char buf[4096];
+            size_t n;
+            while ((n = fread(buf, 1, sizeof(buf), pipe)) > 0) {
+                std::cout.write(buf, n);
+                output.append(buf, n);
             }
             int rc = pclose(pipe);
             if (rc == 0)

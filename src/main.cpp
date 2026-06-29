@@ -976,7 +976,7 @@ int main(int argc, char* argv[])
     } autoPause;
 
     // Windows: argv ʹ��ϵͳ ANSI ���루����ϵͳΪ GBK����תΪ UTF-8 ԭ���滻
-    static std::vector<std::string> utf8Args(argc);
+    std::vector<std::string> utf8Args(argc);
     for (int i = 0; i < argc; ++i)
     {
         utf8Args[i] = localToUtf8(argv[i]);

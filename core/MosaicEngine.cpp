@@ -1522,7 +1522,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             int topN = std::min(cfg.topNrandom, std::min(N, validCount));
             std::partial_sort(idxs.begin(), idxs.begin() + topN, idxs.end(),
                 [&](int a, int b) { return scores[a] < scores[b]; });
-            int rankPos = rand() % topN;       // 閫? 浣?  0-based, ,  rank-1
+            thread_local std::mt19937 rng(std::random_device{}());
+            int rankPos = std::uniform_int_distribution<int>(0, topN - 1)(rng);       // 閫? 浣?  0-based, ,  rank-1
             int pick = idxs[rankPos];
             int chosenLibIdx = indices[pick];
             bestLibIdx[ti] = chosenLibIdx;
@@ -2095,7 +2096,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             if (scored.empty()) { noCandidateCount++; continue; }
             std::sort(scored.begin(), scored.end());
             int topN = std::min(cfg.topNrandom, (int)scored.size());
-            int pickIdx = scored[rand() % topN].second;
+            thread_local std::mt19937 rng2(std::random_device{}());
+            int pickIdx = scored[std::uniform_int_distribution<int>(0, topN - 1)(rng2)].second;
             bestLibIdxCpu[ti] = pickIdx;
             bestRecsCpu[ti] = allRecords[pickIdx];
             // --analyze: 只记录胜出者的特征数据（每个 tile 一条）
