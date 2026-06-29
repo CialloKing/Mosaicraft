@@ -2173,7 +2173,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     // , , , , 寮?
     std::string fmt = cfg.outputFormat;
-    if (fmt == "jpg" || fmt.empty())
+    // 仅当未显式指定格式时，从扩展名推断
+    if ((fmt == "jpg" || fmt.empty()) && !cfg.formatExplicit)
     {
         // , 閿熺殕杈炬嫹 outputPath , 灞? 閿熺嫛璁规嫹
         auto dotPos = outputPath.rfind('.');
