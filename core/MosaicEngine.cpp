@@ -27,6 +27,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <mutex>
 #include <random>
 #include <iostream>
 
@@ -1161,6 +1162,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     auto t6 = Clock::now(); opLbpNs += std::chrono::duration_cast<Ns>(t6 - t5).count();
                     int d = ++featDone;
                     if (d % 500 == 0 || d == totalTiles) {
+                        static std::mutex coutMutex;
+                        std::lock_guard<std::mutex> lock(coutMutex);
                         double e = std::chrono::duration<double>(Clock::now() - tCpuFeatStart).count();
                         double eta = (e / d) * (totalTiles - d);
                         std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
@@ -2078,6 +2081,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
                     int d = ++placeDone;
                     if (d % 500 == 0 || d == totalTiles) {
+                        static std::mutex placeMutex;
+                        std::lock_guard<std::mutex> lock(placeMutex);
                         double e = std::chrono::duration<double>(Clock::now() - tPlaceStart).count();
                         double eta = (e / d) * (totalTiles - d);
                         std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
@@ -2223,6 +2228,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     matched++;
                     int d = ++placed;
                     if (d % 2000 == 0 || d == totalTiles) {
+                        static std::mutex cpuPlaceMutex;
+                        std::lock_guard<std::mutex> lock(cpuPlaceMutex);
                         double e = std::chrono::duration<double>(Clock::now() - tCpuPlaceStart).count();
                         double eta = (e / d) * (totalTiles - d);
                         std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
