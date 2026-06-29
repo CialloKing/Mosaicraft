@@ -367,10 +367,21 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
     auto dp = anaDir.rfind('.');
     if (dp != std::string::npos) anaDir = anaDir.substr(0, dp) + "_analysis";
     else anaDir += "_analysis";
-    std::filesystem::create_directories(u8path(anaDir));
+    std::error_code ec;
+    std::filesystem::create_directories(u8path(anaDir), ec);
+    if (ec)
+    {
+        std::cerr << "WARNING: analysis dir creation failed: " << ec.message() << std::endl;
+        return;
+    }
 
     std::string freqDir = anaDir + "/freq_rank";
-    std::filesystem::create_directories(u8path(freqDir));
+    std::filesystem::create_directories(u8path(freqDir), ec);
+    if (ec)
+    {
+        std::cerr << "WARNING: freq_rank dir creation failed: " << ec.message() << std::endl;
+        return;
+    }
     int exported = 0;
     for (const auto& [cnt, id] : topUsed)
     {
