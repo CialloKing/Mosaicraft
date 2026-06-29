@@ -439,10 +439,61 @@ Compress-Archive -Path release_pkg\* -Destination Mosaicraft_release.zip
 
 > **EN**: Detailed version changelog. See git tags for each release.
 
-### v1.11: Web ����������
-- ����̬ HTML: `tools/command-builder/index.html` ˫������
-- 7 ��������ȫ���ǣ�46 �������� CLI ͬ��
-- GitHub ��ɫ����
+### v1.11: Web 命令生成器
+- 静态 HTML: `tools/command-builder/index.html` 双栏布局
+- 7 个子命令全覆盖，46 个参数与 CLI 同步
+- GitHub 明色主题
+
+### v1.12: 架构重构 + 性能优化
+
+**流式写入**
+- PNG 流式写入 (PngStreamWriter): 逐行写盘，内存恒定 ~162KB
+- JPG 流式写入 (JpgStreamWriter): libjpeg 直接 API
+- `--write-mode stream/batch/auto` 统一管理 PNG/TIFF/JPG
+
+**数据库**
+- DB 自包含: 统一目录内包含 `mosaicraft.db`
+- DB 元数据: `meta` 表存储 `feature_w/h`，支持多分辨率适配
+- `--normalize-size <WxH>` 自动统一归一化分辨率
+- GPU 多分辨率: 180x320 / 320x180 / 360x640 / 640x360
+- 输出 tile 自动匹配 DB 尺寸(横图320x180, 竖图180x320)
+
+**性能 (45K 图库, RTX 4060)**
+- 建库: 30min → 2.3min (13x 提升)
+- GPU_BATCH 32→256
+- CPU/GPU 流水线并行
+- FeaturePack 多线程读取
+- 背压控制 (MAX_QUEUE=512) 防 OOM
+
+**CLI 规范**
+- `--output-tile WxH` 统一尺寸格式
+- `--force`/`-y` 安全确认 + TTY 检测
+- 退出码 0/1/2/3/4 + help 文档化
+- 31 个参数标签说明统一，帮助文本统一
+- 默认值: db=`library/mosaicraft.db`, output=`output/output.jpg`
+
+**Web UI 集成**
+- `MosaicraftWebUI.exe`: cpp-httplib HTTP 服务器
+- Web UI 改为使用结构化 API，API 列表详见 `docs/API.md`
+- `GET /api/info` 返回版本和 API 能力摘要
+- `POST /api/run` 默认关闭，仅通过 `MOSAICRAFT_ENABLE_LEGACY_RUN=1` 作为旧命令兼容入口
+- 30min 超时，管道批量读取，端口冲突提示
+
+**Linux 支持 (v1.13 目标)**
+- 条件编译 `isatty`/`getchar`/`unistd.h` 已补
+- 核心算法跨平台（已在 WSL/原生实测）
+
+**健壮性**
+- GPU cudaMalloc 全部检查返回值
+- `--normalize-size`/`--output-tile`/`--write-mode` 格式校验
+- `\r` 进度行覆盖 + 控制台暂停(AutoPause)
+- 统一压缩质量默认值 (JPEG q90, PNG lv9)
+
+### v1.12.3: 支持 MOSAICRAFT_CUDA
+- `cmake -D MOSAICRAFT_CUDA=OFF` 纯 CPU 编译
+- 条件编译隔离 CUDA 头文件/链接依赖
+- `core/CudaStubs.cpp`: 无 CUDA 时的空实现
+- Windows/Linux 双平台通过
 
 
 ## 12. v1.13 更新日志 (2026-06-28)
@@ -459,53 +510,4 @@ Compress-Archive -Path release_pkg\* -Destination Mosaicraft_release.zip
 - API 文档: docs/API.md 完整端点目录
 - 测试: 19→43 用例, 27→475 断言
 - Legacy /api/run 保留: 向后兼容
-### v1.12: �ܹ��ع� + �����Ż�
 
-**�������**
-- PNG ��ʽд�� (PngStreamWriter): ����д�̣��ڴ�㶨 ~162KB
-- JPG ��ʽд�� (JpgStreamWriter): libjpeg ���� API
-- `--write-mode stream/batch/auto` ͳһ���� PNG/TIFF/JPG
-
-**���ݿ�**
-- DB �԰���: ��һ��Ŀ¼�ں� `mosaicraft.db`
-- DB ������: `meta` ��洢 `feature_w/h`����������Ӧ
-- `--normalize-size <WxH>` �Զ����һ���ֱ���
-- GPU ��ֱ���: 180x320 / 320x180 / 360x640 / 640x360
-- ��� tile �Զ����� DB �ߴ�(�����320x180, ������180x320)
-
-**���� (45K ͼ��, RTX 4060)**
-- ����: 30min �� 2.3min (13x ����)
-- GPU_BATCH 32��256
-- CPU/GPU ��ˮ�߲���
-- FeaturePack ���̶߳�ȡ
-- �����н� (MAX_QUEUE=512) �� OOM
-
-**CLI �淶**
-- `--output-tile WxH` ��������ʽ
-- `--force`/`-y` ��ȫ���� + TTY ���
-- �˳��� 0/1/2/3/4 + help �ĵ���
-- 31 ������������ȷ�������ı�ͳһ
-- Ĭ��ֵ: db=`library/mosaicraft.db`, output=`output/output.jpg`
-
-**Web UI ������**
-- `MosaicraftWebUI.exe`: cpp-httplib HTTP ����
-- Web UI ����ʹ�ýṹ�� API, API �б���� `docs/API.md`
-- `GET /api/info` 返回版本和 API 能力摘要
-- `POST /api/run` 默认关闭，仅通过 `MOSAICRAFT_ENABLE_LEGACY_RUN=1` 作为旧命令兼容入口
-- 30min ��ʱ, ���ֽڶ�ȡ, �˿ڳ�ͻ���
-
-**Linux ֧�� (v1.13 Ŀ��)**
-- �������� `isatty`/`getchar`/`unistd.h` �Ѳ�
-- �����㷨��ƽ̨���� WSL/ԭ��ʵ��
-
-**��׳��**
-- GPU cudaMalloc ȫ����鷵��ֵ
-- `--normalize-size`/`--output-tile`/`--write-mode` ����У��
-- `\r` ������� + ����̨��ͣ(AutoPause)
-- ��һ��ѹ���������� (JPEG q90, PNG lv9)
-
-### v1.12.3: ����� MOSAICRAFT_CUDA
-- `cmake -D MOSAICRAFT_CUDA=OFF` �� CPU ����
-- ������������� CUDA ͷ�ļ�/��������
-- `core/CudaStubs.cpp`: �� CUDA ʱ�Ŀ�ʵ��
-- Windows/Linux ������
