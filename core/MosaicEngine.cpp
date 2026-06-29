@@ -1121,6 +1121,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     if (!cfg.useGpu)  // CPU , 锟剿ｏ拷, ,  16 锟�??筹拷, �?
     {
         std::atomic<int> featDone{0};
+        auto tCpuFeatStart = Clock::now();
         std::vector<std::thread> featWorkers;
         for (int t = 0; t < nThreads; ++t) {
             featWorkers.emplace_back([&, t]() {
@@ -1146,7 +1147,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     auto t6 = Clock::now(); opLbpNs += std::chrono::duration_cast<Ns>(t6 - t5).count();
                     int d = ++featDone;
                     if (d % 500 == 0 || d == totalTiles) {
-                        double e = std::chrono::duration<double>(Clock::now() - tStart).count();
+                        double e = std::chrono::duration<double>(Clock::now() - tCpuFeatStart).count();
                         double eta = (e / d) * (totalTiles - d);
                         std::cout << "\r  features " << d << "/" << totalTiles
                                   << " | ETA " << (eta < 1.0 ? "<1s" : std::to_string(static_cast<int>(eta)) + "s")
@@ -1258,6 +1259,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
 
         std::cout << "  collecting candidates..." << std::flush;
+        auto tCollectStart = Clock::now();
         std::vector<int> allIndices(totalTiles * N, -1);
         std::vector<float> tileVec;
         int annMissCount = 0;
@@ -1277,7 +1279,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     annMissCount++;
             }
             if (ti % 500 == 0 || ti == totalTiles - 1) {
-                double e = std::chrono::duration<double>(Clock::now() - tStart).count();
+                double e = std::chrono::duration<double>(Clock::now() - tCollectStart).count();
                 double eta = (e / (ti+1)) * (totalTiles - (ti+1));
                 std::cout << "\r  collecting candidates " << (ti+1) << "/" << totalTiles
                           << " | ETA " << (eta < 1.0 ? "<1s" : std::to_string(static_cast<int>(eta)) + "s")
@@ -2105,6 +2107,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         if (cfg.neighborWindow <= 0) cfg.neighborWindow = autoNeighborWindow();
 
         std::cout << "  selecting best..." << std::flush;
+        auto tCpuSelectStart = Clock::now();
         for (int ti = 0; ti < totalTiles; ++ti)
         {
             std::vector<float> tileVec;
@@ -2169,7 +2172,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 if (--freq[old] <= 0) freq.erase(old);
             }
             if (ti % 5000 == 0 || ti == totalTiles-1) {
-                double e = std::chrono::duration<double>(Clock::now() - tStart).count();
+                double e = std::chrono::duration<double>(Clock::now() - tCpuSelectStart).count();
                 double eta = (e / (ti+1)) * (totalTiles - (ti+1));
                 std::cout << "\r  selecting " << (ti+1) << "/" << totalTiles
                           << " | ETA " << (eta < 1.0 ? "<1s" : std::to_string(static_cast<int>(eta)) + "s")
