@@ -939,9 +939,20 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     // , , ,  , 锟�??筹拷�? , , ,  tile , ,  , , ,
     int totalTiles = tilesX * tilesY;
-    int doneWidth = static_cast<int>(std::to_string(totalTiles).size());  // 计数器固定宽度，消除光标跳动
+    int doneWidth = static_cast<int>(std::to_string(totalTiles).size());  // 计数器固定宽度
 
-    // --analyze: �? , , , , , , , ,
+    // 进度期间隐藏光标，消除 \r 回行首时光标闪烁导致的"跳动"视觉
+#ifdef _WIN32
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_CURSOR_INFO ci;
+    bool cursorWasVisible = GetConsoleCursorInfo(hOut, &ci) && ci.bVisible;
+    if (cursorWasVisible) { ci.bVisible = FALSE; SetConsoleCursorInfo(hOut, &ci); }
+    auto restoreCursor = [&]() {
+        if (cursorWasVisible) { ci.bVisible = TRUE; SetConsoleCursorInfo(hOut, &ci); }
+    };
+#endif
+
+    // --analyze: ...
     std::vector<double> analyzeScores;
     std::vector<int>    analyzeImageIds;
     std::vector<double> analyzeLabD, analyzeGridD, analyzeEdgeD;
@@ -2368,7 +2379,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     releaseGpuLib();
 
-    // , �? �?
+#ifdef _WIN32
+    restoreCursor();
+#endif
+
+    // , 锟? 锟?
     msPlace = Ms(Clock::now() - tLast).count();
     printBenchmark("single");
     return true;
