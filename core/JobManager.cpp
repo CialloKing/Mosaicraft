@@ -3,6 +3,7 @@
 #include <exception>
 #include <iomanip>
 #include <sstream>
+#include "core/ConsoleGuard.h"
 
 namespace mosaicraft
 {
@@ -200,8 +201,14 @@ void JobManager::workerLoop()
             if (it != m_jobs.end()) type = it->second->snapshot.type;
         }
 
-        if (type == "build") runBuildJob(id);
-        else runMosaicJob(id);
+        if (type == "build") {
+            ConsoleQuickEditGuard guard;
+            runBuildJob(id);
+        }
+        else {
+            ConsoleQuickEditGuard guard;
+            runMosaicJob(id);
+        }
     }
 }
 
