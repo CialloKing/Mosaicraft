@@ -1,4 +1,4 @@
-﻿#include "core/Database.h"
+#include "core/Database.h"
 #include "core/BuildService.h"
 #include "core/DatabaseService.h"
 #include "core/InspectService.h"
@@ -66,6 +66,35 @@ static bool readOptionValue(int argc, char* argv[], int& i, const std::string& o
         return false;
     }
     value = argv[++i];
+    return true;
+}
+
+// 带数值校验的版本 — 检测 "abc" 或 "12abc" 等非法输入
+static bool readOptionInt(int argc, char* argv[], int& i, const std::string& option, int& out)
+{
+    const char* raw = nullptr;
+    if (!readOptionValue(argc, argv, i, option, raw)) return false;
+    char* end = nullptr;
+    long v = std::strtol(raw, &end, 10);
+    if (end == raw || *end != '\0') {
+        std::cerr << "ERROR: " << option << " expects an integer, got: " << raw << std::endl;
+        return false;
+    }
+    out = static_cast<int>(v);
+    return true;
+}
+
+static bool readOptionDouble(int argc, char* argv[], int& i, const std::string& option, double& out)
+{
+    const char* raw = nullptr;
+    if (!readOptionValue(argc, argv, i, option, raw)) return false;
+    char* end = nullptr;
+    double v = std::strtod(raw, &end);
+    if (end == raw || *end != '\0') {
+        std::cerr << "ERROR: " << option << " expects a number, got: " << raw << std::endl;
+        return false;
+    }
+    out = v;
     return true;
 }
 
@@ -195,9 +224,9 @@ static int cmdBuild(int argc, char* argv[])
         }
         else if (arg == "-t" || arg == "--threads")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            threads = std::atoi(value);
+            int _v = 0;
+            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
+            threads = _v;
             if (threads < 0)
             {
                 threads = 0;
@@ -329,45 +358,45 @@ static int cmdMosaic(int argc, char* argv[])
         }
         else if (arg == "--lab-weight")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.labWeight = std::atof(value);
+            double _v = 0.0;
+            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
+            cfg.labWeight = _v;
         }
         else if (arg == "--grid-weight")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.gridWeight = std::atof(value);
+            double _v = 0.0;
+            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
+            cfg.gridWeight = _v;
         }
         else if (arg == "--tiny-weight")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.tinyWeight = std::atof(value);
+            double _v = 0.0;
+            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
+            cfg.tinyWeight = _v;
         }
         else if (arg == "--edge-weight")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.edgeWeight = std::atof(value);
+            double _v = 0.0;
+            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
+            cfg.edgeWeight = _v;
         }
         else if (arg == "--lbp-weight")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.lbpWeight = std::atof(value);
+            double _v = 0.0;
+            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
+            cfg.lbpWeight = _v;
         }
         else if (arg == "--penalty")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.usePenalty = std::atof(value);
+            double _v = 0.0;
+            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
+            cfg.usePenalty = _v;
         }
         else if (arg == "--l-range")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.lRange = std::atof(value);
+            double _v = 0.0;
+            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
+            cfg.lRange = _v;
         }
         else if (arg == "--candidates")
         {
@@ -430,15 +459,15 @@ static int cmdMosaic(int argc, char* argv[])
         }
         else if (arg == "--neighbor-window")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.neighborWindow = std::atoi(value);
+            int _v = 0;
+            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
+            cfg.neighborWindow = _v;
         }
         else if (arg == "--neighbor-penalty")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.neighborPenalty = std::atof(value);
+            double _v = 0.0;
+            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
+            cfg.neighborPenalty = _v;
         }
         else if (arg == "-U" || arg == "--upscale")
         {
@@ -786,9 +815,9 @@ static int cmdDbUsage(int argc, char* argv[])
         }
         else if (arg == "-n")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            limit = std::atoi(value);
+            int _v = 0;
+            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
+            limit = _v;
         }
         else if (arg == "--unused")
             showUnused = true;

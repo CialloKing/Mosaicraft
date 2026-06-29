@@ -450,8 +450,8 @@ int findBestMatch(
         labW, gridW, tinyW, edgeW, lbpW, usePenalty,
         d_scores.get());
 
-    if (!CUDA_OK(cudaDeviceSynchronize())) return -1;
     if (!CUDA_OK(cudaGetLastError())) return -1;
+    if (!CUDA_OK(cudaDeviceSynchronize())) return -1;
 
     // CPU 侧找 argmin
     std::vector<double> scores(static_cast<std::size_t>(numCandidates));

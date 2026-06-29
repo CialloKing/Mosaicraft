@@ -112,6 +112,7 @@ public:
                 uint32_t tc = 0, lc = 0;
                 if (fread(&tc,4,1,ft)==1 && fread(&lc,4,1,fl)==1 && tc==lc) {
                     int oldN = static_cast<int>(tc);
+                    if (oldN < 0 || oldN > 500000) { fclose(ft); fclose(fl); return false; }  // 损坏/恶意缓存防护
                     oldTiny.resize(oldN * 256);
                     oldLbp.resize(oldN * 256);
                     oldIds.resize(oldN);
