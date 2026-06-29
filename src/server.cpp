@@ -392,9 +392,21 @@ int main(int argc, char* argv[])
             }
             CloseHandle(hReadPipe);
 
-            WaitForSingleObject(pi.hProcess, 30 * 60 * 1000);  // 30 分钟超时
+            DWORD waitResult = WaitForSingleObject(pi.hProcess, 30 * 60 * 1000);  // 30 分钟超时
             DWORD exitCode = 0;
-            GetExitCodeProcess(pi.hProcess, &exitCode);
+            if (waitResult == WAIT_TIMEOUT) {
+                TerminateProcess(pi.hProcess, 1);
+                CloseHandle(pi.hProcess);
+                res.set_content("ERROR: command timed out after 30 minutes\n" + output, "text/plain; charset=utf-8");
+                return;
+            }
+            if (waitResult == WAIT_FAILED || !GetExitCodeProcess(pi.hProcess, &exitCode)) {
+                DWORD err = GetLastError();
+                CloseHandle(pi.hProcess);
+                res.set_content("ERROR: failed to wait for command (" + std::to_string(err) + ")\n" + output,
+                                "text/plain; charset=utf-8");
+                return;
+            }
             CloseHandle(pi.hProcess);
 
             if (exitCode == 0)

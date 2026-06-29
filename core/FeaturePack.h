@@ -8,8 +8,10 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace mosaicraft
@@ -70,6 +72,7 @@ public:
                             const std::vector<float>& lbp)
     {
         if (!s_tinyFile || !s_lbpFile) return;
+        if (tiny.size() < 256 || lbp.size() < 256) return;
         int32_t id = static_cast<int32_t>(imageId);
         // tiny: id(4B) + 256B uint8_t
         fwrite(&id, sizeof(id), 1, s_tinyFile);
@@ -255,16 +258,15 @@ public:
         }
         fclose(ft); fclose(fl);
 
-        // 建立 image_id → binary_index 映射
-        int maxId = 0;
-        for (int id : recordIds)
-            if (id > maxId) maxId = id;
-        for (int id : fileIds)
-            if (id > maxId) maxId = id;
-
-        std::vector<int> idToOffset(maxId + 1, -1);
+        // 建立 image_id → binary_index 映射，避免损坏文件里的负数/超大 id 造成越界或巨量分配。
+        std::unordered_map<int, int> idToOffset;
+        idToOffset.reserve(static_cast<size_t>(N));
         for (int i = 0; i < N; ++i)
+        {
+            if (fileIds[i] < 0)
+                return false;
             idToOffset[fileIds[i]] = i;
+        }
 
         // 按 recordIds 顺序填充输出数组
         h_tiny.resize(dbCount * 256);
@@ -272,9 +274,10 @@ public:
         for (int i = 0; i < dbCount; ++i)
         {
             int imgId = recordIds[i];
-            int offset = (imgId >= 0 && imgId <= maxId) ? idToOffset[imgId] : -1;
-            if (offset >= 0)
+            auto offsetIt = idToOffset.find(imgId);
+            if (offsetIt != idToOffset.end())
             {
+                int offset = offsetIt->second;
                 std::memcpy(&h_tiny[i * 256], &fileTiny[offset * 256], 256);
                 std::memcpy(&h_lbp[i * 256],  &fileLbp[offset * 256],  256 * sizeof(float));
             }

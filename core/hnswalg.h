@@ -687,6 +687,8 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
 
     void saveIndex(const std::string &location) {
         std::ofstream output(location, std::ios::binary);
+        if (!output.is_open())
+            throw std::runtime_error("Cannot open file for writing: " + location);
 
         writeBinaryPOD(output, offsetLevel0_);
         writeBinaryPOD(output, max_elements_);
@@ -712,6 +714,8 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                 output.write(linkLists_[i], linkListSize);
         }
         output.close();
+        if (!output)
+            throw std::runtime_error("Failed to write index: " + location);
     }
 
 
@@ -1230,7 +1234,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                         tableint *datal = (tableint *) (data + 1);
                         for (int i = 0; i < size; i++) {
                             tableint cand = datal[i];
-                            if (cand < 0 || cand > max_elements_)
+                            if (cand >= cur_element_count)
                                 throw std::runtime_error("cand error");
                             dist_t d = fstdistfunc_(data_point, getDataByInternalId(cand), dist_func_param_);
                             if (d < curdist) {
@@ -1294,7 +1298,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                 tableint *datal = (tableint *) (data + 1);
                 for (int i = 0; i < size; i++) {
                     tableint cand = datal[i];
-                    if (cand < 0 || cand > max_elements_)
+                    if (cand >= cur_element_count)
                         throw std::runtime_error("cand error");
                     dist_t d = fstdistfunc_(query_data, getDataByInternalId(cand), dist_func_param_);
 
@@ -1354,7 +1358,7 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                 tableint *datal = (tableint *) (data + 1);
                 for (int i = 0; i < size; i++) {
                     tableint cand = datal[i];
-                    if (cand < 0 || cand > max_elements_)
+                    if (cand >= cur_element_count)
                         throw std::runtime_error("cand error");
                     dist_t d = fstdistfunc_(query_data, getDataByInternalId(cand), dist_func_param_);
 

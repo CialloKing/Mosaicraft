@@ -498,8 +498,18 @@ static int cmdMosaic(int argc, char* argv[])
             if (!readOptionValue(argc, argv, i, arg, val)) return 1;
             const char* sep = strchr(val, 'x');
             if (sep && sep != val && *(sep+1) != '\0' && !strchr(sep+1, 'x')) {
-                cfg.nativeTileW = std::max(1, std::atoi(val));
-                cfg.nativeTileH = std::max(1, std::atoi(sep + 1));
+                errno = 0;
+                char* endW = nullptr;
+                char* endH = nullptr;
+                long w = std::strtol(val, &endW, 10);
+                long h = std::strtol(sep + 1, &endH, 10);
+                if (errno == ERANGE || endW != sep || endH == sep + 1 || *endH != '\0' ||
+                    w < 1 || w > INT_MAX || h < 1 || h > INT_MAX) {
+                    std::cerr << "ERROR: --output-tile expected WxH format (e.g. 180x320), got: " << val << std::endl;
+                    return 1;
+                }
+                cfg.nativeTileW = static_cast<int>(w);
+                cfg.nativeTileH = static_cast<int>(h);
             } else {
                 std::cerr << "ERROR: --output-tile expected WxH format (e.g. 180x320), got: " << val << std::endl;
                 return 1;

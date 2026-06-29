@@ -319,6 +319,7 @@ __global__ void scoreBatchKernel(
     const double* __restrict__ libEdge,
     const float* __restrict__ libLBP,
     const int* __restrict__ libUseCount,
+    int libCount,
     // 权重（每 tile 独立，支持自适应）
     const double* __restrict__ tileLabW,   // [totalTiles]
     const double* __restrict__ tileGridW,
@@ -334,7 +335,7 @@ __global__ void scoreBatchKernel(
     if (idx >= totalWork) { return; }
 
     int libIdx = indices[idx];
-    if (libIdx < 0) { d_scores[idx] = 1e30; return; }
+    if (libIdx < 0 || libIdx >= libCount) { d_scores[idx] = 1e30; return; }
     int tileIdx = idx / N;
 
     // --- LAB distance ---
@@ -806,7 +807,7 @@ void scoreBatch(
         d_tileL.get(), d_tileA.get(), d_tileB.get(),
         d_tileGrid.get(), d_tileTiny.get(), d_tileEdge.get(), d_tileLBP.get(),
         d_indices.get(), N,
-        lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use,
+        lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use, lib.count,
         d_labW.get(), d_gridW.get(), d_tinyW.get(), d_edgeW.get(), d_lbpW.get(), usePenalty,
         d_scores.get());
 

@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -941,7 +942,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
               << std::endl;
 
     // , , ,  , 锟�??筹拷�? , , ,  tile , ,  , , ,
-    int totalTiles = tilesX * tilesY;
+    int64_t totalTiles64 = static_cast<int64_t>(tilesX) * tilesY;
+    if (totalTiles64 > INT_MAX) {
+        std::cerr << "ERROR: Too many tiles (" << totalTiles64 << ")" << std::endl;
+        releaseGpuLib();
+        return false;
+    }
+    int totalTiles = static_cast<int>(totalTiles64);
     int doneWidth = static_cast<int>(std::to_string(totalTiles).size());  // 计数器固定宽度
 
     // 进度期间隐藏光标，消除 \r 回行首时光标闪烁导致的"跳动"视觉
@@ -1280,7 +1287,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
         std::cout << "  collecting candidates..." << std::flush;
         auto tCollectStart = Clock::now();
-        std::vector<int> allIndices(totalTiles * N, -1);
+        const size_t totalWork = static_cast<size_t>(totalTiles) * static_cast<size_t>(N);
+        std::vector<int> allIndices(totalWork, -1);
         std::vector<float> tileVec;
         int annMissCount = 0;
         for (int ti = 0; ti < totalTiles; ++ti)
@@ -1294,7 +1302,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             {
                 int libIdx = annIndex.idToAllRecordsIndex(imgIds[j]);
                 if (libIdx >= 0)
-                    allIndices[ti * N + j] = libIdx;
+                    allIndices[static_cast<size_t>(ti) * static_cast<size_t>(N) + static_cast<size_t>(j)] = libIdx;
                 else
                     annMissCount++;
             }
@@ -1315,14 +1323,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
         tLast = tANN;
 
         // , ,  Phase B: , �?  tile , , , GPU , �? , 锟节存布锟�??ｏ拷 , ,
-        std::vector<float>   flatGrid(totalTiles * 192);
-        std::vector<uint8_t> flatTiny(totalTiles * 256);
-        std::vector<float>   flatLBP(totalTiles * 256);
+        std::vector<float>   flatGrid(static_cast<size_t>(totalTiles) * 192);
+        std::vector<uint8_t> flatTiny(static_cast<size_t>(totalTiles) * 256);
+        std::vector<float>   flatLBP(static_cast<size_t>(totalTiles) * 256);
         for (int ti = 0; ti < totalTiles; ++ti)
         {
-            std::memcpy(&flatGrid[ti * 192], allGrid[ti].data(), 192 * sizeof(float));
-            std::memcpy(&flatTiny[ti * 256], allTiny[ti].data(), 256);
-            std::memcpy(&flatLBP[ti * 256], allLBP[ti].data(), 256 * sizeof(float));
+            std::memcpy(&flatGrid[static_cast<size_t>(ti) * 192], allGrid[ti].data(), 192 * sizeof(float));
+            std::memcpy(&flatTiny[static_cast<size_t>(ti) * 256], allTiny[ti].data(), 256);
+            std::memcpy(&flatLBP[static_cast<size_t>(ti) * 256], allLBP[ti].data(), 256 * sizeof(float));
         }
 
         // , ,  Phase C: , ,  GPU , ,  , ,
@@ -1422,7 +1430,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << " T=" << cntTexture << " N=" << cntNormal;
         }
         std::cout << "..." << std::flush;
-        std::vector<double> allScores(totalTiles * N, 1e30);
+        std::vector<double> allScores(totalWork, 1e30);
         cuda::scoreBatch(
             totalTiles,
             allTL.data(), allTA.data(), allTB.data(),
@@ -1507,8 +1515,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
         int noCandidateCount = 0;  // , 希锟酵�??�? 藓锟窖★拷锟?tile
         for (int ti = 0; ti < totalTiles; ++ti)
         {
-            double* scores = &allScores[ti * N];
-            const int* indices = &allIndices[ti * N];
+            const size_t rowOffset = static_cast<size_t>(ti) * static_cast<size_t>(N);
+            double* scores = &allScores[rowOffset];
+            const int* indices = &allIndices[rowOffset];
             // �? , �? �? , 锟脚筹拷 -1 , �?
             int validCount = 0;
             for (int j = 0; j < N; ++j)
@@ -1616,7 +1625,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 int annRank = -1;
                 for (int j = 0; j < N; ++j)
                 {
-                    if (allIndices[ti * N + j] == chosenLibIdx) { annRank = j; break; }
+                    if (allIndices[static_cast<size_t>(ti) * static_cast<size_t>(N) + static_cast<size_t>(j)] == chosenLibIdx) { annRank = j; break; }
                 }
                 analyzeAnnRanks.push_back(annRank);
 
