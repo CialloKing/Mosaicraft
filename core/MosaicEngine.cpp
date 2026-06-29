@@ -451,7 +451,9 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
     std::string heatPath = anaDir + "/heatmap.png";
     double sMin = sortedScores.front(), sRange = sortedScores.back() - sMin;
     if (sRange < 0.001) sRange = 0.001;
-    cv::Mat heat(tilesY * 4, tilesX * 4, CV_8UC3);
+    int cellW = cfg.tileW;
+    int cellH = cfg.tileH;
+    cv::Mat heat(tilesY * cellH, tilesX * cellW, CV_8UC3);
     for (int ty = 0; ty < tilesY; ++ty)
     {
         for (int tx = 0; tx < tilesX; ++tx)
@@ -465,7 +467,7 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
                 color = cv::Vec3b(0, static_cast<uchar>(255*t*2), static_cast<uchar>(255*(1-t*2)));
             else
                 color = cv::Vec3b(0, static_cast<uchar>(255*(1-(t-0.5)*2)), static_cast<uchar>(255));
-            cv::rectangle(heat, cv::Rect(tx*4, ty*4, 4, 4), color, cv::FILLED);
+            cv::rectangle(heat, cv::Rect(tx*cellW, ty*cellH, cellW, cellH), color, cv::FILLED);
         }
     }
     // 保持与原图相同宽高比（仅在 tile 格比例与原图不一致时拉伸，维持 INTER_NEAREST 保持格块清晰）
