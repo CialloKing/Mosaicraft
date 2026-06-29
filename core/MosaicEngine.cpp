@@ -1063,9 +1063,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
             int done = batchStart + batchN;
             double elapsed = std::chrono::duration<double>(Clock::now() - tPreFeat).count();
             double eta = (elapsed / done) * (totalTiles - done);
-            std::string etaStr = (eta < 1.0) ? "<1s" : (std::to_string(static_cast<int>(eta)) + "s");
+            std::string etaStr = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
+            // 固定宽度5字符，右对齐，确保行长度恒定
+            if (etaStr.size() < 5) etaStr = std::string(5 - etaStr.size(), ' ') + etaStr;
             std::cout << "\r  features " << done << "/" << totalTiles
-                      << " | ETA " << etaStr << "   " << std::flush;  // β���ո񸲸Ǿ��в���
+                      << " | ETA" << etaStr << std::flush;
         }
 
         // 剩锟洁不,  256 , �?
@@ -1149,9 +1151,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     if (d % 500 == 0 || d == totalTiles) {
                         double e = std::chrono::duration<double>(Clock::now() - tCpuFeatStart).count();
                         double eta = (e / d) * (totalTiles - d);
+                        std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
+                        if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
                         std::cout << "\r  features " << d << "/" << totalTiles
-                                  << " | ETA " << (eta < 1.0 ? "<1s" : std::to_string(static_cast<int>(eta)) + "s")
-                                  << "   " << std::flush;
+                                  << " | ETA" << etas << std::flush;
                     }
                 }
             });
@@ -1281,9 +1284,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
             if (ti % 500 == 0 || ti == totalTiles - 1) {
                 double e = std::chrono::duration<double>(Clock::now() - tCollectStart).count();
                 double eta = (e / (ti+1)) * (totalTiles - (ti+1));
+                std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
+                if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
                 std::cout << "\r  collecting candidates " << (ti+1) << "/" << totalTiles
-                          << " | ETA " << (eta < 1.0 ? "<1s" : std::to_string(static_cast<int>(eta)) + "s")
-                          << "   " << std::flush;
+                          << " | ETA" << etas << std::flush;
             }
         }
         std::cout << " done" << std::endl;
@@ -1649,9 +1653,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
             if (ti % 2000 == 0 || ti == totalTiles - 1) {
                 double e = std::chrono::duration<double>(Clock::now() - tLast).count();
                 double eta = (e / (ti+1)) * (totalTiles - (ti+1));
+                std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
+                if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
                 std::cout << "\r  selecting best " << (ti+1) << "/" << totalTiles
-                          << " | ETA " << (eta < 1.0 ? "<1s" : std::to_string(static_cast<int>(eta)) + "s")
-                          << "   " << std::flush;
+                          << " | ETA" << etas << std::flush;
             }
         }
         cntGrid = totalTiles; cntTiny = totalTiles;
@@ -2063,9 +2068,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     if (d % 500 == 0 || d == totalTiles) {
                         double e = std::chrono::duration<double>(Clock::now() - tPlaceStart).count();
                         double eta = (e / d) * (totalTiles - d);
+                        std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
+                        if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
                         std::cout << "\r  placing " << d << "/" << totalTiles
-                                  << " | ETA " << (eta < 1.0 ? "<1s" : std::to_string(static_cast<int>(eta)) + "s")
-                                  << "   " << std::flush;
+                                  << " | ETA" << etas << std::flush;
                     }
                 }
             });
@@ -2174,9 +2180,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
             if (ti % 5000 == 0 || ti == totalTiles-1) {
                 double e = std::chrono::duration<double>(Clock::now() - tCpuSelectStart).count();
                 double eta = (e / (ti+1)) * (totalTiles - (ti+1));
+                std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
+                if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
                 std::cout << "\r  selecting " << (ti+1) << "/" << totalTiles
-                          << " | ETA " << (eta < 1.0 ? "<1s" : std::to_string(static_cast<int>(eta)) + "s")
-                          << "   " << std::flush;
+                          << " | ETA" << etas << std::flush;
             }
         }
         cntGrid = cntTiny = cntEdge = cntLBP = totalTiles;
@@ -2206,9 +2213,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     if (d % 2000 == 0 || d == totalTiles) {
                         double e = std::chrono::duration<double>(Clock::now() - tCpuPlaceStart).count();
                         double eta = (e / d) * (totalTiles - d);
+                        std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
+                        if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
                         std::cout << "\r  placing " << d << "/" << totalTiles
-                                  << " | ETA " << (eta < 1.0 ? "<1s" : std::to_string(static_cast<int>(eta)) + "s")
-                                  << "   " << std::flush;
+                                  << " | ETA" << etas << std::flush;
                     }
                 }
             });
