@@ -35,15 +35,6 @@
 #define EXIT_ERR_MEMORY  3
 #define EXIT_ERR_GPU     4
 
-// 辅助：如果 -d 指向目录，自动查找目录内的 mosaicraft.db
-static std::string resolveDbPath(const std::string& rawPath)
-{
-    std::error_code ec;
-    if (std::filesystem::is_directory(rawPath, ec))
-        return rawPath + "/mosaicraft.db";
-    return rawPath;
-}
-
 static bool isKnownOptionToken(const std::string& token)
 {
     static const char* kOptions[] = {
