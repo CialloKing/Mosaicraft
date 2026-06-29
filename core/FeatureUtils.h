@@ -26,6 +26,7 @@ inline double labDistance(double l1, double a1, double b1,
 inline std::vector<float> computeGrid4x4(const cv::Mat& bgr)
 {
     const int gridRows = 4, gridCols = 4;
+    if (bgr.rows < gridRows || bgr.cols < gridCols) return std::vector<float>(48, 0.0f);
     const int cellH = bgr.rows / gridRows, cellW = bgr.cols / gridCols;
     std::vector<float> grid;
     grid.reserve(48);
@@ -51,6 +52,7 @@ inline std::vector<float> computeGrid4x4(const cv::Mat& bgr)
 inline std::vector<float> computeGrid8x8(const cv::Mat& bgr)
 {
     const int gridRows = 8, gridCols = 8;
+    if (bgr.rows < gridRows || bgr.cols < gridCols) return std::vector<float>(192, 0.0f);
     const int cellH = bgr.rows / gridRows, cellW = bgr.cols / gridCols;
     std::vector<float> grid;
     grid.reserve(192);

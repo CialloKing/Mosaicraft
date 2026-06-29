@@ -359,8 +359,12 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
         int col = 0;
 
         rec.id           = sqlite3_column_int(stmt, col++);
-        rec.filePath     = reinterpret_cast<const char*>(sqlite3_column_text(stmt, col++));
-        rec.fileHash     = reinterpret_cast<const char*>(sqlite3_column_text(stmt, col++));
+        rec.filePath     = sqlite3_column_type(stmt, col) != SQLITE_NULL
+                           ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, col)) : "";
+        col++;
+        rec.fileHash     = sqlite3_column_type(stmt, col) != SQLITE_NULL
+                           ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, col)) : "";
+        col++;
         rec.format       = sqlite3_column_type(stmt, col) != SQLITE_NULL
                            ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, col)) : "";
         col++;
@@ -589,7 +593,13 @@ void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
             sqlite3_finalize(stmt);
         }
     }
-    // 更新 target_runs
+    // 更新图片使用统计
+    if (!m_db) return;
+    if (!exec("BEGIN TRANSACTION"))
+    {
+        return;
+    }
+    bool ok = true;
     if (!targetHash.empty() && m_db) {
         if (isNewTarget) {
             const char* insSql = "INSERT INTO target_runs (target_hash, first_path, run_count, last_used) "
@@ -598,8 +608,10 @@ void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
             if (sqlite3_prepare_v2(m_db, insSql, -1, &stmt, nullptr) == SQLITE_OK) {
                 sqlite3_bind_text(stmt, 1, targetHash.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(stmt, 2, targetPath.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_step(stmt);
+                ok = (sqlite3_step(stmt) == SQLITE_DONE) && ok;
                 sqlite3_finalize(stmt);
+            } else {
+                ok = false;
             }
         } else {
             const char* updSql = "UPDATE target_runs SET run_count = run_count + 1, "
@@ -607,19 +619,13 @@ void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
             sqlite3_stmt* stmt = nullptr;
             if (sqlite3_prepare_v2(m_db, updSql, -1, &stmt, nullptr) == SQLITE_OK) {
                 sqlite3_bind_text(stmt, 1, targetHash.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_step(stmt);
+                ok = (sqlite3_step(stmt) == SQLITE_DONE) && ok;
                 sqlite3_finalize(stmt);
+            } else {
+                ok = false;
             }
         }
     }
-
-    // 更新图片使用统计
-    if (!m_db) return;
-    if (!exec("BEGIN TRANSACTION"))
-    {
-        return;
-    }
-    bool ok = true;
     for (const auto& [imgId, tileCount] : imageUseCount)
     {
         std::string runsExpr = isNewTarget ? "total_runs + 1" : "total_runs";

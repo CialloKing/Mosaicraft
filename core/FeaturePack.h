@@ -67,19 +67,20 @@ public:
     }
 
     // 追加一张图：先写 image_id，再写特征数据
-    static void appendImage(int imageId,
+    static bool appendImage(int imageId,
                             const std::vector<uint8_t>& tiny,
                             const std::vector<float>& lbp)
     {
-        if (!s_tinyFile || !s_lbpFile) return;
-        if (tiny.size() < 256 || lbp.size() < 256) return;
+        if (!s_tinyFile || !s_lbpFile) return false;
+        if (tiny.size() < 256 || lbp.size() < 256) return false;
         int32_t id = static_cast<int32_t>(imageId);
         // tiny: id(4B) + 256B uint8_t
-        fwrite(&id, sizeof(id), 1, s_tinyFile);
-        fwrite(tiny.data(), 1, 256, s_tinyFile);
+        if (fwrite(&id, sizeof(id), 1, s_tinyFile) != 1) return false;
+        if (fwrite(tiny.data(), 1, 256, s_tinyFile) != 256) return false;
         // lbp:  id(4B) + 256 float = 1024B
-        fwrite(&id, sizeof(id), 1, s_lbpFile);
-        fwrite(lbp.data(), sizeof(float), 256, s_lbpFile);
+        if (fwrite(&id, sizeof(id), 1, s_lbpFile) != 1) return false;
+        if (fwrite(lbp.data(), sizeof(float), 256, s_lbpFile) != 256) return false;
+        return true;
     }
 
     static void endWrite()
@@ -181,11 +182,11 @@ public:
             auto op = oldPos.find(rec->id);
             if (op != oldPos.end()) {
                 int o = op->second;
-                appendImage(rec->id,
+                if (!appendImage(rec->id,
                     std::vector<uint8_t>(oldTiny.begin()+o*256, oldTiny.begin()+(o+1)*256),
-                    std::vector<float>(oldLbp.begin()+o*256, oldLbp.begin()+(o+1)*256));
+                    std::vector<float>(oldLbp.begin()+o*256, oldLbp.begin()+(o+1)*256))) return false;
             } else {
-                appendImage(rec->id, allTiny[i], allLbp[i]);
+                if (!appendImage(rec->id, allTiny[i], allLbp[i])) return false;
             }
         }
         endWrite();

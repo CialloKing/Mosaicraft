@@ -72,6 +72,12 @@ public:
             fs::path levelDir = pyramidDir / std::to_string(level);
             fs::remove_all(levelDir, ec);
             fs::create_directories(levelDir, ec);
+            if (ec)
+            {
+                std::cerr << "ERROR: DeepZoom cannot create directory "
+                          << pathToUtf8(levelDir) << ": " << ec.message() << std::endl;
+                return;
+            }
         }
 
         auto readSourceTile = [&](int c, int r) {
@@ -171,6 +177,8 @@ public:
                 if (imwriteUnicode(pathToUtf8(dst), tile,
                                    {cv::IMWRITE_JPEG_QUALITY, quality}))
                     ++written;
+                else
+                    std::cerr << "ERROR: DeepZoom failed to write " << pathToUtf8(dst) << std::endl;
             }
         }
         std::cout << " (" << written << " tiles)" << std::endl;
@@ -210,6 +218,8 @@ public:
                     if (imwriteUnicode(pathToUtf8(dst), tile,
                                        {cv::IMWRITE_JPEG_QUALITY, quality}))
                         ++written;
+                    else
+                        std::cerr << "ERROR: DeepZoom failed to write " << pathToUtf8(dst) << std::endl;
                 }
             }
 

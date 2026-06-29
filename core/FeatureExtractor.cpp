@@ -41,25 +41,30 @@ void FeatureExtractor::compute(const cv::Mat& bgr,
     // ——— V2：8×8 LAB Grid ———
     const int gridRows = 8;
     const int gridCols = 8;
-    const int cellH = bgr.rows / gridRows;
-    const int cellW = bgr.cols / gridCols;
-
     rec.grid4x4.clear();
     rec.grid4x4.reserve(gridRows * gridCols * 3);
-
-    for (int r = 0; r < gridRows; ++r)
+    if (bgr.rows < gridRows || bgr.cols < gridCols)
     {
-        for (int c = 0; c < gridCols; ++c)
+        rec.grid4x4.assign(gridRows * gridCols * 3, 0.0f);
+    }
+    else
+    {
+        const int cellH = bgr.rows / gridRows;
+        const int cellW = bgr.cols / gridCols;
+        for (int r = 0; r < gridRows; ++r)
         {
-            cv::Rect roi(c * cellW, r * cellH, cellW, cellH);
-            cv::Mat cellBGR = bgr(roi);
-            cv::Mat cellLab;
-            cv::cvtColor(cellBGR, cellLab, cv::COLOR_BGR2Lab);
-            cv::Scalar cellMean = cv::mean(cellLab);
+            for (int c = 0; c < gridCols; ++c)
+            {
+                cv::Rect roi(c * cellW, r * cellH, cellW, cellH);
+                cv::Mat cellBGR = bgr(roi);
+                cv::Mat cellLab;
+                cv::cvtColor(cellBGR, cellLab, cv::COLOR_BGR2Lab);
+                cv::Scalar cellMean = cv::mean(cellLab);
 
-            rec.grid4x4.push_back(static_cast<float>(cellMean[0]));
-            rec.grid4x4.push_back(static_cast<float>(cellMean[1]));
-            rec.grid4x4.push_back(static_cast<float>(cellMean[2]));
+                rec.grid4x4.push_back(static_cast<float>(cellMean[0]));
+                rec.grid4x4.push_back(static_cast<float>(cellMean[1]));
+                rec.grid4x4.push_back(static_cast<float>(cellMean[2]));
+            }
         }
     }
 
