@@ -400,7 +400,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
             }
             if ((i + 1) % 2000 == 0 || i + 1 == files.size()) {
                 std::cout << "\r  features " << (i + 1) << "/" << files.size()
-                          << " (ok:" << inserted << " skip:" << skipped << ")" << std::flush;
+                          << " (ok:" << inserted << " skip:" << skipped << ")   " << std::flush;
             }
         }
         std::cout << std::endl;
