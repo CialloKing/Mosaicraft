@@ -2193,7 +2193,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
     if (outDot != std::string::npos)
     {
         std::string oldExt = outPath.substr(outDot + 1);
-        if (fmt == "tiff" && (oldExt == "jpg" || oldExt == "jpeg" || oldExt == "png" || oldExt == "webp"))
+        // 显式 --format 时把输出路径扩展名纠正为匹配格式
+        if (cfg.formatExplicit && oldExt != fmt)
+            outPath = outPath.substr(0, outDot) + "." + fmt;
+        else if (fmt == "tiff" && (oldExt == "jpg" || oldExt == "jpeg" || oldExt == "png" || oldExt == "webp"))
             outPath = outPath.substr(0, outDot) + ".tiff";
     }
 
