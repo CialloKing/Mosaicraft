@@ -5,6 +5,7 @@
 #include "PngStreamWriter.h"
 #include "PngBatchWriter.h"
 #include "JpgStreamWriter.h"
+#include "JpgStreamWriter.h"
 #include "FeatureIndex.h"
 #include "FeaturePack.h"
 #include "FeatureUtils.h"
@@ -1731,7 +1732,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
             else if (isJpg)
             {
-                useStream = false;  // JPG �? �? , , 锟皆讹拷锟叫伙拷
+#ifdef _WIN32
+                MEMORYSTATUSEX mem = { sizeof(mem) };
+                if (GlobalMemoryStatusEx(&mem))
+                    useStream = (mem.ullAvailPhys < static_cast<ULONGLONG>(rawBytes) * 2);
+                else
+                    useStream = true;
+#else
+                useStream = true;
+#endif
             }
             else // auto, PNG/TIFF , 锟捷匡拷, 锟节达拷锟皆讹拷�?
             {

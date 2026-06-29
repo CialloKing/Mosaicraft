@@ -28,7 +28,8 @@ public:
             m_restore = GetConsoleMode(m_hConsole, &m_oldMode) != 0;
             if (m_restore)
             {
-                DWORD newMode = m_oldMode & ~ENABLE_QUICK_EDIT_MODE;
+                // ENABLE_QUICK_EDIT_MODE 需要 ENABLE_EXTENDED_FLAGS 才能被识别
+                DWORD newMode = (m_oldMode | ENABLE_EXTENDED_FLAGS) & ~ENABLE_QUICK_EDIT_MODE;
                 SetConsoleMode(m_hConsole, newMode);
             }
         }

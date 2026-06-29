@@ -1,24 +1,29 @@
 #pragma once
+// 流式 JPEG 写出器：逐行接收 RGB 数据并立即通过 libjpeg 写盘
+// 不缓存全图，内存恒定（libjpeg 内部分配少量压缩缓冲）
+//
+// 用法：
+//   JpgStreamWriter jpg(outputPath, outW, outH, quality);
+//   for (int y = 0; y < outH; ++y)
+//       jpg.writeRow(rowBuf.data());   // rowBuf: outW*3 bytes, RGB order
+//   jpg.close();
+
 #include <cstdio>
-#include <csetjmp>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
-#include <vector>
 #include <jpeglib.h>
 
 namespace mosaicraft {
 
-// 流式 JPEG 写出器：逐行接收 RGB 数据并立即写入 libjpeg
-// 内存仅 ~outW*3 字节（单行缓冲），不缓存全图
-// 调用方负责 BGR→RGB 转换（在组装行时内联完成）
 class JpgStreamWriter
 {
 public:
     JpgStreamWriter(const JpgStreamWriter&) = delete;
     JpgStreamWriter& operator=(const JpgStreamWriter&) = delete;
 
-    JpgStreamWriter(const std::string& path, int w, int h, int quality = 100) : m_w(w), m_h(h)
+    JpgStreamWriter(const std::string& path, int w, int h, int quality = 95)
+        : m_w(w), m_h(h)
     {
 #ifdef _WIN32
         std::wstring wp = std::filesystem::u8path(path).wstring();
@@ -26,88 +31,61 @@ public:
 #else
         m_fp = fopen(path.c_str(), "wb");
 #endif
-        if (!m_fp) throw std::runtime_error("Jpg open");
+        if (!m_fp)
+            throw std::runtime_error("Jpg open failed: " + path);
+
         m_cinfo.err = jpeg_std_error(&m_jerr);
-        // 覆盖默认exit()行为：致命错误通过setjmp/longjmp处理
-        m_cinfo.client_data = this;
-        m_jerr.error_exit = [](j_common_ptr cinfo) {
-            auto* self = static_cast<JpgStreamWriter*>(cinfo->client_data);
-            longjmp(self->m_jmpBuf, 1);
-        };
-        if (setjmp(m_jmpBuf)) {
-            fail();
-            throw std::runtime_error("JpgStreamWriter: libjpeg initialization failed");
-        }
         jpeg_create_compress(&m_cinfo);
-        m_created = true;
         jpeg_stdio_dest(&m_cinfo, m_fp);
-        m_cinfo.image_width = w;
-        m_cinfo.image_height = h;
-        m_cinfo.input_components = 3;
-        m_cinfo.in_color_space = JCS_RGB;
+
+        m_cinfo.image_width      = static_cast<JDIMENSION>(w);
+        m_cinfo.image_height     = static_cast<JDIMENSION>(h);
+        m_cinfo.input_components = 3;           // RGB
+        m_cinfo.in_color_space   = JCS_RGB;
+
         jpeg_set_defaults(&m_cinfo);
-        // 使用 4:2:0 色度子采样 + 优化 Huffman 表，与 OpenCV imwrite 行为一致
-        m_cinfo.comp_info[0].h_samp_factor = 2;
-        m_cinfo.comp_info[0].v_samp_factor = 2;
-        // Y:Cb:Cr = 4:2:0 (Cb/Cr 各 1/4 采样)
         jpeg_set_quality(&m_cinfo, quality, TRUE);
         jpeg_start_compress(&m_cinfo, TRUE);
     }
 
-    // 写入一行 RGB 数据（每行 m_w*3 字节，R/G/B 顺序）
+    // 写入一行 RGB 数据（m_w*3 字节，R/G/B 顺序）
+    // 调用方已在组装行时完成 BGR→RGB 转换
     bool writeRow(const uint8_t* rgb)
     {
-        if (!m_fp) return false;
-        if (setjmp(m_jmpBuf)) {
-            fail();
-            return false;
-        }
-        JSAMPROW row = const_cast<JSAMPROW>(rgb);
-        if (jpeg_write_scanlines(&m_cinfo, &row, 1) != 1) return false;
+        if (m_closed) return false;
+        JSAMPROW row[1];
+        row[0] = const_cast<JSAMPROW>(rgb);
+        jpeg_write_scanlines(&m_cinfo, row, 1);
         m_rowsWritten++;
         return true;
     }
 
     void close()
     {
-        if (m_fp)
-        {
-            if (setjmp(m_jmpBuf)) {
-                fail();
-                return;
-            }
-            jpeg_finish_compress(&m_cinfo);
-            jpeg_destroy_compress(&m_cinfo);
-            m_created = false;
-            fclose(m_fp);
-            m_fp = nullptr;
-        }
+        if (m_closed) return;
+        m_closed = true;
+        jpeg_finish_compress(&m_cinfo);
+        jpeg_destroy_compress(&m_cinfo);
+        if (m_fp) { fclose(m_fp); m_fp = nullptr; }
     }
 
-    ~JpgStreamWriter() { close(); }
+    ~JpgStreamWriter()
+    {
+        if (!m_closed) close();
+    }
+
+    int width()  const { return m_w; }
+    int height() const { return m_h; }
+    int rowsWritten() const { return m_rowsWritten; }
 
 private:
-    void fail()
-    {
-        if (m_fp)
-        {
-            if (m_created)
-            {
-                jpeg_destroy_compress(&m_cinfo);
-                m_created = false;
-            }
-            fclose(m_fp);
-            m_fp = nullptr;
-        }
-    }
-
-    FILE* m_fp = nullptr;
-    bool m_created = false;
-    struct jpeg_compress_struct m_cinfo = {};
-    struct jpeg_error_mgr m_jerr = {};
-    jmp_buf m_jmpBuf = {};
-    int m_w, m_h;
-    int m_rowsWritten = 0;
+    FILE*             m_fp = nullptr;
+    int               m_w;
+    int               m_h;
+    int               m_rowsWritten = 0;
+    bool              m_closed = false;
+    jpeg_compress_struct m_cinfo{};
+    jpeg_error_mgr       m_jerr{};
 };
 
-}
+} // namespace mosaicraft
