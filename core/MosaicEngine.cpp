@@ -468,6 +468,22 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
             cv::rectangle(heat, cv::Rect(tx*4, ty*4, 4, 4), color, cv::FILLED);
         }
     }
+    // 缩放到与原图相同比例（最大 800px）
+    double heatScale = std::min(800.0 / heat.cols, 800.0 / heat.rows);
+    if (heatScale > 0 && heatScale < 10.0) {
+        // 先按 tile grid 比例拉伸到与原图一致的比例
+        double srcAspect = (double)target.cols / target.rows;
+        double tileAspect = (double)(tilesX) / tilesY;
+        if (std::abs(srcAspect - tileAspect) > 0.01) {
+            int newW = static_cast<int>(heat.cols * srcAspect / tileAspect);
+            int newH = heat.rows;
+            if (newW < 1) { newH = static_cast<int>(heat.rows * tileAspect / srcAspect); newW = heat.cols; }
+            if (newW > 1 && newH > 1)
+                cv::resize(heat, heat, cv::Size(newW, newH), 0, 0, cv::INTER_NEAREST);
+        }
+        // 再统一缩放到合适大小
+        cv::resize(heat, heat, cv::Size(), heatScale, heatScale, cv::INTER_NEAREST);
+    }
     imwriteUnicode(heatPath, heat);
     std::cout << "  Heatmap: " << heatPath << "\n";
 
