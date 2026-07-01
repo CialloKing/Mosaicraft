@@ -354,7 +354,7 @@ int extractBatch(
         fprintf(stderr, "GPU build: unsupported size %dx%d\n", imgW, imgH);
         return 0;
     }
-    if (cudaDeviceSynchronize() != cudaSuccess || cudaGetLastError() != cudaSuccess)
+    if (cudaGetLastError() != cudaSuccess || cudaDeviceSynchronize() != cudaSuccess)
     {
         fprintf(stderr, "GPU feature error: kernel launch failed\n");
         return 0;
@@ -367,13 +367,13 @@ int extractBatch(
     std::vector<double> h_contrast(N);
     std::vector<double> h_edge(N);
 
-    cudaMemcpy(h_grid.data(), d_grid.get(), N * 192 * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_tiny.data(), d_tiny.get(), N * 256, cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_lbp.data(), d_lbp.get(), N * 256 * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_avgLAB.data(), d_avgLAB.get(), N * 3 * sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_bright.data(), d_bright.get(), N * sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_contrast.data(), d_contrast.get(), N * sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_edge.data(), d_edge.get(), N * sizeof(double), cudaMemcpyDeviceToHost);
+    if (cudaMemcpy(h_grid.data(), d_grid.get(), N * 192 * sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) return 0;
+    if (cudaMemcpy(h_tiny.data(), d_tiny.get(), N * 256, cudaMemcpyDeviceToHost) != cudaSuccess) return 0;
+    if (cudaMemcpy(h_lbp.data(), d_lbp.get(), N * 256 * sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) return 0;
+    if (cudaMemcpy(h_avgLAB.data(), d_avgLAB.get(), N * 3 * sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) return 0;
+    if (cudaMemcpy(h_bright.data(), d_bright.get(), N * sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) return 0;
+    if (cudaMemcpy(h_contrast.data(), d_contrast.get(), N * sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) return 0;
+    if (cudaMemcpy(h_edge.data(), d_edge.get(), N * sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) return 0;
 
     // 填充 ImageRecord
     for (int i = 0; i < N; ++i)
@@ -459,7 +459,7 @@ namespace {
         if (cudaMemcpy(d_img.get(), h_images, N * imgBytes, cudaMemcpyHostToDevice) != cudaSuccess) return -1;
         featureKernel<W, H><<<N, W>>>(d_img.get(), d_grid.get(), d_tiny.get(), d_lbp.get(),
                                       d_lab.get(), d_bright.get(), d_contrast.get(), d_edge.get(), N);
-        if (cudaDeviceSynchronize() != cudaSuccess || cudaGetLastError() != cudaSuccess) {
+        if (cudaGetLastError() != cudaSuccess || cudaDeviceSynchronize() != cudaSuccess) {
             fprintf(stderr, "GPU kernel error (%dx%d)\n", W, H);
             return -1;
         }

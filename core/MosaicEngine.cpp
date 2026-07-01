@@ -967,10 +967,22 @@ bool MosaicEngine::generate(const std::string& targetPath,
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     CONSOLE_CURSOR_INFO ci;
     bool cursorWasVisible = GetConsoleCursorInfo(hOut, &ci) && ci.bVisible;
-    if (cursorWasVisible) { ci.bVisible = FALSE; SetConsoleCursorInfo(hOut, &ci); }
-    auto restoreCursor = [&]() {
-        if (cursorWasVisible) { ci.bVisible = TRUE; SetConsoleCursorInfo(hOut, &ci); }
+    struct CursorRestoreGuard
+    {
+        HANDLE hOut = nullptr;
+        bool restore = false;
+        CONSOLE_CURSOR_INFO original{};
+        ~CursorRestoreGuard()
+        {
+            if (restore) SetConsoleCursorInfo(hOut, &original);
+        }
     };
+    CursorRestoreGuard cursorRestore{hOut, cursorWasVisible, ci};
+    if (cursorWasVisible) {
+        CONSOLE_CURSOR_INFO hidden = ci;
+        hidden.bVisible = FALSE;
+        SetConsoleCursorInfo(hOut, &hidden);
+    }
 #endif
 
     // --analyze: ...
@@ -1995,7 +2007,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
                 if (ty % 10 == 0) std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
             }
-            png.close();
+            if (!png.close()) {
+                std::cerr << "\n  PNG close failed: " << outputPath << std::endl;
+                releaseGpuLib();
+                return false;
+            }
             matched = totalTiles - streamFail;
             loadFail = streamFail;
             std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
@@ -2051,7 +2067,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
                 if (ty % 10 == 0) std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
             }
-            jpg.close();
+            if (!jpg.close()) {
+                std::cerr << "\n  JPG close failed: " << outputPath << std::endl;
+                releaseGpuLib();
+                return false;
+            }
             matched = totalTiles - streamFail;
             loadFail = streamFail;
             std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
@@ -2425,7 +2445,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
     releaseGpuLib();
 
 #ifdef _WIN32
-    restoreCursor();
 #endif
 
     // , 锟? 锟?

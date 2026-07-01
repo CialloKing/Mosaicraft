@@ -347,27 +347,27 @@ static int cmdMosaic(int argc, char* argv[])
         }
         else if (arg == "--tile-w")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.tileW = std::max(4, std::atoi(value));
+            int _v = 0;
+            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
+            cfg.tileW = std::max(4, _v);
         }
         else if (arg == "--tile-h")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.tileH = std::max(4, std::atoi(value));
+            int _v = 0;
+            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
+            cfg.tileH = std::max(4, _v);
         }
         else if (arg == "-W" || arg == "--out-w")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.outW = std::max(1, std::atoi(value));
+            int _v = 0;
+            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
+            cfg.outW = std::max(1, _v);
         }
         else if (arg == "-H" || arg == "--out-h")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.outH = std::max(1, std::atoi(value));
+            int _v = 0;
+            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
+            cfg.outH = std::max(1, _v);
         }
         else if (arg == "--lab-weight")
         {
@@ -413,16 +413,15 @@ static int cmdMosaic(int argc, char* argv[])
         }
         else if (arg == "--candidates")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.candidates = std::max(10, std::atoi(value));
+            int _v = 0;
+            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
+            cfg.candidates = std::max(10, _v);
         }
         else if (arg == "--topn-random")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            int v = std::atoi(value);
-            cfg.topNrandom = std::max(1, v);
+            int _v = 0;
+            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
+            cfg.topNrandom = std::max(1, _v);
         }
         else if (arg == "-f" || arg == "--format")
         {
@@ -440,17 +439,15 @@ static int cmdMosaic(int argc, char* argv[])
         }
         else if (arg == "-q" || arg == "--quality")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            int q = std::atoi(value);
-            cfg.jpegQuality = std::max(1, std::min(100, q));
+            int _v = 0;
+            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
+            cfg.jpegQuality = std::max(1, std::min(100, _v));
         }
         else if (arg == "--png-level")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            int lvl = std::atoi(value);
-            cfg.pngCompressionLevel = std::max(1, std::min(9, lvl));
+            int _v = 0;
+            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
+            cfg.pngCompressionLevel = std::max(1, std::min(9, _v));
         }
         else if (arg == "--write-mode")
         {
@@ -487,9 +484,9 @@ static int cmdMosaic(int argc, char* argv[])
         }
         else if (arg == "-U" || arg == "--upscale")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.upscale = std::max(1, std::atoi(value));
+            int _v = 0;
+            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
+            cfg.upscale = std::max(1, _v);
         }
         else if (arg == "--output-tile")
         {
@@ -529,10 +526,9 @@ static int cmdMosaic(int argc, char* argv[])
         }
         else if (arg == "--color-strength")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            double v = std::atof(value);
-            cfg.colorStrength = std::max(0.0, std::min(0.5, v));
+            double _v = 0.0;
+            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
+            cfg.colorStrength = std::max(0.0, std::min(0.5, _v));
         }
         else if (arg == "--benchmark")
         {

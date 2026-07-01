@@ -97,14 +97,16 @@ public:
         return true;
     }
 
-    void close()
+    bool close()
     {
-        if (m_closed) return;
+        if (m_closed) return true;
+        bool ok = true;
         m_closed = true;
         if (m_fp)
         {
             if (setjmp(m_jerr.jumpBuffer))
             {
+                ok = false;
                 if (m_created)
                 {
                     jpeg_destroy_compress(&m_cinfo);
@@ -112,7 +114,7 @@ public:
                 }
                 fclose(m_fp);
                 m_fp = nullptr;
-                return;
+                return false;
             }
             jpeg_finish_compress(&m_cinfo);
         }
@@ -122,6 +124,7 @@ public:
             m_created = false;
         }
         if (m_fp) { fclose(m_fp); m_fp = nullptr; }
+        return ok;
     }
 
     ~JpgStreamWriter()

@@ -55,11 +55,16 @@ public:
         return true;
     }
 
-    void close()
+    bool close()
     {
+        bool ok = true;
         if (m_png)
         {
-            if (!setjmp(png_jmpbuf(m_png)))
+            if (setjmp(png_jmpbuf(m_png)))
+            {
+                ok = false;
+            }
+            else
             {
                 png_write_end(m_png, m_info);
             }
@@ -67,6 +72,7 @@ public:
             m_png = nullptr;
         }
         if (m_fp) { fclose(m_fp); m_fp = nullptr; }
+        return ok;
     }
 
     ~PngStreamWriter() { close(); }
