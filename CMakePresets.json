@@ -1,0 +1,21 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Release",
+      "configuration": "Release",
+      "toolchainFile": "D:/C++project/SDK/vcpkg/scripts/buildsystems/vcpkg.cmake"
+    },
+    {
+      "name": "debug",
+      "displayName": "RelWithDebInfo (调试用)",
+      "configuration": "RelWithDebInfo",
+      "toolchainFile": "D:/C++project/SDK/vcpkg/scripts/buildsystems/vcpkg.cmake"
+    }
+  ],
+  "buildPresets": [
+    { "name": "release", "configurePreset": "default" },
+    { "name": "debug", "configurePreset": "debug" }
+  ]
+}
