@@ -251,11 +251,14 @@ static int cmdBuild(int argc, char* argv[])
             if (!readOptionValue(argc, argv, i, arg, val)) return 1;
             const char* sep = strchr(val, 'x');
             if (sep && sep != val && *(sep+1) != '\0' && !strchr(sep+1, 'x')) {
+                errno = 0;
                 char* endW = nullptr;
                 char* endH = nullptr;
                 long w = std::strtol(val, &endW, 10);
                 long h = std::strtol(sep + 1, &endH, 10);
-                if (endW == val || *endW != 'x' || endH == sep + 1 || *endH != '\0' || w <= 0 || h <= 0) {
+                if (errno == ERANGE || endW == val || *endW != 'x' ||
+                    endH == sep + 1 || *endH != '\0' ||
+                    w <= 0 || h <= 0 || w > INT_MAX || h > INT_MAX) {
                     std::cerr << "ERROR: --normalize-size expected WxH format (e.g. 180x320), got: " << val << std::endl;
                     return 1;
                 }
@@ -734,7 +737,7 @@ static int cmdDbStats(int argc, char* argv[])
     std::cout << "  L-histogram:\n";
     for (const auto& bin : stats.lHistogram)
     {
-        std::string bar(bin.count * 50 / total, '#');
+        std::string bar(static_cast<size_t>(bin.count) * 50 / static_cast<size_t>(total), '#');
         std::cout << "    " << std::setw(3) << bin.lo << "-" << std::setw(3) << bin.hi
                   << " | " << bar << " " << bin.count << "\n";
     }

@@ -937,7 +937,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
 
     std::cout << "Tiles: " << tilesX << " x " << tilesY
-              << " = " << (tilesX * tilesY)
+              << " = " << (static_cast<int64_t>(tilesX) * tilesY)
               << "  (output " << outW << "x" << outH
               << ", tile " << outTileW << "x" << outTileH;
     if (padRight > 0 || padBottom > 0)

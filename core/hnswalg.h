@@ -787,6 +787,8 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
         if (data_level0_memory_ == nullptr)
             throw std::runtime_error("Not enough memory: loadIndex failed to allocate level0");
         input.read(data_level0_memory_, cur_element_count * size_data_per_element_);
+        if (!input)
+            throw std::runtime_error("Index seems to be corrupted or unsupported");
 
         size_links_per_element_ = maxM_ * sizeof(tableint) + sizeof(linklistsizeint);
 
@@ -815,6 +817,8 @@ class HierarchicalNSW : public AlgorithmInterface<dist_t> {
                 if (linkLists_[i] == nullptr)
                     throw std::runtime_error("Not enough memory: loadIndex failed to allocate linklist");
                 input.read(linkLists_[i], linkListSize);
+                if (!input)
+                    throw std::runtime_error("Index seems to be corrupted or unsupported");
             }
         }
 

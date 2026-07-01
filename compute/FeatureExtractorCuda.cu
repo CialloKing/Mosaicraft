@@ -296,14 +296,18 @@ int extractBatch(
         {
             cv::cvtColor(images[i], bgr, cv::COLOR_BGRA2BGR);
         }
+        else if (images[i].channels() == 1)
+        {
+            cv::cvtColor(images[i], bgr, cv::COLOR_GRAY2BGR);
+        }
         else
         {
             bgr = images[i];
         }
-        if (bgr.empty() || bgr.cols != imgW || bgr.rows != imgH)
+        if (bgr.empty() || bgr.cols != imgW || bgr.rows != imgH || bgr.channels() != 3)
         {
-            fprintf(stderr, "GPU build: image size mismatch at index %d (%dx%d vs %dx%d)\n",
-                i, bgr.cols, bgr.rows, imgW, imgH);
+            fprintf(stderr, "GPU build: image mismatch at index %d (%dx%d ch=%d vs %dx%d ch=3)\n",
+                i, bgr.cols, bgr.rows, bgr.channels(), imgW, imgH);
             return 0;
         }
         std::memcpy(&h_images[i * imgBytes], bgr.data, imgBytes);

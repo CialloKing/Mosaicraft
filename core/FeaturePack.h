@@ -153,6 +153,7 @@ public:
         std::vector<std::vector<uint8_t>> allTiny(nTotal);
         std::vector<std::vector<float>>   allLbp(nTotal);
         std::atomic<int> nextIdx{0};
+        std::atomic<bool> readOk{true};
         std::vector<std::thread> readers;
         for (int t = 0; t < nThr; ++t) {
             readers.emplace_back([&]() {
@@ -163,12 +164,18 @@ public:
                     std::vector<uint8_t> tiny(256, 0);
                     if (!rec->tinyPath.empty()) {
                         FILE* f = u8fopen(rec->tinyPath.c_str(), "rb");
-                        if (f) { fread(tiny.data(), 1, 256, f); fclose(f); }
+                        if (f) {
+                            if (fread(tiny.data(), 1, 256, f) != 256) readOk = false;
+                            fclose(f);
+                        }
                     }
                     std::vector<float> lbp(256, 0.0f);
                     if (!rec->histPath.empty()) {
                         FILE* f = u8fopen(rec->histPath.c_str(), "rb");
-                        if (f) { fread(lbp.data(), sizeof(float), 256, f); fclose(f); }
+                        if (f) {
+                            if (fread(lbp.data(), sizeof(float), 256, f) != 256) readOk = false;
+                            fclose(f);
+                        }
                     }
                     allTiny[i] = std::move(tiny);
                     allLbp[i]  = std::move(lbp);
@@ -176,6 +183,7 @@ public:
             });
         }
         for (auto& w : readers) w.join();
+        if (!readOk) return false;
 
         for (int i = 0; i < nTotal; ++i) {
             const auto* rec = sorted[i];

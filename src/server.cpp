@@ -261,11 +261,15 @@ int main(int argc, char* argv[])
 {
     int port = 8080;
     if (argc > 1) {
-        port = std::atoi(argv[1]);
-        if (port < 1 || port > 65535) {
+        errno = 0;
+        char* end = nullptr;
+        long parsedPort = std::strtol(argv[1], &end, 10);
+        if (errno == ERANGE || end == argv[1] || *end != '\0' ||
+            parsedPort < 1 || parsedPort > 65535) {
             std::cerr << "ERROR: Invalid port " << argv[1] << " (1-65535)" << std::endl;
             return 1;
         }
+        port = static_cast<int>(parsedPort);
     }
 
     const bool legacyRunEnabled = envFlagEnabled("MOSAICRAFT_ENABLE_LEGACY_RUN");
@@ -479,7 +483,11 @@ int main(int argc, char* argv[])
     ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 #else
     std::string url = "http://localhost:" + std::to_string(port);
-    std::system(("xdg-open " + url + " &").c_str());
+    pid_t opener = fork();
+    if (opener == 0) {
+        execlp("xdg-open", "xdg-open", url.c_str(), static_cast<char*>(nullptr));
+        _exit(127);
+    }
 #endif
 
     if (!svr.listen("localhost", port)) {

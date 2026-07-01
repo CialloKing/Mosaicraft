@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdexcept>
+
 // https://github.com/nmslib/hnswlib/pull/508
 // This allows others to provide their own error stream (e.g. RcppHNSW)
 #ifndef HNSWLIB_ERR_OVERRIDE
@@ -165,6 +167,8 @@ static void writeBinaryPOD(std::ostream &out, const T &podRef) {
 template<typename T>
 static void readBinaryPOD(std::istream &in, T &podRef) {
     in.read((char *) &podRef, sizeof(T));
+    if (!in)
+        throw std::runtime_error("Index seems to be corrupted or unsupported");
 }
 
 template<typename MTYPE>
