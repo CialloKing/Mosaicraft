@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-06-30 | 版本 / Version：v1.13.6
+> 最后更新 / Last updated：2026-07-02 | 版本 / Version：v1.13.7
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -528,4 +528,3 @@ Compress-Archive -Path release_pkg\* -Destination Mosaicraft_v1.13.3.zip
 - API 文档: docs/API.md 完整端点目录
 - 测试: 19→43 用例, 27→475 断言
 - Legacy /api/run 保留: 向后兼容
-
