@@ -1,21 +1,36 @@
 {
-  "version": 6,
+  "version": 3,
   "configurePresets": [
     {
       "name": "default",
       "displayName": "Release",
-      "configuration": "Release",
-      "toolchainFile": "D:/C++project/SDK/vcpkg/scripts/buildsystems/vcpkg.cmake"
+      "description": "Release build with vcpkg",
+      "generator": "Visual Studio 18 2026",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "D:/C++project/SDK/vcpkg/scripts/buildsystems/vcpkg.cmake"
+      }
     },
     {
-      "name": "debug",
-      "displayName": "RelWithDebInfo (调试用)",
-      "configuration": "RelWithDebInfo",
-      "toolchainFile": "D:/C++project/SDK/vcpkg/scripts/buildsystems/vcpkg.cmake"
+      "name": "relwithdebinfo",
+      "displayName": "RelWithDebInfo (可调试)",
+      "description": "Release优化 + 调试符号，可断点",
+      "inherits": "default",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "release", "configurePreset": "default" },
-    { "name": "debug", "configurePreset": "debug" }
+    {
+      "name": "release",
+      "configurePreset": "default",
+      "configuration": "Release"
+    },
+    {
+      "name": "relwithdebinfo",
+      "configurePreset": "relwithdebinfo",
+      "configuration": "RelWithDebInfo"
+    }
   ]
 }
