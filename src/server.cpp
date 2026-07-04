@@ -260,16 +260,33 @@ static std::string findMosaicraft()
 int main(int argc, char* argv[])
 {
     int port = 8080;
-    if (argc > 1) {
+    bool openBrowser = !envFlagEnabled("MOSAICRAFT_NO_BROWSER");
+    bool portSet = false;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--no-open" || arg == "--no-browser") {
+            openBrowser = false;
+            continue;
+        }
+        if (arg == "-h" || arg == "--help") {
+            std::cout << "Usage: MosaicraftWebUI [port] [--no-open]" << std::endl;
+            return 0;
+        }
+        if (portSet) {
+            std::cerr << "ERROR: Unexpected argument " << arg << std::endl;
+            std::cerr << "Usage: MosaicraftWebUI [port] [--no-open]" << std::endl;
+            return 1;
+        }
         errno = 0;
         char* end = nullptr;
-        long parsedPort = std::strtol(argv[1], &end, 10);
-        if (errno == ERANGE || end == argv[1] || *end != '\0' ||
+        long parsedPort = std::strtol(arg.c_str(), &end, 10);
+        if (errno == ERANGE || end == arg.c_str() || *end != '\0' ||
             parsedPort < 1 || parsedPort > 65535) {
-            std::cerr << "ERROR: Invalid port " << argv[1] << " (1-65535)" << std::endl;
+            std::cerr << "ERROR: Invalid port " << arg << " (1-65535)" << std::endl;
             return 1;
         }
         port = static_cast<int>(parsedPort);
+        portSet = true;
     }
 
     const bool legacyRunEnabled = envFlagEnabled("MOSAICRAFT_ENABLE_LEGACY_RUN");
@@ -285,6 +302,7 @@ int main(int argc, char* argv[])
     std::cout << "  Mosaicraft: " << mosaicPath << std::endl;
     std::cout << "  HTML: " << htmlPath << std::endl;
     std::cout << "  Legacy /api/run: " << (legacyRunEnabled ? "enabled" : "disabled") << std::endl;
+    std::cout << "  Browser: " << (openBrowser ? "auto-open" : "disabled") << std::endl;
 
     std::string htmlContent = readFile(htmlPath);
     std::mutex htmlMutex;
@@ -478,17 +496,19 @@ int main(int argc, char* argv[])
     std::cout << "  Press Ctrl+C to stop" << std::endl;
 
     // Try to open the browser.
+    if (openBrowser) {
 #ifdef _WIN32
-    std::string url = "http://localhost:" + std::to_string(port);
-    ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        std::string url = "http://localhost:" + std::to_string(port);
+        ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 #else
-    std::string url = "http://localhost:" + std::to_string(port);
-    pid_t opener = fork();
-    if (opener == 0) {
-        execlp("xdg-open", "xdg-open", url.c_str(), static_cast<char*>(nullptr));
-        _exit(127);
-    }
+        std::string url = "http://localhost:" + std::to_string(port);
+        pid_t opener = fork();
+        if (opener == 0) {
+            execlp("xdg-open", "xdg-open", url.c_str(), static_cast<char*>(nullptr));
+            _exit(127);
+        }
 #endif
+    }
 
     if (!svr.listen("localhost", port)) {
         std::cerr << "ERROR: Failed to start server on port " << port << std::endl;

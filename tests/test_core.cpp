@@ -543,6 +543,18 @@ TEST_CASE("API request parser reports invalid fields")
     BuildRequest build;
     CHECK_FALSE(parseBuildRequestJson(R"({"threads":"many"})", build, error));
     CHECK(error == "threads must be a number");
+
+    error.clear();
+    CHECK_FALSE(parseMosaicRequestJson(R"({"outputTile":"90x160bad"})", request, error));
+    CHECK(error == "outputTile must use WxH format");
+
+    error.clear();
+    CHECK_FALSE(parseBuildRequestJson(R"({"normalizeSize":"180xbad"})", build, error));
+    CHECK(error == "normalizeSize must use WxH format");
+
+    error.clear();
+    CHECK_FALSE(parseMosaicRequestJson(R"({"tileW":9.5})", request, error));
+    CHECK(error == "tileW must be an integer");
 }
 
 TEST_CASE("API request parser applies database and inspect requests")
@@ -633,6 +645,45 @@ TEST_CASE("API request parser accepts canonical query keys from metadata")
         error));
     CHECK(inspect.imagePath == "target.jpg");
     CHECK(inspect.dbPath == "library.db");
+}
+
+TEST_CASE("API request parser rejects invalid query values")
+{
+    std::string error;
+
+    DatabaseUsageRequest usage;
+    CHECK_FALSE(parseDatabaseUsageRequestApi(
+        {{"db", "usage.db"}, {"limit", "bad"}},
+        "",
+        usage,
+        error));
+    CHECK(error == "limit must be a number");
+
+    error.clear();
+    CHECK_FALSE(parseDatabaseUsageRequestApi(
+        {{"db", "usage.db"}, {"unused", "maybe"}},
+        "",
+        usage,
+        error));
+    CHECK(error == "showUnused must be a boolean");
+
+    DatabaseUsageExportRequest exportRequest;
+    error.clear();
+    CHECK_FALSE(parseDatabaseUsageExportRequestApi(
+        {{"db", "usage.db"}, {"output", "used"}, {"confirm", "maybe"}},
+        "",
+        exportRequest,
+        error));
+    CHECK(error == "confirm must be a boolean");
+
+    DatabasePurgeRequest purge;
+    error.clear();
+    CHECK_FALSE(parseDatabasePurgeRequestApi(
+        {{"db", "purge.db"}, {"dryRun", "sometimes"}},
+        "",
+        purge,
+        error));
+    CHECK(error == "dryRun must be a boolean");
 }
 
 TEST_CASE("API handlers expose discovery and health without HTTP")
@@ -1010,6 +1061,13 @@ TEST_CASE("API handlers centralize database and inspect status mapping")
     CHECK_FALSE(badUsage.body["ok"].get<bool>());
     CHECK(badUsage.body["message"].get<std::string>() == "limit must be a number");
 
+    auto badUsageQuery = apiDatabaseUsage(
+        {{"db", "__api_handler_status_test__.db"}, {"limit", "bad"}},
+        "");
+    CHECK(badUsageQuery.status == 400);
+    CHECK_FALSE(badUsageQuery.body["ok"].get<bool>());
+    CHECK(badUsageQuery.body["message"].get<std::string>() == "limit must be a number");
+
     auto missingExportConfirm = apiDatabaseUsageExport(
         {{"db", "__api_handler_status_test__.db"}, {"output", "__unused_export__"}},
         "");
@@ -1023,6 +1081,13 @@ TEST_CASE("API handlers centralize database and inspect status mapping")
     CHECK(badPurge.status == 400);
     CHECK_FALSE(badPurge.body["ok"].get<bool>());
     CHECK(badPurge.body["message"].get<std::string>() == "dryRun must be a boolean");
+
+    auto badPurgeQuery = apiDatabasePurge(
+        {{"db", "__api_handler_status_test__.db"}, {"dryRun", "maybe"}},
+        "");
+    CHECK(badPurgeQuery.status == 400);
+    CHECK_FALSE(badPurgeQuery.body["ok"].get<bool>());
+    CHECK(badPurgeQuery.body["message"].get<std::string>() == "dryRun must be a boolean");
 
     auto badInspect = apiInspect({{"input", ""}}, R"({"imagePath":123})");
     CHECK(badInspect.status == 400);

@@ -4,7 +4,10 @@
 #include "json.hpp"
 
 #include <algorithm>
+#include <cerrno>
+#include <cctype>
 #include <cstdlib>
+#include <climits>
 #include <cmath>
 #include <initializer_list>
 #include <limits>
@@ -19,13 +22,41 @@ using json = nlohmann::json;
 
 using FieldAliases = std::unordered_map<std::string, std::vector<std::string>>;
 
+bool parseStrictInt(const std::string& text, int& out)
+{
+    if (text.empty()) return false;
+    errno = 0;
+    char* end = nullptr;
+    long value = std::strtol(text.c_str(), &end, 10);
+    if (errno == ERANGE || end == text.c_str() || *end != '\0' ||
+        value < INT_MIN || value > INT_MAX) {
+        return false;
+    }
+    out = static_cast<int>(value);
+    return true;
+}
+
+bool parsePositiveInt(const std::string& text, int& out)
+{
+    int value = 0;
+    if (!parseStrictInt(text, value) || value <= 0) return false;
+    out = value;
+    return true;
+}
+
 bool parseSize(const std::string& text, int& w, int& h)
 {
-    size_t sep = text.find('x');
-    if (sep == std::string::npos) sep = text.find('X');
+    size_t sep = text.find_first_of("xX");
     if (sep == std::string::npos || sep == 0 || sep + 1 >= text.size()) return false;
-    w = std::max(1, std::atoi(text.substr(0, sep).c_str()));
-    h = std::max(1, std::atoi(text.substr(sep + 1).c_str()));
+    if (text.find_first_of("xX", sep + 1) != std::string::npos) return false;
+    int parsedW = 0;
+    int parsedH = 0;
+    if (!parsePositiveInt(text.substr(0, sep), parsedW) ||
+        !parsePositiveInt(text.substr(sep + 1), parsedH)) {
+        return false;
+    }
+    w = parsedW;
+    h = parsedH;
     return true;
 }
 
@@ -87,6 +118,10 @@ bool getIntField(const json& body,
             error = key + " is out of range";
             return false;
         }
+        if (std::floor(value) != value) {
+            error = key + " must be an integer";
+            return false;
+        }
         out = static_cast<int>(value);
         return true;
     }
@@ -106,7 +141,12 @@ bool getDoubleField(const json& body,
             error = key + " must be a number";
             return false;
         }
-        out = it->get<double>();
+        double value = it->get<double>();
+        if (!std::isfinite(value)) {
+            error = key + " is out of range";
+            return false;
+        }
+        out = value;
         return true;
     }
     return false;
@@ -178,11 +218,41 @@ bool getQueryBool(const ApiQueryParams& query,
                   const FieldAliases& aliases,
                   const std::string& field,
                   bool defaultForPresence,
-                  bool& out)
+                  bool& out,
+                  std::string& error)
 {
     std::string value;
     if (!getQueryField(query, aliases, field, value)) return false;
-    out = value.empty() ? defaultForPresence : value != "0";
+    if (value.empty()) {
+        out = defaultForPresence;
+        return true;
+    }
+    std::transform(value.begin(), value.end(), value.begin(),
+        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    if (value == "1" || value == "true" || value == "yes" || value == "on") {
+        out = true;
+        return true;
+    }
+    if (value == "0" || value == "false" || value == "no" || value == "off") {
+        out = false;
+        return true;
+    }
+    error = field + " must be a boolean";
+    return false;
+}
+
+bool getQueryInt(const ApiQueryParams& query,
+                 const FieldAliases& aliases,
+                 const std::string& field,
+                 int& out,
+                 std::string& error)
+{
+    std::string value;
+    if (!getQueryField(query, aliases, field, value)) return false;
+    if (!parseStrictInt(value, out)) {
+        error = field + " must be a number";
+        return false;
+    }
     return true;
 }
 
@@ -412,10 +482,13 @@ bool parseDatabaseUsageRequestApi(const ApiQueryParams& query,
 {
     const auto aliases = aliasesFor(ApiOperation::DatabaseUsage);
     std::string text;
+    int intValue = 0;
     bool boolValue = false;
     if (getQueryField(query, aliases, "dbPath", text)) request.dbPath = text;
-    if (getQueryField(query, aliases, "limit", text)) request.limit = std::max(1, std::atoi(text.c_str()));
-    if (getQueryBool(query, aliases, "showUnused", false, boolValue)) request.showUnused = boolValue;
+    if (getQueryInt(query, aliases, "limit", intValue, error)) request.limit = std::max(1, intValue);
+    if (!error.empty()) return false;
+    if (getQueryBool(query, aliases, "showUnused", false, boolValue, error)) request.showUnused = boolValue;
+    if (!error.empty()) return false;
     return applyDatabaseUsageRequestJson(body, request, error);
 }
 
@@ -429,7 +502,8 @@ bool parseDatabaseUsageExportRequestApi(const ApiQueryParams& query,
     bool boolValue = false;
     if (getQueryField(query, aliases, "dbPath", text)) request.dbPath = text;
     if (getQueryField(query, aliases, "outputDir", text)) request.outputDir = text;
-    if (getQueryBool(query, aliases, "confirm", false, boolValue)) request.confirm = boolValue;
+    if (getQueryBool(query, aliases, "confirm", false, boolValue, error)) request.confirm = boolValue;
+    if (!error.empty()) return false;
     return applyDatabaseUsageExportRequestJson(body, request, error);
 }
 
@@ -442,8 +516,10 @@ bool parseDatabasePurgeRequestApi(const ApiQueryParams& query,
     std::string text;
     bool boolValue = false;
     if (getQueryField(query, aliases, "dbPath", text)) request.dbPath = text;
-    if (getQueryBool(query, aliases, "dryRun", true, boolValue)) request.dryRun = boolValue;
-    if (getQueryBool(query, aliases, "confirm", false, boolValue)) request.confirm = boolValue;
+    if (getQueryBool(query, aliases, "dryRun", true, boolValue, error)) request.dryRun = boolValue;
+    if (!error.empty()) return false;
+    if (getQueryBool(query, aliases, "confirm", false, boolValue, error)) request.confirm = boolValue;
+    if (!error.empty()) return false;
     return applyDatabasePurgeRequestJson(body, request, error);
 }
 

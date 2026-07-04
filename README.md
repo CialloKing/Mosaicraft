@@ -58,7 +58,7 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
 
 ### 🛠️ 工具链
 - **Web UI** — `MosaicraftWebUI.exe` 本地 HTTP 服务，浏览器一键运行
-- **REST API** — 15 个端点（`/api/jobs/*`, `/api/db/*`, `/api/mosaic`），JSON 交互，异步任务管理
+- **REST API** — 17 个端点（`/api/jobs/*`, `/api/db/*`, `/api/mosaic`），JSON 交互，异步任务管理
 - **Web 命令生成器** — `tools/command-builder/index.html` 可视化拼装 CLI 命令
 - **图库诊断** — `db-stats` 亮度直方图 + 覆盖缺口；`db-usage` 全局热点图；`db-health` 健康检查
 - **数据库管理** — `db-purge` 减量清理；`build --append` 增量建库；`build --recursive` 递归扫描
@@ -229,7 +229,7 @@ Mosaicraft/
 ├── docs/
 │   └── ENCYCLOPEDIA.md         # 项目百科全书
 ├── tests/
-│   └── regression.ps1          # 回归测试
+│   └── test_core.cpp           # doctest 核心/API 合约测试
 ├── CMakeLists.txt
 └── README.md
 ```

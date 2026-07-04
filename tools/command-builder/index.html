@@ -65,7 +65,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 <body>
 <header>
   <h1>🧩 Mosaicraft</h1>
-  <span>命令生成器 v1.14.0</span>
+  <span id="version-badge">命令生成器 v1.13.7</span>
 </header>
 <nav class="tabs" id="tabs">
   <button class="tab active" data-cmd="mosaic">🎨 生成马赛克</button>
@@ -352,6 +352,7 @@ function copyCommand() {
 let serverAvailable = false;
 let currentJobId = '';
 let apiInfo = null;
+let serviceInfo = null;
 const SUPPORTED_API_MAJOR = 1;
 const SERVER_URL = window.location.protocol === 'http:' || window.location.protocol === 'https:'
   ? window.location.origin
@@ -359,12 +360,14 @@ const SERVER_URL = window.location.protocol === 'http:' || window.location.proto
 
 async function checkServer() {
   try {
-    const res = await fetch(SERVER_URL + '/api/info');
-    if (res.ok) {
-      const data = await res.json();
-      const api = data && data.info && data.info.api ? data.info.api : null;
+    const data = await getJson('/api/info');
+    if (data.ok) {
+      serviceInfo = data.info || null;
+      const api = serviceInfo && serviceInfo.api ? serviceInfo.api : null;
       if (!api || !api.structured) throw new Error('structured API unavailable');
       apiInfo = api;
+      const badge = document.getElementById('version-badge');
+      if (badge && serviceInfo.version) badge.textContent = 'Mosaicraft v' + serviceInfo.version;
       const major = Number(api.contractMajorVersion || 0);
       if (major !== SUPPORTED_API_MAJOR || api.stable !== true) {
         serverAvailable = false;
@@ -383,10 +386,14 @@ async function checkServer() {
       document.getElementById('btn-clear-jobs').style.display = '';
       document.getElementById('run-status').style.display = '';
       document.getElementById('run-status').innerHTML = '<span style="color:#7ee787">🟢 已连接结构化 API</span> — contract ' +
-        escapeHtml(api.contractVersion || 'unknown') + ' / ' + escapeHtml(api.compatibility || 'unknown');
+        escapeHtml(api.contractVersion || 'unknown') + ' / ' + escapeHtml(api.compatibility || 'unknown') +
+        '，端点 ' + escapeHtml(api.enabledEndpointCount || 0) + '/' + escapeHtml(api.endpointCount || 0);
       return;
+    } else if (data.message) {
+      throw new Error(data.message);
     }
   } catch(e) {}
+  serviceInfo = null;
   apiInfo = null;
   serverAvailable = false;
   document.getElementById('btn-run').style.display = 'none';
@@ -398,20 +405,14 @@ async function checkServer() {
 
 async function runCommand() {
   const tab = document.querySelector('.tab.active').dataset.cmd;
-  const cmd = document.getElementById('cmd-output').textContent;
   const status = document.getElementById('run-status');
   status.style.display = '';
   status.textContent = 'Running...';
   setCurrentJob('');
   try {
     if (tab === 'mosaic') {
-      const res = await fetch(SERVER_URL + '/api/jobs/mosaic', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildMosaicPayload())
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok || !data.job) {
+      const data = await postJson('/api/jobs/mosaic', buildMosaicPayload());
+      if (!data.ok || !data.job) {
         status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
         if (data && data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
         return;
@@ -421,13 +422,8 @@ async function runCommand() {
       return;
     }
     if (tab === 'build') {
-      const res = await fetch(SERVER_URL + '/api/jobs/build', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildBuildPayload())
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok || !data.job) {
+      const data = await postJson('/api/jobs/build', buildBuildPayload());
+      if (!data.ok || !data.job) {
         status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
         if (data && data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
         return;
@@ -476,7 +472,7 @@ async function runCommand() {
           })
         : await postJson('/api/db/usage', {
             dbPath: val('u-db'),
-            limit: Number(val('u-n') || 50),
+            limit: parseUiNumber('u-n', 'Top N', { integer: true, min: 1 }) || 50,
             showUnused: false
           });
       if (!data.ok) {
@@ -507,28 +503,50 @@ async function runCommand() {
 
     status.innerHTML = '<span style="color:#f78166">❌ 当前命令尚未接入结构化 API</span>';
   } catch(e) {
-    status.innerHTML = '<span style="color:#f78166">⚠ 请求失败</span> — 请确认 Web UI 服务器已启动';
+    status.innerHTML = '<span style="color:#f78166">⚠ 请求失败</span> — ' +
+      escapeHtml(e && e.message ? e.message : '请确认 Web UI 服务器已启动');
   }
 }
 
+async function readJsonResponse(res) {
+  const text = await res.text();
+  if (!text) return { ok: res.ok };
+  try {
+    const data = JSON.parse(text);
+    if (!res.ok && data.ok !== false) data.ok = false;
+    return data;
+  } catch(e) {
+    return { ok: false, message: text || ('HTTP ' + res.status) };
+  }
+}
+
+async function requestJson(path, options) {
+  const res = await fetch(SERVER_URL + path, options || {});
+  const data = await readJsonResponse(res);
+  if (!res.ok && !data.message) data.message = 'HTTP ' + res.status;
+  return data;
+}
+
+async function getJson(path) {
+  return await requestJson(path);
+}
+
 async function postJson(path, payload) {
-  const res = await fetch(SERVER_URL + path, {
+  return await requestJson(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
-  return await res.json();
+}
+
+async function deleteJson(path) {
+  return await requestJson(path, { method: 'DELETE' });
 }
 
 function setCurrentJob(jobId) {
   currentJobId = jobId || '';
   const btn = document.getElementById('btn-cancel-job');
   if (btn) btn.disabled = !currentJobId;
-}
-
-async function deleteJson(path) {
-  const res = await fetch(SERVER_URL + path, { method: 'DELETE' });
-  return await res.json();
 }
 
 async function cancelCurrentJob() {
@@ -568,9 +586,8 @@ async function pollJob(jobId, status) {
   while (true) {
     await new Promise(resolve => setTimeout(resolve, 1000));
     if (currentJobId !== jobId) return;
-    const res = await fetch(SERVER_URL + '/api/jobs/' + encodeURIComponent(jobId));
-    const data = await res.json();
-    if (!res.ok || !data.ok || !data.job) {
+    const data = await getJson('/api/jobs/' + encodeURIComponent(jobId));
+    if (!data.ok || !data.job) {
       status.innerHTML = '<span style="color:#f78166">❌ Job 查询失败</span>';
       if (data && data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
       return;
@@ -710,6 +727,37 @@ function setIfValue(payload, key, id, mapper) {
   payload[key] = mapper ? mapper(raw) : raw;
 }
 
+function parseUiNumber(id, label, options) {
+  const raw = val(id);
+  if (raw === '') return null;
+  const opts = options || {};
+  const num = Number(raw);
+  if (!Number.isFinite(num)) throw new Error(label + ' 必须是数字');
+  if (opts.integer && !Number.isInteger(num)) throw new Error(label + ' 必须是整数');
+  if (opts.min !== undefined && num < opts.min) throw new Error(label + ' 不能小于 ' + opts.min);
+  if (opts.max !== undefined && num > opts.max) throw new Error(label + ' 不能大于 ' + opts.max);
+  return num;
+}
+
+function setIfNumber(payload, key, id, label, options) {
+  const num = parseUiNumber(id, label, options);
+  if (num !== null) payload[key] = num;
+}
+
+function setIfSize(payload, key, id, label) {
+  const raw = val(id);
+  if (raw === '') return null;
+  const match = raw.match(/^(\d+)x(\d+)$/i);
+  if (!match) throw new Error(label + ' 必须使用 WxH 格式');
+  const w = Number(match[1]);
+  const h = Number(match[2]);
+  if (!Number.isSafeInteger(w) || !Number.isSafeInteger(h) || w <= 0 || h <= 0) {
+    throw new Error(label + ' 必须使用正整数 WxH 格式');
+  }
+  payload[key] = raw;
+  return { w, h };
+}
+
 function setIfChecked(payload, key, id) {
   if (val(id)) payload[key] = true;
 }
@@ -721,26 +769,26 @@ function buildMosaicPayload() {
   setIfValue(payload, 'outputPath', 'm-output');
   setIfValue(payload, 'format', 'm-format');
   setIfValue(payload, 'writeMode', 'm-writemode');
-  setIfValue(payload, 'tileW', 'm-tilew', Number);
-  setIfValue(payload, 'tileH', 'm-tileh', Number);
-  setIfValue(payload, 'candidates', 'm-candidates', Number);
-  setIfValue(payload, 'topNrandom', 'm-topn', Number);
-  setIfValue(payload, 'lRange', 'm-lrange', Number);
-  setIfValue(payload, 'neighborWindow', 'm-nwin', Number);
-  setIfValue(payload, 'neighborPenalty', 'm-npen', Number);
-  setIfValue(payload, 'upscale', 'm-upscale', Number);
-  setIfValue(payload, 'outW', 'm-outw', Number);
-  setIfValue(payload, 'outH', 'm-outh', Number);
-  setIfValue(payload, 'outputTile', 'm-otile');
-  setIfValue(payload, 'labWeight', 'm-labw', Number);
-  setIfValue(payload, 'gridWeight', 'm-gridw', Number);
-  setIfValue(payload, 'tinyWeight', 'm-tinyw', Number);
-  setIfValue(payload, 'edgeWeight', 'm-edgew', Number);
-  setIfValue(payload, 'lbpWeight', 'm-lbpw', Number);
-  setIfValue(payload, 'penalty', 'm-penalty', Number);
-  setIfValue(payload, 'quality', 'm-quality', Number);
-  setIfValue(payload, 'pngLevel', 'm-pnglevel', Number);
-  setIfValue(payload, 'colorStrength', 'm-colorstr', Number);
+  setIfNumber(payload, 'tileW', 'm-tilew', 'Tile 宽度', { integer: true, min: 1 });
+  setIfNumber(payload, 'tileH', 'm-tileh', 'Tile 高度', { integer: true, min: 1 });
+  setIfNumber(payload, 'candidates', 'm-candidates', '候选数', { integer: true, min: 1 });
+  setIfNumber(payload, 'topNrandom', 'm-topn', 'TopN 随机', { integer: true, min: 1 });
+  setIfNumber(payload, 'lRange', 'm-lrange', 'L 亮度范围');
+  setIfNumber(payload, 'neighborWindow', 'm-nwin', '邻域窗口', { integer: true, min: 0 });
+  setIfNumber(payload, 'neighborPenalty', 'm-npen', '邻域惩罚');
+  setIfNumber(payload, 'upscale', 'm-upscale', '上采样', { integer: true, min: 1 });
+  setIfNumber(payload, 'outW', 'm-outw', '输出宽度', { integer: true, min: 1 });
+  setIfNumber(payload, 'outH', 'm-outh', '输出高度', { integer: true, min: 1 });
+  const outTile = setIfSize(payload, 'outputTile', 'm-otile', '输出 Tile 尺寸');
+  setIfNumber(payload, 'labWeight', 'm-labw', 'LAB 权重');
+  setIfNumber(payload, 'gridWeight', 'm-gridw', 'Grid 权重');
+  setIfNumber(payload, 'tinyWeight', 'm-tinyw', 'Tiny 权重');
+  setIfNumber(payload, 'edgeWeight', 'm-edgew', 'Edge 权重');
+  setIfNumber(payload, 'lbpWeight', 'm-lbpw', 'LBP 权重');
+  setIfNumber(payload, 'penalty', 'm-penalty', '复用惩罚');
+  setIfNumber(payload, 'quality', 'm-quality', 'JPEG/WebP 质量', { integer: true, min: 1, max: 100 });
+  setIfNumber(payload, 'pngLevel', 'm-pnglevel', 'PNG 压缩级别', { integer: true, min: 1, max: 9 });
+  setIfNumber(payload, 'colorStrength', 'm-colorstr', '颜色强度', { min: 0, max: 0.5 });
   setIfChecked(payload, 'tiled', 'm-tiled');
   setIfChecked(payload, 'deepZoom', 'm-deepzoom');
   setIfChecked(payload, 'analyze', 'm-analyze');
@@ -749,11 +797,9 @@ function buildMosaicPayload() {
   setIfChecked(payload, 'colorAdjust', 'm-coloradj');
   if (val('m-cpu')) payload.useGpu = false;
 
-  const outTile = val('m-otile');
-  const match = outTile.match(/^(\d+)x(\d+)$/i);
-  if (match) {
-    payload.nativeTileW = Number(match[1]);
-    payload.nativeTileH = Number(match[2]);
+  if (outTile) {
+    payload.nativeTileW = outTile.w;
+    payload.nativeTileH = outTile.h;
   }
   return payload;
 }
@@ -763,18 +809,16 @@ function buildBuildPayload() {
   setIfValue(payload, 'inputDir', 'b-input');
   setIfValue(payload, 'outputDir', 'b-output');
   setIfValue(payload, 'dbPath', 'b-db');
-  setIfValue(payload, 'threads', 'b-threads', Number);
-  setIfValue(payload, 'normalizeSize', 'b-normsize');
+  setIfNumber(payload, 'threads', 'b-threads', '线程数', { integer: true, min: 0 });
+  const normSize = setIfSize(payload, 'normalizeSize', 'b-normsize', '归一化尺寸');
   setIfChecked(payload, 'appendMode', 'b-append');
   setIfChecked(payload, 'recursive', 'b-recursive');
   setIfChecked(payload, 'normalizeOnly', 'b-normonly');
   setIfChecked(payload, 'forceMode', 'b-force');
 
-  const normSize = val('b-normsize');
-  const match = normSize.match(/^(\d+)x(\d+)$/i);
-  if (match) {
-    payload.normalizeWidth = Number(match[1]);
-    payload.normalizeHeight = Number(match[2]);
+  if (normSize) {
+    payload.normalizeWidth = normSize.w;
+    payload.normalizeHeight = normSize.h;
   }
   return payload;
 }

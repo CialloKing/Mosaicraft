@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-07-02 | 版本 / Version：v1.13.7
+> 最后更新 / Last updated：2026-07-04 | 版本 / Version：v1.13.7
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -521,7 +521,7 @@ Compress-Archive -Path release_pkg\* -Destination Mosaicraft_v1.13.3.zip
 ### v1.13.2: Bug 修复 · CLI 校验 · PngStreamWriter 清理 (2026-07-01)
 
 ### v1.13.3: 全面 bug 审查修复 — 5 HIGH + 6 MEDIUM (2026-06-29)
-- 15 端点 REST API: /api/jobs/*, /api/db/*, /api/mosaic, /api/inspect
+- 17 端点 REST API: /api/jobs/*, /api/db/*, /api/mosaic, /api/inspect
 - 异步任务: POST /api/jobs/* 提交 → GET /api/jobs/{id} 轮询
 - 服务层解耦: MosaicService / BuildService, CLI 与 HTTP 共享 core
 - API 合约: apiContractVersion(), /api/info 暴露稳定性

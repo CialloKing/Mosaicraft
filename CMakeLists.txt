@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(Mosaicraft VERSION 0.2.0 LANGUAGES CXX)
+project(Mosaicraft VERSION 1.13.7 LANGUAGES CXX)
 
 # C++17
 set(CMAKE_CXX_STANDARD 17)
