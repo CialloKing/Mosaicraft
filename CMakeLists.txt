@@ -215,3 +215,16 @@ target_include_directories(mosaicraft_tests PRIVATE
 # CTest 集成
 enable_testing()
 add_test(NAME mosaicraft_tests COMMAND mosaicraft_tests)
+
+add_executable(mosaicraft_regression_tests EXCLUDE_FROM_ALL
+    tests/test_regression.cpp
+)
+target_link_libraries(mosaicraft_regression_tests PRIVATE
+    mosaicraft_core
+    mosaicraft_cuda
+)
+target_include_directories(mosaicraft_regression_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/tests
+)
+add_test(NAME mosaicraft_regression_tests COMMAND mosaicraft_regression_tests)
