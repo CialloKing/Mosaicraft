@@ -98,6 +98,17 @@ cmake --build build --config Release
 | `MOSAICRAFT_CUDA=ON` | ✅ | CUDA GPU 加速（需 NVIDIA GPU + CUDA Toolkit） |
 | `MOSAICRAFT_CUDA=OFF` | — | 纯 CPU 编译（Linux / 无 GPU Windows） |
 
+### 验证
+
+```powershell
+# 核心单元/API 合约测试 + 服务层回归测试
+cmake --build build --config Release --target mosaicraft_tests mosaicraft_regression_tests
+ctest --test-dir build -C Release --output-on-failure
+
+# Web UI/API 真实 smoke：启动 MosaicraftWebUI，提交 build/mosaic job 并验证输出
+cmake --build build --config Release --target mosaicraft_webui_smoke
+```
+
 ---
 
 ## 使用指南
@@ -229,7 +240,9 @@ Mosaicraft/
 ├── docs/
 │   └── ENCYCLOPEDIA.md         # 项目百科全书
 ├── tests/
-│   └── test_core.cpp           # doctest 核心/API 合约测试
+│   ├── test_core.cpp           # doctest 核心/API 合约测试
+│   ├── test_regression.cpp     # 服务层建库/检查/出图回归测试
+│   └── webui_smoke.ps1         # Web UI/API 真实 smoke 验证
 ├── CMakeLists.txt
 └── README.md
 ```

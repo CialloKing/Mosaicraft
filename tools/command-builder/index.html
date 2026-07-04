@@ -353,7 +353,23 @@ let serverAvailable = false;
 let currentJobId = '';
 let apiInfo = null;
 let serviceInfo = null;
+let apiEndpoints = [];
 const SUPPORTED_API_MAJOR = 1;
+const REQUIRED_API_OPERATIONS = [
+  'info',
+  'endpoints',
+  'submitMosaicJob',
+  'submitBuildJob',
+  'getJob',
+  'cancelJob',
+  'clearFinishedJobs',
+  'databaseStats',
+  'databaseHealth',
+  'databaseUsage',
+  'databaseUsageExport',
+  'databasePurge',
+  'inspect'
+];
 const SERVER_URL = window.location.protocol === 'http:' || window.location.protocol === 'https:'
   ? window.location.origin
   : 'http://localhost:8080';
@@ -380,6 +396,22 @@ async function checkServer() {
           '，此界面支持 v' + SUPPORTED_API_MAJOR + '.x stable';
         return;
       }
+      const endpoints = await getJson('/api/endpoints');
+      if (!endpoints.ok || !Array.isArray(endpoints.endpoints)) {
+        throw new Error('structured endpoint discovery unavailable');
+      }
+      apiEndpoints = endpoints.endpoints;
+      const missing = missingRequiredOperations(apiEndpoints);
+      if (missing.length) {
+        serverAvailable = false;
+        document.getElementById('btn-run').style.display = 'none';
+        document.getElementById('btn-cancel-job').style.display = 'none';
+        document.getElementById('btn-clear-jobs').style.display = 'none';
+        document.getElementById('run-status').style.display = '';
+        document.getElementById('run-status').innerHTML = '<span style="color:#f78166">⚠ API 端点不完整</span> — 缺少 ' +
+          escapeHtml(missing.join(', '));
+        return;
+      }
       serverAvailable = true;
       document.getElementById('btn-run').style.display = '';
       document.getElementById('btn-cancel-job').style.display = '';
@@ -395,12 +427,19 @@ async function checkServer() {
   } catch(e) {}
   serviceInfo = null;
   apiInfo = null;
+  apiEndpoints = [];
   serverAvailable = false;
   document.getElementById('btn-run').style.display = 'none';
   document.getElementById('btn-cancel-job').style.display = 'none';
   document.getElementById('btn-clear-jobs').style.display = 'none';
   document.getElementById('run-status').style.display = '';
   document.getElementById('run-status').innerHTML = '<span style="color:#f78166">⚠ 独立模式</span> — 请通过 Web UI (<code>MosaicraftWebUI.exe</code>) 访问以使用运行功能，或复制命令手动执行';
+}
+
+function missingRequiredOperations(endpoints) {
+  return REQUIRED_API_OPERATIONS.filter(name => {
+    return !endpoints.some(endpoint => endpoint.operation === name && endpoint.enabled !== false);
+  });
 }
 
 async function runCommand() {
@@ -410,11 +449,13 @@ async function runCommand() {
   status.textContent = 'Running...';
   setCurrentJob('');
   try {
+    if (!serverAvailable) {
+      throw new Error('请通过 MosaicraftWebUI.exe 打开页面后再运行');
+    }
     if (tab === 'mosaic') {
       const data = await postJson('/api/jobs/mosaic', buildMosaicPayload());
       if (!data.ok || !data.job) {
-        status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
-        if (data && data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+        renderFailure(status, data);
         return;
       }
       setCurrentJob(data.job.id);
@@ -424,8 +465,7 @@ async function runCommand() {
     if (tab === 'build') {
       const data = await postJson('/api/jobs/build', buildBuildPayload());
       if (!data.ok || !data.job) {
-        status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
-        if (data && data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+        renderFailure(status, data);
         return;
       }
       setCurrentJob(data.job.id);
@@ -435,8 +475,7 @@ async function runCommand() {
     if (tab === 'dbstats') {
       const data = await postJson('/api/db/stats', { dbPath: val('s-db') });
       if (!data.ok) {
-        status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
-        if (data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+        renderFailure(status, data);
         return;
       }
       status.innerHTML = '<span style="color:#7ee787">✅ Done</span>' + renderDbStats(data.stats);
@@ -445,18 +484,19 @@ async function runCommand() {
     if (tab === 'dbhealth') {
       const data = await postJson('/api/db/health', { dbPath: val('h-db') });
       if (!data.ok) {
-        status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
-        if (data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+        renderFailure(status, data);
         return;
       }
       status.innerHTML = '<span style="color:#7ee787">✅ Done</span>' + renderDbHealth(data.health);
       return;
     }
     if (tab === 'inspect') {
-      const data = await postJson('/api/inspect', { imagePath: val('i-input'), dbPath: val('i-db') });
+      const data = await postJson('/api/inspect', {
+        imagePath: requireValue('i-input', '图片路径'),
+        dbPath: val('i-db')
+      });
       if (!data.ok) {
-        status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
-        if (data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+        renderFailure(status, data);
         return;
       }
       status.innerHTML = '<span style="color:#7ee787">✅ Done</span>' + renderInspect(data.inspect);
@@ -464,6 +504,10 @@ async function runCommand() {
     }
     if (tab === 'dbusage') {
       const exportDir = val('u-export');
+      if (exportDir && !confirm('确认导出已用图片到：' + exportDir + ' ?')) {
+        status.innerHTML = '<span style="color:#79c0ff">已取消导出</span>';
+        return;
+      }
       const data = exportDir
         ? await postJson('/api/db/usage/export', {
             dbPath: val('u-db'),
@@ -476,8 +520,7 @@ async function runCommand() {
             showUnused: false
           });
       if (!data.ok) {
-        status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
-        if (data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+        renderFailure(status, data);
         if (data.export) status.innerHTML += renderDbUsageExport(data.export);
         return;
       }
@@ -486,14 +529,17 @@ async function runCommand() {
     }
     if (tab === 'dbpurge') {
       const execute = !!val('p-force');
+      if (execute && !confirm('确认实际清理孤立数据库记录？建议先取消勾选执行一次预览。')) {
+        status.innerHTML = '<span style="color:#79c0ff">已取消清理</span>';
+        return;
+      }
       const data = await postJson('/api/db/purge', {
         dbPath: val('p-db'),
         dryRun: !execute,
         confirm: execute
       });
       if (!data.ok) {
-        status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
-        if (data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+        renderFailure(status, data);
         if (data.purge) status.innerHTML += renderDbPurge(data.purge);
         return;
       }
@@ -501,11 +547,21 @@ async function runCommand() {
       return;
     }
 
-    status.innerHTML = '<span style="color:#f78166">❌ 当前命令尚未接入结构化 API</span>';
+    throw new Error('未知功能页：' + tab);
   } catch(e) {
-    status.innerHTML = '<span style="color:#f78166">⚠ 请求失败</span> — ' +
-      escapeHtml(e && e.message ? e.message : '请确认 Web UI 服务器已启动');
+    renderFailure(status, { message: e && e.message ? e.message : '请确认 Web UI 服务器已启动' }, '⚠ 请求失败');
   }
+}
+
+function renderFailure(status, data, title) {
+  status.innerHTML = '<span style="color:#f78166">' + escapeHtml(title || '❌ Failed') + '</span>';
+  if (data && data.message) {
+    status.innerHTML += '<br>' + renderMessageBlock(data.message);
+  }
+}
+
+function renderMessageBlock(message) {
+  return '<pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(message) + '</pre>';
 }
 
 async function readJsonResponse(res) {
@@ -727,6 +783,12 @@ function setIfValue(payload, key, id, mapper) {
   payload[key] = mapper ? mapper(raw) : raw;
 }
 
+function requireValue(id, label) {
+  const raw = val(id);
+  if (raw === '') throw new Error(label + ' 不能为空');
+  return raw;
+}
+
 function parseUiNumber(id, label, options) {
   const raw = val(id);
   if (raw === '') return null;
@@ -764,7 +826,7 @@ function setIfChecked(payload, key, id) {
 
 function buildMosaicPayload() {
   const payload = {};
-  setIfValue(payload, 'inputPath', 'm-input');
+  payload.inputPath = requireValue('m-input', '目标图片');
   setIfValue(payload, 'dbPath', 'm-db');
   setIfValue(payload, 'outputPath', 'm-output');
   setIfValue(payload, 'format', 'm-format');
@@ -785,7 +847,7 @@ function buildMosaicPayload() {
   setIfNumber(payload, 'tinyWeight', 'm-tinyw', 'Tiny 权重');
   setIfNumber(payload, 'edgeWeight', 'm-edgew', 'Edge 权重');
   setIfNumber(payload, 'lbpWeight', 'm-lbpw', 'LBP 权重');
-  setIfNumber(payload, 'penalty', 'm-penalty', '复用惩罚');
+  setIfNumber(payload, 'usePenalty', 'm-penalty', '复用惩罚');
   setIfNumber(payload, 'quality', 'm-quality', 'JPEG/WebP 质量', { integer: true, min: 1, max: 100 });
   setIfNumber(payload, 'pngLevel', 'm-pnglevel', 'PNG 压缩级别', { integer: true, min: 1, max: 9 });
   setIfNumber(payload, 'colorStrength', 'm-colorstr', '颜色强度', { min: 0, max: 0.5 });
@@ -806,7 +868,7 @@ function buildMosaicPayload() {
 
 function buildBuildPayload() {
   const payload = {};
-  setIfValue(payload, 'inputDir', 'b-input');
+  payload.inputDir = requireValue('b-input', '图片目录');
   setIfValue(payload, 'outputDir', 'b-output');
   setIfValue(payload, 'dbPath', 'b-db');
   setIfNumber(payload, 'threads', 'b-threads', '线程数', { integer: true, min: 0 });

@@ -389,19 +389,33 @@ cmake --build build --config Release
 
 编译后自动复制 `index.html` + CUDA DLL (`cudart64_*.dll`) 到 `build/Release/bin/`。
 
+### 发布前验证
+
+```powershell
+# 单元/API 合约测试 + 服务层回归测试
+cmake --build build --config Release --target mosaicraft_tests mosaicraft_regression_tests
+ctest --test-dir build -C Release --output-on-failure
+
+# Web UI/API 真实 smoke：启动本地 HTTP 服务，提交 build/mosaic job，检查输出
+cmake --build build --config Release --target mosaicraft_webui_smoke
+```
+
 ### 发布打包
 
 ```powershell
 # 收集文件
+New-Item -ItemType Directory -Force release_pkg
 copy build\Release\bin\*.exe release_pkg\
 copy build\Release\bin\*.dll release_pkg\
-copy tools\command-builder\index.html release_pkg\
+copy build\Release\bin\index.html release_pkg\
+copy README.md release_pkg\
+copy docs\API.md release_pkg\
 copy C:\Windows\System32\vcruntime140.dll release_pkg\
 copy C:\Windows\System32\vcruntime140_1.dll release_pkg\
 copy C:\Windows\System32\msvcp140.dll release_pkg\
 
 # 压缩
-Compress-Archive -Path release_pkg\* -Destination Mosaicraft_v1.13.3.zip
+Compress-Archive -Path release_pkg\* -Destination Mosaicraft_v1.13.7.zip
 ```
 
 发布包 ~5 MB，解压即用。需 NVIDIA 驱动支持 GPU 加速（CPU fallback 可用 `MOSAICRAFT_CUDA=OFF` 编译）。

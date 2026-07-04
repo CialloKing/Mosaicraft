@@ -228,3 +228,15 @@ target_include_directories(mosaicraft_regression_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME mosaicraft_regression_tests COMMAND mosaicraft_regression_tests)
+
+find_program(POWERSHELL_COMMAND NAMES pwsh powershell)
+if (POWERSHELL_COMMAND)
+    add_custom_target(mosaicraft_webui_smoke
+        COMMAND "${POWERSHELL_COMMAND}" -NoProfile -ExecutionPolicy Bypass
+            -File "${CMAKE_SOURCE_DIR}/tests/webui_smoke.ps1"
+            -WebUiExe "$<TARGET_FILE:MosaicraftWebUI>"
+        DEPENDS MosaicraftWebUI mosaicraft
+        USES_TERMINAL
+        COMMENT "Running Web UI/API smoke test..."
+    )
+endif()
