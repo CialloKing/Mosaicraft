@@ -1,6 +1,6 @@
 # Mosaicraft Release Checklist
 
-发布日期 / Applies to：v1.13.8 及后续补丁版本
+发布日期 / Applies to：v1.13.9 及后续补丁版本
 
 本清单定义正式发布的准入标准。正式 CUDA 包仍由本机或专用 GPU 环境构建；GitHub Actions CPU-only CI 是基础门禁，不替代 CUDA 发布包。
 

@@ -1,4 +1,4 @@
-# Mosaicraft v1.13.8
+# Mosaicraft v1.13.9
 
 > GPU 加速的照片马赛克拼贴生成器 — 本地创建图库图片精准匹配，输出超大分辨率马赛克拼图
 
@@ -282,7 +282,7 @@ Mosaicraft/
 | v1.10 | WorstTile · Unicode 全链路 | ✅ |
 | v1.11 | Web 命令生成器 | ✅ |
 | v1.12 | MosaicraftWebUI · 多分辨率 GPU · CUDA 开关 | ✅ |
-| v1.13 | REST API · 异步任务 · 合约版本化 | ✅ |
+| v1.13 | REST API · 异步任务 · 合约版本化 · 发布自动化 | ✅ |
 | v2.0 | GUI 桌面应用 | 📋 计划中 |
 
 ---

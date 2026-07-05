@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-07-05 | 版本 / Version：v1.13.8
+> 最后更新 / Last updated：2026-07-05 | 版本 / Version：v1.13.9
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -347,6 +347,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.13.1 | API 合约完善, 文档化 | — |
 | 1.13.2 | CLI 缺值校验 + PngStreamWriter 清理 | — |
 | 1.13.3 | **全面 bug 审查**: 5 HIGH + 6 MEDIUM 修复, 数值校验, 死代码清理 | — |
+| 1.13.9 | 发布准入清单、远端 CPU-only CI、vcpkg 缓存、Web UI/API 错误反馈打磨 | — |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -546,3 +547,9 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 - API 文档: docs/API.md 完整端点目录
 - 测试: 19→43 用例, 27→475 断言
 - Legacy /api/run 保留: 向后兼容
+
+### v1.13.9: 发布准入与 CI 门禁稳定化 (2026-07-05)
+- 发布脚本：InspectOnly、打包、解压验证、SHA256 输出
+- CI 门禁：Windows CPU-only 构建、CTest、Web UI/API smoke、发布候选包 artifact
+- 依赖缓存：vcpkg binary cache 缩短后续 CI 安装耗时
+- Web UI/API：结构化错误展示与常见字段修正建议
