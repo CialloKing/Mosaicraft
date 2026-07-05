@@ -238,6 +238,28 @@ function Assert-EncyclopediaVersionEntry {
     throw "Missing encyclopedia version entry: v$VersionText"
 }
 
+function Assert-ArchiveDocumentationPolicy {
+    param([string]$ExtractRoot)
+
+    foreach ($required in @(
+        "README.md",
+        "API.md",
+        "ENCYCLOPEDIA.md",
+        "LICENSE",
+        "third_party_versions.txt"
+    )) {
+        Assert-FileExists -Path (Join-Path $ExtractRoot $required)
+    }
+
+    $blockedDocs = Get-ChildItem -LiteralPath $ExtractRoot -Recurse -File |
+        Where-Object { $_.Name -eq "CHANGELOG.md" -or $_.Name -like "RELEASE_NOTES_*.md" }
+
+    if ($blockedDocs) {
+        $names = ($blockedDocs | ForEach-Object { $_.Name } | Sort-Object -Unique) -join ", "
+        throw "Unexpected standalone release documentation in archive: $names"
+    }
+}
+
 function Invoke-ReleaseInspection {
     param(
         [string]$VersionText,
@@ -444,6 +466,7 @@ try {
             $webUiPath = Join-Path $extractRoot $webUiName
             Assert-FileExists -Path $cliPath
             Assert-FileExists -Path $webUiPath
+            Assert-ArchiveDocumentationPolicy -ExtractRoot $extractRoot
 
             $versionOutput = (& $cliPath --version).Trim()
             if ($versionOutput -ne "Mosaicraft $versionText") {

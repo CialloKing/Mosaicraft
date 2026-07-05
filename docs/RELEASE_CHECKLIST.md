@@ -39,6 +39,7 @@
 - Web UI/API smoke
 - 生成 `Mosaicraft_v<version>_windows-x64_cuda.zip`
 - 解压发布包并验证包内 CLI `--version`
+- 验证包内文档规则：必须包含 `ENCYCLOPEDIA.md`，不得包含 `CHANGELOG.md` 或 `RELEASE_NOTES_*`
 - 使用包内 `MosaicraftWebUI.exe` 再跑 Web UI/API smoke
 - 输出 SHA256
 
@@ -91,6 +92,7 @@ GitHub Release 正文必须保持简洁，只包含：
 
 - 本机 CUDA 构建或测试失败
 - 发布包解压验证失败
+- 发布包文档规则验证失败
 - 远端 CPU-only CI 未完成或失败
 - `docs/ENCYCLOPEDIA.md` 当前版本记录缺失
 - zip 不是由 `scripts/release.ps1` 生成
