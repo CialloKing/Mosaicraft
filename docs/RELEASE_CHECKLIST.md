@@ -88,7 +88,25 @@ GitHub Release 正文必须保持简洁，只包含：
 
 完整变更、CI、发布脚本和验证细节保留在 `docs/ENCYCLOPEDIA.md`、README 和项目文档中，不直接展开到 GitHub Release 页面。
 
-## 6. 不允许发布的情况
+## 6. 发布后真实附件验收
+
+创建或替换 GitHub Release 附件后，必须从 GitHub Release 重新下载真实 zip 验收。
+
+```powershell
+.\scripts\verify-release-asset.ps1 -Tag v<version>
+```
+
+脚本必须完成：
+
+- 读取 GitHub Release 元数据并选择 zip 资产
+- 下载真实 Release 附件
+- 校验 GitHub asset digest、Release 页面 SHA256 和本地文件 SHA256 一致
+- 解压 zip 并检查 CLI、Web UI、`index.html`、README、API、百科、license 和第三方版本清单
+- 确认包内没有 `CHANGELOG.md` 或 `RELEASE_NOTES_*`
+- 验证包内 CLI `--version`、CLI `--help` 和 Web UI `--help`
+- 使用包内 `MosaicraftWebUI.exe` 跑 Web UI/API smoke
+
+## 7. 不允许发布的情况
 
 - 本机 CUDA 构建或测试失败
 - 发布包解压验证失败
@@ -97,8 +115,9 @@ GitHub Release 正文必须保持简洁，只包含：
 - `docs/ENCYCLOPEDIA.md` 当前版本记录缺失
 - zip 不是由 `scripts/release.ps1` 生成
 - 未记录 SHA256
+- GitHub Release 真实附件未通过 `scripts/verify-release-asset.ps1`
 
-## 7. CUDA CI 后续方案
+## 8. CUDA CI 后续方案
 
 当前策略：
 

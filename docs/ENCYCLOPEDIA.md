@@ -412,6 +412,9 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 
 # CI/无 CUDA 环境：生成 CPU-only 发布候选包
 .\scripts\release.ps1 -BuildDir build-ci -Configuration Release -NoCuda -PackageSuffix ci-cpu
+
+# 发布后验收 GitHub Release 上真实可下载的 zip
+.\scripts\verify-release-asset.ps1 -Tag v<version>
 ```
 
 发布脚本会生成 `Mosaicraft_v<version>_<platform>-<arch>_<runtime>.zip`。当前正式 Windows CUDA 包名为 `Mosaicraft_v<version>_windows-x64_cuda.zip`；CI CPU-only 候选包名为 `Mosaicraft_v<version>_windows-x64_cpu-only_ci-cpu.zip`。历史更新说明统一维护在本文件中，打包时会复制为包内的 `ENCYCLOPEDIA.md`。脚本会复制 EXE、DLL、`index.html`、`README.md`、`API.md`、`LICENSE`、`ENCYCLOPEDIA.md` 和第三方版本清单，并验证：
@@ -420,6 +423,8 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 - 包内 `MosaicraftWebUI.exe` 可启动；
 - Web UI/API smoke 可提交 build/mosaic job；
 - SHA256 可直接用于发布校验。
+
+`verify-release-asset.ps1` 是发布后的真实附件验收入口。它从 GitHub Release 下载 zip，校验 asset digest、Release 页面 SHA256 和文件 SHA256，解压检查包结构和文档策略，并使用解压后的 `MosaicraftWebUI.exe` 跑 Web UI/API smoke。这个步骤用于发现“本地包通过，但 Release 页面附件不是同一个产物”的问题。
 
 发布包 ~5 MB，解压即用。需 NVIDIA 驱动支持 GPU 加速（CPU fallback 可用 `MOSAICRAFT_CUDA=OFF` 编译）。Windows CPU-only CI 门禁位于 `.github/workflows/ci.yml`，复用同一个发布脚本生成 `windows-x64_cpu-only_ci-cpu` 候选包。
 
@@ -614,6 +619,10 @@ v1.13.9 是 v1.13 系列的发布工程与交付稳定性补丁版本。相比 v
   - 自动检查 CMake、CTest、PowerShell、vcpkg toolchain、发布必需文件和现有 build 输出
   - 可从 `CMakePresets.json` 自动读取默认 vcpkg toolchain
   - 不再要求源码仓库新增单版本说明文件，历史说明统一维护在本百科中
+- 新增 `scripts/verify-release-asset.ps1`
+  - 发布后从 GitHub Release 下载真实 zip 附件
+  - 校验 GitHub asset digest、Release 页面 SHA256 和本地文件 SHA256 一致
+  - 使用解压后的包内可执行文件验证 CLI/Web UI 最小可用性和 Web UI/API smoke
 - 完成 GitHub Actions Windows CPU-only CI 门禁
   - 构建、CTest、Web UI/API smoke、打包、解压验证、artifact 上传
   - 启用 vcpkg binary cache，后续依赖安装从约 44 分钟降至约 19 秒
@@ -630,6 +639,7 @@ v1.13.9 是 v1.13 系列的发布工程与交付稳定性补丁版本。相比 v
 - `mosaicraft_regression_tests` 通过
 - `mosaicraft_webui_smoke` 在发布构建上通过
 - `scripts/release.ps1 -BuildDir build -Configuration Release` 生成并解压验证 `Mosaicraft_v1.13.9_windows-x64_cuda.zip`
+- `scripts/verify-release-asset.ps1 -Tag v1.13.9` 验证 GitHub Release 真实附件通过
 - 远端 GitHub Actions `CI` 在 `main` 上通过
 
 发布包内容：
