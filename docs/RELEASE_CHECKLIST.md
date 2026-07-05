@@ -74,15 +74,18 @@ gh run view <run-id> --json status,conclusion,url,jobs
 gh release create v<version> `
   .\Mosaicraft_v<version>_windows-x64_cuda.zip `
   --title "Mosaicraft v<version>" `
-  --notes-file .\RELEASE_NOTES_v<version>.md
+  --notes-file <concise-release-page-notes.md>
 ```
 
-发布说明中必须包含：
+GitHub Release 正文必须保持简洁，只包含：
 
+- 下载哪个 zip
+- 解压后如何启动 `MosaicraftWebUI.exe`
+- CLI 用户如何运行 `mosaicraft.exe --help`
+- Windows x64 / CUDA 运行环境说明
 - SHA256
-- Windows x64 CUDA 包说明
-- CPU-only CI 通过的 run 链接
-- 已知限制：GitHub hosted CI 不验证 CUDA，CUDA 由本机或专用 GPU 环境验证
+
+完整变更、CI、发布脚本和验证细节保留在 `RELEASE_NOTES_v<version>.md`、README 和项目文档中，不直接展开到 GitHub Release 页面。
 
 ## 6. 不允许发布的情况
 
