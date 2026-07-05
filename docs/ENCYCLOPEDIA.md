@@ -403,6 +403,9 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 ### 发布打包
 
 ```powershell
+# 发布前环境检查，不构建、不打包
+.\scripts\release.ps1 -InspectOnly -BuildDir build -Configuration Release
+
 # 默认 CUDA Release 发布：配置、构建、CTest、WebUI smoke、打包、解压验证、SHA256
 .\scripts\release.ps1 -BuildDir build -Configuration Release
 
@@ -418,6 +421,8 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 - SHA256 可直接用于发布校验。
 
 发布包 ~5 MB，解压即用。需 NVIDIA 驱动支持 GPU 加速（CPU fallback 可用 `MOSAICRAFT_CUDA=OFF` 编译）。Windows CPU-only CI 门禁位于 `.github/workflows/ci.yml`，复用同一个发布脚本生成 `_ci-cpu` 候选包。
+
+正式发布以 `docs/RELEASE_CHECKLIST.md` 为准：本机 CUDA 发布包用于正式附件，远端 CPU-only CI 用于基础质量门禁。GitHub hosted CI 当前不验证 CUDA；如需自动化 CUDA 发布，应配置自托管 Windows GPU runner。
 
 ---
 

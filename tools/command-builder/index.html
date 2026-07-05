@@ -555,13 +555,66 @@ async function runCommand() {
 
 function renderFailure(status, data, title) {
   status.innerHTML = '<span style="color:#f78166">' + escapeHtml(title || '❌ Failed') + '</span>';
+  const details = renderApiErrorDetails(data);
+  if (details) {
+    status.innerHTML += details;
+  }
   if (data && data.message) {
     status.innerHTML += '<br>' + renderMessageBlock(data.message);
+  }
+  const suggestion = renderApiErrorSuggestion(data);
+  if (suggestion) {
+    status.innerHTML += '<br><span style="font-size:0.76rem;color:#79c0ff">' + escapeHtml(suggestion) + '</span>';
   }
 }
 
 function renderMessageBlock(message) {
   return '<pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(message) + '</pre>';
+}
+
+function renderApiErrorDetails(data) {
+  if (!data) return '';
+  const items = [];
+  if (data.status !== undefined) items.push('HTTP ' + data.status);
+  if (data.path) items.push(data.path);
+  if (data.exitCode !== undefined) items.push('exitCode=' + data.exitCode);
+  const field = apiErrorField(data.message || '');
+  if (field) items.push('field=' + field);
+  if (!items.length) return '';
+  return '<br><span style="font-size:0.72rem;color:#8b949e">' + escapeHtml(items.join(' · ')) + '</span>';
+}
+
+function apiErrorField(message) {
+  const text = String(message || '');
+  const match = text.match(/^([A-Za-z][A-Za-z0-9]*)\s+(must|is)\b/);
+  return match ? match[1] : '';
+}
+
+function renderApiErrorSuggestion(data) {
+  if (!data) return '';
+  const message = String(data.message || '');
+  const field = apiErrorField(message);
+  const fieldHints = {
+    tileW: 'Tile 宽度不能小于 4。',
+    tileH: 'Tile 高度不能小于 4。',
+    candidates: '候选数不能小于 10。',
+    quality: 'JPEG/WebP 质量必须在 1 到 100 之间。',
+    pngLevel: 'PNG 压缩级别必须在 1 到 9 之间。',
+    colorStrength: '颜色强度必须在 0 到 0.5 之间。',
+    threads: '线程数必须为 0 或正整数。',
+    limit: 'Top N 必须为正整数。',
+    imagePath: '请检查图片路径是否为空或类型错误。',
+    inputPath: '请检查目标图片路径是否为空或类型错误。',
+    inputDir: '请检查图库目录路径是否为空或类型错误。',
+    dbPath: '请检查数据库路径是否为空或类型错误。'
+  };
+  if (field && fieldHints[field]) return fieldHints[field];
+  if (message.indexOf('invalid JSON body') === 0) return '请求体不是合法 JSON，请重新提交。';
+  if (message.indexOf('无法连接 Web UI/API') === 0) return '请确认当前页面由 MosaicraftWebUI.exe 打开，且服务仍在运行。';
+  if (data.status === 404) return '请确认接口、任务 ID 或 legacy /api/run 状态。';
+  if (data.status === 409) return '当前任务状态不允许执行该操作。';
+  if (data.status >= 500) return '服务端处理失败，请查看 MosaicraftWebUI 控制台日志。';
+  return '';
 }
 
 async function readJsonResponse(res) {
@@ -581,11 +634,14 @@ async function requestJson(path, options) {
     const res = await fetch(SERVER_URL + path, options || {});
     const data = await readJsonResponse(res);
     data.status = res.status;
+    data.path = path;
     if (!res.ok && !data.message) data.message = 'HTTP ' + res.status;
     return data;
   } catch(e) {
     return {
       ok: false,
+      status: 0,
+      path: path,
       message: '无法连接 Web UI/API: ' + (e && e.message ? e.message : 'network error')
     };
   }
@@ -619,8 +675,7 @@ async function cancelCurrentJob() {
   try {
     const data = await deleteJson('/api/jobs/' + encodeURIComponent(currentJobId));
     if (!data.ok) {
-      status.innerHTML = '<span style="color:#f78166">❌ 无法取消任务</span>';
-      if (data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+      renderFailure(status, data, '❌ 无法取消任务');
       return;
     }
     setCurrentJob('');
@@ -635,8 +690,7 @@ async function clearFinishedJobs() {
   try {
     const data = await deleteJson('/api/jobs');
     if (!data.ok) {
-      status.innerHTML = '<span style="color:#f78166">❌ 清理失败</span>';
-      if (data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+      renderFailure(status, data, '❌ 清理失败');
       return;
     }
     status.innerHTML = '<span style="color:#7ee787">已清理 ' + escapeHtml(data.removed || 0) + ' 个完成任务</span>';
@@ -652,8 +706,7 @@ async function pollJob(jobId, status) {
     if (currentJobId !== jobId) return;
     const data = await getJson('/api/jobs/' + encodeURIComponent(jobId));
     if (!data.ok || !data.job) {
-      status.innerHTML = '<span style="color:#f78166">❌ Job 查询失败</span>';
-      if (data && data.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(data.message) + '</pre>';
+      renderFailure(status, data, '❌ Job 查询失败');
       return;
     }
 

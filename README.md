@@ -112,6 +112,9 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 ### 发布自动化
 
 ```powershell
+# 发布前环境检查，不构建、不打包
+.\scripts\release.ps1 -InspectOnly -BuildDir build -Configuration Release
+
 # 默认 CUDA Release 发布：配置/构建/CTest/WebUI smoke/打包/解压验证/SHA256
 .\scripts\release.ps1 -BuildDir build -Configuration Release
 
@@ -120,6 +123,8 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 ```
 
 脚本会生成 `Mosaicraft_v<version>.zip`，并验证包内 `mosaicraft --version` 与 Web UI/API smoke。CI 使用同一脚本跑 Windows CPU-only 门禁，避免本地发布步骤和远端检查不一致。
+
+正式发布准入以 [Release Checklist](docs/RELEASE_CHECKLIST.md) 为准：本机 CUDA 发布包和远端 CPU-only CI 都通过后，才创建 GitHub Release。
 
 ---
 
@@ -250,7 +255,8 @@ Mosaicraft/
 ├── tools/
 │   └── command-builder/        # Web 命令生成器
 ├── docs/
-│   └── ENCYCLOPEDIA.md         # 项目百科全书
+│   ├── ENCYCLOPEDIA.md         # 项目百科全书
+│   └── RELEASE_CHECKLIST.md    # 正式发布准入清单
 ├── scripts/
 │   └── release.ps1             # 发布构建、打包和解压验证
 ├── tests/

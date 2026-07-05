@@ -11,6 +11,7 @@ param(
     [switch]$SkipTests,
     [switch]$SkipSmoke,
     [switch]$SkipArchiveValidation,
+    [switch]$InspectOnly,
     [switch]$KeepWorkspace
 )
 
@@ -65,6 +66,30 @@ function Get-ProjectVersion {
     return $match.Groups[1].Value
 }
 
+function Find-PresetToolchainFile {
+    $presetPath = Join-Path $RepoRoot "CMakePresets.json"
+    if (-not (Test-Path -LiteralPath $presetPath)) {
+        return ""
+    }
+
+    try {
+        $presets = Get-Content -LiteralPath $presetPath -Raw | ConvertFrom-Json
+        foreach ($preset in @($presets.configurePresets)) {
+            if ($preset.name -ne "default") {
+                continue
+            }
+            $toolchain = $preset.cacheVariables.CMAKE_TOOLCHAIN_FILE
+            if ($toolchain) {
+                return [string]$toolchain
+            }
+        }
+    }
+    catch {
+        Write-Warning "Unable to read CMakePresets.json: $($_.Exception.Message)"
+    }
+    return ""
+}
+
 function Copy-RequiredFile {
     param(
         [string]$Source,
@@ -98,15 +123,125 @@ function Assert-FileExists {
     }
 }
 
+function Test-CommandExists {
+    param([string]$Name)
+
+    return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
+}
+
+function Write-InspectLine {
+    param(
+        [string]$Status,
+        [string]$Message
+    )
+
+    Write-Host ("[{0}] {1}" -f $Status, $Message)
+}
+
+function Assert-InspectPath {
+    param(
+        [string]$Label,
+        [string]$Path
+    )
+
+    if (Test-Path -LiteralPath $Path) {
+        Write-InspectLine -Status "OK" -Message "$Label`: $Path"
+        return
+    }
+    throw "Missing $Label`: $Path"
+}
+
+function Assert-InspectCommand {
+    param([string]$Name)
+
+    if (Test-CommandExists -Name $Name) {
+        Write-InspectLine -Status "OK" -Message "command $Name"
+        return
+    }
+    throw "Missing command: $Name"
+}
+
+function Invoke-ReleaseInspection {
+    param(
+        [string]$VersionText,
+        [string]$BuildPath,
+        [string]$Configuration,
+        [string]$Toolchain,
+        [string]$PackagePath,
+        [switch]$NoCuda,
+        [switch]$SkipBuild
+    )
+
+    Invoke-Step "Inspect release environment" {
+        Write-InspectLine -Status "INFO" -Message "repo: $RepoRoot"
+        Write-InspectLine -Status "INFO" -Message "version: $VersionText"
+        Write-InspectLine -Status "INFO" -Message "build: $BuildPath"
+        Write-InspectLine -Status "INFO" -Message "configuration: $Configuration"
+        Write-InspectLine -Status "INFO" -Message "package: $PackagePath"
+        Write-InspectLine -Status "INFO" -Message ("cuda: " + ($(if ($NoCuda) { "disabled" } else { "enabled" })))
+
+        Assert-InspectCommand -Name "cmake"
+        Assert-InspectCommand -Name "ctest"
+        if (Test-CommandExists -Name "pwsh") {
+            Write-InspectLine -Status "OK" -Message "command pwsh"
+        } else {
+            Assert-InspectCommand -Name "powershell"
+        }
+
+        if ($Toolchain) {
+            Assert-InspectPath -Label "vcpkg toolchain" -Path $Toolchain
+        } else {
+            Write-InspectLine -Status "WARN" -Message "vcpkg toolchain not set; configure must find dependencies another way"
+        }
+
+        foreach ($required in @(
+            "CMakeLists.txt",
+            "README.md",
+            "docs\API.md",
+            "LICENSE",
+            "third_party_versions.txt",
+            "tests\webui_smoke.ps1"
+        )) {
+            Assert-InspectPath -Label $required -Path (Join-Path $RepoRoot $required)
+        }
+
+        $releaseNotes = Join-Path $RepoRoot "RELEASE_NOTES_v$VersionText.md"
+        Assert-InspectPath -Label "release notes" -Path $releaseNotes
+
+        if (-not $NoCuda -and -not $env:CUDA_PATH) {
+            Write-InspectLine -Status "WARN" -Message "CUDA_PATH is not set; CUDA configure may still work if CMake can locate the toolkit"
+        }
+
+        $binDir = Join-Path $BuildPath "$Configuration\bin"
+        if (Test-Path -LiteralPath $binDir) {
+            Write-InspectLine -Status "OK" -Message "build output directory: $binDir"
+            $cliName = Get-ExecutableName -BaseName "mosaicraft"
+            $webUiName = Get-ExecutableName -BaseName "MosaicraftWebUI"
+            Assert-InspectPath -Label $cliName -Path (Join-Path $binDir $cliName)
+            Assert-InspectPath -Label $webUiName -Path (Join-Path $binDir $webUiName)
+            Assert-InspectPath -Label "index.html" -Path (Join-Path $binDir "index.html")
+        } elseif ($SkipBuild) {
+            throw "Build output directory is required when -SkipBuild is set: $binDir"
+        } else {
+            Write-InspectLine -Status "WARN" -Message "build output directory not found yet: $binDir"
+        }
+    }
+}
+
 $versionText = Get-ProjectVersion
 $buildPath = Resolve-RepoPath $BuildDir
 $outputPath = if ($OutputDir) { Resolve-RepoPath $OutputDir } else { $RepoRoot }
-New-Item -ItemType Directory -Force -Path $outputPath | Out-Null
 
 if (-not $ToolchainFile -and $env:VCPKG_ROOT) {
     $candidateToolchain = Join-Path $env:VCPKG_ROOT "scripts\buildsystems\vcpkg.cmake"
     if (Test-Path -LiteralPath $candidateToolchain) {
         $ToolchainFile = $candidateToolchain
+    }
+}
+if (-not $ToolchainFile) {
+    $presetToolchain = Find-PresetToolchainFile
+    if ($presetToolchain -and (Test-Path -LiteralPath $presetToolchain)) {
+        $ToolchainFile = $presetToolchain
     }
 }
 
@@ -119,6 +254,20 @@ $zipPath = Join-Path $outputPath "$packageName.zip"
 $tempRoot = [System.IO.Path]::GetTempPath()
 $packageRoot = Join-Path $tempRoot ("${packageName}_pkg_" + [System.Guid]::NewGuid().ToString("N"))
 $extractRoot = Join-Path $tempRoot ("${packageName}_extract_" + [System.Guid]::NewGuid().ToString("N"))
+
+if ($InspectOnly) {
+    Invoke-ReleaseInspection `
+        -VersionText $versionText `
+        -BuildPath $buildPath `
+        -Configuration $Configuration `
+        -Toolchain $ToolchainFile `
+        -PackagePath $zipPath `
+        -NoCuda:$NoCuda `
+        -SkipBuild:$SkipBuild
+    return
+}
+
+New-Item -ItemType Directory -Force -Path $outputPath | Out-Null
 
 try {
     if (-not $SkipConfigure) {
