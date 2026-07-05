@@ -256,8 +256,7 @@ Mosaicraft/
 │   └── command-builder/        # Web 命令生成器
 ├── docs/
 │   ├── ENCYCLOPEDIA.md         # 项目百科全书
-│   ├── RELEASE_CHECKLIST.md    # 正式发布准入清单
-│   └── releases/               # 单版本详细发布说明
+│   └── RELEASE_CHECKLIST.md    # 正式发布准入清单
 ├── scripts/
 │   └── release.ps1             # 发布构建、打包和解压验证
 ├── tests/
@@ -267,7 +266,6 @@ Mosaicraft/
 ├── .github/workflows/
 │   └── ci.yml                  # Windows CPU-only CI 门禁
 ├── CMakeLists.txt
-├── CHANGELOG.md
 └── README.md
 ```
 

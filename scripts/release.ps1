@@ -68,20 +68,6 @@ function Get-ProjectVersion {
     return $match.Groups[1].Value
 }
 
-function Get-ReleaseNotesPath {
-    param([string]$VersionText)
-
-    foreach ($candidate in @(
-        (Join-Path $RepoRoot "docs\releases\v$VersionText.md"),
-        (Join-Path $RepoRoot "RELEASE_NOTES_v$VersionText.md")
-    )) {
-        if (Test-Path -LiteralPath $candidate) {
-            return $candidate
-        }
-    }
-    throw "Missing release notes for version $VersionText"
-}
-
 function Find-PresetToolchainFile {
     $presetPath = Join-Path $RepoRoot "CMakePresets.json"
     if (-not (Test-Path -LiteralPath $presetPath)) {
@@ -239,6 +225,19 @@ function Assert-InspectCommand {
     throw "Missing command: $Name"
 }
 
+function Assert-EncyclopediaVersionEntry {
+    param([string]$VersionText)
+
+    $encyclopedia = Join-Path $RepoRoot "docs\ENCYCLOPEDIA.md"
+    $content = Get-Content -LiteralPath $encyclopedia -Raw
+    $escapedVersion = [regex]::Escape($VersionText)
+    if ($content -match "(^|[^0-9])v?$escapedVersion([^0-9]|$)") {
+        Write-InspectLine -Status "OK" -Message "encyclopedia version entry: v$VersionText"
+        return
+    }
+    throw "Missing encyclopedia version entry: v$VersionText"
+}
+
 function Invoke-ReleaseInspection {
     param(
         [string]$VersionText,
@@ -274,18 +273,16 @@ function Invoke-ReleaseInspection {
 
         foreach ($required in @(
             "CMakeLists.txt",
-            "CHANGELOG.md",
             "README.md",
             "docs\API.md",
+            "docs\ENCYCLOPEDIA.md",
             "LICENSE",
             "third_party_versions.txt",
             "tests\webui_smoke.ps1"
         )) {
             Assert-InspectPath -Label $required -Path (Join-Path $RepoRoot $required)
         }
-
-        $releaseNotes = Get-ReleaseNotesPath -VersionText $VersionText
-        Assert-InspectPath -Label "release notes" -Path $releaseNotes
+        Assert-EncyclopediaVersionEntry -VersionText $VersionText
 
         if (-not $NoCuda -and -not $env:CUDA_PATH) {
             Write-InspectLine -Status "WARN" -Message "CUDA_PATH is not set; CUDA configure may still work if CMake can locate the toolkit"
@@ -426,11 +423,9 @@ try {
 
         Copy-RequiredFile -Source (Join-Path $RepoRoot "README.md") -Destination $packageRoot
         Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\API.md") -Destination (Join-Path $packageRoot "API.md")
+        Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\ENCYCLOPEDIA.md") -Destination (Join-Path $packageRoot "ENCYCLOPEDIA.md")
         Copy-RequiredFile -Source (Join-Path $RepoRoot "LICENSE") -Destination $packageRoot
         Copy-RequiredFile -Source (Join-Path $RepoRoot "third_party_versions.txt") -Destination $packageRoot
-
-        $releaseNotes = Get-ReleaseNotesPath -VersionText $versionText
-        Copy-Item -LiteralPath $releaseNotes -Destination (Join-Path $packageRoot "RELEASE_NOTES_v$versionText.md") -Force
 
         if (Test-Path -LiteralPath $zipPath) {
             Remove-Item -LiteralPath $zipPath -Force

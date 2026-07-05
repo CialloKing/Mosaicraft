@@ -7,9 +7,8 @@
 ## 1. 发布前状态
 
 - 工作区必须干净：`git status --short --branch`
-- 当前版本号必须一致：`CMakeLists.txt`、`core/Version.h`、README、Web UI badge、测试断言、release notes
-- 对应 release notes 必须存在：`docs/releases/v<version>.md`
-- `CHANGELOG.md` 必须追加当前版本高层摘要
+- 当前版本号必须一致：`CMakeLists.txt`、`core/Version.h`、README、Web UI badge、测试断言、百科版本记录
+- `docs/ENCYCLOPEDIA.md` 必须追加当前版本高层摘要和必要的详细说明
 - 当前提交必须已推送到远端 `main`
 
 ## 2. 环境检查
@@ -23,7 +22,7 @@
 - CMake、CTest、PowerShell 可执行文件可用
 - vcpkg toolchain 可定位
 - 发布所需文档和 license 文件存在
-- 对应 release notes 和 `CHANGELOG.md` 存在
+- `docs/ENCYCLOPEDIA.md` 存在，且包含当前版本记录
 - 如果跳过构建，现有 build 输出目录内必须已有 CLI、WebUI 和 `index.html`
 
 ## 3. 本机 CUDA 发布包
@@ -86,14 +85,14 @@ GitHub Release 正文必须保持简洁，只包含：
 - Windows x64 / CUDA 运行环境说明
 - SHA256
 
-完整变更、CI、发布脚本和验证细节保留在 `docs/releases/v<version>.md`、`CHANGELOG.md`、README 和项目文档中，不直接展开到 GitHub Release 页面。
+完整变更、CI、发布脚本和验证细节保留在 `docs/ENCYCLOPEDIA.md`、README 和项目文档中，不直接展开到 GitHub Release 页面。
 
 ## 6. 不允许发布的情况
 
 - 本机 CUDA 构建或测试失败
 - 发布包解压验证失败
 - 远端 CPU-only CI 未完成或失败
-- release notes 缺失
+- `docs/ENCYCLOPEDIA.md` 当前版本记录缺失
 - zip 不是由 `scripts/release.ps1` 生成
 - 未记录 SHA256
 

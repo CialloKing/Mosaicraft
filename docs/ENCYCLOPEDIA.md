@@ -414,7 +414,7 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 .\scripts\release.ps1 -BuildDir build-ci -Configuration Release -NoCuda -PackageSuffix ci-cpu
 ```
 
-发布脚本会生成 `Mosaicraft_v<version>_<platform>-<arch>_<runtime>.zip`。当前正式 Windows CUDA 包名为 `Mosaicraft_v<version>_windows-x64_cuda.zip`；CI CPU-only 候选包名为 `Mosaicraft_v<version>_windows-x64_cpu-only_ci-cpu.zip`。详细 release notes 存放在 `docs/releases/v<version>.md`，打包时会复制为包内的 `RELEASE_NOTES_v<version>.md`。脚本会复制 EXE、DLL、`index.html`、`README.md`、`API.md`、`LICENSE`、第三方版本清单和对应 release notes，并验证：
+发布脚本会生成 `Mosaicraft_v<version>_<platform>-<arch>_<runtime>.zip`。当前正式 Windows CUDA 包名为 `Mosaicraft_v<version>_windows-x64_cuda.zip`；CI CPU-only 候选包名为 `Mosaicraft_v<version>_windows-x64_cpu-only_ci-cpu.zip`。历史更新说明统一维护在本文件中，打包时会复制为包内的 `ENCYCLOPEDIA.md`。脚本会复制 EXE、DLL、`index.html`、`README.md`、`API.md`、`LICENSE`、`ENCYCLOPEDIA.md` 和第三方版本清单，并验证：
 
 - 包内 CLI `--version` 与项目版本一致；
 - 包内 `MosaicraftWebUI.exe` 可启动；
@@ -548,10 +548,102 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 - 测试: 19→43 用例, 27→475 断言
 - Legacy /api/run 保留: 向后兼容
 
+### v1.13.7: 发布收口 · API 稳定性 · Web UI 可靠性 (2026-07-05)
+
+v1.13.7 是一次发布收口版本，重点是提升可交付性、API 稳定性和 Web UI 运行可靠性。此版本没有引入新的核心算法方向，主要目标是确保 CLI、Web UI、结构化 API 和发布包行为一致。
+
+主要变化：
+- 统一版本与发布文档到 `1.13.7`
+- 收紧结构化 API 输入校验，非法字段类型会返回明确错误
+- Web UI 默认使用结构化 API，不再依赖旧式 `/api/run` 命令端点
+- Web UI 启动后会校验 `/api/info` 和 `/api/endpoints`，确认 API 合约和必需端点可用
+- Web UI 增加前置表单校验，`mosaic`、`build`、`inspect` 的必填项会在请求前检查
+- Web UI 对导出和实际清理类操作增加确认步骤
+- 新增服务层回归测试，覆盖建库、数据库统计、图片检查、生成马赛克和错误路径
+- 新增 Web UI/API smoke 验证，真实启动 `MosaicraftWebUI.exe` 并通过 HTTP 提交 build/mosaic job
+
+验证范围：
+- CUDA 默认 Release 构建通过
+- CPU-only Release 构建通过
+- `mosaicraft_tests` 通过
+- `mosaicraft_regression_tests` 通过
+- `mosaicraft_webui_smoke` 在 CUDA 构建和 CPU-only 构建上通过
+- `tools/command-builder/index.html` 内嵌脚本语法检查通过
+
+兼容性说明：
+- `/api/run` 仅作为旧命令兼容端点保留，默认禁用
+- 新 Web UI 和新集成方应使用结构化 API
+- CUDA 构建需要可用的 NVIDIA 驱动；无 GPU 环境可使用 `MOSAICRAFT_CUDA=OFF` 构建
+
+### v1.13.8: 发布工程增强 · 版本一致性 (2026-07-05)
+
+v1.13.8 是 v1.13 系列的发布工程增强版本。相比 v1.13.7，本版本将近期较多的发布一致性、API 校验、服务层回归测试和 Web UI/API 验证工作统一纳入新的补丁版本号。
+
+主要变化：
+- 将项目版本从 `1.13.7` 提升到 `1.13.8`
+- 保持 CLI、API、Web UI badge、README、百科文档和测试断言中的版本一致
+- 保留结构化 API 输入校验收紧结果，非法字段类型会返回明确错误
+- 保留 Web UI 对 `/api/info` 和 `/api/endpoints` 的 API 合约校验
+- 保留 Web UI 前置表单校验和危险操作确认
+- 保留服务层回归测试，覆盖建库、数据库统计、图片检查、生成马赛克和错误路径
+- 保留 Web UI/API smoke 验证，真实启动 `MosaicraftWebUI.exe` 并通过 HTTP 提交 build/mosaic job
+
+验证范围：
+- CUDA 默认 Release 构建通过
+- CPU-only Release 构建通过
+- `mosaicraft_tests` 通过
+- `mosaicraft_regression_tests` 通过
+- `mosaicraft_webui_smoke` 在发布构建上通过
+- 解压发布包后，CLI 返回 `Mosaicraft 1.13.8`，Web UI/API smoke 通过
+
+兼容性说明：
+- `/api/run` 仅作为旧命令兼容端点保留，默认禁用
+- 新 Web UI 和新集成方应使用结构化 API
+- CUDA 构建需要可用的 NVIDIA 驱动；无 GPU 环境可使用 `MOSAICRAFT_CUDA=OFF` 构建
+
 ### v1.13.9: 发布准入与 CI 门禁稳定化 (2026-07-05)
-- 发布脚本：InspectOnly、打包、解压验证、SHA256 输出
-- 包命名：`Mosaicraft_v<version>_<platform>-<arch>_<runtime>.zip`
-- 发布说明：根目录保留 `CHANGELOG.md`，详细版本说明移入 `docs/releases/`
-- CI 门禁：Windows CPU-only 构建、CTest、Web UI/API smoke、发布候选包 artifact
-- 依赖缓存：vcpkg binary cache 缩短后续 CI 安装耗时
-- Web UI/API：结构化错误展示与常见字段修正建议
+
+v1.13.9 是 v1.13 系列的发布工程与交付稳定性补丁版本。相比 v1.13.8，本版本不改变核心马赛克算法，重点固化发布准入、远端 CI 门禁、vcpkg 缓存和 Web UI/API 错误反馈。
+
+主要变化：
+- 将项目版本从 `1.13.8` 提升到 `1.13.9`
+- 新增正式发布准入清单 `docs/RELEASE_CHECKLIST.md`，明确本机 CUDA 包和远端 CPU-only CI 的分工
+- 增强 `scripts/release.ps1`
+  - 新增 `-InspectOnly` 发布前环境检查模式
+  - 发布包名包含平台、架构和运行时，例如 `Mosaicraft_v1.13.9_windows-x64_cuda.zip`
+  - 自动检查 CMake、CTest、PowerShell、vcpkg toolchain、发布必需文件和现有 build 输出
+  - 可从 `CMakePresets.json` 自动读取默认 vcpkg toolchain
+  - 不再要求源码仓库新增单版本说明文件，历史说明统一维护在本百科中
+- 完成 GitHub Actions Windows CPU-only CI 门禁
+  - 构建、CTest、Web UI/API smoke、打包、解压验证、artifact 上传
+  - 启用 vcpkg binary cache，后续依赖安装从约 44 分钟降至约 19 秒
+- 打磨 Web UI/API 错误展示
+  - 显示 HTTP 状态、API 路径、`exitCode` 和字段名
+  - 对常见字段错误提供明确修正建议
+  - 取消任务、清理任务、轮询任务失败路径统一使用结构化错误展示
+
+验证范围：
+- `scripts/release.ps1 -InspectOnly -BuildDir build -Configuration Release` 通过
+- CUDA 默认 Release 构建通过
+- CPU-only Release 构建通过
+- `mosaicraft_tests` 通过
+- `mosaicraft_regression_tests` 通过
+- `mosaicraft_webui_smoke` 在发布构建上通过
+- `scripts/release.ps1 -BuildDir build -Configuration Release` 生成并解压验证 `Mosaicraft_v1.13.9_windows-x64_cuda.zip`
+- 远端 GitHub Actions `CI` 在 `main` 上通过
+
+发布包内容：
+- `mosaicraft.exe`
+- `MosaicraftWebUI.exe`
+- `index.html`
+- 运行所需 OpenCV / SQLite / TIFF / PNG / JPEG / WebP / CUDA runtime DLL
+- `README.md`
+- `API.md`
+- `LICENSE`
+- `third_party_versions.txt`
+- `ENCYCLOPEDIA.md`
+
+兼容性说明：
+- 核心 CLI、HTTP API 合约主版本和输出算法保持兼容
+- `/api/run` 仍仅作为旧命令兼容端点保留，默认禁用
+- CUDA 正式包仍由本机或专用 GPU 环境构建；GitHub hosted CI 当前验证 CPU-only 基础门禁
