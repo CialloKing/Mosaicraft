@@ -12,6 +12,7 @@ v1.13.9 是 v1.13 系列的发布工程与交付稳定性补丁版本。相比 v
 - 新增正式发布准入清单 `docs/RELEASE_CHECKLIST.md`，明确本机 CUDA 包和远端 CPU-only CI 的分工。
 - 增强 `scripts/release.ps1`：
   - 新增 `-InspectOnly` 发布前环境检查模式。
+  - 发布包名包含平台、架构和运行时，例如 `Mosaicraft_v1.13.9_windows-x64_cuda.zip`。
   - 自动检查 CMake、CTest、PowerShell、vcpkg toolchain、release notes、发布必需文件和现有 build 输出。
   - 可从 `CMakePresets.json` 自动读取默认 vcpkg toolchain。
 - 完成 GitHub Actions Windows CPU-only CI 门禁：
@@ -32,12 +33,12 @@ v1.13.9 是 v1.13 系列的发布工程与交付稳定性补丁版本。相比 v
 - `mosaicraft_tests` 通过。
 - `mosaicraft_regression_tests` 通过。
 - `mosaicraft_webui_smoke` 在发布构建上通过。
-- `scripts/release.ps1 -BuildDir build -Configuration Release` 生成并解压验证 `Mosaicraft_v1.13.9.zip`。
+- `scripts/release.ps1 -BuildDir build -Configuration Release` 生成并解压验证 `Mosaicraft_v1.13.9_windows-x64_cuda.zip`。
 - 远端 GitHub Actions `CI` 在 `main` 上通过。
 
 ## 发布包内容
 
-`Mosaicraft_v1.13.9.zip` 应包含：
+`Mosaicraft_v1.13.9_windows-x64_cuda.zip` 应包含：
 
 - `mosaicraft.exe`
 - `MosaicraftWebUI.exe`

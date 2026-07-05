@@ -347,7 +347,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.13.1 | API 合约完善, 文档化 | — |
 | 1.13.2 | CLI 缺值校验 + PngStreamWriter 清理 | — |
 | 1.13.3 | **全面 bug 审查**: 5 HIGH + 6 MEDIUM 修复, 数值校验, 死代码清理 | — |
-| 1.13.9 | 发布准入清单、远端 CPU-only CI、vcpkg 缓存、Web UI/API 错误反馈打磨 | — |
+| 1.13.9 | 发布准入清单、平台/运行时包命名、远端 CPU-only CI、vcpkg 缓存、Web UI/API 错误反馈打磨 | — |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -414,14 +414,14 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 .\scripts\release.ps1 -BuildDir build-ci -Configuration Release -NoCuda -PackageSuffix ci-cpu
 ```
 
-发布脚本会生成 `Mosaicraft_v<version>.zip`，复制 EXE、DLL、`index.html`、`README.md`、`API.md`、`LICENSE`、第三方版本清单和对应 release notes，并验证：
+发布脚本会生成 `Mosaicraft_v<version>_<platform>-<arch>_<runtime>.zip`。当前正式 Windows CUDA 包名为 `Mosaicraft_v<version>_windows-x64_cuda.zip`；CI CPU-only 候选包名为 `Mosaicraft_v<version>_windows-x64_cpu-only_ci-cpu.zip`。脚本会复制 EXE、DLL、`index.html`、`README.md`、`API.md`、`LICENSE`、第三方版本清单和对应 release notes，并验证：
 
 - 包内 CLI `--version` 与项目版本一致；
 - 包内 `MosaicraftWebUI.exe` 可启动；
 - Web UI/API smoke 可提交 build/mosaic job；
 - SHA256 可直接用于发布校验。
 
-发布包 ~5 MB，解压即用。需 NVIDIA 驱动支持 GPU 加速（CPU fallback 可用 `MOSAICRAFT_CUDA=OFF` 编译）。Windows CPU-only CI 门禁位于 `.github/workflows/ci.yml`，复用同一个发布脚本生成 `_ci-cpu` 候选包。
+发布包 ~5 MB，解压即用。需 NVIDIA 驱动支持 GPU 加速（CPU fallback 可用 `MOSAICRAFT_CUDA=OFF` 编译）。Windows CPU-only CI 门禁位于 `.github/workflows/ci.yml`，复用同一个发布脚本生成 `windows-x64_cpu-only_ci-cpu` 候选包。
 
 正式发布以 `docs/RELEASE_CHECKLIST.md` 为准：本机 CUDA 发布包用于正式附件，远端 CPU-only CI 用于基础质量门禁。GitHub hosted CI 当前不验证 CUDA；如需自动化 CUDA 发布，应配置自托管 Windows GPU runner。
 
@@ -550,6 +550,7 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 
 ### v1.13.9: 发布准入与 CI 门禁稳定化 (2026-07-05)
 - 发布脚本：InspectOnly、打包、解压验证、SHA256 输出
+- 包命名：`Mosaicraft_v<version>_<platform>-<arch>_<runtime>.zip`
 - CI 门禁：Windows CPU-only 构建、CTest、Web UI/API smoke、发布候选包 artifact
 - 依赖缓存：vcpkg binary cache 缩短后续 CI 安装耗时
 - Web UI/API：结构化错误展示与常见字段修正建议

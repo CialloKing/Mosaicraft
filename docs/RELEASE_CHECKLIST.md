@@ -37,7 +37,7 @@
 - `mosaicraft_tests`
 - `mosaicraft_regression_tests`
 - Web UI/API smoke
-- 生成 `Mosaicraft_v<version>.zip`
+- 生成 `Mosaicraft_v<version>_windows-x64_cuda.zip`
 - 解压发布包并验证包内 CLI `--version`
 - 使用包内 `MosaicraftWebUI.exe` 再跑 Web UI/API smoke
 - 输出 SHA256
@@ -58,7 +58,7 @@ gh run view <run-id> --json status,conclusion,url,jobs
 - 最新 `CI` workflow 必须通过
 - `Windows CPU-only` job 必须通过
 - `Release gate` 必须完成
-- `Mosaicraft_v<version>_ci-cpu.zip` artifact 必须上传成功
+- `Mosaicraft_v<version>_windows-x64_cpu-only_ci-cpu.zip` artifact 必须上传成功
 
 说明：
 
@@ -72,7 +72,7 @@ gh run view <run-id> --json status,conclusion,url,jobs
 
 ```powershell
 gh release create v<version> `
-  .\Mosaicraft_v<version>.zip `
+  .\Mosaicraft_v<version>_windows-x64_cuda.zip `
   --title "Mosaicraft v<version>" `
   --notes-file .\RELEASE_NOTES_v<version>.md
 ```
@@ -80,7 +80,7 @@ gh release create v<version> `
 发布说明中必须包含：
 
 - SHA256
-- CUDA 包说明
+- Windows x64 CUDA 包说明
 - CPU-only CI 通过的 run 链接
 - 已知限制：GitHub hosted CI 不验证 CUDA，CUDA 由本机或专用 GPU 环境验证
 

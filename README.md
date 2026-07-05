@@ -122,7 +122,7 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 .\scripts\release.ps1 -BuildDir build-ci -Configuration Release -NoCuda -PackageSuffix ci-cpu
 ```
 
-脚本会生成 `Mosaicraft_v<version>.zip`，并验证包内 `mosaicraft --version` 与 Web UI/API smoke。CI 使用同一脚本跑 Windows CPU-only 门禁，避免本地发布步骤和远端检查不一致。
+脚本会生成 `Mosaicraft_v<version>_<platform>-<arch>_<runtime>.zip`。当前正式 Windows CUDA 包名为 `Mosaicraft_v<version>_windows-x64_cuda.zip`；CI CPU-only 候选包名为 `Mosaicraft_v<version>_windows-x64_cpu-only_ci-cpu.zip`。脚本会验证包内 `mosaicraft --version` 与 Web UI/API smoke。CI 使用同一脚本跑 Windows CPU-only 门禁，避免本地发布步骤和远端检查不一致。
 
 正式发布准入以 [Release Checklist](docs/RELEASE_CHECKLIST.md) 为准：本机 CUDA 发布包和远端 CPU-only CI 都通过后，才创建 GitHub Release。
 

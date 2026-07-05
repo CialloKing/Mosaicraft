@@ -3,6 +3,8 @@ param(
     [string]$Configuration = "Release",
     [string]$Version = "",
     [string]$ToolchainFile = "",
+    [string]$PackagePlatform = "",
+    [string]$PackageArch = "",
     [string]$PackageSuffix = "",
     [string]$OutputDir = "",
     [switch]$NoCuda,
@@ -113,6 +115,68 @@ function Get-ExecutableName {
         return "$BaseName.exe"
     }
     return $BaseName
+}
+
+function Get-DefaultPackagePlatform {
+    try {
+        if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
+            return "windows"
+        }
+        if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Linux)) {
+            return "linux"
+        }
+        if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)) {
+            return "macos"
+        }
+    }
+    catch {
+    }
+
+    if (Test-IsWindows) {
+        return "windows"
+    }
+
+    $platform = [System.Environment]::OSVersion.Platform.ToString().ToLowerInvariant()
+    if ($platform -match "unix") {
+        return "linux"
+    }
+    if ($platform -match "mac") {
+        return "macos"
+    }
+    return $platform
+}
+
+function Get-DefaultPackageArch {
+    $arch = ""
+    try {
+        $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+    }
+    catch {
+        $arch = $env:PROCESSOR_ARCHITECTURE
+    }
+
+    switch -Regex ($arch) {
+        "^(X64|AMD64)$" { return "x64" }
+        "^X86$" { return "x86" }
+        "^Arm64$" { return "arm64" }
+        default { return $arch.ToLowerInvariant() }
+    }
+}
+
+function Normalize-PackageToken {
+    param(
+        [string]$Value,
+        [string]$Fallback,
+        [string]$Label
+    )
+
+    $token = if ($Value) { $Value } else { $Fallback }
+    $token = $token.Trim().ToLowerInvariant() -replace '[^a-z0-9_.-]', '-'
+    $token = $token.Trim([char[]]"._-")
+    if (-not $token) {
+        throw "Invalid package $Label"
+    }
+    return $token
 }
 
 function Assert-FileExists {
@@ -231,6 +295,9 @@ function Invoke-ReleaseInspection {
 $versionText = Get-ProjectVersion
 $buildPath = Resolve-RepoPath $BuildDir
 $outputPath = if ($OutputDir) { Resolve-RepoPath $OutputDir } else { $RepoRoot }
+$packagePlatform = Normalize-PackageToken -Value $PackagePlatform -Fallback (Get-DefaultPackagePlatform) -Label "platform"
+$packageArch = Normalize-PackageToken -Value $PackageArch -Fallback (Get-DefaultPackageArch) -Label "arch"
+$packageRuntime = if ($NoCuda) { "cpu-only" } else { "cuda" }
 
 if (-not $ToolchainFile -and $env:VCPKG_ROOT) {
     $candidateToolchain = Join-Path $env:VCPKG_ROOT "scripts\buildsystems\vcpkg.cmake"
@@ -249,7 +316,7 @@ $suffix = ""
 if ($PackageSuffix) {
     $suffix = "_" + ($PackageSuffix -replace '[^A-Za-z0-9_.-]', '-')
 }
-$packageName = "Mosaicraft_v$versionText$suffix"
+$packageName = "Mosaicraft_v${versionText}_${packagePlatform}-${packageArch}_${packageRuntime}${suffix}"
 $zipPath = Join-Path $outputPath "$packageName.zip"
 $tempRoot = [System.IO.Path]::GetTempPath()
 $packageRoot = Join-Path $tempRoot ("${packageName}_pkg_" + [System.Guid]::NewGuid().ToString("N"))
