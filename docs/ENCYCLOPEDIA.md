@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-07-05 | 版本 / Version：v1.13.9
+> 最后更新 / Last updated：2026-07-05 | 版本 / Version：v1.13.10
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -348,6 +348,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.13.2 | CLI 缺值校验 + PngStreamWriter 清理 | — |
 | 1.13.3 | **全面 bug 审查**: 5 HIGH + 6 MEDIUM 修复, 数值校验, 死代码清理 | — |
 | 1.13.9 | 发布准入清单、平台/运行时包命名、远端 CPU-only CI、vcpkg 缓存、Web UI/API 错误反馈打磨 | — |
+| 1.13.10 | tag/Release/zip 一致性、BUILD_INFO、真实附件验收强制化 | — |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -417,14 +418,15 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 .\scripts\verify-release-asset.ps1 -Tag v<version>
 ```
 
-发布脚本会生成 `Mosaicraft_v<version>_<platform>-<arch>_<runtime>.zip`。当前正式 Windows CUDA 包名为 `Mosaicraft_v<version>_windows-x64_cuda.zip`；CI CPU-only 候选包名为 `Mosaicraft_v<version>_windows-x64_cpu-only_ci-cpu.zip`。历史更新说明统一维护在本文件中，打包时会复制为包内的 `ENCYCLOPEDIA.md`。脚本会复制 EXE、DLL、`index.html`、`README.md`、`API.md`、`LICENSE`、`ENCYCLOPEDIA.md` 和第三方版本清单，并验证：
+发布脚本会生成 `Mosaicraft_v<version>_<platform>-<arch>_<runtime>.zip`。当前正式 Windows CUDA 包名为 `Mosaicraft_v<version>_windows-x64_cuda.zip`；CI CPU-only 候选包名为 `Mosaicraft_v<version>_windows-x64_cpu-only_ci-cpu.zip`。正式打包要求 git 工作区干净。历史更新说明统一维护在本文件中，打包时会复制为包内的 `ENCYCLOPEDIA.md`。脚本会复制 EXE、DLL、`index.html`、`README.md`、`API.md`、`LICENSE`、`ENCYCLOPEDIA.md`、`BUILD_INFO.txt` 和第三方版本清单，并验证：
 
 - 包内 CLI `--version` 与项目版本一致；
+- 包内 `BUILD_INFO.txt` 的版本、包名和 git commit 与当前源码一致；
 - 包内 `MosaicraftWebUI.exe` 可启动；
 - Web UI/API smoke 可提交 build/mosaic job；
 - SHA256 可直接用于发布校验。
 
-`verify-release-asset.ps1` 是发布后的真实附件验收入口。它从 GitHub Release 下载 zip，校验 asset digest、Release 页面 SHA256 和文件 SHA256，解压检查包结构和文档策略，并使用解压后的 `MosaicraftWebUI.exe` 跑 Web UI/API smoke。这个步骤用于发现“本地包通过，但 Release 页面附件不是同一个产物”的问题。
+`verify-release-asset.ps1` 是发布后的真实附件验收入口。它从 GitHub Release 下载 zip，校验 asset digest、Release 页面 SHA256 和文件 SHA256，解压检查包结构和文档策略，确认包内 `BUILD_INFO.txt` 的 commit 匹配 GitHub tag，并使用解压后的 `MosaicraftWebUI.exe` 跑 Web UI/API smoke。这个步骤用于发现“本地包通过，但 Release 页面附件不是同一个产物”的问题。
 
 发布包 ~5 MB，解压即用。需 NVIDIA 驱动支持 GPU 加速（CPU fallback 可用 `MOSAICRAFT_CUDA=OFF` 编译）。Windows CPU-only CI 门禁位于 `.github/workflows/ci.yml`，复用同一个发布脚本生成 `windows-x64_cpu-only_ci-cpu` 候选包。
 
@@ -639,7 +641,7 @@ v1.13.9 是 v1.13 系列的发布工程与交付稳定性补丁版本。相比 v
 - `mosaicraft_regression_tests` 通过
 - `mosaicraft_webui_smoke` 在发布构建上通过
 - `scripts/release.ps1 -BuildDir build -Configuration Release` 生成并解压验证 `Mosaicraft_v1.13.9_windows-x64_cuda.zip`
-- `scripts/verify-release-asset.ps1 -Tag v1.13.9` 验证 GitHub Release 真实附件通过
+- GitHub Release 真实附件按当时的下载、SHA256、包结构和 Web UI/API smoke 策略验收通过；v1.13.10 起新增 `BUILD_INFO.txt` 与 tag commit 强校验
 - 远端 GitHub Actions `CI` 在 `main` 上通过
 
 发布包内容：
@@ -657,3 +659,28 @@ v1.13.9 是 v1.13 系列的发布工程与交付稳定性补丁版本。相比 v
 - 核心 CLI、HTTP API 合约主版本和输出算法保持兼容
 - `/api/run` 仍仅作为旧命令兼容端点保留，默认禁用
 - CUDA 正式包仍由本机或专用 GPU 环境构建；GitHub hosted CI 当前验证 CPU-only 基础门禁
+
+### v1.13.10: Release/tag/zip 一致性标准化 (2026-07-05)
+
+v1.13.10 是一次发布可追溯性修正版本。v1.13.9 发布后，源码继续加入真实附件验收脚本、Web UI/API 任务体验优化和发布文档整理，导致 `v1.13.9` tag、Release 页面和最终 zip 内容不再天然对应。本版本通过新的补丁号重新收束，确保 tag、源码、zip 和 Release 页面一致。
+
+主要变化：
+- 将项目版本从 `1.13.9` 提升到 `1.13.10`
+- 发布包新增 `BUILD_INFO.txt`
+  - 记录版本、包名、平台、架构、运行时、构建配置和 git commit
+  - `scripts/release.ps1` 打包后会解压校验 `BUILD_INFO.txt`
+- `scripts/release.ps1` 正式打包前要求 git 工作区干净，避免包内容包含未提交改动
+- 增强 `scripts/verify-release-asset.ps1`
+  - 读取 GitHub tag 指向的真实 commit
+  - 校验 Release zip 内 `BUILD_INFO.txt` 的 commit 与 tag commit 一致
+  - 继续校验 GitHub asset digest、Release 页面 SHA256、包结构和 Web UI/API smoke
+- 固化发布规则：如果发布后源码或发布流程继续变更，应进入下一个 patch 版本，不继续替换旧 tag 下的正式附件
+
+验证范围：
+- PowerShell 语法检查通过
+- CUDA 默认 Release 构建通过
+- `mosaicraft_tests` 通过
+- `mosaicraft_regression_tests` 通过
+- Web UI/API smoke 通过
+- 发布包解压验证和 `BUILD_INFO.txt` 校验通过
+- `scripts/verify-release-asset.ps1 -Tag v1.13.10` 验证 GitHub Release 真实附件通过

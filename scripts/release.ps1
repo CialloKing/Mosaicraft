@@ -34,6 +34,22 @@ function Invoke-Native {
     }
 }
 
+function Invoke-NativeOutput
+{
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments
+    )
+
+    $output = & $FilePath @Arguments 2>&1
+    if ($LASTEXITCODE -ne 0)
+    {
+        $text = ($output | Out-String).Trim()
+        throw "$FilePath failed with exit code $LASTEXITCODE. $text"
+    }
+    return $output
+}
+
 function Invoke-Step {
     param(
         [string]$Label,
@@ -66,6 +82,41 @@ function Get-ProjectVersion {
         throw "Unable to read version from $versionHeader"
     }
     return $match.Groups[1].Value
+}
+
+function Get-GitCommit
+{
+    if (-not (Test-CommandExists -Name "git"))
+    {
+        throw "Missing command: git"
+    }
+
+    Push-Location $RepoRoot
+    try
+    {
+        return ((Invoke-NativeOutput -FilePath "git" -Arguments @("rev-parse", "HEAD") | Out-String).Trim())
+    }
+    finally
+    {
+        Pop-Location
+    }
+}
+
+function Assert-CleanGitWorktree
+{
+    Push-Location $RepoRoot
+    try
+    {
+        $status = ((Invoke-NativeOutput -FilePath "git" -Arguments @("status", "--porcelain") | Out-String).Trim())
+        if ($status)
+        {
+            throw "Git worktree must be clean before release packaging. Commit or remove pending changes first."
+        }
+    }
+    finally
+    {
+        Pop-Location
+    }
 }
 
 function Find-PresetToolchainFile {
@@ -245,6 +296,7 @@ function Assert-ArchiveDocumentationPolicy {
         "README.md",
         "API.md",
         "ENCYCLOPEDIA.md",
+        "BUILD_INFO.txt",
         "LICENSE",
         "third_party_versions.txt"
     )) {
@@ -257,6 +309,77 @@ function Assert-ArchiveDocumentationPolicy {
     if ($blockedDocs) {
         $names = ($blockedDocs | ForEach-Object { $_.Name } | Sort-Object -Unique) -join ", "
         throw "Unexpected standalone release documentation in archive: $names"
+    }
+}
+
+function Write-BuildInfo
+{
+    param(
+        [string]$Destination,
+        [string]$VersionText,
+        [string]$PackageName,
+        [string]$Runtime,
+        [string]$Platform,
+        [string]$Arch,
+        [string]$CommitHash,
+        [string]$Configuration
+    )
+
+    $buildInfoPath = Join-Path $Destination "BUILD_INFO.txt"
+    $lines = @(
+        "Name: Mosaicraft",
+        "Version: $VersionText",
+        "Package: $PackageName.zip",
+        "Platform: $Platform",
+        "Arch: $Arch",
+        "Runtime: $Runtime",
+        "Configuration: $Configuration",
+        "Commit: $CommitHash",
+        "GeneratedAtUtc: $((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"))"
+    )
+    Set-Content -LiteralPath $buildInfoPath -Value $lines -Encoding UTF8
+}
+
+function Read-BuildInfo
+{
+    param([string]$Path)
+
+    $info = @{}
+    foreach ($line in Get-Content -LiteralPath $Path)
+    {
+        $match = [regex]::Match($line, '^([^:]+):\s*(.*)$')
+        if ($match.Success)
+        {
+            $info[$match.Groups[1].Value.Trim()] = $match.Groups[2].Value.Trim()
+        }
+    }
+    return $info
+}
+
+function Assert-BuildInfo
+{
+    param(
+        [string]$ExtractRoot,
+        [string]$VersionText,
+        [string]$PackageName,
+        [string]$CommitHash
+    )
+
+    $buildInfoPath = Join-Path $ExtractRoot "BUILD_INFO.txt"
+    Assert-FileExists -Path $buildInfoPath
+    $info = Read-BuildInfo -Path $buildInfoPath
+
+    if ($info["Version"] -ne $VersionText)
+    {
+        throw "BUILD_INFO version mismatch: $($info["Version"])"
+    }
+    if ($info["Package"] -ne "$PackageName.zip")
+    {
+        throw "BUILD_INFO package mismatch: $($info["Package"])"
+    }
+    if ($info["Commit"] -ne $CommitHash)
+    {
+        throw "BUILD_INFO commit mismatch: $($info["Commit"])"
     }
 }
 
@@ -281,6 +404,7 @@ function Invoke-ReleaseInspection {
 
         Assert-InspectCommand -Name "cmake"
         Assert-InspectCommand -Name "ctest"
+        Assert-InspectCommand -Name "git"
         if (Test-CommandExists -Name "pwsh") {
             Write-InspectLine -Status "OK" -Message "command pwsh"
         } else {
@@ -332,6 +456,7 @@ $outputPath = if ($OutputDir) { Resolve-RepoPath $OutputDir } else { $RepoRoot }
 $packagePlatform = Normalize-PackageToken -Value $PackagePlatform -Fallback (Get-DefaultPackagePlatform) -Label "platform"
 $packageArch = Normalize-PackageToken -Value $PackageArch -Fallback (Get-DefaultPackageArch) -Label "arch"
 $packageRuntime = if ($NoCuda) { "cpu-only" } else { "cuda" }
+$gitCommit = Get-GitCommit
 
 if (-not $ToolchainFile -and $env:VCPKG_ROOT) {
     $candidateToolchain = Join-Path $env:VCPKG_ROOT "scripts\buildsystems\vcpkg.cmake"
@@ -371,6 +496,8 @@ if ($InspectOnly) {
 New-Item -ItemType Directory -Force -Path $outputPath | Out-Null
 
 try {
+    Assert-CleanGitWorktree
+
     if (-not $SkipConfigure) {
         Invoke-Step "Configure" {
             $configureArgs = @("-S", $RepoRoot, "-B", $buildPath)
@@ -448,6 +575,15 @@ try {
         Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\ENCYCLOPEDIA.md") -Destination (Join-Path $packageRoot "ENCYCLOPEDIA.md")
         Copy-RequiredFile -Source (Join-Path $RepoRoot "LICENSE") -Destination $packageRoot
         Copy-RequiredFile -Source (Join-Path $RepoRoot "third_party_versions.txt") -Destination $packageRoot
+        Write-BuildInfo `
+            -Destination $packageRoot `
+            -VersionText $versionText `
+            -PackageName $packageName `
+            -Runtime $packageRuntime `
+            -Platform $packagePlatform `
+            -Arch $packageArch `
+            -CommitHash $gitCommit `
+            -Configuration $Configuration
 
         if (Test-Path -LiteralPath $zipPath) {
             Remove-Item -LiteralPath $zipPath -Force
@@ -467,6 +603,7 @@ try {
             Assert-FileExists -Path $cliPath
             Assert-FileExists -Path $webUiPath
             Assert-ArchiveDocumentationPolicy -ExtractRoot $extractRoot
+            Assert-BuildInfo -ExtractRoot $extractRoot -VersionText $versionText -PackageName $packageName -CommitHash $gitCommit
 
             $versionOutput = (& $cliPath --version).Trim()
             if ($versionOutput -ne "Mosaicraft $versionText") {

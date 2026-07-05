@@ -1,6 +1,6 @@
 # Mosaicraft Release Checklist
 
-发布日期 / Applies to：v1.13.9 及后续补丁版本
+发布日期 / Applies to：v1.13.10 及后续补丁版本
 
 本清单定义正式发布的准入标准。正式 CUDA 包仍由本机或专用 GPU 环境构建；GitHub Actions CPU-only CI 是基础门禁，不替代 CUDA 发布包。
 
@@ -38,8 +38,10 @@
 - `mosaicraft_regression_tests`
 - Web UI/API smoke
 - 生成 `Mosaicraft_v<version>_windows-x64_cuda.zip`
+- 正式打包前 git 工作区必须保持干净，包内 `BUILD_INFO.txt` 才能准确对应 tag commit
 - 解压发布包并验证包内 CLI `--version`
 - 验证包内文档规则：必须包含 `ENCYCLOPEDIA.md`，不得包含 `CHANGELOG.md` 或 `RELEASE_NOTES_*`
+- 写入并验证 `BUILD_INFO.txt`，记录版本、包名、运行时和 git commit
 - 使用包内 `MosaicraftWebUI.exe` 再跑 Web UI/API smoke
 - 输出 SHA256
 
@@ -101,7 +103,8 @@ GitHub Release 正文必须保持简洁，只包含：
 - 读取 GitHub Release 元数据并选择 zip 资产
 - 下载真实 Release 附件
 - 校验 GitHub asset digest、Release 页面 SHA256 和本地文件 SHA256 一致
-- 解压 zip 并检查 CLI、Web UI、`index.html`、README、API、百科、license 和第三方版本清单
+- 解压 zip 并检查 CLI、Web UI、`index.html`、README、API、百科、`BUILD_INFO.txt`、license 和第三方版本清单
+- 校验包内 `BUILD_INFO.txt` 的 commit 与 GitHub tag 指向的 commit 一致
 - 确认包内没有 `CHANGELOG.md` 或 `RELEASE_NOTES_*`
 - 验证包内 CLI `--version`、CLI `--help` 和 Web UI `--help`
 - 使用包内 `MosaicraftWebUI.exe` 跑 Web UI/API smoke

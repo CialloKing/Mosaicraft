@@ -166,6 +166,45 @@ function Read-GitHubRelease
     return (($json | Out-String) | ConvertFrom-Json)
 }
 
+function Read-GitHubTagCommitSha
+{
+    param(
+        [string]$RepositoryName,
+        [string]$ReleaseTag
+    )
+
+    Assert-CommandExists -Name "gh"
+    $refJson = Invoke-NativeOutput -FilePath "gh" -Arguments @(
+        "api",
+        "repos/$RepositoryName/git/ref/tags/$ReleaseTag"
+    )
+    $ref = (($refJson | Out-String) | ConvertFrom-Json)
+    $objectType = Get-ObjectPropertyText -Object $ref.object -Name "type"
+    $objectSha = Get-ObjectPropertyText -Object $ref.object -Name "sha"
+
+    if ($objectType -eq "commit")
+    {
+        return $objectSha
+    }
+
+    if ($objectType -ne "tag")
+    {
+        throw "Unsupported tag object type: $objectType"
+    }
+
+    $tagJson = Invoke-NativeOutput -FilePath "gh" -Arguments @(
+        "api",
+        "repos/$RepositoryName/git/tags/$objectSha"
+    )
+    $tag = (($tagJson | Out-String) | ConvertFrom-Json)
+    $commitType = Get-ObjectPropertyText -Object $tag.object -Name "type"
+    if ($commitType -ne "commit")
+    {
+        throw "Annotated tag does not point to a commit: $ReleaseTag"
+    }
+    return (Get-ObjectPropertyText -Object $tag.object -Name "sha")
+}
+
 function Select-ReleaseAsset
 {
     param(
@@ -281,6 +320,7 @@ function Assert-ArchiveDocumentationPolicy
         "README.md",
         "API.md",
         "ENCYCLOPEDIA.md",
+        "BUILD_INFO.txt",
         "LICENSE",
         "third_party_versions.txt"
     ))
@@ -301,6 +341,54 @@ function Assert-ArchiveDocumentationPolicy
     {
         $names = ($blockedNames | Sort-Object -Unique) -join ", "
         throw "Unexpected standalone release documentation in archive: $names"
+    }
+}
+
+function Read-BuildInfo
+{
+    param([string]$Path)
+
+    $info = @{}
+    foreach ($line in Get-Content -LiteralPath $Path)
+    {
+        $match = [regex]::Match($line, '^([^:]+):\s*(.*)$')
+        if ($match.Success)
+        {
+            $info[$match.Groups[1].Value.Trim()] = $match.Groups[2].Value.Trim()
+        }
+    }
+    return $info
+}
+
+function Assert-BuildInfo
+{
+    param(
+        [string]$Root,
+        [string]$VersionText,
+        [string]$PackageName,
+        [string]$TagCommitHash
+    )
+
+    $buildInfoPath = Join-Path $Root "BUILD_INFO.txt"
+    Assert-FileExists -Path $buildInfoPath
+    $info = Read-BuildInfo -Path $buildInfoPath
+    $commit = [string]$info["Commit"]
+
+    if ($info["Version"] -ne $VersionText)
+    {
+        throw "BUILD_INFO version mismatch: $($info["Version"])"
+    }
+    if ($PackageName -and $info["Package"] -ne $PackageName)
+    {
+        throw "BUILD_INFO package mismatch: $($info["Package"])"
+    }
+    if ($commit -notmatch '^[0-9a-fA-F]{40}$')
+    {
+        throw "BUILD_INFO commit is missing or invalid: $commit"
+    }
+    if ($TagCommitHash -and $commit.ToLowerInvariant() -ne $TagCommitHash.ToLowerInvariant())
+    {
+        throw "BUILD_INFO commit does not match release tag. package=$commit tag=$TagCommitHash"
     }
 }
 
@@ -406,6 +494,7 @@ try
     $asset = $null
     $releaseBodyHash = ""
     $assetDigestHash = ""
+    $tagCommitHash = ""
 
     if ($Tag)
     {
@@ -415,8 +504,10 @@ try
             $script:asset = Select-ReleaseAsset -Release $script:release -RequestedName $AssetName
             $script:releaseBodyHash = Get-ReleaseBodySha256 -Body (Get-ObjectPropertyText -Object $script:release -Name "body")
             $script:assetDigestHash = Normalize-Sha256 -Value (Get-ObjectPropertyText -Object $script:asset -Name "digest")
+            $script:tagCommitHash = Read-GitHubTagCommitSha -RepositoryName $Repository -ReleaseTag $Tag
             Write-Host "Release: $script:releaseUrl"
             Write-Host "Asset: $(Get-ObjectPropertyText -Object $script:asset -Name "name")"
+            Write-Host "Tag commit: $script:tagCommitHash"
         }
     }
 
@@ -478,6 +569,7 @@ try
 
         # Single-version release notes should live in ENCYCLOPEDIA.md to keep every zip compact and predictable.
         Assert-ArchiveDocumentationPolicy -Root $extractRoot
+        Assert-BuildInfo -Root $extractRoot -VersionText $ExpectedVersion -PackageName (Split-Path -Leaf $zip) -TagCommitHash $tagCommitHash
         Assert-PackageCommands -CliPath $cliPath -WebUiPath $webUiPath -VersionText $ExpectedVersion
 
         if (-not $SkipSmoke)

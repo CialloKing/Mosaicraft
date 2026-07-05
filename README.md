@@ -1,4 +1,4 @@
-# Mosaicraft v1.13.9
+# Mosaicraft v1.13.10
 
 > GPU 加速的照片马赛克拼贴生成器 — 本地创建图库图片精准匹配，输出超大分辨率马赛克拼图
 
@@ -125,9 +125,9 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 .\scripts\verify-release-asset.ps1 -Tag v<version>
 ```
 
-`release.ps1` 会生成 `Mosaicraft_v<version>_<platform>-<arch>_<runtime>.zip`。当前正式 Windows CUDA 包名为 `Mosaicraft_v<version>_windows-x64_cuda.zip`；CI CPU-only 候选包名为 `Mosaicraft_v<version>_windows-x64_cpu-only_ci-cpu.zip`。脚本会验证包内 `mosaicraft --version` 与 Web UI/API smoke。CI 使用同一脚本跑 Windows CPU-only 门禁，避免本地发布步骤和远端检查不一致。
+`release.ps1` 会生成 `Mosaicraft_v<version>_<platform>-<arch>_<runtime>.zip`。当前正式 Windows CUDA 包名为 `Mosaicraft_v<version>_windows-x64_cuda.zip`；CI CPU-only 候选包名为 `Mosaicraft_v<version>_windows-x64_cpu-only_ci-cpu.zip`。正式打包要求 git 工作区干净。脚本会写入包内 `BUILD_INFO.txt`，记录版本、包名、运行时和 git commit，并验证包内 `mosaicraft --version` 与 Web UI/API smoke。CI 使用同一脚本跑 Windows CPU-only 门禁，避免本地发布步骤和远端检查不一致。
 
-`verify-release-asset.ps1` 用于发布后验收真实 GitHub Release 附件：下载 zip、校验 SHA256、解压检查包结构和文档策略，并使用解压后的 `MosaicraftWebUI.exe` 跑 Web UI/API smoke。
+`verify-release-asset.ps1` 用于发布后验收真实 GitHub Release 附件：下载 zip、校验 SHA256、检查包内 commit 是否匹配 Git tag、解压检查包结构和文档策略，并使用解压后的 `MosaicraftWebUI.exe` 跑 Web UI/API smoke。
 
 正式发布准入以 [Release Checklist](docs/RELEASE_CHECKLIST.md) 为准：本机 CUDA 发布包和远端 CPU-only CI 都通过后，才创建 GitHub Release。
 
