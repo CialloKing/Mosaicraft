@@ -59,6 +59,65 @@ main { max-width: 920px; margin: 28px auto; padding: 0 20px; }
 .btn-primary:hover { filter: brightness(1.1); }
 .btn-secondary { background: var(--border); color: var(--fg); }
 .btn-secondary:hover { background: #484f58; }
+.btn-inline
+{
+  padding: 5px 10px;
+  font-size: 0.72rem;
+}
+.job-card
+{
+  margin-top: 10px;
+  padding: 12px;
+  background: #0d1117;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.job-title
+{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.job-badge
+{
+  color: var(--fg);
+  background: var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+.job-meta
+{
+  color: var(--fg2);
+  font-size: 0.74rem;
+  margin-bottom: 8px;
+}
+.job-path
+{
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 0.74rem;
+}
+.job-path code
+{
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #79c0ff;
+}
+.job-message
+{
+  font-size: 0.7rem;
+  margin-top: 8px;
+  max-height: 200px;
+  overflow: auto;
+}
 footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72rem; }
 </style>
 </head>
@@ -241,6 +300,17 @@ document.querySelectorAll('input, select').forEach(el => {
   el.addEventListener('change', generateCommand);
 });
 
+document.addEventListener('click', event =>
+{
+  const btn = event.target.closest ? event.target.closest('[data-copy-text]') : null;
+  if (!btn)
+  {
+    return;
+  }
+  const text = btn.getAttribute('data-copy-text') || '';
+  copyTextFromButton(text, btn);
+});
+
 function val(id) {
   const el = document.getElementById(id);
   if (!el) return '';
@@ -332,19 +402,54 @@ function generateCommand() {
   document.getElementById('cmd-output').textContent = cmd;
 }
 
-function copyCommand() {
+function copyCommand()
+{
   const cmd = document.getElementById('cmd-output').textContent;
-  navigator.clipboard.writeText(cmd).then(() => {
+  copyTextToClipboard(cmd).then(() =>
+  {
     const fb = document.getElementById('copy-feedback');
     fb.style.display = 'inline';
-    setTimeout(() => { fb.style.display = 'none'; }, 2000);
-  }).catch(() => {
+    setTimeout(() =>
+    {
+      fb.style.display = 'none';
+    }, 2000);
+  });
+}
+
+function copyTextToClipboard(text)
+{
+  if (navigator.clipboard && navigator.clipboard.writeText)
+  {
+    return navigator.clipboard.writeText(text).catch(() => fallbackCopyText(text));
+  }
+  return fallbackCopyText(text);
+}
+
+function fallbackCopyText(text)
+{
+  // Web UI can be opened from local files, where navigator.clipboard may be unavailable.
+  return new Promise(resolve =>
+  {
     const ta = document.createElement('textarea');
-    ta.value = cmd;
+    ta.value = text;
     document.body.appendChild(ta);
     ta.select();
     document.execCommand('copy');
     document.body.removeChild(ta);
+    resolve();
+  });
+}
+
+function copyTextFromButton(text, btn)
+{
+  const original = btn.textContent;
+  copyTextToClipboard(text).then(() =>
+  {
+    btn.textContent = '已复制';
+    setTimeout(() =>
+    {
+      btn.textContent = original;
+    }, 1400);
   });
 }
 
@@ -446,7 +551,7 @@ async function runCommand() {
   const tab = document.querySelector('.tab.active').dataset.cmd;
   const status = document.getElementById('run-status');
   status.style.display = '';
-  status.textContent = 'Running...';
+  status.textContent = '正在提交任务...';
   setCurrentJob('');
   try {
     if (!serverAvailable) {
@@ -679,7 +784,7 @@ async function cancelCurrentJob() {
       return;
     }
     setCurrentJob('');
-    status.innerHTML = '<span style="color:#f78166">已取消任务</span>';
+    status.innerHTML = data.job ? renderJobStatus(data.job, '任务已取消') : '<span style="color:#f78166">已取消任务</span>';
   } catch(e) {
     status.innerHTML = '<span style="color:#f78166">⚠ 取消请求失败</span>';
   }
@@ -700,7 +805,11 @@ async function clearFinishedJobs() {
 }
 
 async function pollJob(jobId, status) {
-  status.innerHTML = '<span style="color:#79c0ff">⏳ Job ' + escapeHtml(jobId) + ' queued</span>';
+  status.innerHTML = renderJobStatus(
+  {
+    id: jobId,
+    state: 'queued'
+  }, '任务已提交');
   while (true) {
     await new Promise(resolve => setTimeout(resolve, 1000));
     if (currentJobId !== jobId) return;
@@ -712,25 +821,126 @@ async function pollJob(jobId, status) {
 
     const job = data.job;
     if (job.state === 'queued') {
-      status.innerHTML = '<span style="color:#79c0ff">⏳ Job ' + escapeHtml(job.id) + ' queued</span>';
+      status.innerHTML = renderJobStatus(job);
     } else if (job.state === 'running') {
-      status.innerHTML = '<span style="color:#79c0ff">▶ Job ' + escapeHtml(job.id) + ' running</span>';
+      status.innerHTML = renderJobStatus(job);
     } else if (job.state === 'succeeded') {
-      status.innerHTML = '<span style="color:#7ee787">✅ Done</span>';
-      if (job.outputPath) status.innerHTML += '<br><span style="font-size:0.76rem">输出：' + escapeHtml(job.outputPath) + '</span>';
+      status.innerHTML = renderJobStatus(job, '任务完成');
       setCurrentJob('');
       return;
     } else if (job.state === 'failed') {
-      status.innerHTML = '<span style="color:#f78166">❌ Failed</span>';
-      if (job.message) status.innerHTML += '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:200px;overflow:auto">' + escapeHtml(job.message) + '</pre>';
+      status.innerHTML = renderJobStatus(job, '任务失败');
       setCurrentJob('');
       return;
     } else if (job.state === 'canceled') {
-      status.innerHTML = '<span style="color:#f78166">任务已取消</span>';
+      status.innerHTML = renderJobStatus(job, '任务已取消');
       setCurrentJob('');
       return;
     }
   }
+}
+
+function renderJobStatus(job, title)
+{
+  const state = String(job && job.state ? job.state : 'queued');
+  const color =
+  {
+    queued: '#79c0ff',
+    running: '#79c0ff',
+    succeeded: '#7ee787',
+    failed: '#f78166',
+    canceled: '#f78166'
+  }[state] || '#8b949e';
+  const label =
+  {
+    queued: '等待中',
+    running: '运行中',
+    succeeded: '已完成',
+    failed: '失败',
+    canceled: '已取消'
+  }[state] || state;
+  const heading = title || label;
+  const meta = [
+    'Job ' + (job && job.id ? job.id : '?'),
+    label,
+    renderJobTiming(job)
+  ].filter(Boolean).join(' · ');
+
+  let html = '<div class="job-card">';
+  html += '<div class="job-title"><span style="color:' + color + '">' + escapeHtml(heading) + '</span>';
+  html += '<span class="job-badge">' + escapeHtml(jobTypeLabel(job && job.type)) + '</span></div>';
+  html += '<div class="job-meta">' + escapeHtml(meta) + '</div>';
+  if (job && job.inputPath)
+  {
+    html += renderJobPath('输入', job.inputPath, '');
+  }
+  if (job && job.outputPath)
+  {
+    html += renderJobPath('输出', job.outputPath, '复制输出路径');
+  }
+  if (job && job.message)
+  {
+    html += '<pre class="job-message">' + escapeHtml(job.message) + '</pre>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function jobTypeLabel(type)
+{
+  if (type === 'mosaic')
+  {
+    return '生成马赛克';
+  }
+  if (type === 'build')
+  {
+    return '建库';
+  }
+  return type || '任务';
+}
+
+function renderJobPath(label, path, copyLabel)
+{
+  let html = '<div class="job-path"><span>' + escapeHtml(label) + '</span><code>' + escapeHtml(path) + '</code>';
+  if (copyLabel)
+  {
+    html += '<button type="button" class="btn btn-secondary btn-inline" data-copy-text="' + escapeAttr(path) + '">' + escapeHtml(copyLabel) + '</button>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderJobTiming(job)
+{
+  if (!job)
+  {
+    return '';
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const created = Number(job.createdAt || 0);
+  const started = Number(job.startedAt || 0);
+  const finished = Number(job.finishedAt || 0);
+  if (started > 0 && finished > 0 && finished >= started)
+  {
+    return '耗时 ' + formatDuration(finished - started);
+  }
+  if (started > 0)
+  {
+    return '已运行 ' + formatDuration(Math.max(0, now - started));
+  }
+  if (created > 0)
+  {
+    return '已等待 ' + formatDuration(Math.max(0, now - created));
+  }
+  return '';
+}
+
+function formatDuration(seconds)
+{
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return mins > 0 ? (mins + 'm ' + secs + 's') : (secs + 's');
 }
 
 function renderDbStats(stats) {
@@ -954,6 +1164,11 @@ function escapeHtml(text) {
     '"': '&quot;',
     "'": '&#39;'
   }[ch]));
+}
+
+function escapeAttr(text)
+{
+  return escapeHtml(text);
 }
 
 // Try to detect server on load

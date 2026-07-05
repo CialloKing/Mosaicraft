@@ -18,6 +18,7 @@
 #include "../core/Version.h"
 #include <vector>
 #include <cmath>
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <algorithm>
@@ -418,10 +419,19 @@ TEST_CASE("API JSON serialization covers jobs and database shapes")
     job.result = ServiceResult::success("done");
     job.inputPath = "in.jpg";
     job.outputPath = "out.jpg";
+    job.createdAt = std::chrono::system_clock::time_point{} + std::chrono::seconds(10);
+    job.startedAt = std::chrono::system_clock::time_point{} + std::chrono::seconds(12);
+    job.finishedAt = std::chrono::system_clock::time_point{} + std::chrono::seconds(17);
     auto jobJson = jobSnapshotToJson(job);
     CHECK(jobJson["id"].get<std::string>() == "job-1");
+    CHECK(jobJson["type"].get<std::string>() == "mosaic");
     CHECK(jobJson["state"].get<std::string>() == "succeeded");
     CHECK(jobJson["ok"].get<bool>());
+    CHECK(jobJson["inputPath"].get<std::string>() == "in.jpg");
+    CHECK(jobJson["outputPath"].get<std::string>() == "out.jpg");
+    CHECK(jobJson["createdAt"].get<int64_t>() == 10);
+    CHECK(jobJson["startedAt"].get<int64_t>() == 12);
+    CHECK(jobJson["finishedAt"].get<int64_t>() == 17);
 
     DatabaseUsage usage;
     usage.empty = false;

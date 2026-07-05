@@ -282,7 +282,10 @@ function Read-LogTail {
 function Wait-JobSucceeded {
     param(
         [string]$JobId,
-        [string]$Label
+        [string]$Label,
+        [string]$ExpectedType = "",
+        [string]$ExpectedInputPath = "",
+        [string]$ExpectedOutputPath = ""
     )
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -291,6 +294,9 @@ function Wait-JobSucceeded {
         Assert-True ($jobResponse.ok -eq $true) "$Label job status request failed"
         $job = $jobResponse.job
         if ($job.state -eq "succeeded") {
+            Assert-JobSnapshot -Job $job -ExpectedType $ExpectedType -ExpectedInputPath $ExpectedInputPath -ExpectedOutputPath $ExpectedOutputPath
+            Assert-True ([int64]$job.startedAt -gt 0) "$Label job startedAt should be set"
+            Assert-True ([int64]$job.finishedAt -ge [int64]$job.startedAt) "$Label job finishedAt should be >= startedAt"
             return $job
         }
         if ($job.state -eq "failed" -or $job.state -eq "canceled") {
@@ -299,6 +305,37 @@ function Wait-JobSucceeded {
         Start-Sleep -Milliseconds 250
     }
     throw "$Label job timed out: $JobId"
+}
+
+function Assert-JobSnapshot
+{
+    param(
+        $Job,
+        [string]$ExpectedType = "",
+        [string]$ExpectedInputPath = "",
+        [string]$ExpectedOutputPath = ""
+    )
+
+    # Job snapshots drive the Web UI task card, so smoke tests lock down these fields.
+    Assert-True ($null -ne $Job) "job snapshot is missing"
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$Job.id)) "job id is missing"
+    Assert-True (-not [string]::IsNullOrWhiteSpace([string]$Job.state)) "job state is missing"
+    Assert-True ([int64]$Job.createdAt -gt 0) "job createdAt should be set"
+    Assert-True ($null -ne $Job.ok) "job ok flag is missing"
+    Assert-True ($null -ne $Job.exitCode) "job exitCode is missing"
+
+    if ($ExpectedType)
+    {
+        Assert-True ([string]$Job.type -eq $ExpectedType) "job type should be $ExpectedType"
+    }
+    if ($ExpectedInputPath)
+    {
+        Assert-True ([string]$Job.inputPath -eq $ExpectedInputPath) "job inputPath should round-trip"
+    }
+    if ($ExpectedOutputPath)
+    {
+        Assert-True ([string]$Job.outputPath -eq $ExpectedOutputPath) "job outputPath should round-trip"
+    }
 }
 
 $webUiPath = Find-WebUiExe -Requested $WebUiExe
@@ -390,7 +427,8 @@ try {
         normalizeSize = "36x64"
     }
     Assert-True ($build.ok -eq $true -and $null -ne $build.job) "build job was not accepted"
-    Wait-JobSucceeded -JobId $build.job.id -Label "build" | Out-Null
+    Assert-JobSnapshot -Job $build.job -ExpectedType "build" -ExpectedInputPath $inputDir -ExpectedOutputPath $libraryDir
+    Wait-JobSucceeded -JobId $build.job.id -Label "build" -ExpectedType "build" -ExpectedInputPath $inputDir -ExpectedOutputPath $libraryDir | Out-Null
 
     $stats = Invoke-Api -Method "POST" -Path "/api/db/stats" -Body @{ dbPath = $dbPath }
     Assert-True ($stats.ok -eq $true) "database stats failed"
@@ -424,7 +462,8 @@ try {
         pngLevel = 1
     }
     Assert-True ($mosaic.ok -eq $true -and $null -ne $mosaic.job) "mosaic job was not accepted"
-    Wait-JobSucceeded -JobId $mosaic.job.id -Label "mosaic" | Out-Null
+    Assert-JobSnapshot -Job $mosaic.job -ExpectedType "mosaic" -ExpectedInputPath $targetPath -ExpectedOutputPath $mosaicPath
+    Wait-JobSucceeded -JobId $mosaic.job.id -Label "mosaic" -ExpectedType "mosaic" -ExpectedInputPath $targetPath -ExpectedOutputPath $mosaicPath | Out-Null
     Assert-True (Test-Path -LiteralPath $mosaicPath) "mosaic output was not created"
 
     $usage = Invoke-Api -Method "POST" -Path "/api/db/usage" -Body @{
