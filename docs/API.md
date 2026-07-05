@@ -94,6 +94,36 @@ Returns service version, entry name, structured API status, legacy `/api/run` st
 }
 ```
 
+字段类型或范围不合法也返回 HTTP 400，且 `message` 指向具体字段。
+Invalid field types or ranges also return HTTP 400, and `message` names the field.
+
+常见范围约束 / Common range constraints:
+
+| 字段 / Field | 范围 / Range |
+|------|------|
+| `tileW`, `tileH` | `>= 4` |
+| `candidates` | `>= 10` |
+| `topNrandom` | `>= 1` |
+| `neighborWindow` | `>= 0` |
+| `upscale` | `>= 1` when provided |
+| `quality` | `1..100` |
+| `pngLevel` | `1..9` |
+| `lRange`, `neighborPenalty` | `>= 0` |
+| `colorStrength` | `0..0.5` |
+| `threads` | `>= 0` |
+| `normalizeWidth`, `normalizeHeight` | `>= 1` |
+| `limit` | `>= 1` |
+
+示例 / Example:
+
+```json
+{
+  "ok": false,
+  "exitCode": 1,
+  "message": "tileW must be at least 4"
+}
+```
+
 ---
 
 ## 任务 / Jobs

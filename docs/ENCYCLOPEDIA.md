@@ -403,22 +403,21 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 ### 发布打包
 
 ```powershell
-# 收集文件
-New-Item -ItemType Directory -Force release_pkg
-copy build\Release\bin\*.exe release_pkg\
-copy build\Release\bin\*.dll release_pkg\
-copy build\Release\bin\index.html release_pkg\
-copy README.md release_pkg\
-copy docs\API.md release_pkg\
-copy C:\Windows\System32\vcruntime140.dll release_pkg\
-copy C:\Windows\System32\vcruntime140_1.dll release_pkg\
-copy C:\Windows\System32\msvcp140.dll release_pkg\
+# 默认 CUDA Release 发布：配置、构建、CTest、WebUI smoke、打包、解压验证、SHA256
+.\scripts\release.ps1 -BuildDir build -Configuration Release
 
-# 压缩
-Compress-Archive -Path release_pkg\* -Destination Mosaicraft_v1.13.8.zip
+# CI/无 CUDA 环境：生成 CPU-only 发布候选包
+.\scripts\release.ps1 -BuildDir build-ci -Configuration Release -NoCuda -PackageSuffix ci-cpu
 ```
 
-发布包 ~5 MB，解压即用。需 NVIDIA 驱动支持 GPU 加速（CPU fallback 可用 `MOSAICRAFT_CUDA=OFF` 编译）。
+发布脚本会生成 `Mosaicraft_v<version>.zip`，复制 EXE、DLL、`index.html`、`README.md`、`API.md`、`LICENSE`、第三方版本清单和对应 release notes，并验证：
+
+- 包内 CLI `--version` 与项目版本一致；
+- 包内 `MosaicraftWebUI.exe` 可启动；
+- Web UI/API smoke 可提交 build/mosaic job；
+- SHA256 可直接用于发布校验。
+
+发布包 ~5 MB，解压即用。需 NVIDIA 驱动支持 GPU 加速（CPU fallback 可用 `MOSAICRAFT_CUDA=OFF` 编译）。Windows CPU-only CI 门禁位于 `.github/workflows/ci.yml`，复用同一个发布脚本生成 `_ci-cpu` 候选包。
 
 ---
 

@@ -109,6 +109,18 @@ ctest --test-dir build -C Release --output-on-failure
 cmake --build build --config Release --target mosaicraft_webui_smoke
 ```
 
+### 发布自动化
+
+```powershell
+# 默认 CUDA Release 发布：配置/构建/CTest/WebUI smoke/打包/解压验证/SHA256
+.\scripts\release.ps1 -BuildDir build -Configuration Release
+
+# CPU-only 发布候选包，可用于无 CUDA runner
+.\scripts\release.ps1 -BuildDir build-ci -Configuration Release -NoCuda -PackageSuffix ci-cpu
+```
+
+脚本会生成 `Mosaicraft_v<version>.zip`，并验证包内 `mosaicraft --version` 与 Web UI/API smoke。CI 使用同一脚本跑 Windows CPU-only 门禁，避免本地发布步骤和远端检查不一致。
+
 ---
 
 ## 使用指南
@@ -239,10 +251,14 @@ Mosaicraft/
 │   └── command-builder/        # Web 命令生成器
 ├── docs/
 │   └── ENCYCLOPEDIA.md         # 项目百科全书
+├── scripts/
+│   └── release.ps1             # 发布构建、打包和解压验证
 ├── tests/
 │   ├── test_core.cpp           # doctest 核心/API 合约测试
 │   ├── test_regression.cpp     # 服务层建库/检查/出图回归测试
 │   └── webui_smoke.ps1         # Web UI/API 真实 smoke 验证
+├── .github/workflows/
+│   └── ci.yml                  # Windows CPU-only CI 门禁
 ├── CMakeLists.txt
 └── README.md
 ```

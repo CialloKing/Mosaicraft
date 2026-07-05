@@ -11,6 +11,7 @@
 #include <cmath>
 #include <initializer_list>
 #include <limits>
+#include <string>
 
 namespace mosaicraft
 {
@@ -42,6 +43,40 @@ bool parsePositiveInt(const std::string& text, int& out)
     if (!parseStrictInt(text, value) || value <= 0) return false;
     out = value;
     return true;
+}
+
+bool requireIntAtLeast(const std::string& field, int value, int minimum, std::string& error)
+{
+    if (value >= minimum) return true;
+    error = field + " must be at least " + std::to_string(minimum);
+    return false;
+}
+
+bool requireIntBetween(const std::string& field, int value, int minimum, int maximum, std::string& error)
+{
+    if (value >= minimum && value <= maximum) return true;
+    error = field + " must be between " + std::to_string(minimum) + " and " +
+            std::to_string(maximum);
+    return false;
+}
+
+bool requireDoubleAtLeast(const std::string& field, double value, double minimum, std::string& error)
+{
+    if (value >= minimum) return true;
+    error = field + " must be at least " + std::to_string(minimum);
+    return false;
+}
+
+bool requireDoubleBetween(const std::string& field,
+                          double value,
+                          double minimum,
+                          double maximum,
+                          std::string& error)
+{
+    if (value >= minimum && value <= maximum) return true;
+    error = field + " must be between " + std::to_string(minimum) + " and " +
+            std::to_string(maximum);
+    return false;
 }
 
 bool parseSize(const std::string& text, int& w, int& h)
@@ -279,23 +314,60 @@ bool parseMosaicRequestJson(const std::string& body,
         request.outputPath = text;
 
     auto& cfg = request.config;
-    if (getIntField(values, keysFor(aliases, "tileW"), intValue, error)) cfg.tileW = std::max(4, intValue);
-    if (getIntField(values, keysFor(aliases, "tileH"), intValue, error)) cfg.tileH = std::max(4, intValue);
-    if (getIntField(values, keysFor(aliases, "outW"), intValue, error)) cfg.outW = intValue > 0 ? intValue : 0;
-    if (getIntField(values, keysFor(aliases, "outH"), intValue, error)) cfg.outH = intValue > 0 ? intValue : 0;
-    if (getIntField(values, keysFor(aliases, "nativeTileW"), intValue, error)) cfg.nativeTileW = std::max(1, intValue);
-    if (getIntField(values, keysFor(aliases, "nativeTileH"), intValue, error)) cfg.nativeTileH = std::max(1, intValue);
-    if (getIntField(values, keysFor(aliases, "candidates"), intValue, error)) cfg.candidates = std::max(10, intValue);
+    if (getIntField(values, keysFor(aliases, "tileW"), intValue, error)) {
+        if (!requireIntAtLeast("tileW", intValue, 4, error)) return false;
+        cfg.tileW = intValue;
+    }
+    if (getIntField(values, keysFor(aliases, "tileH"), intValue, error)) {
+        if (!requireIntAtLeast("tileH", intValue, 4, error)) return false;
+        cfg.tileH = intValue;
+    }
+    if (getIntField(values, keysFor(aliases, "outW"), intValue, error)) {
+        if (!requireIntAtLeast("outW", intValue, 0, error)) return false;
+        cfg.outW = intValue;
+    }
+    if (getIntField(values, keysFor(aliases, "outH"), intValue, error)) {
+        if (!requireIntAtLeast("outH", intValue, 0, error)) return false;
+        cfg.outH = intValue;
+    }
+    if (getIntField(values, keysFor(aliases, "nativeTileW"), intValue, error)) {
+        if (!requireIntAtLeast("nativeTileW", intValue, 1, error)) return false;
+        cfg.nativeTileW = intValue;
+    }
+    if (getIntField(values, keysFor(aliases, "nativeTileH"), intValue, error)) {
+        if (!requireIntAtLeast("nativeTileH", intValue, 1, error)) return false;
+        cfg.nativeTileH = intValue;
+    }
+    if (getIntField(values, keysFor(aliases, "candidates"), intValue, error)) {
+        if (!requireIntAtLeast("candidates", intValue, 10, error)) return false;
+        cfg.candidates = intValue;
+    }
     if (getIntField(values, keysFor(aliases, "topNrandom"), intValue, error))
-        cfg.topNrandom = std::max(1, intValue);
-    if (getIntField(values, keysFor(aliases, "neighborWindow"), intValue, error)) cfg.neighborWindow = intValue;
-    if (getIntField(values, keysFor(aliases, "upscale"), intValue, error)) cfg.upscale = std::max(1, intValue);
-    if (getIntField(values, keysFor(aliases, "quality"), intValue, error))
-        cfg.jpegQuality = std::max(1, std::min(100, intValue));
-    if (getIntField(values, keysFor(aliases, "pngLevel"), intValue, error))
-        cfg.pngCompressionLevel = std::max(1, std::min(9, intValue));
+    {
+        if (!requireIntAtLeast("topNrandom", intValue, 1, error)) return false;
+        cfg.topNrandom = intValue;
+    }
+    if (getIntField(values, keysFor(aliases, "neighborWindow"), intValue, error)) {
+        if (!requireIntAtLeast("neighborWindow", intValue, 0, error)) return false;
+        cfg.neighborWindow = intValue;
+    }
+    if (getIntField(values, keysFor(aliases, "upscale"), intValue, error)) {
+        if (!requireIntAtLeast("upscale", intValue, 1, error)) return false;
+        cfg.upscale = intValue;
+    }
+    if (getIntField(values, keysFor(aliases, "quality"), intValue, error)) {
+        if (!requireIntBetween("quality", intValue, 1, 100, error)) return false;
+        cfg.jpegQuality = intValue;
+    }
+    if (getIntField(values, keysFor(aliases, "pngLevel"), intValue, error)) {
+        if (!requireIntBetween("pngLevel", intValue, 1, 9, error)) return false;
+        cfg.pngCompressionLevel = intValue;
+    }
 
-    if (getDoubleField(values, keysFor(aliases, "lRange"), doubleValue, error)) cfg.lRange = doubleValue;
+    if (getDoubleField(values, keysFor(aliases, "lRange"), doubleValue, error)) {
+        if (!requireDoubleAtLeast("lRange", doubleValue, 0.0, error)) return false;
+        cfg.lRange = doubleValue;
+    }
     if (getDoubleField(values, keysFor(aliases, "usePenalty"), doubleValue, error))
         cfg.usePenalty = doubleValue;
     if (getDoubleField(values, keysFor(aliases, "labWeight"), doubleValue, error)) cfg.labWeight = doubleValue;
@@ -303,9 +375,14 @@ bool parseMosaicRequestJson(const std::string& body,
     if (getDoubleField(values, keysFor(aliases, "tinyWeight"), doubleValue, error)) cfg.tinyWeight = doubleValue;
     if (getDoubleField(values, keysFor(aliases, "edgeWeight"), doubleValue, error)) cfg.edgeWeight = doubleValue;
     if (getDoubleField(values, keysFor(aliases, "lbpWeight"), doubleValue, error)) cfg.lbpWeight = doubleValue;
-    if (getDoubleField(values, keysFor(aliases, "neighborPenalty"), doubleValue, error)) cfg.neighborPenalty = doubleValue;
-    if (getDoubleField(values, keysFor(aliases, "colorStrength"), doubleValue, error))
-        cfg.colorStrength = std::max(0.0, std::min(0.5, doubleValue));
+    if (getDoubleField(values, keysFor(aliases, "neighborPenalty"), doubleValue, error)) {
+        if (!requireDoubleAtLeast("neighborPenalty", doubleValue, 0.0, error)) return false;
+        cfg.neighborPenalty = doubleValue;
+    }
+    if (getDoubleField(values, keysFor(aliases, "colorStrength"), doubleValue, error)) {
+        if (!requireDoubleBetween("colorStrength", doubleValue, 0.0, 0.5, error)) return false;
+        cfg.colorStrength = doubleValue;
+    }
 
     if (getStringField(values, keysFor(aliases, "format"), text, error)) {
         if (!text.empty()) {
@@ -369,11 +446,18 @@ bool parseBuildRequestJson(const std::string& body,
         }
     }
     if (getIntField(values, keysFor(aliases, "threads"), intValue, error))
-        request.threads = std::max(0, intValue);
-    if (getIntField(values, keysFor(aliases, "normalizeWidth"), intValue, error))
-        request.normalizeWidth = std::max(1, intValue);
-    if (getIntField(values, keysFor(aliases, "normalizeHeight"), intValue, error))
-        request.normalizeHeight = std::max(1, intValue);
+    {
+        if (!requireIntAtLeast("threads", intValue, 0, error)) return false;
+        request.threads = intValue;
+    }
+    if (getIntField(values, keysFor(aliases, "normalizeWidth"), intValue, error)) {
+        if (!requireIntAtLeast("normalizeWidth", intValue, 1, error)) return false;
+        request.normalizeWidth = intValue;
+    }
+    if (getIntField(values, keysFor(aliases, "normalizeHeight"), intValue, error)) {
+        if (!requireIntAtLeast("normalizeHeight", intValue, 1, error)) return false;
+        request.normalizeHeight = intValue;
+    }
 
     if (getBoolField(values, keysFor(aliases, "appendMode"), boolValue, error))
         request.appendMode = boolValue;
@@ -413,7 +497,10 @@ bool applyDatabaseUsageRequestJson(const std::string& body,
     bool boolValue = false;
     const auto aliases = aliasesFor(ApiOperation::DatabaseUsage);
     if (getStringField(values, keysFor(aliases, "dbPath"), text, error)) request.dbPath = text;
-    if (getIntField(values, keysFor(aliases, "limit"), intValue, error)) request.limit = std::max(1, intValue);
+    if (getIntField(values, keysFor(aliases, "limit"), intValue, error)) {
+        if (!requireIntAtLeast("limit", intValue, 1, error)) return false;
+        request.limit = intValue;
+    }
     if (getBoolField(values, keysFor(aliases, "showUnused"), boolValue, error)) request.showUnused = boolValue;
     return error.empty();
 }
@@ -485,7 +572,10 @@ bool parseDatabaseUsageRequestApi(const ApiQueryParams& query,
     int intValue = 0;
     bool boolValue = false;
     if (getQueryField(query, aliases, "dbPath", text)) request.dbPath = text;
-    if (getQueryInt(query, aliases, "limit", intValue, error)) request.limit = std::max(1, intValue);
+    if (getQueryInt(query, aliases, "limit", intValue, error)) {
+        if (!requireIntAtLeast("limit", intValue, 1, error)) return false;
+        request.limit = intValue;
+    }
     if (!error.empty()) return false;
     if (getQueryBool(query, aliases, "showUnused", false, boolValue, error)) request.showUnused = boolValue;
     if (!error.empty()) return false;

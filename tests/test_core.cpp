@@ -478,14 +478,14 @@ TEST_CASE("API request parser builds mosaic requests")
     std::string error;
 
     CHECK(parseMosaicRequestJson(
-        R"({"inputPath":"in.jpg","dbPath":"db.sqlite","outputPath":"out.png","quality":120,"writeMode":"stream","deepZoom":true,"cpu":true,"outputTile":"90x160"})",
+        R"({"inputPath":"in.jpg","dbPath":"db.sqlite","outputPath":"out.png","quality":95,"writeMode":"stream","deepZoom":true,"cpu":true,"outputTile":"90x160"})",
         request,
         error));
 
     CHECK(request.inputPath == "in.jpg");
     CHECK(request.dbPath == "db.sqlite");
     CHECK(request.outputPath == "out.png");
-    CHECK(request.config.jpegQuality == 100);
+    CHECK(request.config.jpegQuality == 95);
     CHECK(request.config.writeMode == "stream");
     CHECK(request.config.deepZoom);
     CHECK(request.config.tiledOutput);
@@ -555,6 +555,26 @@ TEST_CASE("API request parser reports invalid fields")
     error.clear();
     CHECK_FALSE(parseMosaicRequestJson(R"({"tileW":9.5})", request, error));
     CHECK(error == "tileW must be an integer");
+
+    error.clear();
+    CHECK_FALSE(parseMosaicRequestJson(R"({"tileW":3})", request, error));
+    CHECK(error == "tileW must be at least 4");
+
+    error.clear();
+    CHECK_FALSE(parseMosaicRequestJson(R"({"quality":120})", request, error));
+    CHECK(error == "quality must be between 1 and 100");
+
+    error.clear();
+    CHECK_FALSE(parseMosaicRequestJson(R"({"pngLevel":0})", request, error));
+    CHECK(error == "pngLevel must be between 1 and 9");
+
+    error.clear();
+    CHECK_FALSE(parseMosaicRequestJson(R"({"colorStrength":0.75})", request, error));
+    CHECK(error == "colorStrength must be between 0.000000 and 0.500000");
+
+    error.clear();
+    CHECK_FALSE(parseBuildRequestJson(R"({"threads":-1})", build, error));
+    CHECK(error == "threads must be at least 0");
 }
 
 TEST_CASE("API request parser applies database and inspect requests")
@@ -563,13 +583,18 @@ TEST_CASE("API request parser applies database and inspect requests")
 
     DatabaseUsageRequest usage;
     CHECK(applyDatabaseUsageRequestJson(
-        R"({"dbPath":"library.db","limit":0,"showUnused":true})",
+        R"({"dbPath":"library.db","limit":5,"showUnused":true})",
         usage,
         error));
     CHECK(usage.dbPath == "library.db");
-    CHECK(usage.limit == 1);
+    CHECK(usage.limit == 5);
     CHECK(usage.showUnused);
 
+    error.clear();
+    CHECK_FALSE(applyDatabaseUsageRequestJson(R"({"limit":0})", usage, error));
+    CHECK(error == "limit must be at least 1");
+
+    error.clear();
     InspectRequest inspect;
     CHECK(applyInspectRequestJson(
         R"({"imagePath":"target.jpg","dbPath":"library.db"})",
@@ -585,7 +610,7 @@ TEST_CASE("API request parser merges query and JSON body")
 
     DatabaseUsageRequest usage;
     CHECK(parseDatabaseUsageRequestApi(
-        {{"db", "query.db"}, {"limit", "0"}, {"unused", "1"}},
+        {{"db", "query.db"}, {"limit", "2"}, {"unused", "1"}},
         R"({"dbPath":"body.db","limit":12,"showUnused":false})",
         usage,
         error));
@@ -658,6 +683,14 @@ TEST_CASE("API request parser rejects invalid query values")
         usage,
         error));
     CHECK(error == "limit must be a number");
+
+    error.clear();
+    CHECK_FALSE(parseDatabaseUsageRequestApi(
+        {{"db", "usage.db"}, {"limit", "0"}},
+        "",
+        usage,
+        error));
+    CHECK(error == "limit must be at least 1");
 
     error.clear();
     CHECK_FALSE(parseDatabaseUsageRequestApi(

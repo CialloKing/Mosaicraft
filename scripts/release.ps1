@@ -1,0 +1,265 @@
+param(
+    [string]$BuildDir = "build",
+    [string]$Configuration = "Release",
+    [string]$Version = "",
+    [string]$ToolchainFile = "",
+    [string]$PackageSuffix = "",
+    [string]$OutputDir = "",
+    [switch]$NoCuda,
+    [switch]$SkipConfigure,
+    [switch]$SkipBuild,
+    [switch]$SkipTests,
+    [switch]$SkipSmoke,
+    [switch]$SkipArchiveValidation,
+    [switch]$KeepWorkspace
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+
+function Invoke-Native {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments
+    )
+
+    & $FilePath @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$FilePath failed with exit code $LASTEXITCODE"
+    }
+}
+
+function Invoke-Step {
+    param(
+        [string]$Label,
+        [scriptblock]$Action
+    )
+
+    Write-Host ""
+    Write-Host "==> $Label"
+    & $Action
+}
+
+function Resolve-RepoPath {
+    param([string]$Path)
+
+    if ([System.IO.Path]::IsPathRooted($Path)) {
+        return $Path
+    }
+    return Join-Path $RepoRoot $Path
+}
+
+function Get-ProjectVersion {
+    if ($Version) {
+        return $Version
+    }
+
+    $versionHeader = Join-Path $RepoRoot "core\Version.h"
+    $content = Get-Content -LiteralPath $versionHeader -Raw
+    $match = [regex]::Match($content, 'kVersion\s*=\s*"([^"]+)"')
+    if (-not $match.Success) {
+        throw "Unable to read version from $versionHeader"
+    }
+    return $match.Groups[1].Value
+}
+
+function Copy-RequiredFile {
+    param(
+        [string]$Source,
+        [string]$Destination
+    )
+
+    if (-not (Test-Path -LiteralPath $Source)) {
+        throw "Missing release file: $Source"
+    }
+    Copy-Item -LiteralPath $Source -Destination $Destination -Force
+}
+
+function Test-IsWindows {
+    return [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+}
+
+function Get-ExecutableName {
+    param([string]$BaseName)
+
+    if (Test-IsWindows) {
+        return "$BaseName.exe"
+    }
+    return $BaseName
+}
+
+function Assert-FileExists {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Missing release file: $Path"
+    }
+}
+
+$versionText = Get-ProjectVersion
+$buildPath = Resolve-RepoPath $BuildDir
+$outputPath = if ($OutputDir) { Resolve-RepoPath $OutputDir } else { $RepoRoot }
+New-Item -ItemType Directory -Force -Path $outputPath | Out-Null
+
+if (-not $ToolchainFile -and $env:VCPKG_ROOT) {
+    $candidateToolchain = Join-Path $env:VCPKG_ROOT "scripts\buildsystems\vcpkg.cmake"
+    if (Test-Path -LiteralPath $candidateToolchain) {
+        $ToolchainFile = $candidateToolchain
+    }
+}
+
+$suffix = ""
+if ($PackageSuffix) {
+    $suffix = "_" + ($PackageSuffix -replace '[^A-Za-z0-9_.-]', '-')
+}
+$packageName = "Mosaicraft_v$versionText$suffix"
+$zipPath = Join-Path $outputPath "$packageName.zip"
+$tempRoot = [System.IO.Path]::GetTempPath()
+$packageRoot = Join-Path $tempRoot ("${packageName}_pkg_" + [System.Guid]::NewGuid().ToString("N"))
+$extractRoot = Join-Path $tempRoot ("${packageName}_extract_" + [System.Guid]::NewGuid().ToString("N"))
+
+try {
+    if (-not $SkipConfigure) {
+        Invoke-Step "Configure" {
+            $configureArgs = @("-S", $RepoRoot, "-B", $buildPath)
+            if ($ToolchainFile) {
+                $configureArgs += "-DCMAKE_TOOLCHAIN_FILE=$ToolchainFile"
+            }
+            if ($NoCuda) {
+                $configureArgs += "-DMOSAICRAFT_CUDA=OFF"
+            }
+            Invoke-Native -FilePath "cmake" -Arguments $configureArgs
+        }
+    }
+
+    if (-not $SkipBuild) {
+        Invoke-Step "Build release targets" {
+            Invoke-Native -FilePath "cmake" -Arguments @(
+                "--build", $buildPath,
+                "--config", $Configuration,
+                "--target", "mosaicraft", "MosaicraftWebUI", "mosaicraft_tests", "mosaicraft_regression_tests"
+            )
+        }
+    }
+
+    if (-not $SkipTests) {
+        Invoke-Step "Run CTest" {
+            Invoke-Native -FilePath "ctest" -Arguments @(
+                "--test-dir", $buildPath,
+                "-C", $Configuration,
+                "--output-on-failure"
+            )
+        }
+    }
+
+    if (-not $SkipSmoke) {
+        Invoke-Step "Run Web UI/API smoke" {
+            Invoke-Native -FilePath "cmake" -Arguments @(
+                "--build", $buildPath,
+                "--config", $Configuration,
+                "--target", "mosaicraft_webui_smoke"
+            )
+        }
+    }
+
+    Invoke-Step "Package $packageName.zip" {
+        $binDir = Join-Path $buildPath "$Configuration\bin"
+        if (-not (Test-Path -LiteralPath $binDir)) {
+            throw "Build output directory not found: $binDir"
+        }
+
+        New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
+
+        $cliName = Get-ExecutableName -BaseName "mosaicraft"
+        $webUiName = Get-ExecutableName -BaseName "MosaicraftWebUI"
+        Copy-RequiredFile -Source (Join-Path $binDir $cliName) -Destination $packageRoot
+        Copy-RequiredFile -Source (Join-Path $binDir $webUiName) -Destination $packageRoot
+        Copy-RequiredFile -Source (Join-Path $binDir "index.html") -Destination $packageRoot
+
+        Get-ChildItem -LiteralPath $binDir -File |
+            Where-Object { $_.Name -match '\.(dll|so|dylib)(\..*)?$' } |
+            ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $packageRoot -Force }
+
+        if (Test-IsWindows) {
+            foreach ($runtime in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")) {
+                $runtimePath = Join-Path $env:WINDIR "System32\$runtime"
+                if (Test-Path -LiteralPath $runtimePath) {
+                    Copy-Item -LiteralPath $runtimePath -Destination $packageRoot -Force
+                } else {
+                    Write-Warning "VC runtime not found: $runtimePath"
+                }
+            }
+        }
+
+        Copy-RequiredFile -Source (Join-Path $RepoRoot "README.md") -Destination $packageRoot
+        Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\API.md") -Destination (Join-Path $packageRoot "API.md")
+        Copy-RequiredFile -Source (Join-Path $RepoRoot "LICENSE") -Destination $packageRoot
+        Copy-RequiredFile -Source (Join-Path $RepoRoot "third_party_versions.txt") -Destination $packageRoot
+
+        $releaseNotes = Join-Path $RepoRoot "RELEASE_NOTES_v$versionText.md"
+        if (Test-Path -LiteralPath $releaseNotes) {
+            Copy-Item -LiteralPath $releaseNotes -Destination $packageRoot -Force
+        }
+
+        if (Test-Path -LiteralPath $zipPath) {
+            Remove-Item -LiteralPath $zipPath -Force
+        }
+        Compress-Archive -Path (Join-Path $packageRoot "*") -DestinationPath $zipPath -CompressionLevel Optimal
+    }
+
+    if (-not $SkipArchiveValidation) {
+        Invoke-Step "Validate archive" {
+            New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
+            Expand-Archive -LiteralPath $zipPath -DestinationPath $extractRoot -Force
+
+            $cliName = Get-ExecutableName -BaseName "mosaicraft"
+            $webUiName = Get-ExecutableName -BaseName "MosaicraftWebUI"
+            $cliPath = Join-Path $extractRoot $cliName
+            $webUiPath = Join-Path $extractRoot $webUiName
+            Assert-FileExists -Path $cliPath
+            Assert-FileExists -Path $webUiPath
+
+            $versionOutput = (& $cliPath --version).Trim()
+            if ($versionOutput -ne "Mosaicraft $versionText") {
+                throw "Unexpected CLI version output: $versionOutput"
+            }
+
+            if (-not $SkipSmoke) {
+                $powershellCommand = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
+                $smokeArgs = @("-NoProfile")
+                if (Test-IsWindows) {
+                    $smokeArgs += @("-ExecutionPolicy", "Bypass")
+                }
+                $smokeArgs += @(
+                    "-File", (Join-Path $RepoRoot "tests\webui_smoke.ps1"),
+                    "-WebUiExe", $webUiPath,
+                    "-TimeoutSeconds", "90"
+                )
+                Invoke-Native -FilePath $powershellCommand -Arguments $smokeArgs
+            }
+        }
+    }
+
+    Invoke-Step "Release package summary" {
+        $item = Get-Item -LiteralPath $zipPath
+        $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $zipPath
+        Write-Host "Package: $($item.FullName)"
+        Write-Host "Size: $($item.Length)"
+        Write-Host "SHA256: $($hash.Hash)"
+    }
+}
+finally {
+    if (-not $KeepWorkspace) {
+        if (Test-Path -LiteralPath $packageRoot) {
+            Remove-Item -LiteralPath $packageRoot -Recurse -Force
+        }
+        if (Test-Path -LiteralPath $extractRoot) {
+            Remove-Item -LiteralPath $extractRoot -Recurse -Force
+        }
+    } else {
+        Write-Host "Package workspace: $packageRoot"
+        Write-Host "Extract workspace: $extractRoot"
+    }
+}

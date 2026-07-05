@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  windows-cpu:
+    name: Windows CPU-only
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Locate vcpkg
+        shell: pwsh
+        run: |
+          if (-not $env:VCPKG_ROOT) {
+            $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          }
+          if (-not $env:VCPKG_ROOT) {
+            throw "VCPKG_ROOT is not available on this runner"
+          }
+          "VCPKG_ROOT=$env:VCPKG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_ROOT\vcpkg.exe" install `
+            opencv4 `
+            sqlite3 `
+            tiff `
+            libpng `
+            libjpeg-turbo `
+            --triplet x64-windows
+
+      - name: Release gate
+        shell: pwsh
+        run: |
+          .\scripts\release.ps1 `
+            -BuildDir build-ci `
+            -Configuration Release `
+            -ToolchainFile "$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -NoCuda `
+            -PackageSuffix ci-cpu
+
+      - name: Upload release candidate package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mosaicraft-v${{ github.sha }}-windows-cpu
+          path: Mosaicraft_v*_ci-cpu.zip
+          if-no-files-found: error

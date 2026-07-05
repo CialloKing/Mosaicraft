@@ -154,13 +154,96 @@ function Invoke-Api {
         $Body = $null
     )
 
+    $response = Invoke-ApiResponse -Method $Method -Path $Path -Body $Body
+    if ($response.StatusCode -lt 200 -or $response.StatusCode -gt 299) {
+        throw "HTTP $($response.StatusCode) from $Path`: $($response.Text)"
+    }
+    return $response.Json
+}
+
+function Read-ErrorResponseText {
+    param($ErrorRecord)
+
+    if ($ErrorRecord.ErrorDetails -and $ErrorRecord.ErrorDetails.Message) {
+        return $ErrorRecord.ErrorDetails.Message
+    }
+    $response = $ErrorRecord.Exception.Response
+    if ($null -eq $response) {
+        return ""
+    }
+    $stream = $response.GetResponseStream()
+    if ($null -eq $stream) {
+        return ""
+    }
+    $reader = New-Object System.IO.StreamReader($stream)
+    try {
+        return $reader.ReadToEnd()
+    }
+    finally {
+        $reader.Close()
+    }
+}
+
+function Convert-ResponseJson {
+    param([string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return $null
+    }
+    try {
+        return $Text | ConvertFrom-Json
+    }
+    catch {
+        return $null
+    }
+}
+
+function Invoke-ApiResponse {
+    param(
+        [string]$Method,
+        [string]$Path,
+        $Body = $null,
+        [switch]$RawBody
+    )
+
     $uri = "$script:BaseUrl$Path"
-    if ($null -eq $Body) {
-        return Invoke-RestMethod -Uri $uri -Method $Method -TimeoutSec 20
+    $request = @{
+        Uri = $uri
+        Method = $Method
+        TimeoutSec = 20
+    }
+    if ($PSVersionTable.PSVersion.Major -lt 6) {
+        $request.UseBasicParsing = $true
+    }
+    else {
+        $request.SkipHttpErrorCheck = $true
+    }
+    if ($null -ne $Body) {
+        $request.ContentType = "application/json"
+        $request.Body = if ($RawBody) { [string]$Body } else { $Body | ConvertTo-Json -Depth 20 }
     }
 
-    $json = $Body | ConvertTo-Json -Depth 20
-    return Invoke-RestMethod -Uri $uri -Method $Method -ContentType "application/json" -Body $json -TimeoutSec 20
+    try {
+        $response = Invoke-WebRequest @request
+        $text = [string]$response.Content
+        return [pscustomobject]@{
+            StatusCode = [int]$response.StatusCode
+            Json = Convert-ResponseJson -Text $text
+            Text = $text
+        }
+    }
+    catch {
+        $response = $_.Exception.Response
+        if ($null -eq $response) {
+            throw
+        }
+        $text = Read-ErrorResponseText -ErrorRecord $_
+        return [pscustomobject]@{
+            StatusCode = [int]$response.StatusCode
+            Json = Convert-ResponseJson -Text $text
+            Text = $text
+        }
+    }
 }
 
 function Wait-Server {
@@ -271,6 +354,32 @@ try {
     foreach ($operation in $required) {
         Assert-True ($operations -contains $operation) "missing API operation: $operation"
     }
+
+    $badJson = Invoke-ApiResponse -Method "POST" -Path "/api/jobs/mosaic" -Body "{" -RawBody
+    Assert-True ($badJson.StatusCode -eq 400) "malformed JSON should return HTTP 400"
+    Assert-True ($badJson.Json.ok -eq $false) "malformed JSON should return ok=false"
+    Assert-True ([string]$badJson.Json.message -like "invalid JSON body:*") "malformed JSON message should be explicit"
+
+    $badTile = Invoke-ApiResponse -Method "POST" -Path "/api/jobs/mosaic" -Body @{
+        inputPath = $targetPath
+        tileW = 3
+    }
+    Assert-True ($badTile.StatusCode -eq 400) "invalid tileW should return HTTP 400"
+    Assert-True ($badTile.Json.ok -eq $false) "invalid tileW should return ok=false"
+    Assert-True ($badTile.Json.message -eq "tileW must be at least 4") "invalid tileW message should be explicit"
+
+    $badUsage = Invoke-ApiResponse -Method "GET" -Path "/api/db/usage?db=missing.db&limit=0"
+    Assert-True ($badUsage.StatusCode -eq 400) "invalid usage limit should return HTTP 400"
+    Assert-True ($badUsage.Json.ok -eq $false) "invalid usage limit should return ok=false"
+    Assert-True ($badUsage.Json.message -eq "limit must be at least 1") "invalid usage limit message should be explicit"
+
+    $missingJob = Invoke-ApiResponse -Method "GET" -Path "/api/jobs/not-found"
+    Assert-True ($missingJob.StatusCode -eq 404) "missing job should return HTTP 404"
+    Assert-True ($missingJob.Json.ok -eq $false) "missing job should return ok=false"
+
+    $legacyRun = Invoke-ApiResponse -Method "POST" -Path "/api/run" -Body "mosaicraft db-stats" -RawBody
+    Assert-True ($legacyRun.StatusCode -eq 404) "disabled legacy run should return HTTP 404"
+    Assert-True ($legacyRun.Json.ok -eq $false) "disabled legacy run should return ok=false"
 
     $build = Invoke-Api -Method "POST" -Path "/api/jobs/build" -Body @{
         inputDir = $inputDir

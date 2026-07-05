@@ -100,9 +100,9 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>📐 Tile 参数</h3>
     <div class="row">
-      <div class="field"><label>Tile 宽度 --tile-w</label><input type="number" id="m-tilew" value="9" min="1"></div>
-      <div class="field"><label>Tile 高度 --tile-h</label><input type="number" id="m-tileh" value="16" min="1"></div>
-      <div class="field"><label>候选数 --candidates</label><input type="number" id="m-candidates" value="150" min="1"></div>
+      <div class="field"><label>Tile 宽度 --tile-w</label><input type="number" id="m-tilew" value="9" min="4"></div>
+      <div class="field"><label>Tile 高度 --tile-h</label><input type="number" id="m-tileh" value="16" min="4"></div>
+      <div class="field"><label>候选数 --candidates</label><input type="number" id="m-candidates" value="150" min="10"></div>
       <div class="field"><label>TopN 随机 --topn-random</label><input type="number" id="m-topn" value="10" min="1"><span class="hint">随机选取池大小</span></div>
     </div>
     <div class="row">
@@ -142,7 +142,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <label><input type="checkbox" id="m-cpu"> 仅 CPU --cpu</label>
     </div>
     <div class="row" style="margin-top:8px">
-      <div class="field"><label>颜色强度 --color-strength</label><input type="number" id="m-colorstr" value="0.04" step="0.01" style="max-width:150px"></div>
+      <div class="field"><label>颜色强度 --color-strength</label><input type="number" id="m-colorstr" value="0.04" min="0" max="0.5" step="0.01" style="max-width:150px"></div>
     </div>
   </div>
 </div>
@@ -577,10 +577,18 @@ async function readJsonResponse(res) {
 }
 
 async function requestJson(path, options) {
-  const res = await fetch(SERVER_URL + path, options || {});
-  const data = await readJsonResponse(res);
-  if (!res.ok && !data.message) data.message = 'HTTP ' + res.status;
-  return data;
+  try {
+    const res = await fetch(SERVER_URL + path, options || {});
+    const data = await readJsonResponse(res);
+    data.status = res.status;
+    if (!res.ok && !data.message) data.message = 'HTTP ' + res.status;
+    return data;
+  } catch(e) {
+    return {
+      ok: false,
+      message: '无法连接 Web UI/API: ' + (e && e.message ? e.message : 'network error')
+    };
+  }
 }
 
 async function getJson(path) {
@@ -831,9 +839,9 @@ function buildMosaicPayload() {
   setIfValue(payload, 'outputPath', 'm-output');
   setIfValue(payload, 'format', 'm-format');
   setIfValue(payload, 'writeMode', 'm-writemode');
-  setIfNumber(payload, 'tileW', 'm-tilew', 'Tile 宽度', { integer: true, min: 1 });
-  setIfNumber(payload, 'tileH', 'm-tileh', 'Tile 高度', { integer: true, min: 1 });
-  setIfNumber(payload, 'candidates', 'm-candidates', '候选数', { integer: true, min: 1 });
+  setIfNumber(payload, 'tileW', 'm-tilew', 'Tile 宽度', { integer: true, min: 4 });
+  setIfNumber(payload, 'tileH', 'm-tileh', 'Tile 高度', { integer: true, min: 4 });
+  setIfNumber(payload, 'candidates', 'm-candidates', '候选数', { integer: true, min: 10 });
   setIfNumber(payload, 'topNrandom', 'm-topn', 'TopN 随机', { integer: true, min: 1 });
   setIfNumber(payload, 'lRange', 'm-lrange', 'L 亮度范围');
   setIfNumber(payload, 'neighborWindow', 'm-nwin', '邻域窗口', { integer: true, min: 0 });
