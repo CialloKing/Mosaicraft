@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-07-04 | 版本 / Version：v1.13.7
+> 最后更新 / Last updated：2026-07-05 | 版本 / Version：v1.13.8
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -415,7 +415,7 @@ copy C:\Windows\System32\vcruntime140_1.dll release_pkg\
 copy C:\Windows\System32\msvcp140.dll release_pkg\
 
 # 压缩
-Compress-Archive -Path release_pkg\* -Destination Mosaicraft_v1.13.7.zip
+Compress-Archive -Path release_pkg\* -Destination Mosaicraft_v1.13.8.zip
 ```
 
 发布包 ~5 MB，解压即用。需 NVIDIA 驱动支持 GPU 加速（CPU fallback 可用 `MOSAICRAFT_CUDA=OFF` 编译）。
