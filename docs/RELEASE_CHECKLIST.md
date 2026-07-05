@@ -8,7 +8,8 @@
 
 - 工作区必须干净：`git status --short --branch`
 - 当前版本号必须一致：`CMakeLists.txt`、`core/Version.h`、README、Web UI badge、测试断言、release notes
-- 对应 release notes 必须存在：`RELEASE_NOTES_v<version>.md`
+- 对应 release notes 必须存在：`docs/releases/v<version>.md`
+- `CHANGELOG.md` 必须追加当前版本高层摘要
 - 当前提交必须已推送到远端 `main`
 
 ## 2. 环境检查
@@ -22,7 +23,7 @@
 - CMake、CTest、PowerShell 可执行文件可用
 - vcpkg toolchain 可定位
 - 发布所需文档和 license 文件存在
-- 对应 release notes 存在
+- 对应 release notes 和 `CHANGELOG.md` 存在
 - 如果跳过构建，现有 build 输出目录内必须已有 CLI、WebUI 和 `index.html`
 
 ## 3. 本机 CUDA 发布包
@@ -85,7 +86,7 @@ GitHub Release 正文必须保持简洁，只包含：
 - Windows x64 / CUDA 运行环境说明
 - SHA256
 
-完整变更、CI、发布脚本和验证细节保留在 `RELEASE_NOTES_v<version>.md`、README 和项目文档中，不直接展开到 GitHub Release 页面。
+完整变更、CI、发布脚本和验证细节保留在 `docs/releases/v<version>.md`、`CHANGELOG.md`、README 和项目文档中，不直接展开到 GitHub Release 页面。
 
 ## 6. 不允许发布的情况
 

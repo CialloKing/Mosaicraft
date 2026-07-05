@@ -414,7 +414,7 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 .\scripts\release.ps1 -BuildDir build-ci -Configuration Release -NoCuda -PackageSuffix ci-cpu
 ```
 
-发布脚本会生成 `Mosaicraft_v<version>_<platform>-<arch>_<runtime>.zip`。当前正式 Windows CUDA 包名为 `Mosaicraft_v<version>_windows-x64_cuda.zip`；CI CPU-only 候选包名为 `Mosaicraft_v<version>_windows-x64_cpu-only_ci-cpu.zip`。脚本会复制 EXE、DLL、`index.html`、`README.md`、`API.md`、`LICENSE`、第三方版本清单和对应 release notes，并验证：
+发布脚本会生成 `Mosaicraft_v<version>_<platform>-<arch>_<runtime>.zip`。当前正式 Windows CUDA 包名为 `Mosaicraft_v<version>_windows-x64_cuda.zip`；CI CPU-only 候选包名为 `Mosaicraft_v<version>_windows-x64_cpu-only_ci-cpu.zip`。详细 release notes 存放在 `docs/releases/v<version>.md`，打包时会复制为包内的 `RELEASE_NOTES_v<version>.md`。脚本会复制 EXE、DLL、`index.html`、`README.md`、`API.md`、`LICENSE`、第三方版本清单和对应 release notes，并验证：
 
 - 包内 CLI `--version` 与项目版本一致；
 - 包内 `MosaicraftWebUI.exe` 可启动；
@@ -551,6 +551,7 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 ### v1.13.9: 发布准入与 CI 门禁稳定化 (2026-07-05)
 - 发布脚本：InspectOnly、打包、解压验证、SHA256 输出
 - 包命名：`Mosaicraft_v<version>_<platform>-<arch>_<runtime>.zip`
+- 发布说明：根目录保留 `CHANGELOG.md`，详细版本说明移入 `docs/releases/`
 - CI 门禁：Windows CPU-only 构建、CTest、Web UI/API smoke、发布候选包 artifact
 - 依赖缓存：vcpkg binary cache 缩短后续 CI 安装耗时
 - Web UI/API：结构化错误展示与常见字段修正建议

@@ -68,6 +68,20 @@ function Get-ProjectVersion {
     return $match.Groups[1].Value
 }
 
+function Get-ReleaseNotesPath {
+    param([string]$VersionText)
+
+    foreach ($candidate in @(
+        (Join-Path $RepoRoot "docs\releases\v$VersionText.md"),
+        (Join-Path $RepoRoot "RELEASE_NOTES_v$VersionText.md")
+    )) {
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+    }
+    throw "Missing release notes for version $VersionText"
+}
+
 function Find-PresetToolchainFile {
     $presetPath = Join-Path $RepoRoot "CMakePresets.json"
     if (-not (Test-Path -LiteralPath $presetPath)) {
@@ -260,6 +274,7 @@ function Invoke-ReleaseInspection {
 
         foreach ($required in @(
             "CMakeLists.txt",
+            "CHANGELOG.md",
             "README.md",
             "docs\API.md",
             "LICENSE",
@@ -269,7 +284,7 @@ function Invoke-ReleaseInspection {
             Assert-InspectPath -Label $required -Path (Join-Path $RepoRoot $required)
         }
 
-        $releaseNotes = Join-Path $RepoRoot "RELEASE_NOTES_v$VersionText.md"
+        $releaseNotes = Get-ReleaseNotesPath -VersionText $VersionText
         Assert-InspectPath -Label "release notes" -Path $releaseNotes
 
         if (-not $NoCuda -and -not $env:CUDA_PATH) {
@@ -414,10 +429,8 @@ try {
         Copy-RequiredFile -Source (Join-Path $RepoRoot "LICENSE") -Destination $packageRoot
         Copy-RequiredFile -Source (Join-Path $RepoRoot "third_party_versions.txt") -Destination $packageRoot
 
-        $releaseNotes = Join-Path $RepoRoot "RELEASE_NOTES_v$versionText.md"
-        if (Test-Path -LiteralPath $releaseNotes) {
-            Copy-Item -LiteralPath $releaseNotes -Destination $packageRoot -Force
-        }
+        $releaseNotes = Get-ReleaseNotesPath -VersionText $versionText
+        Copy-Item -LiteralPath $releaseNotes -Destination (Join-Path $packageRoot "RELEASE_NOTES_v$versionText.md") -Force
 
         if (Test-Path -LiteralPath $zipPath) {
             Remove-Item -LiteralPath $zipPath -Force
