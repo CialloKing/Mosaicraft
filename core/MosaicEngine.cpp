@@ -664,7 +664,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     {
         // �?100 , 锟截诧拷,  1 , , , 锟饺?10000 , ,  ,  3 �?  ,  30KB
         int64_t totalPixels = static_cast<int64_t>(target.rows) * target.cols;
-        int step = std::max(1LL, totalPixels / 10000);
+        int step = std::max<int64_t>(int64_t{1}, totalPixels / 10000);
         uint64_t h = 0x9e3779b97f4a7c15ULL;
         const uint8_t* data = target.data;
         int64_t totalBytes = totalPixels * 3;
@@ -1100,10 +1100,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 allTL[ti]  = batchLAB[i * 3 + 0];
                 allTA[ti]  = batchLAB[i * 3 + 1];
                 allTB[ti]  = batchLAB[i * 3 + 2];
-                allGrid[ti].assign(&batchGrid[i * 192], &batchGrid[(i + 1) * 192]);
-                allTiny[ti].assign(&batchTiny[i * 256], &batchTiny[(i + 1) * 256]);
+                allGrid[ti].assign(batchGrid.data() + i * 192, batchGrid.data() + (i + 1) * 192);
+                allTiny[ti].assign(batchTiny.data() + i * 256, batchTiny.data() + (i + 1) * 256);
                 allEdge[ti] = batchEdgeArr[i];
-                allLBP[ti].assign(&batchLBP[i * 256], &batchLBP[(i + 1) * 256]);
+                allLBP[ti].assign(batchLBP.data() + i * 256, batchLBP.data() + (i + 1) * 256);
             }
             int done = batchStart + batchN;
             double elapsed = std::chrono::duration<double>(Clock::now() - tPreFeat).count();
@@ -1151,10 +1151,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     allTL[ti]  = tailLAB[i * 3 + 0];
                     allTA[ti]  = tailLAB[i * 3 + 1];
                     allTB[ti]  = tailLAB[i * 3 + 2];
-                    allGrid[ti].assign(&tailGrid[i * 192], &tailGrid[(i + 1) * 192]);
-                    allTiny[ti].assign(&tailTiny[i * 256], &tailTiny[(i + 1) * 256]);
+                    allGrid[ti].assign(tailGrid.data() + i * 192, tailGrid.data() + (i + 1) * 192);
+                    allTiny[ti].assign(tailTiny.data() + i * 256, tailTiny.data() + (i + 1) * 256);
                     allEdge[ti] = tailEdgeArr[i];
-                    allLBP[ti].assign(&tailLBP[i * 256], &tailLBP[(i + 1) * 256]);
+                    allLBP[ti].assign(tailLBP.data() + i * 256, tailLBP.data() + (i + 1) * 256);
                 }
             }
             std::cout << "\r  features " << totalTiles << "/" << totalTiles << std::endl;
