@@ -16,11 +16,14 @@ if (MSVC)
 endif()
 
 # --- 跨平台依赖 ---
-# Windows (vcpkg): 保持默认
-# Linux (apt):  1) unofficial-sqlite3 → SQLite3  2) CUDAToolkit REQUIRED → QUIET
-#               3) nvcc.exe → nvcc  4) 删除 -Xcompiler "/utf-8" --compiler-options "/MD"
+# Windows (vcpkg): unofficial-sqlite3 + nvcc.exe + MSVC 编译选项
+# Linux (apt):    系统 SQLite3 + nvcc + GCC/Clang 编译选项
 find_package(OpenCV REQUIRED)
-find_package(unofficial-sqlite3 CONFIG REQUIRED)
+# sqlite3：优先 vcpkg (unofficial-sqlite3)，回退到系统包 (SQLite3)
+find_package(unofficial-sqlite3 CONFIG QUIET)
+if(NOT unofficial-sqlite3_FOUND)
+    find_package(SQLite3 REQUIRED)
+endif()
 find_package(TIFF REQUIRED)
 find_package(PNG REQUIRED)
 find_package(JPEG REQUIRED)
@@ -39,6 +42,15 @@ endif()
 # CUDA 架构（可通过 -DCUDA_ARCH=sm_xx 覆盖，默认 RTX 4060 / sm_89）
 set(CUDA_ARCH "sm_89" CACHE STRING "Target CUDA compute capability")
 
+# nvcc 平台适配：MSVC 需要额外的编译选项，对象文件扩展名也不同
+if(MSVC)
+    set(NVCC_EXTRA_FLAGS -Xcompiler;/utf-8;--compiler-options;/MD)
+    set(CUDA_OBJ_EXT ".obj")
+else()
+    set(NVCC_EXTRA_FLAGS "")
+    set(CUDA_OBJ_EXT ".o")
+endif()
+
 # vcpkg include 路径，供 nvcc 使用（nvcc 不经过 target_include_directories）
 if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
     set(VCPKG_TRIPLET_INCLUDE "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include")
@@ -51,12 +63,12 @@ endif()
 # 手动编译 CUDA 源文件
 # ============================================================
 if (MOSAICRAFT_CUDA)
-set(CUDA_OBJ1 "${CMAKE_BINARY_DIR}/CudaBackend.obj")
-set(CUDA_OBJ2 "${CMAKE_BINARY_DIR}/FeatureExtractorCuda.obj")
+set(CUDA_OBJ1 "${CMAKE_BINARY_DIR}/CudaBackend${CUDA_OBJ_EXT}")
+set(CUDA_OBJ2 "${CMAKE_BINARY_DIR}/FeatureExtractorCuda${CUDA_OBJ_EXT}")
 
 add_custom_command(
     OUTPUT ${CUDA_OBJ1}
-    COMMAND "${CUDAToolkit_BIN_DIR}/nvcc.exe"
+    COMMAND "${CUDAToolkit_BIN_DIR}/nvcc${CMAKE_EXECUTABLE_SUFFIX}"
         -c "${CMAKE_SOURCE_DIR}/compute/CudaBackend.cu"
         -o "${CUDA_OBJ1}"
         -arch=${CUDA_ARCH} -std=c++17
@@ -65,7 +77,7 @@ add_custom_command(
         -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
         -I"${VCPKG_TRIPLET_INCLUDE}"
         -I"${TIFF_INCLUDE_DIR}"
-        -Xcompiler "/utf-8" --compiler-options "/MD"
+        ${NVCC_EXTRA_FLAGS}
     DEPENDS "${CMAKE_SOURCE_DIR}/compute/CudaBackend.cu"
             "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h"
     COMMENT "Compiling CudaBackend.cu (${CUDA_ARCH})..."
@@ -73,7 +85,7 @@ add_custom_command(
 
 add_custom_command(
     OUTPUT ${CUDA_OBJ2}
-    COMMAND "${CUDAToolkit_BIN_DIR}/nvcc.exe"
+    COMMAND "${CUDAToolkit_BIN_DIR}/nvcc${CMAKE_EXECUTABLE_SUFFIX}"
         -c "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu"
         -o "${CUDA_OBJ2}"
         -arch=${CUDA_ARCH} -std=c++17
@@ -82,7 +94,7 @@ add_custom_command(
         -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
         -I"${VCPKG_TRIPLET_INCLUDE}"
         -I"${TIFF_INCLUDE_DIR}"
-        -Xcompiler "/utf-8" --compiler-options "/MD"
+        ${NVCC_EXTRA_FLAGS}
     DEPENDS "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu"
             "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.h"
     COMMENT "Compiling FeatureExtractorCuda.cu..."
@@ -124,11 +136,16 @@ target_include_directories(mosaicraft_core PUBLIC
 
 target_link_libraries(mosaicraft_core PUBLIC
     ${OpenCV_LIBS}
-    unofficial::sqlite3::sqlite3
     ${TIFF_LIBRARIES}
     PNG::PNG
     JPEG::JPEG
 )
+# sqlite3：根据 find_package 结果选择对应的 CMake target
+if(TARGET unofficial::sqlite3::sqlite3)
+    target_link_libraries(mosaicraft_core PUBLIC unofficial::sqlite3::sqlite3)
+else()
+    target_link_libraries(mosaicraft_core PUBLIC SQLite::SQLite3)
+endif()
 
 if (MOSAICRAFT_CUDA)
 add_library(mosaicraft_cuda STATIC
@@ -163,8 +180,8 @@ target_link_libraries(mosaicraft PRIVATE
     mosaicraft_cuda
 )
 
-# CUDA 运行时 DLL 自动部署（vcpkg 不管 CUDA DLL）
-if (MOSAICRAFT_CUDA)
+# CUDA 运行时 DLL 自动部署（仅 Windows；Linux 通过 ldconfig/rpath 解析 .so）
+if (MOSAICRAFT_CUDA AND WIN32)
     file(GLOB CUDA_RUNTIME_DLL "${CUDAToolkit_BIN_DIR}/../bin/x64/cudart64_*.dll")
     if (CUDA_RUNTIME_DLL)
         list(GET CUDA_RUNTIME_DLL 0 CUDA_RUNTIME_DLL_FIRST)
