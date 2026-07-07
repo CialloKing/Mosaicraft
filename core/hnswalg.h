@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "visited_list_pool.h"
 #include "hnswlib.h"

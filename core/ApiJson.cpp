@@ -1,4 +1,4 @@
-#include "ApiJson.h"
+﻿#include "ApiJson.h"
 
 #include "Version.h"
 

@@ -1,4 +1,4 @@
-// Mosaicraft Web UI local HTTP server.
+﻿// Mosaicraft Web UI local HTTP server.
 // Serves the Web UI and structured API while keeping legacy command compatibility.
 #include "core/httplib.h"
 #include "core/ApiHandlers.h"

@@ -1,0 +1,33 @@
+# 统一编码：所有文本文件使用 UTF-8，LF 换行
+# 跨平台（Windows/Linux/Git）一致性
+
+*       text=auto
+
+# 源码文件：UTF-8，LF 换行
+*.cpp   text working-tree-encoding=UTF-8 eol=lf
+*.h     text working-tree-encoding=UTF-8 eol=lf
+*.cu    text working-tree-encoding=UTF-8 eol=lf
+*.hpp   text working-tree-encoding=UTF-8 eol=lf
+
+# 构建配置
+*.cmake text working-tree-encoding=UTF-8 eol=lf
+CMakeLists.txt text working-tree-encoding=UTF-8 eol=lf
+CMakePresets.json text working-tree-encoding=UTF-8 eol=lf
+
+# 文档
+*.md    text working-tree-encoding=UTF-8 eol=lf
+
+# 脚本
+*.ps1   text working-tree-encoding=UTF-8 eol=lf
+*.sh    text working-tree-encoding=UTF-8 eol=lf
+
+# 二进制文件
+*.zip   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.exe   binary
+*.dll   binary
+*.obj   binary
+*.o     binary
+*.db    binary

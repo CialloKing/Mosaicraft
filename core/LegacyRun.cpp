@@ -1,4 +1,4 @@
-#include "LegacyRun.h"
+﻿#include "LegacyRun.h"
 
 namespace mosaicraft
 {

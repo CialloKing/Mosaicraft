@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "ApiMetadata.h"
 #include "DatabaseService.h"

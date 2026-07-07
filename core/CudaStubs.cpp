@@ -1,4 +1,4 @@
-// CudaStubs.cpp — 无 CUDA 时的空实现（在 MOSAICRAFT_CUDA=OFF 时编译）
+﻿// CudaStubs.cpp — 无 CUDA 时的空实现（在 MOSAICRAFT_CUDA=OFF 时编译）
 #include "compute/CudaBackend.h"
 #include <cstdio>
 

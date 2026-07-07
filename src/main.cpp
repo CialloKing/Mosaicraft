@@ -1,4 +1,4 @@
-#include "core/Database.h"
+﻿#include "core/Database.h"
 #include "core/BuildService.h"
 #include "core/DatabaseService.h"
 #include "core/InspectService.h"
@@ -190,7 +190,7 @@ Exit status:
 }
 
 // ============================================================
-// build 子命�?
+// build 子命令
 // ============================================================
 static int cmdBuild(int argc, char* argv[])
 {
@@ -318,7 +318,7 @@ static int cmdBuild(int argc, char* argv[])
 }
 
 // ============================================================
-// mosaic 子命�?
+// mosaic 子命令
 // ============================================================
 static int cmdMosaic(int argc, char* argv[])
 {
@@ -624,7 +624,7 @@ static int cmdMosaic(int argc, char* argv[])
 }
 
 // ============================================================
-// inspect 子命�?�?特征诊断
+// inspect 子命令：特征诊断
 // ============================================================
 static int cmdInspect(int argc, char* argv[])
 {
@@ -687,7 +687,7 @@ static int cmdInspect(int argc, char* argv[])
 }
 
 // ============================================================
-// db-stats 子命令：输出图库统�??信息
+// db-stats 子命令：输出图库统计信息
 // ============================================================
 static int cmdDbStats(int argc, char* argv[])
 {
@@ -820,7 +820,7 @@ static int cmdDbPurge(int argc, char* argv[])
 }
 
 // ============================================================
-// db-usage ������鿴ͼƬʹ��ͳ��
+// db-usage 子命令：查看图片使用统计
 // ============================================================
 static int cmdDbUsage(int argc, char* argv[])
 {
@@ -880,7 +880,7 @@ static int cmdDbUsage(int argc, char* argv[])
                   << std::setw(8) << item.tiles << "\n";
     }
 
-    // --unused: �г���δʹ�õ�ͼƬ
+    // --unused: 列出所有未使用的图片
     if (showUnused)
     {
         for (const auto& item : usage.unusedPreview)
@@ -893,7 +893,7 @@ static int cmdDbUsage(int argc, char* argv[])
             std::cout << "  Tip: use --export <dir> to export used images\n";
     }
 
-    // ��������ȫ�� tile ʹ�������򣬸��ƹ�һ��ͼ������Ŀ¼
+    // 导出：按全部 tile 使用次数排序，复制到统一图片输出目录
     if (!exportDir.empty())
     {
         auto exportResult = usageService.exportUsage({dbPath, exportDir, true});
@@ -915,7 +915,7 @@ static int cmdDbUsage(int argc, char* argv[])
 }
 
 // ============================================================
-// db-health �����ͼ�⽡�������
+// db-health 子命令：图库健康检查
 // ============================================================
 static int cmdDbHealth(int argc, char* argv[])
 {
@@ -1024,7 +1024,7 @@ int main(int argc, char* argv[])
         }
     } autoPause;
 
-    // Windows: argv ʹ��ϵͳ ANSI ���루����ϵͳΪ GBK����תΪ UTF-8 ԭ���滻
+    // Windows: argv 使用系统 ANSI 编码（中文系统为 GBK），转为 UTF-8 原样替换
     std::vector<std::string> utf8Args(argc);
     for (int i = 0; i < argc; ++i)
     {

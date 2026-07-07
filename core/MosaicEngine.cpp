@@ -1,4 +1,4 @@
-#include "MosaicEngine.h"
+﻿#include "MosaicEngine.h"
 #include "BigTiffWriter.h"
 #include "Database.h"
 #include "DeepZoomWriter.h"
@@ -44,7 +44,7 @@ namespace mosaicraft
 {
 
 // ============================================================
-// , , , ,
+// 特征缓存类：线程安全加载 tiny 和 LBP 特征数据
 // ============================================================
 class FeatureCache
 {
@@ -91,12 +91,12 @@ private:
 };
 
 // ============================================================
-// 锟�??诧拷, 色校, , , 锟轿??�? , �? , , �? , , , , , �? �?
-// ,  HSV 锟秸硷拷, , 锟紿 �? , 锟戒，S/V �? ,  [1-strength, 1+strength] , �? , , , �?
+// 粗略色相校正：在 HSV 空间调整色相(H)，S/V 不变，范围 [1-strength, 1+strength]，偏暖或偏冷
+// 备选方案：HSV 空间——仅调色相(H)，保持 S/V 不变，乘数范围 [1-strength, 1+strength]，偏暖或偏冷
 // ============================================================
-// 锟�??诧拷, 色微, , ,  LAB 锟秸硷拷锟轿??拷锟?L, , 锟饺ｏ拷�?
-// LAB , �? 锟饺ｏ拷, ,  L , ,  AB ,  , �? 锟戒�? �? ,
-// L , �? [-strength, +strength] �? , , , 浒�??拷锟�??拷锟?
+// 精细色微调：在 LAB 空间仅调整 L 通道亮度
+// LAB 空间：亮度在 L 通道，色彩在 AB 通道，调整 L 不影响色相
+// L 通道随机偏移 [-strength, +strength] 范围，模拟自然光照变化
 static void adjustColor(cv::Mat& img, double strength)
 {
     cv::Mat lab;
@@ -104,7 +104,7 @@ static void adjustColor(cv::Mat& img, double strength)
     std::vector<cv::Mat> channels(3);
     cv::split(lab, channels);
     // channels[0]=L, [1]=A, [2]=B
-    // L , 锟接ｏ拷[-s, +s] �? , , , , 锟饺ｏ拷锟�??程帮拷全, thread_local , , , �?
+    // L 通道随机偏移 [-s, +s] 范围，随机数生成器线程安全，thread_local 避免数据竞争
     thread_local std::mt19937 rng(std::random_device{}());
     double lFactor = 1.0 + ((static_cast<int>(rng() % 1001) - 300) / 1000.0) * strength;
     channels[0] = channels[0] * lFactor;
@@ -614,29 +614,29 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
 }
 
 // ============================================================
-// , ,
+// 主马赛克生成流程
 // ============================================================
 bool MosaicEngine::generate(const std::string& targetPath,
                              const std::string& dbPath,
                              const std::string& outputPath,
                              const Config& config)
 {
-    // , , �? �?CUDA, ,  GPU , 默锟剿伙�?
+    // 检查 CUDA 可用性，GPU 不可用时默认回退 CPU
     Config cfg = config;
     if (cfg.useGpu && !cuda::isCudaAvailable())
     {
         cfg.useGpu = false;
     }
 
-    // Benchmark , �?
+    // Benchmark 计时变量
     using Clock = std::chrono::steady_clock;
     using Ms = std::chrono::duration<double, std::milli>;
     auto tStart = Clock::now();
     auto tLast  = tStart;
     double msFeat = 0, msANNBuild = 0, msGPUScore = 0, msSelect = 0, msPlace = 0;
-    double msPrep = 0;  // DB, ,  + GPU library, , , , GPU�? ,
+    double msPrep = 0;  // DB 加载 + GPU library 上传累计耗时，GPU 路径专用
 
-    // , , , �? , ,  profile, , 锟�??精锟饺�??拷原, 锟�??硷拷, ,
+    // 细粒度 profile：记录各算子累计纳秒，精确定位瓶颈
     std::atomic<int64_t> opResizeNs{0};
     std::atomic<int64_t> opLabNs{0};
     std::atomic<int64_t> opGridNs{0};
@@ -644,7 +644,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::atomic<int64_t> opEdgeNs{0};
     std::atomic<int64_t> opLbpNs{0};
 
-    // Placement 锟阶讹拷 profile
+    // Placement 阶段 profile
     std::atomic<int64_t> opPlaceDecodeNs{0};
     std::atomic<int64_t> opPlaceResizeNs{0};
     std::atomic<int64_t> opPlaceCopyNs{0};
@@ -659,10 +659,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
         return false;
     }
 
-    // , , �? �? 锟捷癸拷�? , 锟截诧拷, , , , 锟节革拷, 去锟�??���?
+    // 计算目标图哈希，用于缓存匹配结果，避免重复计算
     std::string targetHash;
     {
-        // �?100 , 锟截诧拷,  1 , , , 锟饺?10000 , ,  ,  3 �?  ,  30KB
+        // 每 10000 像素采样 1 个点，约 30KB 数据量，兼顾速度与碰撞率
         int64_t totalPixels = static_cast<int64_t>(target.rows) * target.cols;
         int step = std::max<int64_t>(int64_t{1}, totalPixels / 10000);
         uint64_t h = 0x9e3779b97f4a7c15ULL;
@@ -677,7 +677,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         targetHash = ss.str();
     }
 
-    // �? , , 叽锟绞憋�? , , 锟侥匡拷锟酵硷拷, , 谋锟?tile , , , , �?tile �? �? 锟�??憋拷锟绞ｏ拷
+    // 用户指定输出尺寸时，先缩放目标图到指定分辨率，后续 tile 划分基于此尺寸
     if (cfg.outW > 0 && cfg.outH > 0)
     {
         cv::Mat resized;
@@ -686,7 +686,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << "Target resized to: " << cfg.outW << "x" << cfg.outH << std::endl;
     }
 
-    // --upscale, 锟脚达拷原图, �? ,  tile, �? , �? �? , , 芏龋�?
+    // --upscale：放大原图后再分 tile，提高最终输出分辨率
     if (cfg.upscale > 1)
     {
         cv::Mat up;
@@ -712,7 +712,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
     std::cout << "Database: " << dbCount << " images" << std::endl;
 
-    // Read feature resolution from DB meta (required; old DBs must be rebuilt) , 锟捷旧库�?
+    // Read feature resolution from DB meta (required; old DBs must be rebuilt)，旧库需重建
     std::string fw = db.getMeta("feature_w");
     std::string fh = db.getMeta("feature_h");
     if (fw.empty() || fh.empty())
@@ -729,10 +729,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
     int featBytes = featPixels * 3;
     std::cout << "  (feature space: " << featW << "x" << featH << ")" << std::endl;
 
-    // �??姩鎺�??杈撳�?tile锛氭í�?�?320�?80锛岀�??��?鏂瑰�?�?180�?20
+    // 自动检测输出 tile 方向：横屏 320x180，竖屏 180x320
     if (cfg.nativeTileW == 180 && cfg.nativeTileH == 320)
     {
-        if (featW > featH)  // �??�?
+        if (featW > featH)  // 横屏
         {
             cfg.nativeTileW = 320;
             cfg.nativeTileH = 180;
@@ -741,12 +741,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
 
 
-    // , �? , �??��, ,  FeaturePack / ANN 锟�??久伙拷使锟矫ｏ拷
+    // 提取特征目录路径，供 FeaturePack / ANN 持久化缓存使用
     std::string featDirCache;
-    auto allRecords = db.allRecords();  // �? 锟铰硷拷, �?GPU �? 锟叫�??��, , �?
+    auto allRecords = db.allRecords();  // 全量记录，GPU 路径需连续索引
     dbCount = static_cast<int>(allRecords.size());
 
-    // , , , , �? �? , �??��
+    // 从第一条记录的 tinyPath 推断特征目录
     if (!allRecords.empty() && !allRecords[0].tinyPath.empty())
     {
         std::string firstTiny = allRecords[0].tinyPath;
@@ -759,7 +759,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             featDirCache = firstTiny.substr(0, dirEnd);
     }
 
-    // , , ,  �? , , , �?GPU, , 锟�??程�??拷锟�??���?  tiny/LBP 锟侥硷拷,  , , ,
+    // 为 GPU 路径准备连续内存缓冲区，存放 tiny/LBP 特征数据
     cuda::GpuLibrary gpuLib;
     auto releaseGpuLib = [&]() {
         if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);
@@ -773,7 +773,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::vector<float>   h_lbp(dbCount * 256);
         std::vector<int>     h_use(dbCount);
 
-        // , , , , , , , , �?I/O, , 锟�??程硷拷锟缴ｏ�?
+        // 将 DB 记录的 lab/grid 数据拷贝到连续缓冲区，减少 GPU 上传时的 I/O 碎片
         for (int i = 0; i < dbCount; ++i)
         {
             const auto& rec = allRecords[i];
@@ -784,8 +784,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             h_use[i] = rec.useCount;
         }
 
-        // , 锟皆硷拷锟截讹拷, , , , , 锟芥（tiny.bin + lbp.bin,
-        // , , , 效时,  2 ,  fread , �?50K , 锟侥硷拷 I/O
+        // 尝试从特征缓存包加载（tiny.bin + lbp.bin），
+        // 缓存命中时仅需 2 次 fread，避免 50K 次独立文件 I/O
         bool cacheLoaded = false;
         if (!allRecords.empty() && !allRecords[0].tinyPath.empty())
         {
@@ -798,16 +798,16 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
         if (!cacheLoaded)
         {
-            // , 锟芥�? 锟节伙拷失效 ,  , 锟剿碉拷, 锟�??筹拷, 锟侥硷拷, �?
+            // 缓存未命中或失效时，回退到逐文件读取
             std::cout << "  (feature cache miss, reading individual files)" << std::endl;
             int nUploadThreads = std::thread::hardware_concurrency();
             if (nUploadThreads < 2) nUploadThreads = 2;
-            if (nUploadThreads > 16) nUploadThreads = 16;  // , ,  I/O 锟�??程癸拷锟洁反, 锟剿伙拷
+            if (nUploadThreads > 16) nUploadThreads = 16;  // 限制 I/O 线程数，避免磁盘争抢
             std::vector<std::thread> uploadWorkers;
             for (int t = 0; t < nUploadThreads; ++t)
             {
                 uploadWorkers.emplace_back([&, t]() {
-                    FeatureCache cache;  // �? 锟�??程�??�? , 锟芥�? , , �?
+                    FeatureCache cache;  // 每线程独立缓存，避免锁竞争
                     for (int i = t; i < dbCount; i += nUploadThreads)
                     {
                         const auto& rec = allRecords[i];
@@ -826,7 +826,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
             for (auto& w : uploadWorkers) w.join();
 
-            // , , , 桑锟剿�??�? , , , , �? �??拷麓, , , , , 锟叫ｏ拷
+            // 构建特征缓存包供后续使用，避免下次重复逐文件读取
             if (!featDirCache.empty())
                 FeaturePack::buildCache(featDirCache, allRecords);
         }
@@ -843,12 +843,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
     }
 
-    // , , �? ,  tile, , �? , , 洳谷?
+    // 计算 tile 网格：按 tileW x tileH 划分目标图
     int tilesX = (target.cols + cfg.tileW - 1) / cfg.tileW;
     int tilesY = (target.rows + cfg.tileH - 1) / cfg.tileH;
 
     // Read feature resolution from DB meta (required; old DBs must be rebuilt),
-    // , 图模式锟铰�??�?65500px , �?
+    // 单图模式检查 65500px 上限（JPEG 编码器限制）
     int outTileW = cfg.nativeTileW;
     int outTileH = cfg.nativeTileH;
     const int MAX_DIM = 65500;
@@ -857,7 +857,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     {
         if (cfg.outputFormat == "jpg" && cfg.formatExplicit)
         {
-            // , 式指,  jpg , ,  ,  锟饺憋拷, , , �?tile , , �? �?
+            // 用户明确指定 jpg 格式时，等比缩小 tile 尺寸以适配限制
             double scaleW = (tilesX * outTileW > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesX * outTileW) : 1.0;
             double scaleH = (tilesY * outTileH > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesY * outTileH) : 1.0;
             double scale = std::min(scaleW, scaleH);
@@ -868,19 +868,19 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         else if (cfg.outputFormat == "jpg")
         {
-            // �? 式指, , �? �?  jpg , ,  ,  锟皆讹拷,  tiff
+            // 未明确指定格式时，自动切换到 tiff 以突破限制
             cfg.outputFormat = "tiff";
             std::cout << "  (auto-switched to TIFF: output exceeds JPEG 65500px limit)" << std::endl;
         }
         else if (cfg.outputFormat != "tiff" && cfg.outputFormat != "webp")
         {
-            // , , , �? ,  ,  锟皆讹拷,  tiled
+            // 其他格式超出限制时，自动切换为 tiled 分片输出
             cfg.tiledOutput = true;
             std::cout << "  (auto-switched to tiled: output exceeds 65500px encoder limit)" << std::endl;
         }
     }
 
-    // WebP , ,  16383px ,  锟饺憋拷, 锟脚ｏ拷, , �?JPG 锟�??硷拷丢�,
+    // WebP 编码器限制 16383px，超出时等比缩小 tile，类似 JPG 处理逻辑
     const int WEBP_MAX = 16383;
     if (!cfg.tiledOutput && cfg.outputFormat == "webp"
         && (tilesX * outTileW > WEBP_MAX || tilesY * outTileH > WEBP_MAX))
@@ -894,7 +894,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                   << " to fit WebP 16383px limit)" << std::endl;
     }
 
-    // 溢出棢�查：大型�??��克可能超�?int32 范围
+    // 溢出检查：大型马赛克可能超出 int32 范围
     int64_t outW64 = static_cast<int64_t>(tilesX) * outTileW;
     int64_t outH64 = static_cast<int64_t>(tilesY) * outTileH;
     if (outW64 > INT_MAX || outH64 > INT_MAX) {
@@ -920,7 +920,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                   << "). Output may be distorted." << std::endl;
     }
 
-    // , �? �? , �?  tile 锟�??达拷,  pad, , , , �?tile 锟�??寸）
+    // 目标图尺寸不是 tile 的整数倍时，pad 补齐（不改变 tile 尺寸）
     int padRight  = tilesX * cfg.tileW - target.cols;
     int padBottom = tilesY * cfg.tileH - target.rows;
     if (padRight > 0 || padBottom > 0)
@@ -945,14 +945,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << ", padded +" << padRight << "x" << padBottom;
     }
     std::cout << ")" << std::endl;
-    // , , 锟皆憋拷
+    // 打印宽高比信息
     double srcRatio = static_cast<double>(target.cols) / target.rows;
     double outRatio = static_cast<double>(outW) / outH;
     std::cout << "  Aspect: src=" << std::fixed << std::setprecision(3) << srcRatio
               << " out=" << outRatio << " (diff=" << std::abs(srcRatio - outRatio) << ")"
               << std::endl;
 
-    // , , ,  , 锟�??筹拷�? , , ,  tile , ,  , , ,
+    // 计算总 tile 数量，溢出检查
     int64_t totalTiles64 = static_cast<int64_t>(tilesX) * tilesY;
     if (totalTiles64 > INT_MAX) {
         std::cerr << "ERROR: Too many tiles (" << totalTiles64 << ")" << std::endl;
@@ -990,15 +990,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::vector<int>    analyzeImageIds;
     std::vector<double> analyzeLabD, analyzeGridD, analyzeEdgeD;
     std::vector<double> analyzeGaps;      // winner-runnerUp , , ,
-    std::vector<int>    analyzeRanks;     // winner 锟节猴拷�? , 锟叫碉拷�? (1-based)
-    std::vector<int>    analyzeAnnRanks;  // winner ,  ANN Top200 锟叫碉拷�? (0=, , )
+    std::vector<int>    analyzeRanks;     // winner 在 Top-N 中的排名 (1-based)
+    std::vector<int>    analyzeAnnRanks;  // winner 在 ANN Top200 中的排名 (0=未找到)
     std::vector<int>    analyzeCat;       // 0=Smooth, 1=Edge, 2=Texture, 3=Normal
-    double analyzeGridCellSum[64] = {0};   // �?  cell 锟侥撅拷, 锟�??计ｏ�? 锟节癸拷锟阶凤拷, ,
+    double analyzeGridCellSum[64] = {0};   // 每个 cell 的累计 L2 误差，用于分析网格匹配质量
     FeatureCache analysisFeatureCache;
 
-    int N = cfg.candidates;  // , �? , GPU �? , , ,  benchmark,
+    int N = cfg.candidates;  // 候选数量，GPU 路径需提前确定，用于 benchmark
 
-    // Benchmark , ,  lambda, 锟节斤拷, �? 锟矫ｏ拷, , ,  totalTiles/N �? 锟藉�?
+    // Benchmark 报告 lambda：汇总各阶段耗时，输出 totalTiles/N 等关键指标
     auto printBenchmark = [&](const char* label) {
         if (!cfg.benchmark) return;
         double msTotal = Ms(Clock::now() - tStart).count();
@@ -1048,17 +1048,17 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::vector<double> allEdge(totalTiles);
     std::vector<std::vector<float>> allLBP(totalTiles);
 
-    // Phase D , , ,  4, 4 锟皆憋拷锟矫ｏ拷8, 8, 4, 4,
+    // 特征数组：LAB颜色、8x8 Grid、Tiny、Edge、LBP，后续按需推导 4x4 Grid
 
     int nThreads = std::thread::hardware_concurrency();
     if (nThreads < 2) nThreads = 2;
 
-    // �? 锟阶段硷拷时, DB, 锟截★拷GPU library, , , 锟剿斤拷,
+    // 记录准备阶段耗时：DB 加载 + GPU library 上传耗时
     auto tPreFeat = Clock::now();
     msPrep = Ms(tPreFeat - tLast).count();
     tLast = tPreFeat;
 
-    // Phase 0: , , , �? GPU , , , 锟劫ｏ拷CPU , 锟剿ｏ拷
+    // Phase 0: 特征提取，GPU 路径批量提取，CPU 路径多线程并行
     if (cfg.useGpu)
     {
         const int BATCH = 256;
@@ -1074,7 +1074,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         {
             int batchN = BATCH;
 
-            // CPU resize: tile ,  featW, featH, , 锟�??程ｏ�?
+            // CPU resize: tile 缩放到 featW x featH，多线程并行
             #pragma omp parallel for
             for (int i = 0; i < batchN; ++i)
             {
@@ -1086,14 +1086,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 std::memcpy(&batchFeat[i * featBytes], roiFeat.data, featBytes);
             }
 
-            // GPU , , , �? ,
+            // GPU 批量提取特征
             int ret = mosaicraft::cuda::extractFeaturesRaw(
                 batchFeat.data(), batchN, featW, featH,
                 batchLAB.data(), batchGrid.data(), batchTiny.data(),
                 batchEdgeArr.data(), batchLBP.data());
             if (ret < 0) { cfg.useGpu = false; break; }
 
-            // 锟截讹拷, �?
+            // 拷贝结果到 all* 数组
             for (int i = 0; i < batchN; ++i)
             {
                 int ti = batchStart + i;
@@ -1115,7 +1115,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << " | ETA" << etaStr << std::flush;
         }
 
-        // 剩锟洁不,  256 , �?
+        // 剩余不足 256 的尾部批次
         if (batchStart < totalTiles)
         {
             int tailN = totalTiles - batchStart;
@@ -1165,7 +1165,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
     }
 
-    if (!cfg.useGpu)  // CPU , 锟剿ｏ拷, ,  16 锟�??筹拷, �?
+    if (!cfg.useGpu)  // CPU 路径：多线程并行提取特征
     {
         std::atomic<int> featDone{0};
         auto tCpuFeatStart = Clock::now();
@@ -1223,7 +1223,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     double smoothSum = 0, edgeSum = 0, textureSum = 0, normalSum = 0;
     int cntLBP  = 0, cntMissLBP  = 0;
 
-    // , 锟津窗匡拷锟皆�??�? , 锟劫革拷,  2 ,  tile, , �? 锟津）猴拷默,  300, 水平, ,
+    // 自适应邻居窗口：基准 2 倍 tile 行宽，默认下限 300，上限 400
     auto autoNeighborWindow = [&]() {
         int base = std::max(300, tilesX * 2);
         int dynamic = static_cast<int>(std::sqrt(static_cast<double>(allRecords.size())) * 1.5);
@@ -1232,24 +1232,24 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     if (cfg.neighborWindow <= 0)
     {
-        // , , , , ,  2 ,  tile
-        // , �? , , �? , , , O(, N), , , 飧�??拷歉, , �?
+        // 特征缓存类：线程安全加载 tiny 和 LBP 特征数据 ,  2 ,  tile
+        // 未设置窗口大小时自动计算，否则全库扫描 O(库大小) 开销过大
         cfg.neighborWindow = autoNeighborWindow();
         // 46K, 323, 200K, 400(cap), sweep: 300-400, ,
     }
 
-    // , , , ,  + 频锟绞硷�? , , , , , , 锟矫碉拷, �? ,
+    // 邻居去重：滑动窗口 + 频次计数，限制同图重复出现
     std::deque<int> recentIds;
     std::unordered_map<int, int> freqInWindow;
-    // 强锟狡硷�? 同一图片, 锟劫硷拷�?minGap ,  tile , , 锟劫达拷�?
-    const int MIN_GAP = std::max(50, tilesX);  // , , 丢�,
-    std::unordered_map<int, int> lastUsedAt;   // imageId ,  , 锟绞癸拷�??��?tile , �?
-    std::deque<std::vector<float>> recentGrids;  // , 锟酵硷拷锟解�? , , , �?00, ,
-    constexpr double GRID_DUP_THRESHOLD = 0.010;  // , 锟较格：革拷小锟侥撅拷锟�??��, 为锟�??���?
-    constexpr double GRID_DUP_PENALTY = 200.0;     // , 锟酵硷拷�? , 锟叫??癸拷�?00,
-    constexpr int GRID_DUP_WINDOW = 50;            // 锟教讹拷, 锟节ｏ拷, , , 锟脚ｏ拷, , 丢�, ,  tile , , ,
+    // 强制间距：同一图片在 minGap 个 tile 内禁止复用
+    const int MIN_GAP = std::max(50, tilesX);  // 至少间隔一行
+    std::unordered_map<int, int> lastUsedAt;   // imageId → 最近一次使用的 tile 索引
+    std::deque<std::vector<float>> recentGrids;  // 最近 Grid 特征滑动窗口，上限 50
+    constexpr double GRID_DUP_THRESHOLD = 0.010;  // Grid 相似阈值：低于此值视为重复
+    constexpr double GRID_DUP_PENALTY = 200.0;     // Grid 重复惩罚分，加 200
+    constexpr int GRID_DUP_WINDOW = 50;            // 滑动窗口大小，约等于一行 tile 数量
 
-    // 权锟�??��拷一, , , ,  tile , 锟矫ｏ拷
+    // 权重归一化：将各特征权重转为 tile 评分系数
     double wSum = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight;
     if (cfg.edgeWeight > 0) wSum += cfg.edgeWeight;
     if (cfg.lbpWeight > 0)  wSum += cfg.lbpWeight;
@@ -1260,11 +1260,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
     double nLbpW  = cfg.lbpWeight / wSum;
     N = cfg.candidates;
 
-    // �?  tile , , 选锟�??��硷拷�? GPU �? 预锟芥，CPU �? , , , , �?
+    // 每个 tile 的最终选择结果：GPU 路径预分配，CPU 路径后续填充
     std::vector<ImageRecord> bestRecords(totalTiles);
     std::vector<int> bestLibIdx(totalTiles, -1);
 
-    // , �? 锟绞憋拷拇锟?Mat, 锟�??匡拷模式, , �? , , 锟节达拷锟皆憋拷, �??��锟矫ｏ拷
+    // 输出 Mat：批量模式时直接拼接，流式模式时仅作占位
     cv::Mat output;
 
     auto runAnalysis = [&](const std::string& analysisOutputPath) {
@@ -1280,12 +1280,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     if (cfg.useGpu && gpuLib.count > 0)
     {
-        // 锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋
-        // GPU , , , 水锟�??��拷SQLite �?  ,  丢�,  GPU ,  �? �?  ,  , 锟�??筹拷, �?
-        // 锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋
+        // --------------------------------------------------------
+        // GPU 路径：水线并行——SQLite 读取与 GPU 计算重叠，减少等待
+        // --------------------------------------------------------
 
-        // , ,  Phase A: ANN , , , , , , �?, ,
-        // , 锟饺硷拷锟截持久伙拷, , , build �? 锟芥�? , , , 锟津构斤�? , ,
+        // === Phase A: ANN 近似最近邻搜索，缩小候选范围 ===
+        // ANN 索引持久化缓存：build 一次后可复用，加速后续生成
         FeatureIndex annIndex;
         std::string annPath = featDirCache.empty() ? "lib.ann"
                              : (featDirCache + "/lib.ann");
@@ -1340,12 +1340,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         std::cout << " done" << std::endl;
 
-        // Phase A , �? ANN , ,  + , �?
+            // Phase A 结束：ANN 构建 + 查询耗时
         auto tANN = Clock::now();
         msANNBuild = Ms(tANN - tLast).count();
         tLast = tANN;
 
-        // , ,  Phase B: , �?  tile , , , GPU , �? , 锟节存布锟�??ｏ拷 , ,
+            // === Phase B: 将 tile 特征打包为连续数组，供 GPU 批量评分 ===
         std::vector<float>   flatGrid(static_cast<size_t>(totalTiles) * 192);
         std::vector<uint8_t> flatTiny(static_cast<size_t>(totalTiles) * 256);
         std::vector<float>   flatLBP(static_cast<size_t>(totalTiles) * 256);
@@ -1356,8 +1356,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::memcpy(&flatLBP[static_cast<size_t>(ti) * 256], allLBP[ti].data(), 256 * sizeof(float));
         }
 
-        // , ,  Phase C: , ,  GPU , ,  , ,
-        // , , 应权锟截ｏ拷, ,  tile , , �? , , 预锟借（�? �?  --adaptive-weights,
+        // 主马赛克生成流程  Phase C: , ,  GPU , ,  , ,
+            // === Phase C: 自适应权重计算，按 tile 内容分类，预计算各 tile 权重（需 --adaptive-weights）===
         std::vector<double> tileLabW(totalTiles, nLabW);
         std::vector<double> tileGridW(totalTiles, nGridW);
         std::vector<double> tileTinyW(totalTiles, nTinyW);
@@ -1385,7 +1385,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
                 if (e < 0.005 && lVar < 100.0)
                 {
-                    // Smooth: ,  LAB , �? , ,  Grid, , �? , 锟揭??拷占锟结�?
+                    // Smooth: 低纹理区域，侧重 LAB 颜色和 Grid 结构匹配
                     tileLabW[ti] = 0.25;
                     tileGridW[ti] = 0.45;
                     tileTinyW[ti] = 0.20;
@@ -1395,7 +1395,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
                 else if (e > 0.01)
                 {
-                    // Edge-heavy: , , 锟结�?> , �? , �?0.01 , ,  9, 16 �?ROI,
+                    // Edge-heavy: 边缘密度 > 0.01，侧重 Grid 和 Tiny 纹理
                     tileLabW[ti] = 0.15;
                     tileGridW[ti] = 0.40;
                     tileTinyW[ti] = 0.25;
@@ -1405,7 +1405,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
                 else if (lbpEnt > 3.0)
                 {
-                    // Texture-heavy: , ,  > , �?
+                        // Texture-heavy: LBP 熵 > 3.0，侧重 LBP 纹理特征
                     tileLabW[ti] = 0.15;
                     tileGridW[ti] = 0.40;
                     tileTinyW[ti] = 0.20;
@@ -1423,7 +1423,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << "  GPU scoring " << totalTiles << " x " << N;
         if (cfg.adaptiveWeights)
         {
-            // 锟秸硷拷锟�??诧拷�? , 校准, �?
+                    // 打印边缘和纹理统计分布，辅助权重校准
             std::vector<double> edgeVals(totalTiles), lbpVals(totalTiles);
             for (int ti = 0; ti < totalTiles; ++ti)
             {
@@ -1465,19 +1465,19 @@ bool MosaicEngine::generate(const std::string& targetPath,
             allScores.data());
         std::cout << " done" << std::endl;
 
-        // Phase C , �?
+            // Phase C 结束（GPU 评分完成）
         auto tGPU = Clock::now();
         msGPUScore = Ms(tGPU - tLast).count();
         tLast = tGPU;
 
-        // , ,  Phase D: �? �?  + , , �?  , ,
-        // 8, 8 vs 4, 4 锟皆比ｏ�?  --analyze �? ,
+            // === Phase D: 选择最佳 tile + analyze 数据分析 ===
+            // 8x8 vs 4x4 Grid 对比实验（--analyze 模式）
         std::vector<std::vector<float>> libGrid4x4, tileGrid4x4;
         if (cfg.analyze)
         {
             libGrid4x4.resize(dbCount);
             tileGrid4x4.resize(totalTiles);
-            // �? , 锟酵?4, 4
+                    // 构建库 4x4 Grid 特征
         for (int i = 0; i < dbCount; ++i)
         {
             const auto& g8 = allRecords[i].grid4x4;
@@ -1497,7 +1497,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
             }
         }
-        // �? ,  tile 4, 4
+            // 构建 tile 4x4 Grid 特征
         for (int ti = 0; ti < totalTiles; ++ti)
         {
             const auto& g8 = allGrid[ti];
@@ -1517,7 +1517,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
             }
         }
-        } // if (cfg.analyze) ,  �? , , �?
+            } // if (cfg.analyze) 结束
 
         int grid4Top1 = 0, grid8Top1 = 0, top1Differ = 0;
 
@@ -1535,13 +1535,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
 
         std::cout << "  selecting best..." << std::flush;
-        int noCandidateCount = 0;  // , 希锟酵�??�? 藓锟窖★拷锟?tile
+            int noCandidateCount = 0;  // 统计无候选的 tile 数量
         for (int ti = 0; ti < totalTiles; ++ti)
         {
             const size_t rowOffset = static_cast<size_t>(ti) * static_cast<size_t>(N);
             double* scores = &allScores[rowOffset];
             const int* indices = &allIndices[rowOffset];
-            // �? , �? �? , 锟脚筹拷 -1 , �?
+                    // 统计有效候选数，跳过全为 -1 的 tile
             int validCount = 0;
             for (int j = 0; j < N; ++j)
                 if (indices[j] >= 0) validCount++;
@@ -1550,7 +1550,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 noCandidateCount++;
                 continue;
             }
-            // 频锟绞分硷拷锟酵凤拷, 1, 锟结�?, , , �?, 2, 锟叫凤拷, 3+, 锟截凤拷(, , , )
+                    // 频次分级惩罚：1次轻微、2次中等、3+次重度（上限封顶）
             for (int j = 0; j < N; ++j)
             {
                 int libIdx = indices[j];
@@ -1561,13 +1561,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 if (cnt >= 3)      { scores[j] += cfg.neighborPenalty; }
                 else if (cnt == 2) { scores[j] += cfg.neighborPenalty * 0.4; }
                 else if (cnt == 1) { scores[j] += cfg.neighborPenalty * 0.1; }
-                // 强锟狡硷�? 同一图片,  MIN_GAP , 锟截革拷 ,  ,  500, �? , 锟酵硷拷�? �?
+                            // 强制间距：同一图片在 MIN_GAP 内复用加 500 分惩罚
                 auto gapIt = lastUsedAt.find(imgId);
                 if (gapIt != lastUsedAt.end() && (ti - gapIt->second) < MIN_GAP)
                 {
                     scores[j] += 500.0;
                 }
-                // , 锟酵硷拷锟解�? �? , �?tile ,  Grid , �?,  锟接凤拷
+                            // Grid 去重：当前 tile 与最近窗口内 Grid 相似则加惩罚
                 const auto& candGrid = allRecords[indices[j]].grid4x4;
                 for (const auto& rg : recentGrids)
                 {
@@ -1578,8 +1578,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     }
                 }
             }
-            // Top-N , 锟窖★拷锟絫opN , , , , �? �? ,
-            // , ,  8, 8 vs , , , 4, 4 锟皆比ｏ�?  --analyze,  , ,
+                    // Top-N 随机选取：从前 topN 个最佳候选中随机选择
+                // 8, 8 vs 4, 4 Grid 对比实验（--analyze 模式）
             if (cfg.analyze && validCount > 0)
             {
                 double best4 = 1e30, best8 = 1e30;
@@ -1587,7 +1587,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 for (int j = 0; j < N; ++j)
                 {
                     if (indices[j] < 0) continue;
-                    // GPU scores 锟窖猴拷 8, 8 grid, 4, 4 , ,  = , �?8, 8 , ,  + 4, 4 , ,
+                                    // GPU scores 基于 8x8 grid，4x4 分数 = 原分数 - 8x8 grid项 + 4x4 grid项
                     double grid8d = gridDistance8x8(allGrid[ti], allRecords[indices[j]].grid4x4);
                     double grid4d = gridDistance(tileGrid4x4[ti], libGrid4x4[indices[j]]);
                     double score4 = scores[j] - nGridW * grid8d + nGridW * grid4d;
@@ -1606,12 +1606,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::partial_sort(idxs.begin(), idxs.begin() + topN, idxs.end(),
                 [&](int a, int b) { return scores[a] < scores[b]; });
             thread_local std::mt19937 rng(std::random_device{}());
-            int rankPos = std::uniform_int_distribution<int>(0, topN - 1)(rng);       // �? �?  0-based, ,  rank-1
+            int rankPos = std::uniform_int_distribution<int>(0, topN - 1)(rng);       // 随机选取 0-based 索引，存储时转为 rank-1
             int pick = idxs[rankPos];
             int chosenLibIdx = indices[pick];
             bestLibIdx[ti] = chosenLibIdx;
             bestRecords[ti] = allRecords[chosenLibIdx];
-            // --analyze: , 录��?  tile , , , , 锟�??�? , , , �? , 锟狡�??��, , , �?
+                    // --analyze: 记录每个 tile 的详细匹配数据，用于后续分析报告
             if (cfg.analyze)
             {
                 const auto& rec = allRecords[chosenLibIdx];
@@ -1631,20 +1631,20 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 analyzeGridD.push_back(gridD);
                 analyzeEdgeD.push_back(edgeD);
 
-                // Top-K Gap: winner vs true best, , 锟酵凤拷, 原�??, , 锟筋�?
+                            // Top-K Gap: winner vs true best 的分数差距，衡量随机选取代价
                 double winnerScore = scores[pick];
                 double gap = 0.0;
                 if (validCount >= 2)
                 {
                     if (rankPos == 0)  // winner , , ,
                         gap = scores[idxs[1]] - winnerScore;
-                    else               // , , �? �?
+                                    else               // 未选第一名时，gap 为正
                         gap = winnerScore - scores[idxs[0]];
                 }
                 analyzeGaps.push_back(gap);
                 analyzeRanks.push_back(rankPos + 1);  // 1-based rank in sorted Top-N
 
-                // ANN rank: winner ,  ANN , �? , 械锟轿伙拷锟?(0=, , )
+                            // ANN rank: winner 在 ANN 返回列表中的位置 (0=未找到)
                 int annRank = -1;
                 for (int j = 0; j < N; ++j)
                 {
@@ -1652,7 +1652,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
                 analyzeAnnRanks.push_back(annRank);
 
-                // , 锟洁�? , , 应权, , �? �? ,
+                            // 记录 tile 分类（用于自适应权重分析）
                 int cat = 3;  // Normal
                 if (allEdge[ti] < 0.005)
                 {
@@ -1678,7 +1678,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
                 analyzeCat.push_back(cat);
 
-                // Grid 8, 8 �?cell , 锟阶ｏ拷锟�??硷拷选锟�????碉拷 cell LAB , ,
+                            // Grid 8x8 每个 cell 的 LAB 误差累计，用于分析网格匹配质量
                 for (int ci = 0; ci < 64; ++ci)
                 {
                     int off = ci * 3;
@@ -1688,11 +1688,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     analyzeGridCellSum[ci] += std::sqrt(dl*dl + da*da + db*db);
                 }
             }
-            // �? , , , 锟节猴拷频锟绞硷�?
+                    // 更新滑动窗口和频次统计
             int chosenId = bestRecords[ti].id;
             recentIds.push_back(chosenId);
             freqInWindow[chosenId]++;
-            lastUsedAt[chosenId] = ti;       // , �? 锟绞癸拷锟轿伙拷�?
+                    lastUsedAt[chosenId] = ti;       // 记录最近使用位置
             recentGrids.push_back(allRecords[chosenLibIdx].grid4x4);
             while (static_cast<int>(recentGrids.size()) > GRID_DUP_WINDOW)
                 recentGrids.pop_front();
@@ -1716,7 +1716,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         cntEdge = totalTiles; cntLBP  = totalTiles;
         if (noCandidateCount > 0)
             std::cout << " (" << noCandidateCount << " tiles had no candidates!)";
-        // 8, 8 Grid 锟皆憋拷�?
+            // 8x8 Grid 对比实验结果
         if (totalTiles > 0)
         {
             int validTiles = totalTiles - noCandidateCount;
@@ -1730,18 +1730,18 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         std::cout << " done" << std::endl;
 
-        // Phase D , �?
+            // Phase D 结束（选择完成）
         auto tSelect = Clock::now();
         msSelect = Ms(tSelect - tLast).count();
         tLast = tSelect;
 
-        // , ,  Phase E: , �?, ,
+            // === Phase E: 贴图输出阶段 ===
         int nThreads = std::thread::hardware_concurrency();
         if (nThreads < 2) nThreads = 2;
 
         if (cfg.tiledOutput)
         {
-            // 锟�??匡拷, , 锟矫?tile , , 锟侥硷拷, 锟睫尺达�? 锟狡ｏ拷, , �?Mat
+                    // tiled 分片模式：每个 tile 独立存为文件，无需大 Mat
             std::error_code ec;
             std::string level0Dir = outputPath + "_files/0";
             std::filesystem::create_directories(level0Dir, ec);
@@ -1750,7 +1750,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::atomic<int> tileDone{0};
             std::atomic<int> tileFail{0};
             std::vector<std::thread> tileWorkers;
-            ImageCache imgCache;  // 锟�??程帮拷全, ,
+                    ImageCache imgCache;  // 线程安全图片缓存
             for (int t = 0; t < nThreads; ++t) {
                 tileWorkers.emplace_back([&, t]() {
                     using Ns = std::chrono::nanoseconds;
@@ -1767,7 +1767,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         auto t1 = Clock::now();
                         opPlaceDecodeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
                         if (cfg.colorAdjust) { adjustColor(r, cfg.colorStrength); }
-                        // DZI , �? {name}_files/{level}/{col}_{row}.jpg
+                                            // DZI 命名：{name}_files/{level}/{col}_{row}.jpg
                         snprintf(fname, sizeof(fname), "%s/%d_%d.jpg",
                                  level0Dir.c_str(), tx, ty);
                         imwriteUnicode(fname, r, {cv::IMWRITE_JPEG_QUALITY, cfg.jpegQuality});
@@ -1793,21 +1793,21 @@ bool MosaicEngine::generate(const std::string& targetPath,
                                              tilesX, tilesY, cfg.jpegQuality);
             }
 
-            // , �? �?
+            // 记录贴图耗时（tiled 模式）
             msPlace = Ms(Clock::now() - tLast).count();
             printBenchmark("tiled");
             runAnalysis(outputPath);
         return true;
         }
 
-        // , �? �?
+        // 单图模式：计算原始缓冲区大小
         int64_t rawBytes = static_cast<int64_t>(outW) * outH * 3;
 
-        // --- 统一�? 模式, 锟�??ｏ拷,  PNG/TIFF , �? JPG ,  stream , �? , , ---
-        // auto, PNG/TIFF , 锟捷匡拷, 锟节达拷 ,  batch/stream, JPG �? �?
-        // stream, �? , �? , 写锟教ｏ�? 锟节存）
-        // batch, �? �? , , 锟揭伙拷锟叫达拷�?
-        bool useStream = false;   // true=, �? false=�?
+        // --- 统一输出模式选择：PNG/TIFF 支持 batch/stream，JPG 仅 stream ---
+        // auto 模式：PNG/TIFF 根据内存自动选 batch/stream，JPG 默认 stream
+        // stream 模式：逐行写入，低内存占用
+        // batch 模式：全缓冲后一次性写入
+            bool useStream = false;   // true=流式 false=批量
         bool isHeavyFormat = (cfg.outputFormat == "png" || cfg.outputFormat == "tiff" || cfg.outputFormat == "jpg");
         bool isJpg = (cfg.outputFormat == "jpg");
         if (isHeavyFormat && rawBytes > 500LL * 1024 * 1024)
@@ -1832,7 +1832,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 useStream = true;
 #endif
             }
-            else // auto, PNG/TIFF , 锟捷匡拷, 锟节达拷锟皆讹拷�?
+                    else // auto 模式：PNG/TIFF 根据可用内存自动判断
             {
 #ifdef _WIN32
                 MEMORYSTATUSEX mem = { sizeof(mem) };
@@ -1845,14 +1845,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
 #endif
             }
         }
-        // else: <500MB , �?PNG/TIFF ,  锟�??憋拷准路,
+            // else: <500MB 时 PNG/TIFF 默认走批量路径
 
         if (isHeavyFormat && useStream)
             std::cout << "  (streaming mode ,  low memory)" << std::endl;
         else if (isHeavyFormat && rawBytes > 500LL * 1024 * 1024)
             std::cout << "  (batch mode ,  full buffer " << (rawBytes / 1024 / 1024) << " MB)" << std::endl;
 
-        // --- , �?TIFF ---
+            // --- 流式 TIFF 输出 ---
         if (isHeavyFormat && useStream && cfg.outputFormat == "tiff") {
             BigTiffWriter tiff(outputPath, outW, outH, true);
             std::vector<uint8_t> rowBuf(outW * 3);
@@ -1860,7 +1860,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             int nLoaders = std::min(8, static_cast<int>(std::thread::hardware_concurrency()));
             for (int ty = 0; ty < tilesY; ++ty)
             {
-                // , 锟�??筹拷�? , , , ,  tile
+                            // 多线程加载一行 tile 图片
                 std::vector<cv::Mat> tileRowImgs(tilesX);
                 {
                     std::atomic<int> nextTx{0};
@@ -1879,7 +1879,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         });
                     for (auto& w : loaders) w.join();
                 }
-                // , , , , �?
+                // 统计加载失败数
                 for (int tx = 0; tx < tilesX; ++tx)
                     if (tileRowImgs[tx].empty()) streamFail++;
                 for (int y = 0; y < outTileH; ++y)
@@ -1919,7 +1919,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }  // if (tiff streaming)
         else if (cfg.outputFormat == "png" && !useStream)
         {
-            // PNG batch 模式, �? , 锟藉，一, �?
+            // PNG batch 模式：全缓冲后一次性写入
             std::cout << "  (batch mode ,  full buffer " << (rawBytes / 1024 / 1024) << " MB)" << std::endl;
             mosaicraft::PngBatchWriter png(outputPath, outW, outH, cfg.pngCompressionLevel);
             std::vector<cv::Mat> imgs(tilesX);
@@ -1968,7 +1968,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         else if (cfg.outputFormat == "png")
         {
-            // PNG stream 模式, , , 写锟教ｏ拷锟节达拷愣?~162KB
+            // PNG stream 模式：逐行写入，低内存占用 (~162KB)
             std::cout << "  (streaming mode ,  low memory)" << std::endl;
             mosaicraft::PngStreamWriter png(outputPath, outW, outH, cfg.pngCompressionLevel);
             std::vector<cv::Mat> imgs(tilesX);
@@ -2025,7 +2025,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         return true;
         }
 
-        // --- , �?JPG ---
+            // --- 流式 JPG 输出 ---
         if (isHeavyFormat && useStream && cfg.outputFormat == "jpg")
         {
             std::cout << "  (streaming mode ,  JPG low memory)" << std::endl;
@@ -2055,7 +2055,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         }
                         dst += outTileW * 3;
                     }
-                    // BGR, RGB 原锟�??���?
+                                    // BGR 转 RGB（OpenCV 原生为 BGR）
                     for (int x = 0; x < outW; ++x) {
                         std::swap(rowBuf[x * 3], rowBuf[x * 3 + 2]);
                     }
@@ -2091,10 +2091,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
         auto tPlaceStart = Clock::now();
         std::atomic<int> placeDone{0};
         std::atomic<int> placeFail{0};
-        std::atomic<int> placeNoCand{0};  // , �? �? 锟铰碉拷�?
-        std::atomic<int> placeLoadErr{0}; // 锟侥硷拷, 取失,
+            std::atomic<int> placeNoCand{0};  // 无候选的 tile 计数
+            std::atomic<int> placeLoadErr{0}; // 图片读取失败计数
         std::vector<std::thread> placeWorkers;
-        ImageCache imgCache;  // 锟�??程帮拷全, 锟芥�? , 锟截革拷 imread
+            ImageCache imgCache;  // 线程安全缓存，避免重复 imread
         for (int t = 0; t < nThreads; ++t)
         {
             placeWorkers.emplace_back([&, t]() {
@@ -2119,7 +2119,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     opPlaceDecodeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
 
                     if (cfg.colorAdjust) { adjustColor(resized, cfg.colorStrength); }
-                    // �? 锟�??筹拷�? 锟截碉拷,  ROI, , , , �?
+                                    // 将缩放后的 tile 拷贝到输出 Mat 对应 ROI
                     resized.copyTo(output(cv::Rect(tx * outTileW, ty * outTileH,
                                                   outTileW, outTileH)));
                     auto t2 = Clock::now();
@@ -2148,9 +2148,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
     else
     {
-        // 锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋
-        // CPU �? , ,  tile �? , , , 锟皆??�? �? �?
-        // 锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋锟絋
+        // --------------------------------------------------------
+        // CPU 路径：逐 tile 顺序处理，ANN 搜索 + 评分 + 贴图
+        // --------------------------------------------------------
         FeatureIndex annCpu;
         std::string annPath = featDirCache.empty() ? "lib.ann" : (featDirCache + "/lib.ann");
         std::cout << "  loading ANN index..." << std::flush;
@@ -2166,7 +2166,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
         int noCandidateCount = 0;
 
-        // Phase 1: ANN , �?+ , , �? �? �? �?GPU �? ,
+        // Phase 1: ANN 搜索 + 特征评分 + 去重惩罚（CPU 路径）
         std::vector<int> bestLibIdxCpu(totalTiles, -1);
         std::vector<ImageRecord> bestRecsCpu(totalTiles);
         std::deque<int> recentIds;
@@ -2184,7 +2184,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                             allTiny[ti],allEdge[ti],allLBP[ti], tileVec);
             auto imgIds = annCpu.query(tileVec.data(), N);
             if (imgIds.empty()) { noCandidateCount++; continue; }
-            // , , , �?+ , , 头锟?
+                    // 构建评分列表：lab + grid + tiny + edge + lbp + 惩罚项
             std::vector<std::pair<double,int>> scored;
             for (int j = 0; j < (int)imgIds.size(); ++j) {
                 int li = annCpu.idToAllRecordsIndex(imgIds[j]);
@@ -2205,7 +2205,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 if (cnt >= 3) s += cfg.neighborPenalty;
                 else if (cnt == 2) s += cfg.neighborPenalty * 0.4;
                 else if (cnt == 1) s += cfg.neighborPenalty * 0.1;
-                auto gapIt = lastUsedAt.find(r.id);  // 强锟狡硷拷锟?
+                auto gapIt = lastUsedAt.find(r.id);  // 强制间距检查
                 if (gapIt != lastUsedAt.end() && (ti - gapIt->second) < MIN_GAP) s += 500.0;
                 const auto& candGrid = r.grid4x4;
                 for (const auto& rg : recentGrids)
@@ -2242,7 +2242,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 analyzeGridD.push_back(wGridD);
                 analyzeEdgeD.push_back(wEdgeD);
             }
-            // �? , , , ,
+                        // 更新滑动窗口统计
             int chosenId = bestRecsCpu[ti].id;
             recentIds.push_back(chosenId); freq[chosenId]++; lastUsedAt[chosenId] = ti;
             recentGrids.push_back(bestRecsCpu[ti].grid4x4);
@@ -2266,7 +2266,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << " (" << noCandidateCount << " tiles no candidates!)";
         std::cout << " done" << std::endl;
 
-        // Phase 2: , 锟�??筹拷, �?
+                // Phase 2: 多线程贴图输出
         int nT = std::thread::hardware_concurrency();
         if (nT < 2) nT = 2; if (nT > 16) nT = 16;
         std::atomic<int> placed{0}, pFail{0};
@@ -2305,12 +2305,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     std::cout << std::endl;
 
-    // , , , , �?
+    // 根据扩展名与 --format 自动切换或保持原路径格式一致
     std::string fmt = cfg.outputFormat;
     // ����δ��ʽָ����ʽʱ������չ���ƶ�
     if ((fmt == "jpg" || fmt.empty()) && !cfg.formatExplicit)
     {
-        // , 锟皆达拷 outputPath , �? 锟狡讹拷
+            // 从 outputPath 提取扩展名判断格式
         auto dotPos = outputPath.rfind('.');
         if (dotPos != std::string::npos)
         {
@@ -2341,12 +2341,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 outPath = outPath.substr(0, dotPos) + ".png";
         }
         else if (cfg.formatExplicit)
-        {
+            // --analyze: 仅记录胜出者的匹配数据，每个 tile 一条记录
             outPath += "." + fmt;
         }
     }
 
-    // �? , �?
+    // TIFF 输出
     if (fmt == "tiff")
     {
         if (output.empty())
@@ -2416,18 +2416,18 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
         if (!imwriteUnicode(outPath, output, writeParams))
         {
-            std::cerr << "ERROR: Cannot write output: " << outPath << std::endl;
+    bestRecords = bestRecsCpu;  // 同步到分析报告使用的字段
             releaseGpuLib();
             return false;
         }
     }
 
     std::cout << "Mosaic saved: " << outPath
-              << "  (" << matched << " / " << totalTiles << " tiles"
+    // 当未显式指定格式时，根据扩展名推断
               << (loadFail > 0 ? ", loadFail=" + std::to_string(loadFail) : "")
               << ")"
               << std::endl;
-    // �??��特征计数器�??�??��各路径可能在return前未完整设置�?
+    // 修正特征计数器：各路径可能在 return 前未完整设置
     if (cntEdge + cntMissEdge == 0) { cntEdge = totalTiles; cntMissEdge = 0; }
     if (cntGrid + cntMissGrid == 0) { cntGrid = totalTiles; cntMissGrid = 0; }
     if (cntTiny + cntMissTiny == 0) { cntTiny = totalTiles; cntMissTiny = 0; }
@@ -2439,7 +2439,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
               << " lbp=" << cntLBP << "/" << (cntLBP + cntMissLBP)
               << std::endl;
 
-    // , ,  ?? , , , , , ,  , ,
+    // 根据扩展名与 --format 自动切换或保持原路径格式一致
     runAnalysis(outPath);
 
     releaseGpuLib();
@@ -2447,7 +2447,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
 #ifdef _WIN32
 #endif
 
-    // , 锟? 锟?
+    // 运行分析报告（如有 --analyze）
     msPlace = Ms(Clock::now() - tLast).count();
     printBenchmark("single");
     return true;

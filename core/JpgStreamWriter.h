@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // 流式 JPEG 写出器：逐行接收 RGB 数据并立即通过 libjpeg 写盘
 // 不缓存全图，内存恒定（libjpeg 内部分配少量压缩缓冲）
 //

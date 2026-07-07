@@ -1,4 +1,4 @@
-#include "InspectService.h"
+﻿#include "InspectService.h"
 
 #include "Database.h"
 #include "FeatureUtils.h"

@@ -1,4 +1,4 @@
-#include "JobManager.h"
+﻿#include "JobManager.h"
 
 #include <exception>
 #include <iomanip>

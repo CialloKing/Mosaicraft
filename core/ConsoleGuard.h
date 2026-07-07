@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // RAII guard: disables Windows console Quick Edit mode (accidental click → freeze)
 // and restores original mode on destruction or atexit (handles Ctrl+C / ExitProcess).
 // No-op on non-Windows platforms.

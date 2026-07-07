@@ -1,4 +1,4 @@
-#include "ApiMetadata.h"
+﻿#include "ApiMetadata.h"
 
 #include <algorithm>
 #include <initializer_list>

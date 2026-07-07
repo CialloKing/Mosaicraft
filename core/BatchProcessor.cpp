@@ -1,4 +1,4 @@
-#include "BatchProcessor.h"
+﻿#include "BatchProcessor.h"
 #include "UnicodeIO.h"
 
 #include <algorithm>

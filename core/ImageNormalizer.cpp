@@ -1,4 +1,4 @@
-#include "ImageNormalizer.h"
+﻿#include "ImageNormalizer.h"
 #include "UnicodeIO.h"
 
 #include <opencv2/imgcodecs.hpp>
