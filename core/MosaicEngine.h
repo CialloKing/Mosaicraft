@@ -17,11 +17,11 @@ public:
         double lRange = 20.0;
         double usePenalty = 0.01;
 
-        // 输出尺寸（0 = 用原始目标图分辨率；>0 则将目标图缩放到指定尺寸，输出 tile 始终为原生 180×320）
+        // 输出尺寸（0 = 用原始目标图分辨率；>0 则将目标图缩放到指定尺寸，输出 tile 尺寸由 nativeTileW×H 决定）
         int outW = 0;
         int outH = 0;
 
-        // 原生 tile 尺寸（图库归一化规格，outW=0 时生效）
+        // 原生 tile 尺寸（每个 tile 的输出像素尺寸，默认与图库归一化规格 180×320 一致）
         int nativeTileW = 180;   // 输出 tile 尺寸（与图库归一化尺寸匹配）
         int nativeTileH = 320;
 
@@ -46,7 +46,7 @@ public:
         std::string outputFormat = "jpg";  // 输出格式：jpg / png / webp / tiff
         bool   formatExplicit = false;    // 是否显式指定 --format（否则允许自动切换）
 
-        // 局部颜色校正：对每张候选图随机微调亮度/饱和度，减少视觉重复感
+        // 局部颜色校正：对每张候选图在 LAB L 通道随机微调亮度，减少视觉重复感
         bool   colorAdjust = false;        // 默认关闭（远看有摩尔纹，待进一步优化）
         double colorStrength = 0.04;       // LAB L 通道微调幅度（0.04 = ±4% 亮度）
 
@@ -59,8 +59,8 @@ public:
         // 质量分析：生成后输出匹配报告 + 热力图
         bool analyze = false;
 
-        // 目标图上采样因子：>1 时先将原图放大，再以 9×16 格分割
-        // 2× = 4× tile 密度，输出分辨率不变（配合 nativeTile 缩半）
+        // 目标图上采样因子：>1 时先将原图放大 n×，再以 tileW×tileH 格分割
+        // 2× = 4× tile 密度，输出分辨率不变（配合 nativeTile 等比缩小）
         int upscale = 0;   // 0=自动（nativeTile<180 时自动 2×）
         int pngCompressionLevel = 1;  // PNG 压缩级别 1-9，默认 1（最快速度）
         std::string writeMode = "auto";  // 写入模式：auto(内存自适应) / stream(低内存) / batch(全量)，对 PNG/TIFF 生效

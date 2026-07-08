@@ -1,4 +1,4 @@
-﻿#include "MosaicEngine.h"
+#include "MosaicEngine.h"
 #include "BigTiffWriter.h"
 #include "Database.h"
 #include "DeepZoomWriter.h"
@@ -91,12 +91,9 @@ private:
 };
 
 // ============================================================
-// 粗略色相校正：在 HSV 空间调整色相(H)，S/V 不变，范围 [1-strength, 1+strength]，偏暖或偏冷
-// 备选方案：HSV 空间——仅调色相(H)，保持 S/V 不变，乘数范围 [1-strength, 1+strength]，偏暖或偏冷
+// LAB 亮度微调：在 LAB 空间对 L 通道做随机乘数调整，模拟自然光照变化
+// 曾用 HSV 色相校正方案（仅调 H，S/V 不变），后改为 LAB 仅调亮度效果更自然
 // ============================================================
-// 精细色微调：在 LAB 空间仅调整 L 通道亮度
-// LAB 空间：亮度在 L 通道，色彩在 AB 通道，调整 L 不影响色相
-// L 通道随机偏移 [-strength, +strength] 范围，模拟自然光照变化
 static void adjustColor(cv::Mat& img, double strength)
 {
     cv::Mat lab;
@@ -104,7 +101,8 @@ static void adjustColor(cv::Mat& img, double strength)
     std::vector<cv::Mat> channels(3);
     cv::split(lab, channels);
     // channels[0]=L, [1]=A, [2]=B
-    // L 通道随机偏移 [-s, +s] 范围，随机数生成器线程安全，thread_local 避免数据竞争
+    // L 通道乘数因子：1.0 + ((rand(0..1000)-300)/1000)*strength ≈ [1-0.3s, 1+0.7s]
+    // 偏暗方向的非对称随机，模拟阴影和欠曝变化，thread_local 避免数据竞争
     thread_local std::mt19937 rng(std::random_device{}());
     double lFactor = 1.0 + ((static_cast<int>(rng() % 1001) - 300) / 1000.0) * strength;
     channels[0] = channels[0] * lFactor;
@@ -659,10 +657,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
         return false;
     }
 
-    // 计算目标图哈希，用于缓存匹配结果，避免重复计算
+    // 计算目标图哈希，用于分析报告关联和数据库使用记录
     std::string targetHash;
     {
-        // 每 10000 像素采样 1 个点，约 30KB 数据量，兼顾速度与碰撞率
+        // 每 10000 像素采样 1 个字节，约 10KB 数据量，兼顾速度与碰撞率
         int64_t totalPixels = static_cast<int64_t>(target.rows) * target.cols;
         int step = std::max<int64_t>(int64_t{1}, totalPixels / 10000);
         uint64_t h = 0x9e3779b97f4a7c15ULL;
@@ -1232,10 +1230,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     if (cfg.neighborWindow <= 0)
     {
-        // 特征缓存类：线程安全加载 tiny 和 LBP 特征数据 ,  2 ,  tile
+        // 自适应邻居窗口：由 autoNeighborWindow 自动计算（下限 300，上限 400）
         // 未设置窗口大小时自动计算，否则全库扫描 O(库大小) 开销过大
         cfg.neighborWindow = autoNeighborWindow();
-        // 46K, 323, 200K, 400(cap), sweep: 300-400, ,
     }
 
     // 邻居去重：滑动窗口 + 频次计数，限制同图重复出现
@@ -1281,7 +1278,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     if (cfg.useGpu && gpuLib.count > 0)
     {
         // --------------------------------------------------------
-        // GPU 路径：水线并行——SQLite 读取与 GPU 计算重叠，减少等待
+        // GPU 路径：ANN 搜索 + 批量 GPU 评分（CPU 的 ANN 构建与 GPU kernel 顺序执行）
         // --------------------------------------------------------
 
         // === Phase A: ANN 近似最近邻搜索，缩小候选范围 ===
@@ -1644,7 +1641,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 analyzeGaps.push_back(gap);
                 analyzeRanks.push_back(rankPos + 1);  // 1-based rank in sorted Top-N
 
-                            // ANN rank: winner 在 ANN 返回列表中的位置 (0=未找到)
+                                        // ANN rank: winner 在 ANN 返回列表中的位置 (-1=未找到, 0=Top1)
                 int annRank = -1;
                 for (int j = 0; j < N; ++j)
                 {
@@ -1803,8 +1800,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
         // 单图模式：计算原始缓冲区大小
         int64_t rawBytes = static_cast<int64_t>(outW) * outH * 3;
 
-        // --- 统一输出模式选择：PNG/TIFF 支持 batch/stream，JPG 仅 stream ---
-        // auto 模式：PNG/TIFF 根据内存自动选 batch/stream，JPG 默认 stream
+        // --- 统一输出模式选择：PNG/TIFF/JPG 均支持 batch/stream，>500MB 时自动判断 ---
+        // auto 模式：PNG/TIFF 根据内存自动选 batch/stream，JPG <500MB 时全缓冲，>500MB 根据内存自动选择
         // stream 模式：逐行写入，低内存占用
         // batch 模式：全缓冲后一次性写入
             bool useStream = false;   // true=流式 false=批量
@@ -2228,7 +2225,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             // --analyze: ֻ��¼ʤ���ߵ��������ݣ�ÿ�� tile һ����
             if (cfg.analyze) {
                 const auto& w = allRecords[pickIdx];
-                const auto* wTiny = w.tinyPath.empty() ? nullptr : cpuFeatureCache.loadTiny(w.id, w.tinyPath);
+            // --analyze: 仅记录胜出者的匹配数据，每个 tile 一条记录
                 const auto* wLBP = w.histPath.empty() ? nullptr : cpuFeatureCache.loadLBP(w.id, w.histPath);
                 double wLabD  = cfg.labWeight*labDistance(allTL[ti],allTA[ti],allTB[ti],w.avgL,w.avgA,w.avgB);
                 double wGridD = cfg.gridWeight*gridDistance8x8(allGrid[ti], w.grid4x4);
@@ -2303,14 +2300,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
         bestRecords = bestRecsCpu;  // ͬ�������·��ʹ�õ�����
     }
 
-    std::cout << std::endl;
+    bestRecords = bestRecsCpu;  // 同步到分析报告使用的字段
 
     // 根据扩展名与 --format 自动切换或保持原路径格式一致
     std::string fmt = cfg.outputFormat;
     // ����δ��ʽָ����ʽʱ������չ���ƶ�
     if ((fmt == "jpg" || fmt.empty()) && !cfg.formatExplicit)
     {
-            // 从 outputPath 提取扩展名判断格式
+    // 当未显式指定格式时，根据扩展名推断
         auto dotPos = outputPath.rfind('.');
         if (dotPos != std::string::npos)
         {
@@ -2326,7 +2323,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // ��չ����������ʽ --format ���Զ���ʽ�л��󱣳����·�����ʽһ��
     std::string outPath = outputPath;
     {
-        auto dotPos = outPath.rfind('.');
+    // 根据扩展名与 --format 自动切换或保持原路径格式一致
         auto lower = [](std::string s) { for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); return s; };
         if (dotPos != std::string::npos)
         {
@@ -2344,7 +2341,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             // --analyze: 仅记录胜出者的匹配数据，每个 tile 一条记录
             outPath += "." + fmt;
         }
-    }
+    // 显式指定格式时，追加或替换扩展名
 
     // TIFF 输出
     if (fmt == "tiff")

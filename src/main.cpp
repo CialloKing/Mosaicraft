@@ -127,7 +127,7 @@ Usage:
 Build options:
   -i, --input  <dir>     Source image directory (required)
   -o, --output <dir>     Output directory (default: library, DB stored inside)
-  -d, --db     <path>    Database path (default: <output>/mosaicraft.db)
+  -d, --db     <path>    Database path (default: mosaicraft.db)
   -t, --threads <n>      Worker threads (default: auto)
       --normalize-size <WxH>  Normalized image size (default: 180x320)
       --append           Append mode: add new images without rebuilding
@@ -136,7 +136,7 @@ Build options:
 
 Mosaic options:
   -i, --input  <path>    Target image to mosaicify (required)
-  -d, --db     <path>    Database path (default: <output>/mosaicraft.db)
+  -d, --db     <path>    Database path (default: library/mosaicraft.db)
   -o, --output <path>    Output path or directory (default: output/output.jpg)
       --tile-w     <n>   Tile width in pixels (default: 9)
       --tile-h     <n>   Tile height in pixels (default: 16)
@@ -168,17 +168,17 @@ Mosaic options:
       --benchmark        Show phase timing
       --cpu              Force CPU, no GPU acceleration
 
-Output modes (choose one):
-  -o, --output <path>   Single image output (default)
+Output modes:
+  -o, --output <path>   Single image output (default, can coexist with --tiled/--deepzoom as prefix)
       --tiled            Tile set output (one file per tile)
-      --deepzoom         Deep Zoom pyramid + HTML viewer (implies --tiled)
+      --deepzoom         Deep Zoom pyramid + HTML viewer
 
 Common options:
   -h, --help             Show this help
 
 Inspect options:
   -i, --input  <path>    Image to inspect (required)
-  -d, --db     <path>    Database path (default: <output>/mosaicraft.db)
+  -d, --db     <path>    Database path (default: library/mosaicraft.db)
 
 Exit status:
   0  success
@@ -196,7 +196,7 @@ static int cmdBuild(int argc, char* argv[])
 {
     std::string inputDir;
     std::string outputDir = "library";
-    std::string dbPath = "mosaicraft.db";  // 哨兵值，见下方替换
+    std::string dbPath = "mosaicraft.db";
     int threads = 0;
     bool appendMode = false;
     bool normOnly = false;
