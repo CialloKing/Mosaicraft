@@ -197,6 +197,9 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db --analyze --benchmark
 | `--png-level` | 1 | PNG 压缩 1（快）~ 9（小） |
 | `--write-mode` | auto | auto / stream / batch |
 | `--candidates` | 150 | ANN 候选数 |
+| `--topn-random` | 10 | Top-N 随机选取池 |
+| `--neighbor-window` | 0=auto | 邻域去重窗口 |
+| `--neighbor-penalty` | 100 | 邻域重复惩罚值 |
 | `--lab/grid/tiny/edge/lbp-weight` | 0.20/0.45/0.25/0.05/0.05 | 特征权重 |
 | `--penalty` | 0.01 | 图片复用惩罚 |
 | `--color-adjust` | 关闭 | LAB L 通道微调 |
