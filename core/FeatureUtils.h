@@ -49,27 +49,31 @@ inline std::vector<float> computeGrid4x4(const cv::Mat& bgr)
 // —— 8×8 Grid 实验（用于验证是否值得全面升级） ——
 // 将图像分为 8×8=64 格，每格计算平均 LAB
 // 维数: 64×3 = 192 float
-inline std::vector<float> computeGrid8x8(const cv::Mat& bgr)
+inline std::vector<float> computeGrid8x8FromLab(const cv::Mat& lab)
 {
     const int gridRows = 8, gridCols = 8;
-    if (bgr.rows < gridRows || bgr.cols < gridCols) return std::vector<float>(192, 0.0f);
-    const int cellH = bgr.rows / gridRows, cellW = bgr.cols / gridCols;
+    if (lab.rows < gridRows || lab.cols < gridCols) return std::vector<float>(192, 0.0f);
+    const int cellH = lab.rows / gridRows, cellW = lab.cols / gridCols;
     std::vector<float> grid;
     grid.reserve(192);
     for (int r = 0; r < gridRows; ++r)
     {
         for (int c = 0; c < gridCols; ++c)
         {
-            cv::Mat cell = bgr(cv::Rect(c * cellW, r * cellH, cellW, cellH));
-            cv::Mat cellLab;
-            cv::cvtColor(cell, cellLab, cv::COLOR_BGR2Lab);
-            cv::Scalar m = cv::mean(cellLab);
+            cv::Scalar m = cv::mean(lab(cv::Rect(c * cellW, r * cellH, cellW, cellH)));
             grid.push_back(static_cast<float>(m[0]));
             grid.push_back(static_cast<float>(m[1]));
             grid.push_back(static_cast<float>(m[2]));
         }
     }
     return grid;
+}
+
+inline std::vector<float> computeGrid8x8(const cv::Mat& bgr)
+{
+    cv::Mat lab;
+    cv::cvtColor(bgr, lab, cv::COLOR_BGR2Lab);
+    return computeGrid8x8FromLab(lab);
 }
 
 // 将 4×4 Grid (48维) 双线性插值升采样到 8×8 (192维)
@@ -143,10 +147,9 @@ inline double gridDistance(const std::vector<float>& a,
     return sum / cells / 100.0;
 }
 
-inline std::vector<uint8_t> computeTinyImage(const cv::Mat& bgr)
+inline std::vector<uint8_t> computeTinyImageFromGray(const cv::Mat& gray)
 {
-    cv::Mat gray, tiny;
-    cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
+    cv::Mat tiny;
     cv::resize(gray, tiny, cv::Size(16, 16), 0, 0, cv::INTER_AREA);
     std::vector<uint8_t> result(256);
     std::memcpy(result.data(), tiny.data, 256);
@@ -166,18 +169,15 @@ inline double tinyMSE(const std::vector<uint8_t>& a,
     return sum / (256.0 * 255.0 * 255.0);
 }
 
-inline double computeEdgeDensity(const cv::Mat& bgr)
+inline double computeEdgeDensityFromGray(const cv::Mat& gray)
 {
-    cv::Mat gray, edges;
-    cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
+    cv::Mat edges;
     cv::Canny(gray, edges, 60, 120);
     return static_cast<double>(cv::countNonZero(edges)) / gray.total();
 }
 
-inline std::vector<float> computeLBPHistogram(const cv::Mat& bgr)
+inline std::vector<float> computeLBPHistogramFromGray(const cv::Mat& gray)
 {
-    cv::Mat gray;
-    cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
     std::vector<float> hist(256, 0.0f);
     for (int y = 1; y < gray.rows - 1; ++y)
     {
@@ -206,6 +206,27 @@ inline std::vector<float> computeLBPHistogram(const cv::Mat& bgr)
         for (float& v : hist) { v /= sum; }
     }
     return hist;
+}
+
+inline std::vector<uint8_t> computeTinyImage(const cv::Mat& bgr)
+{
+    cv::Mat gray;
+    cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
+    return computeTinyImageFromGray(gray);
+}
+
+inline double computeEdgeDensity(const cv::Mat& bgr)
+{
+    cv::Mat gray;
+    cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
+    return computeEdgeDensityFromGray(gray);
+}
+
+inline std::vector<float> computeLBPHistogram(const cv::Mat& bgr)
+{
+    cv::Mat gray;
+    cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
+    return computeLBPHistogramFromGray(gray);
 }
 
 inline double lbpDistance(const std::vector<float>& a,

@@ -1186,13 +1186,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     cv::Scalar m = cv::mean(lab);
                     allTL[idx]=m[0]; allTA[idx]=m[1]; allTB[idx]=m[2];
                     auto t2 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opLabNs += std::chrono::duration_cast<Ns>(t2 - t1).count(); }
-                    allGrid[idx] = computeGrid8x8(roiNative);
+                    allGrid[idx] = computeGrid8x8FromLab(lab);
                     auto t3 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opGridNs += std::chrono::duration_cast<Ns>(t3 - t2).count(); }
-                    allTiny[idx] = computeTinyImage(roiNative);
+                    cv::Mat gray;
+                    cv::cvtColor(roiNative, gray, cv::COLOR_BGR2GRAY);
+                    allTiny[idx] = computeTinyImageFromGray(gray);
                     auto t4 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opTinyNs += std::chrono::duration_cast<Ns>(t4 - t3).count(); }
-                    allEdge[idx] = computeEdgeDensity(roiNative);
+                    allEdge[idx] = computeEdgeDensityFromGray(gray);
                     auto t5 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opEdgeNs += std::chrono::duration_cast<Ns>(t5 - t4).count(); }
-                    allLBP[idx] = computeLBPHistogram(roiNative);
+                    allLBP[idx] = computeLBPHistogramFromGray(gray);
                     auto t6 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opLbpNs += std::chrono::duration_cast<Ns>(t6 - t5).count(); }
                     int d = ++featDone;
                     if (d % 500 == 0 || d == totalTiles) {
