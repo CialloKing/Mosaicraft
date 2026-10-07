@@ -1,4 +1,6 @@
-﻿#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+﻿#include "../core/ImageCache.h"
+#include "../core/MosaicOutput.h"
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
 
 #include "../core/BuildService.h"
@@ -222,4 +224,47 @@ TEST_CASE("regression: service errors stay stable for invalid paths")
     const auto mosaic = MosaicService().run(badMosaic);
     CHECK_FALSE(mosaic.ok);
     CHECK(mosaic.message.find("outputPath is a directory") != std::string::npos);
+}
+
+TEST_CASE("bounded cache shares immutable pixels and output modes agree")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    const auto source = utf8(workspace.inputDir() / "tile_00.png");
+    ImageCache cache(18 * 32 * 3);
+    auto first = cache.getShared(1, source, 18, 32);
+    REQUIRE(first);
+    CHECK(cache.getShared(1, source, 18, 32) == first);
+    cv::Mat modified = cache.getOrLoad(1, source, 18, 32);
+    modified.setTo(cv::Scalar(0, 0, 0));
+    CHECK(cv::norm(*first, modified, cv::NORM_INF) > 0);
+    REQUIRE(cache.getShared(2, source, 18, 32));
+    CHECK(cache.cachedBytes() == 18 * 32 * 3);
+    REQUIRE(cache.getShared(3, source, 36, 64));
+    CHECK(cache.cachedBytes() == 18 * 32 * 3);
+    CHECK_FALSE(first->empty()); // 淘汰不影响使用中的共享引用。
+
+    MosaicEngine::Config config;
+    config.outputFormat = "png";
+    config.formatExplicit = true;
+    std::vector<ImageRecord> records(6);
+    for (auto& record : records)
+    {
+        record.id = 1;
+        record.filePath = source;
+    }
+    std::vector<int> selected(6, 0);
+    selected[2] = -1; // 两种模式对缺失小块采用相同背景。
+    OutputStats stats;
+    config.writeMode = "batch";
+    const auto batch = utf8(workspace.outputDir() / "batch.png");
+    REQUIRE(writeMosaicOutput(config, batch, 2, 3, 18, 32, records, selected, {}, stats));
+    CHECK(stats.failed == 1);
+    config.writeMode = "stream";
+    const auto stream = utf8(workspace.outputDir() / "stream.png");
+    REQUIRE(writeMosaicOutput(config, stream, 2, 3, 18, 32, records, selected, {}, stats));
+    CHECK(stats.failed == 1);
+    CHECK(cv::norm(imreadUnicode(batch), imreadUnicode(stream), cv::NORM_INF) == 0);
+    CHECK_FALSE(writeMosaicOutput(config, utf8(workspace.root / "missing" / "out.png"),
+        2, 3, 18, 32, records, selected, {}, stats));
 }

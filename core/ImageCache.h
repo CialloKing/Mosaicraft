@@ -1,94 +1,119 @@
 ﻿#pragma once
 
-#include <array>
-#include <cstdint>
-#include <list>
-#include <mutex>
-#include <unordered_map>
-#include <opencv2/core.hpp>
 #include "UnicodeIO.h"
+#include <list>
+#include <memory>
+#include <mutex>
+#include <opencv2/imgproc.hpp>
+#include <unordered_map>
 
 namespace mosaicraft
 {
 
-// ============================================================
-// ImageCache — 分片线程安全 LRU 内存缓存（16 桶）
-// ============================================================
 class ImageCache
 {
-    static constexpr int kShards = 16;
-    static constexpr size_t kDefaultMaxPerShard = 1024;  // 每分片最多缓存张数
-
-    struct Shard {
-        std::mutex mtx;
-        // key → (Mat, LRU iterator)
-        std::unordered_map<uint64_t, std::pair<cv::Mat, std::list<uint64_t>::iterator>> map;
-        std::list<uint64_t> lru;  // front = least recent, back = most recent
-        size_t maxEntries = kDefaultMaxPerShard;
+    struct Key
+    {
+        int id, width, height;
+        bool operator==(const Key &other) const
+        {
+            return id == other.id && width == other.width && height == other.height;
+        }
+    };
+    struct Hash
+    {
+        size_t operator()(const Key &key) const
+        {
+            size_t hash = std::hash<int>{}(key.id);
+            hash ^= std::hash<int>{}(key.width) + (hash << 6) + (hash >> 2);
+            return hash ^ (std::hash<int>{}(key.height) + (hash << 6) + (hash >> 2));
+        }
+    };
+    struct Entry
+    {
+        std::shared_ptr<const cv::Mat> image;
+        std::list<Key>::iterator position;
+        size_t bytes;
     };
 
-public:
-    explicit ImageCache(size_t maxTotal = kDefaultMaxPerShard * kShards)
+  public:
+    static constexpr size_t kDefaultBudget = 512ULL * 1024 * 1024;
+    explicit ImageCache(size_t budget = kDefaultBudget) : m_budget(budget)
     {
-        size_t perShard = std::max(size_t(1), maxTotal / kShards);
-        for (auto& s : m_shards) s.maxEntries = perShard;
     }
 
-    cv::Mat getOrLoad(int imageId, const std::string& filePath,
-                      int outW, int outH)
+    std::shared_ptr<const cv::Mat> getShared(int imageId, const std::string &path, int width, int height)
     {
-        uint64_t key = (static_cast<uint64_t>(imageId) << 32)
-                     | (static_cast<uint32_t>(outW) << 16)
-                     | static_cast<uint32_t>(outH);
-        int si = (imageId >= 0) ? (imageId & (kShards - 1))
-                                : ((-imageId) & (kShards - 1));  // 安全处理负 id
-        auto& s = m_shards[si];
-
+        const Key key{imageId, width, height};
         {
-            std::lock_guard<std::mutex> lock(s.mtx);
-            auto it = s.map.find(key);
-            if (it != s.map.end()) {
-                // 命中：移到 LRU 尾部（最近使用）
-                s.lru.splice(s.lru.end(), s.lru, it->second.second);
-                return it->second.first.clone();
+            std::lock_guard<std::mutex> lock(m_mutex);
+            auto found = m_entries.find(key);
+            if (found != m_entries.end())
+            {
+                m_lru.splice(m_lru.end(), m_lru, found->second.position);
+                return found->second.image;
             }
         }
-
-        cv::Mat img = imreadUnicode(filePath, cv::IMREAD_COLOR);
-        if (img.empty()) return img;
-
-        cv::Mat toCache;
-        if (img.cols == outW && img.rows == outH)
-            toCache = img;
+        // 读盘、解码、缩放均在锁外；共享只读引用在淘汰后仍有效。
+        cv::Mat source = imreadUnicode(path, cv::IMREAD_COLOR);
+        if (source.empty())
+        {
+            return {};
+        }
+        cv::Mat resized;
+        if (source.cols == width && source.rows == height)
+        {
+            resized = std::move(source);
+        }
         else
-            cv::resize(img, toCache, cv::Size(outW, outH), 0, 0, cv::INTER_AREA);
-
         {
-            std::lock_guard<std::mutex> lock(s.mtx);
-            // 双重检查
-            auto it = s.map.find(key);
-            if (it != s.map.end()) {
-                s.lru.splice(s.lru.end(), s.lru, it->second.second);
-                return it->second.first.clone();
-            }
-
-            // LRU 淘汰
-            if (s.map.size() >= s.maxEntries) {
-                uint64_t oldKey = s.lru.front();
-                s.lru.pop_front();
-                s.map.erase(oldKey);
-            }
-
-            // 插入
-            s.lru.push_back(key);
-            auto lruIt = std::prev(s.lru.end());
-            s.map[key] = {toCache, lruIt};
-            return toCache.clone();
+            cv::resize(source, resized, cv::Size(width, height), 0, 0, cv::INTER_AREA);
         }
+        const size_t bytes = resized.total() * resized.elemSize();
+        auto image = std::make_shared<const cv::Mat>(std::move(resized));
+        if (bytes > m_budget)
+        {
+            return image;
+        }
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto found = m_entries.find(key);
+        if (found != m_entries.end())
+        {
+            m_lru.splice(m_lru.end(), m_lru, found->second.position);
+            return found->second.image;
+        }
+        while (m_bytes > m_budget - bytes && !m_lru.empty())
+        {
+            auto oldest = m_entries.find(m_lru.front());
+            m_bytes -= oldest->second.bytes;
+            m_entries.erase(oldest);
+            m_lru.pop_front();
+        }
+        m_lru.push_back(key);
+        m_entries.emplace(key, Entry{image, std::prev(m_lru.end()), bytes});
+        m_bytes += bytes;
+        return image;
     }
 
-private:
-    std::array<Shard, kShards> m_shards;
+    // 兼容需要修改像素的调用方；复制发生在锁外。
+    cv::Mat getOrLoad(int imageId, const std::string &path, int width, int height)
+    {
+        auto image = getShared(imageId, path, width, height);
+        return image ? image->clone() : cv::Mat{};
+    }
+
+    size_t cachedBytes() const
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_bytes;
+    }
+
+  private:
+    mutable std::mutex m_mutex;
+    std::unordered_map<Key, Entry, Hash> m_entries;
+    std::list<Key> m_lru;
+    size_t m_budget;
+    size_t m_bytes = 0;
 };
 
 } // namespace mosaicraft

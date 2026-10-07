@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+﻿cmake_minimum_required(VERSION 3.20)
 project(Mosaicraft VERSION 1.13.10 LANGUAGES CXX)
 
 # C++17
@@ -118,6 +118,7 @@ add_library(mosaicraft_core STATIC
     core/InspectService.cpp
     core/JobManager.cpp
     core/LegacyRun.cpp
+    core/MosaicOutput.cpp
     core/MosaicEngine.cpp
     core/MosaicService.cpp
 )

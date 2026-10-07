@@ -1,4 +1,5 @@
 ﻿#include "MosaicEngine.h"
+#include "MosaicOutput.h"
 #include "BigTiffWriter.h"
 #include "Database.h"
 #include "DeepZoomWriter.h"
@@ -631,7 +632,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     using Ms = std::chrono::duration<double, std::milli>;
     auto tStart = Clock::now();
     auto tLast  = tStart;
-    double msFeat = 0, msANNBuild = 0, msANNLoad = 0, msANNQuery = 0, msGPUScore = 0, msSelect = 0, msPlace = 0;
+    double msFeat = 0, msANNBuild = 0, msANNLoad = 0, msANNQuery = 0, msGPUScore = 0, msSelect = 0, msPlace = 0, msEncode = 0;
     double msPrep = 0;  // DB 加载 + GPU library 上传累计耗时，GPU 路径专用
 
     // 细粒度 profile：记录各算子累计纳秒，精确定位瓶颈
@@ -1029,6 +1030,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         std::cout << "  Selection:   " << msSelect    << " ms\n";
         std::cout << "  Placement:   " << msPlace     << " ms\n";
+        std::cout << "  Encoding:    " << msEncode << " ms\n";
         if (opPlaceDecodeNs > 0)
         {
             auto toMs = [](int64_t ns) { return ns / 1000000.0; };
@@ -1714,425 +1716,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
         msSelect = Ms(tSelect - tLast).count();
         tLast = tSelect;
 
-            // === Phase E: 贴图输出阶段 ===
-        int nThreads = std::thread::hardware_concurrency();
-        if (nThreads < 2) nThreads = 2;
-
-        if (cfg.tiledOutput)
-        {
-                    // tiled 分片模式：每个 tile 独立存为文件，无需大 Mat
-            std::error_code ec;
-            std::string level0Dir = outputPath + "_files/0";
-            std::filesystem::create_directories(level0Dir, ec);
-            std::cout << "  writing tiles (" << nThreads << " threads)..."
-                      << std::flush;
-            std::atomic<int> tileDone{0};
-            std::atomic<int> tileFail{0};
-            std::vector<std::thread> tileWorkers;
-                    ImageCache imgCache;  // 线程安全图片缓存
-            for (int t = 0; t < nThreads; ++t) {
-                tileWorkers.emplace_back([&, t]() {
-                    using Ns = std::chrono::nanoseconds;
-                    char fname[512];
-                    for (int ti = t; ti < totalTiles; ti += nThreads) {
-                        int libIdx = bestLibIdx[ti];
-                        if (libIdx < 0) { tileFail++; continue; }
-                        int ty = ti / tilesX, tx = ti % tilesX;
-                        const auto& rec = bestRecords[ti];
-                        auto t0 = cfg.benchmark ? Clock::now() : Clock::time_point{};
-                        cv::Mat r = imgCache.getOrLoad(
-                            rec.id, rec.filePath, outTileW, outTileH);
-                        if (r.empty()) { tileFail++; continue; }
-                        auto t1 = cfg.benchmark ? Clock::now() : Clock::time_point{};
-                        if (cfg.benchmark) { opPlaceDecodeNs += std::chrono::duration_cast<Ns>(t1 - t0).count(); }
-                        if (cfg.colorAdjust) { adjustColor(r, cfg.colorStrength); }
-                                            // DZI 命名：{name}_files/{level}/{col}_{row}.jpg
-                        snprintf(fname, sizeof(fname), "%s/%d_%d.jpg",
-                                 level0Dir.c_str(), tx, ty);
-                        imwriteUnicode(fname, r, {cv::IMWRITE_JPEG_QUALITY, cfg.jpegQuality});
-                        int d = ++tileDone;
-                        if (d % 2000 == 0 || d == totalTiles)
-                            std::cout << "\r  writing " << d << "/" << totalTiles << std::flush;
-                    }
-                });
-            }
-            for (auto& w : tileWorkers) w.join();
-            matched = totalTiles - tileFail.load();
-            loadFail = tileFail.load();
-            std::cout << std::endl;
-            std::cout << "Level 0: " << matched << " / " << totalTiles << " tiles";
-            if (loadFail > 0) std::cout << "  (failed: " << loadFail << ")";
-            std::cout << std::endl;
-            releaseGpuLib();
-
-            if (cfg.deepZoom)
-            {
-                std::cout << "  building pyramid levels..." << std::endl;
-                DeepZoomWriter::buildPyramid(level0Dir, outTileW, outTileH,
-                                             tilesX, tilesY, cfg.jpegQuality);
-            }
-
-            // 记录贴图耗时（tiled 模式）
-            msPlace = Ms(Clock::now() - tLast).count();
-            printBenchmark("tiled");
-            runAnalysis(outputPath);
-        return true;
-        }
-
-        // 单图模式：计算原始缓冲区大小
-        int64_t rawBytes = static_cast<int64_t>(outW) * outH * 3;
-
-        // --- 统一输出模式选择：PNG/TIFF/JPG 均支持 batch/stream，>500MB 时自动判断 ---
-        // auto 模式：PNG/TIFF 根据内存自动选 batch/stream，JPG <500MB 时全缓冲，>500MB 根据内存自动选择
-        // stream 模式：逐行写入，低内存占用
-        // batch 模式：全缓冲后一次性写入
-            bool useStream = false;   // true=流式 false=批量
-        bool isHeavyFormat = (cfg.outputFormat == "png" || cfg.outputFormat == "tiff" || cfg.outputFormat == "jpg");
-        bool isJpg = (cfg.outputFormat == "jpg");
-        if (isHeavyFormat && rawBytes > 500LL * 1024 * 1024)
-        {
-            if (cfg.writeMode == "stream")
-            {
-                useStream = true;
-            }
-            else if (cfg.writeMode == "batch")
-            {
-                useStream = false;
-            }
-            else if (isJpg)
-            {
-#ifdef _WIN32
-                MEMORYSTATUSEX mem = { sizeof(mem) };
-                if (GlobalMemoryStatusEx(&mem))
-                    useStream = (mem.ullAvailPhys < static_cast<ULONGLONG>(rawBytes) * 2);
-                else
-                    useStream = true;
-#else
-                useStream = true;
-#endif
-            }
-                    else // auto 模式：PNG/TIFF 根据可用内存自动判断
-            {
-#ifdef _WIN32
-                MEMORYSTATUSEX mem = { sizeof(mem) };
-                if (GlobalMemoryStatusEx(&mem))
-                    useStream = (mem.ullAvailPhys < static_cast<ULONGLONG>(rawBytes) * 2);
-                else
-                    useStream = true;
-#else
-                useStream = true;
-#endif
-            }
-        }
-            // else: <500MB 时 PNG/TIFF 默认走批量路径
-
-        if (isHeavyFormat && useStream)
-            std::cout << "  (streaming mode ,  low memory)" << std::endl;
-        else if (isHeavyFormat && rawBytes > 500LL * 1024 * 1024)
-            std::cout << "  (batch mode ,  full buffer " << (rawBytes / 1024 / 1024) << " MB)" << std::endl;
-
-            // --- 流式 TIFF 输出 ---
-        if (isHeavyFormat && useStream && cfg.outputFormat == "tiff") {
-            BigTiffWriter tiff(outputPath, outW, outH, true);
-            std::vector<uint8_t> rowBuf(outW * 3);
-            int streamFail = 0;
-            int nLoaders = std::min(8, static_cast<int>(std::thread::hardware_concurrency()));
-            for (int ty = 0; ty < tilesY; ++ty)
-            {
-                            // 多线程加载一行 tile 图片
-                std::vector<cv::Mat> tileRowImgs(tilesX);
-                {
-                    std::atomic<int> nextTx{0};
-                    std::vector<std::thread> loaders;
-                    for (int t = 0; t < nLoaders; ++t)
-                        loaders.emplace_back([&]() {
-                            for (int tx = nextTx++; tx < tilesX; tx = nextTx++)
-                            {
-                                int ti = ty * tilesX + tx;
-                                if (ti >= totalTiles) { tileRowImgs[tx] = cv::Mat(); continue; }
-                                cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                                if (!m.empty())
-                                    cv::resize(m, tileRowImgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
-                                if (!m.empty() && cfg.colorAdjust) adjustColor(tileRowImgs[tx], cfg.colorStrength);
-                            }
-                        });
-                    for (auto& w : loaders) w.join();
-                }
-                // 统计加载失败数
-                for (int tx = 0; tx < tilesX; ++tx)
-                    if (tileRowImgs[tx].empty()) streamFail++;
-                for (int y = 0; y < outTileH; ++y)
-                {
-                    for (int tx = 0; tx < tilesX; ++tx)
-                    {
-                        uint8_t* dst = &rowBuf[tx * outTileW * 3];
-                        if (tileRowImgs[tx].empty()) {
-                            std::memset(dst, 0, outTileW * 3);
-                        } else {
-                            cv::Mat tr = tileRowImgs[tx].row(y);
-                            std::memcpy(dst, tr.data, outTileW * 3);
-                        }
-                    }
-                    if (!tiff.writeRow(ty * outTileH + y, rowBuf.data())) {
-                        std::cerr << "\n  TIFF writeRow failed at row " << (ty * outTileH + y) << std::endl;
-                        tiff.close();
-                        releaseGpuLib();
-                        return false;
-                    }
-                }
-                if (ty % 50 == 0)
-                    std::cout << "\r  streaming row " << (ty * outTileH) << "/" << outH << std::flush;
-            }
-            tiff.close();
-            matched = totalTiles - streamFail;
-            loadFail = streamFail;
-            std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
-            std::cout << "Mosaic saved: " << outputPath << "  (" << matched
-                      << " / " << totalTiles << " tiles"
-                      << (loadFail > 0 ? ", loadFail=" + std::to_string(loadFail) : "")
-                      << ")" << std::endl;
-            printBenchmark("single");
-            runAnalysis(outputPath);
-            releaseGpuLib();
-        return true;
-        }  // if (tiff streaming)
-        else if (cfg.outputFormat == "png" && !useStream)
-        {
-            // PNG batch 模式：全缓冲后一次性写入
-            std::cout << "  (batch mode ,  full buffer " << (rawBytes / 1024 / 1024) << " MB)" << std::endl;
-            mosaicraft::PngBatchWriter png(outputPath, outW, outH, cfg.pngCompressionLevel);
-            std::vector<cv::Mat> imgs(tilesX);
-            int streamFail = 0;
-            int nLd = std::min(8, (int)std::thread::hardware_concurrency());
-            for (int ty = 0; ty < tilesY; ++ty) {
-                { std::atomic<int> nx{0}; std::vector<std::thread> ld;
-                  for (int t = 0; t < nLd; ++t) ld.emplace_back([&]() {
-                      for (int tx = nx++; tx < tilesX; tx = nx++) {
-                          int ti = ty * tilesX + tx; if (ti >= totalTiles) { imgs[tx] = cv::Mat(); continue; }
-                          cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                          if (m.empty()) { imgs[tx] = cv::Mat(); continue; } cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA); if (cfg.colorAdjust) adjustColor(imgs[tx], cfg.colorStrength);
-                      }});
-                  for (auto& w : ld) w.join(); }
-                for (int tx = 0; tx < tilesX; ++tx)
-                    if (imgs[tx].empty()) streamFail++;
-                for (int y = 0; y < outTileH; ++y) {
-                    uint8_t* dst = png.rowData(ty * outTileH + y);
-                    for (int tx = 0; tx < tilesX; ++tx) {
-                        uint8_t* tileDst = dst + tx * outTileW * 3;
-                        if (imgs[tx].empty()) {
-                            std::memset(tileDst, 0, outTileW * 3);
-                        } else {
-                            std::memcpy(tileDst, imgs[tx].ptr<const uint8_t>(y), outTileW * 3);
-                        }
-                    }
-                }
-                if (ty % 10 == 0) std::cout << "\r  batching " << (ty+1) << "/" << tilesY << std::flush;
-            }
-            if (!png.writeAll()) {
-                std::cerr << "\n  PNG writeAll failed" << std::endl;
-                releaseGpuLib();
-                return false;
-            }
-            matched = totalTiles - streamFail;
-            loadFail = streamFail;
-            std::cout << "\r  batch done: " << outH << " rows" << std::endl;
-            std::cout << "Mosaic saved: " << outputPath << "  (" << matched
-                      << " / " << totalTiles << " tiles"
-                      << (loadFail > 0 ? ", loadFail=" + std::to_string(loadFail) : "")
-                      << ")" << std::endl;
-            printBenchmark("single");
-            runAnalysis(outputPath);
-            releaseGpuLib();
-        return true;
-        }
-        else if (cfg.outputFormat == "png")
-        {
-            // PNG stream 模式：逐行写入，低内存占用 (~162KB)
-            std::cout << "  (streaming mode ,  low memory)" << std::endl;
-            mosaicraft::PngStreamWriter png(outputPath, outW, outH, cfg.pngCompressionLevel);
-            std::vector<cv::Mat> imgs(tilesX);
-            std::vector<uint8_t> rowBuf(outW * 3);
-            int streamFail = 0;
-            int nLd = std::min(8, (int)std::thread::hardware_concurrency());
-            for (int ty = 0; ty < tilesY; ++ty) {
-                { std::atomic<int> nx{0}; std::vector<std::thread> ld;
-                  for (int t = 0; t < nLd; ++t) ld.emplace_back([&]() {
-                      for (int tx = nx++; tx < tilesX; tx = nx++) {
-                          int ti = ty * tilesX + tx; if (ti >= totalTiles) { imgs[tx] = cv::Mat(); continue; }
-                          cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                          if (m.empty()) { imgs[tx] = cv::Mat(); continue; } cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA); if (cfg.colorAdjust) adjustColor(imgs[tx], cfg.colorStrength);
-                      }});
-                  for (auto& w : ld) w.join(); }
-                for (int tx = 0; tx < tilesX; ++tx)
-                    if (imgs[tx].empty()) streamFail++;
-                for (int y = 0; y < outTileH; ++y) {
-                    uint8_t* dst = rowBuf.data();
-                    for (int tx = 0; tx < tilesX; ++tx) {
-                        if (imgs[tx].empty()) {
-                            std::memset(dst, 0, outTileW * 3);
-                        } else {
-                            std::memcpy(dst, imgs[tx].ptr<const uint8_t>(y), outTileW * 3);
-                        }
-                        dst += outTileW * 3;
-                    }
-                    for (int x = 0; x < outW; ++x) {
-                        std::swap(rowBuf[x * 3], rowBuf[x * 3 + 2]);
-                    }
-                    if (!png.writeRow(rowBuf.data())) {
-                        std::cerr << "\n  PNG writeRow failed at row " << (ty * outTileH + y) << std::endl;
-                        releaseGpuLib();
-                        return false;
-                    }
-                }
-                if (ty % 10 == 0) std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
-            }
-            if (!png.close()) {
-                std::cerr << "\n  PNG close failed: " << outputPath << std::endl;
-                releaseGpuLib();
-                return false;
-            }
-            matched = totalTiles - streamFail;
-            loadFail = streamFail;
-            std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
-            std::cout << "Mosaic saved: " << outputPath << "  (" << matched
-                      << " / " << totalTiles << " tiles"
-                      << (loadFail > 0 ? ", loadFail=" + std::to_string(loadFail) : "")
-                      << ")" << std::endl;
-            printBenchmark("single");
-            runAnalysis(outputPath);
-            releaseGpuLib();
-        return true;
-        }
-
-            // --- 流式 JPG 输出 ---
-        if (isHeavyFormat && useStream && cfg.outputFormat == "jpg")
-        {
-            std::cout << "  (streaming mode ,  JPG low memory)" << std::endl;
-            mosaicraft::JpgStreamWriter jpg(outputPath, outW, outH, cfg.jpegQuality);
-            std::vector<cv::Mat> imgs(tilesX);
-            std::vector<uint8_t> rowBuf(outW * 3);
-            int streamFail = 0;
-            int nLd = std::min(8, (int)std::thread::hardware_concurrency());
-            for (int ty = 0; ty < tilesY; ++ty) {
-                { std::atomic<int> nx{0}; std::vector<std::thread> ld;
-                  for (int t = 0; t < nLd; ++t) ld.emplace_back([&]() {
-                      for (int tx = nx++; tx < tilesX; tx = nx++) {
-                          int ti = ty * tilesX + tx; if (ti >= totalTiles) { imgs[tx] = cv::Mat(); continue; }
-                          cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                          if (m.empty()) { imgs[tx] = cv::Mat(); continue; } cv::resize(m, imgs[tx], cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA); if (cfg.colorAdjust) adjustColor(imgs[tx], cfg.colorStrength);
-                      }});
-                  for (auto& w : ld) w.join(); }
-                for (int tx = 0; tx < tilesX; ++tx)
-                    if (imgs[tx].empty()) streamFail++;
-                for (int y = 0; y < outTileH; ++y) {
-                    uint8_t* dst = rowBuf.data();
-                    for (int tx = 0; tx < tilesX; ++tx) {
-                        if (imgs[tx].empty()) {
-                            std::memset(dst, 0, outTileW * 3);
-                        } else {
-                            std::memcpy(dst, imgs[tx].ptr<const uint8_t>(y), outTileW * 3);
-                        }
-                        dst += outTileW * 3;
-                    }
-                                    // BGR 转 RGB（OpenCV 原生为 BGR）
-                    for (int x = 0; x < outW; ++x) {
-                        std::swap(rowBuf[x * 3], rowBuf[x * 3 + 2]);
-                    }
-                    if (!jpg.writeRow(rowBuf.data())) {
-                        std::cerr << "\n  JPG writeRow failed at row " << (ty * outTileH + y) << std::endl;
-                        releaseGpuLib();
-                        return false;
-                    }
-                }
-                if (ty % 10 == 0) std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
-            }
-            if (!jpg.close()) {
-                std::cerr << "\n  JPG close failed: " << outputPath << std::endl;
-                releaseGpuLib();
-                return false;
-            }
-            matched = totalTiles - streamFail;
-            loadFail = streamFail;
-            std::cout << "\r  streaming done: " << outH << " rows" << std::endl;
-            std::cout << "Mosaic saved: " << outputPath << "  (" << matched
-                      << " / " << totalTiles << " tiles"
-                      << (loadFail > 0 ? ", loadFail=" + std::to_string(loadFail) : "")
-                      << ")" << std::endl;
-            printBenchmark("single");
-            runAnalysis(outputPath);
-            releaseGpuLib();
-        return true;
-        }
-
-        output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
-        std::cout << "  placing tiles (" << nThreads << " threads)..."
-                  << std::flush;
-        auto tPlaceStart = Clock::now();
-        std::atomic<int> placeDone{0};
-        std::atomic<int> placeFail{0};
-            std::atomic<int> placeNoCand{0};  // 无候选的 tile 计数
-            std::atomic<int> placeLoadErr{0}; // 图片读取失败计数
-        std::vector<std::thread> placeWorkers;
-            ImageCache imgCache;  // 线程安全缓存，避免重复 imread
-        for (int t = 0; t < nThreads; ++t)
-        {
-            placeWorkers.emplace_back([&, t]() {
-                using Ns = std::chrono::nanoseconds;
-                for (int ti = t; ti < totalTiles; ti += nThreads)
-                {
-                    int libIdx = bestLibIdx[ti];
-                    if (libIdx < 0) { placeNoCand++; placeFail++; continue; }
-                    const auto& rec = bestRecords[ti];
-                    int ty = ti / tilesX, tx = ti % tilesX;
-
-                    auto t0 = cfg.benchmark ? Clock::now() : Clock::time_point{};
-                    cv::Mat resized = imgCache.getOrLoad(
-                        rec.id, rec.filePath, outTileW, outTileH);
-                    if (resized.empty())
-                    {
-                        placeLoadErr++; placeFail++;
-                        if (cfg.benchmark) { opPlaceDecodeNs += std::chrono::duration_cast<Ns>(Clock::now() - t0).count(); }
-                        continue;
-                    }
-                    auto t1 = cfg.benchmark ? Clock::now() : Clock::time_point{};
-                    if (cfg.benchmark) { opPlaceDecodeNs += std::chrono::duration_cast<Ns>(t1 - t0).count(); }
-
-                    if (cfg.colorAdjust) { adjustColor(resized, cfg.colorStrength); }
-                                    // 将缩放后的 tile 拷贝到输出 Mat 对应 ROI
-                    resized.copyTo(output(cv::Rect(tx * outTileW, ty * outTileH,
-                                                  outTileW, outTileH)));
-                    auto t2 = cfg.benchmark ? Clock::now() : Clock::time_point{};
-                    if (cfg.benchmark) { opPlaceCopyNs += std::chrono::duration_cast<Ns>(t2 - t1).count(); }
-
-                    int d = ++placeDone;
-                    if (d % 500 == 0 || d == totalTiles) {
-                        static std::mutex placeMutex;
-                        std::lock_guard<std::mutex> lock(placeMutex);
-                        double e = std::chrono::duration<double>(Clock::now() - tPlaceStart).count();
-                        double eta = (e / d) * (totalTiles - d);
-                        std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
-                        if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
-                        std::cout << "\r  placing " << d << "/" << totalTiles
-                                  << " | ETA" << etas << std::flush;
-                    }
-                }
-            });
-        }
-        for (auto& w : placeWorkers) w.join();
-        matched = totalTiles - placeFail.load();
-        loadFail = placeFail.load();
-        if (placeNoCand > 0 || placeLoadErr > 0)
-            std::cout << "  (noCand=" << placeNoCand << " loadErr=" << placeLoadErr << ")";
-        std::cout << std::endl;
     }
     else
     {
         // --------------------------------------------------------
         // CPU 路径：逐 tile 顺序处理，ANN 搜索 + 评分 + 贴图
         // --------------------------------------------------------
-        ImageCache imgCache;
         FeatureCache cpuFeatureCache;
-        output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
         int noCandidateCount = 0;
 
         // Phase 1: ANN 搜索 + 特征评分 + 去重惩罚（CPU 路径）
@@ -2234,165 +1824,24 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << " (" << noCandidateCount << " tiles no candidates!)";
         std::cout << " done" << std::endl;
 
-                // Phase 2: 多线程贴图输出
-        int nT = std::thread::hardware_concurrency();
-        if (nT < 2) nT = 2; if (nT > 16) nT = 16;
-        std::atomic<int> placed{0}, pFail{0};
-        std::cout << "  placing (" << nT << " threads)..." << std::flush;
-        auto tCpuPlaceStart = Clock::now();
-        std::vector<std::thread> pWorkers;
-        for (int t = 0; t < nT; ++t) {
-            pWorkers.emplace_back([&, t]() {
-                for (int ti = t; ti < totalTiles; ti += nT) {
-                    int li = bestLibIdxCpu[ti];
-                    if (li < 0) { pFail++; continue; }
-                    int ty = ti / tilesX, tx = ti % tilesX;
-                    cv::Mat m = imgCache.getOrLoad(bestRecsCpu[ti].id, bestRecsCpu[ti].filePath, outTileW, outTileH);
-                    if (m.empty()) { pFail++; continue; }
-                    if (cfg.colorAdjust) adjustColor(m, cfg.colorStrength);
-                    m.copyTo(output(cv::Rect(tx*outTileW,ty*outTileH,outTileW,outTileH)));
-                    matched++;
-                    int d = ++placed;
-                    if (d % 2000 == 0 || d == totalTiles) {
-                        static std::mutex cpuPlaceMutex;
-                        std::lock_guard<std::mutex> lock(cpuPlaceMutex);
-                        double e = std::chrono::duration<double>(Clock::now() - tCpuPlaceStart).count();
-                        double eta = (e / d) * (totalTiles - d);
-                        std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
-                        if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
-                        std::cout << "\r  placing " << std::setw(doneWidth) << d << "/" << totalTiles
-                                  << " | ETA" << etas << std::flush;
-                    }
-                }
-            });
-        }
-        for (auto& w : pWorkers) w.join();
-        loadFail = pFail.load();
-        bestRecords = bestRecsCpu;  // ͬ�������·��ʹ�õ�����
+        msSelect = Ms(Clock::now() - tLast).count();
+        bestRecords = std::move(bestRecsCpu);
+        bestLibIdx = std::move(bestLibIdxCpu);
     }
 
-    // 根据扩展名与 --format 自动切换或保持原路径格式一致
-    std::string fmt = cfg.outputFormat;
-    // ����δ��ʽָ����ʽʱ������չ���ƶ�
-    if ((fmt == "jpg" || fmt.empty()) && !cfg.formatExplicit)
+    releaseGpuLib();
+    OutputStats outputStats;
+    if (!writeMosaicOutput(cfg, outputPath, tilesX, tilesY, outTileW, outTileH,
+                          bestRecords, bestLibIdx, adjustColor, outputStats))
     {
-    // 当未显式指定格式时，根据扩展名推断
-        auto dotPos = outputPath.rfind('.');
-        if (dotPos != std::string::npos)
-        {
-            std::string ext = outputPath.substr(dotPos + 1);
-            if (ext == "png" || ext == "PNG") fmt = "png";
-            else if (ext == "webp" || ext == "WEBP") fmt = "webp";
-            else if (ext == "tiff" || ext == "tif" || ext == "TIFF" || ext == "TIF") fmt = "tiff";
-            else if (ext == "jpg" || ext == "jpeg" || ext == "JPG" || ext == "JPEG") fmt = "jpg";
-        }
+        return false;
     }
-    if (fmt != "jpg" && fmt != "png" && fmt != "webp" && fmt != "tiff") fmt = "jpg";
-
-    // ��չ����������ʽ --format ���Զ���ʽ�л��󱣳����·�����ʽһ��
-    std::string outPath = outputPath;
-    {
-        const auto dotPos = outPath.rfind('.');
-    // 根据扩展名与 --format 自动切换或保持原路径格式一致
-        auto lower = [](std::string s) { for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); return s; };
-        if (dotPos != std::string::npos)
-        {
-            std::string oldExt = lower(outPath.substr(dotPos + 1));
-            if (oldExt == "jpeg") oldExt = "jpg";
-            if (oldExt == "tif")  oldExt = "tiff";
-            if (cfg.formatExplicit && oldExt != fmt)
-                outPath = outPath.substr(0, dotPos) + "." + fmt;
-            else if (fmt == "tiff" && (oldExt == "jpg" || oldExt == "png" || oldExt == "webp"))
-                outPath = outPath.substr(0, dotPos) + ".tiff";
-            else if (fmt == "png" && oldExt == "jpg")
-                outPath = outPath.substr(0, dotPos) + ".png";
-        }
-        else if (cfg.formatExplicit)
-            // --analyze: 仅记录胜出者的匹配数据，每个 tile 一条记录
-            outPath += "." + fmt;
-        }
-    // 显式指定格式时，追加或替换扩展名
-
-    // TIFF 输出
-    if (fmt == "tiff")
-    {
-        if (output.empty())
-        {
-            BigTiffWriter tiff(outPath, outW, outH);
-            std::vector<uint8_t> rowBuf(outW * 3);
-            std::vector<char> failedTiles(totalTiles, 0);
-            for (int ty = 0; ty < tilesY; ++ty)
-            {
-                for (int y = 0; y < outTileH; ++y)
-                {
-                    for (int tx = 0; tx < tilesX; ++tx)
-                    {
-                        int ti = ty * tilesX + tx;
-                        uint8_t* dst = &rowBuf[tx * outTileW * 3];
-                        if (ti >= totalTiles) {
-                            std::memset(dst, 0, outTileW * 3);
-                            continue;
-                        }
-                        cv::Mat m = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
-                        if (m.empty()) {
-                            failedTiles[ti] = 1;
-                            std::memset(dst, 0, outTileW * 3);
-                            continue;
-                        }
-                        cv::resize(m, m, cv::Size(outTileW, outTileH), 0, 0, cv::INTER_AREA);
-                        cv::Mat tileRow = m.row(y);
-                        std::memcpy(dst, tileRow.data, outTileW * 3);
-                    }
-                    if (!tiff.writeRow(ty * outTileH + y, rowBuf.data()))
-                    {
-                        std::cerr << "ERROR: BigTiffWriter failed at row "
-                                  << (ty * outTileH + y) << std::endl;
-                        releaseGpuLib();
-                        return false;
-                    }
-                }
-                if (ty % 20 == 0)
-                    std::cout << "\r  streaming " << (ty+1) << "/" << tilesY << std::flush;
-            }
-            tiff.close();
-            loadFail = static_cast<int>(std::count(failedTiles.begin(), failedTiles.end(), 1));
-            matched = totalTiles - loadFail;
-            std::cout << std::endl;
-        }
-        else
-        {
-            BigTiffWriter tiff(outPath, outW, outH);
-            if (!tiff.writeMat(output.data, static_cast<int>(output.step)))
-            {
-                std::cerr << "ERROR: BigTiffWriter failed" << std::endl;
-                releaseGpuLib();
-                return false;
-            }
-            tiff.close();
-        }
-    }
-    else
-    {
-        std::vector<int> writeParams;
-        if (fmt == "jpg")
-            writeParams = {cv::IMWRITE_JPEG_QUALITY, cfg.jpegQuality};
-        else if (fmt == "png")
-            writeParams = {cv::IMWRITE_PNG_COMPRESSION, cfg.pngCompressionLevel};
-        else if (fmt == "webp")
-            writeParams = {cv::IMWRITE_WEBP_QUALITY, cfg.jpegQuality};
-
-        if (!imwriteUnicode(outPath, output, writeParams))
-        {
-            releaseGpuLib();
-            return false;
-        }
-    }
-
-    std::cout << "Mosaic saved: " << outPath
-    // 当未显式指定格式时，根据扩展名推断
-              << (loadFail > 0 ? ", loadFail=" + std::to_string(loadFail) : "")
-              << ")"
-              << std::endl;
+    matched = outputStats.matched;
+    loadFail = outputStats.failed;
+    msPlace = outputStats.placementMs;
+    msEncode = outputStats.encodingMs;
+    std::cout << "Mosaic saved: " << outputStats.path << " (" << matched << " / " << totalTiles
+              << " tiles, loadFail=" << loadFail << ")" << std::endl;
     // 修正特征计数器：各路径可能在 return 前未完整设置
     if (cntEdge + cntMissEdge == 0) { cntEdge = totalTiles; cntMissEdge = 0; }
     if (cntGrid + cntMissGrid == 0) { cntGrid = totalTiles; cntMissGrid = 0; }
@@ -2406,7 +1855,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
               << std::endl;
 
     // 根据扩展名与 --format 自动切换或保持原路径格式一致
-    runAnalysis(outPath);
+    runAnalysis(outputStats.path);
 
     releaseGpuLib();
 
@@ -2414,7 +1863,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
 #endif
 
     // 运行分析报告（如有 --analyze）
-    msPlace = Ms(Clock::now() - tLast).count();
     printBenchmark("single");
     return true;
 }
