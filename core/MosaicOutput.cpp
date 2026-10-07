@@ -1,4 +1,4 @@
-#include "MosaicOutput.h"
+﻿#include "MosaicOutput.h"
 #include "BigTiffWriter.h"
 #include "DeepZoomWriter.h"
 #include "ImageCache.h"
@@ -189,7 +189,7 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
             {
                 cv::cvtColor(rows.row(y), rgb, cv::COLOR_BGR2RGB);
                 bool ok = png ? png->writeRow(rgb.data)
-                              : (jpg ? jpg->writeRow(rgb.data) : tiff->writeRow(offset + y, rgb.data));
+                              : (jpg ? jpg->writeRow(rgb.data) : tiff->writeRow(offset + y, rows.ptr<uint8_t>(y)));
                 if (!ok)
                 {
                     throw std::runtime_error("image row write failed");

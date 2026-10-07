@@ -256,15 +256,19 @@ TEST_CASE("bounded cache shares immutable pixels and output modes agree")
     std::vector<int> selected(6, 0);
     selected[2] = -1; // 两种模式对缺失小块采用相同背景。
     OutputStats stats;
-    config.writeMode = "batch";
-    const auto batch = utf8(workspace.outputDir() / "batch.png");
-    REQUIRE(writeMosaicOutput(config, batch, 2, 3, 18, 32, records, selected, {}, stats));
-    CHECK(stats.failed == 1);
-    config.writeMode = "stream";
-    const auto stream = utf8(workspace.outputDir() / "stream.png");
-    REQUIRE(writeMosaicOutput(config, stream, 2, 3, 18, 32, records, selected, {}, stats));
-    CHECK(stats.failed == 1);
-    CHECK(cv::norm(imreadUnicode(batch), imreadUnicode(stream), cv::NORM_INF) == 0);
+    for (const std::string format : {"png", "tiff", "jpg"})
+    {
+        config.outputFormat = format;
+        config.writeMode = "batch";
+        const auto batch = utf8(workspace.outputDir() / ("batch." + format));
+        REQUIRE(writeMosaicOutput(config, batch, 2, 3, 18, 32, records, selected, {}, stats));
+        CHECK(stats.failed == 1);
+        config.writeMode = "stream";
+        const auto stream = utf8(workspace.outputDir() / ("stream." + format));
+        REQUIRE(writeMosaicOutput(config, stream, 2, 3, 18, 32, records, selected, {}, stats));
+        CHECK(stats.failed == 1);
+        CHECK(cv::norm(imreadUnicode(batch), imreadUnicode(stream), cv::NORM_INF) == 0);
+    }
     CHECK_FALSE(writeMosaicOutput(config, utf8(workspace.root / "missing" / "out.png"),
         2, 3, 18, 32, records, selected, {}, stats));
 }
