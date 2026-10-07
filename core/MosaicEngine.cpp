@@ -2225,6 +2225,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             // --analyze: ֻ��¼ʤ���ߵ��������ݣ�ÿ�� tile һ����
             if (cfg.analyze) {
                 const auto& w = allRecords[pickIdx];
+                const auto* wTiny = w.tinyPath.empty() ? nullptr : cpuFeatureCache.loadTiny(w.id, w.tinyPath);
             // --analyze: 仅记录胜出者的匹配数据，每个 tile 一条记录
                 const auto* wLBP = w.histPath.empty() ? nullptr : cpuFeatureCache.loadLBP(w.id, w.histPath);
                 double wLabD  = cfg.labWeight*labDistance(allTL[ti],allTA[ti],allTB[ti],w.avgL,w.avgA,w.avgB);
@@ -2300,8 +2301,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
         bestRecords = bestRecsCpu;  // ͬ�������·��ʹ�õ�����
     }
 
-    bestRecords = bestRecsCpu;  // 同步到分析报告使用的字段
-
     // 根据扩展名与 --format 自动切换或保持原路径格式一致
     std::string fmt = cfg.outputFormat;
     // ����δ��ʽָ����ʽʱ������չ���ƶ�
@@ -2323,6 +2322,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // ��չ����������ʽ --format ���Զ���ʽ�л��󱣳����·�����ʽһ��
     std::string outPath = outputPath;
     {
+        const auto dotPos = outPath.rfind('.');
     // 根据扩展名与 --format 自动切换或保持原路径格式一致
         auto lower = [](std::string s) { for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); return s; };
         if (dotPos != std::string::npos)
@@ -2413,7 +2413,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
         if (!imwriteUnicode(outPath, output, writeParams))
         {
-    bestRecords = bestRecsCpu;  // 同步到分析报告使用的字段
             releaseGpuLib();
             return false;
         }
