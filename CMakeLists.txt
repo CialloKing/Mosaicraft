@@ -1,5 +1,5 @@
-﻿cmake_minimum_required(VERSION 3.20)
-project(Mosaicraft VERSION 1.13.10 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.20)
+project(Mosaicraft VERSION 1.14.0 LANGUAGES CXX)
 
 # C++17
 set(CMAKE_CXX_STANDARD 17)
@@ -79,7 +79,6 @@ add_custom_command(
         -I"${TIFF_INCLUDE_DIR}"
         ${NVCC_EXTRA_FLAGS}
     DEPENDS "${CMAKE_SOURCE_DIR}/compute/CudaBackend.cu" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh"
-            "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h"
     COMMENT "Compiling CudaBackend.cu (${CUDA_ARCH})..."
 )
 
@@ -96,7 +95,6 @@ add_custom_command(
         -I"${TIFF_INCLUDE_DIR}"
         ${NVCC_EXTRA_FLAGS}
     DEPENDS "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu" "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.h" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh"
-            "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.h"
     COMMENT "Compiling FeatureExtractorCuda.cu..."
 )
 
@@ -258,3 +256,7 @@ if (POWERSHELL_COMMAND)
         COMMENT "Running Web UI/API smoke test..."
     )
 endif()
+
+# 显式性能采样目标，不增加默认构建或 CTest 的负担。
+add_executable(mosaicraft_ann_benchmark EXCLUDE_FROM_ALL scripts/benchmark_ann.cpp)
+target_link_libraries(mosaicraft_ann_benchmark PRIVATE mosaicraft_core mosaicraft_cuda)

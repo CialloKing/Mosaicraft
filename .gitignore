@@ -54,3 +54,6 @@ Mosaicraft_*.zip
 *.ann196.meta
 *.ann196.tmp
 *.ann196.meta.tmp
+
+# Python benchmark helpers
+__pycache__/

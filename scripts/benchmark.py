@@ -5,6 +5,7 @@ files, so prepare a private feature directory before comparing index versions.
 """
 import argparse
 import ctypes
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -43,6 +44,7 @@ def peak_rss(process):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", type=Path, required=True)
+    parser.add_argument("--baseline-exe", type=Path, help="interleave an older binary with the current binary")
     parser.add_argument("--snapshot", type=Path, required=True)
     parser.add_argument("--target", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -58,11 +60,23 @@ def main():
     db = folder / "run.db"
     if db == args.snapshot.resolve():
         parser.error("snapshot must differ from disposable run.db")
+    variants = [("current", args.exe)]
+    if args.baseline_exe:
+        variants.insert(0, ("baseline", args.baseline_exe))
+    def digest(path):
+        with path.open("rb") as stream:
+            return hashlib.file_digest(stream, "sha256").hexdigest()
+    manifest = dict(snapshot_sha256=digest(args.snapshot), target_sha256=digest(args.target),
+                    executables={name: {"path": str(exe.resolve()), "sha256": digest(exe)} for name, exe in variants},
+                    color_adjust=False, topn_random=1, memory_metric="Windows peak working set; sampled total device VRAM")
+    (folder / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     records = []
-    for run in range(args.runs + 1):
+    jobs = [(run, name, exe) for run in range(args.runs + 1)
+            for name, exe in (variants if run % 2 == 0 else list(reversed(variants)))]
+    for run, name, executable in jobs:
         shutil.copy2(args.snapshot, db)
-        output = folder / ("mosaic." + args.format)
-        command = [str(args.exe.resolve()), "mosaic", "-i", str(args.target.resolve()),
+        output = folder / (name + "." + args.format)
+        command = [str(executable.resolve()), "mosaic", "-i", str(args.target.resolve()),
                    "-d", str(db), "-o", str(output), "--format", args.format,
                    "--write-mode", args.write_mode, "--topn-random", "1", "--benchmark", "--analyze"]
         if args.cpu:
@@ -72,7 +86,7 @@ def main():
         before_gpu = gpu_memory()
         gpu_peak = before_gpu
         rss = 0
-        log = folder / f"run-{run}.log"
+        log = folder / f"{name}-{run}.log"
         start = time.perf_counter()
         with log.open("wb") as stream:
             process = subprocess.Popen(command, stdout=stream, stderr=subprocess.STDOUT)
@@ -90,7 +104,7 @@ def main():
         phases = {key.strip(): float(value) for key, value in
                   re.findall(r"^\s*([^\r\n:]+):\s*([\d.]+)\s*ms", text, re.MULTILINE)}
         quality = re.search(r"Score: mean=([\d.]+).*?p90=([\d.]+)", text)
-        record = dict(run=run, warmup=run == 0, wall_seconds=elapsed,
+        record = dict(variant=name, run=run, warmup=run == 0, wall_seconds=elapsed,
                       peak_rss_bytes=rss or None, gpu_device_before_mib=before_gpu,
                       gpu_device_peak_mib=gpu_peak, phases_ms=phases,
                       mean=float(quality[1]) if quality else None,
@@ -98,7 +112,9 @@ def main():
         records.append(record)
         (folder / "results.json").write_text(json.dumps(records, indent=2), encoding="utf-8")
         print(json.dumps(record), flush=True)
-    print("Median wall seconds:", statistics.median(r["wall_seconds"] for r in records[1:]))
+    for name, _ in variants:
+        print(name, "median wall seconds:", statistics.median(
+            r["wall_seconds"] for r in records if r["variant"] == name and not r["warmup"]))
 
 
 if __name__ == "__main__":
