@@ -40,6 +40,14 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
 {
     try
     {
+        auto now = [&]()
+        {
+            return config.benchmark ? Clock::now() : Clock::time_point{};
+        };
+        auto elapsed = [&](Clock::time_point start)
+        {
+            return config.benchmark ? milliseconds(start) : 0.0;
+        };
         stats = {};
         const int width = tilesX * tileW, height = tilesY * tileH;
         const size_t count = static_cast<size_t>(tilesX) * tilesY;
@@ -71,7 +79,7 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
         stats.path = path;
         if (config.tiledOutput)
         {
-            const auto start = Clock::now();
+            const auto start = now();
             const auto folder = path + "_files/0";
             std::filesystem::create_directories(u8path(folder));
             pool.run(count,
@@ -92,7 +100,7 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
             {
                 DeepZoomWriter::buildPyramid(folder, tileW, tileH, tilesX, tilesY, config.jpegQuality);
             }
-            stats.placementMs = milliseconds(start);
+            stats.placementMs = elapsed(start);
             stats.failed = failures;
             stats.matched = static_cast<int>(count) - stats.failed;
             return true;
@@ -225,9 +233,9 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
                                 return;
                             }
                             lock.unlock();
-                            const auto start = Clock::now();
+                            const auto start = now();
                             fill(rows[slot], y);
-                            stats.placementMs += milliseconds(start);
+                            stats.placementMs += elapsed(start);
                             lock.lock();
                             ready[slot] = true;
                             changed.notify_all();
@@ -256,9 +264,9 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
                         std::rethrow_exception(error);
                     }
                     lock.unlock();
-                    const auto start = Clock::now();
+                    const auto start = now();
                     writeRows(rows[slot], y * tileH);
-                    stats.encodingMs += milliseconds(start);
+                    stats.encodingMs += elapsed(start);
                     lock.lock();
                     ready[slot] = false;
                     changed.notify_all();
@@ -278,7 +286,7 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
         }
         else
         {
-            const auto start = Clock::now();
+            const auto start = now();
             cv::Mat canvas(height, width, CV_8UC3, cv::Scalar(64, 64, 64));
             pool.run(count,
                      [&](size_t i)
@@ -290,8 +298,10 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
                                                            static_cast<int>(i / tilesX) * tileH, tileW, tileH)));
                          }
                      });
-            stats.placementMs = milliseconds(start);
-            const auto encodeStart = Clock::now();
+            stats.placementMs = elapsed(start);
+            // 画布已持有全部像素，编码前释放缓存，避免和编码缓冲叠加。
+            cache.clear();
+            const auto encodeStart = now();
             if (format == "png")
             {
                 openWriter();
@@ -311,15 +321,15 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
             {
                 throw std::runtime_error("image write failed");
             }
-            stats.encodingMs = milliseconds(encodeStart);
+            stats.encodingMs = elapsed(encodeStart);
         }
-        const auto closeStart = Clock::now();
+        const auto closeStart = now();
         if ((png && !png->close()) || (jpg && !jpg->close()))
         {
             throw std::runtime_error("image close failed");
         }
         tiff.reset();
-        stats.encodingMs += milliseconds(closeStart);
+        stats.encodingMs += elapsed(closeStart);
         stats.failed = failures;
         stats.matched = static_cast<int>(count) - stats.failed;
         return true;

@@ -633,7 +633,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     using Ms = std::chrono::duration<double, std::milli>;
     auto tStart = Clock::now();
     auto tLast  = tStart;
-    double msFeat = 0, msANNBuild = 0, msANNLoad = 0, msANNQuery = 0, msGPUScore = 0, msSelect = 0, msPlace = 0, msEncode = 0;
+    double msFeat = 0, msANNBuild = 0, msANNLoad = 0, msANNQuery = 0, msGPUScore = 0, msSelect = 0, msPlace = 0, msEncode = 0, msCPUScore = 0;
     double msPrep = 0;  // DB 加载 + GPU library 上传累计耗时，GPU 路径专用
 
     // 细粒度 profile：记录各算子累计纳秒，精确定位瓶颈
@@ -1038,7 +1038,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << (totalTiles * static_cast<double>(N) / msGPUScore * 1000.0)
                       << " scores/s\n";
         }
-        std::cout << "  Selection:   " << msSelect    << " ms\n";
+        std::cout << std::fixed << std::setprecision(1);
+        std::cout << "  CPU scoring: " << msCPUScore << " ms\n";
+        std::cout << "  Selection:   " << (msSelect - msCPUScore)    << " ms\n";
         std::cout << "  Placement:   " << msPlace     << " ms\n";
         std::cout << "  Encoding:    " << msEncode << " ms\n";
         if (opPlaceDecodeNs > 0)
@@ -1226,7 +1228,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::vector<int> bestLibIdx(totalTiles, -1);
 
     // 输出 Mat：批量模式时直接拼接，流式模式时仅作占位
-    cv::Mat output;
 
     auto runAnalysis = [&](const std::string& analysisOutputPath) {
         writeAnalysisReport(AnalysisReportContext{
@@ -1240,6 +1241,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
     };
 
     // 两个后端共用只读索引和并行粗筛；邻域相关的选择仍按 tile 顺序进行。
+    std::vector<int> allIndices;
+    {
     FeatureIndex annIndex;
     const std::string annPath = featDirCache.empty() ? "lib.ann196" : featDirCache + "/lib.ann196";
     const auto indexStart = Clock::now();
@@ -1269,13 +1272,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::copy(tileVector.begin(), tileVector.end(), queries.begin() + static_cast<size_t>(ti) * FeatureIndex::kDimension);
     }
     std::cout << "  collecting candidates (parallel)..." << std::flush;
-    auto allIndices = annIndex.queryBatch(queries, N);
+    allIndices = annIndex.queryBatch(queries, N);
     queries.clear();
     queries.shrink_to_fit();
-    const size_t totalWork = allIndices.size();
     msANNQuery = Ms(Clock::now() - queryStart).count();
     tLast = Clock::now();
     std::cout << " done" << std::endl;
+
+    } // 查询完成即释放索引，避免与大图画布和编码缓冲同时占用内存。
+    const size_t totalWork = allIndices.size();
 
     if (cfg.useGpu && gpuLib.count > 0)
     {
@@ -1685,9 +1690,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
         std::cout << "  selecting best..." << std::flush;
         auto tCpuSelectStart = Clock::now();
+        std::vector<std::pair<double, int>> scored;
+        scored.reserve(N);
         for (int ti = 0; ti < totalTiles; ++ti)
         {
-            std::vector<std::pair<double, int>> scored;
+            scored.clear();
+            const auto scoreStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
             for (int j = 0; j < N; ++j)
             {
                 int li = allIndices[static_cast<size_t>(ti) * N + j];
@@ -1723,6 +1731,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     }
                 }
                 scored.push_back({s, li});
+            }
+            if (cfg.benchmark)
+            {
+                // 候选评分包含原有邻域惩罚；排序和最终选图另计。
+                msCPUScore += Ms(Clock::now() - scoreStart).count();
             }
             if (scored.empty()) { noCandidateCount++; continue; }
             std::sort(scored.begin(), scored.end());
@@ -1779,6 +1792,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
 
     releaseGpuLib();
+    allIndices.clear();
+    allIndices.shrink_to_fit();
     OutputStats outputStats;
     if (!writeMosaicOutput(cfg, outputPath, tilesX, tilesY, outTileW, outTileH,
                           bestRecords, bestLibIdx, adjustColor, outputStats))

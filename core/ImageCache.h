@@ -102,6 +102,14 @@ class ImageCache
         return image ? image->clone() : cv::Mat{};
     }
 
+    void clear()
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_entries.clear();
+        m_lru.clear();
+        m_bytes = 0;
+    }
+
     size_t cachedBytes() const
     {
         std::lock_guard<std::mutex> lock(m_mutex);
