@@ -60,7 +60,7 @@ int matchWithIndices(
     double usePenalty);
 
 // 批量评分：totalTiles 个 tile 的全部候选一次性 GPU 评分
-void scoreBatch(
+bool scoreBatch(
     int totalTiles,
     const double* h_tileL, const double* h_tileA, const double* h_tileB,
     const float* h_tileGrid, const std::uint8_t* h_tileTiny,

@@ -24,11 +24,15 @@ int matchWithIndices(double,double,double,const float*,const std::uint8_t*,
     double,const float*,const GpuLibrary&,const int*,int,
     double,double,double,double,double,double) { return -1; }
 
-void scoreBatch(int,const double*,const double*,const double*,
+bool scoreBatch(int,const double*,const double*,const double*,
     const float*,const std::uint8_t*,const double*,const float*,
     const int*,int,const GpuLibrary&,
     const double*,const double*,const double*,const double*,const double*,
-    double,double*) {}
+    double,double*)
+{
+    return false;
+}
+
 
 int extractTileFeatures(const std::uint8_t*, int, int, int,
     double*, float*, std::uint8_t*, double*, float*) { return 0; }

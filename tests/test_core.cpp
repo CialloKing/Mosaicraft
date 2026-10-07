@@ -1,4 +1,5 @@
-﻿// ============================================================
+﻿#include "../compute/CudaBackend.h"
+// ============================================================
 // Mosaicraft 核心单元测试 (doctest)
 // 跨平台：Windows / Linux / macOS
 // 构建: cmake --build build --target mosaicraft_tests
@@ -1174,4 +1175,14 @@ TEST_CASE("JobManager can cancel queued jobs and clear finished jobs")
 
     JobSnapshot afterClear;
     CHECK_FALSE(manager.getJob(jobId, afterClear));
+}
+
+TEST_CASE("CUDA scoring rejects an invalid library")
+{
+    mosaicraft::cuda::GpuLibrary library;
+    double score = 123.0;
+    int index = 0;
+    CHECK_FALSE(mosaicraft::cuda::scoreBatch(1, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, &index, 1, library,
+        nullptr, nullptr, nullptr, nullptr, nullptr, 0.0, &score));
 }

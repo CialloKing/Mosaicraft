@@ -1,4 +1,4 @@
-#include "MosaicEngine.h"
+﻿#include "MosaicEngine.h"
 #include "BigTiffWriter.h"
 #include "Database.h"
 #include "DeepZoomWriter.h"
@@ -1451,7 +1451,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         std::cout << "..." << std::flush;
         std::vector<double> allScores(totalWork, 1e30);
-        cuda::scoreBatch(
+        if (!cuda::scoreBatch(
             totalTiles,
             allTL.data(), allTA.data(), allTB.data(),
             flatGrid.data(), flatTiny.data(), allEdge.data(), flatLBP.data(),
@@ -1459,7 +1459,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
             gpuLib,
             tileLabW.data(), tileGridW.data(), tileTinyW.data(), tileEdgeW.data(), tileLbpW.data(),
             cfg.usePenalty,
-            allScores.data());
+            allScores.data()))
+        {
+            // 失败分数不能进入选图，否则会把未计算的候选当作正常结果。
+            std::cerr << "ERROR: GPU scoring failed; mosaic was not generated." << std::endl;
+            releaseGpuLib();
+            return false;
+        }
         std::cout << " done" << std::endl;
 
             // Phase C 结束（GPU 评分完成）

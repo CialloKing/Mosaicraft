@@ -726,7 +726,7 @@ int matchWithIndices(
 // ============================================================
 // 批量评分：一次 kernel 处理全部 tile，消除逐 tile 启动开销
 // ============================================================
-void scoreBatch(
+bool scoreBatch(
     int totalTiles,
     const double* h_tileL, const double* h_tileA, const double* h_tileB,
     const float* h_tileGrid,     // [totalTiles * 192]，已扁平化
@@ -741,12 +741,12 @@ void scoreBatch(
     double usePenalty,
     double* outScores)            // [totalTiles * N]
 {
-    if (totalTiles <= 0 || N <= 0) { return; }
-    if (totalTiles > std::numeric_limits<int>::max() / N) { return; }
-    if (!outScores || !h_indices) { return; }
+    if (totalTiles <= 0 || N <= 0) { return false; }
+    if (totalTiles > std::numeric_limits<int>::max() / N) { return false; }
+    if (!outScores || !h_indices) { return false; }
     int totalWork = totalTiles * N;
     fillFailedScores(outScores, totalWork);
-    if (!hasValidLibrary(lib)) { return; }
+    if (!hasValidLibrary(lib)) { return false; }
 
     // ——— 上传 tile 特征（仅一次） ———
     DeviceBuffer<double> d_tileL;
@@ -757,21 +757,21 @@ void scoreBatch(
     DeviceBuffer<double> d_tileEdge;
     DeviceBuffer<float> d_tileLBP;
 
-    if (!CUDA_OK(d_tileL.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
-    if (!CUDA_OK(d_tileA.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
-    if (!CUDA_OK(d_tileB.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
-    if (!CUDA_OK(d_tileGrid.allocate(static_cast<std::size_t>(totalTiles) * 192 * sizeof(float)))) return;
-    if (!CUDA_OK(d_tileTiny.allocate(static_cast<std::size_t>(totalTiles) * 256))) return;
-    if (!CUDA_OK(d_tileEdge.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
-    if (!CUDA_OK(d_tileLBP.allocate(static_cast<std::size_t>(totalTiles) * 256 * sizeof(float)))) return;
+    if (!CUDA_OK(d_tileL.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
+    if (!CUDA_OK(d_tileA.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
+    if (!CUDA_OK(d_tileB.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
+    if (!CUDA_OK(d_tileGrid.allocate(static_cast<std::size_t>(totalTiles) * 192 * sizeof(float)))) { return false; }
+    if (!CUDA_OK(d_tileTiny.allocate(static_cast<std::size_t>(totalTiles) * 256))) { return false; }
+    if (!CUDA_OK(d_tileEdge.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
+    if (!CUDA_OK(d_tileLBP.allocate(static_cast<std::size_t>(totalTiles) * 256 * sizeof(float)))) { return false; }
 
-    if (!CUDA_OK(cudaMemcpy(d_tileL.get(), h_tileL, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
-    if (!CUDA_OK(cudaMemcpy(d_tileA.get(), h_tileA, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
-    if (!CUDA_OK(cudaMemcpy(d_tileB.get(), h_tileB, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
-    if (!CUDA_OK(cudaMemcpy(d_tileGrid.get(), h_tileGrid, static_cast<std::size_t>(totalTiles) * 192 * sizeof(float), cudaMemcpyHostToDevice))) return;
-    if (!CUDA_OK(cudaMemcpy(d_tileTiny.get(), h_tileTiny, static_cast<std::size_t>(totalTiles) * 256, cudaMemcpyHostToDevice))) return;
-    if (!CUDA_OK(cudaMemcpy(d_tileEdge.get(), h_tileEdge, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
-    if (!CUDA_OK(cudaMemcpy(d_tileLBP.get(), h_tileLBP, static_cast<std::size_t>(totalTiles) * 256 * sizeof(float), cudaMemcpyHostToDevice))) return;
+    if (!CUDA_OK(cudaMemcpy(d_tileL.get(), h_tileL, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
+    if (!CUDA_OK(cudaMemcpy(d_tileA.get(), h_tileA, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
+    if (!CUDA_OK(cudaMemcpy(d_tileB.get(), h_tileB, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
+    if (!CUDA_OK(cudaMemcpy(d_tileGrid.get(), h_tileGrid, static_cast<std::size_t>(totalTiles) * 192 * sizeof(float), cudaMemcpyHostToDevice))) { return false; }
+    if (!CUDA_OK(cudaMemcpy(d_tileTiny.get(), h_tileTiny, static_cast<std::size_t>(totalTiles) * 256, cudaMemcpyHostToDevice))) { return false; }
+    if (!CUDA_OK(cudaMemcpy(d_tileEdge.get(), h_tileEdge, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
+    if (!CUDA_OK(cudaMemcpy(d_tileLBP.get(), h_tileLBP, static_cast<std::size_t>(totalTiles) * 256 * sizeof(float), cudaMemcpyHostToDevice))) { return false; }
 
     // ——— 上传自适应权重（每 tile 一套） ———
     DeviceBuffer<double> d_labW;
@@ -779,25 +779,25 @@ void scoreBatch(
     DeviceBuffer<double> d_tinyW;
     DeviceBuffer<double> d_edgeW;
     DeviceBuffer<double> d_lbpW;
-    if (!CUDA_OK(d_labW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
-    if (!CUDA_OK(d_gridW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
-    if (!CUDA_OK(d_tinyW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
-    if (!CUDA_OK(d_edgeW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
-    if (!CUDA_OK(d_lbpW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) return;
-    if (!CUDA_OK(cudaMemcpy(d_labW.get(), h_labW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
-    if (!CUDA_OK(cudaMemcpy(d_gridW.get(), h_gridW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
-    if (!CUDA_OK(cudaMemcpy(d_tinyW.get(), h_tinyW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
-    if (!CUDA_OK(cudaMemcpy(d_edgeW.get(), h_edgeW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
-    if (!CUDA_OK(cudaMemcpy(d_lbpW.get(), h_lbpW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) return;
+    if (!CUDA_OK(d_labW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
+    if (!CUDA_OK(d_gridW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
+    if (!CUDA_OK(d_tinyW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
+    if (!CUDA_OK(d_edgeW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
+    if (!CUDA_OK(d_lbpW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
+    if (!CUDA_OK(cudaMemcpy(d_labW.get(), h_labW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
+    if (!CUDA_OK(cudaMemcpy(d_gridW.get(), h_gridW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
+    if (!CUDA_OK(cudaMemcpy(d_tinyW.get(), h_tinyW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
+    if (!CUDA_OK(cudaMemcpy(d_edgeW.get(), h_edgeW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
+    if (!CUDA_OK(cudaMemcpy(d_lbpW.get(), h_lbpW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
 
     // ——— 上传候选索引 ———
     DeviceBuffer<int> d_indices;
-    if (!CUDA_OK(d_indices.allocate(static_cast<std::size_t>(totalWork) * sizeof(int)))) return;
-    if (!CUDA_OK(cudaMemcpy(d_indices.get(), h_indices, static_cast<std::size_t>(totalWork) * sizeof(int), cudaMemcpyHostToDevice))) return;
+    if (!CUDA_OK(d_indices.allocate(static_cast<std::size_t>(totalWork) * sizeof(int)))) { return false; }
+    if (!CUDA_OK(cudaMemcpy(d_indices.get(), h_indices, static_cast<std::size_t>(totalWork) * sizeof(int), cudaMemcpyHostToDevice))) { return false; }
 
     // ——— 评分输出 ———
     DeviceBuffer<double> d_scores;
-    if (!CUDA_OK(d_scores.allocate(static_cast<std::size_t>(totalWork) * sizeof(double)))) return;
+    if (!CUDA_OK(d_scores.allocate(static_cast<std::size_t>(totalWork) * sizeof(double)))) { return false; }
 
     // ——— 启动 kernel（一次处理全部 tile） ———
     int blockSize = 256;
@@ -811,9 +811,9 @@ void scoreBatch(
         d_labW.get(), d_gridW.get(), d_tinyW.get(), d_edgeW.get(), d_lbpW.get(), usePenalty,
         d_scores.get());
 
-    if (!CUDA_OK(cudaGetLastError())) return;
-    if (!CUDA_OK(cudaDeviceSynchronize())) return;
-    CUDA_OK(cudaMemcpy(outScores, d_scores.get(), static_cast<std::size_t>(totalWork) * sizeof(double), cudaMemcpyDeviceToHost));
+    if (!CUDA_OK(cudaGetLastError())) { return false; }
+    if (!CUDA_OK(cudaDeviceSynchronize())) { return false; }
+    return CUDA_OK(cudaMemcpy(outScores, d_scores.get(), static_cast<std::size_t>(totalWork) * sizeof(double), cudaMemcpyDeviceToHost));
 }
 
 // ============================================================
