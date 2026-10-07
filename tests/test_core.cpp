@@ -1,4 +1,5 @@
-﻿#include "../compute/CudaBackend.h"
+﻿#include "../core/FeatureIndex.h"
+#include "../compute/CudaBackend.h"
 // ============================================================
 // Mosaicraft 核心单元测试 (doctest)
 // 跨平台：Windows / Linux / macOS
@@ -1185,4 +1186,47 @@ TEST_CASE("CUDA scoring rejects an invalid library")
     CHECK_FALSE(mosaicraft::cuda::scoreBatch(1, nullptr, nullptr, nullptr,
         nullptr, nullptr, nullptr, nullptr, &index, 1, library,
         nullptr, nullptr, nullptr, nullptr, nullptr, 0.0, &score));
+}
+
+TEST_CASE("ANN cache validates features and parallel queries preserve ordering")
+{
+    std::vector<ImageRecord> records(32);
+    for (int i = 0; i < 32; ++i)
+    {
+        records[i].id = i * 3 + 1;
+        records[i].avgL = i * 7;
+        records[i].grid4x4.assign(192, static_cast<float>(i));
+    }
+    FeatureIndex index;
+    REQUIRE(index.build(records));
+    CHECK(index.dimension() == 196);
+    std::vector<float> query;
+    buildTileVector(10, 0, 0, records[2].grid4x4, {}, 0, {}, query);
+    std::vector<float> queries;
+    for (int i = 0; i < 20; ++i)
+    {
+        queries.insert(queries.end(), query.begin(), query.end());
+    }
+    CHECK(index.queryBatch(queries, 8, 1) == index.queryBatch(queries, 8, 4));
+    const auto path = std::filesystem::temp_directory_path() /
+        ("mosaicraft-ann-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    const std::string cache = pathToUtf8(path);
+    REQUIRE(index.save(cache));
+    FeatureIndex loaded;
+    REQUIRE(loaded.load(cache, 196, records));
+    CHECK(loaded.queryBatch(queries, 8, 2) == index.queryBatch(queries, 8, 1));
+    CHECK_FALSE(loaded.load(cache, 708, records));
+    records[0].avgL += 1;
+    CHECK_FALSE(loaded.load(cache, 196, records));
+    records[0].avgL -= 1;
+    records[0].id += 1000;
+    CHECK_FALSE(loaded.load(cache, 196, records));
+    records[0].id -= 1000;
+    {
+        std::ofstream corrupt(path, std::ios::binary | std::ios::app);
+        corrupt << 'x';
+    }
+    CHECK_FALSE(loaded.load(cache, 196, records));
+    std::filesystem::remove(path);
+    std::filesystem::remove(std::filesystem::u8path(cache + ".meta"));
 }

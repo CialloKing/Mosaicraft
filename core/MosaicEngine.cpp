@@ -631,7 +631,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     using Ms = std::chrono::duration<double, std::milli>;
     auto tStart = Clock::now();
     auto tLast  = tStart;
-    double msFeat = 0, msANNBuild = 0, msGPUScore = 0, msSelect = 0, msPlace = 0;
+    double msFeat = 0, msANNBuild = 0, msANNLoad = 0, msANNQuery = 0, msGPUScore = 0, msSelect = 0, msPlace = 0;
     double msPrep = 0;  // DB 加载 + GPU library 上传累计耗时，GPU 路径专用
 
     // 细粒度 profile：记录各算子累计纳秒，精确定位瓶颈
@@ -1017,7 +1017,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "    LBP:      " << std::setprecision(1) << toMs(opLbpNs)    << " ms\n";
         }
         if (msANNBuild > 0)
-            std::cout << "  ANN (bld+q): " << msANNBuild  << " ms\n";
+            std::cout << "  ANN build:   " << msANNBuild << " ms\n";
+        std::cout << "  ANN load:    " << msANNLoad << " ms\n";
+        std::cout << "  ANN query:   " << msANNQuery << " ms\n";
         if (msGPUScore > 0)
         {
             std::cout << "  GPU scoring: " << msGPUScore  << " ms\n";
@@ -1175,21 +1177,21 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     int ty = idx / tilesX, tx = idx % tilesX;
                     cv::Mat roi = target(cv::Rect(tx*cfg.tileW, ty*cfg.tileH, cfg.tileW, cfg.tileH));
                     cv::Mat roiNative;
-                    auto t0 = Clock::now();
+                    auto t0 = cfg.benchmark ? Clock::now() : Clock::time_point{};
                     cv::resize(roi, roiNative, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
-                    auto t1 = Clock::now(); opResizeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
+                    auto t1 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opResizeNs += std::chrono::duration_cast<Ns>(t1 - t0).count(); }
                     cv::Mat lab; cv::cvtColor(roiNative, lab, cv::COLOR_BGR2Lab);
                     cv::Scalar m = cv::mean(lab);
                     allTL[idx]=m[0]; allTA[idx]=m[1]; allTB[idx]=m[2];
-                    auto t2 = Clock::now(); opLabNs += std::chrono::duration_cast<Ns>(t2 - t1).count();
+                    auto t2 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opLabNs += std::chrono::duration_cast<Ns>(t2 - t1).count(); }
                     allGrid[idx] = computeGrid8x8(roiNative);
-                    auto t3 = Clock::now(); opGridNs += std::chrono::duration_cast<Ns>(t3 - t2).count();
+                    auto t3 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opGridNs += std::chrono::duration_cast<Ns>(t3 - t2).count(); }
                     allTiny[idx] = computeTinyImage(roiNative);
-                    auto t4 = Clock::now(); opTinyNs += std::chrono::duration_cast<Ns>(t4 - t3).count();
+                    auto t4 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opTinyNs += std::chrono::duration_cast<Ns>(t4 - t3).count(); }
                     allEdge[idx] = computeEdgeDensity(roiNative);
-                    auto t5 = Clock::now(); opEdgeNs += std::chrono::duration_cast<Ns>(t5 - t4).count();
+                    auto t5 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opEdgeNs += std::chrono::duration_cast<Ns>(t5 - t4).count(); }
                     allLBP[idx] = computeLBPHistogram(roiNative);
-                    auto t6 = Clock::now(); opLbpNs += std::chrono::duration_cast<Ns>(t6 - t5).count();
+                    auto t6 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opLbpNs += std::chrono::duration_cast<Ns>(t6 - t5).count(); }
                     int d = ++featDone;
                     if (d % 500 == 0 || d == totalTiles) {
                         static std::mutex coutMutex;
@@ -1275,72 +1277,46 @@ bool MosaicEngine::generate(const std::string& targetPath,
         });
     };
 
+    // 两个后端共用只读索引和并行粗筛；邻域相关的选择仍按 tile 顺序进行。
+    FeatureIndex annIndex;
+    const std::string annPath = featDirCache.empty() ? "lib.ann196" : featDirCache + "/lib.ann196";
+    const auto indexStart = Clock::now();
+    bool loaded = annIndex.load(annPath, FeatureIndex::kDimension, allRecords);
+    msANNLoad = Ms(Clock::now() - indexStart).count();
+    if (!loaded)
+    {
+        const auto buildStart = Clock::now();
+        std::cout << "  building ANN index (196 dimensions)..." << std::flush;
+        if (!annIndex.build(allRecords))
+        {
+            releaseGpuLib();
+            return false;
+        }
+        if (!annIndex.save(annPath))
+        {
+            std::cerr << "WARNING: ANN cache could not be saved." << std::endl;
+        }
+        msANNBuild = Ms(Clock::now() - buildStart).count();
+    }
+    const auto queryStart = Clock::now();
+    std::vector<float> queries(static_cast<size_t>(totalTiles) * FeatureIndex::kDimension);
+    std::vector<float> tileVector;
+    for (int ti = 0; ti < totalTiles; ++ti)
+    {
+        buildTileVector(allTL[ti], allTA[ti], allTB[ti], allGrid[ti], allTiny[ti], allEdge[ti], allLBP[ti], tileVector);
+        std::copy(tileVector.begin(), tileVector.end(), queries.begin() + static_cast<size_t>(ti) * FeatureIndex::kDimension);
+    }
+    std::cout << "  collecting candidates (parallel)..." << std::flush;
+    auto allIndices = annIndex.queryBatch(queries, N);
+    queries.clear();
+    queries.shrink_to_fit();
+    const size_t totalWork = allIndices.size();
+    msANNQuery = Ms(Clock::now() - queryStart).count();
+    tLast = Clock::now();
+    std::cout << " done" << std::endl;
+
     if (cfg.useGpu && gpuLib.count > 0)
     {
-        // --------------------------------------------------------
-        // GPU 路径：ANN 搜索 + 批量 GPU 评分（CPU 的 ANN 构建与 GPU kernel 顺序执行）
-        // --------------------------------------------------------
-
-        // === Phase A: ANN 近似最近邻搜索，缩小候选范围 ===
-        // ANN 索引持久化缓存：build 一次后可复用，加速后续生成
-        FeatureIndex annIndex;
-        std::string annPath = featDirCache.empty() ? "lib.ann"
-                             : (featDirCache + "/lib.ann");
-        bool annLoaded = false;
-        if (!featDirCache.empty())
-        {
-            std::cout << "  loading ANN index..." << std::flush;
-            annLoaded = annIndex.load(annPath, 708, allRecords);
-            std::cout << (annLoaded ? " done" : " not found") << std::endl;
-        }
-        if (!annLoaded)
-        {
-            std::cout << "  building ANN index (" << dbCount << " images)..." << std::flush;
-            annIndex.build(allRecords);
-            std::cout << " done" << std::endl;
-            if (!featDirCache.empty())
-            {
-                if (annIndex.save(annPath))
-                    std::cout << "  ANN index saved: " << annPath << std::endl;
-            }
-        }
-
-        std::cout << "  collecting candidates..." << std::flush;
-        auto tCollectStart = Clock::now();
-        const size_t totalWork = static_cast<size_t>(totalTiles) * static_cast<size_t>(N);
-        std::vector<int> allIndices(totalWork, -1);
-        std::vector<float> tileVec;
-        int annMissCount = 0;
-        for (int ti = 0; ti < totalTiles; ++ti)
-        {
-            buildTileVector(allTL[ti], allTA[ti], allTB[ti],
-                            allGrid[ti], allTiny[ti], allEdge[ti], allLBP[ti],
-                            tileVec);
-            auto imgIds = annIndex.query(tileVec.data(), N);
-            int nc = static_cast<int>(imgIds.size());
-            for (int j = 0; j < nc; ++j)
-            {
-                int libIdx = annIndex.idToAllRecordsIndex(imgIds[j]);
-                if (libIdx >= 0)
-                    allIndices[static_cast<size_t>(ti) * static_cast<size_t>(N) + static_cast<size_t>(j)] = libIdx;
-                else
-                    annMissCount++;
-            }
-            if (ti % 500 == 0 || ti == totalTiles - 1) {
-                double e = std::chrono::duration<double>(Clock::now() - tCollectStart).count();
-                double eta = (e / (ti+1)) * (totalTiles - (ti+1));
-                std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
-                if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
-                std::cout << "\r  collecting candidates " << std::setw(doneWidth) << (ti+1) << "/" << totalTiles
-                          << " | ETA" << etas << std::flush;
-            }
-        }
-        std::cout << " done" << std::endl;
-
-            // Phase A 结束：ANN 构建 + 查询耗时
-        auto tANN = Clock::now();
-        msANNBuild = Ms(tANN - tLast).count();
-        tLast = tANN;
 
             // === Phase B: 将 tile 特征打包为连续数组，供 GPU 批量评分 ===
         std::vector<float>   flatGrid(static_cast<size_t>(totalTiles) * 192);
@@ -1763,12 +1739,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         if (libIdx < 0) { tileFail++; continue; }
                         int ty = ti / tilesX, tx = ti % tilesX;
                         const auto& rec = bestRecords[ti];
-                        auto t0 = Clock::now();
+                        auto t0 = cfg.benchmark ? Clock::now() : Clock::time_point{};
                         cv::Mat r = imgCache.getOrLoad(
                             rec.id, rec.filePath, outTileW, outTileH);
                         if (r.empty()) { tileFail++; continue; }
-                        auto t1 = Clock::now();
-                        opPlaceDecodeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
+                        auto t1 = cfg.benchmark ? Clock::now() : Clock::time_point{};
+                        if (cfg.benchmark) { opPlaceDecodeNs += std::chrono::duration_cast<Ns>(t1 - t0).count(); }
                         if (cfg.colorAdjust) { adjustColor(r, cfg.colorStrength); }
                                             // DZI 命名：{name}_files/{level}/{col}_{row}.jpg
                         snprintf(fname, sizeof(fname), "%s/%d_%d.jpg",
@@ -2109,24 +2085,24 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     const auto& rec = bestRecords[ti];
                     int ty = ti / tilesX, tx = ti % tilesX;
 
-                    auto t0 = Clock::now();
+                    auto t0 = cfg.benchmark ? Clock::now() : Clock::time_point{};
                     cv::Mat resized = imgCache.getOrLoad(
                         rec.id, rec.filePath, outTileW, outTileH);
                     if (resized.empty())
                     {
                         placeLoadErr++; placeFail++;
-                        opPlaceDecodeNs += std::chrono::duration_cast<Ns>(Clock::now() - t0).count();
+                        if (cfg.benchmark) { opPlaceDecodeNs += std::chrono::duration_cast<Ns>(Clock::now() - t0).count(); }
                         continue;
                     }
-                    auto t1 = Clock::now();
-                    opPlaceDecodeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
+                    auto t1 = cfg.benchmark ? Clock::now() : Clock::time_point{};
+                    if (cfg.benchmark) { opPlaceDecodeNs += std::chrono::duration_cast<Ns>(t1 - t0).count(); }
 
                     if (cfg.colorAdjust) { adjustColor(resized, cfg.colorStrength); }
                                     // 将缩放后的 tile 拷贝到输出 Mat 对应 ROI
                     resized.copyTo(output(cv::Rect(tx * outTileW, ty * outTileH,
                                                   outTileW, outTileH)));
-                    auto t2 = Clock::now();
-                    opPlaceCopyNs += std::chrono::duration_cast<Ns>(t2 - t1).count();
+                    auto t2 = cfg.benchmark ? Clock::now() : Clock::time_point{};
+                    if (cfg.benchmark) { opPlaceCopyNs += std::chrono::duration_cast<Ns>(t2 - t1).count(); }
 
                     int d = ++placeDone;
                     if (d % 500 == 0 || d == totalTiles) {
@@ -2154,16 +2130,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
         // --------------------------------------------------------
         // CPU 路径：逐 tile 顺序处理，ANN 搜索 + 评分 + 贴图
         // --------------------------------------------------------
-        FeatureIndex annCpu;
-        std::string annPath = featDirCache.empty() ? "lib.ann" : (featDirCache + "/lib.ann");
-        std::cout << "  loading ANN index..." << std::flush;
-        if (!annCpu.load(annPath, 708, allRecords)) {
-            std::cout << " building..." << std::flush;
-            annCpu.build(allRecords);
-            if (!featDirCache.empty()) annCpu.save(annPath);
-        }
-        std::cout << " done" << std::endl;
-
         ImageCache imgCache;
         FeatureCache cpuFeatureCache;
         output = cv::Mat(outH, outW, CV_8UC3, cv::Scalar(64, 64, 64));
@@ -2182,16 +2148,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
         auto tCpuSelectStart = Clock::now();
         for (int ti = 0; ti < totalTiles; ++ti)
         {
-            std::vector<float> tileVec;
-            buildTileVector(allTL[ti],allTA[ti],allTB[ti],allGrid[ti],
-                            allTiny[ti],allEdge[ti],allLBP[ti], tileVec);
-            auto imgIds = annCpu.query(tileVec.data(), N);
-            if (imgIds.empty()) { noCandidateCount++; continue; }
-                    // 构建评分列表：lab + grid + tiny + edge + lbp + 惩罚项
-            std::vector<std::pair<double,int>> scored;
-            for (int j = 0; j < (int)imgIds.size(); ++j) {
-                int li = annCpu.idToAllRecordsIndex(imgIds[j]);
-                if (li < 0) continue;
+            std::vector<std::pair<double, int>> scored;
+            for (int j = 0; j < N; ++j)
+            {
+                int li = allIndices[static_cast<size_t>(ti) * N + j];
+                if (li < 0)
+                {
+                    continue;
+                }
                 const auto& r = allRecords[li];
                 const auto* recTiny = r.tinyPath.empty() ? nullptr : cpuFeatureCache.loadTiny(r.id, r.tinyPath);
                 const auto* recLBP = r.histPath.empty() ? nullptr : cpuFeatureCache.loadLBP(r.id, r.histPath);
