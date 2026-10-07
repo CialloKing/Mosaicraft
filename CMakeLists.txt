@@ -78,7 +78,7 @@ add_custom_command(
         -I"${VCPKG_TRIPLET_INCLUDE}"
         -I"${TIFF_INCLUDE_DIR}"
         ${NVCC_EXTRA_FLAGS}
-    DEPENDS "${CMAKE_SOURCE_DIR}/compute/CudaBackend.cu"
+    DEPENDS "${CMAKE_SOURCE_DIR}/compute/CudaBackend.cu" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh"
             "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h"
     COMMENT "Compiling CudaBackend.cu (${CUDA_ARCH})..."
 )
@@ -95,7 +95,7 @@ add_custom_command(
         -I"${VCPKG_TRIPLET_INCLUDE}"
         -I"${TIFF_INCLUDE_DIR}"
         ${NVCC_EXTRA_FLAGS}
-    DEPENDS "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu"
+    DEPENDS "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu" "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.h" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh"
             "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.h"
     COMMENT "Compiling FeatureExtractorCuda.cu..."
 )

@@ -1,5 +1,6 @@
 ﻿#include "MosaicEngine.h"
 #include "MosaicOutput.h"
+#include "FeatureMatrix.h"
 #include "BigTiffWriter.h"
 #include "Database.h"
 #include "DeepZoomWriter.h"
@@ -142,7 +143,7 @@ struct AnalysisReportContext
     const std::vector<double>& allTA;
     const std::vector<double>& allTB;
     const std::vector<double>& allEdge;
-    const std::vector<std::vector<float>>& allGrid;
+    const FeatureMatrix<float, 192>& allGrid;
     const std::vector<ImageRecord>& allRecords;
     const std::vector<ImageRecord>& bestRecords;
 };
@@ -759,10 +760,17 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
 
     // 为 GPU 路径准备连续内存缓冲区，存放 tiny/LBP 特征数据
+    cuda::GpuTimings featureTimings, scoreTimings, libraryTimings;
     cuda::GpuLibrary gpuLib;
     auto releaseGpuLib = [&]() {
         if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);
     };
+    if (cfg.useGpu && !((featW == 180 && featH == 320) || (featW == 320 && featH == 180)
+        || (featW == 360 && featH == 640) || (featW == 640 && featH == 360)))
+    {
+        std::cout << "Feature size uses CPU extraction and scoring." << std::endl;
+        cfg.useGpu = false;
+    }
     if (cfg.useGpu && cuda::isCudaAvailable())
     {
         std::vector<double>  h_lab(dbCount * 3);
@@ -831,14 +839,16 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         if (cuda::uploadLibrary(gpuLib, h_lab.data(), h_grid.data(),
                                  h_tiny.data(), h_edge.data(),
-                                 h_lbp.data(), h_use.data(), dbCount))
+                                 h_lbp.data(), h_use.data(), dbCount, cfg.benchmark ? &libraryTimings : nullptr))
         {
             std::cout << "GPU library: " << dbCount << " images ("
                       << (dbCount * (192*4+256+256*4) / 1024) << " KB)" << std::endl;
         }
         else
         {
-            cfg.useGpu = false;
+            std::cerr << "ERROR: GPU library upload failed." << std::endl;
+            releaseGpuLib();
+            return false;
         }
     }
 
@@ -1038,6 +1048,20 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "    Resize:   " << std::setprecision(1) << toMs(opPlaceResizeNs) << " ms\n";
             std::cout << "    Copy:     " << std::setprecision(1) << toMs(opPlaceCopyNs) << " ms\n";
         }
+        if (cfg.useGpu)
+        {
+            std::cout << "  Library GPU allocation: " << libraryTimings.allocationMs << " ms\n"
+                      << "  Library GPU upload: " << libraryTimings.uploadMs << " ms\n"
+                      << "  Feature GPU allocation: " << featureTimings.allocationMs << " ms\n"
+                      << "  Feature GPU upload: " << featureTimings.uploadMs << " ms\n"
+                      << "  Feature GPU compute: " << featureTimings.computeMs << " ms\n"
+                      << "  Feature GPU download: " << featureTimings.downloadMs << " ms\n"
+                      << "  Score GPU allocation: " << scoreTimings.allocationMs << " ms\n"
+                      << "  Score GPU upload: " << scoreTimings.uploadMs << " ms\n"
+                      << "  Score GPU compute: " << scoreTimings.computeMs << " ms\n"
+                      << "  Score GPU download: " << scoreTimings.downloadMs << " ms\n"
+                      << "  Score temporary bytes: " << scoreTimings.peakTemporaryBytes << "\n";
+        }
         std::cout << "  === Total: " << msTotal     << " ms ===\n";
         if (totalTiles > 0)
             std::cout << "  Avg/tile:    " << (msTotal / totalTiles) << " ms\n";
@@ -1045,10 +1069,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
     };
 
     std::vector<double> allTL(totalTiles), allTA(totalTiles), allTB(totalTiles);
-    std::vector<std::vector<float>> allGrid(totalTiles);
-    std::vector<std::vector<uint8_t>> allTiny(totalTiles);
+    FeatureMatrix<float, 192> allGrid(totalTiles);
+    FeatureMatrix<uint8_t, 256> allTiny(totalTiles);
     std::vector<double> allEdge(totalTiles);
-    std::vector<std::vector<float>> allLBP(totalTiles);
+    FeatureMatrix<float, 256> allLBP(totalTiles);
 
     // 特征数组：LAB颜色、8x8 Grid、Tiny、Edge、LBP，后续按需推导 4x4 Grid
 
@@ -1063,108 +1087,42 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // Phase 0: 特征提取，GPU 路径批量提取，CPU 路径多线程并行
     if (cfg.useGpu)
     {
-        const int BATCH = 256;
-        std::vector<uint8_t> batchFeat(BATCH * featBytes);
-        std::vector<double> batchLAB(BATCH * 3);
-        std::vector<float>  batchGrid(BATCH * 192);
-        std::vector<uint8_t> batchTiny(BATCH * 256);
-        std::vector<double> batchEdgeArr(BATCH);
-        std::vector<float>  batchLBP(BATCH * 256);
-
-        int batchStart = 0;
-        for (; batchStart + BATCH <= totalTiles; batchStart += BATCH)
+        const int batchSize = 256;
+        cuda::FeatureWorkspace workspace;
+        std::vector<uint8_t> images(batchSize * featBytes);
+        std::vector<double> lab(batchSize * 3);
+        for (int first = 0; first < totalTiles; first += batchSize)
         {
-            int batchN = BATCH;
-
-            // CPU resize: tile 缩放到 featW x featH，多线程并行
+            const int count = std::min(batchSize, totalTiles - first);
             #pragma omp parallel for
-            for (int i = 0; i < batchN; ++i)
+            for (int i = 0; i < count; ++i)
             {
-                int ti = batchStart + i;
-                int ty = ti / tilesX, tx = ti % tilesX;
-                cv::Mat roi = target(cv::Rect(tx*cfg.tileW, ty*cfg.tileH, cfg.tileW, cfg.tileH));
-                cv::Mat roiFeat;
-                cv::resize(roi, roiFeat, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
-                std::memcpy(&batchFeat[i * featBytes], roiFeat.data, featBytes);
+                const int ti = first + i;
+                cv::Mat roi = target(cv::Rect((ti % tilesX) * cfg.tileW, (ti / tilesX) * cfg.tileH,
+                    cfg.tileW, cfg.tileH));
+                cv::Mat resized;
+                cv::resize(roi, resized, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
+                std::memcpy(images.data() + i * featBytes, resized.data, featBytes);
             }
-
-            // GPU 批量提取特征
-            int ret = mosaicraft::cuda::extractFeaturesRaw(
-                batchFeat.data(), batchN, featW, featH,
-                batchLAB.data(), batchGrid.data(), batchTiny.data(),
-                batchEdgeArr.data(), batchLBP.data());
-            if (ret < 0) { cfg.useGpu = false; break; }
-
-            // 拷贝结果到 all* 数组
-            for (int i = 0; i < batchN; ++i)
+            const int result = cuda::extractFeaturesRaw(images.data(), count, featW, featH,
+                lab.data(), allGrid[first].data(), allTiny[first].data(),
+                allEdge.data() + first, allLBP[first].data(), &workspace,
+                cfg.benchmark ? &featureTimings : nullptr);
+            if (result < 0)
             {
-                int ti = batchStart + i;
-                allTL[ti]  = batchLAB[i * 3 + 0];
-                allTA[ti]  = batchLAB[i * 3 + 1];
-                allTB[ti]  = batchLAB[i * 3 + 2];
-                allGrid[ti].assign(batchGrid.data() + i * 192, batchGrid.data() + (i + 1) * 192);
-                allTiny[ti].assign(batchTiny.data() + i * 256, batchTiny.data() + (i + 1) * 256);
-                allEdge[ti] = batchEdgeArr[i];
-                allLBP[ti].assign(batchLBP.data() + i * 256, batchLBP.data() + (i + 1) * 256);
+                std::cerr << "ERROR: GPU feature extraction failed." << std::endl;
+                releaseGpuLib();
+                return false;
             }
-            int done = batchStart + batchN;
-            double elapsed = std::chrono::duration<double>(Clock::now() - tPreFeat).count();
-            double eta = (elapsed / done) * (totalTiles - done);
-            std::string etaStr = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
-            // 固定宽度5字符，右对齐，确保行长度恒定
-            if (etaStr.size() < 5) etaStr = std::string(5 - etaStr.size(), ' ') + etaStr;
-            std::cout << "\r  features " << std::setw(doneWidth) << done << "/" << totalTiles
-                      << " | ETA" << etaStr << std::flush;
+            for (int i = 0; i < count; ++i)
+            {
+                allTL[first + i] = lab[i * 3];
+                allTA[first + i] = lab[i * 3 + 1];
+                allTB[first + i] = lab[i * 3 + 2];
+            }
+            std::cout << "\r  features " << first + count << "/" << totalTiles << std::flush;
         }
-
-        // 剩余不足 256 的尾部批次
-        if (batchStart < totalTiles)
-        {
-            int tailN = totalTiles - batchStart;
-            std::vector<uint8_t> tailFeat(tailN * featBytes);
-            std::vector<double> tailLAB(tailN * 3);
-            std::vector<float>  tailGrid(tailN * 192);
-            std::vector<uint8_t> tailTiny(tailN * 256);
-            std::vector<double> tailEdgeArr(tailN);
-            std::vector<float>  tailLBP(tailN * 256);
-
-            #pragma omp parallel for
-            for (int i = 0; i < tailN; ++i)
-            {
-                int ti = batchStart + i;
-                int ty = ti / tilesX, tx = ti % tilesX;
-                cv::Mat roi = target(cv::Rect(tx*cfg.tileW, ty*cfg.tileH, cfg.tileW, cfg.tileH));
-                cv::Mat roiFeat;
-                cv::resize(roi, roiFeat, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
-                std::memcpy(&tailFeat[i * featBytes], roiFeat.data, featBytes);
-            }
-
-            int ret = mosaicraft::cuda::extractFeaturesRaw(
-                tailFeat.data(), tailN, featW, featH,
-                tailLAB.data(), tailGrid.data(), tailTiny.data(),
-                tailEdgeArr.data(), tailLBP.data());
-            if (ret < 0) { cfg.useGpu = false; }
-
-            if (cfg.useGpu)
-            {
-                for (int i = 0; i < tailN; ++i)
-                {
-                    int ti = batchStart + i;
-                    allTL[ti]  = tailLAB[i * 3 + 0];
-                    allTA[ti]  = tailLAB[i * 3 + 1];
-                    allTB[ti]  = tailLAB[i * 3 + 2];
-                    allGrid[ti].assign(tailGrid.data() + i * 192, tailGrid.data() + (i + 1) * 192);
-                    allTiny[ti].assign(tailTiny.data() + i * 256, tailTiny.data() + (i + 1) * 256);
-                    allEdge[ti] = tailEdgeArr[i];
-                    allLBP[ti].assign(tailLBP.data() + i * 256, tailLBP.data() + (i + 1) * 256);
-                }
-            }
-            std::cout << "\r  features " << totalTiles << "/" << totalTiles << std::endl;
-        }
-        else
-        {
-            std::cout << std::endl;
-        }
+        std::cout << std::endl;
     }
 
     if (!cfg.useGpu)  // CPU 路径：多线程并行提取特征
@@ -1322,17 +1280,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
     if (cfg.useGpu && gpuLib.count > 0)
     {
 
-            // === Phase B: 将 tile 特征打包为连续数组，供 GPU 批量评分 ===
-        std::vector<float>   flatGrid(static_cast<size_t>(totalTiles) * 192);
-        std::vector<uint8_t> flatTiny(static_cast<size_t>(totalTiles) * 256);
-        std::vector<float>   flatLBP(static_cast<size_t>(totalTiles) * 256);
-        for (int ti = 0; ti < totalTiles; ++ti)
-        {
-            std::memcpy(&flatGrid[static_cast<size_t>(ti) * 192], allGrid[ti].data(), 192 * sizeof(float));
-            std::memcpy(&flatTiny[static_cast<size_t>(ti) * 256], allTiny[ti].data(), 256);
-            std::memcpy(&flatLBP[static_cast<size_t>(ti) * 256], allLBP[ti].data(), 256 * sizeof(float));
-        }
-
         // 主马赛克生成流程  Phase C: , ,  GPU , ,  , ,
             // === Phase C: 自适应权重计算，按 tile 内容分类，预计算各 tile 权重（需 --adaptive-weights）===
         std::vector<double> tileLabW(totalTiles, nLabW);
@@ -1434,12 +1381,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
         if (!cuda::scoreBatch(
             totalTiles,
             allTL.data(), allTA.data(), allTB.data(),
-            flatGrid.data(), flatTiny.data(), allEdge.data(), flatLBP.data(),
+            allGrid.data(), allTiny.data(), allEdge.data(), allLBP.data(),
             allIndices.data(), N,
             gpuLib,
             tileLabW.data(), tileGridW.data(), tileTinyW.data(), tileEdgeW.data(), tileLbpW.data(),
             cfg.usePenalty,
-            allScores.data()))
+            allScores.data(), cfg.benchmark ? &scoreTimings : nullptr))
         {
             // 失败分数不能进入选图，否则会把未计算的候选当作正常结果。
             std::cerr << "ERROR: GPU scoring failed; mosaic was not generated." << std::endl;

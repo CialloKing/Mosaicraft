@@ -1230,3 +1230,70 @@ TEST_CASE("ANN cache validates features and parallel queries preserve ordering")
     std::filesystem::remove(path);
     std::filesystem::remove(std::filesystem::u8path(cache + ".meta"));
 }
+
+TEST_CASE("CUDA reuses feature workspace and scoring batches preserve scores")
+{
+    using namespace mosaicraft::cuda;
+    if (!isCudaAvailable())
+    {
+        return;
+    }
+    constexpr int count = 5, candidates = 2;
+    std::vector<uint8_t> images(count * 180 * 320 * 3);
+    for (size_t i = 0; i < images.size(); ++i)
+    {
+        images[i] = static_cast<uint8_t>((i * 17 + i / 97) % 256);
+    }
+    std::vector<double> lab(count * 3), edge(count);
+    std::vector<float> grid(count * 192), lbp(count * 256);
+    std::vector<uint8_t> tiny(count * 256);
+    FeatureWorkspace workspace;
+    REQUIRE(extractFeaturesRaw(images.data(), count, 180, 320, lab.data(), grid.data(), tiny.data(),
+        edge.data(), lbp.data(), &workspace) == 0);
+    const auto originalGrid = grid;
+    const auto originalLbp = lbp;
+    const auto originalTiny = tiny;
+    REQUIRE(extractFeaturesRaw(images.data(), 1, 180, 320, lab.data(), grid.data(), tiny.data(),
+        edge.data(), lbp.data(), &workspace) == 0);
+    // 原内核的浮点原子累加顺序不固定，工作区复用不能要求逐位一致。
+    float maximumGridError = 0;
+    for (size_t i = 0; i < grid.size(); ++i)
+    {
+        maximumGridError = std::max(maximumGridError, std::abs(grid[i] - originalGrid[i]));
+    }
+    CHECK(maximumGridError < 0.001f);
+    CHECK(lbp == originalLbp);
+    CHECK(tiny == originalTiny);
+    GpuLibrary library;
+    struct Cleanup
+    {
+        GpuLibrary& library;
+        ~Cleanup()
+        {
+            freeLibrary(library);
+        }
+    } cleanup{library};
+    int use[count] = {};
+    REQUIRE(uploadLibrary(library, lab.data(), grid.data(), tiny.data(), edge.data(), lbp.data(), use, count));
+    double l[count], a[count], b[count], weights[count];
+    int indices[count * candidates];
+    for (int i = 0; i < count; ++i)
+    {
+        l[i] = lab[i * 3];
+        a[i] = lab[i * 3 + 1];
+        b[i] = lab[i * 3 + 2];
+        weights[i] = 0.2;
+        indices[i * 2] = i;
+        indices[i * 2 + 1] = i == 4 ? -1 : (i + 1) % count;
+    }
+    std::vector<double> full(count * candidates), batched(count * candidates);
+    auto score = [&](std::vector<double>& output, size_t budget)
+    {
+        return scoreBatch(count, l, a, b, grid.data(), tiny.data(), edge.data(), lbp.data(), indices,
+            candidates, library, weights, weights, weights, weights, weights, 0.01, output.data(), nullptr, budget);
+    };
+    REQUIRE(score(full, 256 * 1024 * 1024));
+    REQUIRE(score(batched, 2144 * 2)); // 两块一批，并覆盖最后不足一批的情况。
+    CHECK(full == batched);
+    CHECK_FALSE(score(batched, 1));
+}

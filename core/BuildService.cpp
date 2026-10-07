@@ -217,6 +217,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     {
         std::cout << "Normalizing + Features: GPU (batch " << GPU_BATCH << ", pipelined)" << std::endl;
         gpuThread = std::thread([&]() {
+            cuda::FeatureWorkspace featureWorkspace;
             bool firstBatch = true;
             std::vector<cv::Mat> imgs; imgs.reserve(GPU_BATCH);
             std::vector<ImageRecord> recs; recs.reserve(GPU_BATCH);
@@ -228,7 +229,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                     firstBatch = false;
                 }
 #ifdef MOSAICRAFT_CUDA
-                int done = cuda::extractBatch(imgs, recs, featDir, stems);
+                int done = cuda::extractBatch(imgs, recs, featDir, stems, &featureWorkspace);
 #else
                 int done = 0;
 #endif

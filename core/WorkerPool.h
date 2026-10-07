@@ -15,7 +15,7 @@ namespace mosaicraft
 // 一个任务内复用工作线程；run 返回前所有任务和异常均已收束。
 class WorkerPool
 {
-public:
+  public:
     explicit WorkerPool(unsigned requested = 0)
     {
         unsigned count = requested ? requested : std::min(8u, std::max(1u, std::thread::hardware_concurrency()));
@@ -23,7 +23,11 @@ public:
         {
             for (unsigned i = 0; i < count; ++i)
             {
-                m_threads.emplace_back([this]() { worker(); });
+                m_threads.emplace_back(
+                    [this]()
+                    {
+                        worker();
+                    });
             }
         }
         catch (...)
@@ -33,9 +37,12 @@ public:
         }
     }
 
-    ~WorkerPool() { stop(); }
-    WorkerPool(const WorkerPool&) = delete;
-    WorkerPool& operator=(const WorkerPool&) = delete;
+    ~WorkerPool()
+    {
+        stop();
+    }
+    WorkerPool(const WorkerPool &) = delete;
+    WorkerPool &operator=(const WorkerPool &) = delete;
 
     void run(std::size_t count, std::function<void(std::size_t)> job)
     {
@@ -47,7 +54,11 @@ public:
         m_remaining = m_threads.size();
         ++m_generation;
         m_ready.notify_all();
-        m_done.wait(lock, [this]() { return m_remaining == 0; });
+        m_done.wait(lock,
+                    [this]()
+                    {
+                        return m_remaining == 0;
+                    });
         m_job = {};
         if (m_error)
         {
@@ -55,7 +66,7 @@ public:
         }
     }
 
-private:
+  private:
     void stop()
     {
         {
@@ -63,7 +74,7 @@ private:
             m_stop = true;
         }
         m_ready.notify_all();
-        for (auto& thread : m_threads)
+        for (auto &thread : m_threads)
         {
             thread.join();
         }
@@ -75,7 +86,11 @@ private:
         for (;;)
         {
             std::unique_lock<std::mutex> lock(m_mutex);
-            m_ready.wait(lock, [&]() { return m_stop || m_generation != generation; });
+            m_ready.wait(lock,
+                         [&]()
+                         {
+                             return m_stop || m_generation != generation;
+                         });
             if (m_stop)
             {
                 return;
@@ -116,4 +131,4 @@ private:
     bool m_stop = false;
 };
 
-}
+} // namespace mosaicraft

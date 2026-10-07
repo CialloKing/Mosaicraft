@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include "CudaBackend.h"
 #include "core/Database.h"
 
 #include <opencv2/core.hpp>
@@ -8,8 +9,10 @@
 #include <string>
 #include <vector>
 
-namespace mosaicraft {
-namespace cuda {
+namespace mosaicraft
+{
+namespace cuda
+{
 
 // GPU 批量特征提取。
 // 一次处理多张归一化图（180×320 BGR），填充对应的 ImageRecord。
@@ -21,12 +24,8 @@ namespace cuda {
 // featDir, stems:   [batchSize] 特征文件目录和文件名前缀
 //
 // 返回成功处理的数量。
-int extractBatch(
-    const std::vector<cv::Mat>& images,
-    std::vector<ImageRecord>& records,
-    const std::string& featDir,
-    const std::vector<std::string>& stems
-);
+int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &records, const std::string &featDir,
+                 const std::vector<std::string> &stems, FeatureWorkspace *workspace = nullptr);
 
 } // namespace cuda
 } // namespace mosaicraft

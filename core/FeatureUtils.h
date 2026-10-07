@@ -14,8 +14,7 @@ namespace mosaicraft
 // 共享特征计算工具（MosaicEngine + inspect 共用）
 // ============================================================
 
-inline double labDistance(double l1, double a1, double b1,
-                           double l2, double a2, double b2)
+inline double labDistance(double l1, double a1, double b1, double l2, double a2, double b2)
 {
     double dl = l1 - l2;
     double da = a1 - a2;
@@ -23,10 +22,13 @@ inline double labDistance(double l1, double a1, double b1,
     return std::sqrt(dl * dl + da * da + db * db) / 100.0;
 }
 
-inline std::vector<float> computeGrid4x4(const cv::Mat& bgr)
+inline std::vector<float> computeGrid4x4(const cv::Mat &bgr)
 {
     const int gridRows = 4, gridCols = 4;
-    if (bgr.rows < gridRows || bgr.cols < gridCols) return std::vector<float>(48, 0.0f);
+    if (bgr.rows < gridRows || bgr.cols < gridCols)
+    {
+        return std::vector<float>(48, 0.0f);
+    }
     const int cellH = bgr.rows / gridRows, cellW = bgr.cols / gridCols;
     std::vector<float> grid;
     grid.reserve(48);
@@ -49,10 +51,13 @@ inline std::vector<float> computeGrid4x4(const cv::Mat& bgr)
 // —— 8×8 Grid 实验（用于验证是否值得全面升级） ——
 // 将图像分为 8×8=64 格，每格计算平均 LAB
 // 维数: 64×3 = 192 float
-inline std::vector<float> computeGrid8x8FromLab(const cv::Mat& lab)
+inline std::vector<float> computeGrid8x8FromLab(const cv::Mat &lab)
 {
     const int gridRows = 8, gridCols = 8;
-    if (lab.rows < gridRows || lab.cols < gridCols) return std::vector<float>(192, 0.0f);
+    if (lab.rows < gridRows || lab.cols < gridCols)
+    {
+        return std::vector<float>(192, 0.0f);
+    }
     const int cellH = lab.rows / gridRows, cellW = lab.cols / gridCols;
     std::vector<float> grid;
     grid.reserve(192);
@@ -69,7 +74,7 @@ inline std::vector<float> computeGrid8x8FromLab(const cv::Mat& lab)
     return grid;
 }
 
-inline std::vector<float> computeGrid8x8(const cv::Mat& bgr)
+inline std::vector<float> computeGrid8x8(const cv::Mat &bgr)
 {
     cv::Mat lab;
     cv::cvtColor(bgr, lab, cv::COLOR_BGR2Lab);
@@ -78,8 +83,7 @@ inline std::vector<float> computeGrid8x8(const cv::Mat& bgr)
 
 // 将 4×4 Grid (48维) 双线性插值升采样到 8×8 (192维)
 // 用于库图只有 4×4 时，与 tile 的 8×8 对齐比较
-inline void upsampleGrid4x4to8x8(const std::vector<float>& src48,
-                                  std::vector<float>& dst192)
+inline void upsampleGrid4x4to8x8(const std::vector<float> &src48, std::vector<float> &dst192)
 {
     dst192.resize(192);
     for (int r = 0; r < 8; ++r)
@@ -99,23 +103,21 @@ inline void upsampleGrid4x4to8x8(const std::vector<float>& src48,
 }
 
 // 8×8 Grid 距离（192维，64个cell）
-inline double gridDistance8x8(const std::vector<float>& a,
-                               const std::vector<float>& b,
-                               bool useSqrt = false)  // false=平方(排序用), true=开方(显示用)
+template <class Row>
+inline double gridDistance8x8(const Row &a, const std::vector<float> &b,
+                              bool useSqrt = false) // false=平方(排序用), true=开方(显示用)
 {
-    if (a.size() != 192 || b.size() != 192) { return 1e6; }
+    if (a.size() != 192 || b.size() != 192)
+    {
+        return 1e6;
+    }
     // 空间权重：源于 15K tile 实测 Grid 贡献分析
     // 中心 cell 匹配最稳定(权重↑)，底行最不可靠(权重↓)
-    constexpr double w[64] = {
-        0.85,0.92,0.96,0.99,1.00,0.99,0.94,0.89,
-        0.96,1.02,1.06,1.11,1.11,1.10,1.05,0.98,
-        0.97,1.03,1.07,1.10,1.11,1.09,1.05,0.98,
-        0.96,1.02,1.06,1.09,1.09,1.07,1.02,0.96,
-        0.97,1.03,1.08,1.13,1.13,1.10,1.05,0.98,
-        0.98,1.05,1.10,1.14,1.14,1.10,1.06,0.98,
-        0.97,1.02,1.06,1.10,1.11,1.06,1.02,0.94,
-        0.46,0.47,0.48,0.48,0.48,0.47,0.47,0.46
-    };
+    constexpr double w[64] = {0.85, 0.92, 0.96, 0.99, 1.00, 0.99, 0.94, 0.89, 0.96, 1.02, 1.06, 1.11, 1.11,
+                              1.10, 1.05, 0.98, 0.97, 1.03, 1.07, 1.10, 1.11, 1.09, 1.05, 0.98, 0.96, 1.02,
+                              1.06, 1.09, 1.09, 1.07, 1.02, 0.96, 0.97, 1.03, 1.08, 1.13, 1.13, 1.10, 1.05,
+                              0.98, 0.98, 1.05, 1.10, 1.14, 1.14, 1.10, 1.06, 0.98, 0.97, 1.02, 1.06, 1.10,
+                              1.11, 1.06, 1.02, 0.94, 0.46, 0.47, 0.48, 0.48, 0.48, 0.47, 0.47, 0.46};
     double sum = 0.0;
     for (int i = 0; i < 64; ++i)
     {
@@ -129,11 +131,13 @@ inline double gridDistance8x8(const std::vector<float>& a,
     return sum / 64.0 / 100.0;
 }
 
-inline double gridDistance(const std::vector<float>& a,
-                            const std::vector<float>& b)
+inline double gridDistance(const std::vector<float> &a, const std::vector<float> &b)
 {
     // 支持 48 (4×4) 和 192 (8×8)，按 3 通道自动适配
-    if (a.size() != b.size() || a.size() % 3 != 0) { return 1e6; }
+    if (a.size() != b.size() || a.size() % 3 != 0)
+    {
+        return 1e6;
+    }
     int cells = static_cast<int>(a.size()) / 3;
     double sum = 0.0;
     for (int i = 0; i < cells; ++i)
@@ -147,7 +151,7 @@ inline double gridDistance(const std::vector<float>& a,
     return sum / cells / 100.0;
 }
 
-inline std::vector<uint8_t> computeTinyImageFromGray(const cv::Mat& gray)
+inline std::vector<uint8_t> computeTinyImageFromGray(const cv::Mat &gray)
 {
     cv::Mat tiny;
     cv::resize(gray, tiny, cv::Size(16, 16), 0, 0, cv::INTER_AREA);
@@ -156,10 +160,12 @@ inline std::vector<uint8_t> computeTinyImageFromGray(const cv::Mat& gray)
     return result;
 }
 
-inline double tinyMSE(const std::vector<uint8_t>& a,
-                       const std::vector<uint8_t>& b)
+template <class Row> inline double tinyMSE(const Row &a, const std::vector<uint8_t> &b)
 {
-    if (a.size() != 256 || b.size() != 256) { return 1.0; }
+    if (a.size() != 256 || b.size() != 256)
+    {
+        return 1.0;
+    }
     double sum = 0.0;
     for (std::size_t i = 0; i < 256; ++i)
     {
@@ -169,70 +175,78 @@ inline double tinyMSE(const std::vector<uint8_t>& a,
     return sum / (256.0 * 255.0 * 255.0);
 }
 
-inline double computeEdgeDensityFromGray(const cv::Mat& gray)
+inline double computeEdgeDensityFromGray(const cv::Mat &gray)
 {
     cv::Mat edges;
     cv::Canny(gray, edges, 60, 120);
     return static_cast<double>(cv::countNonZero(edges)) / gray.total();
 }
 
-inline std::vector<float> computeLBPHistogramFromGray(const cv::Mat& gray)
+inline std::vector<float> computeLBPHistogramFromGray(const cv::Mat &gray)
 {
     std::vector<float> hist(256, 0.0f);
     for (int y = 1; y < gray.rows - 1; ++y)
     {
-        const uint8_t* rowUp   = gray.ptr<uint8_t>(y - 1);
-        const uint8_t* rowCur  = gray.ptr<uint8_t>(y);
-        const uint8_t* rowDown = gray.ptr<uint8_t>(y + 1);
+        const uint8_t *rowUp = gray.ptr<uint8_t>(y - 1);
+        const uint8_t *rowCur = gray.ptr<uint8_t>(y);
+        const uint8_t *rowDown = gray.ptr<uint8_t>(y + 1);
         for (int x = 1; x < gray.cols - 1; ++x)
         {
             uint8_t center = rowCur[x];
             uint8_t code = 0;
-            code |= ((rowUp[x - 1]   >= center) ? 1 : 0) << 0;
-            code |= ((rowUp[x]       >= center) ? 1 : 0) << 1;
-            code |= ((rowUp[x + 1]   >= center) ? 1 : 0) << 2;
-            code |= ((rowCur[x + 1]  >= center) ? 1 : 0) << 3;
+            code |= ((rowUp[x - 1] >= center) ? 1 : 0) << 0;
+            code |= ((rowUp[x] >= center) ? 1 : 0) << 1;
+            code |= ((rowUp[x + 1] >= center) ? 1 : 0) << 2;
+            code |= ((rowCur[x + 1] >= center) ? 1 : 0) << 3;
             code |= ((rowDown[x + 1] >= center) ? 1 : 0) << 4;
-            code |= ((rowDown[x]     >= center) ? 1 : 0) << 5;
+            code |= ((rowDown[x] >= center) ? 1 : 0) << 5;
             code |= ((rowDown[x - 1] >= center) ? 1 : 0) << 6;
-            code |= ((rowCur[x - 1]  >= center) ? 1 : 0) << 7;
+            code |= ((rowCur[x - 1] >= center) ? 1 : 0) << 7;
             hist[code] += 1.0f;
         }
     }
     float sum = 0.0f;
-    for (float v : hist) { sum += v; }
+    for (float v : hist)
+    {
+        sum += v;
+    }
     if (sum > 0.0f)
     {
-        for (float& v : hist) { v /= sum; }
+        for (float &v : hist)
+        {
+            v /= sum;
+        }
     }
     return hist;
 }
 
-inline std::vector<uint8_t> computeTinyImage(const cv::Mat& bgr)
+inline std::vector<uint8_t> computeTinyImage(const cv::Mat &bgr)
 {
     cv::Mat gray;
     cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
     return computeTinyImageFromGray(gray);
 }
 
-inline double computeEdgeDensity(const cv::Mat& bgr)
+inline double computeEdgeDensity(const cv::Mat &bgr)
 {
     cv::Mat gray;
     cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
     return computeEdgeDensityFromGray(gray);
 }
 
-inline std::vector<float> computeLBPHistogram(const cv::Mat& bgr)
+inline std::vector<float> computeLBPHistogram(const cv::Mat &bgr)
 {
     cv::Mat gray;
     cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
     return computeLBPHistogramFromGray(gray);
 }
 
-inline double lbpDistance(const std::vector<float>& a,
-                           const std::vector<float>& b)
+template <class Row> inline double lbpDistance(const Row &a, const std::vector<float> &b)
 {
-    if (a.size() != 256 || b.size() != 256) { return 1.0; }
+    if (a.size() != 256 || b.size() != 256)
+    {
+        return 1.0;
+    }
     double sum = 0.0;
     for (std::size_t i = 0; i < 256; ++i)
     {

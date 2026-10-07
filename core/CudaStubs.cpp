@@ -2,53 +2,82 @@
 #include "compute/CudaBackend.h"
 #include <cstdio>
 
-namespace mosaicraft {
-namespace cuda {
+namespace mosaicraft
+{
+namespace cuda
+{
 
-bool isCudaAvailable() { return false; }
+struct FeatureWorkspace::Impl
+{
+};
+FeatureWorkspace::FeatureWorkspace() = default;
+FeatureWorkspace::~FeatureWorkspace() = default;
 
-bool uploadLibrary(GpuLibrary&,
-    const double*, const float*, const std::uint8_t*,
-    const double*, const float*, const int*, int) { return false; }
-
-void freeLibrary(GpuLibrary&) {}
-
-int matchAgainstLibrary(double,double,double,const float*,const std::uint8_t*,
-    double,const float*,const GpuLibrary&,double,double,double,double,double,double) { return -1; }
-
-void scoreIndices(double,double,double,const float*,const std::uint8_t*,
-    double,const float*,const GpuLibrary&,const int*,int,
-    double,double,double,double,double,double,double*) {}
-
-int matchWithIndices(double,double,double,const float*,const std::uint8_t*,
-    double,const float*,const GpuLibrary&,const int*,int,
-    double,double,double,double,double,double) { return -1; }
-
-bool scoreBatch(int,const double*,const double*,const double*,
-    const float*,const std::uint8_t*,const double*,const float*,
-    const int*,int,const GpuLibrary&,
-    const double*,const double*,const double*,const double*,const double*,
-    double,double*)
+bool isCudaAvailable()
 {
     return false;
 }
 
+bool uploadLibrary(GpuLibrary &, const double *, const float *, const std::uint8_t *, const double *, const float *,
+                   const int *, int, GpuTimings*)
+{
+    return false;
+}
 
-int extractTileFeatures(const std::uint8_t*, int, int, int,
-    double*, float*, std::uint8_t*, double*, float*) { return 0; }
+void freeLibrary(GpuLibrary &)
+{
+}
 
-int extractTileFeatures(const std::uint8_t*, int,
-    double*, float*, std::uint8_t*, double*, float*) { return 0; }
+int matchAgainstLibrary(double, double, double, const float *, const std::uint8_t *, double, const float *,
+                        const GpuLibrary &, double, double, double, double, double, double)
+{
+    return -1;
+}
 
-int extractFeaturesRaw(const std::uint8_t*, int,
-    double*, float*, std::uint8_t*, double*, float*) { return 0; }
+void scoreIndices(double, double, double, const float *, const std::uint8_t *, double, const float *,
+                  const GpuLibrary &, const int *, int, double, double, double, double, double, double, double *)
+{
+}
 
-int extractFeaturesRaw(const std::uint8_t*, int, int, int,
-    double*, float*, std::uint8_t*, double*, float*) { return 0; }
+int matchWithIndices(double, double, double, const float *, const std::uint8_t *, double, const float *,
+                     const GpuLibrary &, const int *, int, double, double, double, double, double, double)
+{
+    return -1;
+}
 
-int matchOnGpu(double,double,double,const float*,const std::uint8_t*,
-    double,const float*,const CandidateData&,
-    double,double,double,double,double,double) { return -1; }
+bool scoreBatch(int, const double *, const double *, const double *, const float *, const std::uint8_t *,
+                const double *, const float *, const int *, int, const GpuLibrary &, const double *, const double *,
+                const double *, const double *, const double *, double, double *, GpuTimings *, std::size_t)
+{
+    return false;
+}
+
+int extractTileFeatures(const std::uint8_t *, int, int, int, double *, float *, std::uint8_t *, double *, float *)
+{
+    return 0;
+}
+
+int extractTileFeatures(const std::uint8_t *, int, double *, float *, std::uint8_t *, double *, float *)
+{
+    return 0;
+}
+
+int extractFeaturesRaw(const std::uint8_t *, int, double *, float *, std::uint8_t *, double *, float *)
+{
+    return 0;
+}
+
+int extractFeaturesRaw(const std::uint8_t *, int, int, int, double *, float *, std::uint8_t *, double *, float *,
+                       FeatureWorkspace *, GpuTimings *)
+{
+    return 0;
+}
+
+int matchOnGpu(double, double, double, const float *, const std::uint8_t *, double, const float *,
+               const CandidateData &, double, double, double, double, double, double)
+{
+    return -1;
+}
 
 } // namespace cuda
 } // namespace mosaicraft

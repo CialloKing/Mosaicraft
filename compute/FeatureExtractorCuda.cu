@@ -1,5 +1,6 @@
 ﻿#include "FeatureExtractorCuda.h"
 
+#include "DeviceBuffer.cuh"
 #include <cuda_runtime.h>
 #include <opencv2/imgproc.hpp>
 
@@ -8,70 +9,59 @@
 #include <fstream>
 #include <vector>
 
-namespace mosaicraft {
-namespace cuda {
-
-namespace {
-
-template <typename T>
-class DeviceBuffer
+namespace mosaicraft
 {
-public:
-    DeviceBuffer() = default;
-    ~DeviceBuffer() { reset(); }
+namespace cuda
+{
 
-    DeviceBuffer(const DeviceBuffer&) = delete;
-    DeviceBuffer& operator=(const DeviceBuffer&) = delete;
-
-    cudaError_t allocate(std::size_t bytes)
-    {
-        reset();
-        return cudaMalloc(reinterpret_cast<void**>(&m_ptr), bytes);
-    }
-
-    void reset()
-    {
-        if (m_ptr)
-        {
-            cudaFree(m_ptr);
-            m_ptr = nullptr;
-        }
-    }
-
-    T* get() const { return m_ptr; }
-
-private:
-    T* m_ptr = nullptr;
-};
+namespace
+{
 
 } // namespace
+
+struct FeatureWorkspace::Impl
+{
+    DeviceBuffer<uint8_t> images, tiny;
+    DeviceBuffer<float> grid, lbp;
+    DeviceBuffer<double> lab, bright, contrast, edge;
+    std::vector<uint8_t> h_images, h_tiny;
+    std::vector<float> h_grid, h_lbp;
+    std::vector<double> h_lab, h_bright, h_contrast, h_edge;
+};
+FeatureWorkspace::FeatureWorkspace() : buffers(std::make_unique<Impl>())
+{
+}
+FeatureWorkspace::~FeatureWorkspace() = default;
 
 // ============================================================
 // GPU 常量：归一化图尺寸 — 模板化以支持常见分辨率
 // ============================================================
-template<int W, int H> struct GpuParams {
+template <int W, int H> struct GpuParams
+{
     static constexpr int IMG_W = W;
     static constexpr int IMG_H = H;
     static constexpr int IMG_PIX = W * H;
     static constexpr int GRID_CW = (W + 7) / 8;
     static constexpr int GRID_CH = (H + 7) / 8;
     static constexpr int GRID_CELLS = 64;
-    static constexpr int TINY_SX = W / 16;   // TinyImage 采样步长 X
-    static constexpr int TINY_SY = H / 16;   // TinyImage 采样步长 Y
+    static constexpr int TINY_SX = W / 16; // TinyImage 采样步长 X
+    static constexpr int TINY_SY = H / 16; // TinyImage 采样步长 Y
 };
 static constexpr int LBP_BINS = 256;
 
 // ============================================================
 // 工具：RGB→LAB（GPU device function）
 // ============================================================
-__device__ void rgb2lab(float r, float g, float b, float& l, float& a, float& bb)
+__device__ void rgb2lab(float r, float g, float b, float &l, float &a, float &bb)
 {
     // sRGB → XYZ
     float varR = r / 255.0f, varG = g / 255.0f, varB = b / 255.0f;
     varR = (varR > 0.04045f) ? powf((varR + 0.055f) / 1.055f, 2.4f) : varR / 12.92f;
     varG = (varG > 0.04045f) ? powf((varG + 0.055f) / 1.055f, 2.4f) : varG / 12.92f;
     varB = (varB > 0.04045f) ? powf((varB + 0.055f) / 1.055f, 2.4f) : varB / 12.92f;
-    varR *= 100.0f; varG *= 100.0f; varB *= 100.0f;
+    varR *= 100.0f;
+    varG *= 100.0f;
+    varB *= 100.0f;
 
     float x = varR * 0.4124f + varG * 0.3576f + varB * 0.1805f;
     float y = varR * 0.2126f + varG * 0.7152f + varB * 0.0722f;
@@ -79,11 +69,11 @@ __device__ void rgb2lab(float r, float g, float b, float& l, float& a, float& bb
 
     float refX = 95.047f, refY = 100.0f, refZ = 108.883f;
     float vx = x / refX, vy = y / refY, vz = z / refZ;
-    vx = (vx > 0.008856f) ? powf(vx, 1.0f/3.0f) : (7.787f * vx + 16.0f/116.0f);
-    vy = (vy > 0.008856f) ? powf(vy, 1.0f/3.0f) : (7.787f * vy + 16.0f/116.0f);
-    vz = (vz > 0.008856f) ? powf(vz, 1.0f/3.0f) : (7.787f * vz + 16.0f/116.0f);
+    vx = (vx > 0.008856f) ? powf(vx, 1.0f / 3.0f) : (7.787f * vx + 16.0f / 116.0f);
+    vy = (vy > 0.008856f) ? powf(vy, 1.0f / 3.0f) : (7.787f * vy + 16.0f / 116.0f);
+    vz = (vz > 0.008856f) ? powf(vz, 1.0f / 3.0f) : (7.787f * vz + 16.0f / 116.0f);
 
-    l = (116.0f * vy - 16.0f) * 2.55f;    // OpenCV scale
+    l = (116.0f * vy - 16.0f) * 2.55f; // OpenCV scale
     a = 500.0f * (vx - vy) + 128.0f;
     bb = 200.0f * (vy - vz) + 128.0f;
 }
@@ -97,17 +87,11 @@ __device__ float rgb2gray(float r, float g, float b)
 // 主 kernel：模板化，每个 block 处理一张图片
 // 模板参数 W, H = 图像宽高
 // ============================================================
-template<int W, int H>
-__global__ void featureKernel(
-    const uint8_t* __restrict__ d_images,
-    float* __restrict__ d_grid,
-    uint8_t* __restrict__ d_tiny,
-    float* __restrict__ d_lbp,
-    double* __restrict__ d_avgLAB,
-    double* __restrict__ d_brightness,
-    double* __restrict__ d_contrast,
-    double* __restrict__ d_edgeDensity,
-    int batchSize)
+template <int W, int H>
+__global__ void featureKernel(const uint8_t *__restrict__ d_images, float *__restrict__ d_grid,
+                              uint8_t *__restrict__ d_tiny, float *__restrict__ d_lbp, double *__restrict__ d_avgLAB,
+                              double *__restrict__ d_brightness, double *__restrict__ d_contrast,
+                              double *__restrict__ d_edgeDensity, int batchSize)
 {
     constexpr int IMG_W = W;
     constexpr int IMG_H = H;
@@ -119,22 +103,36 @@ __global__ void featureKernel(
     constexpr int TINY_SY = H / 16;
 
     int imgIdx = blockIdx.x;
-    if (imgIdx >= batchSize) return;
+    if (imgIdx >= batchSize)
+    {
+        return;
+    }
 
     int tx = threadIdx.x;
-    const uint8_t* img = d_images + imgIdx * IMG_PIX * 3;
+    const uint8_t *img = d_images + imgIdx * IMG_PIX * 3;
 
     __shared__ float s_gridLab[GRID_CELLS * 3];
     __shared__ float s_grayAcc;
     __shared__ float s_graySqAcc;
-    __shared__ int   s_edgeCount;
+    __shared__ int s_edgeCount;
     __shared__ uint32_t s_lbpHist[LBP_BINS];
 
     // 跨步清零全部 192 个 Grid cell LAB 累加器（block 可能少于 192 线程）
-    for (int i = tx; i < GRID_CELLS * 3; i += blockDim.x) s_gridLab[i] = 0.0f;
-    if (tx == 0) { s_grayAcc = 0; s_graySqAcc = 0; s_edgeCount = 0; }
+    for (int i = tx; i < GRID_CELLS * 3; i += blockDim.x)
+    {
+        s_gridLab[i] = 0.0f;
+    }
+    if (tx == 0)
+    {
+        s_grayAcc = 0;
+        s_graySqAcc = 0;
+        s_edgeCount = 0;
+    }
     // 跨步清零全部256个LBP bin（block可能少于256线程）
-    for (int i = tx; i < LBP_BINS; i += blockDim.x) s_lbpHist[i] = 0;
+    for (int i = tx; i < LBP_BINS; i += blockDim.x)
+    {
+        s_lbpHist[i] = 0;
+    }
     __syncthreads();
 
     float localGrayAcc = 0, localGraySq = 0;
@@ -143,7 +141,10 @@ __global__ void featureKernel(
     for (int y = 0; y < IMG_H; ++y)
     {
         int x = tx;
-        if (x >= IMG_W) continue;
+        if (x >= IMG_W)
+        {
+            continue;
+        }
 
         int idx = (y * IMG_W + x) * 3;
         float b = img[idx];
@@ -155,8 +156,14 @@ __global__ void featureKernel(
 
         int cellX = x / GRID_CW;
         int cellY = y / GRID_CH;
-        if (cellX >= 8) cellX = 7;
-        if (cellY >= 8) cellY = 7;
+        if (cellX >= 8)
+        {
+            cellX = 7;
+        }
+        if (cellY >= 8)
+        {
+            cellY = 7;
+        }
         int cellIdx = cellY * 8 + cellX;
         atomicAdd(&s_gridLab[cellIdx * 3 + 0], lv);
         atomicAdd(&s_gridLab[cellIdx * 3 + 1], av);
@@ -169,25 +176,59 @@ __global__ void featureKernel(
         if (x > 0 && y > 0)
         {
             float center = gray;
-            float right = rgb2gray(img[(y * IMG_W + x - 1) * 3 + 2], img[(y * IMG_W + x - 1) * 3 + 1], img[(y * IMG_W + x - 1) * 3]);
-            float down  = rgb2gray(img[((y-1) * IMG_W + x) * 3 + 2], img[((y-1) * IMG_W + x) * 3 + 1], img[((y-1) * IMG_W + x) * 3]);
+            float right = rgb2gray(img[(y * IMG_W + x - 1) * 3 + 2], img[(y * IMG_W + x - 1) * 3 + 1],
+                                   img[(y * IMG_W + x - 1) * 3]);
+            float down = rgb2gray(img[((y - 1) * IMG_W + x) * 3 + 2], img[((y - 1) * IMG_W + x) * 3 + 1],
+                                  img[((y - 1) * IMG_W + x) * 3]);
             float grad = fabsf(center - right) + fabsf(center - down);
-            if (grad > 30.0f) localEdge++;
+            if (grad > 30.0f)
+            {
+                localEdge++;
+            }
         }
 
         if (x > 0 && x < IMG_W - 1 && y > 0 && y < IMG_H - 1)
         {
             uint8_t code = 0;
-            float c = rgb2gray(img[((y) * IMG_W + x) * 3 + 2], img[((y) * IMG_W + x) * 3 + 1], img[((y) * IMG_W + x) * 3]);
-            auto gv = [&](int dy, int dx) {
-                float v = rgb2gray(img[((y+dy) * IMG_W + (x+dx)) * 3 + 2],
-                                   img[((y+dy) * IMG_W + (x+dx)) * 3 + 1],
-                                   img[((y+dy) * IMG_W + (x+dx)) * 3]);
+            float c = rgb2gray(img[((y)*IMG_W + x) * 3 + 2], img[((y)*IMG_W + x) * 3 + 1], img[((y)*IMG_W + x) * 3]);
+            auto gv = [&](int dy, int dx)
+            {
+                float v = rgb2gray(img[((y + dy) * IMG_W + (x + dx)) * 3 + 2],
+                                   img[((y + dy) * IMG_W + (x + dx)) * 3 + 1], img[((y + dy) * IMG_W + (x + dx)) * 3]);
                 return v >= c ? 1.0f : 0.0f;
             };
-            if (gv(-1,-1)) code |= 1;    if (gv(-1,0)) code |= 2;    if (gv(-1,1)) code |= 4;
-            if (gv(0,1))  code |= 8;     if (gv(1,1))  code |= 16;   if (gv(1,0))  code |= 32;
-            if (gv(1,-1)) code |= 64;    if (gv(0,-1)) code |= 128;
+            if (gv(-1, -1))
+            {
+                code |= 1;
+            }
+            if (gv(-1, 0))
+            {
+                code |= 2;
+            }
+            if (gv(-1, 1))
+            {
+                code |= 4;
+            }
+            if (gv(0, 1))
+            {
+                code |= 8;
+            }
+            if (gv(1, 1))
+            {
+                code |= 16;
+            }
+            if (gv(1, 0))
+            {
+                code |= 32;
+            }
+            if (gv(1, -1))
+            {
+                code |= 64;
+            }
+            if (gv(0, -1))
+            {
+                code |= 128;
+            }
             atomicAdd(&s_lbpHist[code], 1u);
         }
     }
@@ -204,7 +245,7 @@ __global__ void featureKernel(
         float grayVar = s_graySqAcc / nPix - grayMean * grayMean;
 
         d_brightness[imgIdx] = grayMean;
-        d_contrast[imgIdx]   = (grayVar > 0 ? sqrtf(grayVar) : 0.0f) / 255.0f;
+        d_contrast[imgIdx] = (grayVar > 0 ? sqrtf(grayVar) : 0.0f) / 255.0f;
         d_edgeDensity[imgIdx] = static_cast<double>(s_edgeCount) / nPix;
 
         int outOff = imgIdx * 192;
@@ -233,15 +274,23 @@ __global__ void featureKernel(
 
         int lbpOff = imgIdx * LBP_BINS;
         float lbpSum = 0;
-        for (int i = 0; i < LBP_BINS; ++i) lbpSum += s_lbpHist[i];
+        for (int i = 0; i < LBP_BINS; ++i)
+        {
+            lbpSum += s_lbpHist[i];
+        }
         if (lbpSum > 0)
         {
             for (int i = 0; i < LBP_BINS; ++i)
+            {
                 d_lbp[lbpOff + i] = s_lbpHist[i] / lbpSum;
+            }
         }
         else
         {
-            for (int i = 0; i < LBP_BINS; ++i) d_lbp[lbpOff + i] = 0;
+            for (int i = 0; i < LBP_BINS; ++i)
+            {
+                d_lbp[lbpOff + i] = 0;
+            }
         }
     }
 
@@ -272,15 +321,18 @@ __global__ void featureKernel(
 // ============================================================
 // 主机接口
 // ============================================================
-int extractBatch(
-    const std::vector<cv::Mat>& images,
-    std::vector<ImageRecord>& records,
-    const std::string& featDir,
-    const std::vector<std::string>& stems)
+int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &records, const std::string &featDir,
+                 const std::vector<std::string> &stems, FeatureWorkspace *workspace)
 {
     int N = static_cast<int>(images.size());
-    if (N <= 0) return 0;
-    if (images[0].empty()) return 0;
+    if (N <= 0)
+    {
+        return 0;
+    }
+    if (images[0].empty())
+    {
+        return 0;
+    }
 
     // 从实际图像读取尺寸
     int imgW = images[0].cols;
@@ -288,7 +340,10 @@ int extractBatch(
     size_t imgBytes = static_cast<size_t>(imgW) * imgH * 3;
 
     // 上传图像到 GPU
-    std::vector<uint8_t> h_images(N * imgBytes);
+    FeatureWorkspace local;
+    auto &buffers = *(workspace ? workspace : &local)->buffers;
+    auto &h_images = buffers.h_images;
+    h_images.resize(N * imgBytes);
     for (int i = 0; i < N; ++i)
     {
         cv::Mat bgr;
@@ -306,55 +361,90 @@ int extractBatch(
         }
         if (bgr.empty() || bgr.cols != imgW || bgr.rows != imgH || bgr.channels() != 3)
         {
-            fprintf(stderr, "GPU build: image mismatch at index %d (%dx%d ch=%d vs %dx%d ch=3)\n",
-                i, bgr.cols, bgr.rows, bgr.channels(), imgW, imgH);
+            fprintf(stderr, "GPU build: image mismatch at index %d (%dx%d ch=%d vs %dx%d ch=3)\n", i, bgr.cols,
+                    bgr.rows, bgr.channels(), imgW, imgH);
             return 0;
         }
         std::memcpy(&h_images[i * imgBytes], bgr.data, imgBytes);
     }
 
-    DeviceBuffer<uint8_t> d_images;
-    DeviceBuffer<float> d_grid;
-    DeviceBuffer<uint8_t> d_tiny;
-    DeviceBuffer<float> d_lbp;
-    DeviceBuffer<double> d_avgLAB;
-    DeviceBuffer<double> d_bright;
-    DeviceBuffer<double> d_contrast;
-    DeviceBuffer<double> d_edge;
+    auto &d_images = buffers.images;
+    auto &d_grid = buffers.grid;
+    auto &d_tiny = buffers.tiny;
+    auto &d_lbp = buffers.lbp;
+    auto &d_avgLAB = buffers.lab;
+    auto &d_bright = buffers.bright;
+    auto &d_contrast = buffers.contrast;
+    auto &d_edge = buffers.edge;
 
-    auto allocOrFail = [&](auto& buf, size_t bytes, const char* label) {
-        if (buf.allocate(bytes) == cudaSuccess) return true;
+    auto allocOrFail = [&](auto &buf, size_t bytes, const char *label)
+    {
+        if (buf.allocate(bytes) == cudaSuccess)
+        {
+            return true;
+        }
         fprintf(stderr, "GPU OOM (%dx%d): %s\n", imgW, imgH, label);
         return false;
     };
-    if (!allocOrFail(d_images, N * imgBytes, "image")) return 0;
-    if (!allocOrFail(d_grid, N * 192 * sizeof(float), "grid")) return 0;
-    if (!allocOrFail(d_tiny, N * 256, "tiny")) return 0;
-    if (!allocOrFail(d_lbp, N * 256 * sizeof(float), "lbp")) return 0;
-    if (!allocOrFail(d_avgLAB, N * 3 * sizeof(double), "lab")) return 0;
-    if (!allocOrFail(d_bright, N * sizeof(double), "bright")) return 0;
-    if (!allocOrFail(d_contrast, N * sizeof(double), "contrast")) return 0;
-    if (!allocOrFail(d_edge, N * sizeof(double), "edge")) return 0;
+    if (!allocOrFail(d_images, N * imgBytes, "image"))
+    {
+        return 0;
+    }
+    if (!allocOrFail(d_grid, N * 192 * sizeof(float), "grid"))
+    {
+        return 0;
+    }
+    if (!allocOrFail(d_tiny, N * 256, "tiny"))
+    {
+        return 0;
+    }
+    if (!allocOrFail(d_lbp, N * 256 * sizeof(float), "lbp"))
+    {
+        return 0;
+    }
+    if (!allocOrFail(d_avgLAB, N * 3 * sizeof(double), "lab"))
+    {
+        return 0;
+    }
+    if (!allocOrFail(d_bright, N * sizeof(double), "bright"))
+    {
+        return 0;
+    }
+    if (!allocOrFail(d_contrast, N * sizeof(double), "contrast"))
+    {
+        return 0;
+    }
+    if (!allocOrFail(d_edge, N * sizeof(double), "edge"))
+    {
+        return 0;
+    }
 
     if (cudaMemcpy(d_images.get(), h_images.data(), N * imgBytes, cudaMemcpyHostToDevice) != cudaSuccess)
+    {
         return 0;
+    }
     if (imgW == 180 && imgH == 320)
-        featureKernel<180, 320><<<N, 180>>>(
-            d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(),
-            d_avgLAB.get(), d_bright.get(), d_contrast.get(), d_edge.get(), N);
+    {
+        featureKernel<180, 320><<<N, 180>>>(d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(), d_avgLAB.get(),
+                                            d_bright.get(), d_contrast.get(), d_edge.get(), N);
+    }
     else if (imgW == 320 && imgH == 180)
-        featureKernel<320, 180><<<N, 320>>>(
-            d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(),
-            d_avgLAB.get(), d_bright.get(), d_contrast.get(), d_edge.get(), N);
+    {
+        featureKernel<320, 180><<<N, 320>>>(d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(), d_avgLAB.get(),
+                                            d_bright.get(), d_contrast.get(), d_edge.get(), N);
+    }
     else if (imgW == 360 && imgH == 640)
-        featureKernel<360, 640><<<N, 360>>>(
-            d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(),
-            d_avgLAB.get(), d_bright.get(), d_contrast.get(), d_edge.get(), N);
+    {
+        featureKernel<360, 640><<<N, 360>>>(d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(), d_avgLAB.get(),
+                                            d_bright.get(), d_contrast.get(), d_edge.get(), N);
+    }
     else if (imgW == 640 && imgH == 360)
-        featureKernel<640, 360><<<N, 640>>>(
-            d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(),
-            d_avgLAB.get(), d_bright.get(), d_contrast.get(), d_edge.get(), N);
-    else {
+    {
+        featureKernel<640, 360><<<N, 640>>>(d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(), d_avgLAB.get(),
+                                            d_bright.get(), d_contrast.get(), d_edge.get(), N);
+    }
+    else
+    {
         fprintf(stderr, "GPU build: unsupported size %dx%d\n", imgW, imgH);
         return 0;
     }
@@ -363,26 +453,54 @@ int extractBatch(
         fprintf(stderr, "GPU feature error: kernel launch failed\n");
         return 0;
     }
-    std::vector<float> h_grid(N * 192);
-    std::vector<uint8_t> h_tiny(N * 256);
-    std::vector<float> h_lbp(N * 256);
-    std::vector<double> h_avgLAB(N * 3);
-    std::vector<double> h_bright(N);
-    std::vector<double> h_contrast(N);
-    std::vector<double> h_edge(N);
+    auto &h_grid = buffers.h_grid;
+    h_grid.resize(N * 192);
+    auto &h_tiny = buffers.h_tiny;
+    h_tiny.resize(N * 256);
+    auto &h_lbp = buffers.h_lbp;
+    h_lbp.resize(N * 256);
+    auto &h_avgLAB = buffers.h_lab;
+    h_avgLAB.resize(N * 3);
+    auto &h_bright = buffers.h_bright;
+    h_bright.resize(N);
+    auto &h_contrast = buffers.h_contrast;
+    h_contrast.resize(N);
+    auto &h_edge = buffers.h_edge;
+    h_edge.resize(N);
 
-    if (cudaMemcpy(h_grid.data(), d_grid.get(), N * 192 * sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) return 0;
-    if (cudaMemcpy(h_tiny.data(), d_tiny.get(), N * 256, cudaMemcpyDeviceToHost) != cudaSuccess) return 0;
-    if (cudaMemcpy(h_lbp.data(), d_lbp.get(), N * 256 * sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) return 0;
-    if (cudaMemcpy(h_avgLAB.data(), d_avgLAB.get(), N * 3 * sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) return 0;
-    if (cudaMemcpy(h_bright.data(), d_bright.get(), N * sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) return 0;
-    if (cudaMemcpy(h_contrast.data(), d_contrast.get(), N * sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) return 0;
-    if (cudaMemcpy(h_edge.data(), d_edge.get(), N * sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) return 0;
+    if (cudaMemcpy(h_grid.data(), d_grid.get(), N * 192 * sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess)
+    {
+        return 0;
+    }
+    if (cudaMemcpy(h_tiny.data(), d_tiny.get(), N * 256, cudaMemcpyDeviceToHost) != cudaSuccess)
+    {
+        return 0;
+    }
+    if (cudaMemcpy(h_lbp.data(), d_lbp.get(), N * 256 * sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess)
+    {
+        return 0;
+    }
+    if (cudaMemcpy(h_avgLAB.data(), d_avgLAB.get(), N * 3 * sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess)
+    {
+        return 0;
+    }
+    if (cudaMemcpy(h_bright.data(), d_bright.get(), N * sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess)
+    {
+        return 0;
+    }
+    if (cudaMemcpy(h_contrast.data(), d_contrast.get(), N * sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess)
+    {
+        return 0;
+    }
+    if (cudaMemcpy(h_edge.data(), d_edge.get(), N * sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess)
+    {
+        return 0;
+    }
 
     // 填充 ImageRecord
     for (int i = 0; i < N; ++i)
     {
-        auto& rec = records[i];
+        auto &rec = records[i];
         rec.grid4x4.assign(&h_grid[i * 192], &h_grid[i * 192] + 192);
         rec.avgL = h_avgLAB[i * 3 + 0];
         rec.avgA = h_avgLAB[i * 3 + 1];
@@ -401,7 +519,7 @@ int extractBatch(
             std::ofstream ofs(tinyPath, std::ios::binary);
             if (ofs.is_open())
             {
-                ofs.write(reinterpret_cast<const char*>(&h_tiny[i * 256]), 256);
+                ofs.write(reinterpret_cast<const char *>(&h_tiny[i * 256]), 256);
                 rec.tinyPath = tinyPath;
             }
 
@@ -410,7 +528,7 @@ int extractBatch(
             std::ofstream ofs2(lbpPath, std::ios::binary);
             if (ofs2.is_open())
             {
-                ofs2.write(reinterpret_cast<const char*>(&h_lbp[i * 256]), 256 * sizeof(float));
+                ofs2.write(reinterpret_cast<const char *>(&h_lbp[i * 256]), 256 * sizeof(float));
                 rec.histPath = lbpPath;
             }
         }
@@ -424,65 +542,127 @@ int extractBatch(
 // ============================================================
 // 调度器宏：根据尺寸选择模板实例
 // ============================================================
-#define LAUNCH_FEATURE(W, H) \
-    if (imgW == W && imgH == H) return launchKernel<W, H>(h_images, N, h_avgLAB, h_grid, h_tiny, h_edge, h_lbp)
+#define LAUNCH_FEATURE(W, H)                                                                                           \
+    if (imgW == W && imgH == H)                                                                                        \
+    {                                                                                                                  \
+        return launchKernel<W, H>(h_images, N, h_avgLAB, h_grid, h_tiny, h_edge, h_lbp, workspace, timings);           \
+    }
 
-namespace {
-    template<int W, int H>
-    int launchKernel(const uint8_t* h_images, int N,
-                     double* h_avgLAB, float* h_grid, uint8_t* h_tiny,
-                     double* h_edge, float* h_lbp)
+namespace
+{
+template <int W, int H>
+int launchKernel(const uint8_t *h_images, int N, double *h_avgLAB, float *h_grid, uint8_t *h_tiny, double *h_edge,
+                 float *h_lbp, FeatureWorkspace *workspace, GpuTimings *timings)
+{
+    constexpr int PIX = W * H;
+    size_t imgBytes = PIX * 3;
+    FeatureWorkspace local;
+    auto &buffers = *(workspace ? workspace : &local)->buffers;
+    auto &d_img = buffers.images;
+    auto &d_grid = buffers.grid;
+    auto &d_tiny = buffers.tiny;
+    auto &d_lbp = buffers.lbp;
+    auto &d_lab = buffers.lab;
+    auto &d_bright = buffers.bright;
+    auto &d_contrast = buffers.contrast;
+    auto &d_edge = buffers.edge;
+
+    auto cudaCheck = [](cudaError_t e, const char *name, int W, int H)
     {
-        constexpr int PIX = W * H;
-        size_t imgBytes = PIX * 3;
-        DeviceBuffer<uint8_t> d_img;
-        DeviceBuffer<float> d_grid;
-        DeviceBuffer<uint8_t> d_tiny;
-        DeviceBuffer<float> d_lbp;
-        DeviceBuffer<double> d_lab;
-        DeviceBuffer<double> d_bright;
-        DeviceBuffer<double> d_contrast;
-        DeviceBuffer<double> d_edge;
-
-        auto cudaCheck = [](cudaError_t e, const char* name, int W, int H) {
-            if (e != cudaSuccess) {
-                fprintf(stderr, "GPU OOM (%dx%d): %s for %s\n", W, H, cudaGetErrorString(e), name);
-                return false;
-            }
-            return true;
-        };
-        if (!cudaCheck(d_img.allocate(N * imgBytes), "image", W, H)) return -1;
-        if (!cudaCheck(d_grid.allocate(N * 192 * sizeof(float)), "grid", W, H)) return -1;
-        if (!cudaCheck(d_tiny.allocate(N * 256), "tiny", W, H)) return -1;
-        if (!cudaCheck(d_lbp.allocate(N * 256 * sizeof(float)), "lbp", W, H)) return -1;
-        if (!cudaCheck(d_lab.allocate(N * 3 * sizeof(double)), "lab", W, H)) return -1;
-        if (!cudaCheck(d_bright.allocate(N * sizeof(double)), "bright", W, H)) return -1;
-        if (!cudaCheck(d_contrast.allocate(N * sizeof(double)), "contrast", W, H)) return -1;
-        if (!cudaCheck(d_edge.allocate(N * sizeof(double)), "edge", W, H)) return -1;
-
-        if (cudaMemcpy(d_img.get(), h_images, N * imgBytes, cudaMemcpyHostToDevice) != cudaSuccess) return -1;
-        featureKernel<W, H><<<N, W>>>(d_img.get(), d_grid.get(), d_tiny.get(), d_lbp.get(),
-                                      d_lab.get(), d_bright.get(), d_contrast.get(), d_edge.get(), N);
-        if (cudaGetLastError() != cudaSuccess || cudaDeviceSynchronize() != cudaSuccess) {
+        if (e != cudaSuccess)
+        {
+            fprintf(stderr, "GPU OOM (%dx%d): %s for %s\n", W, H, cudaGetErrorString(e), name);
+            return false;
+        }
+        return true;
+    };
+    {
+        PhaseTimer timer(timings ? &timings->allocationMs : nullptr);
+        if (!cudaCheck(d_img.allocate(N * imgBytes), "image", W, H))
+        {
+            return -1;
+        }
+        if (!cudaCheck(d_grid.allocate(N * 192 * sizeof(float)), "grid", W, H))
+        {
+            return -1;
+        }
+        if (!cudaCheck(d_tiny.allocate(N * 256), "tiny", W, H))
+        {
+            return -1;
+        }
+        if (!cudaCheck(d_lbp.allocate(N * 256 * sizeof(float)), "lbp", W, H))
+        {
+            return -1;
+        }
+        if (!cudaCheck(d_lab.allocate(N * 3 * sizeof(double)), "lab", W, H))
+        {
+            return -1;
+        }
+        if (!cudaCheck(d_bright.allocate(N * sizeof(double)), "bright", W, H))
+        {
+            return -1;
+        }
+        if (!cudaCheck(d_contrast.allocate(N * sizeof(double)), "contrast", W, H))
+        {
+            return -1;
+        }
+        if (!cudaCheck(d_edge.allocate(N * sizeof(double)), "edge", W, H))
+        {
+            return -1;
+        }
+    }
+    {
+        PhaseTimer timer(timings ? &timings->uploadMs : nullptr);
+        if (cudaMemcpy(d_img.get(), h_images, N * imgBytes, cudaMemcpyHostToDevice) != cudaSuccess)
+        {
+            return -1;
+        }
+    }
+    {
+        PhaseTimer timer(timings ? &timings->computeMs : nullptr);
+        featureKernel<W, H><<<N, W>>>(d_img.get(), d_grid.get(), d_tiny.get(), d_lbp.get(), d_lab.get(), d_bright.get(),
+                                      d_contrast.get(), d_edge.get(), N);
+        if (cudaGetLastError() != cudaSuccess || cudaDeviceSynchronize() != cudaSuccess)
+        {
             fprintf(stderr, "GPU kernel error (%dx%d)\n", W, H);
             return -1;
         }
-        if (cudaMemcpy(h_avgLAB, d_lab.get(), N*3*sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) return -1;
-        if (cudaMemcpy(h_grid, d_grid.get(), N*192*sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) return -1;
-        if (cudaMemcpy(h_tiny, d_tiny.get(), N*256, cudaMemcpyDeviceToHost) != cudaSuccess) return -1;
-        if (cudaMemcpy(h_lbp, d_lbp.get(), N*256*sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) return -1;
-        if (cudaMemcpy(h_edge, d_edge.get(), N*sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess) return -1;
-        return 0;
     }
+    {
+        PhaseTimer timer(timings ? &timings->downloadMs : nullptr);
+        if (cudaMemcpy(h_avgLAB, d_lab.get(), N * 3 * sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess)
+        {
+            return -1;
+        }
+        if (cudaMemcpy(h_grid, d_grid.get(), N * 192 * sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess)
+        {
+            return -1;
+        }
+        if (cudaMemcpy(h_tiny, d_tiny.get(), N * 256, cudaMemcpyDeviceToHost) != cudaSuccess)
+        {
+            return -1;
+        }
+        if (cudaMemcpy(h_lbp, d_lbp.get(), N * 256 * sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess)
+        {
+            return -1;
+        }
+        if (cudaMemcpy(h_edge, d_edge.get(), N * sizeof(double), cudaMemcpyDeviceToHost) != cudaSuccess)
+        {
+            return -1;
+        }
+    }
+    return 0;
+}
 } // anonymous namespace
 
 // 带尺寸参数的版本
-int extractFeaturesRaw(
-    const uint8_t* h_images, int N, int imgW, int imgH,
-    double* h_avgLAB, float* h_grid, uint8_t* h_tiny,
-    double* h_edge, float* h_lbp)
+int extractFeaturesRaw(const uint8_t *h_images, int N, int imgW, int imgH, double *h_avgLAB, float *h_grid,
+                       uint8_t *h_tiny, double *h_edge, float *h_lbp, FeatureWorkspace *workspace, GpuTimings *timings)
 {
-    if (N <= 0) return 0;
+    if (N <= 0)
+    {
+        return 0;
+    }
     LAUNCH_FEATURE(180, 320);
     LAUNCH_FEATURE(320, 180);
     LAUNCH_FEATURE(360, 640);
@@ -492,14 +672,11 @@ int extractFeaturesRaw(
 }
 
 // 向后兼容：默认 180×320
-int extractFeaturesRaw(
-    const uint8_t* h_images, int N,
-    double* h_avgLAB, float* h_grid, uint8_t* h_tiny,
-    double* h_edge, float* h_lbp)
+int extractFeaturesRaw(const uint8_t *h_images, int N, double *h_avgLAB, float *h_grid, uint8_t *h_tiny, double *h_edge,
+                       float *h_lbp)
 {
     return extractFeaturesRaw(h_images, N, 180, 320, h_avgLAB, h_grid, h_tiny, h_edge, h_lbp);
 }
-
 
 } // namespace cuda
 } // namespace mosaicraft

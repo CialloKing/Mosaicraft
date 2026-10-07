@@ -1,8 +1,10 @@
 ﻿#include "CudaBackend.h"
 
 #include <cuda_runtime.h>
+#include "DeviceBuffer.cuh"
 
 #include <cfloat>
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
@@ -14,36 +16,6 @@ namespace cuda {
 
 namespace {
 
-template <typename T>
-class DeviceBuffer
-{
-public:
-    DeviceBuffer() = default;
-    ~DeviceBuffer() { reset(); }
-
-    DeviceBuffer(const DeviceBuffer&) = delete;
-    DeviceBuffer& operator=(const DeviceBuffer&) = delete;
-
-    cudaError_t allocate(std::size_t bytes)
-    {
-        reset();
-        return cudaMalloc(reinterpret_cast<void**>(&m_ptr), bytes);
-    }
-
-    void reset()
-    {
-        if (m_ptr)
-        {
-            cudaFree(m_ptr);
-            m_ptr = nullptr;
-        }
-    }
-
-    T* get() const { return m_ptr; }
-
-private:
-    T* m_ptr = nullptr;
-};
 
 bool checkCuda(cudaError_t err, const char* file, int line)
 {
@@ -539,7 +511,7 @@ int matchOnGpu(
 bool uploadLibrary(GpuLibrary& lib,
                    const double* h_lab, const float* h_grid,
                    const std::uint8_t* h_tiny, const double* h_edge,
-                   const float* h_lbp, const int* h_use, int N)
+                   const float* h_lbp, const int* h_use, int N, GpuTimings* timings)
 {
     if (N <= 0) return false;
     lib.count = 0;  // 先清零，失败时 freeLibrary 不会释放垃圾指针
@@ -549,18 +521,24 @@ bool uploadLibrary(GpuLibrary& lib,
     #define CUDA_UPLOAD(p, h, size) \
         if (cudaMemcpy(p, h, size, cudaMemcpyHostToDevice) != cudaSuccess) { freeLibrary(lib); return false; }
 
+    {
+    PhaseTimer timer(timings ? &timings->allocationMs : nullptr);
     CUDA_ALLOC(lib.d_lab,  N * 3 * sizeof(double));
     CUDA_ALLOC(lib.d_grid, N * 192 * sizeof(float));
     CUDA_ALLOC(lib.d_tiny, N * 256);
     CUDA_ALLOC(lib.d_edge, N * sizeof(double));
     CUDA_ALLOC(lib.d_lbp,  N * 256 * sizeof(float));
     CUDA_ALLOC(lib.d_use,  N * sizeof(int));
+    }
+    {
+    PhaseTimer timer(timings ? &timings->uploadMs : nullptr);
     CUDA_UPLOAD(lib.d_lab,  h_lab,  N * 3 * sizeof(double));
     CUDA_UPLOAD(lib.d_grid, h_grid, N * 192 * sizeof(float));
     CUDA_UPLOAD(lib.d_tiny, h_tiny, N * 256);
     CUDA_UPLOAD(lib.d_edge, h_edge, N * sizeof(double));
     CUDA_UPLOAD(lib.d_lbp,  h_lbp,  N * 256 * sizeof(float));
     CUDA_UPLOAD(lib.d_use,  h_use,  N * sizeof(int));
+    }
     lib.count = N;
     return true;
 }
@@ -739,81 +717,169 @@ bool scoreBatch(
     const double* h_labW, const double* h_gridW,
     const double* h_tinyW, const double* h_edgeW, const double* h_lbpW,
     double usePenalty,
-    double* outScores)            // [totalTiles * N]
+    double* outScores, GpuTimings* timings, std::size_t temporaryBudget)
 {
-    if (totalTiles <= 0 || N <= 0) { return false; }
-    if (totalTiles > std::numeric_limits<int>::max() / N) { return false; }
-    if (!outScores || !h_indices) { return false; }
-    int totalWork = totalTiles * N;
-    fillFailedScores(outScores, totalWork);
-    if (!hasValidLibrary(lib)) { return false; }
-
-    // ——— 上传 tile 特征（仅一次） ———
-    DeviceBuffer<double> d_tileL;
-    DeviceBuffer<double> d_tileA;
-    DeviceBuffer<double> d_tileB;
-    DeviceBuffer<float> d_tileGrid;
-    DeviceBuffer<std::uint8_t> d_tileTiny;
-    DeviceBuffer<double> d_tileEdge;
-    DeviceBuffer<float> d_tileLBP;
-
-    if (!CUDA_OK(d_tileL.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
-    if (!CUDA_OK(d_tileA.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
-    if (!CUDA_OK(d_tileB.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
-    if (!CUDA_OK(d_tileGrid.allocate(static_cast<std::size_t>(totalTiles) * 192 * sizeof(float)))) { return false; }
-    if (!CUDA_OK(d_tileTiny.allocate(static_cast<std::size_t>(totalTiles) * 256))) { return false; }
-    if (!CUDA_OK(d_tileEdge.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
-    if (!CUDA_OK(d_tileLBP.allocate(static_cast<std::size_t>(totalTiles) * 256 * sizeof(float)))) { return false; }
-
-    if (!CUDA_OK(cudaMemcpy(d_tileL.get(), h_tileL, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
-    if (!CUDA_OK(cudaMemcpy(d_tileA.get(), h_tileA, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
-    if (!CUDA_OK(cudaMemcpy(d_tileB.get(), h_tileB, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
-    if (!CUDA_OK(cudaMemcpy(d_tileGrid.get(), h_tileGrid, static_cast<std::size_t>(totalTiles) * 192 * sizeof(float), cudaMemcpyHostToDevice))) { return false; }
-    if (!CUDA_OK(cudaMemcpy(d_tileTiny.get(), h_tileTiny, static_cast<std::size_t>(totalTiles) * 256, cudaMemcpyHostToDevice))) { return false; }
-    if (!CUDA_OK(cudaMemcpy(d_tileEdge.get(), h_tileEdge, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
-    if (!CUDA_OK(cudaMemcpy(d_tileLBP.get(), h_tileLBP, static_cast<std::size_t>(totalTiles) * 256 * sizeof(float), cudaMemcpyHostToDevice))) { return false; }
-
-    // ——— 上传自适应权重（每 tile 一套） ———
-    DeviceBuffer<double> d_labW;
-    DeviceBuffer<double> d_gridW;
-    DeviceBuffer<double> d_tinyW;
-    DeviceBuffer<double> d_edgeW;
-    DeviceBuffer<double> d_lbpW;
-    if (!CUDA_OK(d_labW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
-    if (!CUDA_OK(d_gridW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
-    if (!CUDA_OK(d_tinyW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
-    if (!CUDA_OK(d_edgeW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
-    if (!CUDA_OK(d_lbpW.allocate(static_cast<std::size_t>(totalTiles) * sizeof(double)))) { return false; }
-    if (!CUDA_OK(cudaMemcpy(d_labW.get(), h_labW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
-    if (!CUDA_OK(cudaMemcpy(d_gridW.get(), h_gridW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
-    if (!CUDA_OK(cudaMemcpy(d_tinyW.get(), h_tinyW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
-    if (!CUDA_OK(cudaMemcpy(d_edgeW.get(), h_edgeW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
-    if (!CUDA_OK(cudaMemcpy(d_lbpW.get(), h_lbpW, static_cast<std::size_t>(totalTiles) * sizeof(double), cudaMemcpyHostToDevice))) { return false; }
-
-    // ——— 上传候选索引 ———
-    DeviceBuffer<int> d_indices;
-    if (!CUDA_OK(d_indices.allocate(static_cast<std::size_t>(totalWork) * sizeof(int)))) { return false; }
-    if (!CUDA_OK(cudaMemcpy(d_indices.get(), h_indices, static_cast<std::size_t>(totalWork) * sizeof(int), cudaMemcpyHostToDevice))) { return false; }
-
-    // ——— 评分输出 ———
-    DeviceBuffer<double> d_scores;
-    if (!CUDA_OK(d_scores.allocate(static_cast<std::size_t>(totalWork) * sizeof(double)))) { return false; }
-
-    // ——— 启动 kernel（一次处理全部 tile） ———
-    int blockSize = 256;
-    int gridSize = (totalWork + blockSize - 1) / blockSize;
-    scoreBatchKernel<<<gridSize, blockSize>>>(
-        totalTiles,
-        d_tileL.get(), d_tileA.get(), d_tileB.get(),
-        d_tileGrid.get(), d_tileTiny.get(), d_tileEdge.get(), d_tileLBP.get(),
-        d_indices.get(), N,
-        lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use, lib.count,
-        d_labW.get(), d_gridW.get(), d_tinyW.get(), d_edgeW.get(), d_lbpW.get(), usePenalty,
-        d_scores.get());
-
-    if (!CUDA_OK(cudaGetLastError())) { return false; }
-    if (!CUDA_OK(cudaDeviceSynchronize())) { return false; }
-    return CUDA_OK(cudaMemcpy(outScores, d_scores.get(), static_cast<std::size_t>(totalWork) * sizeof(double), cudaMemcpyDeviceToHost));
+    if (timings)
+    {
+        *timings = {};
+    }
+    if (totalTiles <= 0 || N <= 0 || totalTiles > std::numeric_limits<int>::max() / N
+        || !outScores || !h_indices || !h_tileL || !h_tileA || !h_tileB || !h_tileGrid
+        || !h_tileTiny || !h_tileEdge || !h_tileLBP || !h_labW || !h_gridW
+        || !h_tinyW || !h_edgeW || !h_lbpW || !hasValidLibrary(lib))
+    {
+        return false;
+    }
+    fillFailedScores(outScores, totalTiles * N);
+    std::size_t freeBytes = 0, totalBytes = 0;
+    if (!CUDA_OK(cudaMemGetInfo(&freeBytes, &totalBytes)))
+    {
+        return false;
+    }
+    // 为驱动和其他工作区保留余量；即使 WDDM 报告较大的可用值，也限制临时评分显存。
+    const std::size_t bytesPerTile = 9 * sizeof(double) + 192 * sizeof(float)
+        + 256 + 256 * sizeof(float) + static_cast<std::size_t>(N) * (sizeof(int) + sizeof(double));
+    const std::size_t budget = std::min<std::size_t>({temporaryBudget, 256ULL * 1024 * 1024, freeBytes / 2});
+    int batchSize = static_cast<int>(std::min<std::size_t>(totalTiles, budget / bytesPerTile));
+    if (batchSize < 1)
+    {
+        fprintf(stderr, "GPU scoring: insufficient temporary memory for one tile\n");
+        return false;
+    }
+    DeviceBuffer<std::uint8_t> storage;
+    {
+        PhaseTimer timer(timings ? &timings->allocationMs : nullptr);
+        for (;;)
+        {
+            auto error = storage.allocate(static_cast<std::size_t>(batchSize) * bytesPerTile);
+            if (error == cudaSuccess)
+            {
+                break;
+            }
+            if (error != cudaErrorMemoryAllocation || batchSize == 1)
+            {
+                CUDA_OK(error);
+                return false;
+            }
+            // 只对分配不足重试；运行或传输错误不能悄悄切换到另一套评分算法。
+            cudaGetLastError();
+            batchSize = std::max(1, batchSize / 2);
+        }
+    }
+    if (timings)
+    {
+        timings->peakTemporaryBytes = static_cast<std::size_t>(batchSize) * bytesPerTile;
+    }
+    for (int first = 0; first < totalTiles; first += batchSize)
+    {
+        const int count = std::min(batchSize, totalTiles - first);
+        const std::size_t work = static_cast<std::size_t>(count) * N;
+        // 同一块连续显存按类型对齐排布，所有批次复用；末批只传有效元素。
+        double* d_tileL = reinterpret_cast<double*>(storage.get());
+        double* d_tileA = d_tileL + count;
+        double* d_tileB = d_tileA + count;
+        double* d_tileEdge = d_tileB + count;
+        double* d_labW = d_tileEdge + count;
+        double* d_gridW = d_labW + count;
+        double* d_tinyW = d_gridW + count;
+        double* d_edgeW = d_tinyW + count;
+        double* d_lbpW = d_edgeW + count;
+        double* d_scores = d_lbpW + count;
+        float* d_tileGrid = reinterpret_cast<float*>(d_scores + work);
+        float* d_tileLBP = d_tileGrid + static_cast<std::size_t>(count) * 192;
+        int* d_indices = reinterpret_cast<int*>(d_tileLBP + static_cast<std::size_t>(count) * 256);
+        std::uint8_t* d_tileTiny = reinterpret_cast<std::uint8_t*>(d_indices + work);
+        {
+            PhaseTimer timer(timings ? &timings->uploadMs : nullptr);
+            if (!CUDA_OK(cudaMemcpy(d_tileL, h_tileL + static_cast<std::size_t>(first) * 1,
+                static_cast<std::size_t>(count) * 1 * sizeof(*d_tileL), cudaMemcpyHostToDevice)))
+            {
+                return false;
+            }
+            if (!CUDA_OK(cudaMemcpy(d_tileA, h_tileA + static_cast<std::size_t>(first) * 1,
+                static_cast<std::size_t>(count) * 1 * sizeof(*d_tileA), cudaMemcpyHostToDevice)))
+            {
+                return false;
+            }
+            if (!CUDA_OK(cudaMemcpy(d_tileB, h_tileB + static_cast<std::size_t>(first) * 1,
+                static_cast<std::size_t>(count) * 1 * sizeof(*d_tileB), cudaMemcpyHostToDevice)))
+            {
+                return false;
+            }
+            if (!CUDA_OK(cudaMemcpy(d_tileEdge, h_tileEdge + static_cast<std::size_t>(first) * 1,
+                static_cast<std::size_t>(count) * 1 * sizeof(*d_tileEdge), cudaMemcpyHostToDevice)))
+            {
+                return false;
+            }
+            if (!CUDA_OK(cudaMemcpy(d_labW, h_labW + static_cast<std::size_t>(first) * 1,
+                static_cast<std::size_t>(count) * 1 * sizeof(*d_labW), cudaMemcpyHostToDevice)))
+            {
+                return false;
+            }
+            if (!CUDA_OK(cudaMemcpy(d_gridW, h_gridW + static_cast<std::size_t>(first) * 1,
+                static_cast<std::size_t>(count) * 1 * sizeof(*d_gridW), cudaMemcpyHostToDevice)))
+            {
+                return false;
+            }
+            if (!CUDA_OK(cudaMemcpy(d_tinyW, h_tinyW + static_cast<std::size_t>(first) * 1,
+                static_cast<std::size_t>(count) * 1 * sizeof(*d_tinyW), cudaMemcpyHostToDevice)))
+            {
+                return false;
+            }
+            if (!CUDA_OK(cudaMemcpy(d_edgeW, h_edgeW + static_cast<std::size_t>(first) * 1,
+                static_cast<std::size_t>(count) * 1 * sizeof(*d_edgeW), cudaMemcpyHostToDevice)))
+            {
+                return false;
+            }
+            if (!CUDA_OK(cudaMemcpy(d_lbpW, h_lbpW + static_cast<std::size_t>(first) * 1,
+                static_cast<std::size_t>(count) * 1 * sizeof(*d_lbpW), cudaMemcpyHostToDevice)))
+            {
+                return false;
+            }
+            if (!CUDA_OK(cudaMemcpy(d_tileGrid, h_tileGrid + static_cast<std::size_t>(first) * 192,
+                static_cast<std::size_t>(count) * 192 * sizeof(*d_tileGrid), cudaMemcpyHostToDevice)))
+            {
+                return false;
+            }
+            if (!CUDA_OK(cudaMemcpy(d_tileLBP, h_tileLBP + static_cast<std::size_t>(first) * 256,
+                static_cast<std::size_t>(count) * 256 * sizeof(*d_tileLBP), cudaMemcpyHostToDevice)))
+            {
+                return false;
+            }
+            if (!CUDA_OK(cudaMemcpy(d_tileTiny, h_tileTiny + static_cast<std::size_t>(first) * 256,
+                static_cast<std::size_t>(count) * 256 * sizeof(*d_tileTiny), cudaMemcpyHostToDevice)))
+            {
+                return false;
+            }
+            if (!CUDA_OK(cudaMemcpy(d_indices, h_indices + static_cast<std::size_t>(first) * N,
+                static_cast<std::size_t>(count) * N * sizeof(*d_indices), cudaMemcpyHostToDevice)))
+            {
+                return false;
+            }
+        }
+        {
+            PhaseTimer timer(timings ? &timings->computeMs : nullptr);
+            const int blockSize = 256;
+            const int gridSize = static_cast<int>((work + blockSize - 1) / blockSize);
+            scoreBatchKernel<<<gridSize, blockSize>>>(
+                count, d_tileL, d_tileA, d_tileB, d_tileGrid, d_tileTiny, d_tileEdge, d_tileLBP,
+                d_indices, N, lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use, lib.count,
+                d_labW, d_gridW, d_tinyW, d_edgeW, d_lbpW, usePenalty, d_scores);
+            if (!CUDA_OK(cudaGetLastError()) || !CUDA_OK(cudaDeviceSynchronize()))
+            {
+                return false;
+            }
+        }
+        {
+            PhaseTimer timer(timings ? &timings->downloadMs : nullptr);
+            if (!CUDA_OK(cudaMemcpy(outScores + static_cast<std::size_t>(first) * N,
+                d_scores, work * sizeof(double), cudaMemcpyDeviceToHost)))
+            {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 // ============================================================
