@@ -2,6 +2,8 @@
 #include "MosaicOutput.h"
 #include "FeatureMatrix.h"
 #include "BenchmarkTimer.h"
+#include "GridDuplicateCache.h"
+#include <numeric>
 #include "BigTiffWriter.h"
 #include "Database.h"
 #include "DeepZoomWriter.h"
@@ -1218,7 +1220,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // 强制间距：同一图片在 minGap 个 tile 内禁止复用
     const int MIN_GAP = std::max(50, tilesX);  // 至少间隔一行
     std::unordered_map<int, int> lastUsedAt;   // imageId → 最近一次使用的 tile 索引
-    std::deque<std::vector<float>> recentGrids;  // 最近 Grid 特征滑动窗口，上限 50
+    std::deque<int> recentGrids;
+    GridDuplicateCache duplicateCache(allRecords);  // 最近 Grid 特征滑动窗口，上限 50
     constexpr double GRID_DUP_THRESHOLD = 0.010;  // Grid 相似阈值：低于此值视为重复
     constexpr double GRID_DUP_PENALTY = 200.0;     // Grid 重复惩罚分，加 200
     constexpr int GRID_DUP_WINDOW = 50;            // 滑动窗口大小，约等于一行 tile 数量
@@ -1483,6 +1486,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
         std::cout << "  selecting best..." << std::flush;
             int noCandidateCount = 0;  // 统计无候选的 tile 数量
+        std::vector<int> idxs(N);
         for (int ti = 0; ti < totalTiles; ++ti)
         {
             const size_t rowOffset = static_cast<size_t>(ti) * static_cast<size_t>(N);
@@ -1516,10 +1520,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     scores[j] += 500.0;
                 }
                             // Grid 去重：当前 tile 与最近窗口内 Grid 相似则加惩罚
-                const auto& candGrid = allRecords[indices[j]].grid4x4;
                 for (const auto& rg : recentGrids)
                 {
-                    if (gridDistance8x8(candGrid, rg) < GRID_DUP_THRESHOLD)
+                    if (duplicateCache.similar(indices[j], rg, GRID_DUP_THRESHOLD))
                     {
                         scores[j] += GRID_DUP_PENALTY;
                         break;
@@ -1554,8 +1557,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
 
             const auto sortStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
-            std::vector<int> idxs(N);
-            for (int j = 0; j < N; ++j) idxs[j] = j;
+            std::iota(idxs.begin(), idxs.end(), 0);
             int topN = std::min(cfg.topNrandom, std::min(N, validCount));
             std::partial_sort(idxs.begin(), idxs.begin() + topN, idxs.end(),
                 [&](int a, int b) { return scores[a] < scores[b]; });
@@ -1652,7 +1654,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             recentIds.push_back(chosenId);
             freqInWindow[chosenId]++;
                     lastUsedAt[chosenId] = ti;       // 记录最近使用位置
-            recentGrids.push_back(allRecords[chosenLibIdx].grid4x4);
+            recentGrids.push_back(chosenLibIdx);
             while (static_cast<int>(recentGrids.size()) > GRID_DUP_WINDOW)
                 recentGrids.pop_front();
             if (static_cast<int>(recentIds.size()) > cfg.neighborWindow)
@@ -1746,10 +1748,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 else if (cnt == 1) s += cfg.neighborPenalty * 0.1;
                 auto gapIt = lastUsedAt.find(r.id);  // 强制间距检查
                 if (gapIt != lastUsedAt.end() && (ti - gapIt->second) < MIN_GAP) s += 500.0;
-                const auto& candGrid = r.grid4x4;
                 for (const auto& rg : recentGrids)
                 {
-                    if (gridDistance8x8(candGrid, rg) < GRID_DUP_THRESHOLD)
+                    if (duplicateCache.similar(li, rg, GRID_DUP_THRESHOLD))
                     {
                         s += GRID_DUP_PENALTY;
                         break;
@@ -1764,12 +1765,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
             if (scored.empty()) { noCandidateCount++; continue; }
             const auto sortStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
-            std::sort(scored.begin(), scored.end());
+            const int topN = std::min(cfg.topNrandom, static_cast<int>(scored.size()));
+            std::partial_sort(scored.begin(), scored.begin() + topN, scored.end());
             if (cfg.benchmark)
             {
                 msSort += Ms(Clock::now() - sortStart).count();
             }
-            int topN = std::min(cfg.topNrandom, (int)scored.size());
             thread_local std::mt19937 rng2(std::random_device{}());
             int pickIdx = scored[std::uniform_int_distribution<int>(0, topN - 1)(rng2)].second;
             bestLibIdxCpu[ti] = pickIdx;
@@ -1797,7 +1798,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         // 更新滑动窗口统计
             int chosenId = bestRecsCpu[ti].id;
             recentIds.push_back(chosenId); freq[chosenId]++; lastUsedAt[chosenId] = ti;
-            recentGrids.push_back(bestRecsCpu[ti].grid4x4);
+            recentGrids.push_back(pickIdx);
             while (static_cast<int>(recentGrids.size()) > GRID_DUP_WINDOW)
                 recentGrids.pop_front();
             if ((int)recentIds.size() > cfg.neighborWindow) {

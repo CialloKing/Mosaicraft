@@ -1,3 +1,6 @@
+#include "../core/GridDuplicateCache.h"
+#include <deque>
+#include <limits>
 ﻿#include "../core/ImageCache.h"
 #include "../core/MosaicOutput.h"
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
@@ -273,4 +276,60 @@ TEST_CASE("bounded cache shares immutable pixels and output modes agree")
     }
     CHECK_FALSE(writeMosaicOutput(config, utf8(workspace.root / "missing" / "out.png"),
         2, 3, 18, 32, records, selected, {}, stats));
+}
+
+TEST_CASE("bounded grid comparisons preserve thresholds and ordered selections")
+{
+    std::vector<ImageRecord> records(80);
+    for (int i = 0; i < 80; ++i)
+    {
+        records[i].grid4x4.assign(192, static_cast<float>(i / 2) * 0.1f);
+    }
+    records[77].grid4x4.clear();
+    records[78].grid4x4[0] = std::numeric_limits<float>::infinity();
+    records[78].grid4x4[191] = std::numeric_limits<float>::quiet_NaN();
+    records[79].grid4x4[191] = std::numeric_limits<float>::quiet_NaN();
+    GridDuplicateCache cache(records);
+    const double boundary = gridDistance8x8(records[0].grid4x4, records[2].grid4x4);
+    for (double threshold : {0.010, boundary, std::nextafter(boundary, 0.0),
+                             std::nextafter(boundary, 1.0)})
+    {
+        for (int a = 0; a < 80; ++a)
+        {
+            for (int b = 0; b < 80; ++b)
+            {
+                CHECK(cache.similar(a, b, threshold) ==
+                      (gridDistance8x8(records[a].grid4x4, records[b].grid4x4) < threshold));
+            }
+        }
+    }
+    for (int window : {1, 3, 50})
+    {
+        std::deque<int> recent;
+        for (int tile = 0; tile < 90; ++tile)
+        {
+            std::vector<std::pair<double, int>> reference, actual;
+            for (int i = 0; i < 77; ++i)
+            {
+                double oldScore = static_cast<double>(i % 7), newScore = oldScore;
+                bool oldDuplicate = false, newDuplicate = false;
+                for (int r : recent)
+                {
+                    oldDuplicate |= gridDistance8x8(records[i].grid4x4, records[r].grid4x4) < 0.010;
+                    newDuplicate |= cache.similar(i, r, 0.010);
+                }
+                reference.emplace_back(oldScore + (oldDuplicate ? 200 : 0), i);
+                actual.emplace_back(newScore + (newDuplicate ? 200 : 0), i);
+            }
+            std::sort(reference.begin(), reference.end());
+            const int n = tile % 10 + 1;
+            std::partial_sort(actual.begin(), actual.begin() + n, actual.end());
+            CHECK(std::equal(actual.begin(), actual.begin() + n, reference.begin()));
+            recent.push_back(actual[tile % n].second);
+            if (static_cast<int>(recent.size()) > window)
+            {
+                recent.pop_front();
+            }
+        }
+    }
 }

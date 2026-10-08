@@ -105,7 +105,7 @@ inline void upsampleGrid4x4to8x8(const std::vector<float> &src48, std::vector<fl
 // 8×8 Grid 距离（192维，64个cell）
 template <class Row>
 inline double gridDistance8x8(const Row &a, const std::vector<float> &b,
-                              bool useSqrt = false) // false=平方(排序用), true=开方(显示用)
+                              bool useSqrt = false, double stopAt = INFINITY) // stopAt 仅用于已验证有限的去重特征
 {
     if (a.size() != 192 || b.size() != 192)
     {
@@ -127,6 +127,11 @@ inline double gridDistance8x8(const Row &a, const std::vector<float> &b,
         double db = a[idx + 2] - b[idx + 2];
         double sq = dl * dl + da * da + db * db;
         sum += (useSqrt ? std::sqrt(sq) : sq) * w[i];
+        // 与完整距离保持相同的除法顺序，避免阈值边界舍入改变判断。
+        if (std::isfinite(stopAt) && sum / 64.0 / 100.0 >= stopAt)
+        {
+            return sum / 64.0 / 100.0;
+        }
     }
     return sum / 64.0 / 100.0;
 }
