@@ -40,14 +40,8 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
 {
     try
     {
-        auto now = [&]()
-        {
-            return config.benchmark ? Clock::now() : Clock::time_point{};
-        };
-        auto elapsed = [&](Clock::time_point start)
-        {
-            return config.benchmark ? milliseconds(start) : 0.0;
-        };
+        auto now = [&]() { return config.benchmark ? Clock::now() : Clock::time_point{}; };
+        auto elapsed = [&](Clock::time_point start) { return config.benchmark ? milliseconds(start) : 0.0; };
         stats = {};
         const int width = tilesX * tileW, height = tilesY * tileH;
         const size_t count = static_cast<size_t>(tilesX) * tilesY;
@@ -61,10 +55,7 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
             }
         }
         cache.setUseCounts(std::move(useCounts));
-        auto finish = [&](size_t i)
-        {
-            cache.finishUse(records[i].id, tileW, tileH);
-        };
+        auto finish = [&](size_t i) { cache.finishUse(records[i].id, tileW, tileH); };
         WorkerPool pool(static_cast<unsigned>(
             std::min<size_t>(count, std::min(8u, std::max(1u, std::thread::hardware_concurrency())))));
         std::atomic<int> failures{0};
@@ -122,11 +113,11 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
             }
             stats.placementMs = elapsed(start);
             stats.cacheHits = cache.stats().hits;
-        stats.cacheDecodes = cache.stats().decodes;
-        stats.cachePeakBytes = cache.stats().peakBytes;
-        stats.cacheSharedLoads = cache.stats().sharedLoads;
-        stats.loadingMs = loadingNs.load() / 1000000.0;
-        stats.failed = failures;
+            stats.cacheDecodes = cache.stats().decodes;
+            stats.cachePeakBytes = cache.stats().peakBytes;
+            stats.cacheSharedLoads = cache.stats().sharedLoads;
+            stats.loadingMs = loadingNs.load() / 1000000.0;
+            stats.failed = failures;
             stats.matched = static_cast<int>(count) - stats.failed;
             return true;
         }
@@ -134,10 +125,7 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
         std::string format = config.outputFormat;
         auto extension = std::filesystem::u8path(path).extension().string();
         std::transform(extension.begin(), extension.end(), extension.begin(),
-                       [](unsigned char c)
-                       {
-                           return static_cast<char>(std::tolower(c));
-                       });
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         if (!config.formatExplicit && (format == "jpg" || format.empty()))
         {
             if (extension == ".png")
@@ -174,12 +162,13 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
         }
         const uint64_t rawBytes = static_cast<uint64_t>(width) * height * 3;
         const uint64_t rowBytes = static_cast<uint64_t>(width) * tileH * 3;
-        const int rgbRows = static_cast<int>(std::max<uint64_t>(1,
-            std::min<uint64_t>(64, (1024 * 1024) / (static_cast<uint64_t>(width) * 3))));
+        const int rgbRows = static_cast<int>(
+            std::max<uint64_t>(1, std::min<uint64_t>(64, (1024 * 1024) / (static_cast<uint64_t>(width) * 3))));
         const uint64_t conversionBytes = static_cast<uint64_t>(width) * 3 * (format == "png" ? rgbRows : 1);
         const uint64_t memory = availableMemory();
         // 编码可能暂存整图，且缓存与两行预取会同时存活，不能只估算画布。
-        const uint64_t estimated = rawBytes * 2 + ImageCache::kDefaultBudget + rowBytes * 2 + conversionBytes + 16 * 1024 * 1024;
+        const uint64_t estimated =
+            rawBytes * 2 + ImageCache::kDefaultBudget + rowBytes * 2 + conversionBytes + 16 * 1024 * 1024;
         const bool stream =
             format != "webp" &&
             (config.writeMode == "stream" ||
@@ -279,11 +268,7 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
                             const int slot = y % 2;
                             std::unique_lock<std::mutex> lock(mutex);
                             const auto waitStart = now();
-                            changed.wait(lock,
-                                         [&]()
-                                         {
-                                             return stop || !ready[slot];
-                                         });
+                            changed.wait(lock, [&]() { return stop || !ready[slot]; });
                             stats.producerWaitMs += elapsed(waitStart);
                             if (stop)
                             {
@@ -312,11 +297,7 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
                     const int slot = y % 2;
                     std::unique_lock<std::mutex> lock(mutex);
                     const auto waitStart = now();
-                    changed.wait(lock,
-                                 [&]()
-                                 {
-                                     return ready[slot] || error;
-                                 });
+                    changed.wait(lock, [&]() { return ready[slot] || error; });
                     stats.consumerWaitMs += elapsed(waitStart);
                     if (error)
                     {

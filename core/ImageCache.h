@@ -1,9 +1,9 @@
 ﻿#pragma once
 
 #include "UnicodeIO.h"
-#include <list>
-#include <future>
 #include <functional>
+#include <future>
+#include <list>
 #include <memory>
 #include <mutex>
 #include <opencv2/imgproc.hpp>
@@ -80,17 +80,18 @@ class ImageCache
 
     Image getShared(int imageId, const std::string &path, int width, int height)
     {
-        return getSharedWithLoader(imageId, width, height, [&]()
-        {
-            cv::Mat source = imreadUnicode(path, cv::IMREAD_COLOR);
-            if (source.empty() || (source.cols == width && source.rows == height))
-            {
-                return source;
-            }
-            cv::Mat resized;
-            cv::resize(source, resized, cv::Size(width, height), 0, 0, cv::INTER_AREA);
-            return resized;
-        });
+        return getSharedWithLoader(imageId, width, height,
+                                   [&]()
+                                   {
+                                       cv::Mat source = imreadUnicode(path, cv::IMREAD_COLOR);
+                                       if (source.empty() || (source.cols == width && source.rows == height))
+                                       {
+                                           return source;
+                                       }
+                                       cv::Mat resized;
+                                       cv::resize(source, resized, cv::Size(width, height), 0, 0, cv::INTER_AREA);
+                                       return resized;
+                                   });
     }
 
     template <class Loader> Image getSharedWithLoader(int imageId, int width, int height, Loader &&loader)

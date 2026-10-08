@@ -24,11 +24,8 @@ class GridDuplicateCache
         for (const auto &record : records)
         {
             const auto &grid = record.grid4x4;
-            m_finite.push_back(grid.size() == 192 && std::all_of(grid.begin(), grid.end(),
-                [](float value)
-                {
-                    return std::isfinite(value);
-                }));
+            m_finite.push_back(grid.size() == 192 &&
+                               std::all_of(grid.begin(), grid.end(), [](float value) { return std::isfinite(value); }));
         }
     }
 

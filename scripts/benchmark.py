@@ -111,6 +111,8 @@ def main():
         quality = re.search(r"Score: mean=([\d.]+).*?p90=([\d.]+)", text)
         record = dict(variant=name, analysis=analysis, run=run, warmup=run == 0, wall_seconds=elapsed,
                       output_bytes=output.stat().st_size,
+                      cache_counters={key.strip(): int(value) for key, value in
+                                      re.findall(r"^\s*(Image [^\r\n:]+):\s*(\d+)\s*$", text, re.MULTILINE)},
                       peak_rss_bytes=rss or None, gpu_device_before_mib=before_gpu,
                       gpu_device_peak_mib=gpu_peak, phases_ms=phases,
                       mean=float(quality[1]) if quality else None,

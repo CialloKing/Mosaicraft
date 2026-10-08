@@ -1,9 +1,10 @@
 #pragma once
-#include "FeaturePack.h"
 #include "FeatureMatrix.h"
+#include "FeaturePack.h"
 #include "UnicodeIO.h"
-#include <fstream>
+#include "WorkerPool.h"
 #include <chrono>
+#include <fstream>
 
 namespace mosaicraft
 {
@@ -27,7 +28,7 @@ class CandidateFeatures
     std::vector<int> m_slots;
     std::vector<uint8_t> m_tiny;
     std::vector<float> m_lbp;
-    std::vector<bool> m_tinyValid, m_lbpValid;
+    std::vector<uint8_t> m_tinyValid, m_lbpValid;
 
     static uint64_t hash(const void *data, size_t bytes)
     {
@@ -53,8 +54,8 @@ class CandidateFeatures
             !(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
         {
             result.size = (static_cast<uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
-            result.time = (static_cast<uint64_t>(data.ftLastWriteTime.dwHighDateTime) << 32) |
-                          data.ftLastWriteTime.dwLowDateTime;
+            result.time =
+                (static_cast<uint64_t>(data.ftLastWriteTime.dwHighDateTime) << 32) | data.ftLastWriteTime.dwLowDateTime;
         }
 #else
         std::error_code error;
@@ -91,8 +92,8 @@ class CandidateFeatures
         {
             int id;
             Metadata m;
-            if (!(input >> id >> m.tiny.path >> m.tiny.size >> m.tiny.time >> m.tinyHash >> m.tinyValid
-                        >> m.lbp.path >> m.lbp.size >> m.lbp.time >> m.lbpHash >> m.lbpValid) ||
+            if (!(input >> id >> m.tiny.path >> m.tiny.size >> m.tiny.time >> m.tinyHash >> m.tinyValid >> m.lbp.path >>
+                  m.lbp.size >> m.lbp.time >> m.lbpHash >> m.lbpValid) ||
                 id < 0 || !records.emplace(id, m).second)
             {
                 return {};
@@ -102,15 +103,15 @@ class CandidateFeatures
     }
     static void saveMetadata(const std::string &path, const std::unordered_map<int, Metadata> &records)
     {
-        const auto temporary = u8path(path + ".tmp-" +
-            std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        const auto temporary =
+            u8path(path + ".tmp-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
         std::ofstream output(temporary, std::ios::trunc);
         output << "MOSAICRAFT_FEATURES_1 " << records.size() << '\n';
         for (const auto &[id, m] : records)
         {
-            output << id << ' ' << m.tiny.path << ' ' << m.tiny.size << ' ' << m.tiny.time << ' '
-                   << m.tinyHash << ' ' << m.tinyValid << ' ' << m.lbp.path << ' ' << m.lbp.size << ' '
-                   << m.lbp.time << ' ' << m.lbpHash << ' ' << m.lbpValid << '\n';
+            output << id << ' ' << m.tiny.path << ' ' << m.tiny.size << ' ' << m.tiny.time << ' ' << m.tinyHash << ' '
+                   << m.tinyValid << ' ' << m.lbp.path << ' ' << m.lbp.size << ' ' << m.lbp.time << ' ' << m.lbpHash
+                   << ' ' << m.lbpValid << '\n';
         }
         output.close();
         std::error_code error;
@@ -124,7 +125,8 @@ class CandidateFeatures
 
   public:
     CandidateFeatures(const std::vector<ImageRecord> &records, const std::vector<int> &candidates,
-                      const std::string &directory) : m_slots(records.size(), -1)
+                      const std::string &directory)
+        : m_slots(records.size(), -1)
     {
         std::vector<int> needed;
         for (int index : candidates)
@@ -148,71 +150,83 @@ class CandidateFeatures
         {
             ids.emplace(records[i].id, static_cast<int>(i));
         }
-        for (size_t i = 0; i < count; ++i)
-        {
-            current[i].tiny = stamp(records[needed[i]].tinyPath);
-            current[i].lbp = stamp(records[needed[i]].histPath);
-        }
-        const bool validPack = !directory.empty() && FeaturePack::visit(directory, records.size(),
-            [&](int id, const auto &tiny, const auto &lbp)
-            {
-                auto record = ids.find(id);
-                if (record == ids.end())
-                {
-                    return false;
-                }
-                const int slot = m_slots[record->second];
-                auto saved = metadata.find(id);
-                if (slot >= 0 && saved != metadata.end())
-                {
-                    const auto &m = saved->second;
-                    if (m.tinyValid && m.tiny == current[slot].tiny && m.tinyHash == hash(tiny.data(), 256))
+        WorkerPool workers(static_cast<unsigned>(std::max<size_t>(
+            1, std::min<size_t>(count, std::min(8u, std::max(1u, std::thread::hardware_concurrency()))))));
+        workers.run(count,
+                    [&](size_t i)
                     {
-                        std::memcpy(m_tiny.data() + slot * 256, tiny.data(), 256);
-                        m_tinyValid[slot] = true;
-                    }
-                    if (m.lbpValid && m.lbp == current[slot].lbp && m.lbpHash == hash(lbp.data(), 1024))
+                        current[i].tiny = stamp(records[needed[i]].tinyPath);
+                        current[i].lbp = stamp(records[needed[i]].histPath);
+                    });
+        const bool validPack =
+            !directory.empty() &&
+            FeaturePack::visit(
+                directory, records.size(),
+                [&](int id, const auto &tiny, const auto &lbp)
+                {
+                    auto record = ids.find(id);
+                    if (record == ids.end())
                     {
-                        std::memcpy(m_lbp.data() + slot * 256, lbp.data(), 1024);
-                        m_lbpValid[slot] = true;
+                        return false;
                     }
-                }
-                return true;
-            });
+                    const int slot = m_slots[record->second];
+                    auto saved = metadata.find(id);
+                    if (slot >= 0 && saved != metadata.end())
+                    {
+                        const auto &m = saved->second;
+                        if (m.tinyValid && m.tiny == current[slot].tiny && m.tinyHash == hash(tiny.data(), 256))
+                        {
+                            std::memcpy(m_tiny.data() + slot * 256, tiny.data(), 256);
+                            m_tinyValid[slot] = true;
+                        }
+                        if (m.lbpValid && m.lbp == current[slot].lbp && m.lbpHash == hash(lbp.data(), 1024))
+                        {
+                            std::memcpy(m_lbp.data() + slot * 256, lbp.data(), 1024);
+                            m_lbpValid[slot] = true;
+                        }
+                    }
+                    return true;
+                });
         if (!validPack)
         {
             std::fill(m_tinyValid.begin(), m_tinyValid.end(), false);
             std::fill(m_lbpValid.begin(), m_lbpValid.end(), false);
         }
-        bool changed = !validPack;
+        std::atomic<bool> changed{!validPack};
+        workers.run(count,
+                    [&](size_t i)
+                    {
+                        const auto &record = records[needed[i]];
+                        auto &m = current[i];
+                        if (!m_tinyValid[i])
+                        {
+                            m_tinyValid[i] =
+                                !record.tinyPath.empty() && read(record.tinyPath, m_tiny.data() + i * 256, 256);
+                            changed = true;
+                        }
+                        if (!m_lbpValid[i])
+                        {
+                            m_lbpValid[i] =
+                                !record.histPath.empty() && read(record.histPath, m_lbp.data() + i * 256, 1024);
+                            changed = true;
+                        }
+                        m.tinyValid = m_tinyValid[i];
+                        m.lbpValid = m_lbpValid[i];
+                        m.tinyHash = hash(m_tiny.data() + i * 256, 256);
+                        m.lbpHash = hash(m_lbp.data() + i * 256, 1024);
+                        // 源文件在读取期间发生变化时不认证本次值，下次仍回退读取。
+                        if (!(m.tiny == stamp(record.tinyPath)))
+                        {
+                            m.tinyValid = false;
+                        }
+                        if (!(m.lbp == stamp(record.histPath)))
+                        {
+                            m.lbpValid = false;
+                        }
+                    });
         for (size_t i = 0; i < count; ++i)
         {
-            const auto &record = records[needed[i]];
-            auto &m = current[i];
-            if (!m_tinyValid[i])
-            {
-                m_tinyValid[i] = !record.tinyPath.empty() && read(record.tinyPath, m_tiny.data() + i * 256, 256);
-                changed = true;
-            }
-            if (!m_lbpValid[i])
-            {
-                m_lbpValid[i] = !record.histPath.empty() && read(record.histPath, m_lbp.data() + i * 256, 1024);
-                changed = true;
-            }
-            m.tinyValid = m_tinyValid[i];
-            m.lbpValid = m_lbpValid[i];
-            m.tinyHash = hash(m_tiny.data() + i * 256, 256);
-            m.lbpHash = hash(m_lbp.data() + i * 256, 1024);
-            // 源文件在读取期间发生变化时不认证本次值，下次仍回退读取。
-            if (!(m.tiny == stamp(record.tinyPath)))
-            {
-                m.tinyValid = false;
-            }
-            if (!(m.lbp == stamp(record.histPath)))
-            {
-                m.lbpValid = false;
-            }
-            metadata[record.id] = m;
+            metadata[records[needed[i]].id] = current[i];
         }
         for (auto it = metadata.begin(); it != metadata.end();)
         {
