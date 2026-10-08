@@ -195,7 +195,11 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
         {
             for (int y = 0; y < rows.rows; ++y)
             {
-                cv::cvtColor(rows.row(y), rgb, cv::COLOR_BGR2RGB);
+                // TIFF 行接口内部完成转换，避免在公共流程中再转换一次。
+                if (!tiff)
+                {
+                    cv::cvtColor(rows.row(y), rgb, cv::COLOR_BGR2RGB);
+                }
                 bool ok = png ? png->writeRow(rgb.data)
                               : (jpg ? jpg->writeRow(rgb.data) : tiff->writeRow(offset + y, rows.ptr<uint8_t>(y)));
                 if (!ok)
