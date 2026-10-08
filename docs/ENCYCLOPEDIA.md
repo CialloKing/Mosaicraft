@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-10-08 | 版本 / Version：v1.14.0
+> 最后更新 / Last updated：2026-10-08 | 版本 / Version：v1.14.1
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -344,6 +344,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.13.3 | **全面 bug 审查**: 5 HIGH + 6 MEDIUM 修复, 数值校验, 死代码清理 | — |
 | 1.13.9 | 发布准入清单、平台/运行时包命名、远端 CPU-only CI、vcpkg 缓存、Web UI/API 错误反馈打磨 | — |
 | 1.13.10 | tag/Release/zip 一致性、BUILD_INFO、真实附件验收强制化 | — |
+| 1.14.1 | 有界邻域比较、按使用次数释放缓存、CPU特征包校验、PNG多行写入 | 见性能报告 |
 | 1.14.0 | 196维并行ANN、字节预算缓存、公共流式输出、CUDA缓冲复用与失败处理 | 见性能报告 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
@@ -688,3 +689,12 @@ v1.13.10 是一次发布可追溯性修正版本。v1.13.9 发布后，源码继
 新增关键回归覆盖缓存失效、串并行查询、缓存预算与修改隔离、输出模式像素一致性，以及真实 CUDA 工作区复用和分批评分。使用相同数据库快照、固定 `--topn-random 1`、关闭颜色调整进行预热和三次采样。完整数据、方法和验收边界见 `docs/PERFORMANCE_v1.14.0.md`。
 
 > **EN**: Version 1.14.0 keeps all five matching features and public defaults. A validated 196-dimensional ANN cache supports concurrent read-only queries. A byte-budgeted image cache and shared output pipeline bound streaming buffers. CUDA feature allocations persist for a task, scoring uses bounded batches, and runtime failures abort generation. See the performance report for measured results and validation limits.
+
+
+### v1.14.1: 选图提速与内存收敛 (2026-10-08)
+
+邻域 Grid 去重使用阈值提前退出和任务内有界判断缓存，CPU 只排序需要的前 N 项。图片缓存按剩余使用次数释放，单次图片不驻留，同图并发请求共享解码结果；512 MiB 缓存上限保持不变。CPU 候选特征复用 v2 特征包的顺序读取，新增 `features.meta` 验证源文件路径指纹、大小、修改时间及包内特征摘要，失效时回退逐文件读取。元数据是可丢弃的加速层，不要求重新建图库，不改 GPU 特征读取和算法。
+
+PNG 使用有界多行 RGB 转换及写入；过滤器、压缩等级和每 1000 行刷新策略保持不变。`--benchmark` 增加邻域惩罚、排序、分析、加载、转换、写入、等待与缓存统计；工作线程加载时间是累加时间，不与墙钟总耗时相加。基准脚本新增 `--analysis-mode off|on|both`，默认分别采样普通生成和分析模式。性能数据及验收边界见 `docs/PERFORMANCE_v1.14.1.md`。
+
+> **EN**: Version 1.14.1 preserves matching rules and public defaults. Bounded neighbor comparisons, candidate feature buffers, usage-aware image caching and multirow PNG output reduce repeated work. PNG filters, compression and flush boundaries remain unchanged. Benchmark output separates normal generation from analysis overhead; the performance report records measured results and limitations.
