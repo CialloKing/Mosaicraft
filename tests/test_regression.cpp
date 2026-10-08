@@ -1,7 +1,7 @@
 #include "../core/GridDuplicateCache.h"
 #include <deque>
 #include <limits>
-﻿#include "../core/ImageCache.h"
+#include "../core/ImageCache.h"
 #include "../core/MosaicOutput.h"
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
