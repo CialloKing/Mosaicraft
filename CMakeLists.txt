@@ -260,3 +260,6 @@ endif()
 # 显式性能采样目标，不增加默认构建或 CTest 的负担。
 add_executable(mosaicraft_ann_benchmark EXCLUDE_FROM_ALL scripts/benchmark_ann.cpp)
 target_link_libraries(mosaicraft_ann_benchmark PRIVATE mosaicraft_core mosaicraft_cuda)
+
+add_executable(mosaicraft_features_benchmark EXCLUDE_FROM_ALL scripts/benchmark_features.cpp)
+target_link_libraries(mosaicraft_features_benchmark PRIVATE mosaicraft_core mosaicraft_cuda)
