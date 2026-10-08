@@ -66,7 +66,7 @@ int matchWithIndices(double tL, double tA, double tB, const float *tileGrid, con
                      double tileEdge, const float *tileLBP, const GpuLibrary &lib, const int *indices, int numIndices,
                      double labW, double gridW, double tinyW, double edgeW, double lbpW, double usePenalty);
 
-// 批量评分：totalTiles 个 tile 的全部候选一次性 GPU 评分
+// 批量评分：按显存预算分批处理全部候选；任何批次失败返回 false
 bool scoreBatch(int totalTiles, const double *h_tileL, const double *h_tileA, const double *h_tileB,
                 const float *h_tileGrid, const std::uint8_t *h_tileTiny, const double *h_tileEdge,
                 const float *h_tileLBP, const int *h_indices, int N, const GpuLibrary &lib, const double *h_labW,

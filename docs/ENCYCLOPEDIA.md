@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-07-05 | 版本 / Version：v1.13.10
+> 最后更新 / Last updated：2026-10-08 | 版本 / Version：v1.14.0
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -50,20 +50,20 @@ Mosaicraft 是一个 GPU 加速的照片马赛克拼贴生成器。将数千张�
 ### 2.1 双层检索
 
 ```
-Tile 特征 (708维)
+Tile 特征 (五特征共708维，粗筛196维)
      ↓
- ANN (hnswlib)     ← LAB + Grid + Edge (约200维有效信号)
+ ANN (hnswlib)     ← LAB 3 + Grid 192 + Edge 1 (196维)
      ↓
- Top 200 候选
+ Top 150 候选（默认）
      ↓
- GPU kernel        ← 五特征全量评分 (708维 + Tiny 256 + LBP 256)
+ GPU kernel        ← 五特征全量评分 (合计708维)
      ↓
  邻域去重 + Top-N随机
      ↓
  最终选择
 ```
 
-设计理由：ANN 负责缩小搜索空间（25K→200），GPU 负责精确排序。Tiny/LBP 在 ANN 阶段零填充（仅占索引维度 91%，但粗筛仍有效），完整评分留在 GPU 端。
+设计理由：ANN 负责缩小搜索空间，CPU/GPU 精排负责五特征完整评分。v1.14.0 移除了 Tiny/LBP 的 512 维零值占位；两者仍参与精排，权重和邻域去重规则保持不变。
 
 ### 2.2 五特征匹配
 
@@ -87,7 +87,8 @@ normalized/
 └── features/
     ├── tiny.bin         # N × 256B = 6.4MB (25K图库)
     ├── lbp.bin          # N × 1024B = 25.6MB
-    └── lib.ann          # HNSW 图索引 (~几十MB)
+    ├── lib.ann196       # 196维 HNSW 索引（旧 lib.ann 保留）
+    └── lib.ann196.meta  # 格式版本、维度、图片特征指纹及索引文件校验值
 
 lib.db                   # SQLite (avgLAB, Grid BLOB, 路径, 元数据)
 ```
@@ -97,38 +98,32 @@ FeaturePack v2 二进制格式：每条记录显式存储 `int32_t image_id` + �
 ### 2.4 处理流程
 
 ```
-Prep (~300ms)
-├─ FeaturePack 加载 (2次 fread 替代 50K 文件 I/O)
-├─ ANN 索引加载 (loadIndex)
-├─ GPU 库构建 + 上传
-└─ 缓存命中 → 300ms；首次 → ~1400ms
+Prep
+├─ SQLite / FeaturePack 加载
+└─ GPU 图库分配、上传（benchmark 分别记录）
 
-Features (~800ms)
-├─ 16线程并行
-├─ ROI resize → 180×320 (匹配DB)
-├─ computeGrid8x8 (64格)
-├─ computeTinyImage (16×16)
-├─ computeEdgeDensity
-└─ computeLBPHistogram
+Features
+├─ CPU 复用 LAB 和灰度转换结果
+└─ GPU 任务内复用特征工作区；原特征算法保持不变
 
-ANN 查询 (~12s)
-├─ 单线程 buildTileVector + hnswlib searchKnn
-├─ image_id → allRecords 索引映射
-└─ 瓶颈：hnswlib visited pool 非线程安全，无法并行
+ANN
+├─ 校验并加载 lib.ann196，失效时重建
+├─ 196维查询；最多 min(硬件并发数, 8, 任务数) 个工作线程
+└─ 索引只读、独立查询局部状态，结果按原小块顺序保存
 
-GPU 评分 (~60ms)
-├─ scoreBatchKernel (一次 kernel 处理全部 tile×candidate)
-├─ 五特征加权 + 使用惩罚
-└─ 30M+ scores/s
+GPU 评分
+├─ 临时显存预算不超过256 MiB，结合可用显存缩小批次
+├─ 分配不足时减半重试；单块仍失败则返回错误
+└─ 五特征、权重及使用惩罚保持不变
 
-Placement (~15s)
-├─ 16线程 ImageCache (16分片锁)
-├─ cv::Mat clone → colorAdjust (可选) → copyTo
-└─ 瓶颈：copyTo 内存带宽 (11.2GB 写入)
+Selection
+├─ 邻域频率惩罚按原顺序执行
+└─ Top-N 随机选取保持原默认值
 
-Selection (~200ms)
-├─ 邻域频率惩罚 (滑动窗口 ≥2×tilesX)
-└─ Top-N 随机选取 (默认 Top-10)
+Output
+├─ 512 MiB LRU，共享只读图片，颜色调整才复制
+├─ CPU/GPU 复用加载、缩放、贴图、编码流程
+└─ PNG/JPG/TIFF 流式输出：固定线程池、最多两行小块缓冲
 ```
 
 ---
@@ -349,6 +344,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.13.3 | **全面 bug 审查**: 5 HIGH + 6 MEDIUM 修复, 数值校验, 死代码清理 | — |
 | 1.13.9 | 发布准入清单、平台/运行时包命名、远端 CPU-only CI、vcpkg 缓存、Web UI/API 错误反馈打磨 | — |
 | 1.13.10 | tag/Release/zip 一致性、BUILD_INFO、真实附件验收强制化 | — |
+| 1.14.0 | 196维并行ANN、字节预算缓存、公共流式输出、CUDA缓冲复用与失败处理 | 见性能报告 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -450,19 +446,19 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 
 ## 10. 已知限制与未来方向 / Limitations & Roadmap
 
-> **EN**: Known limits: WebP 16,383px cap, single-threaded ANN, Edge density washed out at tile scale. Roadmap: incremental build, face/saliency weighting, GUI.
+> **EN**: Known limits: WebP 16,383px cap, CPU/GPU feature algorithms differ, Edge density washed out at tile scale. Roadmap: incremental build, face/saliency weighting, GUI.
 
 ### 已知限制
 
 - WebP 限制 16383px（低于 JPEG 65500px）
-- ANN 查询单线程（hnswlib visited pool 非线程安全）
-- Edge 密度在 9×16→180×320 上采样后恒为 0
+- ANN 只读查询支持并发，v1.14.0 默认最多 8 线程；构建/修改索引期间不执行查询
+- 小块放大后边缘特征的区分度有限；CPU Canny 与 GPU 梯度算法仍有差异
 - 自适应权重当前版退步，已冻结
 - 无增量建库（需全量重建）
 
 ### 已验证结论
 
-- candidates=150 足够（ANN 召回率 100%）
+- candidates=150 是现有默认折中，实际召回和匹配质量依赖样本
 - topNrandom=10 保证多样性
 - Grid 8×8 是核心竞争力（贡献 69%）
 - 颜色校正 LAB L 通道方式正确但默认关闭（视觉差异有限）
@@ -684,3 +680,11 @@ v1.13.10 是一次发布可追溯性修正版本。v1.13.9 发布后，源码继
 - Web UI/API smoke 通过
 - 发布包解压验证和 `BUILD_INFO.txt` 校验通过
 - `scripts/verify-release-asset.ps1 -Tag v1.13.10` 验证 GitHub Release 真实附件通过
+
+### v1.14.0: 性能与稳定性 (2026-10-08)
+
+本轮保留五特征定义、评分权重、邻域去重规则及 CLI/API 默认值。粗筛改用 196 维，新缓存失效自动重建且保留旧缓存。CPU/GPU 共用并行候选查询与输出流程。图片缓存默认 512 MiB；颜色调整修改独立副本；流式输出固定线程池与两行小块缓冲。CUDA 特征工作区按任务复用，评分使用不超过 256 MiB 的临时显存，失败立即中止生成。
+
+新增关键回归覆盖缓存失效、串并行查询、缓存预算与修改隔离、输出模式像素一致性，以及真实 CUDA 工作区复用和分批评分。使用相同数据库快照、固定 `--topn-random 1`、关闭颜色调整进行预热和三次采样。完整数据、方法和验收边界见 `docs/PERFORMANCE_v1.14.0.md`。
+
+> **EN**: Version 1.14.0 keeps all five matching features and public defaults. A validated 196-dimensional ANN cache supports concurrent read-only queries. A byte-budgeted image cache and shared output pipeline bound streaming buffers. CUDA feature allocations persist for a task, scoring uses bounded batches, and runtime failures abort generation. See the performance report for measured results and validation limits.

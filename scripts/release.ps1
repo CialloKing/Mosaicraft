@@ -573,6 +573,19 @@ try {
         Copy-RequiredFile -Source (Join-Path $RepoRoot "README.md") -Destination $packageRoot
         Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\API.md") -Destination (Join-Path $packageRoot "API.md")
         Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\ENCYCLOPEDIA.md") -Destination (Join-Path $packageRoot "ENCYCLOPEDIA.md")
+        $performanceReport = Join-Path $RepoRoot "docs\PERFORMANCE_v$versionText.md"
+        if (Test-Path -LiteralPath $performanceReport) {
+            $performanceDir = Join-Path $packageRoot "docs"
+            New-Item -ItemType Directory -Force -Path $performanceDir | Out-Null
+            Copy-RequiredFile -Source $performanceReport -Destination $performanceDir
+            Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\RELEASE_CHECKLIST.md") -Destination $performanceDir
+            $performanceData = Join-Path $RepoRoot "docs\performance\v$versionText.json"
+            if (Test-Path -LiteralPath $performanceData) {
+                $dataDir = Join-Path $performanceDir "performance"
+                New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+                Copy-RequiredFile -Source $performanceData -Destination $dataDir
+            }
+        }
         Copy-RequiredFile -Source (Join-Path $RepoRoot "LICENSE") -Destination $packageRoot
         Copy-RequiredFile -Source (Join-Path $RepoRoot "third_party_versions.txt") -Destination $packageRoot
         Write-BuildInfo `
@@ -604,6 +617,14 @@ try {
             Assert-FileExists -Path $webUiPath
             Assert-ArchiveDocumentationPolicy -ExtractRoot $extractRoot
             Assert-BuildInfo -ExtractRoot $extractRoot -VersionText $versionText -PackageName $packageName -CommitHash $gitCommit
+            if (Test-Path -LiteralPath $performanceReport) {
+                $archivedReport = Join-Path $extractRoot "docs\PERFORMANCE_v$versionText.md"
+                Assert-FileExists -Path $archivedReport
+                if ((Get-FileHash -LiteralPath $performanceReport).Hash -ne (Get-FileHash -LiteralPath $archivedReport).Hash) {
+                    throw "Performance report differs from the source report"
+                }
+            }
+
 
             $versionOutput = (& $cliPath --version).Trim()
             if ($versionOutput -ne "Mosaicraft $versionText") {
@@ -636,11 +657,15 @@ try {
 }
 finally {
     if (-not $KeepWorkspace) {
-        if (Test-Path -LiteralPath $packageRoot) {
-            Remove-Item -LiteralPath $packageRoot -Recurse -Force
-        }
-        if (Test-Path -LiteralPath $extractRoot) {
-            Remove-Item -LiteralPath $extractRoot -Recurse -Force
+        $allowedRoot = ([System.IO.Path]::GetFullPath($tempRoot)).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+        foreach ($workspacePath in @($packageRoot, $extractRoot)) {
+            if (Test-Path -LiteralPath $workspacePath) {
+                $resolved = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $workspacePath).Path)
+                if (-not $resolved.StartsWith($allowedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    throw "Refusing to remove a release workspace outside the temporary directory: $resolved"
+                }
+                Remove-Item -LiteralPath $resolved -Recurse -Force
+            }
         }
     } else {
         Write-Host "Package workspace: $packageRoot"

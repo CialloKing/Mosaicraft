@@ -1,6 +1,6 @@
 # Mosaicraft Release Checklist
 
-发布日期 / Applies to：v1.13.10 及后续补丁版本
+发布日期 / Applies to：v1.14.0 及后续版本
 
 本清单定义正式发布的准入标准。正式 CUDA 包仍由本机或专用 GPU 环境构建；GitHub Actions CPU-only CI 是基础门禁，不替代 CUDA 发布包。
 
@@ -132,3 +132,15 @@ GitHub Release 正文必须保持简洁，只包含：
 - 配置自托管 Windows GPU runner
 - 将 CUDA Release 构建和 Web UI/API smoke 纳入独立 `windows-cuda` job
 - 保留 CPU-only job 作为无 GPU fallback 门禁
+
+## 9. v1.14.0 发布候选验收
+
+候选包使用 `-PackageSuffix rc1`；保留默认的构建、CTest、Web UI/API smoke、解压后验证和 SHA256 流程。正式发布仍执行前述远端 CI、tag 和真实附件验收。
+
+- CUDA 和 CPU-only Release 各运行 CTest、Web UI/API smoke。
+- 使用真实 GPU 检查特征工作区复用、末尾批次、分批评分相等和失败返回。
+- 固定图库快照、目标图、`--topn-random 1`，关闭颜色调整；每轮恢复数据库，预热后测量三次取中位数。
+- `scripts/benchmark.py --baseline-exe <old-exe>` 交替运行新旧版本，降低整机负载漂移的影响。
+- 单独构建 `mosaicraft_ann_benchmark` 可排除索引加载时间，对比 708 维串行、196 维串行/并行，并检查完整查询结果。
+- ANN 查询至少降低 30%；代表性总耗时回退不超过 5%；平均/P90 匹配分数恶化不超过 1%。未达到门槛的项目不得作为性能成果发布。
+- 记录首次构建、进程峰值内存和显存采样口径；性能报告见 `docs/PERFORMANCE_v1.14.0.md`。

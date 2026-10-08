@@ -1,4 +1,4 @@
-# Mosaicraft v1.13.10
+# Mosaicraft v1.14.0
 
 > GPU 加速的照片马赛克拼贴生成器 — 本地创建图库图片精准匹配，输出超大分辨率马赛克拼图
 
@@ -36,7 +36,7 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
 ### 🎯 匹配引擎
 - **五层特征融合** — AvgLAB + 8×8 Grid + TinyImage + 边缘密度 + LBP
 - **Grid-first 策略** — 8×8 Grid（192维）贡献 58%，空间加权提升 7.4%
-- **ANN → GPU 四层检索** — hnswlib 粗筛 → GPU 精排 → 邻域去重 → 多线程贴图
+- **ANN → GPU 四层检索** — 196 维并行粗筛 → 五特征 GPU 分批精排 → 邻域去重 → 多线程贴图
 - **自适应参数** — candidates 默认 150，neighborWindow O(√N) 动态缩放
 
 ### ⚡ GPU 加速
@@ -69,7 +69,7 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
 ### 📦 工程优化
 - **FeaturePack** — 50K 文件 → 2 次 fread，加载 < 300ms
 - **建库流水线** — CPU 归一化与 GPU 特征提取并行；GPU 批量 32→256
-- **ImageCache** — LRU 缓存，16 分片并发
+- **ImageCache** — 512 MiB 像素字节预算 LRU，共享只读图片；PNG/JPG/TIFF 固定线程池、双行流式输出
 - **Unicode 路径** — 中文/日文等文件名全链路支持
 
 ---
@@ -298,3 +298,11 @@ Mosaicraft/
 ## 许可证
 
 [GPL v2](LICENSE)
+
+### v1.14.0 性能与稳定性
+
+ANN 使用 `features/lib.ann196` 和 `.meta` 缓存。缓存记录格式版本、维度、按图片 ID 排序的特征指纹及文件校验值；不匹配时自动重建，保留旧 `lib.ann`，无需重建图库。查询默认使用最多 8 个工作线程，选图和邻域去重仍按小块顺序执行。
+
+五种特征及评分权重保持不变。TinyImage、LBP 的 512 维仍参与精排，粗筛不再存储其零值占位。GPU 评分临时显存上限为 256 MiB，任务内复用特征工作区。启动时 CUDA 不可用则使用 CPU；已开始的 CUDA 计算失败会返回服务错误。
+
+使用 `--benchmark` 查看索引加载/构建、查询、特征提取、CUDA 分配/传输/评分、选图、贴图和编码耗时。可重复测量方法与验收结果见 [v1.14.0 性能报告](docs/PERFORMANCE_v1.14.0.md)。
