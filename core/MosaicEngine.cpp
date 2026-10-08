@@ -13,6 +13,7 @@
 #include "JpgStreamWriter.h"
 #include "FeatureIndex.h"
 #include "FeaturePack.h"
+#include "CandidateFeatures.h"
 #include "FeatureUtils.h"
 #include "ImageCache.h"
 #include "UnicodeIO.h"
@@ -636,7 +637,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     using Ms = std::chrono::duration<double, std::milli>;
     auto tStart = Clock::now();
     auto tLast  = tStart;
-    double msNeighbor = 0, msSort = 0, msAnalysis = 0;
+    double msNeighbor = 0, msSort = 0, msAnalysis = 0, msCPUFeatures = 0;
     OutputStats outputStats;
     double msFeat = 0, msANNBuild = 0, msANNLoad = 0, msANNQuery = 0, msGPUScore = 0, msSelect = 0, msPlace = 0, msEncode = 0, msCPUScore = 0;
     double msPrep = 0;  // DB 加载 + GPU library 上传累计耗时，GPU 路径专用
@@ -1046,6 +1047,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << std::fixed << std::setprecision(1);
         std::cout << "  CPU scoring: " << msCPUScore << " ms\n";
         std::cout << "  Selection:   " << (msSelect - msCPUScore)    << " ms\n";
+        std::cout << "  CPU feature loading: " << msCPUFeatures << " ms\n";
         std::cout << "  Neighbor penalties: " << msNeighbor << " ms\n";
         std::cout << "  Candidate sorting: " << msSort << " ms\n";
         std::cout << "  Analysis: " << msAnalysis << " ms\n";
@@ -1706,7 +1708,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
         // --------------------------------------------------------
         // CPU 路径：逐 tile 顺序处理，ANN 搜索 + 评分 + 贴图
         // --------------------------------------------------------
-        FeatureCache cpuFeatureCache;
+        const auto cpuFeatureStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
+        CandidateFeatures cpuFeatures(allRecords, allIndices, featDirCache);
+        if (cfg.benchmark)
+        {
+            msCPUFeatures = Ms(Clock::now() - cpuFeatureStart).count();
+        }
         int noCandidateCount = 0;
 
         // Phase 1: ANN 搜索 + 特征评分 + 去重惩罚（CPU 路径）
@@ -1734,16 +1741,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     continue;
                 }
                 const auto& r = allRecords[li];
-                const auto* recTiny = r.tinyPath.empty() ? nullptr : cpuFeatureCache.loadTiny(r.id, r.tinyPath);
-                const auto* recLBP = r.histPath.empty() ? nullptr : cpuFeatureCache.loadLBP(r.id, r.histPath);
+
                 double labD  = cfg.labWeight*labDistance(allTL[ti],allTA[ti],allTB[ti],r.avgL,r.avgA,r.avgB);
                 double gridD = cfg.gridWeight*gridDistance8x8(allGrid[ti], r.grid4x4);
                 double edgeD = cfg.edgeWeight*std::abs(allEdge[ti]-r.edgeDensity);
                 double s = labD
                          + gridD
-                         + cfg.tinyWeight*(recTiny ? tinyMSE(allTiny[ti], *recTiny) : 1.0)
+                         + cfg.tinyWeight*(cpuFeatures.hasTiny(li) ? tinyMSE(allTiny[ti], cpuFeatures.tiny(li)) : 1.0)
                          + edgeD
-                         + cfg.lbpWeight*(recLBP ? lbpDistance(allLBP[ti], *recLBP) : 1.0);
+                         + cfg.lbpWeight*(cpuFeatures.hasLbp(li) ? lbpDistance(allLBP[ti], cpuFeatures.lbp(li)) : 1.0);
                 BenchmarkTimer neighborTimer(cfg.benchmark, msNeighbor);
                 auto it = freq.find(r.id);
                 int cnt = (it != freq.end()) ? it->second : 0;
@@ -1784,15 +1790,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
             {
                 BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
                 const auto& w = allRecords[pickIdx];
-                const auto* wTiny = w.tinyPath.empty() ? nullptr : cpuFeatureCache.loadTiny(w.id, w.tinyPath);
+
             // --analyze: 仅记录胜出者的匹配数据，每个 tile 一条记录
-                const auto* wLBP = w.histPath.empty() ? nullptr : cpuFeatureCache.loadLBP(w.id, w.histPath);
+
                 double wLabD  = cfg.labWeight*labDistance(allTL[ti],allTA[ti],allTB[ti],w.avgL,w.avgA,w.avgB);
                 double wGridD = cfg.gridWeight*gridDistance8x8(allGrid[ti], w.grid4x4);
                 double wEdgeD = cfg.edgeWeight*std::abs(allEdge[ti]-w.edgeDensity);
                 double wS = wLabD + wGridD + wEdgeD
-                    + cfg.tinyWeight*(wTiny ? tinyMSE(allTiny[ti], *wTiny) : 1.0)
-                    + cfg.lbpWeight*(wLBP ? lbpDistance(allLBP[ti], *wLBP) : 1.0);
+                    + cfg.tinyWeight*(cpuFeatures.hasTiny(pickIdx) ? tinyMSE(allTiny[ti], cpuFeatures.tiny(pickIdx)) : 1.0)
+                    + cfg.lbpWeight*(cpuFeatures.hasLbp(pickIdx) ? lbpDistance(allLBP[ti], cpuFeatures.lbp(pickIdx)) : 1.0);
                 analyzeScores.push_back(wS);
                 analyzeImageIds.push_back(w.id);
                 analyzeLabD.push_back(wLabD);

@@ -165,7 +165,7 @@ inline std::vector<uint8_t> computeTinyImageFromGray(const cv::Mat &gray)
     return result;
 }
 
-template <class Row> inline double tinyMSE(const Row &a, const std::vector<uint8_t> &b)
+template <class Row, class OtherRow> inline double tinyMSE(const Row &a, const OtherRow &b)
 {
     if (a.size() != 256 || b.size() != 256)
     {
@@ -246,7 +246,7 @@ inline std::vector<float> computeLBPHistogram(const cv::Mat &bgr)
     return computeLBPHistogramFromGray(gray);
 }
 
-template <class Row> inline double lbpDistance(const Row &a, const std::vector<float> &b)
+template <class Row, class OtherRow> inline double lbpDistance(const Row &a, const OtherRow &b)
 {
     if (a.size() != 256 || b.size() != 256)
     {

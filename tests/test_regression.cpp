@@ -1,3 +1,4 @@
+#include "../core/CandidateFeatures.h"
 #include "../core/GridDuplicateCache.h"
 #include <deque>
 #include <limits>
@@ -392,4 +393,55 @@ TEST_CASE("usage cache releases final references and shares loading failures")
         }
         cache.clear();
     }
+}
+
+TEST_CASE("candidate features validate old packs source changes corruption and missing data")
+{
+    TempWorkspace workspace;
+    const auto dir = utf8(workspace.inputDir());
+    std::vector<ImageRecord> records(3);
+    for (int i = 0; i < 3; ++i)
+    {
+        records[i].id = i * 7 + 1;
+        records[i].tinyPath = dir + "/" + std::to_string(i) + ".tiny";
+        records[i].histPath = dir + "/" + std::to_string(i) + ".hist";
+        std::vector<uint8_t> tiny(256, static_cast<uint8_t>(i + 1));
+        std::vector<float> lbp(256, 0.25f);
+        std::ofstream t(u8path(records[i].tinyPath), std::ios::binary);
+        t.write(reinterpret_cast<const char *>(tiny.data()), 256);
+        std::ofstream l(u8path(records[i].histPath), std::ios::binary);
+        l.write(reinterpret_cast<const char *>(lbp.data()), 1024);
+    }
+    REQUIRE(FeaturePack::buildCache(dir, records));
+    const std::vector<int> needed{2, 0, 2};
+    CandidateFeatures migrated(records, needed, dir);
+    CHECK(migrated.hasTiny(2));
+    CHECK(migrated.tiny(2)[0] == 3);
+    CHECK(fs::exists(workspace.inputDir() / "features.meta"));
+    CandidateFeatures cached(records, needed, dir);
+    CHECK(cached.tiny(2)[0] == 3);
+    CHECK(cached.lbp(0)[0] == 0.25f);
+    {
+        std::fstream pack(workspace.inputDir() / "tiny.bin", std::ios::binary | std::ios::in | std::ios::out);
+        pack.seekp(8);
+        pack.put(99);
+    }
+    CandidateFeatures corrupt(records, needed, dir);
+    CHECK(corrupt.tiny(0)[0] == 1);
+    {
+        std::vector<uint8_t> changed(256, 42);
+        std::ofstream file(u8path(records[2].tinyPath), std::ios::binary);
+        file.write(reinterpret_cast<const char *>(changed.data()), 256);
+    }
+    fs::last_write_time(u8path(records[2].tinyPath), fs::file_time_type::clock::now() + std::chrono::seconds(1));
+    fs::remove(u8path(records[0].histPath));
+    fs::resize_file(u8path(records[0].tinyPath), 5);
+    CandidateFeatures changed(records, needed, dir);
+    CHECK(changed.tiny(2)[0] == 42);
+    CHECK_FALSE(changed.hasTiny(0));
+    CHECK_FALSE(changed.hasLbp(0));
+    fs::resize_file(workspace.inputDir() / "lbp.bin", 5);
+    CandidateFeatures truncated(records, needed, dir);
+    CHECK(truncated.tiny(2)[0] == 42);
+    CHECK_FALSE(truncated.hasLbp(0));
 }

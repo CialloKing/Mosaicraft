@@ -13,6 +13,9 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <array>
+#include <memory>
+#include <unordered_set>
 
 namespace mosaicraft
 {
@@ -44,6 +47,39 @@ inline FILE* u8fopen(const std::string& path, const char* mode)
 class FeaturePack
 {
 public:
+    // 顺序访问 v2 包，不为整库创建第二份特征副本。
+    template <class Visitor> static bool visit(const std::string &directory, size_t expected, Visitor visitor)
+    {
+        std::unique_ptr<FILE, decltype(&fclose)> tiny(u8fopen(directory + "/tiny.bin", "rb"), fclose);
+        std::unique_ptr<FILE, decltype(&fclose)> lbp(u8fopen(directory + "/lbp.bin", "rb"), fclose);
+        if (!tiny || !lbp)
+        {
+            return false;
+        }
+        setvbuf(tiny.get(), nullptr, _IOFBF, 2 * 1024 * 1024);
+        setvbuf(lbp.get(), nullptr, _IOFBF, 2 * 1024 * 1024);
+        uint32_t tc = 0, lc = 0;
+        if (fread(&tc, 4, 1, tiny.get()) != 1 || fread(&lc, 4, 1, lbp.get()) != 1 ||
+            tc != expected || lc != expected)
+        {
+            return false;
+        }
+        std::unordered_set<int> ids;
+        std::array<uint8_t, 256> t;
+        std::array<float, 256> l;
+        for (size_t i = 0; i < expected; ++i)
+        {
+            int32_t ti = -1, li = -1;
+            if (fread(&ti, 4, 1, tiny.get()) != 1 || fread(t.data(), 1, 256, tiny.get()) != 256 ||
+                fread(&li, 4, 1, lbp.get()) != 1 || fread(l.data(), sizeof(float), 256, lbp.get()) != 256 ||
+                ti < 0 || ti != li || !ids.insert(ti).second || !visitor(ti, t, l))
+            {
+                return false;
+            }
+        }
+        return fgetc(tiny.get()) == EOF && fgetc(lbp.get()) == EOF;
+    }
+
     // ——— 写入 ———
 
     static bool beginWrite(const std::string& featDir, int totalCount)
