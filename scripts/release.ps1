@@ -477,6 +477,7 @@ if ($PackageSuffix) {
 }
 $packageName = "Mosaicraft_v${versionText}_${packagePlatform}-${packageArch}_${packageRuntime}${suffix}"
 $zipPath = Join-Path $outputPath "$packageName.zip"
+$performanceReport = Join-Path $RepoRoot "docs\PERFORMANCE_v$versionText.md"
 $tempRoot = [System.IO.Path]::GetTempPath()
 $packageRoot = Join-Path $tempRoot ("${packageName}_pkg_" + [System.Guid]::NewGuid().ToString("N"))
 $extractRoot = Join-Path $tempRoot ("${packageName}_extract_" + [System.Guid]::NewGuid().ToString("N"))
@@ -573,7 +574,6 @@ try {
         Copy-RequiredFile -Source (Join-Path $RepoRoot "README.md") -Destination $packageRoot
         Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\API.md") -Destination (Join-Path $packageRoot "API.md")
         Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\ENCYCLOPEDIA.md") -Destination (Join-Path $packageRoot "ENCYCLOPEDIA.md")
-        $performanceReport = Join-Path $RepoRoot "docs\PERFORMANCE_v$versionText.md"
         if (Test-Path -LiteralPath $performanceReport) {
             $performanceDir = Join-Path $packageRoot "docs"
             New-Item -ItemType Directory -Force -Path $performanceDir | Out-Null
