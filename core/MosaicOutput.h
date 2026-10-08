@@ -14,6 +14,9 @@ struct OutputStats
     int failed = 0;
     double placementMs = 0;
     double encodingMs = 0;
+    double loadingMs = 0; // 工作线程耗时之和，不计入墙钟总和。
+    double colorMs = 0, codecMs = 0;
+    double producerWaitMs = 0, consumerWaitMs = 0;
     std::string path;
 };
 

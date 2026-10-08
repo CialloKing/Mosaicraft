@@ -54,6 +54,7 @@ def main():
     parser.add_argument("--out-w", type=int)
     parser.add_argument("--out-h", type=int)
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument("--analysis-mode", choices=("off", "on", "both"), default="both")
     args = parser.parse_args()
     folder = args.output_dir.resolve()
     folder.mkdir(parents=True, exist_ok=True)
@@ -71,14 +72,18 @@ def main():
                     color_adjust=False, topn_random=1, memory_metric="Windows peak working set; sampled total device VRAM")
     (folder / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     records = []
-    jobs = [(run, name, exe) for run in range(args.runs + 1)
+    modes = [False, True] if args.analysis_mode == "both" else [args.analysis_mode == "on"]
+    jobs = [(analysis, run, name, exe) for analysis in modes for run in range(args.runs + 1)
             for name, exe in (variants if run % 2 == 0 else list(reversed(variants)))]
-    for run, name, executable in jobs:
+    for analysis, run, name, executable in jobs:
+        mode = "analysis" if analysis else "normal"
         shutil.copy2(args.snapshot, db)
-        output = folder / (name + "." + args.format)
+        output = folder / (name + "-" + mode + "." + args.format)
         command = [str(executable.resolve()), "mosaic", "-i", str(args.target.resolve()),
                    "-d", str(db), "-o", str(output), "--format", args.format,
-                   "--write-mode", args.write_mode, "--topn-random", "1", "--benchmark", "--analyze"]
+                   "--write-mode", args.write_mode, "--topn-random", "1", "--benchmark"]
+        if analysis:
+            command.append("--analyze")
         if args.cpu:
             command.append("--cpu")
         if args.out_w and args.out_h:
@@ -86,7 +91,7 @@ def main():
         before_gpu = gpu_memory()
         gpu_peak = before_gpu
         rss = 0
-        log = folder / f"{name}-{run}.log"
+        log = folder / f"{name}-{mode}-{run}.log"
         start = time.perf_counter()
         with log.open("wb") as stream:
             process = subprocess.Popen(command, stdout=stream, stderr=subprocess.STDOUT)
@@ -104,7 +109,8 @@ def main():
         phases = {key.strip(): float(value) for key, value in
                   re.findall(r"^\s*([^\r\n:]+):\s*([\d.]+)\s*ms", text, re.MULTILINE)}
         quality = re.search(r"Score: mean=([\d.]+).*?p90=([\d.]+)", text)
-        record = dict(variant=name, run=run, warmup=run == 0, wall_seconds=elapsed,
+        record = dict(variant=name, analysis=analysis, run=run, warmup=run == 0, wall_seconds=elapsed,
+                      output_bytes=output.stat().st_size,
                       peak_rss_bytes=rss or None, gpu_device_before_mib=before_gpu,
                       gpu_device_peak_mib=gpu_peak, phases_ms=phases,
                       mean=float(quality[1]) if quality else None,
@@ -112,9 +118,11 @@ def main():
         records.append(record)
         (folder / "results.json").write_text(json.dumps(records, indent=2), encoding="utf-8")
         print(json.dumps(record), flush=True)
-    for name, _ in variants:
-        print(name, "median wall seconds:", statistics.median(
-            r["wall_seconds"] for r in records if r["variant"] == name and not r["warmup"]))
+    for analysis in modes:
+        for name, _ in variants:
+            print(name, "analysis" if analysis else "normal", "median wall seconds:", statistics.median(
+                r["wall_seconds"] for r in records
+                if r["variant"] == name and r["analysis"] == analysis and not r["warmup"]))
 
 
 if __name__ == "__main__":

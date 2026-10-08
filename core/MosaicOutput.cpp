@@ -55,6 +55,7 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
         WorkerPool pool(static_cast<unsigned>(
             std::min<size_t>(count, std::min(8u, std::max(1u, std::thread::hardware_concurrency())))));
         std::atomic<int> failures{0};
+        std::atomic<int64_t> loadingNs{0};
         auto load = [&](size_t i) -> std::shared_ptr<const cv::Mat>
         {
             if (selected[i] < 0)
@@ -62,7 +63,12 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
                 ++failures;
                 return {};
             }
+            const auto loadStart = now();
             auto image = cache.getShared(records[i].id, records[i].filePath, tileW, tileH);
+            if (config.benchmark)
+            {
+                loadingNs += std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - loadStart).count();
+            }
             if (!image)
             {
                 ++failures;
@@ -101,7 +107,8 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
                 DeepZoomWriter::buildPyramid(folder, tileW, tileH, tilesX, tilesY, config.jpegQuality);
             }
             stats.placementMs = elapsed(start);
-            stats.failed = failures;
+            stats.loadingMs = loadingNs.load() / 1000000.0;
+        stats.failed = failures;
             stats.matched = static_cast<int>(count) - stats.failed;
             return true;
         }
@@ -196,12 +203,16 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
             for (int y = 0; y < rows.rows; ++y)
             {
                 // TIFF 行接口内部完成转换，避免在公共流程中再转换一次。
+                const auto colorStart = now();
                 if (!tiff)
                 {
                     cv::cvtColor(rows.row(y), rgb, cv::COLOR_BGR2RGB);
                 }
+                stats.colorMs += elapsed(colorStart);
+                const auto codecStart = now();
                 bool ok = png ? png->writeRow(rgb.data)
                               : (jpg ? jpg->writeRow(rgb.data) : tiff->writeRow(offset + y, rows.ptr<uint8_t>(y)));
+                stats.codecMs += elapsed(codecStart);
                 if (!ok)
                 {
                     throw std::runtime_error("image row write failed");
@@ -227,11 +238,13 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
                         {
                             const int slot = y % 2;
                             std::unique_lock<std::mutex> lock(mutex);
+                            const auto waitStart = now();
                             changed.wait(lock,
                                          [&]()
                                          {
                                              return stop || !ready[slot];
                                          });
+                            stats.producerWaitMs += elapsed(waitStart);
                             if (stop)
                             {
                                 return;
@@ -258,11 +271,13 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
                 {
                     const int slot = y % 2;
                     std::unique_lock<std::mutex> lock(mutex);
+                    const auto waitStart = now();
                     changed.wait(lock,
                                  [&]()
                                  {
                                      return ready[slot] || error;
                                  });
+                    stats.consumerWaitMs += elapsed(waitStart);
                     if (error)
                     {
                         std::rethrow_exception(error);
@@ -334,6 +349,7 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
         }
         tiff.reset();
         stats.encodingMs += elapsed(closeStart);
+        stats.loadingMs = loadingNs.load() / 1000000.0;
         stats.failed = failures;
         stats.matched = static_cast<int>(count) - stats.failed;
         return true;

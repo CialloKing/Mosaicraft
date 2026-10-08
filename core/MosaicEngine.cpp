@@ -1,6 +1,7 @@
 ﻿#include "MosaicEngine.h"
 #include "MosaicOutput.h"
 #include "FeatureMatrix.h"
+#include "BenchmarkTimer.h"
 #include "BigTiffWriter.h"
 #include "Database.h"
 #include "DeepZoomWriter.h"
@@ -633,6 +634,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
     using Ms = std::chrono::duration<double, std::milli>;
     auto tStart = Clock::now();
     auto tLast  = tStart;
+    double msNeighbor = 0, msSort = 0, msAnalysis = 0;
+    OutputStats outputStats;
     double msFeat = 0, msANNBuild = 0, msANNLoad = 0, msANNQuery = 0, msGPUScore = 0, msSelect = 0, msPlace = 0, msEncode = 0, msCPUScore = 0;
     double msPrep = 0;  // DB 加载 + GPU library 上传累计耗时，GPU 路径专用
 
@@ -1041,6 +1044,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << std::fixed << std::setprecision(1);
         std::cout << "  CPU scoring: " << msCPUScore << " ms\n";
         std::cout << "  Selection:   " << (msSelect - msCPUScore)    << " ms\n";
+        std::cout << "  Neighbor penalties: " << msNeighbor << " ms\n";
+        std::cout << "  Candidate sorting: " << msSort << " ms\n";
+        std::cout << "  Analysis: " << msAnalysis << " ms\n";
+        std::cout << "  Output loading (worker sum): " << outputStats.loadingMs << " ms\n";
+        std::cout << "  Color conversion: " << outputStats.colorMs << " ms\n";
+        std::cout << "  Row encoding: " << outputStats.codecMs << " ms\n";
+        std::cout << "  Producer wait: " << outputStats.producerWaitMs << " ms\n";
+        std::cout << "  Consumer wait: " << outputStats.consumerWaitMs << " ms\n";
         std::cout << "  Placement:   " << msPlace     << " ms\n";
         std::cout << "  Encoding:    " << msEncode << " ms\n";
         if (opPlaceDecodeNs > 0)
@@ -1410,6 +1421,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::vector<std::vector<float>> libGrid4x4, tileGrid4x4;
         if (cfg.analyze)
         {
+            BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
             libGrid4x4.resize(dbCount);
             tileGrid4x4.resize(totalTiles);
                     // 构建库 4x4 Grid 特征
@@ -1486,6 +1498,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 continue;
             }
                     // 频次分级惩罚：1次轻微、2次中等、3+次重度（上限封顶）
+            const auto neighborStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
             for (int j = 0; j < N; ++j)
             {
                 int libIdx = indices[j];
@@ -1515,8 +1528,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
                     // Top-N 随机选取：从前 topN 个最佳候选中随机选择
                 // 8, 8 vs 4, 4 Grid 对比实验（--analyze 模式）
+            if (cfg.benchmark)
+            {
+                msNeighbor += Ms(Clock::now() - neighborStart).count();
+            }
             if (cfg.analyze && validCount > 0)
             {
+                BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
                 double best4 = 1e30, best8 = 1e30;
                 int best4idx = -1, best8idx = -1;
                 for (int j = 0; j < N; ++j)
@@ -1535,11 +1553,16 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 if (best4idx != best8idx) top1Differ++;
             }
 
+            const auto sortStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
             std::vector<int> idxs(N);
             for (int j = 0; j < N; ++j) idxs[j] = j;
             int topN = std::min(cfg.topNrandom, std::min(N, validCount));
             std::partial_sort(idxs.begin(), idxs.begin() + topN, idxs.end(),
                 [&](int a, int b) { return scores[a] < scores[b]; });
+            if (cfg.benchmark)
+            {
+                msSort += Ms(Clock::now() - sortStart).count();
+            }
             thread_local std::mt19937 rng(std::random_device{}());
             int rankPos = std::uniform_int_distribution<int>(0, topN - 1)(rng);       // 随机选取 0-based 索引，存储时转为 rank-1
             int pick = idxs[rankPos];
@@ -1549,6 +1572,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     // --analyze: 记录每个 tile 的详细匹配数据，用于后续分析报告
             if (cfg.analyze)
             {
+                BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
                 const auto& rec = allRecords[chosenLibIdx];
                 double labD  = labDistance(allTL[ti], allTA[ti], allTB[ti], rec.avgL, rec.avgA, rec.avgB);
                 double gridD = gridDistance8x8(allGrid[ti], rec.grid4x4, true);
@@ -1714,6 +1738,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                          + cfg.tinyWeight*(recTiny ? tinyMSE(allTiny[ti], *recTiny) : 1.0)
                          + edgeD
                          + cfg.lbpWeight*(recLBP ? lbpDistance(allLBP[ti], *recLBP) : 1.0);
+                BenchmarkTimer neighborTimer(cfg.benchmark, msNeighbor);
                 auto it = freq.find(r.id);
                 int cnt = (it != freq.end()) ? it->second : 0;
                 if (cnt >= 3) s += cfg.neighborPenalty;
@@ -1738,14 +1763,21 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 msCPUScore += Ms(Clock::now() - scoreStart).count();
             }
             if (scored.empty()) { noCandidateCount++; continue; }
+            const auto sortStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
             std::sort(scored.begin(), scored.end());
+            if (cfg.benchmark)
+            {
+                msSort += Ms(Clock::now() - sortStart).count();
+            }
             int topN = std::min(cfg.topNrandom, (int)scored.size());
             thread_local std::mt19937 rng2(std::random_device{}());
             int pickIdx = scored[std::uniform_int_distribution<int>(0, topN - 1)(rng2)].second;
             bestLibIdxCpu[ti] = pickIdx;
             bestRecsCpu[ti] = allRecords[pickIdx];
             // --analyze: ֻ��¼ʤ���ߵ��������ݣ�ÿ�� tile һ����
-            if (cfg.analyze) {
+            if (cfg.analyze)
+            {
+                BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
                 const auto& w = allRecords[pickIdx];
                 const auto* wTiny = w.tinyPath.empty() ? nullptr : cpuFeatureCache.loadTiny(w.id, w.tinyPath);
             // --analyze: 仅记录胜出者的匹配数据，每个 tile 一条记录
@@ -1794,7 +1826,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
     releaseGpuLib();
     allIndices.clear();
     allIndices.shrink_to_fit();
-    OutputStats outputStats;
     if (!writeMosaicOutput(cfg, outputPath, tilesX, tilesY, outTileW, outTileH,
                           bestRecords, bestLibIdx, adjustColor, outputStats))
     {
@@ -1819,7 +1850,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
               << std::endl;
 
     // 根据扩展名与 --format 自动切换或保持原路径格式一致
-    runAnalysis(outputStats.path);
+    {
+        BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
+        runAnalysis(outputStats.path);
+    }
 
     releaseGpuLib();
 
