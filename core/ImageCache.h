@@ -2,6 +2,8 @@
 
 #include "UnicodeIO.h"
 #include <list>
+#include <future>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <opencv2/imgproc.hpp>
@@ -38,61 +40,138 @@ class ImageCache
 
   public:
     static constexpr size_t kDefaultBudget = 512ULL * 1024 * 1024;
-    explicit ImageCache(size_t budget = kDefaultBudget) : m_budget(budget)
+    explicit ImageCache(size_t budget = kDefaultBudget, bool benchmark = false)
+        : m_budget(budget), m_benchmark(benchmark)
     {
     }
 
-    std::shared_ptr<const cv::Mat> getShared(int imageId, const std::string &path, int width, int height)
+    using Image = std::shared_ptr<const cv::Mat>;
+    struct Stats
+    {
+        size_t hits = 0, decodes = 0, peakBytes = 0, sharedLoads = 0;
+    };
+
+    void setUseCounts(std::unordered_map<int, size_t> counts)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_remaining = std::move(counts);
+        m_managed = true;
+    }
+
+    void finishUse(int id, int width, int height)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto remaining = m_remaining.find(id);
+        if (remaining != m_remaining.end() && remaining->second > 0 && --remaining->second == 0)
+        {
+            auto entry = m_entries.find(Key{id, width, height});
+            if (entry != m_entries.end())
+            {
+                erase(entry);
+            }
+        }
+    }
+
+    Stats stats() const
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_stats;
+    }
+
+    Image getShared(int imageId, const std::string &path, int width, int height)
+    {
+        return getSharedWithLoader(imageId, width, height, [&]()
+        {
+            cv::Mat source = imreadUnicode(path, cv::IMREAD_COLOR);
+            if (source.empty() || (source.cols == width && source.rows == height))
+            {
+                return source;
+            }
+            cv::Mat resized;
+            cv::resize(source, resized, cv::Size(width, height), 0, 0, cv::INTER_AREA);
+            return resized;
+        });
+    }
+
+    template <class Loader> Image getSharedWithLoader(int imageId, int width, int height, Loader &&loader)
     {
         const Key key{imageId, width, height};
+        std::shared_future<Image> pending;
+        std::promise<Image> promise;
+        bool owner = false;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             auto found = m_entries.find(key);
             if (found != m_entries.end())
             {
                 m_lru.splice(m_lru.end(), m_lru, found->second.position);
+                if (m_benchmark)
+                {
+                    ++m_stats.hits;
+                }
                 return found->second.image;
             }
+            auto loading = m_loading.find(key);
+            if (loading != m_loading.end())
+            {
+                pending = loading->second;
+                if (m_benchmark)
+                {
+                    ++m_stats.sharedLoads;
+                }
+            }
+            else
+            {
+                pending = promise.get_future().share();
+                m_loading.emplace(key, pending);
+                owner = true;
+                if (m_benchmark)
+                {
+                    ++m_stats.decodes;
+                }
+            }
         }
-        // 读盘、解码、缩放均在锁外；共享只读引用在淘汰后仍有效。
-        cv::Mat source = imreadUnicode(path, cv::IMREAD_COLOR);
-        if (source.empty())
+        if (!owner)
         {
-            return {};
+            // 等待和解码都在全局锁外，其他图片可以继续加载。
+            return pending.get();
         }
-        cv::Mat resized;
-        if (source.cols == width && source.rows == height)
+        try
         {
-            resized = std::move(source);
-        }
-        else
-        {
-            cv::resize(source, resized, cv::Size(width, height), 0, 0, cv::INTER_AREA);
-        }
-        const size_t bytes = resized.total() * resized.elemSize();
-        auto image = std::make_shared<const cv::Mat>(std::move(resized));
-        if (bytes > m_budget)
-        {
+            cv::Mat pixels = loader();
+            Image image = pixels.empty() ? Image{} : std::make_shared<const cv::Mat>(std::move(pixels));
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                const size_t bytes = image ? image->total() * image->elemSize() : 0;
+                const auto uses = m_remaining.find(imageId);
+                const bool reusable = !m_managed || (uses != m_remaining.end() && uses->second > 1);
+                if (image && bytes <= m_budget && reusable)
+                {
+                    while (m_bytes > m_budget - bytes && !m_lru.empty())
+                    {
+                        erase(m_entries.find(m_lru.front()));
+                    }
+                    m_lru.push_back(key);
+                    m_entries.emplace(key, Entry{image, std::prev(m_lru.end()), bytes});
+                    m_bytes += bytes;
+                    if (m_benchmark)
+                    {
+                        m_stats.peakBytes = std::max(m_stats.peakBytes, m_bytes);
+                    }
+                }
+                promise.set_value(image);
+                m_loading.erase(key);
+            }
             return image;
         }
-        std::lock_guard<std::mutex> lock(m_mutex);
-        auto found = m_entries.find(key);
-        if (found != m_entries.end())
+        catch (...)
         {
-            m_lru.splice(m_lru.end(), m_lru, found->second.position);
-            return found->second.image;
+            std::lock_guard<std::mutex> lock(m_mutex);
+            // 每条完成路径都兑现 promise，失败不能让其他工作线程永久等待。
+            promise.set_exception(std::current_exception());
+            m_loading.erase(key);
+            throw;
         }
-        while (m_bytes > m_budget - bytes && !m_lru.empty())
-        {
-            auto oldest = m_entries.find(m_lru.front());
-            m_bytes -= oldest->second.bytes;
-            m_entries.erase(oldest);
-            m_lru.pop_front();
-        }
-        m_lru.push_back(key);
-        m_entries.emplace(key, Entry{image, std::prev(m_lru.end()), bytes});
-        m_bytes += bytes;
-        return image;
     }
 
     // 兼容需要修改像素的调用方；复制发生在锁外。
@@ -122,6 +201,17 @@ class ImageCache
     std::list<Key> m_lru;
     size_t m_budget;
     size_t m_bytes = 0;
+    bool m_benchmark = false, m_managed = false;
+    Stats m_stats;
+    std::unordered_map<int, size_t> m_remaining;
+    std::unordered_map<Key, std::shared_future<Image>, Hash> m_loading;
+
+    void erase(std::unordered_map<Key, Entry, Hash>::iterator entry)
+    {
+        m_bytes -= entry->second.bytes;
+        m_lru.erase(entry->second.position);
+        m_entries.erase(entry);
+    }
 };
 
 } // namespace mosaicraft

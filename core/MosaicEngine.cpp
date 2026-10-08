@@ -1054,6 +1054,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << "  Row encoding: " << outputStats.codecMs << " ms\n";
         std::cout << "  Producer wait: " << outputStats.producerWaitMs << " ms\n";
         std::cout << "  Consumer wait: " << outputStats.consumerWaitMs << " ms\n";
+        std::cout << "  Image cache hits: " << outputStats.cacheHits << "\n"
+                  << "  Image decodes: " << outputStats.cacheDecodes << "\n"
+                  << "  Image cache peak bytes: " << outputStats.cachePeakBytes << "\n"
+                  << "  Image shared loads: " << outputStats.cacheSharedLoads << "\n";
         std::cout << "  Placement:   " << msPlace     << " ms\n";
         std::cout << "  Encoding:    " << msEncode << " ms\n";
         if (opPlaceDecodeNs > 0)

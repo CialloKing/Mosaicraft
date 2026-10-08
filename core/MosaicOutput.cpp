@@ -51,7 +51,20 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
         stats = {};
         const int width = tilesX * tileW, height = tilesY * tileH;
         const size_t count = static_cast<size_t>(tilesX) * tilesY;
-        ImageCache cache;
+        ImageCache cache(ImageCache::kDefaultBudget, config.benchmark);
+        std::unordered_map<int, size_t> useCounts;
+        for (size_t i = 0; i < count; ++i)
+        {
+            if (selected[i] >= 0)
+            {
+                ++useCounts[records[i].id];
+            }
+        }
+        cache.setUseCounts(std::move(useCounts));
+        auto finish = [&](size_t i)
+        {
+            cache.finishUse(records[i].id, tileW, tileH);
+        };
         WorkerPool pool(static_cast<unsigned>(
             std::min<size_t>(count, std::min(8u, std::max(1u, std::thread::hardware_concurrency())))));
         std::atomic<int> failures{0};
@@ -101,13 +114,18 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
                                  throw std::runtime_error("tile write failed: " + tilePath);
                              }
                          }
+                         finish(i);
                      });
             if (config.deepZoom)
             {
                 DeepZoomWriter::buildPyramid(folder, tileW, tileH, tilesX, tilesY, config.jpegQuality);
             }
             stats.placementMs = elapsed(start);
-            stats.loadingMs = loadingNs.load() / 1000000.0;
+            stats.cacheHits = cache.stats().hits;
+        stats.cacheDecodes = cache.stats().decodes;
+        stats.cachePeakBytes = cache.stats().peakBytes;
+        stats.cacheSharedLoads = cache.stats().sharedLoads;
+        stats.loadingMs = loadingNs.load() / 1000000.0;
         stats.failed = failures;
             stats.matched = static_cast<int>(count) - stats.failed;
             return true;
@@ -176,6 +194,7 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
                          {
                              image->copyTo(destination(cv::Rect(static_cast<int>(x) * tileW, 0, tileW, tileH)));
                          }
+                         finish(static_cast<size_t>(tileRow) * tilesX + x);
                      });
         };
 
@@ -316,6 +335,7 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
                              image->copyTo(canvas(cv::Rect(static_cast<int>(i % tilesX) * tileW,
                                                            static_cast<int>(i / tilesX) * tileH, tileW, tileH)));
                          }
+                         finish(i);
                      });
             stats.placementMs = elapsed(start);
             // 画布已持有全部像素，编码前释放缓存，避免和编码缓冲叠加。
@@ -349,6 +369,10 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
         }
         tiff.reset();
         stats.encodingMs += elapsed(closeStart);
+        stats.cacheHits = cache.stats().hits;
+        stats.cacheDecodes = cache.stats().decodes;
+        stats.cachePeakBytes = cache.stats().peakBytes;
+        stats.cacheSharedLoads = cache.stats().sharedLoads;
         stats.loadingMs = loadingNs.load() / 1000000.0;
         stats.failed = failures;
         stats.matched = static_cast<int>(count) - stats.failed;

@@ -17,6 +17,7 @@ struct OutputStats
     double loadingMs = 0; // 工作线程耗时之和，不计入墙钟总和。
     double colorMs = 0, codecMs = 0;
     double producerWaitMs = 0, consumerWaitMs = 0;
+    size_t cacheHits = 0, cacheDecodes = 0, cachePeakBytes = 0, cacheSharedLoads = 0;
     std::string path;
 };
 

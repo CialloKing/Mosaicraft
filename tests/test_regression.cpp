@@ -333,3 +333,63 @@ TEST_CASE("bounded grid comparisons preserve thresholds and ordered selections")
         }
     }
 }
+
+TEST_CASE("usage cache releases final references and shares loading failures")
+{
+    ImageCache cache(1024, true);
+    cache.setUseCounts({{1, 1}, {2, 2}, {3, 2}});
+    auto pixels = []()
+    {
+        return cv::Mat(8, 8, CV_8UC3, cv::Scalar(1, 2, 3));
+    };
+    REQUIRE(cache.getSharedWithLoader(1, 8, 8, pixels));
+    CHECK(cache.cachedBytes() == 0);
+    auto first = cache.getSharedWithLoader(2, 8, 8, pixels);
+    REQUIRE(first);
+    cache.finishUse(2, 8, 8);
+    CHECK(cache.getSharedWithLoader(2, 8, 8, pixels) == first);
+    cache.finishUse(2, 8, 8);
+    CHECK(cache.cachedBytes() == 0);
+    CHECK(first->at<cv::Vec3b>(0, 0)[0] == 1);
+    for (bool fail : {false, true})
+    {
+        std::promise<void> started, release;
+        auto released = release.get_future().share();
+        auto owner = std::async(std::launch::async, [&]()
+        {
+            return cache.getSharedWithLoader(3, 8, 8, [&]() -> cv::Mat
+            {
+                started.set_value();
+                released.wait();
+                if (fail)
+                {
+                    throw std::runtime_error("decode failure");
+                }
+                return pixels();
+            });
+        });
+        started.get_future().wait();
+        const auto shares = cache.stats().sharedLoads;
+        auto waiter = std::async(std::launch::async, [&]()
+        {
+            return cache.getSharedWithLoader(3, 8, 8, pixels);
+        });
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (cache.stats().sharedLoads == shares && std::chrono::steady_clock::now() < deadline)
+        {
+            std::this_thread::yield();
+        }
+        release.set_value();
+        CHECK(cache.stats().sharedLoads == shares + 1);
+        if (fail)
+        {
+            CHECK_THROWS_AS(owner.get(), std::runtime_error);
+            CHECK_THROWS_AS(waiter.get(), std::runtime_error);
+        }
+        else
+        {
+            CHECK(owner.get() == waiter.get());
+        }
+        cache.clear();
+    }
+}
