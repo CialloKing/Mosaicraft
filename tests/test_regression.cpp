@@ -1,3 +1,4 @@
+#include "../core/PngStreamWriter.h"
 #include "../core/CandidateFeatures.h"
 #include "../core/GridDuplicateCache.h"
 #include <deque>
@@ -444,4 +445,27 @@ TEST_CASE("candidate features validate old packs source changes corruption and m
     CandidateFeatures truncated(records, needed, dir);
     CHECK(truncated.tiny(2)[0] == 42);
     CHECK_FALSE(truncated.hasLbp(0));
+}
+
+TEST_CASE("PNG multirow writing preserves refresh boundaries and encoded bytes")
+{
+    TempWorkspace workspace;
+    cv::Mat rgb(2017, 37, CV_8UC3);
+    cv::randu(rgb, 0, 255);
+    const auto oldPath = utf8(workspace.outputDir() / "rows.png");
+    const auto newPath = utf8(workspace.outputDir() / "blocks.png");
+    PngStreamWriter rows(oldPath, rgb.cols, rgb.rows);
+    PngStreamWriter blocks(newPath, rgb.cols, rgb.rows);
+    for (int y = 0; y < rgb.rows; ++y)
+    {
+        REQUIRE(rows.writeRow(rgb.ptr<uint8_t>(y)));
+    }
+    for (int y = 0; y < rgb.rows; y += 64)
+    {
+        REQUIRE(blocks.writeRows(rgb.ptr<uint8_t>(y), rgb.step, std::min(64, rgb.rows - y)));
+    }
+    REQUIRE(rows.close());
+    REQUIRE(blocks.close());
+    std::ifstream a(u8path(oldPath), std::ios::binary), b(u8path(newPath), std::ios::binary);
+    CHECK(std::string(std::istreambuf_iterator<char>(a), {}) == std::string(std::istreambuf_iterator<char>(b), {}));
 }

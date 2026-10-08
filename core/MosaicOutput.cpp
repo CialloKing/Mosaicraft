@@ -174,9 +174,12 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
         }
         const uint64_t rawBytes = static_cast<uint64_t>(width) * height * 3;
         const uint64_t rowBytes = static_cast<uint64_t>(width) * tileH * 3;
+        const int rgbRows = static_cast<int>(std::max<uint64_t>(1,
+            std::min<uint64_t>(64, (1024 * 1024) / (static_cast<uint64_t>(width) * 3))));
+        const uint64_t conversionBytes = static_cast<uint64_t>(width) * 3 * (format == "png" ? rgbRows : 1);
         const uint64_t memory = availableMemory();
         // 编码可能暂存整图，且缓存与两行预取会同时存活，不能只估算画布。
-        const uint64_t estimated = rawBytes * 2 + ImageCache::kDefaultBudget + rowBytes * 2 + 16 * 1024 * 1024;
+        const uint64_t estimated = rawBytes * 2 + ImageCache::kDefaultBudget + rowBytes * 2 + conversionBytes + 16 * 1024 * 1024;
         const bool stream =
             format != "webp" &&
             (config.writeMode == "stream" ||
@@ -219,6 +222,24 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
         };
         auto writeRows = [&](const cv::Mat &rows, int offset)
         {
+            if (png)
+            {
+                for (int y = 0; y < rows.rows; y += rgbRows)
+                {
+                    const int count = std::min(rgbRows, rows.rows - y);
+                    const auto colorStart = now();
+                    cv::cvtColor(rows.rowRange(y, y + count), rgb, cv::COLOR_BGR2RGB);
+                    stats.colorMs += elapsed(colorStart);
+                    const auto codecStart = now();
+                    const bool ok = png->writeRows(rgb.data, rgb.step, count);
+                    stats.codecMs += elapsed(codecStart);
+                    if (!ok)
+                    {
+                        throw std::runtime_error("PNG rows write failed");
+                    }
+                }
+                return;
+            }
             for (int y = 0; y < rows.rows; ++y)
             {
                 // TIFF 行接口内部完成转换，避免在公共流程中再转换一次。
