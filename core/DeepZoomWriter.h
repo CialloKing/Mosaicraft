@@ -18,7 +18,7 @@ namespace mosaicraft
 class DeepZoomWriter
 {
 public:
-    static void buildPyramid(const std::string& level0Dir,
+    static bool buildPyramid(const std::string& level0Dir,
                              int tileW, int tileH,
                              int cols, int rows,
                              int quality)
@@ -64,7 +64,7 @@ public:
         {
             std::cerr << "ERROR: DeepZoom cannot prepare source tiles: "
                       << ec.message() << std::endl;
-            return;
+            return false;
         }
 
         for (int level = 0; level <= maxLevel; ++level)
@@ -76,7 +76,7 @@ public:
             {
                 std::cerr << "ERROR: DeepZoom cannot create directory "
                           << pathToUtf8(levelDir) << ": " << ec.message() << std::endl;
-                return;
+                return false;
             }
         }
 
@@ -178,7 +178,10 @@ public:
                                    {cv::IMWRITE_JPEG_QUALITY, quality}))
                     ++written;
                 else
+                {
                     std::cerr << "ERROR: DeepZoom failed to write " << pathToUtf8(dst) << std::endl;
+                    return false;
+                }
             }
         }
         std::cout << " (" << written << " tiles)" << std::endl;
@@ -219,21 +222,24 @@ public:
                                        {cv::IMWRITE_JPEG_QUALITY, quality}))
                         ++written;
                     else
+                    {
                         std::cerr << "ERROR: DeepZoom failed to write " << pathToUtf8(dst) << std::endl;
+                        return false;
+                    }
                 }
             }
 
             std::cout << " (" << written << " tiles)" << std::endl;
         }
 
-        fs::remove_all(sourceTilesDir, ec);
+        // 所有层、manifest 和 viewer 均成功后才清理原始小块，失败时可从 _source_tiles 恢复。
 
         std::string dziPath = basePath + ".dzi";
         std::ofstream dzi(u8path(dziPath));
         if (!dzi)
         {
             std::cerr << "ERROR: cannot open " << dziPath << std::endl;
-            return;
+            return false;
         }
         dzi << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
         dzi << "<Image xmlns=\"http://schemas.microsoft.com/deepzoom/2008\"\n";
@@ -244,7 +250,7 @@ public:
         if (!dzi)
         {
             std::cerr << "ERROR: failed to write " << dziPath << std::endl;
-            return;
+            return false;
         }
         std::cout << "  DZI manifest: " << dziPath
                   << " (" << (maxLevel + 1) << " levels)" << std::endl;
@@ -254,7 +260,7 @@ public:
         if (!html)
         {
             std::cerr << "ERROR: cannot open " << htmlPath << std::endl;
-            return;
+            return false;
         }
         html << R"(<!DOCTYPE html>
 <html lang="en">
@@ -327,9 +333,11 @@ public:
         if (!html)
         {
             std::cerr << "ERROR: failed to write " << htmlPath << std::endl;
-            return;
+            return false;
         }
         std::cout << "  HTML viewer: " << htmlPath << std::endl;
+        fs::remove_all(sourceTilesDir, ec);
+        return true;
     }
 };
 

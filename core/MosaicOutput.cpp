@@ -109,7 +109,10 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
                      });
             if (config.deepZoom)
             {
-                DeepZoomWriter::buildPyramid(folder, tileW, tileH, tilesX, tilesY, config.jpegQuality);
+                if (!DeepZoomWriter::buildPyramid(folder, tileW, tileH, tilesX, tilesY, config.jpegQuality))
+                {
+                    throw std::runtime_error("DeepZoom pyramid or manifest could not be written");
+                }
             }
             stats.placementMs = elapsed(start);
             stats.cacheHits = cache.stats().hits;

@@ -1214,8 +1214,10 @@ TEST_CASE("ANN cache validates features and parallel queries preserve ordering")
         queries.insert(queries.end(), query.begin(), query.end());
     }
     CHECK(index.queryBatch(queries, 8, 1) == index.queryBatch(queries, 8, 4));
-    const auto path = std::filesystem::temp_directory_path() /
-        ("mosaicraft-ann-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    const auto directory = std::filesystem::temp_directory_path() / std::filesystem::u8path(
+        "mosaicraft-ann-中文-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directories(directory);
+    const auto path = directory / "lib.ann196";
     const std::string cache = pathToUtf8(path);
     REQUIRE(index.save(cache));
     FeatureIndex loaded;
@@ -1235,6 +1237,23 @@ TEST_CASE("ANN cache validates features and parallel queries preserve ordering")
     CHECK_FALSE(loaded.load(cache, 196, records));
     std::filesystem::remove(path);
     std::filesystem::remove(std::filesystem::u8path(cache + ".meta"));
+    std::filesystem::remove(directory);
+}
+
+TEST_CASE("bruteforce removal preserves moved labels and removes the last label")
+{
+    hnswlib::L2Space space(2);
+    hnswlib::BruteforceSearch<float> index(&space, 3);
+    float point[2] = {};
+    index.addPoint(point, 10);
+    index.addPoint(point, 20);
+    index.addPoint(point, 30);
+    index.removePoint(10);
+    CHECK(index.searchKnn(point, 3).size() == 2);
+    index.removePoint(30);
+    CHECK(index.searchKnn(point, 3).top().second == 20);
+    index.removePoint(20);
+    CHECK(index.searchKnn(point, 3).empty());
 }
 
 TEST_CASE("CUDA reuses feature workspace and scoring batches preserve scores")
@@ -1286,7 +1305,7 @@ TEST_CASE("CUDA reuses feature workspace and scoring batches preserve scores")
             freeLibrary(library);
         }
     } cleanup{library};
-    int use[count] = {};
+    int use[count] = {1, 2, 3, 4, 5};
     REQUIRE(uploadLibrary(library, lab.data(), grid.data(), tiny.data(), edge.data(), lbp.data(), use, count));
     double l[count], a[count], b[count], weights[count];
     int indices[count * candidates];
@@ -1306,6 +1325,7 @@ TEST_CASE("CUDA reuses feature workspace and scoring batches preserve scores")
             candidates, library, weights, weights, weights, weights, weights, 0.01, output.data(), nullptr, budget);
     };
     REQUIRE(score(full, 256 * 1024 * 1024));
+    CHECK(full[0] == doctest::Approx(0.01));
     REQUIRE(score(batched, 2144 * 2)); // 两块一批，并覆盖最后不足一批的情况。
     CHECK(full == batched);
     CHECK_FALSE(score(batched, 1));

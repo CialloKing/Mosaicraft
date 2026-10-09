@@ -8,6 +8,7 @@
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <stdexcept>
 #include <vector>
 
 namespace mosaicraft
@@ -88,11 +89,19 @@ void FeatureExtractor::compute(const cv::Mat& bgr,
 
         std::string tinyPath = featDir + "/" + baseName + ".tiny";
         std::ofstream ofs(u8path(tinyPath), std::ios::binary);
+        if (!ofs)
+        {
+            throw std::runtime_error("cannot write tiny feature: " + tinyPath);
+        }
         if (ofs.is_open())
         {
             ofs.write(reinterpret_cast<const char*>(tiny.data),
                       static_cast<std::streamsize>(tiny.total() * tiny.elemSize()));
             ofs.close();
+            if (!ofs)
+            {
+                throw std::runtime_error("tiny feature write failed: " + tinyPath);
+            }
             rec.tinyPath = tinyPath;
         }
     }
@@ -153,11 +162,19 @@ void FeatureExtractor::compute(const cv::Mat& bgr,
         // 保存为 .hist 文件（256 个 float = 1024 字节）
         std::string histPath = featDir + "/" + baseName + ".hist";
         std::ofstream ofs(u8path(histPath), std::ios::binary);
+        if (!ofs)
+        {
+            throw std::runtime_error("cannot write histogram feature: " + histPath);
+        }
         if (ofs.is_open())
         {
             ofs.write(reinterpret_cast<const char*>(hist.data()),
                       static_cast<std::streamsize>(hist.size() * sizeof(float)));
             ofs.close();
+            if (!ofs)
+            {
+                throw std::runtime_error("histogram feature write failed: " + histPath);
+            }
             rec.histPath = histPath;
         }
     }

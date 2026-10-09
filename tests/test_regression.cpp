@@ -475,6 +475,10 @@ TEST_CASE("candidate features validate old packs source changes corruption and m
         l.write(reinterpret_cast<const char *>(lbp.data()), 1024);
     }
     REQUIRE(FeaturePack::buildCache(dir, records));
+    std::vector<uint8_t> packedTiny;
+    std::vector<float> packedLbp;
+    CHECK_FALSE(FeaturePack::tryLoad(dir, {1, 8, 999}, packedTiny, packedLbp));
+    CHECK_FALSE(FeaturePack::tryLoad(dir, {1, 1, 15}, packedTiny, packedLbp));
     const std::vector<int> needed{2, 0, 2};
     CandidateFeatures migrated(records, needed, dir);
     CHECK(migrated.hasTiny(2));
@@ -508,6 +512,26 @@ TEST_CASE("candidate features validate old packs source changes corruption and m
     CHECK_FALSE(truncated.hasLbp(0));
 }
 
+TEST_CASE("output reports incomplete PNG and DeepZoom while empty tiles remain load failures")
+{
+    TempWorkspace workspace;
+    std::ofstream empty(workspace.inputDir() / "empty.jpg");
+    empty.close();
+    CHECK(imreadUnicode(utf8(workspace.inputDir() / "empty.jpg")).empty());
+    cv::Mat image(32, 18, CV_8UC3, cv::Scalar(30, 100, 180));
+    requireWriteImage(workspace.inputDir() / "tile.png", image);
+    ImageRecord record;
+    record.id = 1;
+    record.filePath = utf8(workspace.inputDir() / "tile.png");
+    auto prefix = utf8(workspace.outputDir() / "pyramid");
+    fs::create_directories(u8path(prefix + ".dzi"));
+    MosaicEngine::Config config;
+    config.deepZoom = config.tiledOutput = true;
+    OutputStats stats;
+    CHECK_FALSE(writeMosaicOutput(config, prefix, 1, 1, 18, 32, {record}, {0}, {}, stats));
+    CHECK(fs::exists(u8path(prefix + "_files/_source_tiles/0_0.jpg")));
+}
+
 TEST_CASE("PNG multirow writing preserves refresh boundaries and encoded bytes")
 {
     TempWorkspace workspace;
@@ -527,6 +551,10 @@ TEST_CASE("PNG multirow writing preserves refresh boundaries and encoded bytes")
     }
     REQUIRE(rows.close());
     REQUIRE(blocks.close());
+    PngStreamWriter partial(utf8(workspace.outputDir() / "partial.png"), rgb.cols, rgb.rows);
+    REQUIRE(partial.writeRows(rgb.ptr<uint8_t>(), rgb.step, rgb.rows - 1));
+    CHECK_FALSE(partial.close());
+    CHECK_FALSE(partial.close());
     std::ifstream a(u8path(oldPath), std::ios::binary), b(u8path(newPath), std::ios::binary);
     CHECK(std::string(std::istreambuf_iterator<char>(a), {}) == std::string(std::istreambuf_iterator<char>(b), {}));
 }

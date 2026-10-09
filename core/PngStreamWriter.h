@@ -100,14 +100,14 @@ class PngStreamWriter
 
     bool close()
     {
-        bool ok = true;
+        bool ok = m_rowsWritten == m_h;
         if (m_png)
         {
             if (setjmp(png_jmpbuf(m_png)))
             {
                 ok = false;
             }
-            else
+            else if (ok)
             {
                 png_write_end(m_png, m_info);
             }
@@ -116,10 +116,11 @@ class PngStreamWriter
         }
         if (m_fp)
         {
-            fclose(m_fp);
+            ok = fclose(m_fp) == 0 && ok;
             m_fp = nullptr;
         }
-        return ok;
+        m_closeSucceeded = m_closeSucceeded && ok;
+        return m_closeSucceeded;
     }
 
     ~PngStreamWriter()
@@ -130,6 +131,7 @@ class PngStreamWriter
   private:
     void destroyAfterError()
     {
+        m_closeSucceeded = false;
         if (m_png)
         {
             png_destroy_write_struct(&m_png, &m_info);
@@ -148,6 +150,7 @@ class PngStreamWriter
     png_infop m_info = nullptr;
     int m_w, m_h;
     int m_rowsWritten = 0;
+    bool m_closeSucceeded = true;
 };
 
 } // namespace mosaicraft

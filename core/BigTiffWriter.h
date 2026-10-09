@@ -23,36 +23,8 @@ public:
     BigTiffWriter& operator=(const BigTiffWriter&) = delete;
 
     BigTiffWriter(const std::string& path, int width, int height)
-        : m_w(width), m_h(height)
+        : BigTiffWriter(path, width, height, false)
     {
-        int64_t rawSize = static_cast<int64_t>(width) * height * 3;
-        const char* mode = (rawSize > 3500LL * 1024 * 1024) ? "w8" : "w";
-
-#ifdef _WIN32
-        std::wstring wpath = std::filesystem::u8path(path).wstring();
-        m_tif = TIFFOpenW(wpath.c_str(), mode);  // TIFFOpenW: 文件名宽字符，mode 仍为 ANSI
-#else
-        m_tif = TIFFOpen(path.c_str(), mode);
-#endif
-        if (!m_tif)
-            throw std::runtime_error("BigTiffWriter: cannot open " + path);
-
-        TIFFSetField(m_tif, TIFFTAG_IMAGEWIDTH,      width);
-        TIFFSetField(m_tif, TIFFTAG_IMAGELENGTH,     height);
-        TIFFSetField(m_tif, TIFFTAG_BITSPERSAMPLE,   8);
-        TIFFSetField(m_tif, TIFFTAG_SAMPLESPERPIXEL, 3);
-        TIFFSetField(m_tif, TIFFTAG_ORIENTATION,     ORIENTATION_TOPLEFT);
-        TIFFSetField(m_tif, TIFFTAG_PLANARCONFIG,    PLANARCONFIG_CONTIG);
-        TIFFSetField(m_tif, TIFFTAG_PHOTOMETRIC,     PHOTOMETRIC_RGB);
-        // DPI 标签（避免查看器按像素长宽比误判）
-        TIFFSetField(m_tif, TIFFTAG_XRESOLUTION,    72.0f);
-        TIFFSetField(m_tif, TIFFTAG_YRESOLUTION,    72.0f);
-        TIFFSetField(m_tif, TIFFTAG_RESOLUTIONUNIT,  RESUNIT_INCH);
-        // LZW 需整图单 strip；文件过大时降级为无压缩避免单 strip 内存过高
-        if (rawSize < 400LL * 1024 * 1024) {
-            TIFFSetField(m_tif, TIFFTAG_COMPRESSION, COMPRESSION_LZW);
-        }
-        TIFFSetField(m_tif, TIFFTAG_ROWSPERSTRIP,    height);
     }
 
     // 流式模式：ROWSPERSTRIP=1，每行独立可写（超大图免全图 Mat）
@@ -75,7 +47,13 @@ public:
         TIFFSetField(m_tif, TIFFTAG_ORIENTATION,     ORIENTATION_TOPLEFT);
         TIFFSetField(m_tif, TIFFTAG_PLANARCONFIG,    PLANARCONFIG_CONTIG);
         TIFFSetField(m_tif, TIFFTAG_PHOTOMETRIC,     PHOTOMETRIC_RGB);
-        TIFFSetField(m_tif, TIFFTAG_ROWSPERSTRIP,    1);  // 每行独立 strip：流式可写
+        // 写入模式只改变 strip 布局，不改变 DPI 或压缩策略。
+        TIFFSetField(m_tif, TIFFTAG_XRESOLUTION, 72.0f);
+        TIFFSetField(m_tif, TIFFTAG_YRESOLUTION, 72.0f);
+        TIFFSetField(m_tif, TIFFTAG_RESOLUTIONUNIT, RESUNIT_INCH);
+        TIFFSetField(m_tif, TIFFTAG_COMPRESSION,
+                     rawSize < 400LL * 1024 * 1024 ? COMPRESSION_LZW : COMPRESSION_NONE);
+        TIFFSetField(m_tif, TIFFTAG_ROWSPERSTRIP, streaming ? 1 : height);
     }
 
     ~BigTiffWriter() { if (m_tif) TIFFClose(m_tif); }

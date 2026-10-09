@@ -31,6 +31,7 @@
 #include <thread>
 #include <vector>
 #include <set>
+#include <exception>
 
 #ifdef _WIN32
 #include <conio.h>
@@ -269,17 +270,24 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     FeatureExtractor extractor;
     bool gpuOk = false;
 #ifdef MOSAICRAFT_CUDA
-    gpuOk = cuda::isCudaAvailable();
+    gpuOk = cuda::isCudaAvailable() &&
+        ((request.normalizeWidth == 180 && request.normalizeHeight == 320) ||
+         (request.normalizeWidth == 320 && request.normalizeHeight == 180) ||
+         (request.normalizeWidth == 360 && request.normalizeHeight == 640) ||
+         (request.normalizeWidth == 640 && request.normalizeHeight == 360));
 #endif
     constexpr int GPU_BATCH = 256;
     int inserted = 0;
     int skipped = 0;
 
     std::thread gpuThread;
+    std::exception_ptr gpuError;
     if (gpuOk && !request.normalizeOnly)
     {
         std::cout << "Normalizing + Features: GPU (batch " << GPU_BATCH << ", pipelined)" << std::endl;
         gpuThread = std::thread([&]() {
+            try
+            {
             cuda::FeatureWorkspace featureWorkspace;
             bool firstBatch = true;
             std::set<std::string> pendingHashes;
@@ -307,13 +315,22 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                         extractor.compute(imgs[bi], recs[bi], featDir, stems[bi]);
                     }
                 }
-                db.beginTransaction();
+                if (!db.beginTransaction())
+                {
+                    throw std::runtime_error("cannot begin build transaction");
+                }
                 for (size_t bi = 0; bi < recs.size(); ++bi) {
                     if (recs[bi].filePath.empty()) continue;
                     if (db.insertImage(recs[bi])) inserted++;
-                    else skipped++;
+                    else
+                    {
+                        throw std::runtime_error("cannot insert image into library");
+                    }
                 }
-                db.commitTransaction();
+                if (!db.commitTransaction())
+                {
+                    throw std::runtime_error("cannot commit build transaction");
+                }
                 gpuDone += static_cast<int>(imgs.size());
                 int gd = gpuDone.load();
                 if (gd % 2000 == 0 || gd == static_cast<int>(files.size())) {
@@ -367,6 +384,14 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 stems.push_back(item.stem);
                 if ((int)imgs.size() >= GPU_BATCH) flush();
             }
+            }
+            catch (...)
+            {
+                // 后台异常必须回传；唤醒生产者后退出，避免队列满时永远等待。
+                gpuError = std::current_exception();
+                normPhaseDone.store(true);
+                queueFullCV.notify_all();
+            }
         });
     }
     else if (!request.normalizeOnly)
@@ -413,6 +438,10 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                             }
                             std::unique_lock<std::mutex> lk(queueMtx);
                             queueFullCV.wait(lk, [&]{ return normQueue.size() < MAX_QUEUE || normPhaseDone.load(); });
+                            if (normPhaseDone.load())
+                            {
+                                break;
+                            }
                             normQueue.push({result.clone(), pathToUtf8(outPath), pathToUtf8(outPath.stem())});
                             lk.unlock();
                             queueCV.notify_one();
@@ -441,7 +470,11 @@ ServiceResult BuildService::run(const BuildRequest& request) const
             {
                 auto image = imreadUnicode(files[i], cv::IMREAD_COLOR);
                 std::unique_lock<std::mutex> lock(queueMtx);
-                queueFullCV.wait(lock, [&] { return normQueue.size() < MAX_QUEUE; });
+                queueFullCV.wait(lock, [&] { return normQueue.size() < MAX_QUEUE || normPhaseDone.load(); });
+                if (normPhaseDone.load())
+                {
+                    break;
+                }
                 normQueue.push({image, files[i], pathToUtf8(u8path(files[i]).stem())});
                 lock.unlock();
                 queueCV.notify_one();
@@ -454,6 +487,17 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     if (gpuOk && !request.normalizeOnly)
     {
         gpuThread.join();
+        if (gpuError)
+        {
+            try
+            {
+                std::rethrow_exception(gpuError);
+            }
+            catch (const std::exception& error)
+            {
+                return ServiceResult::failure(1, error.what());
+            }
+        }
         std::cout << "  GPU done: " << gpuDone.load() << std::endl;
     }
 
@@ -518,6 +562,10 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         std::cout << "Normalize only: " << normDone.load()
                   << " images written to " << outputDir << std::endl;
         return ServiceResult::success("normalize completed");
+    }
+    if (inserted == 0 && db.totalCount() == 0)
+    {
+        return ServiceResult::failure(1, "no readable images could be indexed");
     }
 
     std::cout << std::endl;

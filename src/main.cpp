@@ -976,6 +976,10 @@ static int cmdDbHealth(int argc, char* argv[])
 
     std::cout << "=== Database Health ===\n\n";
     std::cout << "Images: " << total << "\n";
+    if (health.missingFiles > 0)
+    {
+        std::cout << "  WARN: Missing image files: " << health.missingFiles << "\n";
+    }
 
     std::cout << "\n--- Brightness Coverage ---\n";
     std::cout << "  Dark  (<50L):  " << std::fixed << std::setprecision(1) << health.darkPct << "% (" << health.dark << ")\n";

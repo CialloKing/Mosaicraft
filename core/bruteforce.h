@@ -4,6 +4,7 @@
 #include <mutex>
 #include <algorithm>
 #include <assert.h>
+#include <filesystem>
 
 namespace hnswlib {
 template<typename dist_t>
@@ -83,7 +84,8 @@ class BruteforceSearch : public AlgorithmInterface<dist_t> {
     }
 
 
-    void removePoint(labeltype cur_external) {
+    void removePoint(labeltype cur_external)
+    {
         std::unique_lock<std::mutex> lock(index_lock);
 
         auto found = dict_external_to_internal.find(cur_external);
@@ -91,15 +93,16 @@ class BruteforceSearch : public AlgorithmInterface<dist_t> {
             return;
         }
 
-        dict_external_to_internal.erase(found);
-
         size_t cur_c = found->second;
-        labeltype label = *((labeltype*)(data_ + size_per_element_ * (cur_element_count-1) + data_size_));
-        dict_external_to_internal[label] = cur_c;
-        memcpy(data_ + size_per_element_ * cur_c,
-                data_ + size_per_element_ * (cur_element_count-1),
-                data_size_+sizeof(labeltype));
+        dict_external_to_internal.erase(found);
         cur_element_count--;
+        if (cur_c != cur_element_count)
+        {
+            labeltype label = *((labeltype*)(data_ + size_per_element_ * cur_element_count + data_size_));
+            dict_external_to_internal[label] = cur_c;
+            memcpy(data_ + size_per_element_ * cur_c, data_ + size_per_element_ * cur_element_count,
+                   data_size_ + sizeof(labeltype));
+        }
     }
 
 
@@ -126,7 +129,7 @@ class BruteforceSearch : public AlgorithmInterface<dist_t> {
 
 
     void saveIndex(const std::string &location) {
-        std::ofstream output(location, std::ios::binary);
+        std::ofstream output(std::filesystem::u8path(location), std::ios::binary);
         std::streampos position;
 
         writeBinaryPOD(output, maxelements_);
@@ -140,7 +143,7 @@ class BruteforceSearch : public AlgorithmInterface<dist_t> {
 
 
     void loadIndex(const std::string &location, SpaceInterface<dist_t> *s) {
-        std::ifstream input(location, std::ios::binary);
+        std::ifstream input(std::filesystem::u8path(location), std::ios::binary);
         std::streampos position;
 
         readBinaryPOD(input, maxelements_);

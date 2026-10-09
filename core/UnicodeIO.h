@@ -119,7 +119,19 @@ inline cv::Mat imreadUnicode(const std::string& utf8Path,
         std::istreambuf_iterator<char>());
     ifs.close();
 
-    return cv::imdecode(data, flags);
+    if (data.empty())
+    {
+        return {};
+    }
+    try
+    {
+        return cv::imdecode(data, flags);
+    }
+    catch (const cv::Exception&)
+    {
+        // 坏图作为加载失败交给调用方计数，不能让单个 tile 中止整轮输出。
+        return {};
+    }
 }
 
 inline bool imwriteUnicode(const std::string& utf8Path,

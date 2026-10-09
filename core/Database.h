@@ -68,7 +68,11 @@ class Database
 {
 public:
     // 打开或创建数据库文件
-    enum class OpenMode { Create, Existing };
+    enum class OpenMode
+    {
+        Create,
+        Existing
+    };
     explicit Database(const std::string& dbPath, OpenMode mode = OpenMode::Create);
     ~Database();
 

@@ -31,7 +31,7 @@ inline bool validateMosaicRequest(MosaicRequest& request, std::string& error)
 {
     auto& cfg = request.config;
     if (cfg.tileW < 4 || cfg.tileH < 4 || !validImageSize(cfg.tileW, cfg.tileH) ||
-        cfg.nativeTileW < 1 || cfg.nativeTileH < 1 || cfg.nativeTileW > 1000000 || cfg.nativeTileH > 1000000 ||
+        !validImageSize(cfg.nativeTileW, cfg.nativeTileH) ||
         cfg.outW < 0 || cfg.outH < 0 || cfg.outW > 1000000 || cfg.outH > 1000000 ||
         cfg.upscale < 0 || cfg.upscale > 64 || cfg.candidates < 1 || cfg.candidates > 10000 ||
         cfg.topNrandom < 1 || cfg.topNrandom > 10000 || cfg.neighborWindow < 0 ||

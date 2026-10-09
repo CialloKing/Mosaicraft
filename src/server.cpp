@@ -362,7 +362,9 @@ int main(int argc, char* argv[])
         {
             return reject(403, "cross-origin API requests are not allowed");
         }
-        if (!request.body.empty())
+        // 预路由阶段尚未读取 body，必须根据传输头判断，不能检查空的 request.body。
+        if (request.has_header("Transfer-Encoding") ||
+            (request.has_header("Content-Length") && request.get_header_value("Content-Length") != "0"))
         {
             auto type = request.get_header_value("Content-Type");
             auto separator = type.find(';');

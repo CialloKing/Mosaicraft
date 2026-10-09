@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <climits>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -268,13 +269,13 @@ public:
             return false;
         }
 
-        int N = static_cast<int>(tinyCount);
-        int dbCount = static_cast<int>(recordIds.size());
-        if (N != dbCount)
+        if (tinyCount != recordIds.size() || tinyCount > static_cast<uint32_t>(INT_MAX))
         {
             fclose(ft); fclose(fl);
             return false;
         }
+        int N = static_cast<int>(tinyCount);
+        int dbCount = static_cast<int>(recordIds.size());
 
         // 逐条读取，建立 id → offset 映射
         // 每条记录: [int32_t id][256B tiny] / [int32_t id][1024B lbp]
@@ -310,7 +311,19 @@ public:
         {
             if (fileIds[i] < 0)
                 return false;
-            idToOffset[fileIds[i]] = i;
+            if (!idToOffset.emplace(fileIds[i], i).second)
+            {
+                return false;
+            }
+        }
+
+        std::unordered_set<int> requested;
+        for (int id : recordIds)
+        {
+            if (!idToOffset.count(id) || !requested.insert(id).second)
+            {
+                return false;
+            }
         }
 
         // 按 recordIds 顺序填充输出数组
@@ -328,8 +341,7 @@ public:
             }
             else
             {
-                std::memset(&h_tiny[i * 256], 0, 256);
-                std::memset(&h_lbp[i * 256],  0, 256 * sizeof(float));
+                return false;
             }
         }
 
