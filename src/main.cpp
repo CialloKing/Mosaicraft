@@ -12,6 +12,7 @@
 #include <opencv2/core.hpp>
 
 #include <ctime>
+#include <cmath>
 
 #include <algorithm>
 #include <cctype>
@@ -50,7 +51,7 @@ static bool isKnownOptionToken(const std::string& token)
         "--topn-random", "-f", "--format", "--cpu", "-q", "--quality",
         "--png-level", "--write-mode", "--tiled", "--deepzoom",
         "--neighbor-window", "--neighbor-penalty", "-U", "--upscale",
-        "--output-tile", "--color-adjust", "--adaptive-weights", "--analyze",
+        "--allow-large-output", "--output-tile", "--color-adjust", "--adaptive-weights", "--analyze",
         "--color-strength", "--benchmark", "-n", "--unused", "--export"
     };
     for (const char* option : kOptions)
@@ -95,7 +96,8 @@ static bool readOptionDouble(int argc, char* argv[], int& i, const std::string& 
     errno = 0;
     char* end = nullptr;
     double v = std::strtod(raw, &end);
-    if (errno == ERANGE || end == raw || *end != '\0') {
+    if (errno == ERANGE || end == raw || *end != '\0' || !std::isfinite(v))
+    {
         std::cerr << "ERROR: " << option << " expects a number, got: " << raw << std::endl;
         return false;
     }
@@ -352,25 +354,25 @@ static int cmdMosaic(int argc, char* argv[])
         {
             int _v = 0;
             if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.tileW = std::max(4, _v);
+            cfg.tileW = _v;
         }
         else if (arg == "--tile-h")
         {
             int _v = 0;
             if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.tileH = std::max(4, _v);
+            cfg.tileH = _v;
         }
         else if (arg == "-W" || arg == "--out-w")
         {
             int _v = 0;
             if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.outW = std::max(1, _v);
+            cfg.outW = _v;
         }
         else if (arg == "-H" || arg == "--out-h")
         {
             int _v = 0;
             if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.outH = std::max(1, _v);
+            cfg.outH = _v;
         }
         else if (arg == "--lab-weight")
         {
@@ -418,13 +420,13 @@ static int cmdMosaic(int argc, char* argv[])
         {
             int _v = 0;
             if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.candidates = std::max(10, _v);
+            cfg.candidates = _v;
         }
         else if (arg == "--topn-random")
         {
             int _v = 0;
             if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.topNrandom = std::max(1, _v);
+            cfg.topNrandom = _v;
         }
         else if (arg == "-f" || arg == "--format")
         {
@@ -444,13 +446,13 @@ static int cmdMosaic(int argc, char* argv[])
         {
             int _v = 0;
             if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.jpegQuality = std::max(1, std::min(100, _v));
+            cfg.jpegQuality = _v;
         }
         else if (arg == "--png-level")
         {
             int _v = 0;
             if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.pngCompressionLevel = std::max(1, std::min(9, _v));
+            cfg.pngCompressionLevel = _v;
         }
         else if (arg == "--write-mode")
         {
@@ -489,7 +491,7 @@ static int cmdMosaic(int argc, char* argv[])
         {
             int _v = 0;
             if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.upscale = std::max(1, _v);
+            cfg.upscale = _v;
         }
         else if (arg == "--output-tile")
         {
@@ -523,6 +525,10 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.adaptiveWeights = true;
         }
+        else if (arg == "--allow-large-output")
+        {
+            cfg.allowLargeOutput = true;
+        }
         else if (arg == "--analyze")
         {
             cfg.analyze = true;
@@ -531,7 +537,7 @@ static int cmdMosaic(int argc, char* argv[])
         {
             double _v = 0.0;
             if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
-            cfg.colorStrength = std::max(0.0, std::min(0.5, _v));
+            cfg.colorStrength = _v;
         }
         else if (arg == "--benchmark")
         {
@@ -646,6 +652,11 @@ static int cmdInspect(int argc, char* argv[])
             if (!readOptionValue(argc, argv, i, arg, value)) return 1;
             dbPath = value;
         }
+        else
+        {
+            std::cerr << "Unknown option: " << arg << std::endl;
+            return 1;
+        }
     }
 
     if (imagePath.empty())
@@ -701,6 +712,11 @@ static int cmdDbStats(int argc, char* argv[])
             const char* value = nullptr;
             if (!readOptionValue(argc, argv, i, arg, value)) return 1;
             dbPath = value;
+        }
+        else
+        {
+            std::cerr << "Unknown option: " << arg << std::endl;
+            return 1;
         }
     }
 
@@ -771,6 +787,11 @@ static int cmdDbPurge(int argc, char* argv[])
         }
         else if (arg == "-y" || arg == "--yes" || arg == "--force")
             forceMode = true;
+        else
+        {
+            std::cerr << "Unknown option: " << arg << std::endl;
+            return 1;
+        }
     }
 
     DatabaseService service;
@@ -852,6 +873,11 @@ static int cmdDbUsage(int argc, char* argv[])
             if (!readOptionValue(argc, argv, i, arg, value)) return 1;
             exportDir = value;
         }
+        else
+        {
+            std::cerr << "Unknown option: " << arg << std::endl;
+            return 1;
+        }
     }
 
     DatabaseService usageService;
@@ -929,6 +955,11 @@ static int cmdDbHealth(int argc, char* argv[])
             if (!readOptionValue(argc, argv, i, arg, value)) return 1;
             dbPath = value;
         }
+        else
+        {
+            std::cerr << "Unknown option: " << arg << std::endl;
+            return 1;
+        }
     }
 
     DatabaseService service;
@@ -998,7 +1029,7 @@ static int cmdDbHealth(int argc, char* argv[])
 // ============================================================
 // main
 // ============================================================
-int main(int argc, char* argv[])
+static int runMain(int argc, char* argv[])
 {
     srand(static_cast<unsigned>(time(nullptr)) ^ static_cast<unsigned>(reinterpret_cast<uintptr_t>(&argc)));
 
@@ -1082,5 +1113,23 @@ int main(int argc, char* argv[])
         std::cerr << "Unknown command: " << cmd << std::endl;
         std::cerr << "Use 'mosaicraft --help' for usage." << std::endl;
         return 1;
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    try
+    {
+        return runMain(argc, argv);
+    }
+    catch (const std::bad_alloc&)
+    {
+        std::cerr << "ERROR: not enough memory" << std::endl;
+        return EXIT_ERR_MEMORY;
+    }
+    catch (const std::exception& error)
+    {
+        std::cerr << "ERROR: " << error.what() << std::endl;
+        return EXIT_ERR_GENERAL;
     }
 }

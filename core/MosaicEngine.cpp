@@ -12,6 +12,7 @@
 #include "JpgStreamWriter.h"
 #include "JpgStreamWriter.h"
 #include "FeatureIndex.h"
+#include "RequestValidation.h"
 #include "FeaturePack.h"
 #include "CandidateFeatures.h"
 #include "FeatureUtils.h"
@@ -631,7 +632,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
                              const Config& config)
 {
     // 检查 CUDA 可用性，GPU 不可用时默认回退 CPU
-    Config cfg = config;
+    MosaicRequest validated{targetPath, dbPath, outputPath, config};
+    std::string validationError;
+    if (!validateMosaicRequest(validated, validationError))
+    {
+        std::cerr << "ERROR: " << validationError << std::endl;
+        return false;
+    }
+    Config cfg = validated.config;
     if (cfg.useGpu && !cuda::isCudaAvailable())
     {
         cfg.useGpu = false;
@@ -669,6 +677,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cerr << "ERROR: Cannot read target image: " << targetPath << std::endl;
         return false;
     }
+    if (!validImageSize(target.cols, target.rows))
+    {
+        std::cerr << "ERROR: Target exceeds 100 million pixels." << std::endl;
+        return false;
+    }
 
     // 计算目标图哈希，用于分析报告关联和数据库使用记录
     std::string targetHash;
@@ -689,8 +702,20 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
 
     // 用户指定输出尺寸时，先缩放目标图到指定分辨率，后续 tile 划分基于此尺寸
-    if (cfg.outW > 0 && cfg.outH > 0)
+    if (cfg.outW > 0 || cfg.outH > 0)
     {
+        // 未指定的一轴按原图比例推导，0 保留 auto 语义。
+        int64_t width = cfg.outW > 0 ? cfg.outW :
+            std::max<int64_t>(1, std::llround(static_cast<double>(target.cols) * cfg.outH / target.rows));
+        int64_t height = cfg.outH > 0 ? cfg.outH :
+            std::max<int64_t>(1, std::llround(static_cast<double>(target.rows) * cfg.outW / target.cols));
+        if (!validImageSize(width, height))
+        {
+            std::cerr << "ERROR: Target resize exceeds 100 million pixels." << std::endl;
+            return false;
+        }
+        cfg.outW = static_cast<int>(width);
+        cfg.outH = static_cast<int>(height);
         cv::Mat resized;
         cv::resize(target, resized, cv::Size(cfg.outW, cfg.outH), 0, 0, cv::INTER_AREA);
         target = resized;
@@ -700,8 +725,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // --upscale：放大原图后再分 tile，提高最终输出分辨率
     if (cfg.upscale > 1)
     {
+        int64_t width = static_cast<int64_t>(target.cols) * cfg.upscale;
+        int64_t height = static_cast<int64_t>(target.rows) * cfg.upscale;
+        if (!validImageSize(width, height))
+        {
+            std::cerr << "ERROR: Upscaled target exceeds 100 million pixels." << std::endl;
+            return false;
+        }
         cv::Mat up;
-        cv::resize(target, up, cv::Size(target.cols * cfg.upscale, target.rows * cfg.upscale),
+        cv::resize(target, up, cv::Size(static_cast<int>(width), static_cast<int>(height)),
                    0, 0, cv::INTER_LINEAR);
         target = up;
         std::cout << "Target upscaled " << cfg.upscale << "x: "
@@ -785,6 +817,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // 为 GPU 路径准备连续内存缓冲区，存放 tiny/LBP 特征数据
     cuda::GpuTimings featureTimings, scoreTimings, libraryTimings;
     cuda::GpuLibrary gpuLib;
+    struct LibraryGuard
+    {
+        cuda::GpuLibrary& library;
+        ~LibraryGuard()
+        {
+            cuda::freeLibrary(library);
+        }
+    } libraryGuard{gpuLib};
     auto releaseGpuLib = [&]() {
         if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);
     };
@@ -883,47 +923,28 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // 单图模式检查 65500px 上限（JPEG 编码器限制）
     int outTileW = cfg.nativeTileW;
     int outTileH = cfg.nativeTileH;
-    const int MAX_DIM = 65500;
-    if (!cfg.tiledOutput && cfg.outputFormat != "png"
-        && (tilesX * outTileW > MAX_DIM || tilesY * outTileH > MAX_DIM))
+    const int64_t proposedW = static_cast<int64_t>(tilesX) * outTileW;
+    const int64_t proposedH = static_cast<int64_t>(tilesY) * outTileH;
+    const int64_t limit = cfg.outputFormat == "webp" ? 16383 : 65500;
+    if (!cfg.tiledOutput && (cfg.outputFormat == "jpg" || cfg.outputFormat == "webp") &&
+        (proposedW > limit || proposedH > limit))
     {
-        if (cfg.outputFormat == "jpg" && cfg.formatExplicit)
-        {
-            // 用户明确指定 jpg 格式时，等比缩小 tile 尺寸以适配限制
-            double scaleW = (tilesX * outTileW > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesX * outTileW) : 1.0;
-            double scaleH = (tilesY * outTileH > MAX_DIM) ? static_cast<double>(MAX_DIM) / (tilesY * outTileH) : 1.0;
-            double scale = std::min(scaleW, scaleH);
-            outTileW = std::max(1, static_cast<int>(outTileW * scale));
-            outTileH = std::max(1, static_cast<int>(outTileH * scale));
-            std::cout << "  (auto-scaled tile " << outTileW << "x" << outTileH
-                      << " to fit JPEG 65500px limit)" << std::endl;
-        }
-        else if (cfg.outputFormat == "jpg")
-        {
-            // 未明确指定格式时，自动切换到 tiff 以突破限制
-            cfg.outputFormat = "tiff";
-            std::cout << "  (auto-switched to TIFF: output exceeds JPEG 65500px limit)" << std::endl;
-        }
-        else if (cfg.outputFormat != "tiff" && cfg.outputFormat != "webp")
-        {
-            // 其他格式超出限制时，自动切换为 tiled 分片输出
-            cfg.tiledOutput = true;
-            std::cout << "  (auto-switched to tiled: output exceeds 65500px encoder limit)" << std::endl;
-        }
+        std::cerr << "ERROR: Output exceeds " << cfg.outputFormat << " dimension limit " << limit
+                  << ". Choose --format png/tiff or --tiled." << std::endl;
+        return false;
     }
-
-    // WebP 编码器限制 16383px，超出时等比缩小 tile，类似 JPG 处理逻辑
-    const int WEBP_MAX = 16383;
-    if (!cfg.tiledOutput && cfg.outputFormat == "webp"
-        && (tilesX * outTileW > WEBP_MAX || tilesY * outTileH > WEBP_MAX))
+    // 大文件是合法用途，但必须在计算及写盘前由用户显式选择。
+    if (proposedW > INT_MAX || proposedH > INT_MAX)
     {
-        double scaleW = (tilesX * outTileW > WEBP_MAX) ? static_cast<double>(WEBP_MAX) / (tilesX * outTileW) : 1.0;
-        double scaleH = (tilesY * outTileH > WEBP_MAX) ? static_cast<double>(WEBP_MAX) / (tilesY * outTileH) : 1.0;
-        double scale = std::min(scaleW, scaleH);
-        outTileW = std::max(1, static_cast<int>(outTileW * scale));
-        outTileH = std::max(1, static_cast<int>(outTileH * scale));
-        std::cout << "  (auto-scaled tile " << outTileW << "x" << outTileH
-                  << " to fit WebP 16383px limit)" << std::endl;
+        std::cerr << "ERROR: Output dimensions exceed INT_MAX." << std::endl;
+        return false;
+    }
+    const uint64_t outputBytes = static_cast<uint64_t>(proposedW) * proposedH * 3;
+    if (outputBytes > UINT64_C(2147483648) && !cfg.allowLargeOutput)
+    {
+        std::cerr << "ERROR: Output requires " << outputBytes
+                  << " uncompressed bytes. Use --allow-large-output to proceed." << std::endl;
+        return false;
     }
 
     // 溢出检查：大型马赛克可能超出 int32 范围

@@ -1,6 +1,7 @@
 ﻿#include "MosaicService.h"
 
 #include "UnicodeIO.h"
+#include "RequestValidation.h"
 
 #include <filesystem>
 
@@ -38,16 +39,33 @@ ServiceResult MosaicService::run(const MosaicRequest& request) const
         return ServiceResult::failure(1, "outputPath is a directory, expected a file path");
     }
 
+    MosaicRequest validated = request;
+    std::string error;
+    if (!validateMosaicRequest(validated, error))
+    {
+        return ServiceResult::failure(1, error);
+    }
+    try
+    {
     MosaicEngine engine;
     bool ok = engine.generate(
         request.inputPath,
         resolveDbPathForService(request.dbPath),
         request.outputPath,
-        request.config);
+        validated.config);
 
     return ok
         ? ServiceResult::success("mosaic generated")
         : ServiceResult::failure(1, "mosaic generation failed");
+    }
+    catch (const std::bad_alloc&)
+    {
+        return ServiceResult::failure(3, "not enough memory to generate mosaic");
+    }
+    catch (const std::exception& exception)
+    {
+        return ServiceResult::failure(1, exception.what());
+    }
 }
 
 } // namespace mosaicraft

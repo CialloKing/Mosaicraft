@@ -1,5 +1,6 @@
 ﻿#include "ImageNormalizer.h"
 #include "UnicodeIO.h"
+#include "RequestValidation.h"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -61,8 +62,14 @@ cv::Mat ImageNormalizer::resizeToCover(const cv::Mat& src)
     double scaleH = static_cast<double>(m_targetHeight) / srcH;
     double scale = (scaleW > scaleH) ? scaleW : scaleH;
 
-    int newW = static_cast<int>(srcW * scale);
-    int newH = static_cast<int>(srcH * scale);
+    double width = std::ceil(srcW * scale);
+    double height = std::ceil(srcH * scale);
+    if (width > 1000000 || height > 1000000 || !validImageSize(static_cast<int64_t>(width), static_cast<int64_t>(height)))
+    {
+        throw std::runtime_error("normalized cover image exceeds 100 million pixels");
+    }
+    int newW = static_cast<int>(width);
+    int newH = static_cast<int>(height);
 
     // 保证像素精度：缩放后尺寸可能因取整略小，向上补 1
     if (newW < m_targetWidth)

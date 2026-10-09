@@ -247,6 +247,26 @@ TEST_CASE("database maintenance rejects missing files and preserves usage integr
     CHECK(DatabaseService().health({utf8(workspace.dbPath())}).health.usedPct == 0);
 }
 
+TEST_CASE("mosaic validates dimensions formats and legacy grids before processing")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    writeTargetImage(workspace.targetPath());
+    REQUIRE(BuildService().run(makeBuildRequest(workspace)).ok);
+    auto request = makeMosaicRequest(workspace);
+    request.config.upscale = 200000;
+    CHECK_FALSE(MosaicService().run(request).ok);
+    request.config.upscale = 1;
+    request.config.outputFormat = "PNG";
+    REQUIRE(MosaicService().run(request).ok);
+    request.config.outW = 0;
+    request.config.outH = 32;
+    REQUIRE(MosaicService().run(request).ok);
+    CHECK(imreadUnicode(request.outputPath).cols > 1);
+    request.config.usePenalty = std::numeric_limits<double>::quiet_NaN();
+    CHECK_FALSE(MosaicService().run(request).ok);
+}
+
 TEST_CASE("regression: service errors stay stable for invalid paths")
 {
     TempWorkspace workspace;

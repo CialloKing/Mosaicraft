@@ -2,6 +2,7 @@
 
 #include "ApiMetadata.h"
 #include "json.hpp"
+#include "RequestValidation.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -417,8 +418,11 @@ bool parseMosaicRequestJson(const std::string& body,
     if (getBoolField(values, keysFor(aliases, "adaptiveWeights"), boolValue, error)) cfg.adaptiveWeights = boolValue;
     if (getBoolField(values, keysFor(aliases, "analyze"), boolValue, error)) cfg.analyze = boolValue;
     if (getBoolField(values, keysFor(aliases, "benchmark"), boolValue, error)) cfg.benchmark = boolValue;
-
-    return error.empty();
+    if (getBoolField(values, keysFor(aliases, "allowLargeOutput"), boolValue, error))
+    {
+        cfg.allowLargeOutput = boolValue;
+    }
+    return error.empty() && validateMosaicRequest(request, error);
 }
 
 bool parseBuildRequestJson(const std::string& body,
@@ -469,7 +473,7 @@ bool parseBuildRequestJson(const std::string& body,
         request.recursive = boolValue;
 
     request.allowPrompt = false;
-    return error.empty();
+    return error.empty() && validateBuildRequest(request, error);
 }
 
 bool applyDatabaseRequestJson(const std::string& body,

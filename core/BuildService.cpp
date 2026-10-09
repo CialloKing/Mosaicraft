@@ -6,6 +6,7 @@
 #include "FeatureUtils.h"
 #include "ImageNormalizer.h"
 #include "UnicodeIO.h"
+#include "RequestValidation.h"
 #include "compute/CudaBackend.h"
 #ifdef MOSAICRAFT_CUDA
 #include "compute/FeatureExtractorCuda.h"
@@ -79,6 +80,11 @@ static bool stdinIsTty()
 
 ServiceResult BuildService::run(const BuildRequest& request) const
 {
+    std::string validationError;
+    if (!validateBuildRequest(request, validationError))
+    {
+        return ServiceResult::failure(1, validationError);
+    }
     if (request.inputDir.empty())
     {
         return ServiceResult::failure(1, "inputDir is required");

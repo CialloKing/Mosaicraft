@@ -58,6 +58,7 @@ public:
 
         // 质量分析：生成后输出匹配报告 + 热力图
         bool analyze = false;
+        bool allowLargeOutput = false; // 超过 2 GiB 原始像素量时要求显式授权。
 
         // 目标图上采样因子：>1 时先将原图放大 n×，再以 tileW×tileH 格分割
         // 2× = 4× tile 密度，输出分辨率不变（配合 nativeTile 等比缩小）
