@@ -139,6 +139,35 @@ ServiceResult BuildService::run(const BuildRequest& request) const
 
     std::string featDir = outputDir + "/features";
     fs::create_directories(u8path(featDir), ec);
+    auto existingRecords = db.allRecords();
+    if (!existingRecords.empty() && !request.normalizeOnly)
+    {
+        if (db.getMeta("feature_w") != std::to_string(request.normalizeWidth) ||
+            db.getMeta("feature_h") != std::to_string(request.normalizeHeight))
+        {
+            return ServiceResult::failure(1, "feature dimensions differ; use a new library directory/database");
+        }
+        FeatureExtractor refresh;
+        for (auto record : existingRecords)
+        {
+            if (record.featureVersion == FeatureExtractor::featureVersion())
+            {
+                continue;
+            }
+            auto image = imreadUnicode(record.filePath, cv::IMREAD_COLOR);
+            if (image.empty())
+            {
+                return ServiceResult::failure(1, "restore missing library files or run db-purge before rebuilding");
+            }
+            // 保留记录 ID、使用次数与原文件；刷新旧特征，同时修正旧 CUDA 的编码前哈希。
+            record.fileHash = hashMatForBuild(image);
+            refresh.compute(image, record, featDir, "id_" + std::to_string(record.id));
+            if (!db.insertImage(record))
+            {
+                return ServiceResult::failure(2, "cannot refresh legacy features");
+            }
+        }
+    }
 
     const std::vector<std::string> exts = {
         ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif"
@@ -253,6 +282,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         gpuThread = std::thread([&]() {
             cuda::FeatureWorkspace featureWorkspace;
             bool firstBatch = true;
+            std::set<std::string> pendingHashes;
             std::vector<cv::Mat> imgs; imgs.reserve(GPU_BATCH);
             std::vector<ImageRecord> recs; recs.reserve(GPU_BATCH);
             std::vector<std::string> stems; stems.reserve(GPU_BATCH);
@@ -305,7 +335,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 }
                 if (item.img.empty()) continue;
                 std::string hash = hashMatForBuild(item.img);
-                if (db.existsByHash(hash)) {
+                if (db.existsByHash(hash) || !pendingHashes.insert(hash).second) {
                     if (!inputIsOutput)
                     {
                         std::error_code removeEc;

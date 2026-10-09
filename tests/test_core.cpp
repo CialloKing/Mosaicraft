@@ -1253,6 +1253,13 @@ TEST_CASE("CUDA reuses feature workspace and scoring batches preserve scores")
     const auto originalGrid = grid;
     const auto originalLbp = lbp;
     const auto originalTiny = tiny;
+    for (int i = 0; i < count; ++i)
+    {
+        cv::Mat image(320, 180, CV_8UC3, images.data() + static_cast<size_t>(i) * 180 * 320 * 3);
+        cv::Mat gray;
+        cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
+        CHECK(edge[i] == mosaicraft::computeEdgeDensityFromGray(gray));
+    }
     REQUIRE(extractFeaturesRaw(images.data(), 1, 180, 320, lab.data(), grid.data(), tiny.data(),
         edge.data(), lbp.data(), &workspace) == 0);
     // 原内核的浮点原子累加顺序不固定，工作区复用不能要求逐位一致。

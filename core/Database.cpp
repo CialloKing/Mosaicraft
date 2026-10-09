@@ -206,7 +206,7 @@ bool Database::insertImage(const ImageRecord& rec)
     }
 
     const char* sql = R"SQL(
-        INSERT OR IGNORE INTO images
+        INSERT INTO images
             (file_path, file_hash, format, src_width, src_height, aspect_ratio, file_size,
              avg_l, avg_a, avg_b,
              mean_brightness, std_brightness, contrast,
@@ -226,6 +226,12 @@ bool Database::insertImage(const ImageRecord& rec)
              ?,
              ?,
              ?)
+        ON CONFLICT(file_path) DO UPDATE SET
+            file_hash=excluded.file_hash, avg_l=excluded.avg_l, avg_a=excluded.avg_a, avg_b=excluded.avg_b,
+            mean_brightness=excluded.mean_brightness, std_brightness=excluded.std_brightness,
+            contrast=excluded.contrast, saturation=excluded.saturation, color_variance=excluded.color_variance,
+            grid4x4=excluded.grid4x4, tiny_path=excluded.tiny_path, edge_density=excluded.edge_density,
+            hist_path=excluded.hist_path, feature_version=excluded.feature_version
     )SQL";
 
     sqlite3_stmt* stmt = nullptr;
@@ -294,7 +300,7 @@ bool Database::insertImage(const ImageRecord& rec)
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 
-    if (rc != SQLITE_DONE && rc != SQLITE_CONSTRAINT)
+    if (rc != SQLITE_DONE)
     {
         std::cerr << "Insert error: " << sqlite3_errmsg(m_db) << std::endl;
         return false;

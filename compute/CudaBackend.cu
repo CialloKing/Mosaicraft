@@ -611,8 +611,15 @@ void scoreIndices(
 {
     // 仅对 N 个候选评分，而非全库
     if (N <= 0) { return; }
-    if (!outScores || !indices) { return; }
+    if (!outScores)
+    {
+        return;
+    }
     fillFailedScores(outScores, N);
+    if (!indices)
+    {
+        return;
+    }
     if (!hasValidLibrary(lib)) { return; }
 
     // 上传 tile 特征

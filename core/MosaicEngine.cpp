@@ -12,6 +12,7 @@
 #include "JpgStreamWriter.h"
 #include "JpgStreamWriter.h"
 #include "FeatureIndex.h"
+#include "FeatureExtractor.h"
 #include "RequestValidation.h"
 #include "FeaturePack.h"
 #include "CandidateFeatures.h"
@@ -791,7 +792,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     for (const auto& record : allRecords)
     {
         // 分析读取全部 192 维；拒绝不完整旧记录，避免越界和虚假的匹配报告。
-        if (record.grid4x4.size() != 192 ||
+        if (record.featureVersion != FeatureExtractor::featureVersion() || record.grid4x4.size() != 192 ||
             !std::all_of(record.grid4x4.begin(), record.grid4x4.end(),
                          [](float value) { return std::isfinite(value); }))
         {
@@ -1331,6 +1332,23 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
     std::cout << "  collecting candidates (parallel)..." << std::flush;
     allIndices = annIndex.queryBatch(queries, N);
+    // ANN 提供结构候选后再应用 L 亮度范围；两个评分后端共用过滤结果。
+    for (int ti = 0; ti < totalTiles; ++ti)
+    {
+        for (int j = 0; j < N; ++j)
+        {
+            auto& index = allIndices[static_cast<size_t>(ti) * N + j];
+            if (index >= 0 && std::abs(allRecords[index].avgL - allTL[ti]) > cfg.lRange)
+            {
+                index = -1;
+            }
+        }
+    }
+    if (std::none_of(allIndices.begin(), allIndices.end(), [](int index) { return index >= 0; }))
+    {
+        std::cerr << "ERROR: No candidates within --l-range; increase the brightness range." << std::endl;
+        return false;
+    }
     queries.clear();
     queries.shrink_to_fit();
     msANNQuery = Ms(Clock::now() - queryStart).count();
@@ -1340,17 +1358,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
     } // 查询完成即释放索引，避免与大图画布和编码缓冲同时占用内存。
     const size_t totalWork = allIndices.size();
 
-    if (cfg.useGpu && gpuLib.count > 0)
-    {
-
-        // 主马赛克生成流程  Phase C: , ,  GPU , ,  , ,
-            // === Phase C: 自适应权重计算，按 tile 内容分类，预计算各 tile 权重（需 --adaptive-weights）===
         std::vector<double> tileLabW(totalTiles, nLabW);
         std::vector<double> tileGridW(totalTiles, nGridW);
         std::vector<double> tileTinyW(totalTiles, nTinyW);
         std::vector<double> tileEdgeW(totalTiles, nEdgeW);
         std::vector<double> tileLbpW(totalTiles, nLbpW);
-        int cntSmooth = 0, cntEdge = 0, cntTexture = 0, cntNormal = 0;
+        int adaptiveSmoothCount = 0, adaptiveEdgeCount = 0, adaptiveTextureCount = 0, adaptiveNormalCount = 0;
         if (cfg.adaptiveWeights)
         {
             for (int ti = 0; ti < totalTiles; ++ti)
@@ -1378,7 +1391,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     tileTinyW[ti] = 0.20;
                     tileEdgeW[ti] = 0.05;
                     tileLbpW[ti] = 0.05;
-                    cntSmooth++;
+                    adaptiveSmoothCount++;
                 }
                 else if (e > 0.01)
                 {
@@ -1388,7 +1401,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     tileTinyW[ti] = 0.25;
                     tileEdgeW[ti] = 0.15;
                     tileLbpW[ti] = 0.05;
-                    cntEdge++;
+                    adaptiveEdgeCount++;
                 }
                 else if (lbpEnt > 3.0)
                 {
@@ -1398,15 +1411,21 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     tileTinyW[ti] = 0.20;
                     tileEdgeW[ti] = 0.05;
                     tileLbpW[ti] = 0.20;
-                    cntTexture++;
+                    adaptiveTextureCount++;
                 }
                 else
                 {
-                    cntNormal++;
+                    adaptiveNormalCount++;
                 }
             }
         }
 
+
+    if (cfg.useGpu && gpuLib.count > 0)
+    {
+
+        // 主马赛克生成流程  Phase C: , ,  GPU , ,  , ,
+            // === Phase C: 自适应权重计算，按 tile 内容分类，预计算各 tile 权重（需 --adaptive-weights）===
         std::cout << "  GPU scoring " << totalTiles << " x " << N;
         if (cfg.adaptiveWeights)
         {
@@ -1436,8 +1455,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "\n  LBP:   P50=" << std::setprecision(2) << pct(lbpVals, 0.50)
                       << " P90=" << pct(lbpVals, 0.90) << " P95=" << pct(lbpVals, 0.95)
                       << " P99=" << pct(lbpVals, 0.99);
-            std::cout << "\n  Class: S=" << cntSmooth << " E=" << cntEdge
-                      << " T=" << cntTexture << " N=" << cntNormal;
+            std::cout << "\n  Class: S=" << adaptiveSmoothCount << " E=" << adaptiveEdgeCount
+                      << " T=" << adaptiveTextureCount << " N=" << adaptiveNormalCount;
         }
         std::cout << "..." << std::flush;
         std::vector<double> allScores(totalWork, 1e30);
@@ -1588,7 +1607,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 {
                     if (indices[j] < 0) continue;
                                     // GPU scores 基于 8x8 grid，4x4 分数 = 原分数 - 8x8 grid项 + 4x4 grid项
-                    double grid8d = gridDistance8x8(allGrid[ti], allRecords[indices[j]].grid4x4);
+                    double grid8d = gridDistance8x8(allGrid[ti], allRecords[indices[j]].grid4x4, true);
                     double grid4d = gridDistance(tileGrid4x4[ti], libGrid4x4[indices[j]]);
                     double score4 = scores[j] - nGridW * grid8d + nGridW * grid4d;
                     double score8 = scores[j];  // GPU , ,  8, 8
@@ -1780,14 +1799,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
                 const auto& r = allRecords[li];
 
-                double labD  = cfg.labWeight*labDistance(allTL[ti],allTA[ti],allTB[ti],r.avgL,r.avgA,r.avgB);
-                double gridD = cfg.gridWeight*gridDistance8x8(allGrid[ti], r.grid4x4);
-                double edgeD = cfg.edgeWeight*std::abs(allEdge[ti]-r.edgeDensity);
+                double labD  = tileLabW[ti]*labDistance(allTL[ti],allTA[ti],allTB[ti],r.avgL,r.avgA,r.avgB);
+                double gridD = tileGridW[ti]*gridDistance8x8(allGrid[ti], r.grid4x4, true);
+                double edgeD = tileEdgeW[ti]*std::abs(allEdge[ti]-r.edgeDensity);
                 double s = labD
                          + gridD
-                         + cfg.tinyWeight*(cpuFeatures.hasTiny(li) ? tinyMSE(allTiny[ti], cpuFeatures.tiny(li)) : 1.0)
+                         + tileTinyW[ti]*(cpuFeatures.hasTiny(li) ? tinyMSE(allTiny[ti], cpuFeatures.tiny(li)) : 1.0)
                          + edgeD
-                         + cfg.lbpWeight*(cpuFeatures.hasLbp(li) ? lbpDistance(allLBP[ti], cpuFeatures.lbp(li)) : 1.0);
+                         + tileLbpW[ti]*(cpuFeatures.hasLbp(li) ? lbpDistance(allLBP[ti], cpuFeatures.lbp(li)) : 1.0)
+                         + r.useCount * cfg.usePenalty;
                 BenchmarkTimer neighborTimer(cfg.benchmark, msNeighbor);
                 auto it = freq.find(r.id);
                 int cnt = (it != freq.end()) ? it->second : 0;
@@ -1831,12 +1851,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
             // --analyze: 仅记录胜出者的匹配数据，每个 tile 一条记录
 
-                double wLabD  = cfg.labWeight*labDistance(allTL[ti],allTA[ti],allTB[ti],w.avgL,w.avgA,w.avgB);
-                double wGridD = cfg.gridWeight*gridDistance8x8(allGrid[ti], w.grid4x4);
-                double wEdgeD = cfg.edgeWeight*std::abs(allEdge[ti]-w.edgeDensity);
+                double wLabD  = tileLabW[ti]*labDistance(allTL[ti],allTA[ti],allTB[ti],w.avgL,w.avgA,w.avgB);
+                double wGridD = tileGridW[ti]*gridDistance8x8(allGrid[ti], w.grid4x4, true);
+                double wEdgeD = tileEdgeW[ti]*std::abs(allEdge[ti]-w.edgeDensity);
                 double wS = wLabD + wGridD + wEdgeD
-                    + cfg.tinyWeight*(cpuFeatures.hasTiny(pickIdx) ? tinyMSE(allTiny[ti], cpuFeatures.tiny(pickIdx)) : 1.0)
-                    + cfg.lbpWeight*(cpuFeatures.hasLbp(pickIdx) ? lbpDistance(allLBP[ti], cpuFeatures.lbp(pickIdx)) : 1.0);
+                    + tileTinyW[ti]*(cpuFeatures.hasTiny(pickIdx) ? tinyMSE(allTiny[ti], cpuFeatures.tiny(pickIdx)) : 1.0)
+                    + tileLbpW[ti]*(cpuFeatures.hasLbp(pickIdx) ? lbpDistance(allLBP[ti], cpuFeatures.lbp(pickIdx)) : 1.0);
                 analyzeScores.push_back(wS);
                 analyzeImageIds.push_back(w.id);
                 analyzeLabD.push_back(wLabD);

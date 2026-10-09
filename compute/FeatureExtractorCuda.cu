@@ -1,6 +1,9 @@
 ﻿#include "FeatureExtractorCuda.h"
 
 #include "DeviceBuffer.cuh"
+#include "core/FeatureExtractor.h"
+#include "core/FeatureUtils.h"
+#include "core/UnicodeIO.h"
 #include <cuda_runtime.h>
 #include <opencv2/imgproc.hpp>
 
@@ -509,14 +512,13 @@ int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &r
         rec.contrast = h_contrast[i];
         rec.edgeDensity = h_edge[i];
 
-        // stdBrightness placeholder
-        rec.stdBrightness = 0;
+        FeatureExtractor::computeStatistics(images[i], rec);
 
         // Save TinyImage
         if (!featDir.empty() && i < static_cast<int>(stems.size()))
         {
             std::string tinyPath = featDir + "/" + stems[i] + ".tiny";
-            std::ofstream ofs(tinyPath, std::ios::binary);
+            std::ofstream ofs(u8path(tinyPath), std::ios::binary);
             if (ofs.is_open())
             {
                 ofs.write(reinterpret_cast<const char *>(&h_tiny[i * 256]), 256);
@@ -525,7 +527,7 @@ int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &r
 
             // Save LBP histogram
             std::string lbpPath = featDir + "/" + stems[i] + ".hist";
-            std::ofstream ofs2(lbpPath, std::ios::binary);
+            std::ofstream ofs2(u8path(lbpPath), std::ios::binary);
             if (ofs2.is_open())
             {
                 ofs2.write(reinterpret_cast<const char *>(&h_lbp[i * 256]), 256 * sizeof(float));
@@ -533,7 +535,7 @@ int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &r
             }
         }
 
-        rec.featureVersion = 5;
+        rec.featureVersion = FeatureExtractor::featureVersion();
     }
 
     return N;
@@ -650,6 +652,14 @@ int launchKernel(const uint8_t *h_images, int N, double *h_avgLAB, float *h_grid
         {
             return -1;
         }
+    }
+    // 查询特征必须与建库使用相同的 Canny 双阈值，不能把近似梯度计数混入同一列。
+    for (int i = 0; i < N; ++i)
+    {
+        cv::Mat bgr(H, W, CV_8UC3, const_cast<uint8_t*>(h_images) + static_cast<size_t>(i) * imgBytes);
+        cv::Mat gray;
+        cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
+        h_edge[i] = computeEdgeDensityFromGray(gray);
     }
     return 0;
 }

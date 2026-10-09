@@ -58,14 +58,17 @@ inline std::vector<float> computeGrid8x8FromLab(const cv::Mat &lab)
     {
         return std::vector<float>(192, 0.0f);
     }
-    const int cellH = lab.rows / gridRows, cellW = lab.cols / gridCols;
+    const int cellH = (lab.rows + gridRows - 1) / gridRows, cellW = (lab.cols + gridCols - 1) / gridCols;
     std::vector<float> grid;
     grid.reserve(192);
     for (int r = 0; r < gridRows; ++r)
     {
         for (int c = 0; c < gridCols; ++c)
         {
-            cv::Scalar m = cv::mean(lab(cv::Rect(c * cellW, r * cellH, cellW, cellH)));
+            const int x = c * cellW, y = r * cellH;
+            const int width = std::min(cellW, lab.cols - x), height = std::min(cellH, lab.rows - y);
+            // 与 CUDA 相同：覆盖尾部像素，极小图像的空 cell 用零表示。
+            cv::Scalar m = width > 0 && height > 0 ? cv::mean(lab(cv::Rect(x, y, width, height))) : cv::Scalar();
             grid.push_back(static_cast<float>(m[0]));
             grid.push_back(static_cast<float>(m[1]));
             grid.push_back(static_cast<float>(m[2]));

@@ -31,6 +31,9 @@ public:
 
     // 当前特征版本号
     static int featureVersion();
+    // OpenCV 的颜色统计和 Canny 定义由两种后端共享，避免同一数据库列有两种语义。
+    static void computeStatistics(const cv::Mat& bgr, ImageRecord& record,
+                                  const cv::Mat& lab = {}, const cv::Mat& gray = {});
 };
 
 } // namespace mosaicraft
