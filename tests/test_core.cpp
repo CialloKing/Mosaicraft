@@ -1003,6 +1003,12 @@ TEST_CASE("API response contract validation matches handlers")
     auto badMosaic = apiSubmitMosaicJob(R"({"writeMode":"invalid"})", manager);
     CHECK(badMosaic.status == 400);
     CHECK(validateApiResponseContract(*mosaicEndpoint, badMosaic).empty());
+    auto syncEndpoint = findEndpoint(ApiOperation::Mosaic);
+    REQUIRE(syncEndpoint != endpoints.end());
+    auto sync = apiMosaic(R"({"inputPath":"__missing_target__.png"})", manager);
+    CHECK(sync.status == 400);
+    CHECK_FALSE(sync.body.contains("job"));
+    CHECK(validateApiResponseContract(*syncEndpoint, sync).empty());
 
     auto buildEndpoint = findEndpoint(ApiOperation::SubmitBuildJob);
     REQUIRE(buildEndpoint != endpoints.end());

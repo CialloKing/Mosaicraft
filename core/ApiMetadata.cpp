@@ -416,7 +416,7 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled)
         endpoint("POST", "/api/db/usage/export", "export used images", "database",
             ApiOperation::DatabaseUsageExport, ApiRequestShape::Query,
             {"dbPath", "outputDir", "confirm"}, {"outputDir", "confirm"}, true),
-        endpoint("GET|POST", "/api/db/purge", "preview or purge orphan records", "database",
+        endpoint("POST", "/api/db/purge", "preview or purge orphan records", "database",
             ApiOperation::DatabasePurge, ApiRequestShape::Query,
             {"dbPath", "dryRun", "confirm"}, {}, true),
         endpoint("GET|POST", "/api/inspect", "inspect a source image", "inspect",

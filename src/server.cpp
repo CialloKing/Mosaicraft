@@ -51,7 +51,24 @@ static bool envFlagEnabled(const char* name)
 
 static void setJsonBody(httplib::Response& res, const json& body)
 {
-    res.set_content(body.dump(), "application/json; charset=utf-8");
+    res.set_content(body.dump(-1, ' ', false, json::error_handler_t::replace), "application/json; charset=utf-8");
+}
+
+static bool validUtf8(const std::string& value)
+{
+    if (value.find('\0') != std::string::npos)
+    {
+        return false;
+    }
+    try
+    {
+        json(value).dump();
+        return true;
+    }
+    catch (const json::exception&)
+    {
+        return false;
+    }
 }
 
 static void sendApiResponse(httplib::Response& res, const mosaicraft::ApiResponse& response)
@@ -319,6 +336,58 @@ int main(int argc, char* argv[])
     }
 
     httplib::Server svr;
+    svr.set_pre_routing_handler([port](const httplib::Request& request, httplib::Response& response)
+    {
+        using Result = httplib::Server::HandlerResponse;
+        if (request.path.rfind("/api/", 0) != 0)
+        {
+            return Result::Unhandled;
+        }
+        auto reject = [&](int status, const char* message)
+        {
+            response.status = status;
+            setJsonBody(response, {{"ok", false}, {"message", message}});
+            return Result::Handled;
+        };
+        auto host = request.get_header_value("Host");
+        const auto suffix = ":" + std::to_string(port);
+        if (request.get_header_value_count("Host") != 1 ||
+            (host != "localhost" + suffix && host != "127.0.0.1" + suffix && host != "[::1]" + suffix))
+        {
+            return reject(403, "Host must identify this local server");
+        }
+        // 回环监听不等于同源授权；浏览器的外部页面和其他端口也不能执行维护操作。
+        if ((request.has_header("Origin") && request.get_header_value("Origin") != "http://" + host) ||
+            request.get_header_value("Sec-Fetch-Site") == "cross-site")
+        {
+            return reject(403, "cross-origin API requests are not allowed");
+        }
+        if (!request.body.empty())
+        {
+            auto type = request.get_header_value("Content-Type");
+            auto separator = type.find(';');
+            type = type.substr(0, separator);
+            std::transform(type.begin(), type.end(), type.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (type != "application/json")
+            {
+                return reject(415, "API request body must use application/json");
+            }
+        }
+        for (const auto& parameter : request.params)
+        {
+            if (!validUtf8(parameter.first) || !validUtf8(parameter.second))
+            {
+                return reject(400, "query parameters must contain valid UTF-8 without NUL bytes");
+            }
+        }
+        return Result::Unhandled;
+    });
+    svr.set_exception_handler([](const httplib::Request&, httplib::Response& response, std::exception_ptr)
+    {
+        response.status = 500;
+        setJsonBody(response, {{"ok", false}, {"message", "internal server error"}});
+    });
 
     // Long-running build and mosaic jobs may take minutes.
     svr.set_read_timeout(1800);   // 30 min

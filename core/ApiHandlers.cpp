@@ -303,10 +303,8 @@ ApiResponse apiMosaic(const std::string& body, JobManager& jobs)
     if (!parseMosaicRequestJson(body, request, error)) return badRequest(error);
 
     try {
-        const std::string jobId = jobs.submitMosaic(request);
-        JobSnapshot snapshot;
-        jobs.getJob(jobId, snapshot);
-        return {202, apiJobJson(snapshot)};
+        const auto result = MosaicService().run(request);
+        return resultResponse(result.ok ? 200 : (result.exitCode == 3 ? 500 : 400), result);
     } catch (const std::exception& e) {
         return internalError(e.what());
     } catch (...) {

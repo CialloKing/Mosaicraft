@@ -192,6 +192,14 @@ void JobManager::workerLoop()
             if (m_stopping && m_queue.empty()) return;
             id = m_queue.front();
             m_queue.pop_front();
+            auto record = m_jobs.find(id);
+            if (record == m_jobs.end() || record->second->snapshot.state != JobState::Queued)
+            {
+                continue;
+            }
+            // 取出队列与置 Running 必须在同一把锁里，取消不能在两者之间成功。
+            record->second->snapshot.state = JobState::Running;
+            record->second->snapshot.startedAt = std::chrono::system_clock::now();
         }
 
         std::string type;
@@ -220,8 +228,10 @@ void JobManager::runMosaicJob(const std::string& id)
         auto it = m_jobs.find(id);
         if (it == m_jobs.end()) return;
         auto& record = it->second;
-        record->snapshot.state = JobState::Running;
-        record->snapshot.startedAt = std::chrono::system_clock::now();
+        if (record->snapshot.state != JobState::Running)
+        {
+            return;
+        }
         request = record->request;
     }
 
@@ -251,8 +261,10 @@ void JobManager::runBuildJob(const std::string& id)
         auto it = m_jobs.find(id);
         if (it == m_jobs.end()) return;
         auto& record = it->second;
-        record->snapshot.state = JobState::Running;
-        record->snapshot.startedAt = std::chrono::system_clock::now();
+        if (record->snapshot.state != JobState::Running)
+        {
+            return;
+        }
         request = record->buildRequest;
     }
 
