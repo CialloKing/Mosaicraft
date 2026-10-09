@@ -206,6 +206,28 @@ TEST_CASE("regression: build, inspect, and render a small mosaic")
     CHECK(usage.usage.total == 10);
 }
 
+TEST_CASE("rebuilding preserves indexed files and source files")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    auto request = makeBuildRequest(workspace);
+    REQUIRE(BuildService().run(request).ok);
+    REQUIRE(BuildService().run(request).ok);
+    Database database(request.dbPath);
+    REQUIRE(database.totalCount() == 10);
+    for (const auto& record : database.allRecords())
+    {
+        CHECK(fs::exists(u8path(record.filePath)));
+    }
+    request.outputDir = request.inputDir;
+    request.dbPath = utf8(workspace.root / "same.db");
+    REQUIRE(BuildService().run(request).ok);
+    REQUIRE(BuildService().run(request).ok);
+    CHECK(fs::exists(workspace.inputDir() / "tile_00.png"));
+    Database sourceDatabase(request.dbPath);
+    CHECK(sourceDatabase.totalCount() == 10);
+}
+
 TEST_CASE("regression: service errors stay stable for invalid paths")
 {
     TempWorkspace workspace;

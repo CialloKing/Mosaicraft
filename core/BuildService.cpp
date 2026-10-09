@@ -29,6 +29,7 @@
 #include <system_error>
 #include <thread>
 #include <vector>
+#include <set>
 
 #ifdef _WIN32
 #include <conio.h>
@@ -182,7 +183,34 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     std::chrono::steady_clock::time_point tNormEnd = tBuildStart;
     ImageNormalizer normalizer(request.normalizeWidth, request.normalizeHeight);
     std::vector<std::string> outPaths(files.size());
-    std::vector<bool> okFlags(files.size(), false);
+    std::vector<uint8_t> okFlags(files.size(), 0);
+    bool inputIsOutput = fs::equivalent(u8path(request.inputDir), u8path(outputDir), ec);
+    ec.clear();
+    // 只为本轮新文件分配名字；旧索引引用及用户文件都不能覆盖。
+    std::set<fs::path> reservedPaths;
+    for (const auto& record : db.allRecords())
+    {
+        reservedPaths.insert(fs::absolute(u8path(record.filePath)).lexically_normal());
+    }
+    size_t nameIndex = 0;
+    for (size_t i = 0; i < files.size(); ++i)
+    {
+        if (inputIsOutput)
+        {
+            outPaths[i] = files[i];
+            continue;
+        }
+        fs::path candidate;
+        do
+        {
+            char name[64];
+            auto extension = pathToUtf8(u8path(files[i]).extension());
+            snprintf(name, sizeof(name), "%06zu%s", nameIndex++, extension.c_str());
+            candidate = u8path(outputDir) / name;
+        } while (fs::exists(candidate) || reservedPaths.count(fs::absolute(candidate).lexically_normal()));
+        reservedPaths.insert(fs::absolute(candidate).lexically_normal());
+        outPaths[i] = pathToUtf8(candidate);
+    }
     std::atomic<int> normDone{0};
     int normThreads = request.threads > 0
         ? std::max(1, request.threads)
@@ -272,8 +300,11 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 if (item.img.empty()) continue;
                 std::string hash = hashMatForBuild(item.img);
                 if (db.existsByHash(hash)) {
-                    std::error_code removeEc;
-                    fs::remove(u8path(item.outPath), removeEc);
+                    if (!inputIsOutput)
+                    {
+                        std::error_code removeEc;
+                        fs::remove(u8path(item.outPath), removeEc);
+                    }
                     skipped++;
                     continue;
                 }
@@ -307,23 +338,12 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         std::cout << "Features: CPU" << std::endl;
     }
 
-    std::error_code equivEc;
-    bool inputIsOutput = false;
-    try {
-        inputIsOutput = fs::equivalent(u8path(request.inputDir), u8path(outputDir), equivEc);
-    } catch (...) {
-        inputIsOutput = false;
-    }
-
     if (!inputIsOutput)
     {
         if (!gpuOk || request.normalizeOnly) {
             std::cout << "Normalizing (" << normThreads << " threads)..." << std::endl;
         }
         std::atomic<size_t> nextFileIdx{0};
-        std::atomic<size_t> nextNameIdx = request.appendMode
-            ? std::atomic<size_t>(db.totalCount())
-            : std::atomic<size_t>(0);
         std::vector<std::thread> workers;
         for (int t = 0; t < normThreads; ++t) {
             workers.emplace_back([&]() {
@@ -331,12 +351,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                     size_t fi = nextFileIdx.fetch_add(1);
                     if (fi >= files.size()) break;
                     const std::string& inPath = files[fi];
-                    std::string ext = pathToUtf8(u8path(inPath).extension());
-                    char name[64];
-                    size_t nameIdx = nextNameIdx.fetch_add(1);
-                    snprintf(name, sizeof(name), "%06zu%s", nameIdx, ext.c_str());
-                    fs::path outPath = u8path(outputDir) / name;
-                    outPaths[fi] = pathToUtf8(outPath);
+                    fs::path outPath = u8path(outPaths[fi]);
                     try {
                         cv::Mat result = normalizer.processToMat(inPath);
                         if (result.empty()) continue;
@@ -347,9 +362,19 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                         } else if (outExt == ".png") {
                             writeParams = {cv::IMWRITE_PNG_COMPRESSION, 9};
                         }
-                        imwriteUnicode(pathToUtf8(outPath), result, writeParams);
+                        if (!imwriteUnicode(pathToUtf8(outPath), result, writeParams))
+                        {
+                            continue;
+                        }
                         okFlags[fi] = true;
                         if (gpuOk && !request.normalizeOnly) {
+                            // JPEG 编解码会改变像素，两种后端都以落盘图像计算哈希和特征。
+                            result = imreadUnicode(pathToUtf8(outPath), cv::IMREAD_COLOR);
+                            if (result.empty())
+                            {
+                                okFlags[fi] = 0;
+                                continue;
+                            }
                             std::unique_lock<std::mutex> lk(queueMtx);
                             queueFullCV.wait(lk, [&]{ return normQueue.size() < MAX_QUEUE || normPhaseDone.load(); });
                             normQueue.push({result.clone(), pathToUtf8(outPath), pathToUtf8(outPath.stem())});
@@ -373,7 +398,19 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     {
         outPaths = files;
         normDone = static_cast<int>(files.size());
-        for (size_t i = 0; i < files.size(); ++i) okFlags[i] = true;
+        for (size_t i = 0; i < files.size(); ++i)
+        {
+            okFlags[i] = 1;
+            if (gpuOk && !request.normalizeOnly)
+            {
+                auto image = imreadUnicode(files[i], cv::IMREAD_COLOR);
+                std::unique_lock<std::mutex> lock(queueMtx);
+                queueFullCV.wait(lock, [&] { return normQueue.size() < MAX_QUEUE; });
+                normQueue.push({image, files[i], pathToUtf8(u8path(files[i]).stem())});
+                lock.unlock();
+                queueCV.notify_one();
+            }
+        }
     }
 
     normPhaseDone.store(true);
@@ -396,7 +433,10 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 std::string hash = hashMatForBuild(img);
                 if (db.existsByHash(hash)) {
                     std::error_code removeEc;
-                    fs::remove(u8path(outPath), removeEc);
+                    if (!inputIsOutput)
+                    {
+                        fs::remove(u8path(outPath), removeEc);
+                    }
                     if (removeEc)
                     {
                         std::cerr << "WARN: cannot remove duplicate output file: " << outPath

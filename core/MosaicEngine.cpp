@@ -751,6 +751,18 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::string featDirCache;
     auto allRecords = db.allRecords();  // 全量记录，GPU 路径需连续索引
     dbCount = static_cast<int>(allRecords.size());
+    for (const auto& record : allRecords)
+    {
+        // 分析读取全部 192 维；拒绝不完整旧记录，避免越界和虚假的匹配报告。
+        if (record.grid4x4.size() != 192 ||
+            !std::all_of(record.grid4x4.begin(), record.grid4x4.end(),
+                         [](float value) { return std::isfinite(value); }))
+        {
+            std::cerr << "ERROR: Invalid grid features for image " << record.id
+                      << ". Rebuild this library before generating a mosaic." << std::endl;
+            return false;
+        }
+    }
 
     // 从第一条记录的 tinyPath 推断特征目录
     if (!allRecords.empty() && !allRecords[0].tinyPath.empty())
