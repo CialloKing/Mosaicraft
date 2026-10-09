@@ -68,7 +68,8 @@ class Database
 {
 public:
     // 打开或创建数据库文件
-    explicit Database(const std::string& dbPath);
+    enum class OpenMode { Create, Existing };
+    explicit Database(const std::string& dbPath, OpenMode mode = OpenMode::Create);
     ~Database();
 
     // 禁止拷贝（sqlite3* 独占所有权）
@@ -116,12 +117,12 @@ public:
 
     // ——— 使用统计 ———
     // 记录一次马赛克生成中各图片的使用情况（同一图片多次 tile 仅计一次 run）
-    void recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
+    bool recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
                         const std::string& targetHash = "",
                         const std::string& targetPath = "");
     // 查询使用统计：返回 (image_id, total_runs, total_tiles) 按 total_runs 降序
     std::vector<std::tuple<int, int, int>> topUsedImages(int limit = 50);
-    void initUsageStats();
+    bool initUsageStats();
 
 private:
     sqlite3* m_db;

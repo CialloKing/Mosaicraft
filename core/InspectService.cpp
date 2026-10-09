@@ -50,7 +50,7 @@ InspectResult InspectService::inspect(const InspectRequest& request) const
         if (v > 0) out.lbpEntropy -= v * std::log2(v);
     }
 
-    Database db(resolveDbPathForService(request.dbPath));
+    Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (db.isOpen())
     {
         out.databaseAvailable = true;

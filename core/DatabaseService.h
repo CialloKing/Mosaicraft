@@ -59,6 +59,7 @@ struct DatabaseStats
 
 struct DatabaseHealth
 {
+    int missingFiles = 0;
     bool empty = true;
     int total = 0;
     int dark = 0, mid = 0, bright = 0;

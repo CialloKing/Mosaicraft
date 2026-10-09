@@ -16,13 +16,13 @@ namespace mosaicraft
 // 构造 / 析构
 // ============================================================
 
-Database::Database(const std::string& dbPath)
+Database::Database(const std::string& dbPath, OpenMode mode)
     : m_db(nullptr)
 {
     // SQLITE_OPEN_CREATE: 文件不存在时自动创建
     // SQLITE_OPEN_READWRITE: 读写模式
     int rc = sqlite3_open_v2(dbPath.c_str(), &m_db,
-                              SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,
+                              SQLITE_OPEN_READWRITE | (mode == OpenMode::Create ? SQLITE_OPEN_CREATE : 0),
                               nullptr);
     if (rc != SQLITE_OK)
     {
@@ -32,10 +32,28 @@ Database::Database(const std::string& dbPath)
         return;
     }
 
-    // WAL 模式 — 读写并发更好，适合多线程建库
-    exec("PRAGMA journal_mode=WAL");
-    // 同步级别设为 NORMAL，平衡性能与安全性
-    exec("PRAGMA synchronous=NORMAL");
+    // 竞争写者时先等待；只有建库允许创建文件，维护命令必须验证已有索引。
+    sqlite3_busy_timeout(m_db, 5000);
+    bool valid = exec("PRAGMA foreign_keys=ON") && exec("PRAGMA journal_mode=WAL") &&
+                 exec("PRAGMA synchronous=NORMAL");
+    if (valid && mode == OpenMode::Existing)
+    {
+        sqlite3_stmt* statement = nullptr;
+        valid = sqlite3_prepare_v2(m_db,
+            "SELECT file_path,file_hash,avg_l,avg_a,avg_b,grid4x4,tiny_path,hist_path,feature_version,use_count "
+            "FROM images LIMIT 0", -1, &statement, nullptr) == SQLITE_OK;
+        if (valid)
+        {
+            valid = sqlite3_step(statement) == SQLITE_DONE;
+        }
+        sqlite3_finalize(statement);
+    }
+    if (!valid)
+    {
+        std::cerr << "ERROR: Invalid database: " << dbPath << " (" << sqlite3_errmsg(m_db) << ")" << std::endl;
+        sqlite3_close(m_db);
+        m_db = nullptr;
+    }
 }
 
 Database::~Database()
@@ -286,14 +304,30 @@ bool Database::insertImage(const ImageRecord& rec)
 
 bool Database::removeImage(int id)
 {
-    if (!m_db) return false;
+    if (!m_db || !initUsageStats() || !exec("BEGIN IMMEDIATE"))
+    {
+        return false;
+    }
+    // 旧 usage_stats 表未必有级联外键；在同一个事务里显式删除统计。
+    bool ok = exec("DELETE FROM usage_stats WHERE image_id=" + std::to_string(id));
     const char* sql = "DELETE FROM images WHERE id = ?";
     sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
-    sqlite3_bind_int(stmt, 1, id);
-    int rc = sqlite3_step(stmt);
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_int(stmt, 1, id);
+        ok = sqlite3_step(stmt) == SQLITE_DONE && ok;
+    }
+    else
+    {
+        ok = false;
+    }
     sqlite3_finalize(stmt);
-    return rc == SQLITE_DONE;
+    if (ok && exec("COMMIT"))
+    {
+        return true;
+    }
+    exec("ROLLBACK");
+    return false;
 }
 
 // ============================================================
@@ -560,27 +594,30 @@ bool Database::exec(const std::string& sql)
 // 使用统计
 // ============================================================
 
-void Database::initUsageStats()
+bool Database::initUsageStats()
 {
-    exec("CREATE TABLE IF NOT EXISTS usage_stats ("
+    bool ok = exec("CREATE TABLE IF NOT EXISTS usage_stats ("
          "image_id INTEGER PRIMARY KEY,"
          "total_runs INTEGER DEFAULT 0,"
          "total_tiles INTEGER DEFAULT 0,"
          "last_used TEXT,"
-         "FOREIGN KEY (image_id) REFERENCES images(id))");
+         "FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE)");
     // 目标图哈希记录：防止改名后重复计数
-    exec("CREATE TABLE IF NOT EXISTS target_runs ("
+    return exec("CREATE TABLE IF NOT EXISTS target_runs ("
          "target_hash TEXT PRIMARY KEY,"
          "first_path TEXT,"
          "run_count INTEGER DEFAULT 0,"
-         "last_used TEXT)");
+         "last_used TEXT)") && ok;
 }
 
-void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
+bool Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
                               const std::string& targetHash,
                               const std::string& targetPath)
 {
-    initUsageStats();
+    if (!m_db || !initUsageStats() || !exec("BEGIN IMMEDIATE"))
+    {
+        return false;
+    }
 
     // 检查目标图内容哈希是否已存在（改名去重）
     bool isNewTarget = true;
@@ -594,11 +631,6 @@ void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
         }
     }
     // 更新图片使用统计
-    if (!m_db) return;
-    if (!exec("BEGIN TRANSACTION"))
-    {
-        return;
-    }
     bool ok = true;
     if (!targetHash.empty() && m_db) {
         if (isNewTarget) {
@@ -643,12 +675,14 @@ void Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
     if (!ok)
     {
         exec("ROLLBACK");
-        return;
+        return false;
     }
     if (!exec("COMMIT"))
     {
         exec("ROLLBACK");
+        return false;
     }
+    return true;
 }
 
 std::vector<std::tuple<int, int, int>> Database::topUsedImages(int limit)
@@ -658,6 +692,7 @@ std::vector<std::tuple<int, int, int>> Database::topUsedImages(int limit)
     initUsageStats();
     // 使用 exec 回调模式
     std::string sql = "SELECT image_id, total_runs, total_tiles FROM usage_stats "
+                      "JOIN images ON images.id=usage_stats.image_id "
                       "ORDER BY total_runs DESC LIMIT " + std::to_string(limit);
     char* errMsg = nullptr;
     auto callback = [](void* data, int argc, char** argv, char**) -> int {

@@ -614,7 +614,12 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
     }
 
     if (db.isOpen() && !useCount.empty())
-        db.recordRunUsage(useCount, targetHash, targetPath);
+    {
+        if (!db.recordRunUsage(useCount, targetHash, targetPath))
+        {
+            throw std::runtime_error("mosaic output saved, but usage statistics could not be committed");
+        }
+    }
 }
 
 // ============================================================
@@ -703,7 +708,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                   << target.cols << "x" << target.rows << std::endl;
     }
 
-    Database db(dbPath);
+    Database db(dbPath, Database::OpenMode::Existing);
     if (!db.isOpen())
     {
         std::cerr << "ERROR: Cannot open database: " << dbPath << std::endl;

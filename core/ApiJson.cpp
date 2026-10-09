@@ -73,6 +73,7 @@ nlohmann::json databaseStatsToJson(const DatabaseStats& stats)
 nlohmann::json databaseHealthToJson(const DatabaseHealth& health)
 {
     return {
+        {"missingFiles", health.missingFiles},
         {"empty", health.empty},
         {"total", health.total},
         {"brightness", {

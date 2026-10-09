@@ -228,6 +228,25 @@ TEST_CASE("rebuilding preserves indexed files and source files")
     CHECK(sourceDatabase.totalCount() == 10);
 }
 
+TEST_CASE("database maintenance rejects missing files and preserves usage integrity")
+{
+    TempWorkspace workspace;
+    auto missing = utf8(workspace.root / "missing.db");
+    CHECK_FALSE(DatabaseService().stats({missing}).status.ok);
+    CHECK_FALSE(fs::exists(u8path(missing)));
+    writeLibraryImages(workspace.inputDir());
+    REQUIRE(BuildService().run(makeBuildRequest(workspace)).ok);
+    Database database(utf8(workspace.dbPath()));
+    auto records = database.allRecords();
+    REQUIRE(database.recordRunUsage({{records[0].id, 1}}, "one", "target"));
+    fs::remove(u8path(records[0].filePath));
+    auto health = DatabaseService().health({utf8(workspace.dbPath())});
+    CHECK(health.health.missingFiles == 1);
+    REQUIRE(DatabaseService().purge({utf8(workspace.dbPath()), false, true}).status.ok);
+    CHECK(database.topUsedImages().empty());
+    CHECK(DatabaseService().health({utf8(workspace.dbPath())}).health.usedPct == 0);
+}
+
 TEST_CASE("regression: service errors stay stable for invalid paths")
 {
     TempWorkspace workspace;

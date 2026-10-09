@@ -17,7 +17,7 @@ namespace mosaicraft
 DatabaseStatsResult DatabaseService::stats(const DatabaseRequest& request) const
 {
     DatabaseStatsResult out;
-    Database db(resolveDbPathForService(request.dbPath));
+    Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (!db.isOpen())
     {
         out.status = ServiceResult::failure(2, "cannot open database: " + request.dbPath);
@@ -86,7 +86,7 @@ DatabaseStatsResult DatabaseService::stats(const DatabaseRequest& request) const
 DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) const
 {
     DatabaseHealthResult out;
-    Database db(resolveDbPathForService(request.dbPath));
+    Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (!db.isOpen())
     {
         out.status = ServiceResult::failure(2, "cannot open database: " + request.dbPath);
@@ -106,6 +106,11 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
     out.health.maxA = out.health.maxB = 0.0;
     for (const auto& r : all)
     {
+        std::error_code error;
+        if (r.filePath.empty() || !std::filesystem::is_regular_file(u8path(r.filePath), error))
+        {
+            ++out.health.missingFiles;
+        }
         if (r.avgL < 50) out.health.dark++;
         else if (r.avgL < 150) out.health.mid++;
         else out.health.bright++;
@@ -115,6 +120,11 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
         out.health.maxB = std::max(out.health.maxB, r.avgB);
     }
 
+    if (out.health.missingFiles > 0)
+    {
+        out.health.warnings.push_back("Missing image files: " + std::to_string(out.health.missingFiles));
+        out.health.recommendations.push_back("Restore missing image files or run db-purge");
+    }
     out.health.darkPct = 100.0 * out.health.dark / out.health.total;
     out.health.midPct = 100.0 * out.health.mid / out.health.total;
     out.health.brightPct = 100.0 * out.health.bright / out.health.total;
@@ -164,7 +174,7 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
 DatabaseUsageResult DatabaseService::usage(const DatabaseUsageRequest& request) const
 {
     DatabaseUsageResult out;
-    Database db(resolveDbPathForService(request.dbPath));
+    Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (!db.isOpen())
     {
         out.status = ServiceResult::failure(2, "cannot open database: " + request.dbPath);
@@ -218,7 +228,7 @@ DatabaseUsageExportResult DatabaseService::exportUsage(const DatabaseUsageExport
         return out;
     }
 
-    Database db(resolveDbPathForService(request.dbPath));
+    Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (!db.isOpen())
     {
         out.status = ServiceResult::failure(2, "cannot open database: " + request.dbPath);
@@ -313,7 +323,7 @@ DatabasePurgeResult DatabaseService::purge(const DatabasePurgeRequest& request) 
     DatabasePurgeResult out;
     out.purge.dryRun = request.dryRun;
 
-    Database db(resolveDbPathForService(request.dbPath));
+    Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (!db.isOpen())
     {
         out.status = ServiceResult::failure(2, "cannot open database: " + request.dbPath);
