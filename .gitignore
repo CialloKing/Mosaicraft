@@ -2,6 +2,7 @@
 build/
 build_cuda_test/
 build_check/
+out/
 
 # Database
 *.db
