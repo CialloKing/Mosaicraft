@@ -300,14 +300,22 @@ ApiResponse apiMosaic(const std::string& body, JobManager& jobs)
 {
     MosaicRequest request;
     std::string error;
-    if (!parseMosaicRequestJson(body, request, error)) return badRequest(error);
+    if (!parseMosaicRequestJson(body, request, error))
+    {
+        return badRequest(error);
+    }
 
-    try {
+    try
+    {
         const auto result = MosaicService().run(request);
         return resultResponse(result.ok ? 200 : (result.exitCode == 3 ? 500 : 400), result);
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception& e)
+    {
         return internalError(e.what());
-    } catch (...) {
+    }
+    catch (...)
+    {
         return internalError("internal error");
     }
 }

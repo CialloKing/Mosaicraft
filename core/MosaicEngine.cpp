@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <charconv>
 #include <climits>
 #include <cmath>
 #include <cstdint>
@@ -706,10 +707,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
     if (cfg.outW > 0 || cfg.outH > 0)
     {
         // 未指定的一轴按原图比例推导，0 保留 auto 语义。
-        int64_t width = cfg.outW > 0 ? cfg.outW :
-            std::max<int64_t>(1, std::llround(static_cast<double>(target.cols) * cfg.outH / target.rows));
-        int64_t height = cfg.outH > 0 ? cfg.outH :
-            std::max<int64_t>(1, std::llround(static_cast<double>(target.rows) * cfg.outW / target.cols));
+        int64_t width =
+            cfg.outW > 0
+                ? cfg.outW
+                : std::max<int64_t>(1, std::llround(static_cast<double>(target.cols) * cfg.outH / target.rows));
+        int64_t height =
+            cfg.outH > 0
+                ? cfg.outH
+                : std::max<int64_t>(1, std::llround(static_cast<double>(target.rows) * cfg.outW / target.cols));
         if (!validImageSize(width, height))
         {
             std::cerr << "ERROR: Target resize exceeds 100 million pixels." << std::endl;
@@ -734,8 +739,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             return false;
         }
         cv::Mat up;
-        cv::resize(target, up, cv::Size(static_cast<int>(width), static_cast<int>(height)),
-                   0, 0, cv::INTER_LINEAR);
+        cv::resize(target, up, cv::Size(static_cast<int>(width), static_cast<int>(height)), 0, 0, cv::INTER_LINEAR);
         target = up;
         std::cout << "Target upscaled " << cfg.upscale << "x: "
                   << target.cols << "x" << target.rows << std::endl;
@@ -766,8 +770,16 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cerr << "  Please rebuild with: mosaicraft build -i <photos> -d <db>" << std::endl;
         return false;
     }
-    int featW = std::atoi(fw.c_str());
-    int featH = std::atoi(fh.c_str());
+    int featW = 0, featH = 0;
+    auto widthResult = std::from_chars(fw.data(), fw.data() + fw.size(), featW);
+    auto heightResult = std::from_chars(fh.data(), fh.data() + fh.size(), featH);
+    // 元数据也属于外部输入，必须在像素乘法和 CUDA 分配之前验证。
+    if (widthResult.ec != std::errc{} || widthResult.ptr != fw.data() + fw.size() || heightResult.ec != std::errc{} ||
+        heightResult.ptr != fh.data() + fh.size() || featW > 8192 || featH > 8192 || !validImageSize(featW, featH))
+    {
+        std::cerr << "ERROR: Invalid DB feature dimensions. Rebuild the library." << std::endl;
+        return false;
+    }
 
     int featPixels = featW * featH;
     int featBytes = featPixels * 3;
@@ -794,7 +806,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
         // 分析读取全部 192 维；拒绝不完整旧记录，避免越界和虚假的匹配报告。
         if (record.featureVersion != FeatureExtractor::featureVersion() || record.grid4x4.size() != 192 ||
             !std::all_of(record.grid4x4.begin(), record.grid4x4.end(),
-                         [](float value) { return std::isfinite(value); }))
+                         [](float value)
+                         {
+                             return std::isfinite(value);
+                         }))
         {
             std::cerr << "ERROR: Invalid grid features for image " << record.id
                       << ". Rebuild this library before generating a mosaic." << std::endl;
@@ -1344,7 +1359,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
         }
     }
-    if (std::none_of(allIndices.begin(), allIndices.end(), [](int index) { return index >= 0; }))
+    if (std::none_of(allIndices.begin(), allIndices.end(),
+                     [](int index)
+                     {
+                         return index >= 0;
+                     }))
     {
         std::cerr << "ERROR: No candidates within --l-range; increase the brightness range." << std::endl;
         return false;
@@ -1420,62 +1439,62 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
         }
 
-
-    if (cfg.useGpu && gpuLib.count > 0)
-    {
-
-        // 主马赛克生成流程  Phase C: , ,  GPU , ,  , ,
-            // === Phase C: 自适应权重计算，按 tile 内容分类，预计算各 tile 权重（需 --adaptive-weights）===
-        std::cout << "  GPU scoring " << totalTiles << " x " << N;
-        if (cfg.adaptiveWeights)
+        if (cfg.useGpu && gpuLib.count > 0)
         {
-                    // 打印边缘和纹理统计分布，辅助权重校准
-            std::vector<double> edgeVals(totalTiles), lbpVals(totalTiles);
-            for (int ti = 0; ti < totalTiles; ++ti)
+
+            // CUDA 批量评分与 CPU 使用上方同一组归一化权重。
+            std::cout << "  GPU scoring " << totalTiles << " x " << N;
+            if (cfg.adaptiveWeights)
             {
-                edgeVals[ti] = allEdge[ti];
-                double ent = 0.0;
-                for (int k = 0; k < 256; ++k)
+                // 打印边缘和纹理统计分布，辅助权重校准
+                std::vector<double> edgeVals(totalTiles), lbpVals(totalTiles);
+                for (int ti = 0; ti < totalTiles; ++ti)
                 {
-                    float v = allLBP[ti][k];
-                    if (v > 0.0f) ent -= v * std::log2(v);
+                    edgeVals[ti] = allEdge[ti];
+                    double ent = 0.0;
+                    for (int k = 0; k < 256; ++k)
+                    {
+                        float v = allLBP[ti][k];
+                        if (v > 0.0f)
+                        {
+                            ent -= v * std::log2(v);
+                        }
+                    }
+                    lbpVals[ti] = ent;
                 }
-                lbpVals[ti] = ent;
+                std::sort(edgeVals.begin(), edgeVals.end());
+                std::sort(lbpVals.begin(), lbpVals.end());
+                auto pct = [&](const auto& v, double p)
+                {
+                    size_t idx = static_cast<size_t>(p * static_cast<double>(v.size()));
+                    if (idx >= v.size())
+                    {
+                        idx = v.size() - 1;
+                    }
+                    return v[idx];
+                };
+                std::cout << "\n  Edge:  P50=" << std::fixed << std::setprecision(3) << pct(edgeVals, 0.50)
+                          << " P90=" << pct(edgeVals, 0.90) << " P95=" << pct(edgeVals, 0.95)
+                          << " P99=" << pct(edgeVals, 0.99);
+                std::cout << "\n  LBP:   P50=" << std::setprecision(2) << pct(lbpVals, 0.50)
+                          << " P90=" << pct(lbpVals, 0.90) << " P95=" << pct(lbpVals, 0.95)
+                          << " P99=" << pct(lbpVals, 0.99);
+                std::cout << "\n  Class: S=" << adaptiveSmoothCount << " E=" << adaptiveEdgeCount
+                          << " T=" << adaptiveTextureCount << " N=" << adaptiveNormalCount;
             }
-            std::sort(edgeVals.begin(), edgeVals.end());
-            std::sort(lbpVals.begin(), lbpVals.end());
-            auto pct = [&](const auto& v, double p) {
-                size_t idx = static_cast<size_t>(p * static_cast<double>(v.size()));
-                if (idx >= v.size()) idx = v.size() - 1;
-                return v[idx];
-            };
-            std::cout << "\n  Edge:  P50=" << std::fixed << std::setprecision(3) << pct(edgeVals, 0.50)
-                      << " P90=" << pct(edgeVals, 0.90) << " P95=" << pct(edgeVals, 0.95)
-                      << " P99=" << pct(edgeVals, 0.99);
-            std::cout << "\n  LBP:   P50=" << std::setprecision(2) << pct(lbpVals, 0.50)
-                      << " P90=" << pct(lbpVals, 0.90) << " P95=" << pct(lbpVals, 0.95)
-                      << " P99=" << pct(lbpVals, 0.99);
-            std::cout << "\n  Class: S=" << adaptiveSmoothCount << " E=" << adaptiveEdgeCount
-                      << " T=" << adaptiveTextureCount << " N=" << adaptiveNormalCount;
-        }
-        std::cout << "..." << std::flush;
-        std::vector<double> allScores(totalWork, 1e30);
-        if (!cuda::scoreBatch(
-            totalTiles,
-            allTL.data(), allTA.data(), allTB.data(),
-            allGrid.data(), allTiny.data(), allEdge.data(), allLBP.data(),
-            allIndices.data(), N,
-            gpuLib,
-            tileLabW.data(), tileGridW.data(), tileTinyW.data(), tileEdgeW.data(), tileLbpW.data(),
-            cfg.usePenalty,
-            allScores.data(), cfg.benchmark ? &scoreTimings : nullptr))
-        {
-            // 失败分数不能进入选图，否则会把未计算的候选当作正常结果。
-            std::cerr << "ERROR: GPU scoring failed; mosaic was not generated." << std::endl;
-            releaseGpuLib();
-            return false;
-        }
-        std::cout << " done" << std::endl;
+            std::cout << "..." << std::flush;
+            std::vector<double> allScores(totalWork, 1e30);
+            if (!cuda::scoreBatch(totalTiles, allTL.data(), allTA.data(), allTB.data(), allGrid.data(), allTiny.data(),
+                                  allEdge.data(), allLBP.data(), allIndices.data(), N, gpuLib, tileLabW.data(),
+                                  tileGridW.data(), tileTinyW.data(), tileEdgeW.data(), tileLbpW.data(), cfg.usePenalty,
+                                  allScores.data(), cfg.benchmark ? &scoreTimings : nullptr))
+            {
+                // 失败分数不能进入选图，否则会把未计算的候选当作正常结果。
+                std::cerr << "ERROR: GPU scoring failed; mosaic was not generated." << std::endl;
+                releaseGpuLib();
+                return false;
+            }
+            std::cout << " done" << std::endl;
 
             // Phase C 结束（GPU 评分完成）
         auto tGPU = Clock::now();
@@ -1758,8 +1777,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         auto tSelect = Clock::now();
         msSelect = Ms(tSelect - tLast).count();
         tLast = tSelect;
-
-    }
+        }
     else
     {
         // --------------------------------------------------------
@@ -1799,15 +1817,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
                 const auto& r = allRecords[li];
 
-                double labD  = tileLabW[ti]*labDistance(allTL[ti],allTA[ti],allTB[ti],r.avgL,r.avgA,r.avgB);
-                double gridD = tileGridW[ti]*gridDistance8x8(allGrid[ti], r.grid4x4, true);
-                double edgeD = tileEdgeW[ti]*std::abs(allEdge[ti]-r.edgeDensity);
-                double s = labD
-                         + gridD
-                         + tileTinyW[ti]*(cpuFeatures.hasTiny(li) ? tinyMSE(allTiny[ti], cpuFeatures.tiny(li)) : 1.0)
-                         + edgeD
-                         + tileLbpW[ti]*(cpuFeatures.hasLbp(li) ? lbpDistance(allLBP[ti], cpuFeatures.lbp(li)) : 1.0)
-                         + r.useCount * cfg.usePenalty;
+                double labD = tileLabW[ti] * labDistance(allTL[ti], allTA[ti], allTB[ti], r.avgL, r.avgA, r.avgB);
+                double gridD = tileGridW[ti] * gridDistance8x8(allGrid[ti], r.grid4x4, true);
+                double edgeD = tileEdgeW[ti] * std::abs(allEdge[ti] - r.edgeDensity);
+                double s =
+                    labD + gridD +
+                    tileTinyW[ti] * (cpuFeatures.hasTiny(li) ? tinyMSE(allTiny[ti], cpuFeatures.tiny(li)) : 1.0) +
+                    edgeD +
+                    tileLbpW[ti] * (cpuFeatures.hasLbp(li) ? lbpDistance(allLBP[ti], cpuFeatures.lbp(li)) : 1.0) +
+                    r.useCount * cfg.usePenalty;
                 BenchmarkTimer neighborTimer(cfg.benchmark, msNeighbor);
                 auto it = freq.find(r.id);
                 int cnt = (it != freq.end()) ? it->second : 0;
@@ -1851,12 +1869,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
             // --analyze: 仅记录胜出者的匹配数据，每个 tile 一条记录
 
-                double wLabD  = tileLabW[ti]*labDistance(allTL[ti],allTA[ti],allTB[ti],w.avgL,w.avgA,w.avgB);
-                double wGridD = tileGridW[ti]*gridDistance8x8(allGrid[ti], w.grid4x4, true);
-                double wEdgeD = tileEdgeW[ti]*std::abs(allEdge[ti]-w.edgeDensity);
-                double wS = wLabD + wGridD + wEdgeD
-                    + tileTinyW[ti]*(cpuFeatures.hasTiny(pickIdx) ? tinyMSE(allTiny[ti], cpuFeatures.tiny(pickIdx)) : 1.0)
-                    + tileLbpW[ti]*(cpuFeatures.hasLbp(pickIdx) ? lbpDistance(allLBP[ti], cpuFeatures.lbp(pickIdx)) : 1.0);
+                double wLabD = tileLabW[ti] * labDistance(allTL[ti], allTA[ti], allTB[ti], w.avgL, w.avgA, w.avgB);
+                double wGridD = tileGridW[ti] * gridDistance8x8(allGrid[ti], w.grid4x4, true);
+                double wEdgeD = tileEdgeW[ti] * std::abs(allEdge[ti] - w.edgeDensity);
+                double wS = wLabD + wGridD + wEdgeD +
+                            tileTinyW[ti] *
+                                (cpuFeatures.hasTiny(pickIdx) ? tinyMSE(allTiny[ti], cpuFeatures.tiny(pickIdx)) : 1.0) +
+                            tileLbpW[ti] *
+                                (cpuFeatures.hasLbp(pickIdx) ? lbpDistance(allLBP[ti], cpuFeatures.lbp(pickIdx)) : 1.0);
                 analyzeScores.push_back(wS);
                 analyzeImageIds.push_back(w.id);
                 analyzeLabD.push_back(wLabD);

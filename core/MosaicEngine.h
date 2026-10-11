@@ -62,7 +62,7 @@ public:
 
         // 目标图上采样因子：>1 时先将原图放大 n×，再以 tileW×tileH 格分割
         // 2× = 4× tile 密度，输出分辨率不变（配合 nativeTile 等比缩小）
-        int upscale = 0;   // 0=自动（nativeTile<180 时自动 2×）
+        int upscale = 0;   // 0/1 不放大，>1 按指定倍数放大。
         int pngCompressionLevel = 1;  // PNG 压缩级别 1-9，默认 1（最快速度）
         std::string writeMode = "auto";  // 写入模式：auto(内存自适应) / stream(低内存) / batch(全量)，对 PNG/TIFF 生效
 

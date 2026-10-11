@@ -124,13 +124,11 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         {
             if (!request.allowPrompt || !stdinIsTty())
             {
-                return ServiceResult::failure(
-                    1,
-                    "DB has " + std::to_string(existingCount) +
-                    " records. Use forceMode to overwrite.");
+                return ServiceResult::failure(1, "DB has " + std::to_string(existingCount) +
+                                                     " records. Use appendMode or forceMode to continue building.");
             }
             std::cout << "Database has " << existingCount
-                      << " records. Overwrite? [y/N] " << std::flush;
+                      << " records. Continue building and preserve existing files? [y/N] " << std::flush;
             char answer = static_cast<char>(std::getchar());
             if (answer != 'y' && answer != 'Y')
             {
@@ -271,11 +269,10 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     FeatureExtractor extractor;
     bool gpuOk = false;
 #ifdef MOSAICRAFT_CUDA
-    gpuOk = cuda::isCudaAvailable() &&
-        ((request.normalizeWidth == 180 && request.normalizeHeight == 320) ||
-         (request.normalizeWidth == 320 && request.normalizeHeight == 180) ||
-         (request.normalizeWidth == 360 && request.normalizeHeight == 640) ||
-         (request.normalizeWidth == 640 && request.normalizeHeight == 360));
+    gpuOk = cuda::isCudaAvailable() && ((request.normalizeWidth == 180 && request.normalizeHeight == 320) ||
+                                        (request.normalizeWidth == 320 && request.normalizeHeight == 180) ||
+                                        (request.normalizeWidth == 360 && request.normalizeHeight == 640) ||
+                                        (request.normalizeWidth == 640 && request.normalizeHeight == 360));
 #endif
     constexpr int GPU_BATCH = 256;
     int inserted = 0;
@@ -286,114 +283,160 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     if (gpuOk && !request.normalizeOnly)
     {
         std::cout << "Normalizing + Features: GPU (batch " << GPU_BATCH << ", pipelined)" << std::endl;
-        gpuThread = std::thread([&]() {
-            try
+        gpuThread = std::thread(
+            [&]()
             {
-            cuda::FeatureWorkspace featureWorkspace;
-            bool firstBatch = true;
-            std::set<std::string> pendingHashes;
-            std::vector<cv::Mat> imgs; imgs.reserve(GPU_BATCH);
-            std::vector<ImageRecord> recs; recs.reserve(GPU_BATCH);
-            std::vector<std::string> stems; stems.reserve(GPU_BATCH);
-            auto flush = [&]() {
-                if (imgs.empty()) return;
-                if (firstBatch) {
-                    tGpuStart = std::chrono::steady_clock::now();
-                    firstBatch = false;
-                }
+                try
+                {
+                    cuda::FeatureWorkspace featureWorkspace;
+                    bool firstBatch = true;
+                    std::set<std::string> pendingHashes;
+                    std::vector<cv::Mat> imgs;
+                    imgs.reserve(GPU_BATCH);
+                    std::vector<ImageRecord> recs;
+                    recs.reserve(GPU_BATCH);
+                    std::vector<std::string> stems;
+                    stems.reserve(GPU_BATCH);
+                    auto flush = [&]()
+                    {
+                        if (imgs.empty())
+                        {
+                            return;
+                        }
+                        if (firstBatch)
+                        {
+                            tGpuStart = std::chrono::steady_clock::now();
+                            firstBatch = false;
+                        }
 #ifdef MOSAICRAFT_CUDA
-                int done = cuda::extractBatch(imgs, recs, featDir, stems, &featureWorkspace);
+                        int done = cuda::extractBatch(imgs, recs, featDir, stems, &featureWorkspace);
 #else
-                int done = 0;
+                        int done = 0;
 #endif
-                if (done <= 0) {
-                    for (size_t bi = 0; bi < imgs.size(); ++bi) {
-                        extractor.compute(imgs[bi], recs[bi], featDir, stems[bi]);
-                    }
-                }
-                else if (done != static_cast<int>(imgs.size())) {
-                    for (size_t bi = static_cast<size_t>(std::max(0, done)); bi < imgs.size(); ++bi) {
-                        extractor.compute(imgs[bi], recs[bi], featDir, stems[bi]);
-                    }
-                }
-                if (!db.beginTransaction())
-                {
-                    throw std::runtime_error("cannot begin build transaction");
-                }
-                for (size_t bi = 0; bi < recs.size(); ++bi) {
-                    if (recs[bi].filePath.empty()) continue;
-                    if (db.insertImage(recs[bi])) inserted++;
-                    else
+                        if (done <= 0)
+                        {
+                            for (size_t bi = 0; bi < imgs.size(); ++bi)
+                            {
+                                extractor.compute(imgs[bi], recs[bi], featDir, stems[bi]);
+                            }
+                        }
+                        else if (done != static_cast<int>(imgs.size()))
+                        {
+                            for (size_t bi = static_cast<size_t>(std::max(0, done)); bi < imgs.size(); ++bi)
+                            {
+                                extractor.compute(imgs[bi], recs[bi], featDir, stems[bi]);
+                            }
+                        }
+                        if (!db.beginTransaction())
+                        {
+                            throw std::runtime_error("cannot begin build transaction");
+                        }
+                        for (size_t bi = 0; bi < recs.size(); ++bi)
+                        {
+                            if (recs[bi].filePath.empty())
+                            {
+                                continue;
+                            }
+                            if (db.insertImage(recs[bi]))
+                            {
+                                inserted++;
+                            }
+                            else
+                            {
+                                throw std::runtime_error("cannot insert image into library");
+                            }
+                        }
+                        if (!db.commitTransaction())
+                        {
+                            throw std::runtime_error("cannot commit build transaction");
+                        }
+                        gpuDone += static_cast<int>(imgs.size());
+                        int gd = gpuDone.load();
+                        if (gd % 2000 == 0 || gd == static_cast<int>(files.size()))
+                        {
+                            std::cout << "\r  gpu feature " << gd << "/" << files.size() << std::flush;
+                        }
+                        imgs.clear();
+                        recs.clear();
+                        stems.clear();
+                    };
+                    while (true)
                     {
-                        throw std::runtime_error("cannot insert image into library");
+                        NormItem item;
+                        {
+                            std::unique_lock<std::mutex> lk(queueMtx);
+                            queueCV.wait(lk,
+                                         [&]
+                                         {
+                                             return !normQueue.empty() || normPhaseDone.load();
+                                         });
+                            if (normQueue.empty() && normPhaseDone.load())
+                            {
+                                flush();
+                                break;
+                            }
+                            if (normQueue.empty())
+                            {
+                                continue;
+                            }
+                            item = std::move(normQueue.front());
+                            normQueue.pop();
+                            lk.unlock();
+                            queueFullCV.notify_one();
+                        }
+                        if (item.img.empty())
+                        {
+                            continue;
+                        }
+                        std::string hash = hashMatForBuild(item.img);
+                        if (db.existsByHash(hash) || !pendingHashes.insert(hash).second)
+                        {
+                            if (!inputIsOutput)
+                            {
+                                std::error_code removeEc;
+                                fs::remove(u8path(item.outPath), removeEc);
+                            }
+                            skipped++;
+                            continue;
+                        }
+                        ImageRecord rec;
+                        rec.filePath = item.outPath;
+                        rec.fileHash = hash;
+                        rec.srcWidth = item.img.cols;
+                        rec.srcHeight = item.img.rows;
+                        rec.aspectRatio = (rec.srcHeight > 0) ? (double)rec.srcWidth / rec.srcHeight : 0.0;
+                        std::error_code sizeEc;
+                        rec.fileSize = static_cast<int64_t>(fs::file_size(u8path(item.outPath), sizeEc));
+                        if (sizeEc)
+                        {
+                            std::cerr << "WARN: cannot stat output file: " << item.outPath << " (" << sizeEc.message()
+                                      << ")" << std::endl;
+                            skipped++;
+                            continue;
+                        }
+                        std::string ext = pathToUtf8(u8path(item.outPath).extension());
+                        if (!ext.empty() && ext[0] == '.')
+                        {
+                            ext = ext.substr(1);
+                        }
+                        rec.format = ext;
+                        imgs.push_back(item.img);
+                        recs.push_back(rec);
+                        stems.push_back(item.stem);
+                        if ((int)imgs.size() >= GPU_BATCH)
+                        {
+                            flush();
+                        }
                     }
                 }
-                if (!db.commitTransaction())
+                catch (...)
                 {
-                    throw std::runtime_error("cannot commit build transaction");
+                    // 后台异常必须回传；唤醒生产者后退出，避免队列满时永远等待。
+                    gpuError = std::current_exception();
+                    normPhaseDone.store(true);
+                    queueFullCV.notify_all();
                 }
-                gpuDone += static_cast<int>(imgs.size());
-                int gd = gpuDone.load();
-                if (gd % 2000 == 0 || gd == static_cast<int>(files.size())) {
-                    std::cout << "\r  gpu feature " << gd << "/" << files.size() << std::flush;
-                }
-                imgs.clear(); recs.clear(); stems.clear();
-            };
-            while (true) {
-                NormItem item;
-                {
-                    std::unique_lock<std::mutex> lk(queueMtx);
-                    queueCV.wait(lk, [&]{ return !normQueue.empty() || normPhaseDone.load(); });
-                    if (normQueue.empty() && normPhaseDone.load()) { flush(); break; }
-                    if (normQueue.empty()) continue;
-                    item = std::move(normQueue.front());
-                    normQueue.pop();
-                    lk.unlock();
-                    queueFullCV.notify_one();
-                }
-                if (item.img.empty()) continue;
-                std::string hash = hashMatForBuild(item.img);
-                if (db.existsByHash(hash) || !pendingHashes.insert(hash).second) {
-                    if (!inputIsOutput)
-                    {
-                        std::error_code removeEc;
-                        fs::remove(u8path(item.outPath), removeEc);
-                    }
-                    skipped++;
-                    continue;
-                }
-                ImageRecord rec;
-                rec.filePath = item.outPath;
-                rec.fileHash = hash;
-                rec.srcWidth = item.img.cols;
-                rec.srcHeight = item.img.rows;
-                rec.aspectRatio = (rec.srcHeight > 0) ? (double)rec.srcWidth / rec.srcHeight : 0.0;
-                std::error_code sizeEc;
-                rec.fileSize = static_cast<int64_t>(fs::file_size(u8path(item.outPath), sizeEc));
-                if (sizeEc)
-                {
-                    std::cerr << "WARN: cannot stat output file: " << item.outPath
-                              << " (" << sizeEc.message() << ")" << std::endl;
-                    skipped++;
-                    continue;
-                }
-                std::string ext = pathToUtf8(u8path(item.outPath).extension());
-                if (!ext.empty() && ext[0] == '.') ext = ext.substr(1);
-                rec.format = ext;
-                imgs.push_back(item.img);
-                recs.push_back(rec);
-                stems.push_back(item.stem);
-                if ((int)imgs.size() >= GPU_BATCH) flush();
-            }
-            }
-            catch (...)
-            {
-                // 后台异常必须回传；唤醒生产者后退出，避免队列满时永远等待。
-                gpuError = std::current_exception();
-                normPhaseDone.store(true);
-                queueFullCV.notify_all();
-            }
-        });
+            });
     }
     else if (!request.normalizeOnly)
     {
@@ -471,7 +514,11 @@ ServiceResult BuildService::run(const BuildRequest& request) const
             {
                 auto image = imreadUnicode(files[i], cv::IMREAD_COLOR);
                 std::unique_lock<std::mutex> lock(queueMtx);
-                queueFullCV.wait(lock, [&] { return normQueue.size() < MAX_QUEUE || normPhaseDone.load(); });
+                queueFullCV.wait(lock,
+                                 [&]
+                                 {
+                                     return normQueue.size() < MAX_QUEUE || normPhaseDone.load();
+                                 });
                 if (normPhaseDone.load())
                 {
                     break;

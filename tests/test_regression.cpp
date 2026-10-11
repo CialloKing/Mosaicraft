@@ -291,6 +291,12 @@ TEST_CASE("mosaic validates dimensions formats and legacy grids before processin
     CHECK(imreadUnicode(request.outputPath).cols > 1);
     request.config.usePenalty = std::numeric_limits<double>::quiet_NaN();
     CHECK_FALSE(MosaicService().run(request).ok);
+    request.config.usePenalty = 0.01;
+    Database database(request.dbPath);
+    database.setMeta("feature_w", "2147483647");
+    CHECK_FALSE(MosaicService().run(request).ok);
+    database.setMeta("feature_w", "180broken");
+    CHECK_FALSE(MosaicService().run(request).ok);
 }
 
 TEST_CASE("regression: service errors stay stable for invalid paths")

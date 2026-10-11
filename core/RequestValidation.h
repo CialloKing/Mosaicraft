@@ -12,8 +12,7 @@ namespace mosaicraft
 // 在分配 OpenCV 图像或计算 int 尺寸之前统一验证，CLI、API 和直接服务调用共用。
 inline bool validImageSize(int64_t width, int64_t height)
 {
-    return width > 0 && height > 0 && width <= 1000000 && height <= 1000000 &&
-           width * height <= 100000000;
+    return width > 0 && height > 0 && width <= 1000000 && height <= 1000000 && width * height <= 100000000;
 }
 
 inline bool validateBuildRequest(const BuildRequest& request, std::string& error)
@@ -31,12 +30,10 @@ inline bool validateMosaicRequest(MosaicRequest& request, std::string& error)
 {
     auto& cfg = request.config;
     if (cfg.tileW < 4 || cfg.tileH < 4 || !validImageSize(cfg.tileW, cfg.tileH) ||
-        !validImageSize(cfg.nativeTileW, cfg.nativeTileH) ||
-        cfg.outW < 0 || cfg.outH < 0 || cfg.outW > 1000000 || cfg.outH > 1000000 ||
-        cfg.upscale < 0 || cfg.upscale > 64 || cfg.candidates < 1 || cfg.candidates > 10000 ||
-        cfg.topNrandom < 1 || cfg.topNrandom > 10000 || cfg.neighborWindow < 0 ||
-        cfg.neighborWindow > 1000000 || cfg.jpegQuality < 1 || cfg.jpegQuality > 100 ||
-        cfg.pngCompressionLevel < 1 || cfg.pngCompressionLevel > 9)
+        !validImageSize(cfg.nativeTileW, cfg.nativeTileH) || cfg.outW < 0 || cfg.outH < 0 || cfg.outW > 1000000 ||
+        cfg.outH > 1000000 || cfg.upscale < 0 || cfg.upscale > 64 || cfg.candidates < 1 || cfg.candidates > 10000 ||
+        cfg.topNrandom < 1 || cfg.topNrandom > 10000 || cfg.neighborWindow < 0 || cfg.neighborWindow > 1000000 ||
+        cfg.jpegQuality < 1 || cfg.jpegQuality > 100 || cfg.pngCompressionLevel < 1 || cfg.pngCompressionLevel > 9)
     {
         error = "invalid mosaic dimensions or integer options (upscale 0..64, candidates 1..10000)";
         return false;
@@ -52,9 +49,9 @@ inline bool validateMosaicRequest(MosaicRequest& request, std::string& error)
         sum += weight;
     }
     if (!std::isfinite(sum) || sum <= 0 || !std::isfinite(cfg.usePenalty) || cfg.usePenalty < 0 ||
-        !std::isfinite(cfg.neighborPenalty) || cfg.neighborPenalty < 0 ||
-        !std::isfinite(cfg.lRange) || cfg.lRange < 0 || cfg.lRange > 255 ||
-        !std::isfinite(cfg.colorStrength) || cfg.colorStrength < 0 || cfg.colorStrength > 0.5)
+        !std::isfinite(cfg.neighborPenalty) || cfg.neighborPenalty < 0 || !std::isfinite(cfg.lRange) ||
+        cfg.lRange < 0 || cfg.lRange > 255 || !std::isfinite(cfg.colorStrength) || cfg.colorStrength < 0 ||
+        cfg.colorStrength > 0.5)
     {
         error = "weights, penalties and ranges must be finite and within their valid ranges";
         return false;
@@ -67,7 +64,10 @@ inline bool validateMosaicRequest(MosaicRequest& request, std::string& error)
     auto lower = [](std::string value)
     {
         std::transform(value.begin(), value.end(), value.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                       [](unsigned char c)
+                       {
+                           return static_cast<char>(std::tolower(c));
+                       });
         return value;
     };
     cfg.outputFormat = lower(cfg.outputFormat);
@@ -92,4 +92,4 @@ inline bool validateMosaicRequest(MosaicRequest& request, std::string& error)
     }
     return true;
 }
-}
+} // namespace mosaicraft
