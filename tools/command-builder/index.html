@@ -171,8 +171,8 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <div class="field"><label>上采样 --upscale</label><input type="number" id="m-upscale" min="1" placeholder="1× (不放大)"></div>
     </div>
     <div class="row">
-      <div class="field"><label>输出宽度 --out-w</label><input type="number" id="m-outw" placeholder="自动"></div>
-      <div class="field"><label>输出高度 --out-h</label><input type="number" id="m-outh" placeholder="自动"></div>
+      <div class="field"><label>输出宽度 --out-w</label><input type="number" id="m-outw" min="0" max="1000000" placeholder="0=自动；单轴保持比例"></div>
+      <div class="field"><label>输出高度 --out-h</label><input type="number" id="m-outh" min="0" max="1000000" placeholder="0=自动；单轴保持比例"></div>
       <div class="field"><label>输出 Tile 尺寸 --output-tile</label><input type="text" id="m-otile" value="180x320" placeholder="180x320"></div>
     </div>
   </div>
@@ -197,6 +197,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <label><input type="checkbox" id="m-analyze"> 质量分析 --analyze</label>
       <label><input type="checkbox" id="m-adaptive"> 自适应权重 --adaptive-weights</label>
       <label><input type="checkbox" id="m-benchmark"> 性能分析 --benchmark</label>
+      <label><input type="checkbox" id="m-large-output"> 允许超大输出（未压缩像素超过 2 GiB）</label>
       <label><input type="checkbox" id="m-coloradj"> 启用颜色校正 --color-adjust</label>
       <label><input type="checkbox" id="m-cpu"> 仅 CPU --cpu</label>
     </div>
@@ -226,7 +227,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <label><input type="checkbox" id="b-append"> 增量模式 --append</label>
       <label><input type="checkbox" id="b-recursive"> 递归扫描子目录 -r</label>
       <label><input type="checkbox" id="b-normonly"> 仅归一化 --normalize-only</label>
-      <label><input type="checkbox" id="b-force"> 强制覆盖 -y</label>
+      <label><input type="checkbox" id="b-force"> 跳过已有图库确认 -y（保留文件）</label>
     </div>
   </div>
 </div>
@@ -361,6 +362,7 @@ function generateCommand() {
     if (val('m-analyze')) lines.push('--analyze');
     if (val('m-adaptive')) lines.push('--adaptive-weights');
     if (val('m-benchmark')) lines.push('--benchmark');
+    if (val('m-large-output')) lines.push('--allow-large-output');
     if (val('m-coloradj')) lines.push('--color-adjust');
     const cs = val('m-colorstr'); if (cs && cs !== '0.04') lines.push('--color-strength ' + cs);
     if (val('m-cpu')) lines.push('--cpu');
@@ -459,7 +461,7 @@ let currentJobId = '';
 let apiInfo = null;
 let serviceInfo = null;
 let apiEndpoints = [];
-const SUPPORTED_API_MAJOR = 1;
+const SUPPORTED_API_MAJOR = 2;
 const REQUIRED_API_OPERATIONS = [
   'info',
   'endpoints',
@@ -1110,8 +1112,8 @@ function buildMosaicPayload() {
   setIfNumber(payload, 'neighborWindow', 'm-nwin', '邻域窗口', { integer: true, min: 0 });
   setIfNumber(payload, 'neighborPenalty', 'm-npen', '邻域惩罚');
   setIfNumber(payload, 'upscale', 'm-upscale', '上采样', { integer: true, min: 1 });
-  setIfNumber(payload, 'outW', 'm-outw', '输出宽度', { integer: true, min: 1 });
-  setIfNumber(payload, 'outH', 'm-outh', '输出高度', { integer: true, min: 1 });
+  setIfNumber(payload, 'outW', 'm-outw', '输出宽度', { integer: true, min: 0, max: 1000000 });
+  setIfNumber(payload, 'outH', 'm-outh', '输出高度', { integer: true, min: 0, max: 1000000 });
   const outTile = setIfSize(payload, 'outputTile', 'm-otile', '输出 Tile 尺寸');
   setIfNumber(payload, 'labWeight', 'm-labw', 'LAB 权重');
   setIfNumber(payload, 'gridWeight', 'm-gridw', 'Grid 权重');
@@ -1127,6 +1129,7 @@ function buildMosaicPayload() {
   setIfChecked(payload, 'analyze', 'm-analyze');
   setIfChecked(payload, 'adaptiveWeights', 'm-adaptive');
   setIfChecked(payload, 'benchmark', 'm-benchmark');
+  setIfChecked(payload, 'allowLargeOutput', 'm-large-output');
   setIfChecked(payload, 'colorAdjust', 'm-coloradj');
   if (val('m-cpu')) payload.useGpu = false;
 

@@ -41,7 +41,8 @@
 
 static bool isKnownOptionToken(const std::string& token)
 {
-    static const char* kOptions[] = {
+    static const char* kOptions[] =
+    {
         "-i", "--input", "-o", "--output", "-d", "--db", "-t", "--threads",
         "--append", "-r", "--recursive", "--normalize-size", "--normalize-only",
         "-y", "--yes", "--force", "-h", "--help",
@@ -150,12 +151,13 @@ Mosaic options:
       --out-w      <n>   Target output width in pixels
       --out-h      <n>   Target output height in pixels
       --upscale    <n>   Upscale target nX before tiling
+      --allow-large-output  Allow output above 2 GiB of uncompressed pixels
       --output-tile <WxH>  Output tile pixel size (default: 180x320)
       --l-range     <f>  L brightness search range (default: 20)
       --topn-random <n>  Top-N random selection (default: 10)
       --neighbor-window <n>  Neighborhood window (default: 0=auto)
       --neighbor-penalty <f> Base penalty value (default: 100)
-      --tiled            Output tiles as separate files (no size limit)
+      --tiled            Output tiles as separate files
       --deepzoom         Generate Deep Zoom pyramid + HTML viewer
       --color-adjust     Enable per-tile color jitter (off by default)
       --color-strength <v>  Color jitter intensity (default: 0.04)
@@ -559,6 +561,7 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --out-w <n>           Target output width (0=auto)" << std::endl;
             std::cout << "  --out-h <n>           Target output height (0=auto)" << std::endl;
             std::cout << "  --upscale <n>         Upscale target nX before tiling" << std::endl;
+            std::cout << "  --allow-large-output  Allow output above 2 GiB of uncompressed pixels" << std::endl;
             std::cout << "  --output-tile <WxH>   Output tile pixel size (default: 180x320)" << std::endl;
             std::cout << "  --l-range <f>         L brightness search range (default: 20)" << std::endl;
             std::cout << "  --topn-random <n>     Pick from top-N for variety (default: 10)" << std::endl;
@@ -576,7 +579,7 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --analyze             Generate quality report + heatmap + worst tiles" << std::endl;
             std::cout << "  --benchmark           Print per-phase timing breakdown" << std::endl;
             std::cout << "  --cpu                 Force CPU (no GPU)" << std::endl;
-            std::cout << "  --tiled               Output tiles as separate files (no size limit)" << std::endl;
+            std::cout << "  --tiled               Output tiles as separate files" << std::endl;
             std::cout << "  --deepzoom            Generate Deep Zoom pyramid + HTML viewer" << std::endl;
             std::cout << std::endl;
             std::cout << "  Output modes (choose one): -o (single), --tiled, --deepzoom" << std::endl;

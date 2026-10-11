@@ -377,7 +377,7 @@ try {
     $info = Invoke-Api -Method "GET" -Path "/api/info"
     Assert-True ($info.ok -eq $true) "/api/info did not return ok=true"
     Assert-True ($info.info.api.structured -eq $true) "structured API is not enabled"
-    Assert-True ([int]$info.info.api.contractMajorVersion -eq 1) "unexpected API contract major version"
+    Assert-True ([int]$info.info.api.contractMajorVersion -eq 2) "unexpected API contract major version"
 
     $endpoints = Invoke-Api -Method "GET" -Path "/api/endpoints"
     Assert-True ($endpoints.ok -eq $true) "/api/endpoints did not return ok=true"

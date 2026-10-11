@@ -15,6 +15,9 @@ Both entries call the same core services for mosaic generation, library building
 `/api/info` 在 `entryPoints` 中暴露相同的入口边界，调用方可据此区分当前入口和支持的可执行入口集合。
 `/api/info` exposes the same entry point boundary in `entryPoints`, so callers can distinguish the current entry from the supported executable entry set.
 
+当前 API 合约为 **2.0**：维护清理接口仅允许 POST，HTTP Host/Origin/Content-Type 校验已收紧。随程序提供的 Web UI 已同步升级；旧客户端需按下文更新请求。
+The current API contract is **2.0**: purge accepts POST only, and HTTP Host/Origin/Content-Type validation is stricter. The bundled Web UI is updated; older clients must update requests as described below.
+
 ---
 
 ## 服务发现 / Discovery
@@ -97,21 +100,28 @@ Returns service version, entry name, structured API status, legacy `/api/run` st
 字段类型或范围不合法也返回 HTTP 400，且 `message` 指向具体字段。
 Invalid field types or ranges also return HTTP 400, and `message` names the field.
 
+API 只接受本机服务的 Host（`localhost`、`127.0.0.1` 或 `[::1]` 加当前端口）。浏览器请求的 Origin 必须与该 Host 同源，跨站请求返回 HTTP 403；命令行客户端可以不发送 Origin。结构化请求体必须使用 `Content-Type: application/json`，否则返回 HTTP 415。非法 UTF-8 或包含 NUL 的 query 参数返回 HTTP 400 JSON。
+The API requires a local Host with the current port. Browser Origin must match that Host; cross-site requests return HTTP 403. Non-browser clients may omit Origin. Structured request bodies require `Content-Type: application/json` or return HTTP 415. Invalid UTF-8 or NUL bytes in query parameters return HTTP 400 JSON.
+
 常见范围约束 / Common range constraints:
 
 | 字段 / Field | 范围 / Range |
 |------|------|
-| `tileW`, `tileH` | `>= 4` |
-| `candidates` | `>= 10` |
-| `topNrandom` | `>= 1` |
-| `neighborWindow` | `>= 0` |
-| `upscale` | `>= 1` when provided |
+| `tileW`, `tileH` | `4..1000000`, tile pixels `<=100000000` |
+| `outW`, `outH` | `0..1000000`; `0=auto`, one axis preserves aspect ratio |
+| `nativeTileW`, `nativeTileH` | `1..1000000`, tile pixels `<=100000000` |
+| `candidates` | `10..10000` |
+| `topNrandom` | `1..10000` |
+| `neighborWindow` | `0..1000000` |
+| `upscale` | `1..64` when provided |
 | `quality` | `1..100` |
 | `pngLevel` | `1..9` |
-| `lRange`, `neighborPenalty` | `>= 0` |
+| `lRange` | `0..255`, candidate L difference limit |
+| weights | finite, nonnegative, positive finite sum |
+| `usePenalty`, `neighborPenalty` | finite, `>= 0` |
 | `colorStrength` | `0..0.5` |
-| `threads` | `>= 0` |
-| `normalizeWidth`, `normalizeHeight` | `>= 1` |
+| `threads` | `0..256` |
+| `normalizeWidth`, `normalizeHeight` | `1..8192` |
 | `limit` | `>= 1` |
 
 示例 / Example:
@@ -131,6 +141,8 @@ Invalid field types or ranges also return HTTP 400, and `message` names the fiel
 ### `POST /api/jobs/mosaic`
 
 启动异步马赛克任务 / Starts an asynchronous mosaic job.
+
+成功提交返回 HTTP 202 和 `job` / Successful submission returns HTTP 202 with `job`.
 
 ### `POST /api/jobs/build`
 
@@ -162,6 +174,12 @@ Cancels a queued job. Running jobs are not interrupted and return HTTP 409.
 
 同步执行马赛克请求。新 UI 代码应优先使用 `POST /api/jobs/mosaic` 处理长时间任务。
 Runs a mosaic request synchronously. New UI code should prefer `POST /api/jobs/mosaic` for long-running work.
+
+成功生成后返回 HTTP 200 和服务结果，不返回 job。同步生成和异步建库/生成共用串行执行锁，以保证特征缓存写入一致。
+Returns HTTP 200 with a service result after successful generation, without a job. Synchronous generation and asynchronous build/mosaic pipelines share a serial execution lock to keep feature cache writes consistent.
+
+两个生成端点均接受 `allowLargeOutput: true`，用于允许未压缩 RGB 像素量超过 2 GiB 的输出（默认拒绝）。目标缩放/上采样后的工作图像最多 1 亿像素。单图 JPEG/WebP 超过各自尺寸限制时返回失败，请选择 PNG、TIFF 或 `tiled: true`。旧版图库特征需先通过建库端点原地刷新。
+Both mosaic endpoints accept `allowLargeOutput: true` for output above 2 GiB of uncompressed RGB pixels (rejected by default). Resized/upscaled working targets are limited to 100 million pixels. JPEG/WebP output exceeding format dimensions fails; select PNG, TIFF or `tiled: true`. Refresh legacy features through the build endpoint before generation.
 
 ---
 
@@ -221,7 +239,7 @@ Exports used images ordered by total tile count. This endpoint has filesystem si
 }
 ```
 
-### `GET|POST /api/db/purge`
+### `POST /api/db/purge`
 
 预览或移除孤立的数据库记录。默认为干运行。实际删除需要 `dryRun: false` 和 `confirm: true`。
 Previews or removes orphan database records. Default is dry-run. Actual deletion requires `dryRun: false` and `confirm: true`.
@@ -242,3 +260,6 @@ Previews or removes orphan database records. Default is dry-run. Actual deletion
 
 旧式命令风格调用方的兼容端点。Web UI 不再使用此端点。默认禁用；在启动 `MosaicraftWebUI.exe` 前设置 `MOSAICRAFT_ENABLE_LEGACY_RUN=1` 可启用兼容模式。
 Compatibility endpoint for old command-style callers. The Web UI no longer uses this endpoint. It is disabled by default; set `MOSAICRAFT_ENABLE_LEGACY_RUN=1` before starting `MosaicraftWebUI.exe` to enable compatibility mode.
+
+命令文本可使用 `Content-Type: text/plain`，仍须通过同一 Host/Origin 校验。
+Raw command text may use `Content-Type: text/plain`, with the same Host/Origin validation.

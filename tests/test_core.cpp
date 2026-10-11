@@ -344,8 +344,8 @@ TEST_CASE("API feature metadata is shared")
     const auto features = apiFeatureList();
     CHECK(std::find(features.begin(), features.end(), "mosaic-jobs") != features.end());
     CHECK(std::find(features.begin(), features.end(), "database-maintenance") != features.end());
-    CHECK(std::string(apiContractVersion()) == "1.0");
-    CHECK(apiContractMajorVersion() == 1);
+    CHECK(std::string(apiContractVersion()) == "2.0");
+    CHECK(apiContractMajorVersion() == 2);
     CHECK(std::string(apiCompatibilityLevel()) == "stable");
     CHECK(apiContractStable());
 }
@@ -394,8 +394,8 @@ TEST_CASE("API JSON serialization is shared")
     CHECK(infoJson["entryPoints"].size() == 2);
     CHECK(infoJson["entryPoints"][0]["executable"].get<std::string>() == "mosaicraft.exe");
     CHECK(infoJson["entryPoints"][1]["executable"].get<std::string>() == "MosaicraftWebUI.exe");
-    CHECK(infoJson["api"]["contractVersion"].get<std::string>() == "1.0");
-    CHECK(infoJson["api"]["contractMajorVersion"].get<int>() == 1);
+    CHECK(infoJson["api"]["contractVersion"].get<std::string>() == "2.0");
+    CHECK(infoJson["api"]["contractMajorVersion"].get<int>() == 2);
     CHECK(infoJson["api"]["compatibility"].get<std::string>() == "stable");
     CHECK(infoJson["api"]["stable"].get<bool>());
     CHECK_FALSE(infoJson["api"]["legacyRunEnabled"].get<bool>());
@@ -1193,8 +1193,8 @@ TEST_CASE("CUDA scoring rejects an invalid library")
         nullptr, nullptr, nullptr, nullptr, &index, 1, library,
         nullptr, nullptr, nullptr, nullptr, nullptr, 0.0, &score));
     double scores[2] = {123.0, 456.0};
-    mosaicraft::cuda::scoreIndices(0, 0, 0, nullptr, nullptr, 0, nullptr,
-        library, nullptr, 2, 0, 0, 0, 0, 0, 0, scores);
+    mosaicraft::cuda::scoreIndices(0, 0, 0, nullptr, nullptr, 0, nullptr, library, nullptr, 2, 0, 0, 0, 0, 0, 0,
+                                   scores);
     CHECK(scores[0] == std::numeric_limits<double>::max());
     CHECK(scores[1] == std::numeric_limits<double>::max());
 }
@@ -1219,8 +1219,10 @@ TEST_CASE("ANN cache validates features and parallel queries preserve ordering")
         queries.insert(queries.end(), query.begin(), query.end());
     }
     CHECK(index.queryBatch(queries, 8, 1) == index.queryBatch(queries, 8, 4));
-    const auto directory = std::filesystem::temp_directory_path() / std::filesystem::u8path(
-        "mosaicraft-ann-中文-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    const auto directory =
+        std::filesystem::temp_directory_path() /
+        std::filesystem::u8path("mosaicraft-ann-中文-" +
+                                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(directory);
     const auto path = directory / "lib.ann196";
     const std::string cache = pathToUtf8(path);

@@ -346,12 +346,13 @@ const char* apiRequestShapeName(ApiRequestShape shape)
 
 const char* apiContractVersion()
 {
-    return "1.0";
+    return "2.0";
 }
 
 int apiContractMajorVersion()
 {
-    return 1;
+    // 移除 GET purge 和收紧 HTTP 请求边界属于合约变更，旧 UI 应显式升级。
+    return 2;
 }
 
 const char* apiCompatibilityLevel()
