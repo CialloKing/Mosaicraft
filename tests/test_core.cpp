@@ -1192,6 +1192,11 @@ TEST_CASE("CUDA scoring rejects an invalid library")
     CHECK_FALSE(mosaicraft::cuda::scoreBatch(1, nullptr, nullptr, nullptr,
         nullptr, nullptr, nullptr, nullptr, &index, 1, library,
         nullptr, nullptr, nullptr, nullptr, nullptr, 0.0, &score));
+    double scores[2] = {123.0, 456.0};
+    mosaicraft::cuda::scoreIndices(0, 0, 0, nullptr, nullptr, 0, nullptr,
+        library, nullptr, 2, 0, 0, 0, 0, 0, 0, scores);
+    CHECK(scores[0] == std::numeric_limits<double>::max());
+    CHECK(scores[1] == std::numeric_limits<double>::max());
 }
 
 TEST_CASE("ANN cache validates features and parallel queries preserve ordering")

@@ -3,6 +3,7 @@
 #include "MosaicEngine.h"
 
 #include <string>
+#include <mutex>
 
 namespace mosaicraft
 {
@@ -39,5 +40,6 @@ public:
 };
 
 std::string resolveDbPathForService(const std::string& rawPath);
+std::mutex& pipelineMutex();
 
 } // namespace mosaicraft

@@ -18,10 +18,12 @@
 #include <opencv2/imgproc.hpp>
 
 #include <chrono>
+#include <atomic>
 #include <cstdio>
 #include <filesystem>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 using namespace mosaicraft;
@@ -245,6 +247,30 @@ TEST_CASE("database maintenance rejects missing files and preserves usage integr
     REQUIRE(DatabaseService().purge({utf8(workspace.dbPath()), false, true}).status.ok);
     CHECK(database.topUsedImages().empty());
     CHECK(DatabaseService().health({utf8(workspace.dbPath())}).health.usedPct == 0);
+
+    // 同一个目标同时提交时，累计两轮 tile，但独立目标数只增加一次。
+    Database other(utf8(workspace.dbPath()), Database::OpenMode::Existing);
+    std::atomic<int> ready{0};
+    bool firstOk = false, secondOk = false;
+    auto record = [&](Database& connection, bool& ok)
+    {
+        ++ready;
+        while (ready.load() < 2)
+        {
+            std::this_thread::yield();
+        }
+        ok = connection.recordRunUsage({{records[1].id, 2}}, "same", "concurrent-target");
+    };
+    std::thread first(record, std::ref(database), std::ref(firstOk));
+    std::thread second(record, std::ref(other), std::ref(secondOk));
+    first.join();
+    second.join();
+    REQUIRE(firstOk);
+    REQUIRE(secondOk);
+    const auto usage = database.topUsedImages();
+    REQUIRE(usage.size() == 1);
+    CHECK(std::get<1>(usage[0]) == 1);
+    CHECK(std::get<2>(usage[0]) == 4);
 }
 
 TEST_CASE("mosaic validates dimensions formats and legacy grids before processing")

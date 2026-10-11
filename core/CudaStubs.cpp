@@ -1,5 +1,6 @@
 ﻿// CudaStubs.cpp — 无 CUDA 时的空实现（在 MOSAICRAFT_CUDA=OFF 时编译）
 #include "compute/CudaBackend.h"
+#include <cfloat>
 #include <cstdio>
 
 namespace mosaicraft
@@ -35,8 +36,15 @@ int matchAgainstLibrary(double, double, double, const float *, const std::uint8_
 }
 
 void scoreIndices(double, double, double, const float *, const std::uint8_t *, double, const float *,
-                  const GpuLibrary &, const int *, int, double, double, double, double, double, double, double *)
+                  const GpuLibrary &, const int *, int count, double, double, double, double, double, double, double* scores)
 {
+    if (scores)
+    {
+        for (int i = 0; i < count; ++i)
+        {
+            scores[i] = DBL_MAX;
+        }
+    }
 }
 
 int matchWithIndices(double, double, double, const float *, const std::uint8_t *, double, const float *,

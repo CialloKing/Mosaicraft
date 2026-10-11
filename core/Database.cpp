@@ -40,13 +40,28 @@ Database::Database(const std::string& dbPath, OpenMode mode)
     {
         sqlite3_stmt* statement = nullptr;
         valid = sqlite3_prepare_v2(m_db,
-            "SELECT file_path,file_hash,avg_l,avg_a,avg_b,grid4x4,tiny_path,hist_path,feature_version,use_count "
+            "SELECT id,file_path,file_hash,format,src_width,src_height,aspect_ratio,file_size,avg_l,avg_a,avg_b,"
+            "mean_brightness,std_brightness,contrast,saturation,color_variance,grid4x4,tiny_path,edge_density,"
+            "hist_path,feature_version,use_count "
             "FROM images LIMIT 0", -1, &statement, nullptr) == SQLITE_OK;
         if (valid)
         {
             valid = sqlite3_step(statement) == SQLITE_DONE;
         }
         sqlite3_finalize(statement);
+        statement = nullptr;
+        if (valid)
+        {
+            // 能打开文件不代表其数据页完整；避免损坏索引仍被读成空库。
+            valid = sqlite3_prepare_v2(m_db, "PRAGMA quick_check(1)", -1, &statement, nullptr) == SQLITE_OK &&
+                    sqlite3_step(statement) == SQLITE_ROW;
+            if (valid)
+            {
+                const auto* result = sqlite3_column_text(statement, 0);
+                valid = result && std::string(reinterpret_cast<const char*>(result)) == "ok";
+            }
+            sqlite3_finalize(statement);
+        }
     }
     if (!valid)
     {

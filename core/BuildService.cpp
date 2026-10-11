@@ -90,6 +90,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     {
         return ServiceResult::failure(1, "inputDir is required");
     }
+    std::lock_guard<std::mutex> pipelineLock(pipelineMutex());
 
     std::string outputDir = request.outputDir.empty() ? "library" : request.outputDir;
     std::string dbPath = request.dbPath.empty() ? "mosaicraft.db" : request.dbPath;

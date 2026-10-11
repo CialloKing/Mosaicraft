@@ -8,6 +8,13 @@
 namespace mosaicraft
 {
 
+std::mutex& pipelineMutex()
+{
+    // FeaturePack 的写入器属于整条管线；同步 HTTP 调用也保持一次只运行一个任务。
+    static std::mutex mutex;
+    return mutex;
+}
+
 std::string resolveDbPathForService(const std::string& rawPath)
 {
     std::error_code ec;
@@ -47,16 +54,17 @@ ServiceResult MosaicService::run(const MosaicRequest& request) const
     }
     try
     {
-    MosaicEngine engine;
-    bool ok = engine.generate(
-        request.inputPath,
-        resolveDbPathForService(request.dbPath),
-        request.outputPath,
-        validated.config);
+        std::lock_guard<std::mutex> lock(pipelineMutex());
+        MosaicEngine engine;
+        bool ok = engine.generate(
+            request.inputPath,
+            resolveDbPathForService(request.dbPath),
+            request.outputPath,
+            validated.config);
 
-    return ok
-        ? ServiceResult::success("mosaic generated")
-        : ServiceResult::failure(1, "mosaic generation failed");
+        return ok
+            ? ServiceResult::success("mosaic generated")
+            : ServiceResult::failure(1, "mosaic generation failed");
     }
     catch (const std::bad_alloc&)
     {
