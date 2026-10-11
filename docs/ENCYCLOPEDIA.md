@@ -189,7 +189,7 @@ mosaicraft mosaic -i <img> -d <db> [-o <path>] [选项...]
 | `--penalty <f>` | 0.01 | 使用频率惩罚（usePenalty） |
 | `--neighbor-penalty <f>` | 100.0 | 邻域重复惩罚（越大越多样） |
 | `--neighbor-window <n>` | 0=auto | 邻域窗口大小（≥2×tilesX） |
-| `--l-range <f>` | 0.03 | L 通道微调范围 |
+| `--l-range <f>` | 20 | ANN 候选的 L 亮度差上限（0..255） |
 
 #### 输出/工具
 
@@ -269,16 +269,18 @@ mosaicraft inspect -i <img> [-d <db>]
 
 ## 5. 输出格式行为 / Output Formats
 
-> **EN**: JPG (max 65,500px), TIFF (unlimited / BigTIFF), WebP (max 16,383px), PNG (max 65,500px, auto-tiled). Output extension determines format.
+> **EN**: JPG (max 65,500px) and WebP (max 16,383px) reject oversized single images. PNG and TIFF preserve dimensions up to the signed 32-bit axis limit. Output extension determines format unless explicitly selected.
 
 | 格式 | 限制 | 超限行为 |
 |------|------|----------|
-| JPG (默认) | 65500px | 未显式→TIFF；显式`--format jpg`→等比缩放 |
-| TIFF | 无限制 (BigTIFF) | — |
-| WebP | **16383px** | 等比缩放 |
-| PNG | 65500px | 自动 tiled |
+| JPG (默认) | 65500px | 报错，请选择 PNG/TIFF/分块输出 |
+| TIFF | 单轴 `INT_MAX` (BigTIFF) | 报错 |
+| WebP | **16383px** | 报错，请选择 PNG/TIFF/分块输出 |
+| PNG | 单轴 `INT_MAX` | 报错 |
 
 输出路径扩展名自动推断格式：`-o result.tiff` → TIFF，无需 `--format`。
+
+超过 2 GiB 未压缩 RGB 像素量需显式使用 `--allow-large-output`（Web UI 勾选“允许超大输出”）。工作图像最多 1 亿像素。程序不再自动切换格式或缩小尺寸；显式格式会调整文件后缀。v6 特征与兼容性变化见 [修复验证记录](BUGFIX_VERIFICATION.md)。
 
 ---
 

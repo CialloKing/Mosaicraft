@@ -138,7 +138,7 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 ### 命令一览
 
 ```
-mosaicraft build     -i <dir> [-d <db>] [--append] [-r] [--normalize-size W H]
+mosaicraft build     -i <dir> [-d <db>] [--append] [-r] [--normalize-size WxH]
 mosaicraft mosaic    -i <img> -d <db> [-o <path>] [选项]
 mosaicraft inspect   -i <img> [-d <db>]
 mosaicraft db-stats  -d <db>
@@ -154,13 +154,15 @@ mosaicraft db-health -d <db>
 mosaicraft build -i ./photos -d library/mosaicraft.db -r
 
 # 自定义归一化分辨率
-mosaicraft build -i ./photos --normalize-size 360 640 -r
+mosaicraft build -i ./photos --normalize-size 360x640 -r
 
 # 增量追加新图片
 mosaicraft build -i ./new_photos -d library/mosaicraft.db --append -r
 ```
 
 归一化 → 特征提取 → SQLite + FeaturePack + ANN 索引，全自动完成。
+
+重复建库保留已有图库文件和原图，同一图片在 CPU/CUDA 间追加也会去重。旧版特征会在再次 `build --append` 时原地刷新为 v6，保留图片 ID 和使用统计；生成前会拒绝未刷新的旧特征。已有非空图库的归一化尺寸必须保持一致，改变尺寸请使用新的图库目录和数据库。若旧记录对应的文件已经丢失，请先恢复文件或执行 `db-purge` 清理悬空记录。
 
 ### 生成马赛克
 
@@ -172,7 +174,7 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
 mosaicraft mosaic -i target.jpg -d library/mosaicraft.db --out-w 640 --out-h 480
 
 # 高密度（4× tile 数量）
-mosaicraft mosaic -i target.jpg -d library/mosaicraft.db --upscale 2 --output-tile 90 160
+mosaicraft mosaic -i target.jpg -d library/mosaicraft.db --upscale 2 --output-tile 90x160
 
 # 质量控制
 mosaicraft mosaic -i target.jpg -d library/mosaicraft.db --png-level 9 --write-mode stream
@@ -189,9 +191,9 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db --analyze --benchmark
 | `-d --db` | library/mosaicraft.db | 特征数据库 |
 | `-o --output` | output/output.jpg | 输出路径（扩展名决定格式） |
 | `--tile-w/h` | 9 / 16 | tile 网格尺寸 |
-| `--output-tile <w> <h>` | 180 320 | 单 tile 输出尺寸 |
-| `--out-w/h` | 原图 | 目标图缩放 |
-| `--upscale <n>` | 关闭 | 放大原图 n× 再分块 |
+| `--output-tile <WxH>` | 180x320 | 单 tile 输出尺寸；横屏图库默认使用 320x180 |
+| `--out-w/h` | 0=auto | 目标图缩放；只指定一轴时另一轴按比例推导 |
+| `--upscale <n>` | 关闭 | 放大原图 n× 再分块，最大 64 |
 | `--format` | 扩展名 | jpg / png / webp / tiff |
 | `--quality` | 100 | JPEG/WebP 质量 1-100 |
 | `--png-level` | 1 | PNG 压缩 1（快）~ 9（小） |
@@ -202,11 +204,17 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db --analyze --benchmark
 | `--neighbor-penalty` | 100 | 邻域重复惩罚值 |
 | `--lab/grid/tiny/edge/lbp-weight` | 0.20/0.45/0.25/0.05/0.05 | 特征权重 |
 | `--penalty` | 0.01 | 图片复用惩罚 |
+| `--l-range` | 20 | ANN 候选的 L 亮度差上限（0..255） |
 | `--color-adjust` | 关闭 | LAB L 通道微调 |
 | `--cpu` | — | 强制 CPU 模式 |
 | `--benchmark` | — | 分阶段耗时统计 |
 | `--analyze` | — | 质量报告 + 热力图 |
 | `--deepzoom` | — | Deep Zoom 金字塔 + HTML viewer |
+| `--allow-large-output` | 关闭 | 允许未压缩 RGB 像素量超过 2 GiB 的输出 |
+
+参数中的尺寸、权重和惩罚会统一校验，未知选项、未知格式以及 NaN/Infinity 会报错。工作图像（含放大后目标、单个 tile）最多 1 亿像素、单轴最多 100 万，建库归一化单轴最多 8192。JPEG 单轴超过 65500、WebP 超过 16383 时会报错，请显式选择 PNG、TIFF 或分块输出。程序不会因编码器尺寸限制自动切换格式或缩小输出；显式 `--format` 与文件后缀不同时，后缀按所选格式调整。超过 2 GiB 的输出需传入 `--allow-large-output`，该阈值按未压缩像素计算，不代表最终文件大小。
+
+v6 统一了 CPU/CUDA 的 8×8 分区、Canny 边缘定义、统计列、评分尺度和复用惩罚，因此选图可能与旧版不同。CUDA 路径使用 CPU 的 OpenCV Canny 来保证同一语义，会增加特征提取时间。修复与验证记录见 [BUGFIX_VERIFICATION.md](docs/BUGFIX_VERIFICATION.md)。
 
 ### 图库管理
 
