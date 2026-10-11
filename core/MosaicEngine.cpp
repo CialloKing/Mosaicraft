@@ -949,30 +949,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
                   << ". Choose --format png/tiff or --tiled." << std::endl;
         return false;
     }
-    // 大文件是合法用途，但必须在计算及写盘前由用户显式选择。
+    // 超大输出默认允许，但必须在转换为 int 前防止尺寸溢出。
     if (proposedW > INT_MAX || proposedH > INT_MAX)
     {
         std::cerr << "ERROR: Output dimensions exceed INT_MAX." << std::endl;
         return false;
     }
-    const uint64_t outputBytes = static_cast<uint64_t>(proposedW) * proposedH * 3;
-    if (outputBytes > UINT64_C(2147483648) && !cfg.allowLargeOutput)
-    {
-        std::cerr << "ERROR: Output requires " << outputBytes
-                  << " uncompressed bytes. Use --allow-large-output to proceed." << std::endl;
-        return false;
-    }
-
-    // 溢出检查：大型马赛克可能超出 int32 范围
-    int64_t outW64 = static_cast<int64_t>(tilesX) * outTileW;
-    int64_t outH64 = static_cast<int64_t>(tilesY) * outTileH;
-    if (outW64 > INT_MAX || outH64 > INT_MAX) {
-        std::cerr << "ERROR: Output too large (" << outW64 << "x" << outH64 << ")" << std::endl;
-        releaseGpuLib();
-        return false;
-    }
-    int outW = static_cast<int>(outW64);
-    int outH = static_cast<int>(outH64);
+    int outW = static_cast<int>(proposedW);
+    int outH = static_cast<int>(proposedH);
 
     // 宽高比校验：DB 特征空间 vs 输出 tile，featW/featH 从meta解析而来
     if (featH <= 0 || featW <= 0) {

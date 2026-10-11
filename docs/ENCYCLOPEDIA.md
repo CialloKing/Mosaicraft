@@ -280,7 +280,7 @@ mosaicraft inspect -i <img> [-d <db>]
 
 输出路径扩展名自动推断格式：`-o result.tiff` → TIFF，无需 `--format`。
 
-超过 2 GiB 未压缩 RGB 像素量需显式使用 `--allow-large-output`（Web UI 勾选“允许超大输出”）。工作图像最多 1 亿像素。程序不再自动切换格式或缩小尺寸；显式格式会调整文件后缀。v6 特征与兼容性变化见 [修复验证记录](BUGFIX_VERIFICATION.md)。
+超大输出默认允许，无需额外开关；PNG/TIFF 可使用流式写入降低内存占用。工作图像最多 1 亿像素。程序不再自动切换格式或缩小尺寸；显式格式会调整文件后缀。v6 特征与兼容性变化见 [修复验证记录](BUGFIX_VERIFICATION.md)。
 
 ---
 

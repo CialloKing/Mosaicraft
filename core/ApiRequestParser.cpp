@@ -418,10 +418,6 @@ bool parseMosaicRequestJson(const std::string& body,
     if (getBoolField(values, keysFor(aliases, "adaptiveWeights"), boolValue, error)) cfg.adaptiveWeights = boolValue;
     if (getBoolField(values, keysFor(aliases, "analyze"), boolValue, error)) cfg.analyze = boolValue;
     if (getBoolField(values, keysFor(aliases, "benchmark"), boolValue, error)) cfg.benchmark = boolValue;
-    if (getBoolField(values, keysFor(aliases, "allowLargeOutput"), boolValue, error))
-    {
-        cfg.allowLargeOutput = boolValue;
-    }
     return error.empty() && validateMosaicRequest(request, error);
 }
 

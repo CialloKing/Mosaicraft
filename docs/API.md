@@ -178,8 +178,8 @@ Runs a mosaic request synchronously. New UI code should prefer `POST /api/jobs/m
 成功生成后返回 HTTP 200 和服务结果，不返回 job。同步生成和异步建库/生成共用串行执行锁，以保证特征缓存写入一致。
 Returns HTTP 200 with a service result after successful generation, without a job. Synchronous generation and asynchronous build/mosaic pipelines share a serial execution lock to keep feature cache writes consistent.
 
-两个生成端点均接受 `allowLargeOutput: true`，用于允许未压缩 RGB 像素量超过 2 GiB 的输出（默认拒绝）。目标缩放/上采样后的工作图像最多 1 亿像素。单图 JPEG/WebP 超过各自尺寸限制时返回失败，请选择 PNG、TIFF 或 `tiled: true`。旧版图库特征需先通过建库端点原地刷新。
-Both mosaic endpoints accept `allowLargeOutput: true` for output above 2 GiB of uncompressed RGB pixels (rejected by default). Resized/upscaled working targets are limited to 100 million pixels. JPEG/WebP output exceeding format dimensions fails; select PNG, TIFF or `tiled: true`. Refresh legacy features through the build endpoint before generation.
+两个生成端点默认允许超大输出，无需额外字段或开关。目标缩放/上采样后的工作图像最多 1 亿像素。单图 JPEG/WebP 超过各自尺寸限制时返回失败，请选择 PNG、TIFF 或 `tiled: true`。PNG/TIFF 可指定 `writeMode: "stream"` 降低内存占用。旧版图库特征需先通过建库端点原地刷新。
+Both mosaic endpoints allow large output by default, without an extra field or switch. Resized/upscaled working targets are limited to 100 million pixels. JPEG/WebP output exceeding format dimensions fails; select PNG, TIFF or `tiled: true`. PNG/TIFF can use `writeMode: "stream"` to reduce memory use. Refresh legacy features through the build endpoint before generation.
 
 ---
 

@@ -197,7 +197,6 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <label><input type="checkbox" id="m-analyze"> 质量分析 --analyze</label>
       <label><input type="checkbox" id="m-adaptive"> 自适应权重 --adaptive-weights</label>
       <label><input type="checkbox" id="m-benchmark"> 性能分析 --benchmark</label>
-      <label><input type="checkbox" id="m-large-output"> 允许超大输出（未压缩像素超过 2 GiB）</label>
       <label><input type="checkbox" id="m-coloradj"> 启用颜色校正 --color-adjust</label>
       <label><input type="checkbox" id="m-cpu"> 仅 CPU --cpu</label>
     </div>
@@ -362,7 +361,6 @@ function generateCommand() {
     if (val('m-analyze')) lines.push('--analyze');
     if (val('m-adaptive')) lines.push('--adaptive-weights');
     if (val('m-benchmark')) lines.push('--benchmark');
-    if (val('m-large-output')) lines.push('--allow-large-output');
     if (val('m-coloradj')) lines.push('--color-adjust');
     const cs = val('m-colorstr'); if (cs && cs !== '0.04') lines.push('--color-strength ' + cs);
     if (val('m-cpu')) lines.push('--cpu');
@@ -1129,7 +1127,6 @@ function buildMosaicPayload() {
   setIfChecked(payload, 'analyze', 'm-analyze');
   setIfChecked(payload, 'adaptiveWeights', 'm-adaptive');
   setIfChecked(payload, 'benchmark', 'm-benchmark');
-  setIfChecked(payload, 'allowLargeOutput', 'm-large-output');
   setIfChecked(payload, 'colorAdjust', 'm-coloradj');
   if (val('m-cpu')) payload.useGpu = false;
 

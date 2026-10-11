@@ -52,7 +52,7 @@ static bool isKnownOptionToken(const std::string& token)
         "--topn-random", "-f", "--format", "--cpu", "-q", "--quality",
         "--png-level", "--write-mode", "--tiled", "--deepzoom",
         "--neighbor-window", "--neighbor-penalty", "-U", "--upscale",
-        "--allow-large-output", "--output-tile", "--color-adjust", "--adaptive-weights", "--analyze",
+        "--output-tile", "--color-adjust", "--adaptive-weights", "--analyze",
         "--color-strength", "--benchmark", "-n", "--unused", "--export"
     };
     for (const char* option : kOptions)
@@ -151,7 +151,6 @@ Mosaic options:
       --out-w      <n>   Target output width in pixels
       --out-h      <n>   Target output height in pixels
       --upscale    <n>   Upscale target nX before tiling
-      --allow-large-output  Allow output above 2 GiB of uncompressed pixels
       --output-tile <WxH>  Output tile pixel size (default: 180x320)
       --l-range     <f>  L brightness search range (default: 20)
       --topn-random <n>  Top-N random selection (default: 10)
@@ -527,10 +526,6 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.adaptiveWeights = true;
         }
-        else if (arg == "--allow-large-output")
-        {
-            cfg.allowLargeOutput = true;
-        }
         else if (arg == "--analyze")
         {
             cfg.analyze = true;
@@ -561,7 +556,6 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --out-w <n>           Target output width (0=auto)" << std::endl;
             std::cout << "  --out-h <n>           Target output height (0=auto)" << std::endl;
             std::cout << "  --upscale <n>         Upscale target nX before tiling" << std::endl;
-            std::cout << "  --allow-large-output  Allow output above 2 GiB of uncompressed pixels" << std::endl;
             std::cout << "  --output-tile <WxH>   Output tile pixel size (default: 180x320)" << std::endl;
             std::cout << "  --l-range <f>         L brightness search range (default: 20)" << std::endl;
             std::cout << "  --topn-random <n>     Pick from top-N for variety (default: 10)" << std::endl;

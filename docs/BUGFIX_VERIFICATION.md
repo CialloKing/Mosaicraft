@@ -12,7 +12,7 @@
 | 4 | 建库与维护使用不同数据库打开模式；维护不创建文件，验证列与 SQLite 数据页完整性 | 缺失 DB 未创建；损坏 DB 返回错误 |
 | 5 | CPU/CUDA 均以落盘图像解码后的像素计算哈希；GPU 批内也去重 | 跨后端追加相同图片保持 5 行 |
 | 6 | 共享尺寸上界校验，使用 64 位计算；服务捕获分配异常；校验 DB 尺寸元数据 | 巨大 upscale 和损坏尺寸元数据被拒绝 |
-| 7 | 格式大小写归一，拒绝未知格式；单轴缩放有效、0 保持自动；不再隐式切换格式或缩小输出 | PNG 签名、单轴/0 尺寸、JPEG 超限和 2 GiB 阈值检查 |
+| 7 | 格式大小写归一，拒绝未知格式；单轴缩放有效、0 保持自动；不再隐式切换格式或缩小输出；超大输出默认允许 | PNG 签名、单轴/0 尺寸、JPEG 超限及超大输出进入编码器的检查 |
 | 8 | GPU 建库补齐标准差、饱和度与颜色方差，复用 CPU 统计函数 | 同批 CPU/CUDA 三列一致且非零 |
 | 9 | 建库和查询统一使用 OpenCV Canny 边缘密度 | CPU/CUDA 统计一致，真实 CUDA 单测对照 Canny |
 | 10 | CPU/CUDA 均按 lRange 过滤 ANN 候选 | 宽范围可生成，零范围无候选时返回错误 |
@@ -50,13 +50,13 @@
 | CUDA Release | 48/48，551 条断言 | 11/11，28149 条断言 | 通过 |
 | CPU-only Release | 48/48，535 条断言 | 11/11，28149 条断言 | 通过 |
 
-另完成 **75 项独立 CLI/SQLite/图像/HTTP 检查**，包含实际 CUDA 建库和生成。Web UI 的超大输出复选框、CLI 命令生成、JSON 请求字段、0 尺寸与 API 主版本经 JavaScript 执行验证。全部文件操作使用合成图库和临时目录。
+另完成 **77 项独立 CLI/SQLite/图像/HTTP 检查**，包含实际 CUDA 建库和生成。Web UI 的 CLI 命令生成、JSON 请求字段、0 尺寸与 API 主版本经 JavaScript 执行验证。超大输出检查使用不可写路径，验证其进入编码器后返回 I/O 错误，避免实际写入巨型文件。全部文件操作使用合成图库和临时目录。
 
 复现入口：`ctest --test-dir build -C Release --output-on-failure`、`ctest --test-dir build_nocuda -C Release --output-on-failure`；两种构建均执行 `mosaicraft_webui_smoke` 目标。独立检查脚本与日志保留于本地忽略目录 `output/bug-audit-20261009/`，最新检查目录由 `latest-fix-run.txt` 指示。
 
 ## 使用变化
 
 - 旧图库需再次运行 `build --append` 刷新为 **v6**，图片 ID、文件和使用统计保留。缺失文件需先恢复或通过 purge 清理；非空图库改变归一化尺寸需新目录和数据库。
-- 超过 **2 GiB 未压缩 RGB 像素量**需 `--allow-large-output` / `allowLargeOutput: true` / Web UI 复选框。目标与单 tile 最多 1 亿像素；JPEG/WebP 超限返回错误。
+- 超大输出默认允许，不设置额外体积门槛。目标与单 tile 最多 1 亿像素；JPEG/WebP 超限返回错误。
 - HTTP API 合约为 **2.0**；维护清理仅 POST，结构化请求体使用 JSON，同源界面已同步升级。
 - v6 修正了特征和评分语义，选图可能与旧版不同；CUDA 路径增加 CPU Canny 步骤。本轮未重跑大型图库性能基准，也不保证 CPU/CUDA 浮点特征或最终选图逐位一致。
