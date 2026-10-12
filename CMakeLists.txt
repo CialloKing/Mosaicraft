@@ -119,6 +119,7 @@ add_library(mosaicraft_core STATIC
     core/JobManager.cpp
     core/LegacyRun.cpp
     core/LibraryAccess.cpp
+    core/LibraryColorOrder.cpp
     core/MosaicOutput.cpp
     core/MosaicEngine.cpp
     core/MosaicService.cpp

@@ -1,6 +1,7 @@
 ﻿#include "BuildService.h"
 
 #include "Database.h"
+#include "LibraryColorOrder.h"
 #include "FeatureExtractor.h"
 #include "FeaturePack.h"
 #include "FeatureUtils.h"
@@ -106,15 +107,25 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         return ServiceResult::failure(1, "cannot create output directory: " + outputDir);
     }
 
-    Database db(resolveDbPathForService(dbPath));
+    Database db(resolveDbPathForService(dbPath), Database::OpenMode::Build);
     if (!db.isOpen())
     {
-        return ServiceResult::failure(EXIT_ERR_DB, "cannot open database: " + dbPath);
+        return ServiceResult::failure(EXIT_ERR_DB, "cannot open database: " + dbPath + "; " + db.error());
     }
 
     if (!db.createTables())
     {
         return ServiceResult::failure(EXIT_ERR_DB, "cannot create database tables");
+    }
+
+    std::string recoveryError;
+    if (!recoverLibraryColorOrder(db, recoveryError))
+    {
+        return ServiceResult::failure(EXIT_ERR_DB, recoveryError);
+    }
+    if (!fs::is_directory(u8path(request.inputDir), ec))
+    {
+        return ServiceResult::failure(1, "cannot read input directory: " + request.inputDir);
     }
 
     if (!request.appendMode && !request.normalizeOnly)
@@ -128,7 +139,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                                                      " records. Use appendMode or forceMode to continue building.");
             }
             std::cout << "Database has " << existingCount
-                      << " records. Continue building and preserve existing files? [y/N] " << std::flush;
+                      << " records. Continue building and renumber the entire library by color? [y/N] " << std::flush;
             char answer = static_cast<char>(std::getchar());
             if (answer != 'y' && answer != 'Y')
             {
@@ -169,6 +180,14 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         }
     }
 
+    // 入库前持久化尺寸；首次建库被中断后，已有记录仍可用同样尺寸继续追加。
+    if (!request.normalizeOnly &&
+        (!db.setMeta("feature_w", std::to_string(request.normalizeWidth)) ||
+         !db.setMeta("feature_h", std::to_string(request.normalizeHeight))))
+    {
+        return ServiceResult::failure(EXIT_ERR_DB, "cannot save library dimensions");
+    }
+
     const std::vector<std::string> exts = {
         ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif"
     };
@@ -203,10 +222,14 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         }
     }
 
+    if (ec)
+    {
+        return ServiceResult::failure(1, "cannot scan input directory: " + ec.message());
+    }
     std::sort(files.begin(), files.end());
     std::cout << "Found " << files.size() << " image(s) in " << request.inputDir << std::endl;
 
-    if (files.empty())
+    if (files.empty() && (existingRecords.empty() || request.normalizeOnly))
     {
         return ServiceResult::failure(1, "no supported images found");
     }
@@ -221,7 +244,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     std::vector<uint8_t> okFlags(files.size(), 0);
     bool inputIsOutput = fs::equivalent(u8path(request.inputDir), u8path(outputDir), ec);
     ec.clear();
-    // 只为本轮新文件分配名字；旧索引引用及用户文件都不能覆盖。
+    // 新图片先用临时名字，避免失败文件和旧编号阻碍最终全库颜色排序。
     std::set<fs::path> reservedPaths;
     for (const auto& record : db.allRecords())
     {
@@ -240,7 +263,8 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         {
             char name[64];
             auto extension = pathToUtf8(u8path(files[i]).extension());
-            snprintf(name, sizeof(name), "%06zu%s", nameIndex++, extension.c_str());
+            snprintf(name, sizeof(name), request.normalizeOnly ? "%06zu%s" : ".mosaicraft-new-%06zu%s",
+                     nameIndex++, extension.c_str());
             candidate = u8path(outputDir) / name;
         } while (fs::exists(candidate) || reservedPaths.count(fs::absolute(candidate).lexically_normal()));
         reservedPaths.insert(fs::absolute(candidate).lexically_normal());
@@ -257,7 +281,11 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         std::cout << "Normalize only mode" << std::endl;
     }
 
-    struct NormItem { cv::Mat img; std::string outPath; std::string stem; };
+    struct NormItem
+    {
+        cv::Mat img;
+        std::string outPath;
+    };
     std::queue<NormItem> normQueue;
     std::mutex queueMtx;
     std::condition_variable queueCV;
@@ -422,7 +450,8 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                         rec.format = ext;
                         imgs.push_back(item.img);
                         recs.push_back(rec);
-                        stems.push_back(item.stem);
+                        // 特征文件不跟随数字编号，追加重排也不会覆盖其他图片的特征。
+                        stems.push_back("hash_" + hash);
                         if ((int)imgs.size() >= GPU_BATCH)
                         {
                             flush();
@@ -486,7 +515,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                             {
                                 break;
                             }
-                            normQueue.push({result.clone(), pathToUtf8(outPath), pathToUtf8(outPath.stem())});
+                            normQueue.push({result.clone(), pathToUtf8(outPath)});
                             lk.unlock();
                             queueCV.notify_one();
                         }
@@ -523,7 +552,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 {
                     break;
                 }
-                normQueue.push({image, files[i], pathToUtf8(u8path(files[i]).stem())});
+                normQueue.push({image, files[i]});
                 lock.unlock();
                 queueCV.notify_one();
             }
@@ -591,7 +620,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 std::string ext = pathToUtf8(u8path(outPath).extension());
                 if (!ext.empty() && ext[0] == '.') ext = ext.substr(1);
                 rec.format = ext;
-                extractor.compute(img, rec, featDir, pathToUtf8(u8path(outPath).stem()));
+                extractor.compute(img, rec, featDir, "hash_" + hash);
                 if (db.insertImage(rec)) inserted++;
                 else skipped++;
             } catch (...) {
@@ -616,6 +645,19 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         return ServiceResult::failure(1, "no readable images could be indexed");
     }
 
+    const auto tColorStart = std::chrono::steady_clock::now();
+    ColorOrderResult colorResult;
+    std::string colorError;
+    if (!reorderLibraryByColor(db, outputDir, colorResult, colorError))
+    {
+        return ServiceResult::failure(1, "cannot reorder library by color: " + colorError);
+    }
+    const double colorSeconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - tColorStart).count();
+    std::cout << "Color order: " << colorResult.computed << " colors computed, "
+              << colorResult.renamed << " images renamed (" << std::fixed << std::setprecision(3)
+              << colorSeconds << "s)" << std::endl;
+
     std::cout << std::endl;
     std::cout << "Done: " << inserted << " images indexed, "
               << db.totalCount() << " total in database." << std::endl;
@@ -638,6 +680,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         std::cout << " done" << std::endl;
     } else {
         std::cout << " failed" << std::endl;
+        return ServiceResult::failure(1, "cannot build feature cache after color ordering");
     }
     auto cacheSec = std::chrono::duration_cast<Ms>(
         std::chrono::steady_clock::now() - tCacheStart).count() / 1000.0;
