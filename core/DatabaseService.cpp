@@ -20,7 +20,7 @@ DatabaseStatsResult DatabaseService::stats(const DatabaseRequest& request) const
     Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (!db.isOpen())
     {
-        out.status = ServiceResult::failure(2, db.error());
+        out.status = ServiceResult::failure(2, "cannot open database: " + request.dbPath);
         return out;
     }
 
@@ -89,7 +89,7 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
     Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (!db.isOpen())
     {
-        out.status = ServiceResult::failure(2, db.error());
+        out.status = ServiceResult::failure(2, "cannot open database: " + request.dbPath);
         return out;
     }
 
@@ -177,7 +177,7 @@ DatabaseUsageResult DatabaseService::usage(const DatabaseUsageRequest& request) 
     Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (!db.isOpen())
     {
-        out.status = ServiceResult::failure(2, db.error());
+        out.status = ServiceResult::failure(2, "cannot open database: " + request.dbPath);
         return out;
     }
 
@@ -231,7 +231,7 @@ DatabaseUsageExportResult DatabaseService::exportUsage(const DatabaseUsageExport
     Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (!db.isOpen())
     {
-        out.status = ServiceResult::failure(2, db.error());
+        out.status = ServiceResult::failure(2, "cannot open database: " + request.dbPath);
         return out;
     }
 
@@ -326,7 +326,7 @@ DatabasePurgeResult DatabaseService::purge(const DatabasePurgeRequest& request) 
     Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (!db.isOpen())
     {
-        out.status = ServiceResult::failure(2, db.error());
+        out.status = ServiceResult::failure(2, "cannot open database: " + request.dbPath);
         return out;
     }
 

@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include <cstdint>
-#include <memory>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -12,8 +11,6 @@ struct sqlite3;
 
 namespace mosaicraft
 {
-
-class LibraryAccess;
 
 // ImageRecord — 图片在数据库中的一条完整记录。
 // 按特征分层设计：元数据 → 全局颜色 → 区域结构 → 纹理 → 语义。
@@ -65,13 +62,6 @@ struct ImageRecord
     int featureVersion = 0;         // 特征计算版本号，递增便于增量更新
 };
 
-struct ImageColorOrder
-{
-    std::string fileHash;
-    int version = 0;
-    std::int64_t key = 0;
-};
-
 // Database — SQLite 索引的 RAII 封装。
 // 只存索引指针和标量特征；大块数据（TinyImage / Histogram）存文件系统。
 class Database
@@ -81,8 +71,7 @@ public:
     enum class OpenMode
     {
         Create,
-        Existing,
-        Build
+        Existing
     };
     explicit Database(const std::string& dbPath, OpenMode mode = OpenMode::Create);
     ~Database();
@@ -93,14 +82,6 @@ public:
 
     // 是否成功打开
     bool isOpen() const;
-    const std::string& path() const
-    {
-        return m_path;
-    }
-    const std::string& error() const
-    {
-        return m_error;
-    }
 
     // 首次使用时建表（幂等）；若旧表缺少列则自动迁移
     bool createTables();
@@ -109,11 +90,6 @@ public:
 
     // 插入一条记录；若 file_path 已存在则忽略（UNIQUE 约束）
     bool insertImage(const ImageRecord& rec);
-
-    // 颜色浏览缓存不参与马赛克匹配；路径更新只修改指定 ID 的位置。
-    std::unordered_map<int, ImageColorOrder> imageColorOrders();
-    bool saveImageColorOrder(int id, const ImageColorOrder& color);
-    bool updateImagePath(int id, const std::string& oldPath, const std::string& newPath);
 
     // 删除单条记录（db-purge 用）
     bool removeImage(int id);
@@ -154,9 +130,6 @@ public:
 
 private:
     sqlite3* m_db;
-    std::unique_ptr<LibraryAccess> m_access;
-    std::string m_path;
-    std::string m_error;
 
     // 执行无结果集 SQL（CREATE / INSERT / DELETE）
     bool exec(const std::string& sql);
@@ -164,16 +137,7 @@ private:
 public:
     // 事务控制
     bool beginTransaction() { return exec("BEGIN TRANSACTION"); }
-    // 路径事务先持久化 WAL，提交后才能移除文件系统恢复清单。
-    bool beginImmediateTransaction()
-    {
-        return exec("PRAGMA synchronous=FULL") && exec("BEGIN IMMEDIATE");
-    }
     bool commitTransaction() { return exec("COMMIT"); }
-    bool rollbackTransaction()
-    {
-        return exec("ROLLBACK");
-    }
 private:
 
     // 检查某列是否存在

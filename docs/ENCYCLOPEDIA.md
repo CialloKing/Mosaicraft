@@ -700,11 +700,3 @@ v1.13.10 是一次发布可追溯性修正版本。v1.13.9 发布后，源码继
 PNG 使用有界多行 RGB 转换及写入；过滤器、压缩等级和每 1000 行刷新策略保持不变。`--benchmark` 增加邻域惩罚、排序、分析、加载、转换、写入、等待与缓存统计；工作线程加载时间是累加时间，不与墙钟总耗时相加。基准脚本新增 `--analysis-mode off|on|both`，默认分别采样普通生成和分析模式。性能数据及验收边界见 `docs/PERFORMANCE_v1.14.1.md`。
 
 > **EN**: Version 1.14.1 preserves matching rules and public defaults. Bounded neighbor comparisons, candidate feature buffers, usage-aware image caching and multirow PNG output reduce repeated work. PNG filters, compression and flush boundaries remain unchanged. Benchmark output separates normal generation from analysis overhead; the performance report records measured results and limitations.
-
-### 未发布更新：全库主色排序 (2026-10-12)
-
-建库默认根据 32×32 缩略图的主色排列全部已索引图片，从 `000000` 连续编号，保留扩展名。灰度图片由黑到白，彩色按色相分区并交替明暗排列。普通、重复、追加及同目录建库均执行全库重排；仅归一化模式保持原行为。颜色排序缓存独立于 v6 匹配特征，按图片 ID、内容哈希和算法版本复用。
-
-两阶段重命名、数据库路径事务、持久化恢复清单和跨进程图库锁共同保护图片与索引。图片 ID、使用统计及特征引用保持稳定，新特征文件使用内容哈希命名。未索引的冲突文件不会被覆盖，已索引图片跨卷移动会失败。实际验证和样本耗时见 [颜色排序验证](COLOR_ORDER_VERIFICATION.md)。
-
-> **EN**: Unreleased builds now order the whole library by dominant color and renumber indexed files after appends. Independent color metadata, stable image IDs and feature names, operation locks and recoverable two-phase renames preserve library integrity. See the verification record for CPU/CUDA checks and sample timings.

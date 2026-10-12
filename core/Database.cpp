@@ -1,8 +1,6 @@
 ﻿#include "Database.h"
 
 #include <sqlite3.h>
-#include "LibraryAccess.h"
-#include "UnicodeIO.h"
 
 #include <cstring>
 #include <iostream>
@@ -21,36 +19,13 @@ namespace mosaicraft
 Database::Database(const std::string& dbPath, OpenMode mode)
     : m_db(nullptr)
 {
-    std::error_code pathError;
-    m_path = pathToUtf8(std::filesystem::weakly_canonical(u8path(dbPath), pathError));
-    if (pathError || (mode == OpenMode::Existing && !std::filesystem::is_regular_file(u8path(m_path), pathError)))
-    {
-        m_error = "database file does not exist: " + dbPath;
-        return;
-    }
-    m_access = std::make_unique<LibraryAccess>(m_path, mode == OpenMode::Build);
-    if (!m_access->acquired())
-    {
-        m_error = "library is busy or its operation lock cannot be opened: " + dbPath;
-        std::cerr << m_error << std::endl;
-        m_access.reset();
-        return;
-    }
-    if (mode != OpenMode::Build && std::filesystem::exists(libraryJournalPath(m_path)))
-    {
-        m_error = "unfinished color reorder; run build to recover: " + dbPath;
-        std::cerr << m_error << std::endl;
-        m_access.reset();
-        return;
-    }
     // SQLITE_OPEN_CREATE: 文件不存在时自动创建
     // SQLITE_OPEN_READWRITE: 读写模式
-    int rc = sqlite3_open_v2(m_path.c_str(), &m_db,
-                              SQLITE_OPEN_READWRITE | (mode != OpenMode::Existing ? SQLITE_OPEN_CREATE : 0),
+    int rc = sqlite3_open_v2(dbPath.c_str(), &m_db,
+                              SQLITE_OPEN_READWRITE | (mode == OpenMode::Create ? SQLITE_OPEN_CREATE : 0),
                               nullptr);
     if (rc != SQLITE_OK)
     {
-        m_error = sqlite3_errmsg(m_db);
         std::cerr << "Database open error: " << sqlite3_errmsg(m_db) << std::endl;
         sqlite3_close(m_db);
         m_db = nullptr;
@@ -90,7 +65,6 @@ Database::Database(const std::string& dbPath, OpenMode mode)
     }
     if (!valid)
     {
-        m_error = "invalid database: " + dbPath;
         std::cerr << "ERROR: Invalid database: " << dbPath << " (" << sqlite3_errmsg(m_db) << ")" << std::endl;
         sqlite3_close(m_db);
         m_db = nullptr;
@@ -180,13 +154,6 @@ bool Database::createTables()
         CREATE TABLE IF NOT EXISTS meta (
             key   TEXT PRIMARY KEY,
             value TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS image_color_order (
-            image_id INTEGER PRIMARY KEY REFERENCES images(id) ON DELETE CASCADE,
-            file_hash TEXT NOT NULL,
-            version INTEGER NOT NULL,
-            sort_key INTEGER NOT NULL
         );
     )SQL";
 
@@ -354,62 +321,6 @@ bool Database::insertImage(const ImageRecord& rec)
         return false;
     }
     return true;
-}
-
-std::unordered_map<int, ImageColorOrder> Database::imageColorOrders()
-{
-    std::unordered_map<int, ImageColorOrder> colors;
-    sqlite3_stmt* statement = nullptr;
-    if (!m_db || sqlite3_prepare_v2(m_db,
-        "SELECT image_id,file_hash,version,sort_key FROM image_color_order",
-        -1, &statement, nullptr) != SQLITE_OK)
-    {
-        return colors;
-    }
-    while (sqlite3_step(statement) == SQLITE_ROW)
-    {
-        colors.emplace(sqlite3_column_int(statement, 0), ImageColorOrder{
-            reinterpret_cast<const char*>(sqlite3_column_text(statement, 1)),
-            sqlite3_column_int(statement, 2), sqlite3_column_int64(statement, 3)});
-    }
-    sqlite3_finalize(statement);
-    return colors;
-}
-
-bool Database::saveImageColorOrder(int id, const ImageColorOrder& color)
-{
-    sqlite3_stmt* statement = nullptr;
-    if (!m_db || sqlite3_prepare_v2(m_db,
-        "INSERT INTO image_color_order(image_id,file_hash,version,sort_key) VALUES(?,?,?,?) "
-        "ON CONFLICT(image_id) DO UPDATE SET file_hash=excluded.file_hash,"
-        "version=excluded.version,sort_key=excluded.sort_key", -1, &statement, nullptr) != SQLITE_OK)
-    {
-        return false;
-    }
-    sqlite3_bind_int(statement, 1, id);
-    sqlite3_bind_text(statement, 2, color.fileHash.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(statement, 3, color.version);
-    sqlite3_bind_int64(statement, 4, color.key);
-    const bool ok = sqlite3_step(statement) == SQLITE_DONE;
-    sqlite3_finalize(statement);
-    return ok;
-}
-
-bool Database::updateImagePath(int id, const std::string& oldPath, const std::string& newPath)
-{
-    sqlite3_stmt* statement = nullptr;
-    if (!m_db || sqlite3_prepare_v2(m_db,
-        "UPDATE images SET file_path=? WHERE id=? AND file_path=?",
-        -1, &statement, nullptr) != SQLITE_OK)
-    {
-        return false;
-    }
-    sqlite3_bind_text(statement, 1, newPath.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(statement, 2, id);
-    sqlite3_bind_text(statement, 3, oldPath.c_str(), -1, SQLITE_TRANSIENT);
-    const bool ok = sqlite3_step(statement) == SQLITE_DONE && sqlite3_changes(m_db) == 1;
-    sqlite3_finalize(statement);
-    return ok;
 }
 
 bool Database::removeImage(int id)
