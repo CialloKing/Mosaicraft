@@ -13,6 +13,10 @@
 #include "../core/InspectService.h"
 #include "../core/MosaicService.h"
 #include "../core/UnicodeIO.h"
+#include "../core/ColorOrder.h"
+#include "../core/LibraryColorOrder.h"
+#include "../core/LibraryAccess.h"
+#include "../core/json.hpp"
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
@@ -21,6 +25,7 @@
 #include <atomic>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -271,6 +276,150 @@ TEST_CASE("database maintenance rejects missing files and preserves usage integr
     REQUIRE(usage.size() == 1);
     CHECK(std::get<1>(usage[0]) == 1);
     CHECK(std::get<2>(usage[0]) == 4);
+}
+
+TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    const auto request = makeBuildRequest(workspace);
+    REQUIRE(BuildService().run(request).ok);
+    std::vector<ImageRecord> records;
+    {
+        Database database(request.dbPath);
+        records = database.allRecords();
+    }
+    const std::string token = "112233";
+    const auto staging = workspace.libraryDir() / (".mosaicraft-color-order-" + token);
+    fs::create_directory(staging);
+    nlohmann::json journal = {{"version", 1}, {"database", utf8(fs::weakly_canonical(workspace.dbPath()))},
+        {"token", token}, {"output", utf8(workspace.libraryDir())}, {"staging", utf8(staging)},
+        {"phase", "staging"}, {"entries", nlohmann::json::array()}};
+    for (int i = 0; i < 2; ++i)
+    {
+        journal["entries"].push_back({{"id", records[i].id}, {"old_db_path", records[i].filePath},
+            {"original", records[i].filePath}, {"final", records[1 - i].filePath},
+            {"temporary", utf8(staging / (std::to_string(records[i].id) + ".stage"))},
+            {"hash", records[i].fileHash}, {"size", fs::file_size(u8path(records[i].filePath))}});
+    }
+    bool committed = false;
+    SUBCASE("interrupted staging")
+    {
+        fs::rename(u8path(records[0].filePath), u8path(journal["entries"][0]["temporary"].get<std::string>()));
+    }
+    SUBCASE("interrupted publishing")
+    {
+        for (const auto& entry : journal["entries"])
+        {
+            fs::rename(u8path(entry["original"].get<std::string>()), u8path(entry["temporary"].get<std::string>()));
+        }
+        const auto& first = journal["entries"][0];
+        fs::rename(u8path(first["temporary"].get<std::string>()), u8path(first["final"].get<std::string>()));
+        journal["phase"] = "publishing";
+    }
+    SUBCASE("interrupted rollback")
+    {
+        const auto& second = journal["entries"][1];
+        fs::rename(u8path(second["original"].get<std::string>()), u8path(second["temporary"].get<std::string>()));
+        journal["phase"] = "restoring";
+    }
+    SUBCASE("committed before journal cleanup")
+    {
+        Database database(request.dbPath, Database::OpenMode::Build);
+        REQUIRE(database.isOpen());
+        REQUIRE(database.beginImmediateTransaction());
+        for (const auto& entry : journal["entries"])
+        {
+            fs::rename(u8path(entry["original"].get<std::string>()), u8path(entry["temporary"].get<std::string>()));
+            REQUIRE(database.updateImagePath(entry["id"], entry["old_db_path"], entry["temporary"]));
+        }
+        for (const auto& entry : journal["entries"])
+        {
+            fs::rename(u8path(entry["temporary"].get<std::string>()), u8path(entry["final"].get<std::string>()));
+            REQUIRE(database.updateImagePath(entry["id"], entry["temporary"], entry["final"]));
+        }
+        REQUIRE(database.setMeta("color_order_batch", token));
+        REQUIRE(database.commitTransaction());
+        journal["phase"] = "publishing";
+        committed = true;
+    }
+    {
+        std::ofstream output(libraryJournalPath(request.dbPath));
+        output << journal;
+    }
+    {
+        Database blocked(request.dbPath, Database::OpenMode::Existing);
+        CHECK_FALSE(blocked.isOpen());
+        CHECK(blocked.error().find("unfinished color reorder") != std::string::npos);
+    }
+    std::string error;
+    {
+        Database database(request.dbPath, Database::OpenMode::Build);
+        REQUIRE(database.isOpen());
+        REQUIRE_MESSAGE(recoverLibraryColorOrder(database, error), error);
+        const auto restored = database.allRecords();
+        REQUIRE(restored.size() == records.size());
+        for (size_t i = 0; i < restored.size(); ++i)
+        {
+            CHECK(restored[i].id == records[i].id);
+            CHECK(restored[i].fileHash == records[i].fileHash);
+            CHECK(restored[i].tinyPath == records[i].tinyPath);
+            CHECK(fs::exists(u8path(restored[i].filePath)));
+            const auto originalIndex = committed && i < 2 ? 1 - i : i;
+            CHECK(restored[i].filePath == records[originalIndex].filePath);
+        }
+    }
+    CHECK_FALSE(fs::exists(staging));
+    CHECK_FALSE(fs::exists(libraryJournalPath(request.dbPath)));
+}
+
+TEST_CASE("color reorder handles occupied paths and releases library locks")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    const auto request = makeBuildRequest(workspace);
+    REQUIRE(BuildService().run(request).ok);
+    Database database(request.dbPath, Database::OpenMode::Build);
+    REQUIRE(database.isOpen());
+    Database blocked(request.dbPath, Database::OpenMode::Existing);
+    CHECK_FALSE(blocked.isOpen());
+    auto records = database.allRecords();
+    ColorOrderResult result;
+    std::string error;
+    SUBCASE("unindexed file is preserved")
+    {
+        const auto destination = workspace.outputDir();
+        requireWriteImage(destination / "000000.png", cv::Mat(32, 32, CV_8UC3, cv::Scalar(1, 2, 3)));
+        CHECK_FALSE(reorderLibraryByColor(database, utf8(destination), result, error));
+        CHECK(error.find("unindexed file") != std::string::npos);
+        CHECK(fs::exists(destination / "000000.png"));
+    }
+    SUBCASE("color cache and stable reordering")
+    {
+        REQUIRE_MESSAGE(reorderLibraryByColor(database, request.outputDir, result, error), error);
+        CHECK(result.computed == 10);
+        ColorOrderResult repeated;
+        REQUIRE_MESSAGE(reorderLibraryByColor(database, request.outputDir, repeated, error), error);
+        CHECK(repeated.computed == 0);
+        CHECK(repeated.renamed == 0);
+        CHECK(database.imageColorOrders().size() == 10);
+    }
+#ifdef _WIN32
+    SUBCASE("locked source rolls back already staged files")
+    {
+        const auto handle = CreateFileW(u8path(records[3].filePath).c_str(), GENERIC_READ,
+            FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+        REQUIRE(handle != INVALID_HANDLE_VALUE);
+        const bool reordered = reorderLibraryByColor(database, utf8(workspace.outputDir()), result, error);
+        CloseHandle(handle);
+        CHECK_FALSE(reordered);
+        CHECK_FALSE(fs::exists(libraryJournalPath(request.dbPath)));
+    }
+#endif
+    for (const auto& record : database.allRecords())
+    {
+        CHECK(fs::exists(u8path(record.filePath)));
+    }
 }
 
 TEST_CASE("mosaic validates dimensions formats and legacy grids before processing")

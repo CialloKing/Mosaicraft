@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -11,6 +12,8 @@ struct sqlite3;
 
 namespace mosaicraft
 {
+
+class LibraryAccess;
 
 // ImageRecord — 图片在数据库中的一条完整记录。
 // 按特征分层设计：元数据 → 全局颜色 → 区域结构 → 纹理 → 语义。
@@ -78,7 +81,8 @@ public:
     enum class OpenMode
     {
         Create,
-        Existing
+        Existing,
+        Build
     };
     explicit Database(const std::string& dbPath, OpenMode mode = OpenMode::Create);
     ~Database();
@@ -89,6 +93,8 @@ public:
 
     // 是否成功打开
     bool isOpen() const;
+    const std::string& path() const { return m_path; }
+    const std::string& error() const { return m_error; }
 
     // 首次使用时建表（幂等）；若旧表缺少列则自动迁移
     bool createTables();
@@ -142,6 +148,9 @@ public:
 
 private:
     sqlite3* m_db;
+    std::unique_ptr<LibraryAccess> m_access;
+    std::string m_path;
+    std::string m_error;
 
     // 执行无结果集 SQL（CREATE / INSERT / DELETE）
     bool exec(const std::string& sql);

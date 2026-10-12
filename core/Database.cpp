@@ -1,6 +1,8 @@
 ﻿#include "Database.h"
 
 #include <sqlite3.h>
+#include "LibraryAccess.h"
+#include "UnicodeIO.h"
 
 #include <cstring>
 #include <iostream>
@@ -19,10 +21,32 @@ namespace mosaicraft
 Database::Database(const std::string& dbPath, OpenMode mode)
     : m_db(nullptr)
 {
+    std::error_code pathError;
+    m_path = pathToUtf8(std::filesystem::weakly_canonical(u8path(dbPath), pathError));
+    if (pathError || (mode == OpenMode::Existing && !std::filesystem::is_regular_file(u8path(m_path))))
+    {
+        m_error = "database file does not exist: " + dbPath;
+        return;
+    }
+    m_access = std::make_unique<LibraryAccess>(m_path, mode == OpenMode::Build);
+    if (!m_access->acquired())
+    {
+        m_error = "library is busy or its operation lock cannot be opened: " + dbPath;
+        std::cerr << m_error << std::endl;
+        m_access.reset();
+        return;
+    }
+    if (mode != OpenMode::Build && std::filesystem::exists(libraryJournalPath(m_path)))
+    {
+        m_error = "unfinished color reorder; run build to recover: " + dbPath;
+        std::cerr << m_error << std::endl;
+        m_access.reset();
+        return;
+    }
     // SQLITE_OPEN_CREATE: 文件不存在时自动创建
     // SQLITE_OPEN_READWRITE: 读写模式
-    int rc = sqlite3_open_v2(dbPath.c_str(), &m_db,
-                              SQLITE_OPEN_READWRITE | (mode == OpenMode::Create ? SQLITE_OPEN_CREATE : 0),
+    int rc = sqlite3_open_v2(m_path.c_str(), &m_db,
+                              SQLITE_OPEN_READWRITE | (mode != OpenMode::Existing ? SQLITE_OPEN_CREATE : 0),
                               nullptr);
     if (rc != SQLITE_OK)
     {
