@@ -230,7 +230,8 @@ TEST_CASE("rebuilding preserves indexed files and source files")
     request.dbPath = utf8(workspace.root / "same.db");
     REQUIRE(BuildService().run(request).ok);
     REQUIRE(BuildService().run(request).ok);
-    CHECK(fs::exists(workspace.inputDir() / "tile_00.png"));
+    CHECK_FALSE(fs::exists(workspace.inputDir() / "tile_00.png"));
+    CHECK(fs::exists(workspace.inputDir() / "000000.png"));
     Database sourceDatabase(request.dbPath);
     CHECK(sourceDatabase.totalCount() == 10);
 }
@@ -397,7 +398,7 @@ TEST_CASE("color reorder handles occupied paths and releases library locks")
     SUBCASE("color cache and stable reordering")
     {
         REQUIRE_MESSAGE(reorderLibraryByColor(database, request.outputDir, result, error), error);
-        CHECK(result.computed == 10);
+        CHECK(result.computed == 0);
         ColorOrderResult repeated;
         REQUIRE_MESSAGE(reorderLibraryByColor(database, request.outputDir, repeated, error), error);
         CHECK(repeated.computed == 0);
@@ -420,6 +421,96 @@ TEST_CASE("color reorder handles occupied paths and releases library locks")
     {
         CHECK(fs::exists(u8path(record.filePath)));
     }
+}
+
+TEST_CASE("default color build and append keep bytes IDs usage and feature references")
+{
+    TempWorkspace workspace;
+    auto request = makeBuildRequest(workspace);
+    const auto input = workspace.inputDir() / u8path("颜色子目录");
+    fs::create_directory(input);
+    request.outputDir = utf8(workspace.root / u8path("渐变图库"));
+    request.dbPath = utf8(u8path(request.outputDir) / "mosaicraft.db");
+    request.recursive = true;
+    request.threads = 4;
+    requireWriteImage(input / "a_blue.png", cv::Mat(64, 36, CV_8UC3, cv::Scalar(255, 0, 0)));
+    requireWriteImage(input / "b_green.bmp", cv::Mat(64, 36, CV_8UC3, cv::Scalar(0, 255, 0)));
+    requireWriteImage(input / "z_red.jpg", cv::Mat(64, 36, CV_8UC3, cv::Scalar(0, 0, 255)));
+    REQUIRE(BuildService().run(request).ok);
+    auto bytes = [](const std::string& path)
+    {
+        std::ifstream input(u8path(path), std::ios::binary);
+        return std::vector<char>(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+    };
+    std::vector<ImageRecord> original;
+    std::unordered_map<int, std::vector<char>> originalBytes;
+    {
+        Database database(request.dbPath);
+        original = database.allRecords();
+        REQUIRE(original.size() == 3);
+        CHECK(fs::exists(u8path(request.outputDir) / "000000.jpg"));
+        CHECK(fs::exists(u8path(request.outputDir) / "000001.bmp"));
+        CHECK(fs::exists(u8path(request.outputDir) / "000002.png"));
+        REQUIRE(database.recordRunUsage({{original[0].id, 5}}, "target", "target.png"));
+        for (const auto& record : original)
+        {
+            originalBytes[record.id] = bytes(record.filePath);
+        }
+    }
+    requireWriteImage(input / "new_black.png", cv::Mat(64, 36, CV_8UC3, cv::Scalar(0, 0, 0)));
+    request.appendMode = true;
+    REQUIRE(BuildService().run(request).ok);
+    REQUIRE(BuildService().run(request).ok);
+    auto emptyAppend = request;
+    emptyAppend.inputDir = utf8(workspace.emptyInputDir());
+    REQUIRE(BuildService().run(emptyAppend).ok);
+    {
+        Database database(request.dbPath);
+        const auto records = database.allRecords();
+        REQUIRE(records.size() == 4);
+        CHECK(fs::exists(u8path(request.outputDir) / "000000.png"));
+        CHECK(fs::exists(u8path(request.outputDir) / "000001.jpg"));
+        CHECK(fs::exists(u8path(request.outputDir) / "000002.bmp"));
+        CHECK(fs::exists(u8path(request.outputDir) / "000003.png"));
+        CHECK(database.imageColorOrders().size() == 4);
+        const auto usage = database.topUsedImages();
+        REQUIRE(usage.size() == 1);
+        CHECK(std::get<0>(usage[0]) == original[0].id);
+        CHECK(std::get<1>(usage[0]) == 1);
+        CHECK(std::get<2>(usage[0]) == 5);
+        for (const auto& before : original)
+        {
+            const auto found = std::find_if(records.begin(), records.end(),
+                [&](const auto& record)
+                {
+                    return record.id == before.id;
+                });
+            REQUIRE(found != records.end());
+            CHECK(bytes(found->filePath) == originalBytes.at(before.id));
+            CHECK(found->fileHash == before.fileHash);
+            CHECK(found->tinyPath == before.tinyPath);
+            CHECK(found->histPath == before.histPath);
+            CHECK(found->grid4x4 == before.grid4x4);
+            CHECK(found->useCount == before.useCount);
+            CHECK(fs::exists(u8path(found->tinyPath)));
+            CHECK(fs::exists(u8path(found->histPath)));
+        }
+    }
+    CHECK(fs::exists(input / "z_red.jpg"));
+    writeTargetImage(workspace.targetPath());
+    auto mosaic = makeMosaicRequest(workspace);
+    mosaic.dbPath = request.dbPath;
+    REQUIRE(MosaicService().run(mosaic).ok);
+    REQUIRE_FALSE(imreadUnicode(utf8(workspace.mosaicPath())).empty());
+    auto normalized = request;
+    normalized.outputDir = utf8(workspace.root / "normalized");
+    fs::create_directory(u8path(normalized.outputDir));
+    normalized.dbPath = utf8(u8path(normalized.outputDir) / "mosaicraft.db");
+    normalized.normalizeOnly = true;
+    REQUIRE(BuildService().run(normalized).ok);
+    Database normalizedDatabase(normalized.dbPath);
+    CHECK(normalizedDatabase.totalCount() == 0);
+    CHECK(normalizedDatabase.imageColorOrders().empty());
 }
 
 TEST_CASE("mosaic validates dimensions formats and legacy grids before processing")

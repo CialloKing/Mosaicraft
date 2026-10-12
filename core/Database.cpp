@@ -23,7 +23,7 @@ Database::Database(const std::string& dbPath, OpenMode mode)
 {
     std::error_code pathError;
     m_path = pathToUtf8(std::filesystem::weakly_canonical(u8path(dbPath), pathError));
-    if (pathError || (mode == OpenMode::Existing && !std::filesystem::is_regular_file(u8path(m_path))))
+    if (pathError || (mode == OpenMode::Existing && !std::filesystem::is_regular_file(u8path(m_path), pathError)))
     {
         m_error = "database file does not exist: " + dbPath;
         return;
@@ -50,6 +50,7 @@ Database::Database(const std::string& dbPath, OpenMode mode)
                               nullptr);
     if (rc != SQLITE_OK)
     {
+        m_error = sqlite3_errmsg(m_db);
         std::cerr << "Database open error: " << sqlite3_errmsg(m_db) << std::endl;
         sqlite3_close(m_db);
         m_db = nullptr;
@@ -89,6 +90,7 @@ Database::Database(const std::string& dbPath, OpenMode mode)
     }
     if (!valid)
     {
+        m_error = "invalid database: " + dbPath;
         std::cerr << "ERROR: Invalid database: " << dbPath << " (" << sqlite3_errmsg(m_db) << ")" << std::endl;
         sqlite3_close(m_db);
         m_db = nullptr;

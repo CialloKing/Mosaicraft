@@ -158,7 +158,8 @@ private:
 public:
     // 事务控制
     bool beginTransaction() { return exec("BEGIN TRANSACTION"); }
-    bool beginImmediateTransaction() { return exec("BEGIN IMMEDIATE"); }
+    // 路径事务先持久化 WAL，提交后才能移除文件系统恢复清单。
+    bool beginImmediateTransaction() { return exec("PRAGMA synchronous=FULL") && exec("BEGIN IMMEDIATE"); }
     bool commitTransaction() { return exec("COMMIT"); }
     bool rollbackTransaction() { return exec("ROLLBACK"); }
 private:
