@@ -63,7 +63,7 @@ public:
         auto it = m_tiny.find(id);
         if (it != m_tiny.end()) { return &it->second; }
 
-        std::ifstream ifs(path, std::ios::binary);
+        std::ifstream ifs(u8path(path), std::ios::binary);
         if (!ifs.is_open()) { return nullptr; }
 
         std::vector<uint8_t> data(256);
@@ -79,7 +79,7 @@ public:
         auto it = m_lbp.find(id);
         if (it != m_lbp.end()) { return &it->second; }
 
-        std::ifstream ifs(path, std::ios::binary);
+        std::ifstream ifs(u8path(path), std::ios::binary);
         if (!ifs.is_open()) { return nullptr; }
 
         std::vector<float> data(256);
@@ -870,55 +870,18 @@ bool MosaicEngine::generate(const std::string& targetPath,
             h_use[i] = rec.useCount;
         }
 
-        // 尝试从特征缓存包加载（tiny.bin + lbp.bin），
-        // 缓存命中时仅需 2 次 fread，避免 50K 次独立文件 I/O
-        bool cacheLoaded = false;
-        if (!allRecords.empty() && !allRecords[0].tinyPath.empty())
-        {
-            std::vector<int> recordIds;
-            recordIds.reserve(dbCount);
-            for (const auto& r : allRecords)
-                recordIds.push_back(r.id);
-            cacheLoaded = FeaturePack::tryLoad(featDirCache, recordIds, h_tiny, h_lbp);
-        }
-
+        std::vector<int> needed(dbCount);
+        std::iota(needed.begin(), needed.end(), 0);
+        std::vector<uint8_t> tinyValid, lbpValid;
+        const bool cacheLoaded =
+            FeaturePack::load(featDirCache, allRecords, needed, h_tiny, h_lbp, tinyValid, lbpValid);
         if (!cacheLoaded)
         {
-            // 缓存未命中或失效时，回退到逐文件读取
-            std::cout << "  (feature cache miss, reading individual files)" << std::endl;
-            int nUploadThreads = std::thread::hardware_concurrency();
-            if (nUploadThreads < 2) nUploadThreads = 2;
-            if (nUploadThreads > 16) nUploadThreads = 16;  // 限制 I/O 线程数，避免磁盘争抢
-            std::vector<std::thread> uploadWorkers;
-            for (int t = 0; t < nUploadThreads; ++t)
-            {
-                uploadWorkers.emplace_back([&, t]() {
-                    FeatureCache cache;  // 每线程独立缓存，避免锁竞争
-                    for (int i = t; i < dbCount; i += nUploadThreads)
-                    {
-                        const auto& rec = allRecords[i];
-                        if (!rec.tinyPath.empty())
-                        {
-                            auto* td = cache.loadTiny(rec.id, rec.tinyPath);
-                            if (td) std::memcpy(&h_tiny[i*256], td->data(), 256);
-                        }
-                        if (!rec.histPath.empty())
-                        {
-                            auto* ld = cache.loadLBP(rec.id, rec.histPath);
-                            if (ld) std::memcpy(&h_lbp[i*256], ld->data(), 256*sizeof(float));
-                        }
-                    }
-                });
-            }
-            for (auto& w : uploadWorkers) w.join();
-
-            // 构建特征缓存包供后续使用，避免下次重复逐文件读取
-            if (!featDirCache.empty())
-                FeaturePack::buildCache(featDirCache, allRecords);
+            std::cout << "  (validated feature cache miss, using source files)" << std::endl;
         }
-        if (cuda::uploadLibrary(gpuLib, h_lab.data(), h_grid.data(),
-                                 h_tiny.data(), h_edge.data(),
-                                 h_lbp.data(), h_use.data(), dbCount, cfg.benchmark ? &libraryTimings : nullptr))
+        if (cuda::uploadLibrary(gpuLib, h_lab.data(), h_grid.data(), h_tiny.data(), h_edge.data(), h_lbp.data(),
+                                h_use.data(), dbCount, cfg.benchmark ? &libraryTimings : nullptr, tinyValid.data(),
+                                lbpValid.data()))
         {
             std::cout << "GPU library: " << dbCount << " images ("
                       << (dbCount * (192*4+256+256*4) / 1024) << " KB)" << std::endl;

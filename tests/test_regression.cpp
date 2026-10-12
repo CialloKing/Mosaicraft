@@ -844,14 +844,18 @@ TEST_CASE("usage cache releases final references and shares loading failures")
     }
 }
 
-TEST_CASE("candidate features validate old packs source changes corruption and missing data")
+TEST_CASE("feature generations validate sources legacy caches corruption and publication failure")
 {
     TempWorkspace workspace;
-    const auto dir = utf8(workspace.inputDir());
+    const auto folder = workspace.inputDir() / u8path("中文特征");
+    fs::create_directory(folder);
+    const auto dir = utf8(folder);
     std::vector<ImageRecord> records(3);
     for (int i = 0; i < 3; ++i)
     {
         records[i].id = i * 7 + 1;
+        records[i].featureVersion = 6;
+        records[i].fileHash = "image-" + std::to_string(i);
         records[i].tinyPath = dir + "/" + std::to_string(i) + ".tiny";
         records[i].histPath = dir + "/" + std::to_string(i) + ".hist";
         std::vector<uint8_t> tiny(256, static_cast<uint8_t>(i + 1));
@@ -861,21 +865,37 @@ TEST_CASE("candidate features validate old packs source changes corruption and m
         std::ofstream l(u8path(records[i].histPath), std::ios::binary);
         l.write(reinterpret_cast<const char *>(lbp.data()), 1024);
     }
-    REQUIRE(FeaturePack::buildCache(dir, records));
-    std::vector<uint8_t> packedTiny;
-    std::vector<float> packedLbp;
-    CHECK_FALSE(FeaturePack::tryLoad(dir, {1, 8, 999}, packedTiny, packedLbp));
-    CHECK_FALSE(FeaturePack::tryLoad(dir, {1, 1, 15}, packedTiny, packedLbp));
+    const auto manifestPath = folder / "features.pack";
+    auto publishedPath = [&](const char *suffix)
+    {
+        std::ifstream manifest(manifestPath);
+        std::string magic, generation;
+        int version;
+        manifest >> magic >> version >> generation;
+        return folder / ("features-" + generation + suffix);
+    };
+    // Unverified v2 bytes cannot override refreshed source files with the same IDs.
+    {
+        uint32_t count = 3;
+        std::ofstream old(folder / "tiny.bin", std::ios::binary);
+        old.write(reinterpret_cast<const char *>(&count), 4);
+        for (const auto &record : records)
+        {
+            std::array<uint8_t, 256> zero{};
+            old.write(reinterpret_cast<const char *>(&record.id), 4);
+            old.write(reinterpret_cast<const char *>(zero.data()), 256);
+        }
+    }
     const std::vector<int> needed{2, 0, 2};
-    CandidateFeatures migrated(records, needed, dir);
-    CHECK(migrated.hasTiny(2));
-    CHECK(migrated.tiny(2)[0] == 3);
-    CHECK(fs::exists(workspace.inputDir() / "features.meta"));
+    CandidateFeatures legacy(records, needed, dir);
+    CHECK(legacy.tiny(2)[0] == 3);
+    REQUIRE(FeaturePack::buildCache(dir, records));
+    const auto oldGeneration = publishedPath(".tiny.bin");
     CandidateFeatures cached(records, needed, dir);
-    CHECK(cached.tiny(2)[0] == 3);
+    CHECK(cached.hasTiny(2));
     CHECK(cached.lbp(0)[0] == 0.25f);
     {
-        std::fstream pack(workspace.inputDir() / "tiny.bin", std::ios::binary | std::ios::in | std::ios::out);
+        std::fstream pack(oldGeneration, std::ios::binary | std::ios::in | std::ios::out);
         pack.seekp(8);
         pack.put(99);
     }
@@ -886,14 +906,32 @@ TEST_CASE("candidate features validate old packs source changes corruption and m
         std::ofstream file(u8path(records[2].tinyPath), std::ios::binary);
         file.write(reinterpret_cast<const char *>(changed.data()), 256);
     }
-    fs::last_write_time(u8path(records[2].tinyPath), fs::file_time_type::clock::now() + std::chrono::seconds(1));
+    ++records[2].featureVersion;
+    REQUIRE(FeaturePack::buildCache(dir, records));
+    CandidateFeatures refreshed(records, needed, dir);
+    CHECK(refreshed.tiny(2)[0] == 42);
+    CHECK(fs::exists(oldGeneration));
+#ifdef _WIN32
+    const auto generationBefore = publishedPath(".tiny.bin");
+    HANDLE blocker = CreateFileW(manifestPath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                                 FILE_ATTRIBUTE_NORMAL, nullptr);
+    REQUIRE(blocker != INVALID_HANDLE_VALUE);
+    const bool published = FeaturePack::buildCache(dir, records);
+    CloseHandle(blocker);
+    CHECK_FALSE(published);
+    CHECK(publishedPath(".tiny.bin") == generationBefore);
+#endif
+    // A complete but unpublished generation is ignored after an interrupted writer.
+    std::ofstream interrupted(folder / "features-123-456.tiny.bin");
+    interrupted << "partial";
+    interrupted.close();
     fs::remove(u8path(records[0].histPath));
     fs::resize_file(u8path(records[0].tinyPath), 5);
-    CandidateFeatures changed(records, needed, dir);
-    CHECK(changed.tiny(2)[0] == 42);
-    CHECK_FALSE(changed.hasTiny(0));
-    CHECK_FALSE(changed.hasLbp(0));
-    fs::resize_file(workspace.inputDir() / "lbp.bin", 5);
+    CandidateFeatures missing(records, needed, dir);
+    CHECK(missing.tiny(2)[0] == 42);
+    CHECK_FALSE(missing.hasTiny(0));
+    CHECK_FALSE(missing.hasLbp(0));
+    fs::resize_file(publishedPath(".lbp.bin"), 5);
     CandidateFeatures truncated(records, needed, dir);
     CHECK(truncated.tiny(2)[0] == 42);
     CHECK_FALSE(truncated.hasLbp(0));

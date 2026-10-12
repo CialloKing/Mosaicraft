@@ -1,7 +1,10 @@
 #include "core/CandidateFeatures.h"
+#include "core/UnicodeIO.h"
+#include <chrono>
+#include <fstream>
 #include <iostream>
+#include <numeric>
 #include <sstream>
-#include <unordered_set>
 
 using namespace mosaicraft;
 
@@ -16,32 +19,8 @@ int main(int argc, char **argv)
     Database database(argv[1]);
     const auto records = database.allRecords();
     const std::string directory = argv[2];
-    std::ifstream metadata(u8path(directory + "/features.meta"));
-    std::string line;
-    std::getline(metadata, line);
-    std::unordered_set<int> wanted;
-    while (std::getline(metadata, line))
-    {
-        std::istringstream row(line);
-        int id;
-        if (row >> id)
-        {
-            wanted.insert(id);
-        }
-    }
-    std::vector<int> candidates;
-    for (size_t i = 0; i < records.size(); ++i)
-    {
-        if (wanted.count(records[i].id))
-        {
-            candidates.push_back(static_cast<int>(i));
-        }
-    }
-    if (candidates.empty())
-    {
-        std::cerr << "No validated candidates; run a fixed CPU workload first.\n";
-        return 1;
-    }
+    std::vector<int> candidates(records.size());
+    std::iota(candidates.begin(), candidates.end(), 0);
     std::cout << "candidates=" << candidates.size() << '\n';
     uint64_t expected = 0;
     for (int run = 0; run < 4; ++run)
@@ -69,7 +48,8 @@ int main(int argc, char **argv)
                 for (int index : candidates)
                 {
                     const auto &record = records[index];
-                    std::ifstream t(record.tinyPath, std::ios::binary), l(record.histPath, std::ios::binary);
+                    std::ifstream t(u8path(record.tinyPath), std::ios::binary),
+                        l(u8path(record.histPath), std::ios::binary);
                     std::vector<uint8_t> td(256);
                     std::vector<float> ld(256);
                     if (t.read(reinterpret_cast<char *>(td.data()), 256) &&

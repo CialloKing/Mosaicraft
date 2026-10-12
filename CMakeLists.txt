@@ -115,6 +115,7 @@ add_library(mosaicraft_core STATIC
     core/Database.cpp
     core/DatabaseService.cpp
     core/FeatureExtractor.cpp
+    core/FeaturePack.cpp
     core/InspectService.cpp
     core/JobManager.cpp
     core/LegacyRun.cpp

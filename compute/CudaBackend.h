@@ -46,11 +46,14 @@ struct GpuLibrary
     double *d_edge = nullptr;
     float *d_lbp = nullptr;
     int *d_use = nullptr;
+    std::uint8_t *d_tinyValid = nullptr;
+    std::uint8_t *d_lbpValid = nullptr;
     int count = 0;
 };
 
 bool uploadLibrary(GpuLibrary &lib, const double *h_lab, const float *h_grid, const std::uint8_t *h_tiny,
-                   const double *h_edge, const float *h_lbp, const int *h_use, int N, GpuTimings *timings = nullptr);
+                   const double *h_edge, const float *h_lbp, const int *h_use, int N, GpuTimings *timings = nullptr,
+                   const std::uint8_t *tinyValid = nullptr, const std::uint8_t *lbpValid = nullptr);
 void freeLibrary(GpuLibrary &lib);
 
 int matchAgainstLibrary(double tL, double tA, double tB, const float *tileGrid, const std::uint8_t *tileTiny,

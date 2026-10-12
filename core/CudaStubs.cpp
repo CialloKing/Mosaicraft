@@ -20,7 +20,7 @@ bool isCudaAvailable()
 }
 
 bool uploadLibrary(GpuLibrary &, const double *, const float *, const std::uint8_t *, const double *, const float *,
-                   const int *, int, GpuTimings*)
+                   const int *, int, GpuTimings *, const std::uint8_t *, const std::uint8_t *)
 {
     return false;
 }

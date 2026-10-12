@@ -69,24 +69,17 @@ __device__ const double kGridWeight[64] = {
 
 __global__ void scoreKernel(
     // tile
-    double tL, double tA, double tB,
-    const float* __restrict__ tileGrid,
-    const std::uint8_t* __restrict__ tileTiny,
-    double tileEdge,
-    const float* __restrict__ tileLBP,
+    double tL, double tA, double tB, const float *__restrict__ tileGrid, const std::uint8_t *__restrict__ tileTiny,
+    double tileEdge, const float *__restrict__ tileLBP,
     // candidates (device arrays)
-    const double* __restrict__ d_candLAB,
-    const float* __restrict__ d_candGrid,
-    const std::uint8_t* __restrict__ d_candTiny,
-    const double* __restrict__ d_candEdge,
-    const float* __restrict__ d_candLBP,
-    const int* __restrict__ d_candUseCount,
-    int numCandidates,
+    const double *__restrict__ d_candLAB, const float *__restrict__ d_candGrid,
+    const std::uint8_t *__restrict__ d_candTiny, const double *__restrict__ d_candEdge,
+    const float *__restrict__ d_candLBP, const int *__restrict__ d_candUseCount,
+    const std::uint8_t *__restrict__ tinyValid, const std::uint8_t *__restrict__ lbpValid, int numCandidates,
     // weights
-    double labW, double gridW, double tinyW, double edgeW, double lbpW,
-    double usePenalty,
+    double labW, double gridW, double tinyW, double edgeW, double lbpW, double usePenalty,
     // output
-    double* __restrict__ d_scores)
+    double *__restrict__ d_scores)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= numCandidates)
@@ -125,7 +118,8 @@ __global__ void scoreKernel(
     }
 
     // --- TinyImage MSE ---
-    double tinyDist = 0.0;
+    double tinyDist = 1.0;
+    if (!tinyValid || tinyValid[idx])
     {
         const std::uint8_t* candTiny = d_candTiny + idx * 256;
         double sum = 0.0;
@@ -143,7 +137,8 @@ __global__ void scoreKernel(
     double edgeDist = fabs(tileEdge - d_candEdge[idx]);
 
     // --- LBP distance (L1 / 2) ---
-    double lbpDist = 0.0;
+    double lbpDist = 1.0;
+    if (!lbpValid || lbpValid[idx])
     {
         const float* candLBP = d_candLBP + idx * 256;
         double sum = 0.0;
@@ -171,27 +166,18 @@ __global__ void scoreKernel(
 // ============================================================
 __global__ void scoreIndexedKernel(
     // tile 特征
-    double tL, double tA, double tB,
-    const float* __restrict__ tileGrid,
-    const std::uint8_t* __restrict__ tileTiny,
-    double tileEdge,
-    const float* __restrict__ tileLBP,
+    double tL, double tA, double tB, const float *__restrict__ tileGrid, const std::uint8_t *__restrict__ tileTiny,
+    double tileEdge, const float *__restrict__ tileLBP,
     // 常驻库数组（全量，按索引跳转访问）
-    const double* __restrict__ libLAB,
-    const float* __restrict__ libGrid,
-    const std::uint8_t* __restrict__ libTiny,
-    const double* __restrict__ libEdge,
-    const float* __restrict__ libLBP,
-    const int* __restrict__ libUseCount,
+    const double *__restrict__ libLAB, const float *__restrict__ libGrid, const std::uint8_t *__restrict__ libTiny,
+    const double *__restrict__ libEdge, const float *__restrict__ libLBP, const int *__restrict__ libUseCount,
+    const std::uint8_t *__restrict__ libTinyValid, const std::uint8_t *__restrict__ libLbpValid,
     // 候选索引
-    const int* __restrict__ indices,
-    int N,
-    int libCount,
+    const int *__restrict__ indices, int N, int libCount,
     // 权重
-    double labW, double gridW, double tinyW, double edgeW, double lbpW,
-    double usePenalty,
+    double labW, double gridW, double tinyW, double edgeW, double lbpW, double usePenalty,
     // 输出：N 个评分
-    double* __restrict__ d_scores)
+    double *__restrict__ d_scores)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= N)
@@ -229,7 +215,8 @@ __global__ void scoreIndexedKernel(
     }
 
     // --- TinyImage MSE ---
-    double tinyDist = 0.0;
+    double tinyDist = 1.0;
+    if (!libTinyValid || libTinyValid[libIdx])
     {
         const std::uint8_t* candTiny = libTiny + libIdx * 256;
         double sum = 0.0;
@@ -246,7 +233,8 @@ __global__ void scoreIndexedKernel(
     double edgeDist = fabs(tileEdge - libEdge[libIdx]);
 
     // --- LBP distance ---
-    double lbpDist = 0.0;
+    double lbpDist = 1.0;
+    if (!libLbpValid || libLbpValid[libIdx])
     {
         const float* candLBP = libLBP + libIdx * 256;
         double sum = 0.0;
@@ -273,34 +261,28 @@ __global__ void scoreIndexedKernel(
 // GPU kernel: 批量评分 — 一次 kernel 处理全部 tile × N 候选
 // 消除逐 tile 启动 kernel 的巨大开销（38k 次 → 1 次）
 // ============================================================
-__global__ void scoreBatchKernel(
-    int totalTiles,
-    const double* __restrict__ tileL,     // [totalTiles]
-    const double* __restrict__ tileA,
-    const double* __restrict__ tileB,
-    const float* __restrict__ tileGrid,   // [totalTiles * 192]
-    const std::uint8_t* __restrict__ tileTiny, // [totalTiles * 256]
-    const double* __restrict__ tileEdge,   // [totalTiles]
-    const float* __restrict__ tileLBP,     // [totalTiles * 256]
-    const int* __restrict__ indices,       // [totalTiles * N] 库索引，-1 表示无效
-    int N,
-    // 常驻库
-    const double* __restrict__ libLAB,
-    const float* __restrict__ libGrid,
-    const std::uint8_t* __restrict__ libTiny,
-    const double* __restrict__ libEdge,
-    const float* __restrict__ libLBP,
-    const int* __restrict__ libUseCount,
-    int libCount,
-    // 权重（每 tile 独立，支持自适应）
-    const double* __restrict__ tileLabW,   // [totalTiles]
-    const double* __restrict__ tileGridW,
-    const double* __restrict__ tileTinyW,
-    const double* __restrict__ tileEdgeW,
-    const double* __restrict__ tileLbpW,
-    double usePenalty,
-    // 输出：[totalTiles * N]
-    double* __restrict__ d_scores)
+__global__ void scoreBatchKernel(int totalTiles,
+                                 const double *__restrict__ tileL, // [totalTiles]
+                                 const double *__restrict__ tileA, const double *__restrict__ tileB,
+                                 const float *__restrict__ tileGrid,        // [totalTiles * 192]
+                                 const std::uint8_t *__restrict__ tileTiny, // [totalTiles * 256]
+                                 const double *__restrict__ tileEdge,       // [totalTiles]
+                                 const float *__restrict__ tileLBP,         // [totalTiles * 256]
+                                 const int *__restrict__ indices,           // [totalTiles * N] 库索引，-1 表示无效
+                                 int N,
+                                 // 常驻库
+                                 const double *__restrict__ libLAB, const float *__restrict__ libGrid,
+                                 const std::uint8_t *__restrict__ libTiny, const double *__restrict__ libEdge,
+                                 const float *__restrict__ libLBP, const int *__restrict__ libUseCount,
+                                 const std::uint8_t *__restrict__ libTinyValid,
+                                 const std::uint8_t *__restrict__ libLbpValid, int libCount,
+                                 // 权重（每 tile 独立，支持自适应）
+                                 const double *__restrict__ tileLabW, // [totalTiles]
+                                 const double *__restrict__ tileGridW, const double *__restrict__ tileTinyW,
+                                 const double *__restrict__ tileEdgeW, const double *__restrict__ tileLbpW,
+                                 double usePenalty,
+                                 // 输出：[totalTiles * N]
+                                 double *__restrict__ d_scores)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int totalWork = totalTiles * N;
@@ -341,7 +323,8 @@ __global__ void scoreBatchKernel(
     }
 
     // --- TinyImage MSE ---
-    double tinyDist = 0.0;
+    double tinyDist = 1.0;
+    if (!libTinyValid || libTinyValid[libIdx])
     {
         const std::uint8_t* tTiny = tileTiny + tileIdx * 256;
         const std::uint8_t* cTiny = libTiny + libIdx * 256;
@@ -359,7 +342,8 @@ __global__ void scoreBatchKernel(
     double edgeDist = fabs(tileEdge[tileIdx] - libEdge[libIdx]);
 
     // --- LBP distance ---
-    double lbpDist = 0.0;
+    double lbpDist = 1.0;
+    if (!libLbpValid || libLbpValid[libIdx])
     {
         const float* tLBP = tileLBP + tileIdx * 256;
         const float* cLBP = libLBP + libIdx * 256;
@@ -415,13 +399,9 @@ int findBestMatch(
     int blockSize = 256;
     int gridSize = (numCandidates + blockSize - 1) / blockSize;
 
-    scoreKernel<<<gridSize, blockSize>>>(
-        tL, tA, tB,
-        tileGrid, tileTiny, tileEdge, tileLBP,
-        d_candLAB, d_candGrid, d_candTiny, d_candEdge, d_candLBP,
-        d_candUseCount, numCandidates,
-        labW, gridW, tinyW, edgeW, lbpW, usePenalty,
-        d_scores.get());
+    scoreKernel<<<gridSize, blockSize>>>(tL, tA, tB, tileGrid, tileTiny, tileEdge, tileLBP, d_candLAB, d_candGrid,
+                                         d_candTiny, d_candEdge, d_candLBP, d_candUseCount, nullptr, nullptr,
+                                         numCandidates, labW, gridW, tinyW, edgeW, lbpW, usePenalty, d_scores.get());
 
     if (!CUDA_OK(cudaGetLastError())) return -1;
     if (!CUDA_OK(cudaDeviceSynchronize())) return -1;
@@ -508,10 +488,9 @@ int matchOnGpu(
 // ============================================================
 // GPU 常驻图库
 // ============================================================
-bool uploadLibrary(GpuLibrary& lib,
-                   const double* h_lab, const float* h_grid,
-                   const std::uint8_t* h_tiny, const double* h_edge,
-                   const float* h_lbp, const int* h_use, int N, GpuTimings* timings)
+bool uploadLibrary(GpuLibrary &lib, const double *h_lab, const float *h_grid, const std::uint8_t *h_tiny,
+                   const double *h_edge, const float *h_lbp, const int *h_use, int N, GpuTimings *timings,
+                   const std::uint8_t *tinyValid, const std::uint8_t *lbpValid)
 {
     if (N <= 0) return false;
     lib.count = 0;  // 先清零，失败时 freeLibrary 不会释放垃圾指针
@@ -529,6 +508,14 @@ bool uploadLibrary(GpuLibrary& lib,
     CUDA_ALLOC(lib.d_edge, N * sizeof(double));
     CUDA_ALLOC(lib.d_lbp,  N * 256 * sizeof(float));
     CUDA_ALLOC(lib.d_use,  N * sizeof(int));
+    if (tinyValid)
+    {
+        CUDA_ALLOC(lib.d_tinyValid, static_cast<size_t>(N));
+    }
+    if (lbpValid)
+    {
+        CUDA_ALLOC(lib.d_lbpValid, static_cast<size_t>(N));
+    }
     }
     {
     PhaseTimer timer(timings ? &timings->uploadMs : nullptr);
@@ -538,6 +525,14 @@ bool uploadLibrary(GpuLibrary& lib,
     CUDA_UPLOAD(lib.d_edge, h_edge, N * sizeof(double));
     CUDA_UPLOAD(lib.d_lbp,  h_lbp,  N * 256 * sizeof(float));
     CUDA_UPLOAD(lib.d_use,  h_use,  N * sizeof(int));
+    if (tinyValid)
+    {
+        CUDA_UPLOAD(lib.d_tinyValid, tinyValid, static_cast<size_t>(N));
+    }
+    if (lbpValid)
+    {
+        CUDA_UPLOAD(lib.d_lbpValid, lbpValid, static_cast<size_t>(N));
+    }
     }
     lib.count = N;
     return true;
@@ -551,6 +546,16 @@ void freeLibrary(GpuLibrary& lib)
     if (lib.d_edge) { cudaFree(lib.d_edge); lib.d_edge = nullptr; }
     if (lib.d_lbp)  { cudaFree(lib.d_lbp);  lib.d_lbp  = nullptr; }
     if (lib.d_use)  { cudaFree(lib.d_use);  lib.d_use  = nullptr; }
+    if (lib.d_tinyValid)
+    {
+        cudaFree(lib.d_tinyValid);
+        lib.d_tinyValid = nullptr;
+    }
+    if (lib.d_lbpValid)
+    {
+        cudaFree(lib.d_lbpValid);
+        lib.d_lbpValid = nullptr;
+    }
     lib.count = 0;
 }
 
@@ -581,12 +586,10 @@ int matchAgainstLibrary(
 
     int blockSize = 256;
     int gridSize = (N + blockSize - 1) / blockSize;
-    scoreKernel<<<gridSize, blockSize>>>(
-        tL, tA, tB,
-        d_tileGrid.get(), d_tileTiny.get(), tileEdge, d_tileLBP.get(),
-        lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use, N,
-        labW, gridW, tinyW, edgeW, lbpW, usePenalty,
-        d_scores.get());
+    scoreKernel<<<gridSize, blockSize>>>(tL, tA, tB, d_tileGrid.get(), d_tileTiny.get(), tileEdge, d_tileLBP.get(),
+                                         lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use,
+                                         lib.d_tinyValid, lib.d_lbpValid, N, labW, gridW, tinyW, edgeW, lbpW,
+                                         usePenalty, d_scores.get());
 
     if (!CUDA_OK(cudaGetLastError())) return -1;
     if (!CUDA_OK(cudaDeviceSynchronize())) return -1;
@@ -645,11 +648,9 @@ void scoreIndices(
     int blockSize = 256;
     int gridSize = (N + blockSize - 1) / blockSize;
     scoreIndexedKernel<<<gridSize, blockSize>>>(
-        tL, tA, tB, d_tileGrid.get(), d_tileTiny.get(), tileEdge, d_tileLBP.get(),
-        lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use,
-        d_indices.get(), N,
-        lib.count,
-        labW, gridW, tinyW, edgeW, lbpW, usePenalty, d_scores.get());
+        tL, tA, tB, d_tileGrid.get(), d_tileTiny.get(), tileEdge, d_tileLBP.get(), lib.d_lab, lib.d_grid, lib.d_tiny,
+        lib.d_edge, lib.d_lbp, lib.d_use, lib.d_tinyValid, lib.d_lbpValid, d_indices.get(), N, lib.count, labW, gridW,
+        tinyW, edgeW, lbpW, usePenalty, d_scores.get());
 
     if (!CUDA_OK(cudaGetLastError())) return;
     if (!CUDA_OK(cudaDeviceSynchronize())) return;
@@ -688,11 +689,9 @@ int matchWithIndices(
     int gridSize = (N + blockSize - 1) / blockSize;
     // 使用索引化 kernel，仅对候选集评分，不遍历全库
     scoreIndexedKernel<<<gridSize, blockSize>>>(
-        tL, tA, tB, d_tileGrid.get(), d_tileTiny.get(), tileEdge, d_tileLBP.get(),
-        lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use,
-        d_indices.get(), N,
-        lib.count,
-        labW, gridW, tinyW, edgeW, lbpW, usePenalty, d_scores.get());
+        tL, tA, tB, d_tileGrid.get(), d_tileTiny.get(), tileEdge, d_tileLBP.get(), lib.d_lab, lib.d_grid, lib.d_tiny,
+        lib.d_edge, lib.d_lbp, lib.d_use, lib.d_tinyValid, lib.d_lbpValid, d_indices.get(), N, lib.count, labW, gridW,
+        tinyW, edgeW, lbpW, usePenalty, d_scores.get());
 
     if (!CUDA_OK(cudaGetLastError())) return -1;
     if (!CUDA_OK(cudaDeviceSynchronize())) return -1;
@@ -869,9 +868,9 @@ bool scoreBatch(
             const int blockSize = 256;
             const int gridSize = static_cast<int>((work + blockSize - 1) / blockSize);
             scoreBatchKernel<<<gridSize, blockSize>>>(
-                count, d_tileL, d_tileA, d_tileB, d_tileGrid, d_tileTiny, d_tileEdge, d_tileLBP,
-                d_indices, N, lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use, lib.count,
-                d_labW, d_gridW, d_tinyW, d_edgeW, d_lbpW, usePenalty, d_scores);
+                count, d_tileL, d_tileA, d_tileB, d_tileGrid, d_tileTiny, d_tileEdge, d_tileLBP, d_indices, N,
+                lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use, lib.d_tinyValid, lib.d_lbpValid,
+                lib.count, d_labW, d_gridW, d_tinyW, d_edgeW, d_lbpW, usePenalty, d_scores);
             if (!CUDA_OK(cudaGetLastError()) || !CUDA_OK(cudaDeviceSynchronize()))
             {
                 return false;

@@ -1394,4 +1394,11 @@ TEST_CASE("CUDA reuses feature workspace and scoring batches preserve scores")
     REQUIRE(score(batched, 2144 * 2)); // 两块一批，并覆盖最后不足一批的情况。
     CHECK(full == batched);
     CHECK_FALSE(score(batched, 1));
+    // 缺失特征应各贡献距离 1，而不是把零向量作为真实特征评分。
+    freeLibrary(library);
+    uint8_t valid[count] = {0, 1, 1, 1, 1};
+    REQUIRE(uploadLibrary(library, lab.data(), grid.data(), tiny.data(), edge.data(), lbp.data(), use, count,
+                          nullptr, valid, valid));
+    REQUIRE(score(batched, 256 * 1024 * 1024));
+    CHECK(batched[0] == doctest::Approx(0.41));
 }
