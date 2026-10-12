@@ -188,12 +188,15 @@ void validateJournal(Database& database, const Json& journal, bool committed)
         const int id = entry.at("id");
         const auto found = records.find(id);
         const auto original = absolutePath(entry.at("original").get<std::string>());
+        const auto oldDbPath = u8path(entry.at("old_db_path").get<std::string>());
+        const auto expectedOriginal = fs::weakly_canonical(oldDbPath.is_absolute() ? oldDbPath :
+            u8path(journal.at("working_directory").get<std::string>()) / oldDbPath);
         const auto final = absolutePath(entry.at("final").get<std::string>());
         const auto temporary = absolutePath(entry.at("temporary").get<std::string>());
         if (found == records.end() || !ids.insert(id).second ||
             !originals.insert(identity(original)).second || !destinations.insert(identity(final)).second ||
             final.parent_path() != root || temporary != staging / (std::to_string(id) + ".stage") ||
-            original != absolutePath(entry.at("old_db_path").get<std::string>()) ||
+            original != expectedOriginal ||
             found->second.filePath != entry.at(committed ? "final" : "old_db_path").get<std::string>() ||
             found->second.fileHash != entry.at("hash").get<std::string>())
         {
@@ -352,6 +355,7 @@ bool reorderLibraryByColor(Database& database, const std::string& outputDir,
         const auto token = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
         staging = root / (".mosaicraft-color-order-" + token);
         Json journal = {{"version", 1}, {"database", database.path()}, {"token", token},
+            {"working_directory", pathToUtf8(fs::current_path())},
             {"output", pathToUtf8(root)}, {"staging", pathToUtf8(staging)},
             {"phase", "staging"}, {"entries", Json::array()}};
         const int width = std::max(6, static_cast<int>(std::to_string(records.empty() ? 0 : records.size() - 1).size()));

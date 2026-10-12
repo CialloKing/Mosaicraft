@@ -308,6 +308,20 @@ TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
     {
         fs::rename(u8path(records[0].filePath), u8path(journal["entries"][0]["temporary"].get<std::string>()));
     }
+    SUBCASE("relative paths use the original working directory")
+    {
+        Database database(request.dbPath, Database::OpenMode::Build);
+        journal["working_directory"] = utf8(workspace.root);
+        for (size_t i = 0; i < 2; ++i)
+        {
+            const auto relative = utf8(fs::relative(u8path(records[i].filePath), workspace.root));
+            REQUIRE(database.updateImagePath(records[i].id, records[i].filePath, relative));
+            journal["entries"][i]["old_db_path"] = relative;
+            records[i].filePath = relative;
+        }
+        const auto& entry = journal["entries"][0];
+        fs::rename(u8path(entry["original"].get<std::string>()), u8path(entry["temporary"].get<std::string>()));
+    }
     SUBCASE("interrupted publishing")
     {
         for (const auto& entry : journal["entries"])
@@ -365,7 +379,8 @@ TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
             CHECK(restored[i].id == records[i].id);
             CHECK(restored[i].fileHash == records[i].fileHash);
             CHECK(restored[i].tinyPath == records[i].tinyPath);
-            CHECK(fs::exists(u8path(restored[i].filePath)));
+            const auto imagePath = u8path(restored[i].filePath);
+            CHECK(fs::exists(imagePath.is_absolute() ? imagePath : workspace.root / imagePath));
             const auto originalIndex = committed && i < 2 ? 1 - i : i;
             CHECK(restored[i].filePath == records[originalIndex].filePath);
         }
