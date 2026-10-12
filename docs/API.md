@@ -148,6 +148,12 @@ The API requires a local Host with the current port. Browser Origin must match t
 
 启动异步图库构建任务 / Starts an asynchronous library build job.
 
+默认对全库按主色排序并从 `000000` 连续编号，`appendMode: true` 也会重新排列旧图片。输入与输出同目录时也更改已索引原图的文件名。图片 ID、使用统计和图片内容保持不变；`normalizeOnly: true` 不执行全库重排。不增加新的请求字段。
+Builds order the entire library by dominant color and number files consecutively from `000000`, including append and same-directory builds. Image IDs, usage statistics and bytes are preserved. `normalizeOnly: true` skips reordering. No new request fields are required.
+
+同一图库的建库与读取、生成、维护通过文件锁协调。图库忙或存在未恢复的重命名清单时，数据库操作返回失败；用建库任务恢复后继续。目标被未索引文件占用或旧图库图片需要跨卷移动时，建库失败并保留已有图片。
+An operation lock coordinates builds with library readers and maintenance. Busy libraries and pending rename journals fail database operations; a build recovers pending renames. Unindexed destination conflicts and cross-volume moves of indexed images fail without overwriting existing images.
+
 ### `GET /api/jobs`
 
 列出已知任务 / Lists known jobs.

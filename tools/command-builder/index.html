@@ -226,8 +226,9 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <label><input type="checkbox" id="b-append"> 增量模式 --append</label>
       <label><input type="checkbox" id="b-recursive"> 递归扫描子目录 -r</label>
       <label><input type="checkbox" id="b-normonly"> 仅归一化 --normalize-only</label>
-      <label><input type="checkbox" id="b-force"> 跳过已有图库确认 -y（保留文件）</label>
+      <label><input type="checkbox" id="b-force"> 跳过已有图库确认 -y（按颜色重新编号）</label>
     </div>
+    <p class="hint">建库默认按主色排列全库，从 000000 连续编号。追加后旧编号可能改变；输入与输出同目录时，也会更改原文件名。可在 Windows 资源管理器中按名称升序查看颜色渐变。仅归一化模式不重排图库。</p>
   </div>
 </div>
 

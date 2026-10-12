@@ -22,6 +22,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include <chrono>
+#include <cctype>
 #include <atomic>
 #include <cstdio>
 #include <filesystem>
@@ -30,6 +31,7 @@
 #include <system_error>
 #include <thread>
 #include <vector>
+#include <unordered_map>
 
 using namespace mosaicraft;
 

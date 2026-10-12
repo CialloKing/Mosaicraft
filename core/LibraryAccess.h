@@ -16,7 +16,10 @@ public:
     ~LibraryAccess();
     LibraryAccess(const LibraryAccess&) = delete;
     LibraryAccess& operator=(const LibraryAccess&) = delete;
-    bool acquired() const { return m_acquired; }
+    bool acquired() const
+    {
+        return m_acquired;
+    }
 
 private:
     bool m_acquired = false;
