@@ -944,6 +944,34 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     CHECK_FALSE(truncated.hasLbp(0));
 }
 
+TEST_CASE("CPU build rolls back a failing ordered batch")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    fs::create_directories(workspace.libraryDir());
+    {
+        Database database(utf8(workspace.dbPath()));
+        REQUIRE(database.createTables());
+    }
+    sqlite3 *connection = nullptr;
+    REQUIRE(sqlite3_open(utf8(workspace.dbPath()).c_str(), &connection) == SQLITE_OK);
+    const int triggerResult =
+        sqlite3_exec(connection,
+                     "CREATE TRIGGER fail_second BEFORE INSERT ON images "
+                     "WHEN NEW.file_path LIKE '%000001%' BEGIN SELECT RAISE(ABORT,'batch fault'); END;",
+                     nullptr, nullptr, nullptr);
+    sqlite3_close(connection);
+    REQUIRE(triggerResult == SQLITE_OK);
+    auto request = makeBuildRequest(workspace);
+    request.normalizeWidth = 72;
+    request.normalizeHeight = 128; // 非 CUDA 模板尺寸，两种构建都验收 CPU 批次。
+    request.threads = 4;
+    CHECK_FALSE(BuildService().run(request).ok);
+    Database database(utf8(workspace.dbPath()), Database::OpenMode::Existing);
+    REQUIRE(database.isOpen());
+    CHECK(database.totalCount() == 0);
+}
+
 TEST_CASE("output reports incomplete PNG and DeepZoom while empty tiles remain load failures")
 {
     TempWorkspace workspace;

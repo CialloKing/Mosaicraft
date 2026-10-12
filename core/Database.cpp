@@ -99,6 +99,8 @@ Database::Database(const std::string& dbPath, OpenMode mode)
 
 Database::~Database()
 {
+    sqlite3_finalize(m_insertStatement);
+    sqlite3_finalize(m_hashStatement);
     sqlite3_finalize(m_pathStatement);
     sqlite3_finalize(m_colorStatement);
     if (m_db)
@@ -299,9 +301,8 @@ bool Database::insertImage(const ImageRecord& rec)
             hist_path=excluded.hist_path, feature_version=excluded.feature_version
     )SQL";
 
-    sqlite3_stmt* stmt = nullptr;
-    int rc = sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
-    if (rc != SQLITE_OK)
+    auto *stmt = prepareCached(m_insertStatement, sql);
+    if (!stmt)
     {
         std::cerr << "Prepare insert error: " << sqlite3_errmsg(m_db) << std::endl;
         return false;
@@ -362,8 +363,8 @@ bool Database::insertImage(const ImageRecord& rec)
     // feature_version
     sqlite3_bind_int(stmt, idx++, rec.featureVersion);
 
-    rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
+    const int rc = sqlite3_step(stmt);
+    sqlite3_reset(stmt);
 
     if (rc != SQLITE_DONE)
     {
@@ -495,8 +496,11 @@ bool Database::existsByHash(const std::string& hash)
     }
 
     const char* sql = "SELECT COUNT(*) FROM images WHERE file_hash = ?";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    auto *stmt = prepareCached(m_hashStatement, sql);
+    if (!stmt)
+    {
+        return false;
+    }
     sqlite3_bind_text(stmt, 1, hash.c_str(), -1, SQLITE_TRANSIENT);
 
     bool exists = false;
@@ -504,7 +508,7 @@ bool Database::existsByHash(const std::string& hash)
     {
         exists = sqlite3_column_int(stmt, 0) > 0;
     }
-    sqlite3_finalize(stmt);
+    sqlite3_reset(stmt);
     return exists;
 }
 

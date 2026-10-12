@@ -164,6 +164,8 @@ public:
 
 private:
     sqlite3* m_db;
+    sqlite3_stmt *m_insertStatement = nullptr;
+    sqlite3_stmt *m_hashStatement = nullptr;
     sqlite3_stmt *m_pathStatement = nullptr;
     sqlite3_stmt *m_colorStatement = nullptr;
     sqlite3_stmt *prepareCached(sqlite3_stmt *&statement, const char *sql);

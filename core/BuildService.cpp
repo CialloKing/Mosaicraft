@@ -1,13 +1,14 @@
 ﻿#include "BuildService.h"
 
 #include "Database.h"
-#include "LibraryColorOrder.h"
 #include "FeatureExtractor.h"
 #include "FeaturePack.h"
 #include "FeatureUtils.h"
 #include "ImageNormalizer.h"
-#include "UnicodeIO.h"
+#include "LibraryColorOrder.h"
 #include "RequestValidation.h"
+#include "UnicodeIO.h"
+#include "WorkerPool.h"
 #include "compute/CudaBackend.h"
 #ifdef MOSAICRAFT_CUDA
 #include "compute/FeatureExtractorCuda.h"
@@ -581,56 +582,146 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     if (!gpuOk && !request.normalizeOnly)
     {
         tGpuStart = std::chrono::steady_clock::now();
-        std::cout << "Features: CPU" << std::endl;
-        for (size_t i = 0; i < files.size(); ++i) {
-            if (!okFlags[i]) { skipped++; continue; }
-            const std::string& outPath = outPaths[i];
-            try {
-                cv::Mat img = imreadUnicode(outPath, cv::IMREAD_COLOR);
-                if (img.empty()) { skipped++; continue; }
-                std::string hash = hashMatForBuild(img);
-                if (db.existsByHash(hash)) {
-                    std::error_code removeEc;
+        constexpr size_t pixelBudget = 64ULL * 1024 * 1024;
+        const size_t pixelsPerImage = static_cast<size_t>(request.normalizeWidth) * request.normalizeHeight * 3;
+        // 同目录输入的尺寸可能不同，单张处理保证超预算图片独占批次。
+        const size_t batchLimit =
+            inputIsOutput ? 1 : std::min<size_t>(256, std::max<size_t>(1, pixelBudget / pixelsPerImage));
+        WorkerPool workers(request.threads > 0 ? static_cast<unsigned>(request.threads) : 0);
+        std::cout << "Features: CPU (ordered batches, max " << batchLimit << " images, 64 MiB pixels)" << std::endl;
+        for (size_t first = 0; first < files.size(); first += batchLimit)
+        {
+            const size_t count = std::min(batchLimit, files.size() - first);
+            std::vector<cv::Mat> images(count);
+            std::vector<ImageRecord> records(count);
+            std::vector<uint8_t> ready(count, 0);
+            std::vector<std::string> errors(count);
+            workers.run(
+                count,
+                [&](size_t i)
+                {
+                    if (!okFlags[first + i])
+                    {
+                        return;
+                    }
+                    try
+                    {
+                        images[i] = imreadUnicode(outPaths[first + i], cv::IMREAD_COLOR);
+                        if (!inputIsOutput && !images[i].empty() &&
+                            (images[i].cols != request.normalizeWidth || images[i].rows != request.normalizeHeight))
+                        {
+                            throw std::runtime_error("normalized image dimensions changed before feature extraction");
+                        }
+                    }
+                    catch (const std::exception &error)
+                    {
+                        errors[i] = error.what();
+                        images[i].release();
+                    }
+                });
+            std::set<std::string> pendingHashes;
+            for (size_t i = 0; i < count; ++i)
+            {
+                if (images[i].empty())
+                {
+                    ++skipped;
+                    continue;
+                }
+                const auto &outPath = outPaths[first + i];
+                const auto hash = hashMatForBuild(images[i]);
+                if (db.existsByHash(hash) || !pendingHashes.insert(hash).second)
+                {
                     if (!inputIsOutput)
                     {
-                        fs::remove(u8path(outPath), removeEc);
+                        std::error_code removeError;
+                        fs::remove(u8path(outPath), removeError);
+                        if (removeError)
+                        {
+                            std::cerr << "WARN: cannot remove duplicate output file: " << outPath << std::endl;
+                        }
                     }
-                    if (removeEc)
-                    {
-                        std::cerr << "WARN: cannot remove duplicate output file: " << outPath
-                                  << " (" << removeEc.message() << ")" << std::endl;
-                    }
-                    skipped++;
+                    images[i].release();
+                    ++skipped;
                     continue;
                 }
-                ImageRecord rec;
-                rec.filePath = outPath;
-                rec.fileHash = hash;
-                rec.srcWidth = img.cols;
-                rec.srcHeight = img.rows;
-                rec.aspectRatio = (rec.srcHeight > 0) ? (double)rec.srcWidth / rec.srcHeight : 0.0;
-                std::error_code sizeEc;
-                rec.fileSize = static_cast<int64_t>(fs::file_size(u8path(outPath), sizeEc));
-                if (sizeEc)
+                auto &record = records[i];
+                record.filePath = outPath;
+                record.fileHash = hash;
+                record.srcWidth = images[i].cols;
+                record.srcHeight = images[i].rows;
+                record.aspectRatio = static_cast<double>(record.srcWidth) / record.srcHeight;
+                std::error_code sizeError;
+                record.fileSize = static_cast<int64_t>(fs::file_size(u8path(outPath), sizeError));
+                if (sizeError)
                 {
-                    std::cerr << "WARN: cannot stat output file: " << outPath
-                              << " (" << sizeEc.message() << ")" << std::endl;
-                    skipped++;
+                    images[i].release();
+                    ++skipped;
                     continue;
                 }
-                std::string ext = pathToUtf8(u8path(outPath).extension());
-                if (!ext.empty() && ext[0] == '.') ext = ext.substr(1);
-                rec.format = ext;
-                extractor.compute(img, rec, featDir, "hash_" + hash);
-                if (db.insertImage(rec)) inserted++;
-                else skipped++;
-            } catch (...) {
-                skipped++;
+                record.format = pathToUtf8(u8path(outPath).extension());
+                if (!record.format.empty())
+                {
+                    record.format.erase(0, 1);
+                }
+                ready[i] = 1;
             }
-            if ((i + 1) % 2000 == 0 || i + 1 == files.size()) {
-                std::cout << "\r  features " << (i + 1) << "/" << files.size()
-                          << " (ok:" << inserted << " skip:" << skipped << ")   " << std::flush;
+            workers.run(count,
+                        [&](size_t i)
+                        {
+                            if (!ready[i])
+                            {
+                                return;
+                            }
+                            try
+                            {
+                                FeatureExtractor featureExtractor;
+                                featureExtractor.compute(images[i], records[i], featDir, "hash_" + records[i].fileHash);
+                            }
+                            catch (const std::exception &error)
+                            {
+                                errors[i] = error.what();
+                                ready[i] = 0;
+                            }
+                            images[i].release();
+                        });
+            const int batchCount = static_cast<int>(std::count(ready.begin(), ready.end(), uint8_t{1}));
+            for (size_t i = 0; i < count; ++i)
+            {
+                if (!errors[i].empty())
+                {
+                    std::cerr << "WARN: feature extraction skipped " << outPaths[first + i] << ": " << errors[i]
+                              << std::endl;
+                }
+                if (!records[i].filePath.empty() && !ready[i])
+                {
+                    ++skipped;
+                }
             }
+            if (batchCount > 0)
+            {
+                // SQL 只在调用线程执行；失败回滚整批，提交后才增加已入库数量。
+                if (!db.beginTransaction())
+                {
+                    return ServiceResult::failure(2, "cannot begin CPU build transaction");
+                }
+                bool written = true;
+                for (size_t i = 0; i < count; ++i)
+                {
+                    if (ready[i] && !db.insertImage(records[i]))
+                    {
+                        written = false;
+                        break;
+                    }
+                }
+                if (!written || !db.commitTransaction())
+                {
+                    db.rollbackTransaction();
+                    return ServiceResult::failure(2, "cannot commit CPU build batch; transaction rolled back");
+                }
+                inserted += batchCount;
+            }
+            std::cout << "\r  features " << first + count << "/" << files.size() << " (ok:" << inserted
+                      << " skip:" << skipped << ")   " << std::flush;
         }
         std::cout << std::endl;
     }
