@@ -308,6 +308,18 @@ TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
     {
         fs::rename(u8path(records[0].filePath), u8path(journal["entries"][0]["temporary"].get<std::string>()));
     }
+#ifdef _WIN32
+    SUBCASE("Windows database path spelling is case insensitive")
+    {
+        auto path = journal["database"].get<std::string>();
+        std::transform(path.begin(), path.end(), path.begin(),
+            [](unsigned char character)
+            {
+                return static_cast<char>(std::tolower(character));
+            });
+        journal["database"] = path;
+    }
+#endif
     SUBCASE("relative paths use the original working directory")
     {
         Database database(request.dbPath, Database::OpenMode::Build);

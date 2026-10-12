@@ -161,7 +161,8 @@ void cleanupJournal(const fs::path& path, const Json& journal)
 
 void validateJournal(Database& database, const Json& journal, bool committed)
 {
-    if (journal.at("version") != 1 || journal.at("database") != database.path())
+    if (journal.at("version") != 1 ||
+        identity(u8path(journal.at("database").get<std::string>())) != identity(u8path(database.path())))
     {
         throw std::runtime_error("color reorder journal belongs to another database or version");
     }
