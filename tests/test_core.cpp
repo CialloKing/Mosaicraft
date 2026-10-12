@@ -18,6 +18,9 @@
 #include "../core/JobManager.h"
 #include "../core/LegacyRun.h"
 #include "../core/Version.h"
+#include "../core/ColorOrder.h"
+#include <opencv2/imgproc.hpp>
+#include <stdexcept>
 #include <vector>
 #include <cmath>
 #include <chrono>
@@ -26,6 +29,61 @@
 #include <algorithm>
 
 using namespace mosaicraft;
+
+TEST_CASE("mean LAB ordering preserves gray threshold hue wrap and brightness transitions")
+{
+    auto key = [](const cv::Mat& image)
+    {
+        cv::Mat lab;
+        cv::cvtColor(image, lab, cv::COLOR_BGR2Lab);
+        const auto mean = cv::mean(lab);
+        return meanLabColorOrderKey(mean[0], mean[1], mean[2]);
+    };
+    CHECK(meanLabColorOrderKey(0, 128, 128) < meanLabColorOrderKey(100, 128, 128));
+    CHECK(meanLabColorOrderKey(100, 128, 128) < meanLabColorOrderKey(255, 128, 128));
+    CHECK(meanLabColorOrderKey(100, 128.4999, 128) < (std::int64_t(1) << 40));
+    CHECK(meanLabColorOrderKey(100, 128.5001, 128) >= (std::int64_t(1) << 40));
+    CHECK_THROWS_AS(meanLabColorOrderKey(-1, 128, 128), std::invalid_argument);
+    CHECK_THROWS_AS(meanLabColorOrderKey(100, std::numeric_limits<double>::quiet_NaN(), 128),
+                    std::invalid_argument);
+
+    const std::vector<cv::Scalar> rainbow
+    {
+        cv::Scalar(0, 0, 255), cv::Scalar(0, 128, 255), cv::Scalar(0, 255, 255),
+        cv::Scalar(0, 255, 0), cv::Scalar(255, 255, 0), cv::Scalar(255, 0, 0), cv::Scalar(255, 0, 255)
+    };
+    auto previous = meanLabColorOrderKey(255, 128, 128);
+    for (const auto& color : rainbow)
+    {
+        const auto current = key(cv::Mat(32, 32, CV_8UC3, color));
+        CHECK(previous < current);
+        previous = current;
+    }
+
+    cv::Mat mixed(32, 32, CV_8UC3, cv::Scalar(255, 0, 0));
+    mixed(cv::Rect(0, 0, 16, 32)).setTo(cv::Scalar(0, 255, 255));
+    cv::Mat moved(32, 32, CV_8UC3, cv::Scalar(255, 0, 0));
+    moved(cv::Rect(0, 16, 32, 16)).setTo(cv::Scalar(0, 255, 255));
+    CHECK(key(mixed) == key(moved));
+    CHECK((key(mixed) >> 32) != (key(cv::Mat(32, 32, CV_8UC3, cv::Scalar(255, 0, 0))) >> 32));
+    cv::Mat pale(32, 32, CV_8UC3, cv::Scalar(255, 255, 255));
+    pale(cv::Rect(0, 0, 4, 32)).setTo(cv::Scalar(255, 0, 0));
+    CHECK(key(pale) >= (std::int64_t(1) << 40));
+
+    auto hueKey = [](float hue, float value)
+    {
+        cv::Vec3f pixel(hue, 1.0f, value);
+        cv::Mat hsv(1, 1, CV_32FC3, &pixel), bgr, lab;
+        cv::cvtColor(hsv, bgr, cv::COLOR_HSV2BGR);
+        cv::cvtColor(bgr, lab, cv::COLOR_BGR2Lab);
+        const auto color = lab.at<cv::Vec3f>(0, 0);
+        return meanLabColorOrderKey(color[0] * 255.0 / 100.0, color[1] + 128.0, color[2] + 128.0);
+    };
+    CHECK(hueKey(350, 0.8f) < hueKey(10, 0.8f));
+    CHECK(hueKey(10, 0.8f) < hueKey(30, 0.8f));
+    CHECK(hueKey(350, 0.8f) < hueKey(350, 0.3f));
+    CHECK(hueKey(0, 0.3f) < hueKey(0, 0.8f));
+}
 
 // ============================================================
 // labDistance

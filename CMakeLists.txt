@@ -111,12 +111,14 @@ add_library(mosaicraft_core STATIC
     core/ImageNormalizer.cpp
     core/BatchProcessor.cpp
     core/BuildService.cpp
+    core/ColorOrder.cpp
     core/Database.cpp
     core/DatabaseService.cpp
     core/FeatureExtractor.cpp
     core/InspectService.cpp
     core/JobManager.cpp
     core/LegacyRun.cpp
+    core/LibraryAccess.cpp
     core/MosaicOutput.cpp
     core/MosaicEngine.cpp
     core/MosaicService.cpp

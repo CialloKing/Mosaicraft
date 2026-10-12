@@ -13,6 +13,9 @@
 #include "../core/InspectService.h"
 #include "../core/MosaicService.h"
 #include "../core/UnicodeIO.h"
+#include "../core/ColorOrder.h"
+#include <sqlite3.h>
+#include <cmath>
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
@@ -228,6 +231,41 @@ TEST_CASE("rebuilding preserves indexed files and source files")
     CHECK(fs::exists(workspace.inputDir() / "tile_00.png"));
     Database sourceDatabase(request.dbPath);
     CHECK(sourceDatabase.totalCount() == 10);
+}
+
+TEST_CASE("color cache migrates legacy tables and retains fractional LAB sources")
+{
+    TempWorkspace workspace;
+    fs::create_directories(workspace.libraryDir());
+    sqlite3* legacy = nullptr;
+    REQUIRE(sqlite3_open(utf8(workspace.dbPath()).c_str(), &legacy) == SQLITE_OK);
+    const int created = sqlite3_exec(legacy,
+        "CREATE TABLE image_color_order(image_id INTEGER PRIMARY KEY REFERENCES images(id) ON DELETE CASCADE,"
+        "file_hash TEXT NOT NULL,version INTEGER NOT NULL,sort_key INTEGER NOT NULL);"
+        "INSERT INTO image_color_order VALUES(1,'legacy',1,0)", nullptr, nullptr, nullptr);
+    sqlite3_close(legacy);
+    REQUIRE(created == SQLITE_OK);
+    Database database(utf8(workspace.dbPath()), Database::OpenMode::Build);
+    REQUIRE(database.createTables());
+    const auto old = database.imageColorOrders().at(1);
+    CHECK(old.version == 1);
+    CHECK(std::isnan(old.sourceL));
+    ImageRecord record;
+    record.filePath = "fixture.png";
+    record.fileHash = "legacy";
+    REQUIRE(database.insertImage(record));
+    ImageColorOrder color
+    {
+        record.fileHash, kColorOrderVersion, meanLabColorOrderKey(100.25, 128.6, 128.2),
+        100.25, 128.6, 128.2
+    };
+    REQUIRE(database.saveImageColorOrder(1, color));
+    const auto cached = database.imageColorOrders().at(1);
+    CHECK(cached.version == 2);
+    CHECK(cached.key == color.key);
+    CHECK(cached.sourceL == color.sourceL);
+    CHECK(cached.sourceA == color.sourceA);
+    CHECK(cached.sourceB == color.sourceB);
 }
 
 TEST_CASE("database maintenance rejects missing files and preserves usage integrity")
