@@ -22,5 +22,7 @@ class FeaturePack
                      std::vector<uint8_t> &tinyValid, std::vector<uint8_t> &lbpValid);
     static bool buildCache(const std::string &directory, const std::vector<ImageRecord> &records,
                            Stats *stats = nullptr);
+    // Only the exclusive build lock may remove generations that another reader could still use.
+    static void removeObsolete(const std::string &directory);
 };
 } // namespace mosaicraft

@@ -10,6 +10,7 @@
 
 // 前向声明，避免暴露 sqlite3.h 到头文件
 struct sqlite3;
+struct sqlite3_stmt;
 
 namespace mosaicraft
 {
@@ -163,6 +164,9 @@ public:
 
 private:
     sqlite3* m_db;
+    sqlite3_stmt *m_pathStatement = nullptr;
+    sqlite3_stmt *m_colorStatement = nullptr;
+    sqlite3_stmt *prepareCached(sqlite3_stmt *&statement, const char *sql);
     std::unique_ptr<LibraryAccess> m_access;
     std::string m_path;
     std::string m_error;

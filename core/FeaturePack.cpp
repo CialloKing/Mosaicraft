@@ -336,12 +336,20 @@ bool FeaturePack::buildCache(const std::string &directory, const std::vector<Ima
     std::vector<Metadata> metadata;
     std::vector<int> needed(records.size());
     std::iota(needed.begin(), needed.end(), 0);
-    loadFeatures(directory, records, needed, tiny, lbp, tinyValid, lbpValid, metadata);
+    const bool reused = loadFeatures(directory, records, needed, tiny, lbp, tinyValid, lbpValid, metadata);
     const auto writeStart = Clock::now();
     if (stats)
     {
         *stats = {};
         stats->validationMs = std::chrono::duration<double, std::milli>(writeStart - start).count();
+    }
+    if (reused)
+    {
+        if (stats)
+        {
+            stats->reused = true;
+        }
+        return true;
     }
     static std::atomic<unsigned> sequence{0};
 #ifdef _WIN32
@@ -442,5 +450,38 @@ bool FeaturePack::buildCache(const std::string &directory, const std::vector<Ima
         stats->writingMs = std::chrono::duration<double, std::milli>(Clock::now() - writeStart).count();
     }
     return true;
+}
+void FeaturePack::removeObsolete(const std::string &directory)
+{
+    Manifest manifest;
+    if (!readManifest(directory, manifest))
+    {
+        return;
+    }
+    const std::string current = "features-" + manifest.generation;
+    std::error_code error;
+    fs::directory_iterator iterator(u8path(directory), error), end;
+    while (!error && iterator != end)
+    {
+        const auto entry = *iterator;
+        const auto name = pathToUtf8(entry.path().filename());
+        if (name.rfind("features-", 0) == 0 && name.rfind(current + ".", 0) != 0)
+        {
+            for (const std::string suffix : {".tiny.bin", ".lbp.bin", ".meta", ".manifest.tmp"})
+            {
+                if (name.size() > 9 + suffix.size() &&
+                    name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0)
+                {
+                    const auto token = name.substr(9, name.size() - 9 - suffix.size());
+                    if (token.find_first_not_of("0123456789-") == std::string::npos)
+                    {
+                        std::error_code removeError;
+                        fs::remove(entry.path(), removeError);
+                    }
+                }
+            }
+        }
+        iterator.increment(error);
+    }
 }
 } // namespace mosaicraft

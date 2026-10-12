@@ -891,6 +891,12 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     CHECK(legacy.tiny(2)[0] == 3);
     REQUIRE(FeaturePack::buildCache(dir, records));
     const auto oldGeneration = publishedPath(".tiny.bin");
+    const auto manifestTime = fs::last_write_time(manifestPath);
+    FeaturePack::Stats cacheStats;
+    REQUIRE(FeaturePack::buildCache(dir, records, &cacheStats));
+    CHECK(cacheStats.reused);
+    CHECK(fs::last_write_time(manifestPath) == manifestTime);
+    CHECK(publishedPath(".tiny.bin") == oldGeneration);
     CandidateFeatures cached(records, needed, dir);
     CHECK(cached.hasTiny(2));
     CHECK(cached.lbp(0)[0] == 0.25f);
@@ -913,6 +919,7 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     CHECK(fs::exists(oldGeneration));
 #ifdef _WIN32
     const auto generationBefore = publishedPath(".tiny.bin");
+    ++records[0].featureVersion;
     HANDLE blocker = CreateFileW(manifestPath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
                                  FILE_ATTRIBUTE_NORMAL, nullptr);
     REQUIRE(blocker != INVALID_HANDLE_VALUE);

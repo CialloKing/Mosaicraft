@@ -679,9 +679,14 @@ ServiceResult BuildService::run(const BuildRequest& request) const
 
     tCacheStart = std::chrono::steady_clock::now();
     std::cout << "Building feature cache..." << std::flush;
-    if (FeaturePack::buildCache(featDir, db.allRecords())) {
-        std::cout << " done" << std::endl;
-    } else {
+    FeaturePack::Stats cacheStats;
+    if (FeaturePack::buildCache(featDir, db.allRecords(), &cacheStats))
+    {
+        FeaturePack::removeObsolete(featDir);
+        std::cout << (cacheStats.reused ? " reused" : " done") << std::endl;
+    }
+    else
+    {
         std::cout << " failed" << std::endl;
         return ServiceResult::failure(1, "cannot build feature cache after color ordering");
     }

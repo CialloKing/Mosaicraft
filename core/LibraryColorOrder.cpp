@@ -34,9 +34,8 @@ fs::path absolutePath(const std::string& path)
     return fs::weakly_canonical(u8path(path));
 }
 
-fs::path identity(const fs::path& path)
+fs::path normalizedIdentity(const fs::path &normalized)
 {
-    auto normalized = fs::weakly_canonical(path);
 #ifdef _WIN32
     auto native = normalized.wstring();
     std::transform(native.begin(), native.end(), native.begin(), std::towlower);
@@ -46,31 +45,44 @@ fs::path identity(const fs::path& path)
 #endif
 }
 
-bool sameVolume(const fs::path& file, const fs::path& directory)
+fs::path identity(const fs::path &path)
+{
+    return normalizedIdentity(fs::weakly_canonical(path));
+}
+
+struct FileInformation
+{
+    uint64_t volume, size;
+    bool regular;
+};
+
+FileInformation fileInformation(const fs::path &path)
 {
 #ifdef _WIN32
-    auto volume = [](const fs::path& path)
+    const auto handle =
+        CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                    OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    BY_HANDLE_FILE_INFORMATION information{};
+    const bool ok = handle != INVALID_HANDLE_VALUE && GetFileInformationByHandle(handle, &information);
+    if (handle != INVALID_HANDLE_VALUE)
     {
-        const auto handle = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-            FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-        BY_HANDLE_FILE_INFORMATION information{};
-        const bool ok = handle != INVALID_HANDLE_VALUE && GetFileInformationByHandle(handle, &information);
-        if (handle != INVALID_HANDLE_VALUE)
-        {
-            CloseHandle(handle);
-        }
-        if (!ok)
-        {
-            throw std::runtime_error("cannot determine library volume: " + pathToUtf8(path));
-        }
-        return information.dwVolumeSerialNumber;
-    };
-    return volume(file) == volume(directory);
+        CloseHandle(handle);
+    }
+    if (!ok)
+    {
+        throw std::runtime_error("cannot inspect library path: " + pathToUtf8(path));
+    }
+    return {information.dwVolumeSerialNumber,
+            (static_cast<uint64_t>(information.nFileSizeHigh) << 32) | information.nFileSizeLow,
+            !(information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)};
 #else
-    struct stat source{}, destination{};
-    return stat(file.c_str(), &source) == 0 && stat(directory.c_str(), &destination) == 0 &&
-           source.st_dev == destination.st_dev;
+    struct stat information{};
+    if (stat(path.c_str(), &information) != 0)
+    {
+        throw std::runtime_error("cannot inspect library path: " + pathToUtf8(path));
+    }
+    return {static_cast<uint64_t>(information.st_dev), static_cast<uint64_t>(information.st_size),
+            S_ISREG(information.st_mode)};
 #endif
 }
 
@@ -315,20 +327,30 @@ bool reorderLibraryByColor(Database& database, const std::string& outputDir,
             throw std::runtime_error("cannot read all library records for color ordering");
         }
         const auto root = absolutePath(outputDir);
+        const auto rootVolume = fileInformation(root).volume;
+        struct Source
+        {
+            fs::path path;
+            uint64_t size;
+        };
+        std::unordered_map<int, Source> sourceInformation;
+        sourceInformation.reserve(records.size());
         auto colors = database.imageColorOrders();
         std::vector<int> changedColors;
         std::set<fs::path> sources;
         for (const auto& record : records)
         {
             const auto source = absolutePath(record.filePath);
-            if (!fs::is_regular_file(source) || !sources.insert(identity(source)).second)
+            const auto information = fileInformation(source);
+            if (!information.regular || !sources.insert(normalizedIdentity(source)).second)
             {
                 throw std::runtime_error("missing or aliased library image: " + record.filePath);
             }
-            if (!sameVolume(source, root))
+            if (information.volume != rootVolume)
             {
                 throw std::runtime_error("color ordering cannot move images across volumes: " + record.filePath);
             }
+            sourceInformation.emplace(record.id, Source{source, information.size});
             auto found = colors.find(record.id);
             if (found == colors.end() || found->second.version != kColorOrderVersion ||
                 found->second.fileHash != record.fileHash ||
@@ -377,22 +399,25 @@ bool reorderLibraryByColor(Database& database, const std::string& outputDir,
         for (size_t i = 0; i < records.size(); ++i)
         {
             const auto& record = records[i];
-            const auto original = absolutePath(record.filePath);
+            const auto &original = sourceInformation.at(record.id).path;
             std::ostringstream name;
             name << std::setfill('0') << std::setw(width) << i << pathToUtf8(original.extension());
             const auto final = root / u8path(name.str());
-            if (fs::exists(final) && !sources.count(identity(final)))
-            {
-                throw std::runtime_error("unindexed file blocks color ordering: " + pathToUtf8(final));
-            }
             if (original == final)
             {
                 continue;
             }
-            journal["entries"].push_back({{"id", record.id}, {"old_db_path", record.filePath},
-                {"original", pathToUtf8(original)}, {"final", pathToUtf8(final)},
-                {"temporary", pathToUtf8(staging / (std::to_string(record.id) + ".stage"))},
-                {"hash", record.fileHash}, {"size", fs::file_size(original)}});
+            if (fs::exists(final) && !sources.count(identity(final)))
+            {
+                throw std::runtime_error("unindexed file blocks color ordering: " + pathToUtf8(final));
+            }
+            journal["entries"].push_back({{"id", record.id},
+                                          {"old_db_path", record.filePath},
+                                          {"original", pathToUtf8(original)},
+                                          {"final", pathToUtf8(final)},
+                                          {"temporary", pathToUtf8(staging / (std::to_string(record.id) + ".stage"))},
+                                          {"hash", record.fileHash},
+                                          {"size", sourceInformation.at(record.id).size}});
         }
         if (changedColors.empty() && journal["entries"].empty())
         {
