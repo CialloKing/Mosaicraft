@@ -4,6 +4,7 @@
 #include "core/FeatureExtractor.h"
 #include "core/FeatureUtils.h"
 #include "core/UnicodeIO.h"
+#include "core/WorkerPool.h"
 #include <cuda_runtime.h>
 #include <opencv2/imgproc.hpp>
 
@@ -30,6 +31,7 @@ struct FeatureWorkspace::Impl
     std::vector<uint8_t> h_images, h_tiny;
     std::vector<float> h_grid, h_lbp;
     std::vector<double> h_lab, h_bright, h_contrast, h_edge;
+    std::unique_ptr<WorkerPool> cpuWorkers;
 };
 FeatureWorkspace::FeatureWorkspace() : buffers(std::make_unique<Impl>())
 {
@@ -677,13 +679,19 @@ int launchKernel(const uint8_t *h_images, int N, double *h_avgLAB, float *h_grid
         }
     }
     // 查询特征必须与建库使用相同的 Canny 双阈值，不能把近似梯度计数混入同一列。
-    for (int i = 0; i < N; ++i)
+    if (!buffers.cpuWorkers)
     {
-        cv::Mat bgr(H, W, CV_8UC3, const_cast<uint8_t*>(h_images) + static_cast<size_t>(i) * imgBytes);
-        cv::Mat gray;
-        cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
-        h_edge[i] = computeEdgeDensityFromGray(gray);
+        buffers.cpuWorkers = std::make_unique<WorkerPool>();
     }
+    buffers.cpuWorkers->run(N,
+                            [&](size_t i)
+                            {
+                                cv::Mat bgr(H, W, CV_8UC3,
+                                            const_cast<uint8_t *>(h_images) + static_cast<size_t>(i) * imgBytes);
+                                cv::Mat gray;
+                                cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
+                                h_edge[i] = computeEdgeDensityFromGray(gray);
+                            });
     return 0;
 }
 } // anonymous namespace

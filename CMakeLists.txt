@@ -96,6 +96,7 @@ add_custom_command(
         ${NVCC_EXTRA_FLAGS}
     DEPENDS "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu" "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.h" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh"
         "${CMAKE_SOURCE_DIR}/core/FeatureUtils.h" "${CMAKE_SOURCE_DIR}/core/FeatureExtractor.h" "${CMAKE_SOURCE_DIR}/core/UnicodeIO.h"
+        "${CMAKE_SOURCE_DIR}/core/WorkerPool.h"
     COMMENT "Compiling FeatureExtractorCuda.cu..."
 )
 

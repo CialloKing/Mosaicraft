@@ -1113,19 +1113,20 @@ bool MosaicEngine::generate(const std::string& targetPath,
         cuda::FeatureWorkspace workspace;
         std::vector<uint8_t> images(batchSize * featBytes);
         std::vector<double> lab(batchSize * 3);
+        WorkerPool preparationWorkers;
         for (int first = 0; first < totalTiles; first += batchSize)
         {
             const int count = std::min(batchSize, totalTiles - first);
-            #pragma omp parallel for
-            for (int i = 0; i < count; ++i)
-            {
-                const int ti = first + i;
-                cv::Mat roi = target(cv::Rect((ti % tilesX) * cfg.tileW, (ti / tilesX) * cfg.tileH,
-                    cfg.tileW, cfg.tileH));
-                cv::Mat resized;
-                cv::resize(roi, resized, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
-                std::memcpy(images.data() + i * featBytes, resized.data, featBytes);
-            }
+            preparationWorkers.run(count,
+                                   [&](size_t i)
+                                   {
+                                       const int ti = first + i;
+                                       cv::Mat roi = target(cv::Rect((ti % tilesX) * cfg.tileW,
+                                                                     (ti / tilesX) * cfg.tileH, cfg.tileW, cfg.tileH));
+                                       cv::Mat resized;
+                                       cv::resize(roi, resized, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
+                                       std::memcpy(images.data() + i * featBytes, resized.data, featBytes);
+                                   });
             const int result = cuda::extractFeaturesRaw(images.data(), count, featW, featH,
                 lab.data(), allGrid[first].data(), allTiny[first].data(),
                 allEdge.data() + first, allLBP[first].data(), &workspace,
