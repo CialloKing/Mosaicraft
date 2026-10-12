@@ -18,6 +18,7 @@
 #include "../core/JobManager.h"
 #include "../core/LegacyRun.h"
 #include "../core/Version.h"
+#include "../core/ColorOrder.h"
 #include <vector>
 #include <cmath>
 #include <chrono>
@@ -26,6 +27,29 @@
 #include <algorithm>
 
 using namespace mosaicraft;
+
+TEST_CASE("color ordering follows dominant hue and separates neutral images")
+{
+    auto key = [](cv::Scalar color)
+    {
+        return imageColorOrderKey(cv::Mat(32, 32, CV_8UC3, color));
+    };
+    CHECK(key({0, 0, 0}) < key({100, 100, 100}));
+    CHECK(key({100, 100, 100}) < key({255, 255, 255}));
+    const std::vector<cv::Scalar> rainbow = {
+        {0, 0, 255}, {0, 128, 255}, {0, 255, 255}, {0, 255, 0},
+        {255, 255, 0}, {255, 0, 0}, {255, 0, 255}};
+    auto previous = key({255, 255, 255});
+    for (const auto& color : rainbow)
+    {
+        CHECK(previous < key(color));
+        previous = key(color);
+    }
+    cv::Mat mixed(32, 32, CV_8UC3, cv::Scalar(255, 0, 0));
+    mixed(cv::Rect(0, 0, 8, 32)).setTo(cv::Scalar(0, 255, 255));
+    CHECK((imageColorOrderKey(mixed) >> 32) == (key({255, 0, 0}) >> 32));
+    CHECK(key({0, 0, 255}) < key({0, 0, 80}));
+}
 
 // ============================================================
 // labDistance

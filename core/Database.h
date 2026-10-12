@@ -62,6 +62,13 @@ struct ImageRecord
     int featureVersion = 0;         // 特征计算版本号，递增便于增量更新
 };
 
+struct ImageColorOrder
+{
+    std::string fileHash;
+    int version = 0;
+    std::int64_t key = 0;
+};
+
 // Database — SQLite 索引的 RAII 封装。
 // 只存索引指针和标量特征；大块数据（TinyImage / Histogram）存文件系统。
 class Database
@@ -90,6 +97,11 @@ public:
 
     // 插入一条记录；若 file_path 已存在则忽略（UNIQUE 约束）
     bool insertImage(const ImageRecord& rec);
+
+    // 颜色浏览缓存不参与马赛克匹配；路径更新只修改指定 ID 的位置。
+    std::unordered_map<int, ImageColorOrder> imageColorOrders();
+    bool saveImageColorOrder(int id, const ImageColorOrder& color);
+    bool updateImagePath(int id, const std::string& oldPath, const std::string& newPath);
 
     // 删除单条记录（db-purge 用）
     bool removeImage(int id);
@@ -137,7 +149,9 @@ private:
 public:
     // 事务控制
     bool beginTransaction() { return exec("BEGIN TRANSACTION"); }
+    bool beginImmediateTransaction() { return exec("BEGIN IMMEDIATE"); }
     bool commitTransaction() { return exec("COMMIT"); }
+    bool rollbackTransaction() { return exec("ROLLBACK"); }
 private:
 
     // 检查某列是否存在

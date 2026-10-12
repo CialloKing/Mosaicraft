@@ -111,6 +111,7 @@ add_library(mosaicraft_core STATIC
     core/ImageNormalizer.cpp
     core/BatchProcessor.cpp
     core/BuildService.cpp
+    core/ColorOrder.cpp
     core/Database.cpp
     core/DatabaseService.cpp
     core/FeatureExtractor.cpp

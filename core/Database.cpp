@@ -155,6 +155,13 @@ bool Database::createTables()
             key   TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS image_color_order (
+            image_id INTEGER PRIMARY KEY REFERENCES images(id) ON DELETE CASCADE,
+            file_hash TEXT NOT NULL,
+            version INTEGER NOT NULL,
+            sort_key INTEGER NOT NULL
+        );
     )SQL";
 
     char* errMsg = nullptr;
@@ -321,6 +328,62 @@ bool Database::insertImage(const ImageRecord& rec)
         return false;
     }
     return true;
+}
+
+std::unordered_map<int, ImageColorOrder> Database::imageColorOrders()
+{
+    std::unordered_map<int, ImageColorOrder> colors;
+    sqlite3_stmt* statement = nullptr;
+    if (!m_db || sqlite3_prepare_v2(m_db,
+        "SELECT image_id,file_hash,version,sort_key FROM image_color_order",
+        -1, &statement, nullptr) != SQLITE_OK)
+    {
+        return colors;
+    }
+    while (sqlite3_step(statement) == SQLITE_ROW)
+    {
+        colors.emplace(sqlite3_column_int(statement, 0), ImageColorOrder{
+            reinterpret_cast<const char*>(sqlite3_column_text(statement, 1)),
+            sqlite3_column_int(statement, 2), sqlite3_column_int64(statement, 3)});
+    }
+    sqlite3_finalize(statement);
+    return colors;
+}
+
+bool Database::saveImageColorOrder(int id, const ImageColorOrder& color)
+{
+    sqlite3_stmt* statement = nullptr;
+    if (!m_db || sqlite3_prepare_v2(m_db,
+        "INSERT INTO image_color_order(image_id,file_hash,version,sort_key) VALUES(?,?,?,?) "
+        "ON CONFLICT(image_id) DO UPDATE SET file_hash=excluded.file_hash,"
+        "version=excluded.version,sort_key=excluded.sort_key", -1, &statement, nullptr) != SQLITE_OK)
+    {
+        return false;
+    }
+    sqlite3_bind_int(statement, 1, id);
+    sqlite3_bind_text(statement, 2, color.fileHash.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(statement, 3, color.version);
+    sqlite3_bind_int64(statement, 4, color.key);
+    const bool ok = sqlite3_step(statement) == SQLITE_DONE;
+    sqlite3_finalize(statement);
+    return ok;
+}
+
+bool Database::updateImagePath(int id, const std::string& oldPath, const std::string& newPath)
+{
+    sqlite3_stmt* statement = nullptr;
+    if (!m_db || sqlite3_prepare_v2(m_db,
+        "UPDATE images SET file_path=? WHERE id=? AND file_path=?",
+        -1, &statement, nullptr) != SQLITE_OK)
+    {
+        return false;
+    }
+    sqlite3_bind_text(statement, 1, newPath.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(statement, 2, id);
+    sqlite3_bind_text(statement, 3, oldPath.c_str(), -1, SQLITE_TRANSIENT);
+    const bool ok = sqlite3_step(statement) == SQLITE_DONE && sqlite3_changes(m_db) == 1;
+    sqlite3_finalize(statement);
+    return ok;
 }
 
 bool Database::removeImage(int id)
