@@ -244,7 +244,8 @@ TEST_CASE("rebuilding preserves indexed files and source files")
     CHECK(sourceDatabase.totalCount() == 10);
     for (const auto& record : sourceDatabase.allRecords())
     {
-        CHECK(u8path(record.filePath).parent_path() == workspace.inputDir());
+        // Windows 临时目录可能使用 8.3 短路径；验证目录身份而非路径拼写。
+        CHECK(fs::equivalent(u8path(record.filePath).parent_path(), workspace.inputDir()));
     }
 }
 
