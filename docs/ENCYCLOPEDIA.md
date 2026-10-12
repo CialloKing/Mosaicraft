@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-10-12 | 版本 / Version：v1.15.0
+> 最后更新 / Last updated：2026-10-12 | 版本 / Version：v1.14.2
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -348,7 +348,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.13.10 | tag/Release/zip 一致性、BUILD_INFO、真实附件验收强制化 | — |
 | 1.14.1 | 有界邻域比较、按使用次数释放缓存、CPU特征包校验、PNG多行写入 | 见性能报告 |
 | 1.14.0 | 196维并行ANN、字节预算缓存、公共流式输出、CUDA缓冲复用与失败处理 | 见性能报告 |
-| 1.15.0 | 默认平均色HSV建库、可恢复全库重编号、v6特征一致性与API 2.0边界修复 | 见验证记录 |
+| 1.14.2 | 默认平均色HSV建库、可恢复全库重编号、v6特征一致性与API 2.0边界修复 | 见验证记录 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -701,7 +701,7 @@ PNG 使用有界多行 RGB 转换及写入；过滤器、压缩等级和每 1000
 
 > **EN**: Version 1.14.1 preserves matching rules and public defaults. Bounded neighbor comparisons, candidate feature buffers, usage-aware image caching and multirow PNG output reduce repeated work. PNG filters, compression and flush boundaries remain unchanged. Benchmark output separates normal generation from analysis overhead; the performance report records measured results and limitations.
 
-### v1.15.0: 默认 HSV 颜色建库与边界修复 (2026-10-12)
+### v1.14.2: 默认 HSV 颜色建库与边界修复 (2026-10-12)
 
 此版本将平均颜色排序设为默认建库行为，同时发布已完成的建库、匹配特征、文件输出和 HTTP API 边界修复。外部 HTTP API 合约升级为 **2.0**；同步 `/api/mosaic` 返回生成结果，维护清理仅接受 POST，结构化请求要求 JSON 并校验来源。命令行与内置 Web UI 已同步。
 
@@ -713,4 +713,4 @@ PNG 使用有界多行 RGB 转换及写入；过滤器、压缩等级和每 1000
 
 验收使用实际 CUDA 和 CPU-only 构建、核心及服务回归、Web UI/API smoke。45,625 张现有图库重排后，连续编号为 `000000`–`045624`，灰度区 146 张、彩色区 45,479 张；图片与独立特征 SHA256、ID、使用统计和特征引用保持一致，重复运行补算 0 张、改名 0 张。颜色缓存算法版本为 2，与软件版本和匹配特征版本分别管理。
 
-> **EN**: Version 1.15.0 reuses stored mean LAB for default HSV v2 ordering and renumbers indexed files after appends. Chroma below 0.5 enters grayscale; 15-degree hue bands start at 345 degrees and alternate lightness direction. Color caches retain source means; independent CPU/CUDA builds can differ, while repeated ordering of one database is stable. Locks and recoverable two-phase renames preserve image bytes, IDs, statistics and feature references. Matching features v6 align backend definitions; old libraries need `build --append` to refresh. HTTP API contract 2.0 tightens JSON and origin checks and returns synchronous mosaic results. See the verification records for compatibility changes, fault checks and the 45,625-image library acceptance.
+> **EN**: Version 1.14.2 reuses stored mean LAB for default HSV v2 ordering and renumbers indexed files after appends. Chroma below 0.5 enters grayscale; 15-degree hue bands start at 345 degrees and alternate lightness direction. Color caches retain source means; independent CPU/CUDA builds can differ, while repeated ordering of one database is stable. Locks and recoverable two-phase renames preserve image bytes, IDs, statistics and feature references. Matching features v6 align backend definitions; old libraries need `build --append` to refresh. HTTP API contract 2.0 tightens JSON and origin checks and returns synchronous mosaic results. See the verification records for compatibility changes, fault checks and the 45,625-image library acceptance.
