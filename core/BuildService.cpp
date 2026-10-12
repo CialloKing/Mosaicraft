@@ -580,6 +580,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
 
     if (!gpuOk && !request.normalizeOnly)
     {
+        tGpuStart = std::chrono::steady_clock::now();
         std::cout << "Features: CPU" << std::endl;
         for (size_t i = 0; i < files.size(); ++i) {
             if (!okFlags[i]) { skipped++; continue; }
@@ -665,10 +666,12 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     auto tNow = std::chrono::steady_clock::now();
     using Ms = std::chrono::milliseconds;
     auto normMs = std::chrono::duration_cast<Ms>(tNormEnd - tNormStart).count();
-    auto gpuMs = std::chrono::duration_cast<Ms>(tNow - tGpuStart).count();
+    // 重排和特征提取分别计时，不能把大量文件重命名算作 GPU 特征耗时。
+    auto gpuMs = std::chrono::duration_cast<Ms>(tColorStart - tGpuStart).count();
     auto totalMs = std::chrono::duration_cast<Ms>(tNow - tBuildStart).count();
     std::cout << "  Phase timing: normalize " << std::fixed << std::setprecision(1) << normMs / 1000.0
-              << "s | GPU features " << gpuMs / 1000.0 << "s";
+              << "s | " << (gpuOk ? "GPU" : "CPU") << " features " << gpuMs / 1000.0
+              << "s | color ordering " << colorSeconds << "s";
     if (totalMs > 0 && inserted > 0) {
         std::cout << " | throughput " << static_cast<int>(inserted * 1000.0 / totalMs) << " img/s";
     }

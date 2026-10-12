@@ -1,4 +1,4 @@
-﻿#include "core/Database.h"
+#include "core/Database.h"
 #include "core/BuildService.h"
 #include "core/DatabaseService.h"
 #include "core/InspectService.h"
@@ -119,7 +119,7 @@ static void printHelp()
     std::cout << R"(Mosaicraft — Image mosaic generator
 
 Usage:
-  mosaicraft build    [options]    Build image database
+  mosaicraft build    [options]    Build and HSV-order image database
   mosaicraft mosaic   [options]    Create mosaic from target image
   mosaicraft inspect  [options]    Inspect image features
   mosaicraft db-stats [options]    Show database statistics
@@ -133,9 +133,11 @@ Build options:
   -d, --db     <path>    Database path (default: mosaicraft.db)
   -t, --threads <n>      Worker threads (default: auto)
       --normalize-size <WxH>  Normalized image size (default: 180x320)
-      --append           Append mode: add new images without rebuilding
+      --append           Add new images, then renumber the entire library by mean color
   -r, --recursive        Scan subdirectories for source images
       --normalize-only   Only normalize images, don't build database
+  Build orders whole-image color and renumbers files from 000000.
+  Appends and same-directory builds may change existing numeric filenames.
 
 Mosaic options:
   -i, --input  <path>    Target image to mosaicify (required)

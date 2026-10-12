@@ -144,7 +144,7 @@ mosaicraft build -i <dir> [-o <dir>] [-d <path>] [-t <n>]
 | `-o --output <dir>` | `normalized` | 归一化输出目录 |
 | `-d --db <path>` | `mosaicraft.db` | 数据库路径 |
 | `-t --threads <n>` | 自动 | 归一化线程数 |
-| `--append` | — | 增量建库（仅新增图片） |
+| `--append` | — | 追加图片后按颜色重排全库 |
 | `-r --recursive` | — | 递归扫描子目录 |
 | `--normalize-only` | — | 仅归一化不建库（初筛用） |
 
@@ -700,3 +700,11 @@ v1.13.10 是一次发布可追溯性修正版本。v1.13.9 发布后，源码继
 PNG 使用有界多行 RGB 转换及写入；过滤器、压缩等级和每 1000 行刷新策略保持不变。`--benchmark` 增加邻域惩罚、排序、分析、加载、转换、写入、等待与缓存统计；工作线程加载时间是累加时间，不与墙钟总耗时相加。基准脚本新增 `--analysis-mode off|on|both`，默认分别采样普通生成和分析模式。性能数据及验收边界见 `docs/PERFORMANCE_v1.14.1.md`。
 
 > **EN**: Version 1.14.1 preserves matching rules and public defaults. Bounded neighbor comparisons, candidate feature buffers, usage-aware image caching and multirow PNG output reduce repeated work. PNG filters, compression and flush boundaries remain unchanged. Benchmark output separates normal generation from analysis overhead; the performance report records measured results and limitations.
+
+### 未发布更新：平均颜色 HSV 排序 v2 (2026-10-12)
+
+建库直接复用数据库平均 LAB，描述整张图片的综合色调；不读取缩略图、不使用主色回退。按 OpenCV 编码还原 `L*=avgL×100/255`、`a*=avgA−128`、`b*=avgB−128`，在保留小数时判断 `C < 0.5` 的灰度区。彩色将平均 LAB 转为 BGR，再转 HSV，以 345° 为起点，每 15° 一个区间，按交替明暗、精细色相和色度排列，相同键按内容哈希和图片 ID 排列。普通、重复、追加及同目录建库均执行全库重排；仅归一化模式保持原行为。独立颜色缓存升级为 v2，并记录来源均值，匹配特征仍为 v6。CPU/CUDA 独立建库允许平均颜色精度差异，同一数据库重复排序稳定。
+
+两阶段重命名、数据库路径事务、持久化恢复清单和跨进程图库锁共同保护图片与索引。图片 ID、使用统计及特征引用保持稳定，新特征文件使用内容哈希命名。未索引的冲突文件不会被覆盖，已索引图片跨卷移动会失败。实际验证和样本耗时见 [颜色排序验证](COLOR_ORDER_VERIFICATION.md)。
+
+> **EN**: Unreleased builds reuse stored mean LAB for HSV v2 ordering and renumber indexed files after appends. Chroma below 0.5 enters grayscale; 15-degree hue bands start at 345 degrees and alternate lightness direction. Color caches retain their source means; matching features remain v6. Independent CPU/CUDA builds can differ, while repeated ordering of one database is stable. Independent color metadata, stable image IDs and feature names, operation locks and recoverable two-phase renames preserve library integrity. See the verification record for CPU/CUDA checks and sample timings.
