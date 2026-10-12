@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-10-08 | 版本 / Version：v1.14.1
+> 最后更新 / Last updated：2026-10-12 | 版本 / Version：v1.15.0
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -348,6 +348,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.13.10 | tag/Release/zip 一致性、BUILD_INFO、真实附件验收强制化 | — |
 | 1.14.1 | 有界邻域比较、按使用次数释放缓存、CPU特征包校验、PNG多行写入 | 见性能报告 |
 | 1.14.0 | 196维并行ANN、字节预算缓存、公共流式输出、CUDA缓冲复用与失败处理 | 见性能报告 |
+| 1.15.0 | 默认平均色HSV建库、可恢复全库重编号、v6特征一致性与API 2.0边界修复 | 见验证记录 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -449,15 +450,15 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 
 ## 10. 已知限制与未来方向 / Limitations & Roadmap
 
-> **EN**: Known limits: WebP 16,383px cap, CPU/GPU feature algorithms differ, Edge density washed out at tile scale. Roadmap: incremental build, face/saliency weighting, GUI.
+> **EN**: Known limits: WebP has a 16,383px cap, independently computed CPU/GPU floating-point features can differ, and edge density has limited discrimination at tile scale. Appends are supported and renumber the entire library by color. Roadmap: face/saliency weighting and GUI.
 
 ### 已知限制
 
 - WebP 限制 16383px（低于 JPEG 65500px）
 - ANN 只读查询支持并发，v1.14.0 默认最多 8 线程；构建/修改索引期间不执行查询
-- 小块放大后边缘特征的区分度有限；CPU Canny 与 GPU 梯度算法仍有差异
+- 小块放大后边缘特征的区分度有限；CPU/CUDA 均使用 Canny 定义，其他浮点特征仍可能有精度差异
 - 自适应权重当前版退步，已冻结
-- 无增量建库（需全量重建）
+- `--append` 支持增量建库；完成时按颜色重排全库，旧图片文件名可能改变
 
 ### 已验证结论
 
@@ -471,7 +472,6 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 | 优先级 | 方向 |
 |--------|------|
 | P1 | Analyze 增强（分类细分、最差 tile 定位） |
-| P1 | 增量建库 |
 | P2 | 面部/显著区域权重 |
 | P2 | DeepZoom viewer 增强 |
 | P3 | GUI |
@@ -701,10 +701,16 @@ PNG 使用有界多行 RGB 转换及写入；过滤器、压缩等级和每 1000
 
 > **EN**: Version 1.14.1 preserves matching rules and public defaults. Bounded neighbor comparisons, candidate feature buffers, usage-aware image caching and multirow PNG output reduce repeated work. PNG filters, compression and flush boundaries remain unchanged. Benchmark output separates normal generation from analysis overhead; the performance report records measured results and limitations.
 
-### 未发布更新：平均颜色 HSV 排序 v2 (2026-10-12)
+### v1.15.0: 默认 HSV 颜色建库与边界修复 (2026-10-12)
+
+此版本将平均颜色排序设为默认建库行为，同时发布已完成的建库、匹配特征、文件输出和 HTTP API 边界修复。外部 HTTP API 合约升级为 **2.0**；同步 `/api/mosaic` 返回生成结果，维护清理仅接受 POST，结构化请求要求 JSON 并校验来源。命令行与内置 Web UI 已同步。
 
 建库直接复用数据库平均 LAB，描述整张图片的综合色调；不读取缩略图、不使用主色回退。按 OpenCV 编码还原 `L*=avgL×100/255`、`a*=avgA−128`、`b*=avgB−128`，在保留小数时判断 `C < 0.5` 的灰度区。彩色将平均 LAB 转为 BGR，再转 HSV，以 345° 为起点，每 15° 一个区间，按交替明暗、精细色相和色度排列，相同键按内容哈希和图片 ID 排列。普通、重复、追加及同目录建库均执行全库重排；仅归一化模式保持原行为。独立颜色缓存升级为 v2，并记录来源均值，匹配特征仍为 v6。CPU/CUDA 独立建库允许平均颜色精度差异，同一数据库重复排序稳定。
 
 两阶段重命名、数据库路径事务、持久化恢复清单和跨进程图库锁共同保护图片与索引。图片 ID、使用统计及特征引用保持稳定，新特征文件使用内容哈希命名。未索引的冲突文件不会被覆盖，已索引图片跨卷移动会失败。实际验证和样本耗时见 [颜色排序验证](COLOR_ORDER_VERIFICATION.md)。
 
-> **EN**: Unreleased builds reuse stored mean LAB for HSV v2 ordering and renumber indexed files after appends. Chroma below 0.5 enters grayscale; 15-degree hue bands start at 345 degrees and alternate lightness direction. Color caches retain their source means; matching features remain v6. Independent CPU/CUDA builds can differ, while repeated ordering of one database is stable. Independent color metadata, stable image IDs and feature names, operation locks and recoverable two-phase renames preserve library integrity. See the verification record for CPU/CUDA checks and sample timings.
+匹配特征 v6 统一 CPU/CUDA 的 8×8 分区、Canny 边缘定义、统计字段及评分尺度，去重使用落盘图像像素哈希。旧图库需运行 `build --append` 刷新特征并完成颜色重排；图片字节、ID 和使用统计保持对应，选图结果可能与旧特征版不同。还修复重复建库误删、中文特征及索引路径、特征包 ID 校验、数据库损坏检查与并发使用统计、取消竞态，以及 PNG/DeepZoom/TIFF 的失败处理。超大输出默认允许，超出编码器或整数范围时明确报错。具体用例与兼容边界见 [边界与一致性修复验证](BUGFIX_VERIFICATION.md)。
+
+验收使用实际 CUDA 和 CPU-only 构建、核心及服务回归、Web UI/API smoke。45,625 张现有图库重排后，连续编号为 `000000`–`045624`，灰度区 146 张、彩色区 45,479 张；图片与独立特征 SHA256、ID、使用统计和特征引用保持一致，重复运行补算 0 张、改名 0 张。颜色缓存算法版本为 2，与软件版本和匹配特征版本分别管理。
+
+> **EN**: Version 1.15.0 reuses stored mean LAB for default HSV v2 ordering and renumbers indexed files after appends. Chroma below 0.5 enters grayscale; 15-degree hue bands start at 345 degrees and alternate lightness direction. Color caches retain source means; independent CPU/CUDA builds can differ, while repeated ordering of one database is stable. Locks and recoverable two-phase renames preserve image bytes, IDs, statistics and feature references. Matching features v6 align backend definitions; old libraries need `build --append` to refresh. HTTP API contract 2.0 tightens JSON and origin checks and returns synchronous mosaic results. See the verification records for compatibility changes, fault checks and the 45,625-image library acceptance.
