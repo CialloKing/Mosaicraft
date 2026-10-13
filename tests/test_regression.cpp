@@ -7,6 +7,7 @@
 #include "../core/MatchingAccess.h"
 #include "../core/MosaicOutput.h"
 #include "../core/PngStreamWriter.h"
+#include "../core/TileCompositor.h"
 #include "../core/WorkerPool.h"
 #include <deque>
 #include <limits>
@@ -778,6 +779,182 @@ TEST_CASE("bounded cache shares immutable pixels and output modes agree")
         }
     }
     CHECK(cv::norm(imreadUnicode(source), sourcePixels, cv::NORM_INF) == 0);
+}
+
+TEST_CASE("overlay samples global pixel centers across tile boundaries and clamps edges")
+{
+    cv::Mat storage(4, 6, CV_8UC3, cv::Scalar(0, 0, 0));
+    cv::Mat target = storage(cv::Rect(1, 1, 4, 2)); // 非连续参考图也必须按行读取。
+    for (int y = 0; y < target.rows; ++y)
+    {
+        for (int x = 0; x < target.cols; ++x)
+        {
+            target.at<cv::Vec3b>(y, x) = cv::Vec3b(x * 80, y * 32, 64);
+        }
+    }
+    TileCompositor sampler(target, 2, 1, cv::Size(4, 2));
+    cv::Mat left, right;
+    sampler.sample(0, left);
+    sampler.sample(1, right);
+    const int expected[] = {0, 20, 60, 100, 140, 180, 220, 240};
+    for (int x = 0; x < 8; ++x)
+    {
+        CHECK((x < 4 ? left : right).at<cv::Vec3b>(0, x % 4)[0] == expected[x]);
+    }
+    CHECK(right.at<cv::Vec3b>(1, 3) == cv::Vec3b(240, 32, 64));
+    TileCompositor downsample(target, 2, 1, cv::Size(1, 1));
+    downsample.sample(1, right);
+    CHECK(right.at<cv::Vec3b>(0, 0) == cv::Vec3b(200, 16, 64));
+    CHECK_THROWS_AS(sampler.sample(2, right), std::out_of_range);
+    CHECK_THROWS_AS(TileCompositor(cv::Mat(), 2, 1, cv::Size(4, 2)), std::invalid_argument);
+}
+
+TEST_CASE("overlay preserves cache pixels adjustment order and all output paths")
+{
+    TempWorkspace workspace;
+    const cv::Mat source(4, 6, CV_8UC3, cv::Scalar(128, 96, 64));
+    const auto sourcePath = workspace.inputDir() / "source.png";
+    requireWriteImage(sourcePath, source);
+    ImageRecord record;
+    record.id = 1;
+    record.filePath = utf8(sourcePath);
+    std::vector<int> selected{0, 0, 0, -1};
+    cv::Mat target(4, 4, CV_8UC3);
+    for (int y = 0; y < 4; ++y)
+    {
+        for (int x = 0; x < 4; ++x)
+        {
+            target.at<cv::Vec3b>(y, x) = cv::Vec3b(x * 64, y * 64, 64);
+        }
+    }
+    cv::Mat enlarged;
+    cv::resize(target, enlarged, cv::Size(12, 8), 0, 0, cv::INTER_LINEAR);
+    MosaicEngine::Config config;
+    config.outputFormat = "png";
+    config.formatExplicit = true;
+    config.benchmark = true;
+    OutputStats stats;
+    auto adjust = [](cv::Mat &image, double)
+    {
+        image.setTo(cv::Scalar(64, 128, 192));
+    };
+    for (bool brightness : {false, true})
+    {
+        config.colorAdjust = brightness;
+        for (double strength : {0.0, 0.25, 1.0})
+        {
+            config.overlayStrength = strength;
+            cv::Mat material(8, 12, CV_8UC3, brightness ? cv::Scalar(64, 128, 192) : cv::Scalar(128, 96, 64));
+            cv::Mat expected;
+            cv::addWeighted(material, 1 - strength, enlarged, strength, 0, expected);
+            expected(cv::Rect(6, 4, 6, 4)).setTo(cv::Scalar(64, 64, 64));
+            cv::Mat reference;
+            for (const std::string mode : {"batch", "stream"})
+            {
+                config.writeMode = mode;
+                const auto path = utf8(workspace.outputDir() / (mode + ".png"));
+                REQUIRE(writeIndexedMosaicOutput(config, path, 2, 2, 6, 4, {record}, selected, adjust, stats,
+                                                strength == 0 ? cv::Mat() : target));
+                const auto pixels = imreadUnicode(path);
+                CHECK(cv::norm(pixels, expected, cv::NORM_INF) <= 1);
+                CHECK(stats.failed == 1);
+                CHECK(stats.overlayReferenceBytes == (strength == 0 ? 0 : 48));
+                CHECK(stats.overlayWorkingBytes <= 8 * TileCompositor::workingBytes(cv::Size(6, 4)));
+                if (reference.empty())
+                {
+                    reference = pixels;
+                }
+                else
+                {
+                    CHECK(cv::norm(pixels, reference, cv::NORM_INF) == 0);
+                }
+            }
+        }
+    }
+    CHECK(cv::norm(imreadUnicode(record.filePath), source, cv::NORM_INF) == 0);
+    config.overlayStrength = 1;
+    CHECK_FALSE(writeIndexedMosaicOutput(config, utf8(workspace.mosaicPath()), 2, 2, 6, 4,
+                                        {record}, selected, adjust, stats));
+    selected.assign(4, 0);
+    config.colorAdjust = false;
+    config.tiledOutput = true;
+    auto jpeg = [&](const cv::Mat &image)
+    {
+        std::vector<uchar> bytes;
+        REQUIRE(cv::imencode(".jpg", image, bytes, {cv::IMWRITE_JPEG_QUALITY, config.jpegQuality}));
+        return cv::imdecode(bytes, cv::IMREAD_COLOR);
+    };
+    cv::Mat encodedTiles(8, 12, CV_8UC3);
+    for (int i = 0; i < 4; ++i)
+    {
+        const cv::Rect region((i % 2) * 6, (i / 2) * 4, 6, 4);
+        jpeg(enlarged(region)).copyTo(encodedTiles(region));
+    }
+    for (bool deepZoom : {false, true})
+    {
+        config.deepZoom = deepZoom;
+        const auto path = utf8(workspace.outputDir() / (deepZoom ? "zoom" : "tiles"));
+        REQUIRE(writeIndexedMosaicOutput(config, path, 2, 2, 6, 4, {record}, selected, {}, stats, target));
+        CHECK(stats.failed == 0);
+        const auto imagePath = deepZoom ? path + "_files/4/0_0.jpg" : path + "_files/0/1_0.jpg";
+        const auto pixels = imreadUnicode(imagePath);
+        // 分块先编码 JPEG，金字塔最高层再编码；对照相同编码步骤，不能拿原像素限制色度采样误差。
+        const cv::Mat expected = deepZoom ? jpeg(encodedTiles) : encodedTiles(cv::Rect(6, 0, 6, 4));
+        REQUIRE(pixels.size() == expected.size());
+        CHECK(cv::norm(pixels, expected, cv::NORM_INF) <= 4);
+        if (deepZoom)
+        {
+            CHECK(fs::exists(u8path(path + ".dzi")));
+        }
+    }
+}
+
+TEST_CASE("overlay follows resize upscale and reflected padding without changing selections")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    writeTargetImage(workspace.targetPath());
+    REQUIRE(BuildService().run(makeBuildRequest(workspace)).ok);
+    auto request = makeMosaicRequest(workspace);
+    auto &config = request.config;
+    config.outW = 11;
+    config.outH = 13;
+    config.upscale = 2;
+    config.tileW = config.tileH = 4;
+    config.nativeTileW = config.nativeTileH = 6;
+    config.lRange = 255;
+    cv::Mat target, resized, padded, expected;
+    cv::resize(imreadUnicode(request.inputPath), resized, cv::Size(11, 13), 0, 0, cv::INTER_AREA);
+    cv::resize(resized, target, cv::Size(22, 26), 0, 0, cv::INTER_LINEAR);
+    cv::copyMakeBorder(target, padded, 0, 2, 0, 2, cv::BORDER_REFLECT);
+    cv::resize(padded, expected, cv::Size(36, 42), 0, 0, cv::INTER_LINEAR);
+    for (bool gpu : {false, true})
+    {
+        if (gpu && !cuda::isCudaAvailable())
+        {
+            continue;
+        }
+        config.useGpu = gpu;
+        std::vector<int> baseline;
+        for (double strength : {0.0, 1.0})
+        {
+            config.overlayStrength = strength;
+            MosaicEngine engine;
+            MatchingAccess::configure(engine, MatchingLimits{}, true, 123);
+            std::vector<int> selected;
+            MatchingAccess::captureSelections(engine, selected);
+            REQUIRE(engine.generate(request.inputPath, request.dbPath, request.outputPath, config));
+            if (strength == 0)
+            {
+                baseline = selected;
+            }
+            else
+            {
+                CHECK(selected == baseline);
+                CHECK(cv::norm(imreadUnicode(request.outputPath), expected, cv::NORM_INF) <= 1);
+            }
+        }
+    }
 }
 
 TEST_CASE("worst tile snapshots retain bounded details and original tie order")

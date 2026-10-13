@@ -158,6 +158,7 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
     std::sort(topUsed.rbegin(), topUsed.rend());
 
     std::cout << "\n=== Match Quality Analysis ===\n";
+    std::cout << "  Scores describe selected tiles before brightness adjustment and base-image overlay.\n";
     std::cout << "  Tiles: " << n << "\n";
     std::cout << "  Score: mean=" << std::fixed << std::setprecision(4) << scoreMean
               << " median=" << scoreP50 << " p90=" << scoreP90
@@ -470,7 +471,8 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
         html << "<tr><th>Matched</th><td>" << matched << " / " << totalTiles << "</td></tr>\n";
         html << "</table>\n";
 
-        html << "<h2>Match Quality</h2><table>\n";
+        html << "<h2>Match Quality</h2><p>Scores describe selected tiles before brightness adjustment and "
+             << "base-image overlay, not the final composited image.</p><table>\n";
         html << "<tr><th>Score Mean</th><td>" << scoreMean << "</td></tr>\n";
         html << "<tr><th>Score Median</th><td>" << scoreP50 << "</td></tr>\n";
         html << "<tr><th>Score P90</th><td>" << scoreP90 << "</td></tr>\n";
@@ -1002,6 +1004,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << "  Candidate sorting: " << msSort << " ms\n";
         std::cout << "  Analysis: " << msAnalysis << " ms\n";
         std::cout << "  Output loading (worker sum): " << outputStats.loadingMs << " ms\n";
+        std::cout << "  Overlay sampling (worker sum): " << outputStats.overlaySamplingMs << " ms\n"
+                  << "  Overlay blending (worker sum): " << outputStats.overlayBlendMs << " ms\n"
+                  << "  Overlay reference bytes: " << outputStats.overlayReferenceBytes << "\n"
+                  << "  Overlay worker budget bytes: " << outputStats.overlayWorkingBytes << "\n";
         std::cout << "  Color conversion: " << outputStats.colorMs << " ms\n";
         std::cout << "  Row encoding: " << outputStats.codecMs << " ms\n";
         std::cout << "  Producer wait: " << outputStats.producerWaitMs << " ms\n";
@@ -1981,14 +1987,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
     {
         std::cout << "  " << noCandidateCount << " tiles had no candidates\n";
     }
-    if (!cfg.analyze)
+    if (!cfg.analyze && cfg.overlayStrength == 0)
     {
         target.release();
     }
 
     releaseGpuLib();
     if (!writeIndexedMosaicOutput(cfg, outputPath, tilesX, tilesY, outTileW, outTileH, allRecords, bestLibIdx,
-                                  adjustColor, outputStats))
+                                  adjustColor, outputStats, target))
     {
         return false;
     }

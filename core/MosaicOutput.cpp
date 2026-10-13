@@ -4,6 +4,7 @@
 #include "ImageCache.h"
 #include "JpgStreamWriter.h"
 #include "PngStreamWriter.h"
+#include "TileCompositor.h"
 #include "WorkerPool.h"
 #include <array>
 #include <chrono>
@@ -37,7 +38,7 @@ uint64_t availableMemory()
 static bool writeOutput(const MosaicEngine::Config &config, const std::string &path, int tilesX, int tilesY, int tileW,
                         int tileH, const std::function<const ImageRecord &(size_t)> &recordAt,
                         const std::vector<int> &selected, const std::function<void(cv::Mat &, double)> &adjustColor,
-                        OutputStats &stats)
+                        OutputStats &stats, const cv::Mat &target)
 {
     try
     {
@@ -49,6 +50,19 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
         if (selected.size() != count)
         {
             throw std::invalid_argument("selection count does not match output grid");
+        }
+        if (!std::isfinite(config.overlayStrength) || config.overlayStrength < 0 || config.overlayStrength > 1)
+        {
+            throw std::invalid_argument("overlayStrength must be finite and between 0 and 1");
+        }
+        const unsigned workers = static_cast<unsigned>(
+            std::min<size_t>(count, std::min(8u, std::max(1u, std::thread::hardware_concurrency()))));
+        std::unique_ptr<TileCompositor> compositor;
+        if (config.overlayStrength > 0)
+        {
+            compositor = std::make_unique<TileCompositor>(target, tilesX, tilesY, cv::Size(tileW, tileH));
+            stats.overlayReferenceBytes = target.total() * target.elemSize();
+            stats.overlayWorkingBytes = workers * TileCompositor::workingBytes(cv::Size(tileW, tileH));
         }
         ImageCache cache(ImageCache::kDefaultBudget, config.benchmark);
         std::unordered_map<int, size_t> useCounts;
@@ -67,10 +81,15 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
                 cache.finishUse(recordAt(i).id, tileW, tileH);
             }
         };
-        WorkerPool pool(static_cast<unsigned>(
-            std::min<size_t>(count, std::min(8u, std::max(1u, std::thread::hardware_concurrency())))));
+        WorkerPool pool(workers);
         std::atomic<int> failures{0};
         std::atomic<int64_t> loadingNs{0};
+        std::atomic<int64_t> samplingNs{0}, blendingNs{0};
+        auto finishOverlayStats = [&]()
+        {
+            stats.overlaySamplingMs = samplingNs.load() / 1000000.0;
+            stats.overlayBlendMs = blendingNs.load() / 1000000.0;
+        };
         auto load = [&](size_t i) -> std::shared_ptr<const cv::Mat>
         {
             if (selected[i] < 0)
@@ -89,10 +108,28 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
                 ++failures;
                 return {};
             }
-            if (config.colorAdjust)
+            if (config.colorAdjust || compositor)
             {
+                // 同一素材在不同位置有不同参考色，所有调整共享这一份独立副本。
                 cv::Mat adjusted = image->clone();
-                adjustColor(adjusted, config.colorStrength);
+                if (config.colorAdjust)
+                {
+                    adjustColor(adjusted, config.colorStrength);
+                }
+                if (compositor)
+                {
+                    cv::Mat reference;
+                    const auto sampleStart = now();
+                    compositor->sample(i, reference);
+                    const auto blendStart = now();
+                    cv::addWeighted(adjusted, 1.0 - config.overlayStrength, reference, config.overlayStrength,
+                                    0.0, adjusted);
+                    if (config.benchmark)
+                    {
+                        samplingNs += std::chrono::duration_cast<std::chrono::nanoseconds>(blendStart - sampleStart).count();
+                        blendingNs += std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - blendStart).count();
+                    }
+                }
                 return std::make_shared<const cv::Mat>(std::move(adjusted));
             }
             return image;
@@ -133,6 +170,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
             stats.loadingMs = loadingNs.load() / 1000000.0;
             stats.failed = failures;
             stats.matched = static_cast<int>(count) - stats.failed;
+            finishOverlayStats();
             return true;
         }
 
@@ -182,7 +220,8 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
         const uint64_t memory = availableMemory();
         // 编码可能暂存整图，且缓存与两行预取会同时存活，不能只估算画布。
         const uint64_t estimated =
-            rawBytes * 2 + ImageCache::kDefaultBudget + rowBytes * 2 + conversionBytes + 16 * 1024 * 1024;
+            rawBytes * 2 + ImageCache::kDefaultBudget + rowBytes * 2 + conversionBytes + 16 * 1024 * 1024 +
+            stats.overlayReferenceBytes + stats.overlayWorkingBytes;
         const bool stream =
             format != "webp" &&
             (config.writeMode == "stream" ||
@@ -392,6 +431,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
         stats.loadingMs = loadingNs.load() / 1000000.0;
         stats.failed = failures;
         stats.matched = static_cast<int>(count) - stats.failed;
+        finishOverlayStats();
         return true;
     }
     catch (const std::exception &error)
@@ -403,7 +443,8 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
 
 bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &path, int tilesX, int tilesY, int tileW,
                        int tileH, const std::vector<ImageRecord> &records, const std::vector<int> &selected,
-                       const std::function<void(cv::Mat &, double)> &adjustColor, OutputStats &stats)
+                       const std::function<void(cv::Mat &, double)> &adjustColor, OutputStats &stats,
+                       const cv::Mat &target)
 {
     return writeOutput(
         config, path, tilesX, tilesY, tileW, tileH,
@@ -411,13 +452,14 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
         {
             return records.at(i);
         },
-        selected, adjustColor, stats);
+        selected, adjustColor, stats, target);
 }
 
 bool writeIndexedMosaicOutput(const MosaicEngine::Config &config, const std::string &path, int tilesX, int tilesY,
                               int tileW, int tileH, const std::vector<ImageRecord> &library,
                               const std::vector<int> &selected,
-                              const std::function<void(cv::Mat &, double)> &adjustColor, OutputStats &stats)
+                              const std::function<void(cv::Mat &, double)> &adjustColor, OutputStats &stats,
+                              const cv::Mat &target)
 {
     const ImageRecord missing;
     return writeOutput(
@@ -426,7 +468,7 @@ bool writeIndexedMosaicOutput(const MosaicEngine::Config &config, const std::str
         {
             return selected.at(i) < 0 ? missing : library.at(selected[i]);
         },
-        selected, adjustColor, stats);
+        selected, adjustColor, stats, target);
 }
 
 } // namespace mosaicraft

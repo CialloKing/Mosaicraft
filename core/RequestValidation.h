@@ -29,6 +29,11 @@ inline bool validateBuildRequest(const BuildRequest& request, std::string& error
 inline bool validateMosaicRequest(MosaicRequest& request, std::string& error)
 {
     auto& cfg = request.config;
+    if (!std::isfinite(cfg.overlayStrength) || cfg.overlayStrength < 0 || cfg.overlayStrength > 1)
+    {
+        error = "overlayStrength must be finite and between 0 and 1";
+        return false;
+    }
     if (cfg.tileW < 4 || cfg.tileH < 4 || !validImageSize(cfg.tileW, cfg.tileH) ||
         !validImageSize(cfg.nativeTileW, cfg.nativeTileH) || cfg.outW < 0 || cfg.outH < 0 || cfg.outW > 1000000 ||
         cfg.outH > 1000000 || cfg.upscale < 0 || cfg.upscale > 64 || cfg.candidates < 1 || cfg.candidates > 10000 ||

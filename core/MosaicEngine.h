@@ -51,6 +51,8 @@ public:
         bool   colorAdjust = false;        // 默认关闭（远看有摩尔纹，待进一步优化）
         double colorStrength = 0.04;       // L 通道最大相对扰动（0.04 = ±4%，乘数均值为 1）
 
+        double overlayStrength = 0.0;      // 处理后的基础图透明叠加强度，0 关闭，1 完全显示基础图。
+
         // Benchmark：输出各阶段耗时与统计（用于性能分析）
         bool benchmark = false;
 
