@@ -8,7 +8,7 @@
 
 using namespace mosaicraft;
 
-// 显式运行的读取对比工具；候选集合来自同一固定样本生成的校验元数据。
+// 显式比较同一数据库全库特征的逐文件读取与经过校验的包读取。
 int main(int argc, char **argv)
 {
     if (argc != 3)

@@ -1,0 +1,1073 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-13",
+  "project_version": "1.14.2",
+  "matching_feature_version": 6,
+  "api_contract": "2.0",
+  "hardware": {
+    "os": "Windows 10 19045 x64",
+    "cpu": "AMD Ryzen 9 7940H",
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "driver": "616.92",
+    "cuda_toolkit": "13.3.33",
+    "build": "Visual Studio 18 2026 Release x64",
+    "visible_ram_bytes": 33521741824
+  },
+  "baseline": {
+    "commit": "54a249c58b17bc50286e02f63872887818f3998f",
+    "executable_sha256": {
+      "cpu": "cc086b15ef98669adc42de74d8743ac00009aa69ea6d01de1ef7f1fd99f12db5",
+      "cuda": "4e4579cd5d254fb944f419d9a8e2aac88183f8d6e27bd0f2eab6c2b9ac858554"
+    }
+  },
+  "implementation": {
+    "algorithm_commit": "77d00df80d87bf6cfb57adfc803f2065428f27a5",
+    "verification_commit": "05f495510d8b173d69a16931eebd0a10a86bfe7c",
+    "note": "Performance samples include the final algorithms and phase logging before the last display-only corrections for zero-work phases and end-of-build wall timing.",
+    "verification_executable_sha256": {
+      "cpu": "af8541dbafe6467dea8291b4e6bd93fd52f5c2642f5f18f7dd2cf53328785006",
+      "cuda": "ff4c8330c2b340aacfe439041bfa541adb8f1b0b6939177e1c31244b36b08a46"
+    }
+  },
+  "method": {
+    "warmups_per_variant": 1,
+    "measured_runs_per_variant": 3,
+    "alternating_order": true,
+    "statistic": "median process wall seconds",
+    "poll_interval_seconds": 0.025,
+    "peak_memory": "max Windows PeakWorkingSetSize over the three measured runs; host process only",
+    "analysis_during_performance": false,
+    "color_adjust": false,
+    "topn_random": 1,
+    "phases_additive": false,
+    "feature_build_log_precision_seconds": 0.1,
+    "zero_work_log_note": "Measured no-op logs predate the zero-work display fix; those normalize/features fields include setup and do not indicate work on new images."
+  },
+  "fixture": {
+    "records": 45625,
+    "legacy_pack_payload_differences": [
+      45625,
+      45625
+    ],
+    "source_db_sha256": "3571d04f2d9b51411fce39a41a132dee093eb75586745a24a2ca4fe180ed7e5a",
+    "formal_database_unchanged": true,
+    "snapshot_sha256": "f1da47447bc5048d7ec11dc129e4c8649b71c8ffda4cf34e458632839ef8a628",
+    "usage_count_sha256": "d5008008b55c06e85acb9b127df7ff7a5d9bce316732e3a7ffc9973eef14e8f0",
+    "target_sha256": "5e10a27f294e28bb58e07d2c9c987152806ea856e9eb4bc5ff14f3ea0554d8ff",
+    "library_size": 45625,
+    "normalized_size": [
+      180,
+      320
+    ],
+    "cpu_build_images": 1024,
+    "cpu_build_threads": 8,
+    "cpu_build_record_sha256": "bea06cf0cf6d8174ff4114f14196df037dfd84672c3780706cd5413c334126e4",
+    "mosaic_tile_count": 1600,
+    "mosaic_output_size": [
+      7200,
+      12800
+    ],
+    "legacy_pack_for_baseline": "Rebuilt from independent source features in the private fixture to compare valid v6 data.",
+    "private_image_feature_files": "hardlinks; source bytes preserved"
+  },
+  "compatibility": {
+    "outputs": [
+      {
+        "scenario": "cuda_jpg",
+        "output_sha256": "a2ef556707b57cdcaa61cb58386c6f7008b535b7c6ed2da19b1fbb438c656119",
+        "output_bytes": 69500026,
+        "decoded_pixel_max_diff": 0
+      },
+      {
+        "scenario": "cpu_jpg",
+        "output_sha256": "bf23b0437550fa0dfa7b52df4867a06302563532c2da655108b8c9b8f18f05f1",
+        "output_bytes": 68959187,
+        "decoded_pixel_max_diff": 0
+      },
+      {
+        "scenario": "cuda_png",
+        "output_sha256": "f11079b502ac66d8a0b9be3c6268d22fffe3a7015f6faca9e9397dccd99c26e2",
+        "output_bytes": 145393577,
+        "decoded_pixel_max_diff": 0
+      }
+    ],
+    "analysis_runs": [
+      {
+        "backend": "cpu",
+        "usage_histogram_equal": true,
+        "usage_histogram_sha256": "ce8be889b5f6ddc68e190e253515118277d44353d2f11593e6d5779120caba57",
+        "decoded_pixel_max_diff": 0
+      },
+      {
+        "backend": "cuda",
+        "usage_histogram_equal": true,
+        "usage_histogram_sha256": "769d57748796e0ce3473b3c86ea02ce74c6321907b256a0c6b770b4d8ff7920f",
+        "decoded_pixel_max_diff": 0
+      }
+    ],
+    "bright_stale_cache": [
+      {
+        "backend": "cpu",
+        "chosen_id": 2,
+        "quality": [
+          "Score: mean=0.0000 median=0.0000 p90=0.0000 p99=0.0000 max=0.0000"
+        ]
+      },
+      {
+        "backend": "gpu",
+        "chosen_id": 2,
+        "quality": [
+          "Score: mean=0.0000 median=0.0000 p90=0.0000 p99=0.0000 max=0.0000"
+        ]
+      }
+    ],
+    "no_new_images": {
+      "reused": true,
+      "manifest_and_generation_unchanged": true
+    }
+  },
+  "validation": {
+    "cuda": {
+      "core_cases": 49,
+      "regression_cases": 16,
+      "ctest": "2/2 passed",
+      "webui_api_smoke": "passed"
+    },
+    "cpu_only": {
+      "core_cases": 49,
+      "regression_cases": 16,
+      "ctest": "2/2 passed",
+      "webui_api_smoke": "passed"
+    },
+    "features_benchmark_target": "built in both configurations",
+    "linux": "not run"
+  },
+  "medians": [
+    {
+      "scenario": "cpu_build",
+      "median_seconds": {
+        "baseline": 7.075872499999605,
+        "current": 4.526956600000631
+      },
+      "change_percent": -36.02263749098243,
+      "peak_rss": {
+        "baseline": 30216192,
+        "current": 81514496
+      },
+      "phases": {
+        "baseline": {
+          "normalize_s": 2.1,
+          "color_order_s": 1.6,
+          "build_features_s": 3.3
+        },
+        "current": {
+          "Color sorting": 0.356,
+          "color_order_s": 1.4,
+          "build_features_s": 0.9,
+          "Color validation (paths+keys)": 94.741,
+          "Build total (wall, including scan/cache)": 4490.2,
+          "Color filesystem/SQL writing": 1324.922,
+          "Cache writing": 7.4,
+          "normalize_s": 2.1,
+          "Cache validation/source loading": 55.6
+        }
+      }
+    },
+    {
+      "scenario": "noop_build",
+      "median_seconds": {
+        "baseline": 18.487362900001244,
+        "current": 8.832732700000633
+      },
+      "change_percent": -52.22286300227255,
+      "peak_rss": {
+        "baseline": 252035072,
+        "current": 276250624
+      },
+      "phases": {
+        "baseline": {
+          "normalize_s": 1.2,
+          "color_order_s": 15.0,
+          "build_features_s": 1.2
+        },
+        "current": {
+          "Color sorting": 36.803,
+          "color_order_s": 5.3,
+          "build_features_s": 1.2,
+          "Color validation (paths+keys)": 5190.626,
+          "Build total (wall, including scan/cache)": 8755.4,
+          "Color filesystem/SQL writing": 0.0,
+          "Cache writing": 0.0,
+          "normalize_s": 1.2,
+          "Cache validation/source loading": 254.8
+        }
+      }
+    },
+    {
+      "scenario": "cuda_jpg",
+      "median_seconds": {
+        "baseline": 2.78327039999931,
+        "current": 2.9130217999991146
+      },
+      "change_percent": 4.661832353760409,
+      "peak_rss": {
+        "baseline": 613642240,
+        "current": 613781504
+      },
+      "phases": {
+        "baseline": {
+          "Producer wait": 0.0,
+          "Candidate sorting": 0.3,
+          "Feature GPU upload": 43.0,
+          "Encoding": 403.2,
+          "Analysis": 0.0,
+          "CPU scoring": 0.0,
+          "Feature GPU download": 1.9,
+          "Output loading (worker sum)": 1042.2,
+          "Score GPU compute": 9.5,
+          "=== Total": 2652.1,
+          "CPU feature loading": 0.0,
+          "Feature GPU allocation": 0.3,
+          "Color conversion": 0.0,
+          "ANN query": 41.8,
+          "Features": 241.9,
+          "Score GPU download": 0.3,
+          "Score GPU upload": 1.5,
+          "Score GPU allocation": 0.2,
+          "ANN load": 235.8,
+          "Library GPU allocation": 79.4,
+          "Prep (DB+GPU)": 1394.3,
+          "Selection": 128.8,
+          "GPU scoring": 18.4,
+          "Avg/tile": 1.7,
+          "Feature GPU compute": 27.3,
+          "Row encoding": 0.0,
+          "Neighbor penalties": 125.9,
+          "Placement": 159.9,
+          "Library GPU upload": 16.2,
+          "Consumer wait": 0.0
+        },
+        "current": {
+          "Producer wait": 0.0,
+          "Candidate sorting": 0.3,
+          "Feature GPU upload": 45.5,
+          "Encoding": 387.6,
+          "Analysis": 0.0,
+          "CPU scoring": 0.0,
+          "Feature GPU download": 1.7,
+          "Output loading (worker sum)": 1035.2,
+          "Score GPU compute": 9.7,
+          "=== Total": 2794.9,
+          "CPU feature loading": 0.0,
+          "Feature GPU allocation": 0.5,
+          "Color conversion": 0.0,
+          "ANN query": 43.3,
+          "Features": 131.0,
+          "Score GPU download": 0.4,
+          "Score GPU upload": 1.5,
+          "Score GPU allocation": 0.2,
+          "ANN load": 235.8,
+          "Library GPU allocation": 82.8,
+          "Prep (DB+GPU)": 1653.0,
+          "Selection": 131.5,
+          "GPU scoring": 18.8,
+          "Avg/tile": 1.7,
+          "Feature GPU compute": 27.0,
+          "Row encoding": 0.0,
+          "Neighbor penalties": 128.9,
+          "Placement": 158.4,
+          "Library GPU upload": 15.9,
+          "Consumer wait": 0.0
+        }
+      }
+    },
+    {
+      "scenario": "cpu_jpg",
+      "median_seconds": {
+        "baseline": 3.5292860999998084,
+        "current": 2.7860383999995975
+      },
+      "change_percent": -21.05943465451132,
+      "peak_rss": {
+        "baseline": 506130432,
+        "current": 506478592
+      },
+      "phases": {
+        "baseline": {
+          "Producer wait": 0.0,
+          "Tiny": 205.4,
+          "Candidate sorting": 0.3,
+          "Encoding": 396.6,
+          "Analysis": 0.0,
+          "CPU scoring": 343.5,
+          "Output loading (worker sum)": 1083.5,
+          "=== Total": 3469.3,
+          "CPU feature loading": 783.4,
+          "Color conversion": 0.0,
+          "ANN query": 41.7,
+          "Grid": 185.3,
+          "Features": 202.6,
+          "ANN load": 225.5,
+          "Prep (DB+GPU)": 1269.4,
+          "LBP": 440.5,
+          "Selection": 794.0,
+          "LAB": 1806.5,
+          "Avg/tile": 2.2,
+          "Edge": 229.7,
+          "Row encoding": 0.0,
+          "Neighbor penalties": 181.0,
+          "Placement": 165.2,
+          "Consumer wait": 0.0,
+          "Resize": 87.4
+        },
+        "current": {
+          "Producer wait": 0.0,
+          "Tiny": 212.5,
+          "Candidate sorting": 0.3,
+          "Encoding": 403.2,
+          "Analysis": 0.0,
+          "CPU scoring": 305.5,
+          "Output loading (worker sum)": 1003.9,
+          "=== Total": 2749.6,
+          "CPU feature loading": 131.5,
+          "Color conversion": 0.0,
+          "ANN query": 42.6,
+          "Grid": 171.4,
+          "Features": 203.9,
+          "ANN load": 224.9,
+          "Prep (DB+GPU)": 1237.5,
+          "LBP": 434.1,
+          "Selection": 141.9,
+          "LAB": 1827.7,
+          "Avg/tile": 1.7,
+          "Edge": 225.7,
+          "Row encoding": 0.0,
+          "Neighbor penalties": 148.8,
+          "Placement": 154.6,
+          "Consumer wait": 0.0,
+          "Resize": 91.3
+        }
+      }
+    },
+    {
+      "scenario": "cuda_png",
+      "median_seconds": {
+        "baseline": 7.674751800001104,
+        "current": 7.669438300001275
+      },
+      "change_percent": -0.06923350928206284,
+      "peak_rss": {
+        "baseline": 287580160,
+        "current": 288174080
+      },
+      "phases": {
+        "baseline": {
+          "Producer wait": 4796.6,
+          "Candidate sorting": 0.4,
+          "Feature GPU upload": 44.5,
+          "Encoding": 5281.1,
+          "Analysis": 0.0,
+          "CPU scoring": 0.0,
+          "Feature GPU download": 1.9,
+          "Output loading (worker sum)": 1238.3,
+          "Score GPU compute": 10.4,
+          "=== Total": 7568.9,
+          "CPU feature loading": 0.0,
+          "Feature GPU allocation": 0.4,
+          "Color conversion": 40.2,
+          "ANN query": 54.5,
+          "Features": 263.7,
+          "Score GPU download": 0.4,
+          "Score GPU upload": 1.7,
+          "Score GPU allocation": 0.2,
+          "ANN load": 256.3,
+          "Library GPU allocation": 101.5,
+          "Prep (DB+GPU)": 1555.7,
+          "Selection": 180.5,
+          "GPU scoring": 21.0,
+          "Avg/tile": 4.7,
+          "Feature GPU compute": 30.8,
+          "Row encoding": 5240.7,
+          "Neighbor penalties": 176.4,
+          "Placement": 216.5,
+          "Library GPU upload": 16.9,
+          "Consumer wait": 7.2
+        },
+        "current": {
+          "Producer wait": 4655.4,
+          "Candidate sorting": 0.3,
+          "Feature GPU upload": 45.8,
+          "Encoding": 5142.8,
+          "Analysis": 0.0,
+          "CPU scoring": 0.0,
+          "Feature GPU download": 2.0,
+          "Output loading (worker sum)": 1201.6,
+          "Score GPU compute": 10.1,
+          "=== Total": 7549.1,
+          "CPU feature loading": 0.0,
+          "Feature GPU allocation": 0.4,
+          "Color conversion": 39.3,
+          "ANN query": 43.8,
+          "Features": 139.1,
+          "Score GPU download": 0.4,
+          "Score GPU upload": 1.6,
+          "Score GPU allocation": 0.2,
+          "ANN load": 244.5,
+          "Library GPU allocation": 101.8,
+          "Prep (DB+GPU)": 1757.9,
+          "Selection": 144.9,
+          "GPU scoring": 20.7,
+          "Avg/tile": 4.7,
+          "Feature GPU compute": 30.8,
+          "Row encoding": 5103.3,
+          "Neighbor penalties": 142.0,
+          "Placement": 210.6,
+          "Library GPU upload": 17.2,
+          "Consumer wait": 7.3
+        }
+      }
+    }
+  ],
+  "measurements": [
+    {
+      "scenario": "cpu_build",
+      "variant": "baseline",
+      "run": 0,
+      "warmup": true,
+      "seconds": 6.951575999999477,
+      "peak_rss": 28160000,
+      "phases_ms": {
+        "normalize": 2100.0,
+        "build_features": 3200.0,
+        "color_order": 1600.0
+      }
+    },
+    {
+      "scenario": "cpu_build",
+      "variant": "current",
+      "run": 0,
+      "warmup": true,
+      "seconds": 4.60217190000003,
+      "peak_rss": 79134720,
+      "phases_ms": {
+        "Color validation (paths+keys)": 107.588,
+        "Color sorting": 0.407,
+        "Color filesystem/SQL writing": 1361.953,
+        "Cache validation/source loading": 52.2,
+        "Cache writing": 7.2,
+        "Build total (wall, including scan/cache)": 4547.1,
+        "normalize": 2100.0,
+        "build_features": 900.0,
+        "color_order": 1500.0
+      }
+    },
+    {
+      "scenario": "cpu_build",
+      "variant": "current",
+      "run": 1,
+      "warmup": false,
+      "seconds": 4.526956600000631,
+      "peak_rss": 79261696,
+      "phases_ms": {
+        "Color validation (paths+keys)": 94.741,
+        "Color sorting": 0.364,
+        "Color filesystem/SQL writing": 1324.922,
+        "Cache validation/source loading": 60.4,
+        "Cache writing": 7.3,
+        "Build total (wall, including scan/cache)": 4481.1,
+        "normalize": 2100.0,
+        "build_features": 800.0,
+        "color_order": 1400.0
+      }
+    },
+    {
+      "scenario": "cpu_build",
+      "variant": "baseline",
+      "run": 1,
+      "warmup": false,
+      "seconds": 7.050873100000899,
+      "peak_rss": 29511680,
+      "phases_ms": {
+        "normalize": 2100.0,
+        "build_features": 3200.0,
+        "color_order": 1600.0
+      }
+    },
+    {
+      "scenario": "cpu_build",
+      "variant": "baseline",
+      "run": 2,
+      "warmup": false,
+      "seconds": 7.075872499999605,
+      "peak_rss": 28934144,
+      "phases_ms": {
+        "normalize": 2100.0,
+        "build_features": 3300.0,
+        "color_order": 1600.0
+      }
+    },
+    {
+      "scenario": "cpu_build",
+      "variant": "current",
+      "run": 2,
+      "warmup": false,
+      "seconds": 4.578638599999977,
+      "peak_rss": 81514496,
+      "phases_ms": {
+        "Color validation (paths+keys)": 101.105,
+        "Color sorting": 0.356,
+        "Color filesystem/SQL writing": 1364.831,
+        "Cache validation/source loading": 55.6,
+        "Cache writing": 7.7,
+        "Build total (wall, including scan/cache)": 4534.2,
+        "normalize": 2100.0,
+        "build_features": 900.0,
+        "color_order": 1500.0
+      }
+    },
+    {
+      "scenario": "cpu_build",
+      "variant": "current",
+      "run": 3,
+      "warmup": false,
+      "seconds": 4.521759999999631,
+      "peak_rss": 79523840,
+      "phases_ms": {
+        "Color validation (paths+keys)": 94.211,
+        "Color sorting": 0.356,
+        "Color filesystem/SQL writing": 1305.804,
+        "Cache validation/source loading": 53.2,
+        "Cache writing": 7.4,
+        "Build total (wall, including scan/cache)": 4490.2,
+        "normalize": 2100.0,
+        "build_features": 900.0,
+        "color_order": 1400.0
+      }
+    },
+    {
+      "scenario": "cpu_build",
+      "variant": "baseline",
+      "run": 3,
+      "warmup": false,
+      "seconds": 8.875362600001608,
+      "peak_rss": 30216192,
+      "phases_ms": {
+        "normalize": 2200.0,
+        "build_features": 4400.0,
+        "color_order": 2000.0
+      }
+    },
+    {
+      "scenario": "noop_build",
+      "variant": "baseline",
+      "run": 0,
+      "warmup": true,
+      "seconds": 18.753220900000088,
+      "peak_rss": 251785216,
+      "phases_ms": {
+        "normalize": 1200.0,
+        "build_features": 1200.0,
+        "color_order": 15200.0
+      },
+      "cache_reused": false
+    },
+    {
+      "scenario": "noop_build",
+      "variant": "current",
+      "run": 0,
+      "warmup": true,
+      "seconds": 9.07865640000091,
+      "peak_rss": 276275200,
+      "phases_ms": {
+        "Color validation (paths+keys)": 5419.928,
+        "Color sorting": 38.672,
+        "Color filesystem/SQL writing": 0.0,
+        "Cache validation/source loading": 264.8,
+        "Cache writing": 0.0,
+        "Build total (wall, including scan/cache)": 9004.3,
+        "normalize": 1200.0,
+        "build_features": 1200.0,
+        "color_order": 5500.0
+      },
+      "cache_reused": true
+    },
+    {
+      "scenario": "noop_build",
+      "variant": "current",
+      "run": 1,
+      "warmup": false,
+      "seconds": 8.832732700000633,
+      "peak_rss": 275976192,
+      "phases_ms": {
+        "Color validation (paths+keys)": 5190.626,
+        "Color sorting": 38.049,
+        "Color filesystem/SQL writing": 0.0,
+        "Cache validation/source loading": 277.6,
+        "Cache writing": 0.0,
+        "Build total (wall, including scan/cache)": 8755.4,
+        "normalize": 1200.0,
+        "build_features": 1200.0,
+        "color_order": 5300.0
+      },
+      "cache_reused": true
+    },
+    {
+      "scenario": "noop_build",
+      "variant": "baseline",
+      "run": 1,
+      "warmup": false,
+      "seconds": 18.303592400001435,
+      "peak_rss": 251957248,
+      "phases_ms": {
+        "normalize": 1200.0,
+        "build_features": 1200.0,
+        "color_order": 14900.0
+      },
+      "cache_reused": false
+    },
+    {
+      "scenario": "noop_build",
+      "variant": "baseline",
+      "run": 2,
+      "warmup": false,
+      "seconds": 19.064319699999032,
+      "peak_rss": 251899904,
+      "phases_ms": {
+        "normalize": 1200.0,
+        "build_features": 1200.0,
+        "color_order": 15600.0
+      },
+      "cache_reused": false
+    },
+    {
+      "scenario": "noop_build",
+      "variant": "current",
+      "run": 2,
+      "warmup": false,
+      "seconds": 9.289575999999215,
+      "peak_rss": 276140032,
+      "phases_ms": {
+        "Color validation (paths+keys)": 5328.73,
+        "Color sorting": 33.768,
+        "Color filesystem/SQL writing": 0.0,
+        "Cache validation/source loading": 254.8,
+        "Cache writing": 0.0,
+        "Build total (wall, including scan/cache)": 9231.4,
+        "normalize": 1300.0,
+        "build_features": 1300.0,
+        "color_order": 5400.0
+      },
+      "cache_reused": true
+    },
+    {
+      "scenario": "noop_build",
+      "variant": "current",
+      "run": 3,
+      "warmup": false,
+      "seconds": 8.77244299999984,
+      "peak_rss": 276250624,
+      "phases_ms": {
+        "Color validation (paths+keys)": 5119.026,
+        "Color sorting": 36.803,
+        "Color filesystem/SQL writing": 0.0,
+        "Cache validation/source loading": 252.6,
+        "Cache writing": 0.0,
+        "Build total (wall, including scan/cache)": 8717.5,
+        "normalize": 1200.0,
+        "build_features": 1200.0,
+        "color_order": 5200.0
+      },
+      "cache_reused": true
+    },
+    {
+      "scenario": "noop_build",
+      "variant": "baseline",
+      "run": 3,
+      "warmup": false,
+      "seconds": 18.487362900001244,
+      "peak_rss": 252035072,
+      "phases_ms": {
+        "normalize": 1200.0,
+        "build_features": 1200.0,
+        "color_order": 15000.0
+      },
+      "cache_reused": false
+    },
+    {
+      "scenario": "cuda_jpg",
+      "variant": "baseline",
+      "run": 0,
+      "warmup": true,
+      "seconds": 2.7338424999998097,
+      "peak_rss": 613543936,
+      "phases_ms": {
+        "Features": 230.9,
+        "Prep (DB+GPU)": 1390.5,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 20.5,
+        "Encoding": 382.6,
+        "=== Total": 2613.2
+      }
+    },
+    {
+      "scenario": "cuda_jpg",
+      "variant": "current",
+      "run": 0,
+      "warmup": true,
+      "seconds": 2.8350752999995166,
+      "peak_rss": 613433344,
+      "phases_ms": {
+        "Features": 130.1,
+        "Prep (DB+GPU)": 1601.6,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 19.1,
+        "Encoding": 380.9,
+        "=== Total": 2722.6
+      }
+    },
+    {
+      "scenario": "cuda_jpg",
+      "variant": "current",
+      "run": 1,
+      "warmup": false,
+      "seconds": 2.880027399998653,
+      "peak_rss": 613781504,
+      "phases_ms": {
+        "Features": 131.0,
+        "Prep (DB+GPU)": 1610.4,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 18.8,
+        "Encoding": 387.6,
+        "=== Total": 2762.9
+      }
+    },
+    {
+      "scenario": "cuda_jpg",
+      "variant": "baseline",
+      "run": 1,
+      "warmup": false,
+      "seconds": 2.726579500000298,
+      "peak_rss": 613642240,
+      "phases_ms": {
+        "Features": 241.9,
+        "Prep (DB+GPU)": 1380.7,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 18.2,
+        "Encoding": 394.1,
+        "=== Total": 2610.0
+      }
+    },
+    {
+      "scenario": "cuda_jpg",
+      "variant": "baseline",
+      "run": 2,
+      "warmup": false,
+      "seconds": 2.86505230000148,
+      "peak_rss": 611758080,
+      "phases_ms": {
+        "Features": 236.0,
+        "Prep (DB+GPU)": 1409.9,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 18.4,
+        "Encoding": 403.2,
+        "=== Total": 2652.1
+      }
+    },
+    {
+      "scenario": "cuda_jpg",
+      "variant": "current",
+      "run": 2,
+      "warmup": false,
+      "seconds": 3.011134599999423,
+      "peak_rss": 612855808,
+      "phases_ms": {
+        "Features": 145.5,
+        "Prep (DB+GPU)": 1744.8,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 24.9,
+        "Encoding": 381.1,
+        "=== Total": 2908.2
+      }
+    },
+    {
+      "scenario": "cuda_jpg",
+      "variant": "current",
+      "run": 3,
+      "warmup": false,
+      "seconds": 2.9130217999991146,
+      "peak_rss": 613773312,
+      "phases_ms": {
+        "Features": 130.1,
+        "Prep (DB+GPU)": 1653.0,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 18.4,
+        "Encoding": 406.7,
+        "=== Total": 2794.9
+      }
+    },
+    {
+      "scenario": "cuda_jpg",
+      "variant": "baseline",
+      "run": 3,
+      "warmup": false,
+      "seconds": 2.78327039999931,
+      "peak_rss": 612499456,
+      "phases_ms": {
+        "Features": 247.5,
+        "Prep (DB+GPU)": 1394.3,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 18.4,
+        "Encoding": 410.6,
+        "=== Total": 2677.8
+      }
+    },
+    {
+      "scenario": "cpu_jpg",
+      "variant": "baseline",
+      "run": 0,
+      "warmup": true,
+      "seconds": 3.517766800001482,
+      "peak_rss": 505724928,
+      "phases_ms": {
+        "Features": 200.6,
+        "Prep (DB+GPU)": 1263.0,
+        "CPU feature loading": 808.7,
+        "Encoding": 400.2,
+        "=== Total": 3460.8
+      }
+    },
+    {
+      "scenario": "cpu_jpg",
+      "variant": "current",
+      "run": 0,
+      "warmup": true,
+      "seconds": 2.784609800000908,
+      "peak_rss": 505106432,
+      "phases_ms": {
+        "Features": 201.8,
+        "Prep (DB+GPU)": 1234.5,
+        "CPU feature loading": 132.5,
+        "Encoding": 375.7,
+        "=== Total": 2730.9
+      }
+    },
+    {
+      "scenario": "cpu_jpg",
+      "variant": "current",
+      "run": 1,
+      "warmup": false,
+      "seconds": 2.7556939000005514,
+      "peak_rss": 505782272,
+      "phases_ms": {
+        "Features": 187.4,
+        "Prep (DB+GPU)": 1237.5,
+        "CPU feature loading": 127.6,
+        "Encoding": 381.5,
+        "=== Total": 2699.4
+      }
+    },
+    {
+      "scenario": "cpu_jpg",
+      "variant": "baseline",
+      "run": 1,
+      "warmup": false,
+      "seconds": 3.5292860999998084,
+      "peak_rss": 505769984,
+      "phases_ms": {
+        "Features": 202.6,
+        "Prep (DB+GPU)": 1269.4,
+        "CPU feature loading": 764.8,
+        "Encoding": 409.5,
+        "=== Total": 3469.3
+      }
+    },
+    {
+      "scenario": "cpu_jpg",
+      "variant": "baseline",
+      "run": 2,
+      "warmup": false,
+      "seconds": 3.748822099998506,
+      "peak_rss": 506130432,
+      "phases_ms": {
+        "Features": 202.5,
+        "Prep (DB+GPU)": 1287.0,
+        "CPU feature loading": 951.2,
+        "Encoding": 396.6,
+        "=== Total": 3692.5
+      }
+    },
+    {
+      "scenario": "cpu_jpg",
+      "variant": "current",
+      "run": 2,
+      "warmup": false,
+      "seconds": 2.830334700000094,
+      "peak_rss": 506478592,
+      "phases_ms": {
+        "Features": 203.9,
+        "Prep (DB+GPU)": 1253.2,
+        "CPU feature loading": 142.4,
+        "Encoding": 403.2,
+        "=== Total": 2773.7
+      }
+    },
+    {
+      "scenario": "cpu_jpg",
+      "variant": "current",
+      "run": 3,
+      "warmup": false,
+      "seconds": 2.7860383999995975,
+      "peak_rss": 506060800,
+      "phases_ms": {
+        "Features": 207.9,
+        "Prep (DB+GPU)": 1234.3,
+        "CPU feature loading": 131.5,
+        "Encoding": 414.9,
+        "=== Total": 2749.6
+      }
+    },
+    {
+      "scenario": "cpu_jpg",
+      "variant": "baseline",
+      "run": 3,
+      "warmup": false,
+      "seconds": 3.4601612000005844,
+      "peak_rss": 504774656,
+      "phases_ms": {
+        "Features": 206.9,
+        "Prep (DB+GPU)": 1226.0,
+        "CPU feature loading": 783.4,
+        "Encoding": 394.9,
+        "=== Total": 3406.0
+      }
+    },
+    {
+      "scenario": "cuda_png",
+      "variant": "baseline",
+      "run": 0,
+      "warmup": true,
+      "seconds": 7.915925199999037,
+      "peak_rss": 287645696,
+      "phases_ms": {
+        "Features": 283.2,
+        "Prep (DB+GPU)": 1677.0,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 24.8,
+        "Encoding": 5315.1,
+        "=== Total": 7786.5
+      }
+    },
+    {
+      "scenario": "cuda_png",
+      "variant": "current",
+      "run": 0,
+      "warmup": true,
+      "seconds": 7.614591100000325,
+      "peak_rss": 287903744,
+      "phases_ms": {
+        "Features": 145.2,
+        "Prep (DB+GPU)": 1633.7,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 22.2,
+        "Encoding": 5217.5,
+        "=== Total": 7486.7
+      }
+    },
+    {
+      "scenario": "cuda_png",
+      "variant": "current",
+      "run": 1,
+      "warmup": false,
+      "seconds": 7.748214699999153,
+      "peak_rss": 287985664,
+      "phases_ms": {
+        "Features": 158.3,
+        "Prep (DB+GPU)": 1882.8,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 20.9,
+        "Encoding": 5089.4,
+        "=== Total": 7646.2
+      }
+    },
+    {
+      "scenario": "cuda_png",
+      "variant": "baseline",
+      "run": 1,
+      "warmup": false,
+      "seconds": 7.546540999999706,
+      "peak_rss": 287391744,
+      "phases_ms": {
+        "Features": 263.7,
+        "Prep (DB+GPU)": 1553.3,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 21.0,
+        "Encoding": 5067.4,
+        "=== Total": 7422.6
+      }
+    },
+    {
+      "scenario": "cuda_png",
+      "variant": "baseline",
+      "run": 2,
+      "warmup": false,
+      "seconds": 7.674751800001104,
+      "peak_rss": 287547392,
+      "phases_ms": {
+        "Features": 256.3,
+        "Prep (DB+GPU)": 1555.7,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 19.5,
+        "Encoding": 5281.1,
+        "=== Total": 7568.9
+      }
+    },
+    {
+      "scenario": "cuda_png",
+      "variant": "current",
+      "run": 2,
+      "warmup": false,
+      "seconds": 7.669438300001275,
+      "peak_rss": 288026624,
+      "phases_ms": {
+        "Features": 139.1,
+        "Prep (DB+GPU)": 1757.9,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 20.7,
+        "Encoding": 5159.8,
+        "=== Total": 7549.1
+      }
+    },
+    {
+      "scenario": "cuda_png",
+      "variant": "current",
+      "run": 3,
+      "warmup": false,
+      "seconds": 7.559926199999609,
+      "peak_rss": 288174080,
+      "phases_ms": {
+        "Features": 136.8,
+        "Prep (DB+GPU)": 1714.8,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 18.8,
+        "Encoding": 5142.8,
+        "=== Total": 7448.1
+      }
+    },
+    {
+      "scenario": "cuda_png",
+      "variant": "baseline",
+      "run": 3,
+      "warmup": false,
+      "seconds": 8.581996599999911,
+      "peak_rss": 287580160,
+      "phases_ms": {
+        "Features": 338.7,
+        "Prep (DB+GPU)": 1925.4,
+        "CPU feature loading": 0.0,
+        "GPU scoring": 27.1,
+        "Encoding": 5557.2,
+        "=== Total": 8459.7
+      }
+    }
+  ]
+}

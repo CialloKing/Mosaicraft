@@ -40,7 +40,7 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
 - **自适应参数** — candidates 默认 150，neighborWindow O(√N) 动态缩放
 
 ### ⚡ GPU 加速
-- **建库特征提取** — GPU 批量处理，96s → 2.2s（43×）
+- **建库特征提取** — GPU 批量计算；CPU 归一化、Canny 和落盘校验保证 v6 特征语义一致
 - **匹配精排** — CUDA 五特征并行评分
 - **多分辨率** — 模板化内核，支持 180×320 / 320×180 / 360×640 / 640×360
 - **纯 CPU 模式** — `-D MOSAICRAFT_CUDA=OFF` 即可无 NVIDIA 平台编译
@@ -50,9 +50,9 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
 | 格式 | 最大分辨率 | 说明 |
 |------|-----------|------|
 | **JPG** | 65,500px | 默认格式，q1-100 可调 |
-| **PNG** | **无限制** | 流式写入，内存恒定 ~162KB，`--png-level 1-9` |
-| **TIFF** | **无限制** | BigTIFF 直写，实测 50040×75200 |
-| **WebP** | 16,383px | 体积最小，自动等比缩放 |
+| **PNG** | 受整数及编码器边界限制 | 流式写入，缓冲随输出宽度增长，`--png-level 1-9` |
+| **TIFF** | 受整数及编码器边界限制 | BigTIFF 直写，实测 50040×75200 |
+| **WebP** | 16,383px | 超过编码器尺寸限制时明确报错 |
 
 - `--write-mode auto/stream/batch` — 统一控制流式/全量写入
 
@@ -67,10 +67,10 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
 - **API 文档** — `docs/API.md` 完整端点目录
 
 ### 📦 工程优化
-- **FeaturePack** — 50K 文件 → 2 次 fread，加载 < 300ms
-- **建库流水线** — CPU 归一化与 GPU 特征提取并行；GPU 批量 32→256
+- **FeaturePack** — 特征合并读取，CPU/GPU 共用来源校验，完整同代次缓存通过单一清单发布
+- **建库流水线** — CPU 归一化与 GPU 特征提取并行；GPU 批量 256；CPU 特征按 64 MiB 像素预算、最多 256 张分批并行处理，顺序提交
 - **ImageCache** — 512 MiB 像素字节预算 LRU，共享只读图片；PNG/JPG/TIFF 固定线程池、双行流式输出
-- **Unicode 路径** — 中文/日文等文件名全链路支持
+- **Unicode 路径** — 图片及特征文件使用 Unicode 路径读取
 
 ---
 
@@ -168,6 +168,8 @@ mosaicraft build -i ./new_photos -d library/mosaicraft.db --append -r
 
 重编号前检查文件冲突，未索引的同名文件不会被覆盖；已索引图片不能跨卷移动到另一个输出目录。数据库旁的 `.library.lock` 用于协调建库、生成和维护。重命名被中断时会保留 `.color-order.json` 恢复清单，生成和维护拒绝读取未恢复的图库；恢复访问权限或关闭占用文件的程序后，用原建库命令加 `--append` 继续。恢复清单应交由建库命令处理。
 
+特征缓存通过 `features.pack` 清单指向同一代次的数据与校验元数据，绑定图片 ID、特征版本、内容哈希和来源特征文件的路径、大小、修改时间及数据摘要。来源文件被修改、包损坏或清单不完整时，生成自动回退独立特征文件；缺失特征保留缺失状态。旧 v2 包不再未经校验直接参与匹配，下次普通或追加建库会自动生成新缓存；有效缓存不重复写入。清单仅在全部新文件完整落盘后切换，旧代次只在建库持有独占锁时清理。
+
 旧版特征会在再次 `build --append` 时原地刷新为 v6，保留图片 ID 和使用统计；生成前会拒绝未刷新的旧特征。已有非空图库的归一化尺寸必须保持一致，改变尺寸请使用新的图库目录和数据库。若旧记录对应的文件已经丢失，请先恢复文件或执行 `db-purge` 清理悬空记录。颜色排序验证和单次耗时见 [验证记录](docs/COLOR_ORDER_VERIFICATION.md)。
 
 ### 生成马赛克
@@ -217,7 +219,7 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db --analyze --benchmark
 | `--analyze` | — | 质量报告 + 热力图 |
 | `--deepzoom` | — | Deep Zoom 金字塔 + HTML viewer |
 
-参数中的尺寸、权重和惩罚会统一校验，未知选项、未知格式以及 NaN/Infinity 会报错。工作图像（含放大后目标、单个 tile）最多 1 亿像素、单轴最多 100 万，建库归一化单轴最多 8192。JPEG 单轴超过 65500、WebP 超过 16383 时会报错，请显式选择 PNG、TIFF 或分块输出。程序不会因编码器尺寸限制自动切换格式或缩小输出；显式 `--format` 与文件后缀不同时，后缀按所选格式调整。超大输出默认允许，无需额外开关；PNG/TIFF 可使用 `--write-mode stream` 降低内存占用。
+参数中的尺寸、权重和惩罚会统一校验，未知选项、未知格式以及 NaN/Infinity 会报错。工作图像（含放大后目标、单个 tile）最多 1 亿像素、单轴最多 100 万，建库归一化单轴最多 8192。JPEG 单轴超过 65500、WebP 超过 16383 时会报错，请显式选择 PNG、TIFF 或分块输出。程序不会因编码器尺寸限制自动切换格式或缩小输出；显式 `--format` 与文件后缀不同时，后缀按所选格式调整。超大输出默认允许，无需额外开关；PNG/TIFF 可使用 `--write-mode stream` 降低输出内存占用。流式输出仍持有两行 tile 缓冲，内存随宽度和 tile 高度增长；512 MiB 图片缓存预算不代表进程总内存上限，匹配特征和候选也占用内存。
 
 v6 统一了 CPU/CUDA 的 8×8 分区、Canny 边缘定义、统计列、评分尺度和复用惩罚，因此选图可能与旧版不同。CUDA 路径使用 CPU 的 OpenCV Canny 来保证同一语义，会增加特征提取时间。修复与验证记录见 [BUGFIX_VERIFICATION.md](docs/BUGFIX_VERIFICATION.md)。
 
@@ -320,4 +322,4 @@ ANN 使用 `features/lib.ann196` 和 `.meta` 缓存。缓存记录格式版本�
 
 五种特征及评分权重保持不变。TinyImage、LBP 的 512 维仍参与精排，粗筛不再存储其零值占位。GPU 评分临时显存上限为 256 MiB，任务内复用特征工作区。启动时 CUDA 不可用则使用 CPU；已开始的 CUDA 计算失败会返回服务错误。
 
-使用 `--benchmark` 查看索引加载/构建、查询、特征提取、CUDA 分配/传输/评分、邻域惩罚、排序、分析、输出和缓存统计。基准脚本 `scripts/benchmark.py` 的 `--analysis-mode off|on|both` 默认 `both`，分别保存普通生成及分析模式结果。可重复测量方法与验收结果见 [v1.14.1 性能报告](docs/PERFORMANCE_v1.14.1.md)。
+使用 `--benchmark` 查看索引加载/构建、查询、特征提取、CUDA 分配/传输/评分、邻域惩罚、排序、分析、输出和缓存统计。基准脚本 `scripts/benchmark.py` 的 `--analysis-mode off|on|both` 默认 `both`，分别保存普通生成及分析模式结果。当前 v6 缓存与建库优化的耗时、峰值内存和回归结果见 [第一轮性能报告](docs/PERFORMANCE_PHASE1.md)；[v1.14.1 性能报告](docs/PERFORMANCE_v1.14.1.md) 保留历史样本结果。

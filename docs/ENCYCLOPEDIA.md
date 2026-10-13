@@ -714,3 +714,14 @@ PNG 使用有界多行 RGB 转换及写入；过滤器、压缩等级和每 1000
 验收使用实际 CUDA 和 CPU-only 构建、核心及服务回归、Web UI/API smoke。45,625 张现有图库重排后，连续编号为 `000000`–`045624`，灰度区 146 张、彩色区 45,479 张；图片与独立特征 SHA256、ID、使用统计和特征引用保持一致，重复运行补算 0 张、改名 0 张。颜色缓存算法版本为 2，与软件版本和匹配特征版本分别管理。
 
 > **EN**: Version 1.14.2 reuses stored mean LAB for default HSV v2 ordering and renumbers indexed files after appends. Chroma below 0.5 enters grayscale; 15-degree hue bands start at 345 degrees and alternate lightness direction. Color caches retain source means; independent CPU/CUDA builds can differ, while repeated ordering of one database is stable. Locks and recoverable two-phase renames preserve image bytes, IDs, statistics and feature references. Matching features v6 align backend definitions; old libraries need `build --append` to refresh. HTTP API contract 2.0 tightens JSON and origin checks and returns synchronous mosaic results. See the verification records for compatibility changes, fault checks and the 45,625-image library acceptance.
+
+
+### 第一轮缓存与性能更新（版本号保持 1.14.2）
+
+CPU/GPU 共用独立特征文件的 Unicode 读取和来源校验。缓存的 `features.pack` 清单指向同代次的 TinyImage、LBP 和二进制校验元数据；绑定记录 ID、特征版本、图片内容哈希及来源文件的路径、大小、修改时间和数据摘要。未经认证的旧 v2 包回退来源文件，建库时自动升级；新代次完整落盘后才切换清单，失败保留旧清单。无变化追加复用有效缓存，旧代次只在建库独占锁下清理。
+
+颜色重排复用本次路径信息，输出目录卷号只读取一次，路径、别名、目标冲突、跨卷和恢复检查保留。CPU 特征按最多 256 张、64 MiB 待处理像素分批并行计算，去重与数据库写入按扫描顺序进行，事务失败回滚整批；同目录输入采用单张批次，以兼容不同尺寸和超预算图片。CUDA 目标块准备和 Canny 补算各复用最多 8 个默认工作线程，计算公式不变。
+
+大图库在 Windows 批量枚举特征目录的文件属性，减少逐文件系统调用；失败或未命中项仍查询原文件属性。建库日志分别记录颜色校验、排序与文件/SQL 写入，缓存校验/来源读取与写入，以及包含扫描和缓存的墙钟总耗时。流水线阶段存在重叠，不能直接相加。内存和性能验收见 [第一轮验收记录](PERFORMANCE_PHASE1.md)。
+
+> **EN**: This update keeps version 1.14.2, matching features v6 and API contract 2.0. Both backends share Unicode source reads, cache validation and missing-feature penalties. Immutable cache generations publish through one manifest; unverified v2 packs fall back to source files and builds upgrade them automatically. Unchanged builds reuse valid packs and color checks reuse path information. CPU feature batches retain scan-order database commits and roll back failed transactions. CUDA preparation and Canny use reusable worker pools. Timings separate validation, writing and wall time; see the phase-one report for measured performance and memory limits.
