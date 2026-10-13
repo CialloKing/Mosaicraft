@@ -160,8 +160,8 @@ Mosaic options:
       --neighbor-penalty <f> Base penalty value (default: 100)
       --tiled            Output tiles as separate files
       --deepzoom         Generate Deep Zoom pyramid + HTML viewer
-      --color-adjust     Enable per-tile color jitter (off by default)
-      --color-strength <v>  Color jitter intensity (default: 0.04)
+      --color-adjust     Enable symmetric per-tile LAB L jitter (off by default)
+      --color-strength <v>  Max relative L jitter, 0..0.5 (default: 0.04 = +/-4%; requires --color-adjust)
       --adaptive-weights  Enable adaptive feature weights
       --lab-weight   <w> LAB distance weight (default: 0.20)
       --grid-weight  <w> Grid 8x8 distance weight (default: 0.45)
@@ -570,8 +570,8 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --lbp-weight <f>      LBP histogram weight (default: 0.05)" << std::endl;
             std::cout << "  --penalty <f>         Use-count penalty (default: 0.01)" << std::endl;
             std::cout << "  --adaptive-weights    Enable adaptive feature weights" << std::endl;
-            std::cout << "  --color-adjust        Enable per-tile color jitter (off by default)" << std::endl;
-            std::cout << "  --color-strength <f>  Color jitter intensity (default: 0.04)" << std::endl;
+            std::cout << "  --color-adjust        Enable symmetric per-tile LAB L jitter (off by default)" << std::endl;
+            std::cout << "  --color-strength <f>  Max relative L jitter, 0..0.5 (default: 0.04 = +/-4%; requires --color-adjust)" << std::endl;
             std::cout << "  --analyze             Generate quality report + heatmap + worst tiles" << std::endl;
             std::cout << "  --benchmark           Print per-phase timing breakdown" << std::endl;
             std::cout << "  --cpu                 Force CPU (no GPU)" << std::endl;

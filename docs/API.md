@@ -119,10 +119,13 @@ The API requires a local Host with the current port. Browser Origin must match t
 | `lRange` | `0..255`, candidate L difference limit |
 | weights | finite, nonnegative, positive finite sum |
 | `usePenalty`, `neighborPenalty` | finite, `>= 0` |
-| `colorStrength` | `0..0.5` |
+| `colorStrength` | `0..0.5`, default `0.04` |
 | `threads` | `0..256` |
 | `normalizeWidth`, `normalizeHeight` | `1..8192` |
 | `limit` | `>= 1` |
+
+亮度调整默认关闭（`colorAdjust: false`），`colorStrength` 默认 `0.04`；单独设置强度不会启用。选图后，每个输出小块在 `1±colorStrength` 范围的 1001 档乘数中等概率抽取一档，统一缩放 LAB L 通道，A、B 通道保持不变。默认乘数范围为 `0.96～1.04`，平均值为 1；强度为 0 时跳过颜色转换，保持原像素。像素取整、高亮截断和颜色转换仍可能影响最终图像的平均亮度。
+Brightness adjustment defaults to off (`colorAdjust: false`), with `colorStrength` defaulting to `0.04`; setting strength alone does not enable it. After matching, each output tile uniformly samples one of 1001 multipliers in `1±colorStrength` and scales its LAB L channel, leaving A and B unchanged. The default multiplier range is `0.96..1.04`, with a mean of 1; zero strength skips color conversion and preserves the pixels. Quantization, highlight clipping, and color conversion can still affect the final image's mean brightness.
 
 示例 / Example:
 

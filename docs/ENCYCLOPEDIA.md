@@ -199,12 +199,14 @@ mosaicraft mosaic -i <img> -d <db> [-o <path>] [选项...]
 | `--deepzoom` | Deep Zoom + HTML |
 | `--write-mode <mode>` | 写入模式：`auto`/`stream`/`batch` |
 | `--png-level <n>` | PNG 压缩级别 (1-9，默认 1) |
-| `--color-adjust` | LAB L 微调（默认关闭） |
-| `--color-strength <f>` | 微调强度 (0.04) |
+| `--color-adjust` | 选图后对每个小块施加对称随机 LAB L 扰动（默认关闭） |
+| `--color-strength <f>` | L 通道最大相对扰动，范围 `0..0.5`，默认 `0.04`（`±4%`） |
 | `--adaptive-weights` | 🧪 自适应权重（实验） |
 | `--cpu` | 强制 CPU |
 | `--benchmark` | 耗时分解 |
 | `--analyze` | 匹配质量报告 + 热力图 |
+
+单独设置强度不会启用亮度调整。每个输出小块从 1001 个等概率档位中抽取乘数，范围为 `1±strength`（默认 `0.96～1.04`），平均值为 1；仅统一缩放 LAB L 通道，A、B 通道保持不变。强度为 0 时保持原像素。乘数分布对称，但像素取整、高亮截断和颜色转换仍可能影响最终图像的平均亮度。
 
 ### inspect
 

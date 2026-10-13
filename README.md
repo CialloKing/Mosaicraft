@@ -214,11 +214,14 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db --analyze --benchmark
 | `--lab/grid/tiny/edge/lbp-weight` | 0.20/0.45/0.25/0.05/0.05 | 特征权重 |
 | `--penalty` | 0.01 | 图片复用惩罚 |
 | `--l-range` | 20 | ANN 候选的 L 亮度差上限（0..255） |
-| `--color-adjust` | 关闭 | LAB L 通道微调 |
+| `--color-adjust` | 关闭 | 选图后对每个小块的 LAB L 通道施加对称随机扰动 |
+| `--color-strength` | 0.04 | L 通道最大相对扰动，范围 `0..0.5`；`0.04` 对应 `±4%` |
 | `--cpu` | — | 强制 CPU 模式 |
 | `--benchmark` | — | 分阶段耗时统计 |
 | `--analyze` | — | 质量报告 + 热力图 |
 | `--deepzoom` | — | Deep Zoom 金字塔 + HTML viewer |
+
+亮度调整需要显式启用 `--color-adjust`，单独设置 `--color-strength` 不会启用。每个输出小块分别抽取一个等概率随机档位（共 1001 档），以 `1±strength` 的乘数统一缩放 LAB L 通道，A、B 通道保持不变。默认强度 `0.04` 的乘数范围为 `0.96～1.04`，平均值为 1；强度为 0 时跳过颜色转换，保持原像素。调整在选图后执行，不改变匹配特征；像素取整、高亮截断和颜色转换仍可能影响最终图像的平均亮度。
 
 参数中的尺寸、权重和惩罚会统一校验，未知选项、未知格式以及 NaN/Infinity 会报错。工作图像（含放大后目标、单个 tile）最多 1 亿像素、单轴最多 100 万，建库归一化单轴最多 8192。JPEG 单轴超过 65500、WebP 超过 16383 时会报错，请显式选择 PNG、TIFF 或分块输出。程序不会因编码器尺寸限制自动切换格式或缩小输出；显式 `--format` 与文件后缀不同时，后缀按所选格式调整。超大输出默认允许，无需额外开关；PNG/TIFF 可使用 `--write-mode stream` 降低输出内存占用。流式输出仍持有两行 tile 缓冲，内存随宽度和 tile 高度增长；512 MiB 图片缓存预算不代表进程总内存上限，匹配特征和候选也占用内存。
 
