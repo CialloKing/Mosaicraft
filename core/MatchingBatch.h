@@ -79,7 +79,7 @@ struct MatchingBuffers
         indices.resize(checkedMatchProduct(count, candidates));
         if (gpu)
         {
-            images.resize(checkedMatchProduct(count, imageBytes));
+            images.resize(checkedMatchProduct(std::min<size_t>(count, 256), imageBytes));
             lab.resize(count * 3);
             scores.resize(checkedMatchProduct(count, candidates));
             if (analyze)

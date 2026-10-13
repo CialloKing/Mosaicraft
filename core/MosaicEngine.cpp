@@ -1257,22 +1257,30 @@ bool MosaicEngine::generate(const std::string& targetPath,
             const auto featureStart = Clock::now();
             if (cfg.useGpu)
             {
-                featureWorkers.run(count,
-                                   [&](size_t local)
-                                   {
-                                       const int ti = first + static_cast<int>(local);
-                                       cv::Mat roi = target(cv::Rect((ti % tilesX) * cfg.tileW,
-                                                                     (ti / tilesX) * cfg.tileH, cfg.tileW, cfg.tileH));
-                                       cv::Mat resized;
-                                       cv::resize(roi, resized, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
-                                       std::memcpy(buffers.images.data() + local * featBytes, resized.data, featBytes);
-                                   });
-                if (cuda::extractFeaturesRaw(buffers.images.data(), count, featW, featH, buffers.lab.data(),
-                                             allGrid.data(), allTiny.data(), allEdge.data(), allLBP.data(),
-                                             workspace.get(), cfg.benchmark ? &featureTimings : nullptr) < 0)
+                // CUDA 沿用原有 256 张提取粒度；外层较大批次仍统一查询、评分和顺序选图。
+                // 复用输入暂存，避免放大 kernel/暂存容量导致吞吐回退。
+                for (int piece = 0; piece < count; piece += 256)
                 {
-                    std::cerr << "ERROR: GPU feature extraction failed." << std::endl;
-                    return false;
+                    const int pieceCount = std::min(256, count - piece);
+                    featureWorkers.run(
+                        pieceCount,
+                        [&](size_t local)
+                        {
+                            const int ti = first + piece + static_cast<int>(local);
+                            cv::Mat roi = target(
+                                cv::Rect((ti % tilesX) * cfg.tileW, (ti / tilesX) * cfg.tileH, cfg.tileW, cfg.tileH));
+                            cv::Mat resized;
+                            cv::resize(roi, resized, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
+                            std::memcpy(buffers.images.data() + local * featBytes, resized.data, featBytes);
+                        });
+                    if (cuda::extractFeaturesRaw(buffers.images.data(), pieceCount, featW, featH,
+                                                 buffers.lab.data() + piece * 3, allGrid[piece].data(),
+                                                 allTiny[piece].data(), allEdge.data() + piece, allLBP[piece].data(),
+                                                 workspace.get(), cfg.benchmark ? &featureTimings : nullptr) < 0)
+                    {
+                        std::cerr << "ERROR: GPU feature extraction failed." << std::endl;
+                        return false;
+                    }
                 }
                 for (int local = 0; local < count; ++local)
                 {
