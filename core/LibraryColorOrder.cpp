@@ -321,6 +321,12 @@ bool reorderLibraryByColor(Database& database, const std::string& outputDir,
     fs::path staging;
     try
     {
+        using Clock = std::chrono::steady_clock;
+        const auto start = Clock::now();
+        auto elapsed = [](Clock::time_point from)
+        {
+            return std::chrono::duration<double, std::milli>(Clock::now() - from).count();
+        };
         auto records = database.allRecords();
         if (records.size() != static_cast<size_t>(database.totalCount()))
         {
@@ -375,6 +381,8 @@ bool reorderLibraryByColor(Database& database, const std::string& outputDir,
                 ++result.computed;
             }
         }
+        result.validationMs = elapsed(start);
+        const auto sortStart = Clock::now();
         std::sort(records.begin(), records.end(),
             [&](const auto& left, const auto& right)
             {
@@ -389,6 +397,8 @@ bool reorderLibraryByColor(Database& database, const std::string& outputDir,
                 }
                 return left.id < right.id;
             });
+        result.sortingMs = elapsed(sortStart);
+        const auto destinationCheckStart = Clock::now();
         const auto token = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
         staging = root / (".mosaicraft-color-order-" + token);
         Json journal = {{"version", 1}, {"database", database.path()}, {"token", token},
@@ -419,10 +429,12 @@ bool reorderLibraryByColor(Database& database, const std::string& outputDir,
                                           {"hash", record.fileHash},
                                           {"size", sourceInformation.at(record.id).size}});
         }
+        result.validationMs += elapsed(destinationCheckStart);
         if (changedColors.empty() && journal["entries"].empty())
         {
             return true;
         }
+        const auto writeStart = Clock::now();
         if (!database.beginImmediateTransaction())
         {
             throw std::runtime_error("cannot begin color ordering transaction");
@@ -478,6 +490,7 @@ bool reorderLibraryByColor(Database& database, const std::string& outputDir,
         {
             cleanupJournal(path, journal);
         }
+        result.writingMs = elapsed(writeStart);
         return true;
     }
     catch (const std::exception& exception)

@@ -83,6 +83,7 @@ static bool stdinIsTty()
 
 ServiceResult BuildService::run(const BuildRequest& request) const
 {
+    const auto commandStart = std::chrono::steady_clock::now();
     std::string validationError;
     if (!validateBuildRequest(request, validationError))
     {
@@ -655,6 +656,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 if (sizeError)
                 {
                     images[i].release();
+                    record.filePath.clear();
                     ++skipped;
                     continue;
                 }
@@ -749,23 +751,22 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     std::cout << "Color order: " << colorResult.computed << " colors computed, "
               << colorResult.renamed << " images renamed (" << std::fixed << std::setprecision(3)
               << colorSeconds << "s)" << std::endl;
+    std::cout << "  Color validation (paths+keys): " << colorResult.validationMs << " ms\n"
+              << "  Color sorting: " << colorResult.sortingMs << " ms\n"
+              << "  Color filesystem/SQL writing: " << colorResult.writingMs << " ms\n";
 
     std::cout << std::endl;
     std::cout << "Done: " << inserted << " images indexed, "
               << db.totalCount() << " total in database." << std::endl;
 
-    auto tNow = std::chrono::steady_clock::now();
     using Ms = std::chrono::milliseconds;
-    auto normMs = std::chrono::duration_cast<Ms>(tNormEnd - tNormStart).count();
+    auto normMs = inputIsOutput || files.empty() ? 0 : std::chrono::duration_cast<Ms>(tNormEnd - tNormStart).count();
     // 重排和特征提取分别计时，不能把大量文件重命名算作 GPU 特征耗时。
-    auto gpuMs = std::chrono::duration_cast<Ms>(tColorStart - tGpuStart).count();
-    auto totalMs = std::chrono::duration_cast<Ms>(tNow - tBuildStart).count();
+    auto gpuMs = gpuOk && gpuDone.load() == 0 ? 0 : std::chrono::duration_cast<Ms>(tColorStart - tGpuStart).count();
+
     std::cout << "  Phase timing: normalize " << std::fixed << std::setprecision(1) << normMs / 1000.0
               << "s | " << (gpuOk ? "GPU" : "CPU") << " features " << gpuMs / 1000.0
               << "s | color ordering " << colorSeconds << "s";
-    if (totalMs > 0 && inserted > 0) {
-        std::cout << " | throughput " << static_cast<int>(inserted * 1000.0 / totalMs) << " img/s";
-    }
     std::cout << std::endl;
 
     tCacheStart = std::chrono::steady_clock::now();
@@ -773,7 +774,10 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     FeaturePack::Stats cacheStats;
     if (FeaturePack::buildCache(featDir, db.allRecords(), &cacheStats))
     {
-        FeaturePack::removeObsolete(featDir);
+        if (!cacheStats.reused)
+        {
+            FeaturePack::removeObsolete(featDir);
+        }
         std::cout << (cacheStats.reused ? " reused" : " done") << std::endl;
     }
     else
@@ -784,10 +788,15 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     auto cacheSec = std::chrono::duration_cast<Ms>(
         std::chrono::steady_clock::now() - tCacheStart).count() / 1000.0;
     std::cout << "  Cache build: " << std::fixed << std::setprecision(1) << cacheSec << "s" << std::endl;
-
+    std::cout << "  Cache validation/source loading: " << cacheStats.validationMs << " ms\n"
+              << "  Cache writing: " << cacheStats.writingMs << " ms\n";
     db.setMeta("feature_w", std::to_string(request.normalizeWidth));
     db.setMeta("feature_h", std::to_string(request.normalizeHeight));
     std::cout << "Feature resolution: " << request.normalizeWidth << "x" << request.normalizeHeight << std::endl;
+    const auto wallMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - commandStart).count();
+    std::cout << "  Build total (wall, including scan/cache): " << wallMs << " ms\n"
+              << "  GPU normalization/features overlap; child timings are not additive.\n";
 
     return ServiceResult::success("build completed");
 }
