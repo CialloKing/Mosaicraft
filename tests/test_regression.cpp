@@ -914,7 +914,11 @@ TEST_CASE("overlay follows resize upscale and reflected padding without changing
     TempWorkspace workspace;
     writeLibraryImages(workspace.inputDir());
     writeTargetImage(workspace.targetPath());
-    REQUIRE(BuildService().run(makeBuildRequest(workspace)).ok);
+    auto build = makeBuildRequest(workspace);
+    // 使用 CUDA 支持的特征尺寸，避免 GPU 分支只验证到 CPU 回退。
+    build.normalizeWidth = 180;
+    build.normalizeHeight = 320;
+    REQUIRE(BuildService().run(build).ok);
     auto request = makeMosaicRequest(workspace);
     auto &config = request.config;
     config.outW = 11;

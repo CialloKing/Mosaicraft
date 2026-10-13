@@ -55,6 +55,7 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
 | **WebP** | 16,383px | 超过编码器尺寸限制时明确报错 |
 
 - `--write-mode auto/stream/batch` — 统一控制流式/全量写入
+- `--overlay-strength 0..1` — 根据基础图对应位置透明叠加，默认关闭，普通、流式和 DeepZoom 输出共用。
 
 ### 🛠️ 工具链
 - **Web UI** — `MosaicraftWebUI.exe` 本地 HTTP 服务，浏览器一键运行
@@ -216,6 +217,7 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db --analyze --benchmark
 | `--l-range` | 20 | ANN 候选的 L 亮度差上限（0..255） |
 | `--color-adjust` | 关闭 | 选图后对每个小块的 LAB L 通道施加对称随机扰动 |
 | `--color-strength` | 0.04 | L 通道最大相对扰动，范围 `0..0.5`；`0.04` 对应 `±4%` |
+| `--overlay-strength` | 0 | 基础图透明叠加强度，范围 `0..1`；`0` 关闭 |
 | `--cpu` | — | 强制 CPU 模式 |
 | `--benchmark` | — | 分阶段耗时统计 |
 | `--analyze` | — | 质量报告 + 热力图 |
@@ -226,6 +228,14 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db --analyze --benchmark
 参数中的尺寸、权重和惩罚会统一校验，未知选项、未知格式以及 NaN/Infinity 会报错。工作图像（含放大后目标、单个 tile）最多 1 亿像素、单轴最多 100 万，建库归一化单轴最多 8192。JPEG 单轴超过 65500、WebP 超过 16383 时会报错，请显式选择 PNG、TIFF 或分块输出。程序不会因编码器尺寸限制自动切换格式或缩小输出；显式 `--format` 与文件后缀不同时，后缀按所选格式调整。超大输出默认允许，无需额外开关；PNG/TIFF 可使用 `--write-mode stream` 降低输出内存占用。流式输出仍持有两行 tile 缓冲，内存随宽度和 tile 高度增长；512 MiB 图片缓存预算不代表进程总内存上限，匹配特征和候选也占用内存。
 
 v6 统一了 CPU/CUDA 的 8×8 分区、Canny 边缘定义、统计列、评分尺度和复用惩罚，因此选图可能与旧版不同。CUDA 路径使用 CPU 的 OpenCV Canny 来保证同一语义，会增加特征提取时间。修复与验证记录见 [BUGFIX_VERIFICATION.md](docs/BUGFIX_VERIFICATION.md)。
+
+基础图透明叠加在选图后执行：`结果 = 素材 × (1 − 强度) + 基础图 × 强度`。例如 `--overlay-strength 0.2` 保留 80% 素材，混合 20% 基础图；默认 `0` 跳过叠加，`1` 在成功加载的小块中完全显示基础图。参考图沿用匹配时的尺寸调整、`--upscale` 和镜像补边，缩小时丢失的原图细节不会恢复。强度越高，基础图轮廓越明显，小图细节越弱。
+
+```powershell
+mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.png --overlay-strength 0.2
+```
+
+叠加逐块双线性采样，不分配完整输出尺寸的基础图；开启时保留目标工作图，并额外使用每个工作线程的小块缓冲。若同时启用随机亮度调整，先调整素材亮度，再叠加基础图。图库、匹配结果和共享素材缓存不因叠加而改变，无需重建图库；缺失素材仍计为失败并沿用原背景。`--analyze` 分数描述选图质量，不衡量最终叠加画面。实现与实际样图验收见 [基础图叠加验证](docs/BASE_IMAGE_OVERLAY_VERIFICATION.md)。
 
 ### 图库管理
 

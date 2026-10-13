@@ -120,12 +120,17 @@ The API requires a local Host with the current port. Browser Origin must match t
 | weights | finite, nonnegative, positive finite sum |
 | `usePenalty`, `neighborPenalty` | finite, `>= 0` |
 | `colorStrength` | `0..0.5`, default `0.04` |
+| `overlayStrength` | finite, `0..1`, default `0` (off) |
 | `threads` | `0..256` |
 | `normalizeWidth`, `normalizeHeight` | `1..8192` |
 | `limit` | `>= 1` |
 
 亮度调整默认关闭（`colorAdjust: false`），`colorStrength` 默认 `0.04`；单独设置强度不会启用。选图后，每个输出小块在 `1±colorStrength` 范围的 1001 档乘数中等概率抽取一档，统一缩放 LAB L 通道，A、B 通道保持不变。默认乘数范围为 `0.96～1.04`，平均值为 1；强度为 0 时跳过颜色转换，保持原像素。像素取整、高亮截断和颜色转换仍可能影响最终图像的平均亮度。
 Brightness adjustment defaults to off (`colorAdjust: false`), with `colorStrength` defaulting to `0.04`; setting strength alone does not enable it. After matching, each output tile uniformly samples one of 1001 multipliers in `1±colorStrength` and scales its LAB L channel, leaving A and B unchanged. The default multiplier range is `0.96..1.04`, with a mean of 1; zero strength skips color conversion and preserves the pixels. Quantization, highlight clipping, and color conversion can still affect the final image's mean brightness.
+
+基础图透明叠加通过 `overlayStrength` 开启，例如 `0.2` 表示 80% 素材与 20% 基础图混合，无需额外开关。同步 `/api/mosaic` 和异步 `/api/jobs/mosaic` 均支持。使用经过尺寸调整、upscale 和镜像补边后的目标工作图，按全图坐标逐块双线性采样；强度 `0` 跳过叠加，`1` 在成功加载的小块中完全显示该参考图。不会改变选图和图库；缺失素材仍计为失败并沿用原背景。若同时开启亮度扰动，先调整亮度再叠加。分析分数仍衡量选图质量，不代表最终合成画面的相似度。
+
+Base-image overlay is enabled by `overlayStrength`; `0.2` blends 80% tile pixels with 20% target pixels, with no separate switch. Both synchronous `/api/mosaic` and asynchronous `/api/jobs/mosaic` support it. The reference is the resized, upscaled and reflect-padded working target, sampled per tile using global coordinates and bilinear interpolation. Zero skips overlay; one fully shows the reference in successfully loaded tiles. Matching and the library remain unchanged. Missing tiles retain their failure counts and background. Optional brightness jitter runs before overlay. Analysis scores continue to describe tile matching, not final composite similarity.
 
 示例 / Example:
 

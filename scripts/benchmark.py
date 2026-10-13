@@ -7,6 +7,7 @@ import argparse
 import ctypes
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -55,7 +56,11 @@ def main():
     parser.add_argument("--out-h", type=int)
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--analysis-mode", choices=("off", "on", "both"), default="both")
+    parser.add_argument("--overlay-strength", type=float, default=0,
+                        help="current binary overlay strength, 0..1; baseline remains off")
     args = parser.parse_args()
+    if not math.isfinite(args.overlay_strength) or not 0 <= args.overlay_strength <= 1:
+        parser.error("overlay-strength must be finite and between 0 and 1")
     folder = args.output_dir.resolve()
     folder.mkdir(parents=True, exist_ok=True)
     db = folder / "run.db"
@@ -69,7 +74,8 @@ def main():
             return hashlib.file_digest(stream, "sha256").hexdigest()
     manifest = dict(snapshot_sha256=digest(args.snapshot), target_sha256=digest(args.target),
                     executables={name: {"path": str(exe.resolve()), "sha256": digest(exe)} for name, exe in variants},
-                    color_adjust=False, topn_random=1, memory_metric="Windows peak working set; sampled total device VRAM")
+                    color_adjust=False, overlay_strength=args.overlay_strength, topn_random=1,
+                    memory_metric="Windows peak working set; sampled total device VRAM")
     (folder / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     records = []
     modes = [False, True] if args.analysis_mode == "both" else [args.analysis_mode == "on"]
@@ -84,6 +90,8 @@ def main():
                    "--write-mode", args.write_mode, "--topn-random", "1", "--benchmark"]
         if analysis:
             command.append("--analyze")
+        if name == "current" and args.overlay_strength > 0:
+            command += ["--overlay-strength", str(args.overlay_strength)]
         if args.cpu:
             command.append("--cpu")
         if args.out_w and args.out_h:
