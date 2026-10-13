@@ -385,6 +385,15 @@ bool parseMosaicRequestJson(const std::string& body,
         cfg.colorStrength = doubleValue;
     }
 
+    if (getDoubleField(values, keysFor(aliases, "overlayStrength"), doubleValue, error))
+    {
+        if (!requireDoubleBetween("overlayStrength", doubleValue, 0.0, 1.0, error))
+        {
+            return false;
+        }
+        cfg.overlayStrength = doubleValue;
+    }
+
     if (getStringField(values, keysFor(aliases, "format"), text, error)) {
         if (!text.empty()) {
             cfg.outputFormat = text;

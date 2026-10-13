@@ -202,6 +202,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     </div>
     <div class="row" style="margin-top:8px">
       <div class="field"><label>亮度扰动幅度 --color-strength</label><input type="number" id="m-colorstr" value="0.04" min="0" max="0.5" step="0.01" style="max-width:150px"><div class="hint">0.04 表示 L 通道最多 ±4%；单独设置幅度不会启用。幅度为 0 时保持原像素。</div></div>
+      <div class="field"><label>基础图叠加强度 --overlay-strength</label><input type="number" id="m-overlaystr" value="0" min="0" max="1" step="0.05" style="max-width:150px"><div class="hint">0 关闭；0.2 表示 80% 素材 + 20% 基础图。使用缩放、放大和补边后的基础图，强度越高，小图细节越弱。</div></div>
     </div>
   </div>
 </div>
@@ -364,6 +365,7 @@ function generateCommand() {
     if (val('m-benchmark')) lines.push('--benchmark');
     if (val('m-coloradj')) lines.push('--color-adjust');
     const cs = val('m-colorstr'); if (cs && cs !== '0.04') lines.push('--color-strength ' + cs);
+    const os = val('m-overlaystr'); if (os && os !== '0') lines.push('--overlay-strength ' + os);
     if (val('m-cpu')) lines.push('--cpu');
   }
   else if (tab === 'build') {
@@ -707,6 +709,7 @@ function renderApiErrorSuggestion(data) {
     quality: 'JPEG/WebP 质量必须在 1 到 100 之间。',
     pngLevel: 'PNG 压缩级别必须在 1 到 9 之间。',
     colorStrength: '亮度扰动幅度必须在 0 到 0.5 之间。',
+    overlayStrength: '基础图叠加强度必须在 0 到 1 之间。',
     threads: '线程数必须为 0 或正整数。',
     limit: 'Top N 必须为正整数。',
     imagePath: '请检查图片路径是否为空或类型错误。',
@@ -1123,6 +1126,7 @@ function buildMosaicPayload() {
   setIfNumber(payload, 'quality', 'm-quality', 'JPEG/WebP 质量', { integer: true, min: 1, max: 100 });
   setIfNumber(payload, 'pngLevel', 'm-pnglevel', 'PNG 压缩级别', { integer: true, min: 1, max: 9 });
   setIfNumber(payload, 'colorStrength', 'm-colorstr', '亮度扰动幅度', { min: 0, max: 0.5 });
+  setIfNumber(payload, 'overlayStrength', 'm-overlaystr', '基础图叠加强度', { min: 0, max: 1 });
   setIfChecked(payload, 'tiled', 'm-tiled');
   setIfChecked(payload, 'deepZoom', 'm-deepzoom');
   setIfChecked(payload, 'analyze', 'm-analyze');

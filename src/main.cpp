@@ -53,7 +53,7 @@ static bool isKnownOptionToken(const std::string& token)
         "--png-level", "--write-mode", "--tiled", "--deepzoom",
         "--neighbor-window", "--neighbor-penalty", "-U", "--upscale",
         "--output-tile", "--color-adjust", "--adaptive-weights", "--analyze",
-        "--color-strength", "--benchmark", "-n", "--unused", "--export"
+        "--color-strength", "--overlay-strength", "--benchmark", "-n", "--unused", "--export"
     };
     for (const char* option : kOptions)
     {
@@ -162,6 +162,7 @@ Mosaic options:
       --deepzoom         Generate Deep Zoom pyramid + HTML viewer
       --color-adjust     Enable symmetric per-tile LAB L jitter (off by default)
       --color-strength <v>  Max relative L jitter, 0..0.5 (default: 0.04 = +/-4%; requires --color-adjust)
+      --overlay-strength <v>  Blend processed target over tiles, 0..1 (default: 0 = off)
       --adaptive-weights  Enable adaptive feature weights
       --lab-weight   <w> LAB distance weight (default: 0.20)
       --grid-weight  <w> Grid 8x8 distance weight (default: 0.45)
@@ -542,6 +543,15 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.benchmark = true;
         }
+        else if (arg == "--overlay-strength")
+        {
+            double strength = 0.0;
+            if (!readOptionDouble(argc, argv, i, arg, strength))
+            {
+                return 1;
+            }
+            cfg.overlayStrength = strength;
+        }
         else if (arg == "-h" || arg == "--help")
         {
             std::cout << "Usage: mosaicraft mosaic -i <image> -d <db> [options]" << std::endl;
@@ -572,6 +582,7 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --adaptive-weights    Enable adaptive feature weights" << std::endl;
             std::cout << "  --color-adjust        Enable symmetric per-tile LAB L jitter (off by default)" << std::endl;
             std::cout << "  --color-strength <f>  Max relative L jitter, 0..0.5 (default: 0.04 = +/-4%; requires --color-adjust)" << std::endl;
+            std::cout << "  --overlay-strength <f>  Blend processed target over tiles, 0..1 (default: 0 = off)" << std::endl;
             std::cout << "  --analyze             Generate quality report + heatmap + worst tiles" << std::endl;
             std::cout << "  --benchmark           Print per-phase timing breakdown" << std::endl;
             std::cout << "  --cpu                 Force CPU (no GPU)" << std::endl;

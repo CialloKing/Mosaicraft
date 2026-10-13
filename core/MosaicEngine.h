@@ -90,6 +90,7 @@ public:
                       << " LBP=" << lbpWeight
                       << "  penalty=" << usePenalty
                       << (colorAdjust ? "  colorAdj=on" : "")
+                      << "  overlay=" << overlayStrength
                       << std::endl;
         }
     };

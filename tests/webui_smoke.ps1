@@ -391,6 +391,12 @@ try {
     foreach ($operation in $required) {
         Assert-True ($operations -contains $operation) "missing API operation: $operation"
     }
+    foreach ($operation in @("mosaic", "submitMosaicJob")) {
+        $overlayEndpoint = @($endpoints.endpoints | Where-Object { $_.operation -eq $operation })[0]
+        Assert-True ($overlayEndpoint.requestFields -contains "overlayStrength") "overlayStrength missing from endpoint discovery"
+    }
+    $uiHtml = (Invoke-WebRequest -Uri "$script:BaseUrl/" -UseBasicParsing).Content
+    Assert-True ($uiHtml -match 'id="m-overlaystr"[^>]+value="0"[^>]+step="0.05"') "overlay control defaults missing from Web UI"
 
     $badJson = Invoke-ApiResponse -Method "POST" -Path "/api/jobs/mosaic" -Body "{" -RawBody
     Assert-True ($badJson.StatusCode -eq 400) "malformed JSON should return HTTP 400"
@@ -416,6 +422,14 @@ try {
     }
 
     $badUsage = Invoke-ApiResponse -Method "GET" -Path "/api/db/usage?db=missing.db&limit=0"
+    foreach ($strength in @(-0.01, 1.01, "NaN", "Infinity")) {
+        $badOverlay = Invoke-ApiResponse -Method "POST" -Path "/api/jobs/mosaic" -Body @{
+            inputPath = $targetPath
+            overlayStrength = $strength
+        }
+        Assert-True ($badOverlay.StatusCode -eq 400) "invalid overlayStrength should return HTTP 400"
+        Assert-True ($badOverlay.Json.ok -eq $false) "invalid overlayStrength should return ok=false"
+    }
     Assert-True ($badUsage.StatusCode -eq 400) "invalid usage limit should return HTTP 400"
     Assert-True ($badUsage.Json.ok -eq $false) "invalid usage limit should return ok=false"
     Assert-True ($badUsage.Json.message -eq "limit must be at least 1") "invalid usage limit message should be explicit"
@@ -493,6 +507,24 @@ try {
         $adjustedInspect = Invoke-Api -Method "POST" -Path "/api/inspect" -Body @{ imagePath = $adjustedBody.outputPath }
         Assert-True ($adjustedInspect.ok -eq $true) "adjusted PNG should decode"
         Assert-True ([int]$adjustedInspect.inspect.width -eq 36 -and [int]$adjustedInspect.inspect.height -eq 64) "adjusted PNG dimensions should match"
+    }
+
+    foreach ($strength in @(0.0, 0.25, 1.0)) {
+        $overlayBody = $mosaicBody.Clone()
+        $overlayBody.outputPath = Join-Path $outputDir ("overlay-" + $strength + ".png")
+        $overlayBody.overlayStrength = $strength
+        if ($strength -eq 0.25) {
+            $overlayResult = Invoke-Api -Method "POST" -Path "/api/mosaic" -Body $overlayBody
+            Assert-True ($overlayResult.ok -eq $true) "synchronous overlay failed"
+        }
+        else {
+            $overlayResult = Invoke-Api -Method "POST" -Path "/api/jobs/mosaic" -Body $overlayBody
+            Assert-True ($overlayResult.ok -eq $true) "overlay job was not accepted"
+            Wait-JobSucceeded -JobId $overlayResult.job.id -Label "overlay" -ExpectedType "mosaic" -ExpectedInputPath $targetPath -ExpectedOutputPath $overlayBody.outputPath | Out-Null
+        }
+        $overlayInspect = Invoke-Api -Method "POST" -Path "/api/inspect" -Body @{ imagePath = $overlayBody.outputPath }
+        Assert-True ($overlayInspect.ok -eq $true) "overlay PNG should decode"
+        Assert-True ([int]$overlayInspect.inspect.width -eq 36 -and [int]$overlayInspect.inspect.height -eq 64) "overlay PNG dimensions should match"
     }
 
     $usage = Invoke-Api -Method "POST" -Path "/api/db/usage" -Body @{

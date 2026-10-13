@@ -14,6 +14,7 @@
 #include "../core/ApiJson.h"
 #include "../core/ApiMetadata.h"
 #include "../core/ApiRequestParser.h"
+#include "../core/RequestValidation.h"
 #include "../core/BrightnessAdjustment.h"
 #include "../core/FeatureUtils.h"
 #include "../core/JobManager.h"
@@ -102,6 +103,45 @@ TEST_CASE("brightness API defaults and strength limits retain explicit opt in")
         {
             CHECK(request.config.colorAdjust);
             CHECK(request.config.colorStrength == strength);
+        }
+    }
+}
+
+TEST_CASE("overlay API defaults bounds and nonfinite service options")
+{
+    MosaicRequest request;
+    std::string error;
+    REQUIRE(parseMosaicRequestJson("{}", request, error));
+    CHECK(request.config.overlayStrength == 0);
+    for (double strength : {0.0, 0.25, 1.0, -0.01, 1.01})
+    {
+        const bool valid = strength >= 0 && strength <= 1;
+        request = {};
+        REQUIRE(parseMosaicRequestJson("{\"overlayStrength\":" + std::to_string(strength) + "}", request, error) == valid);
+        if (valid)
+        {
+            CHECK(request.config.overlayStrength == strength);
+            CHECK_FALSE(request.config.colorAdjust);
+        }
+    }
+    for (const std::string body : {R"({"overlayStrength":"NaN"})", R"({"overlayStrength":"Infinity"})",
+                                   R"({"overlayStrength":true})"})
+    {
+        CHECK_FALSE(parseMosaicRequestJson(body, request, error));
+    }
+    for (double strength : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(),
+                            -std::numeric_limits<double>::infinity()})
+    {
+        request = {};
+        request.config.overlayStrength = strength;
+        CHECK_FALSE(validateMosaicRequest(request, error));
+    }
+    for (const auto &endpoint : apiEndpointMetadata(false))
+    {
+        if (endpoint.operation == ApiOperation::Mosaic || endpoint.operation == ApiOperation::SubmitMosaicJob)
+        {
+            CHECK(std::find(endpoint.requestFields.begin(), endpoint.requestFields.end(), "overlayStrength") !=
+                  endpoint.requestFields.end());
         }
     }
 }
