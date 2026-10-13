@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-10-12 | 版本 / Version：v1.14.2
+> 最后更新 / Last updated：2026-10-14 | 版本 / Version：v1.14.3
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -351,6 +351,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.14.1 | 有界邻域比较、按使用次数释放缓存、CPU特征包校验、PNG多行写入 | 见性能报告 |
 | 1.14.0 | 196维并行ANN、字节预算缓存、公共流式输出、CUDA缓冲复用与失败处理 | 见性能报告 |
 | 1.14.2 | 默认平均色HSV建库、可恢复全库重编号、v6特征一致性与API 2.0边界修复 | 见验证记录 |
+| 1.14.3 | 特征缓存一致性、有界建库与匹配、任务内缓存及工作区复用、无偏对称亮度调整 | 见性能记录 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -727,3 +728,16 @@ CPU/GPU 共用独立特征文件的 Unicode 读取和来源校验。缓存的 `f
 大图库在 Windows 批量枚举特征目录的文件属性，减少逐文件系统调用；失败或未命中项仍查询原文件属性。建库日志分别记录颜色校验、排序与文件/SQL 写入，缓存校验/来源读取与写入，以及包含扫描和缓存的墙钟总耗时。流水线阶段存在重叠，不能直接相加。内存和性能验收见 [第一轮验收记录](PERFORMANCE_PHASE1.md)。
 
 > **EN**: This update keeps version 1.14.2, matching features v6 and API contract 2.0. Both backends share Unicode source reads, cache validation and missing-feature penalties. Immutable cache generations publish through one manifest; unverified v2 packs fall back to source files and builds upgrade them automatically. Unchanged builds reuse valid packs and color checks reuse path information. CPU feature batches retain scan-order database commits and roll back failed transactions. CUDA preparation and Canny use reusable worker pools. Timings separate validation, writing and wall time; see the phase-one report for measured performance and memory limits.
+
+### v1.14.3: 缓存一致性、有界匹配与对称亮度调整 (2026-10-14)
+
+此版本发布两轮缓存与性能优化及无偏对称亮度调整，匹配特征仍为 **v6**，HTTP API 合约仍为 **2.0**，生产参数保持兼容。
+
+- CPU/CUDA 共用来源校验和 Unicode 特征读取；旧包、损坏包及来源变化回退独立特征文件。新缓存按完整代次原子发布，失败保留旧包，无变化追加复用有效缓存。缺失特征保留评分惩罚。
+- CPU 建库采用最多 256 张、64 MiB 待处理像素的并行批次，按扫描顺序去重并提交事务；颜色重排复用路径信息和 SQL，CUDA 准备与 Canny 使用线程池。详细数据见 [第一轮验收记录](PERFORMANCE_PHASE1.md)。
+- 匹配主机缓冲及 CPU 特征缓存预算各为 256 MiB，每批最多 1024 块，按任务需要分配。任务内复用特征读取会话、预载/LRU、ANN、线程池和 CUDA 工作区；预算容许时提前准备一批。选图结果保存图库索引，分析仅保留最差 20 块的详细特征。预算不代表进程总内存上限。
+- 亮度调整继续默认关闭；开启后使用 1001 档均匀分布，LAB L 乘数改为 `1±colorStrength`，默认 `0.04` 对应 `0.96～1.04`。与此前 `0.988～1.028` 相比，扰动更宽且乘数平均值为 1；强度 0 保持原像素。像素取整、高亮截断和颜色转换仍可能影响最终平均亮度。CLI、Web UI 和 API 说明已同步。
+
+本机固定 160,000 块样本的 CUDA 总耗时中位数由 43.800 s 降至 33.168 s（约 24.3%），其他场景的收益及内存口径见 [第二轮验收记录](PERFORMANCE_PHASE2.md)。常规 CPU/CUDA 样本分别通过索引、输出哈希及解码像素比较；CUDA 大样本仍存在基线自身的浮点累加顺序与近似同分选图波动，不保证该场景逐字节一致。亮度调整关闭及零强度的 1600 块样本在两种后端中均与调整更新前完全一致。
+
+> **EN**: Version 1.14.3 ships validated feature-cache generations, bounded parallel library builds and bounded matching with task-local caches and reusable workspaces. Host matching buffers and CPU feature payload caches each have a 256 MiB budget, with at most 1024 tiles per batch; these are not process memory limits. Features remain v6 and the HTTP API remains 2.0. Optional brightness jitter remains off by default and now samples 1001 unbiased symmetric LAB L multipliers in `1±strength`; default strength 0.04 spans 0.96–1.04, and zero strength preserves pixels. The fixed local 160,000-tile CUDA benchmark improved by about 24.3%; the reports retain scene-specific results and the existing floating-point near-tie reproducibility limitation.
