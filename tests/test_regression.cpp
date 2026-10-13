@@ -850,8 +850,8 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     const auto folder = workspace.inputDir() / u8path("中文特征");
     fs::create_directory(folder);
     const auto dir = utf8(folder);
-    std::vector<ImageRecord> records(3);
-    for (int i = 0; i < 3; ++i)
+    std::vector<ImageRecord> records(513);
+    for (int i = 0; i < static_cast<int>(records.size()); ++i)
     {
         records[i].id = i * 7 + 1;
         records[i].featureVersion = 6;
@@ -876,7 +876,7 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     };
     // Unverified v2 bytes cannot override refreshed source files with the same IDs.
     {
-        uint32_t count = 3;
+        uint32_t count = static_cast<uint32_t>(records.size());
         std::ofstream old(folder / "tiny.bin", std::ios::binary);
         old.write(reinterpret_cast<const char *>(&count), 4);
         for (const auto &record : records)

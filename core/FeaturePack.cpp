@@ -104,6 +104,85 @@ struct Metadata
 };
 static_assert(sizeof(Metadata) == 88, "feature metadata layout changed");
 
+// 大图库的逐文件属性查询会盖过 GPU 收益；目录枚举提供相同的大小和修改时间。
+// 枚举失败、大小写别名或未找到的文件仍走原属性查询，不将不可读目录当成空目录。
+class StampSampler
+{
+#ifdef _WIN32
+    struct Directory
+    {
+        bool available = false;
+        std::unordered_map<std::wstring, Stamp> entries;
+    };
+    std::unordered_map<fs::path, Directory> m_directories;
+#endif
+  public:
+    StampSampler(const std::vector<ImageRecord> &records, const std::vector<int> &needed)
+    {
+#ifdef _WIN32
+        if (needed.size() < 512)
+        {
+            return;
+        }
+        for (int index : needed)
+        {
+            for (const auto *source : {&records[index].tinyPath, &records[index].histPath})
+            {
+                if (!source->empty())
+                {
+                    const auto path = u8path(*source);
+                    m_directories[path.parent_path()].entries.emplace(path.filename().wstring(), Stamp{});
+                }
+            }
+        }
+        for (auto &[path, directory] : m_directories)
+        {
+            WIN32_FIND_DATAW data{};
+            const auto handle = FindFirstFileExW((path / L"*").c_str(), FindExInfoBasic, &data, FindExSearchNameMatch,
+                                                 nullptr, FIND_FIRST_EX_LARGE_FETCH);
+            if (handle == INVALID_HANDLE_VALUE)
+            {
+                continue;
+            }
+            do
+            {
+                auto entry = directory.entries.find(data.cFileName);
+                if (entry != directory.entries.end() && !(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+                {
+                    entry->second = {1, (static_cast<uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow,
+                                     (static_cast<uint64_t>(data.ftLastWriteTime.dwHighDateTime) << 32) |
+                                         data.ftLastWriteTime.dwLowDateTime};
+                }
+            } while (FindNextFileW(handle, &data));
+            directory.available = GetLastError() == ERROR_NO_MORE_FILES;
+            FindClose(handle);
+        }
+#endif
+    }
+
+    Stamp get(const std::string &source) const
+    {
+#ifdef _WIN32
+        if (!source.empty() && !m_directories.empty())
+        {
+            const auto path = u8path(source);
+            const auto directory = m_directories.find(path.parent_path());
+            if (directory != m_directories.end() && directory->second.available)
+            {
+                const auto entry = directory->second.entries.find(path.filename().wstring());
+                if (entry != directory->second.entries.end() && entry->second.path)
+                {
+                    auto result = entry->second;
+                    result.path = hashBytes(source.data(), source.size());
+                    return result;
+                }
+            }
+        }
+#endif
+        return stamp(source);
+    }
+};
+
 struct Manifest
 {
     std::string generation;
@@ -182,6 +261,7 @@ bool loadFeatures(const std::string &directory, const std::vector<ImageRecord> &
     tinyValid.assign(count, 0);
     lbpValid.assign(count, 0);
     current.resize(count);
+    const StampSampler sampler(records, needed);
     WorkerPool workers(static_cast<unsigned>(std::max<size_t>(1, std::min<size_t>(count, 8))));
     workers.run(count,
                 [&](size_t i)
@@ -191,8 +271,8 @@ bool loadFeatures(const std::string &directory, const std::vector<ImageRecord> &
                     metadata.id = record.id;
                     metadata.version = record.featureVersion;
                     metadata.imageHash = hashBytes(record.fileHash.data(), record.fileHash.size());
-                    metadata.tiny = stamp(record.tinyPath);
-                    metadata.lbp = stamp(record.histPath);
+                    metadata.tiny = sampler.get(record.tinyPath);
+                    metadata.lbp = sampler.get(record.histPath);
                 });
 
     Manifest manifest;
