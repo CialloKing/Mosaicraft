@@ -912,6 +912,9 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     const std::vector<int> needed{2, 0, 2};
     CandidateFeatures legacy(records, needed, dir);
     CHECK(legacy.tiny(2)[0] == 3);
+    FeaturePack::Reader legacyReader(dir, records);
+    CHECK_FALSE(legacyReader.stats().preloaded);
+    CHECK(legacyReader.get(2).tiny[0] == 3);
     REQUIRE(FeaturePack::buildCache(dir, records));
     const auto oldGeneration = publishedPath(".tiny.bin");
     const auto manifestTime = fs::last_write_time(manifestPath);
@@ -923,6 +926,22 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     CandidateFeatures cached(records, needed, dir);
     CHECK(cached.hasTiny(2));
     CHECK(cached.lbp(0)[0] == 0.25f);
+    FeaturePack::Reader preloaded(dir, records);
+    REQUIRE(preloaded.stats().preloaded);
+    preloaded.prepare(needed);
+    CHECK(preloaded.get(2).tiny[0] == cached.tiny(2)[0]);
+    CHECK(preloaded.get(0).lbp[0] == cached.lbp(0)[0]);
+    CHECK(preloaded.stats().sourceReads == 0);
+    FeaturePack::Reader limited(dir, records, 2 * sizeof(FeaturePack::Reader::Row));
+    CHECK_FALSE(limited.stats().preloaded);
+    CHECK(limited.get(2).tiny[0] == 3);
+    CHECK(limited.get(0).tiny[0] == 1);
+    limited.prepare({0, 1});
+    CHECK(limited.get(0).tiny[0] == 1);
+    CHECK(limited.get(1).tiny[0] == 2);
+    CHECK(limited.stats().evictions == 1);
+    CHECK(limited.stats().sourceReads == 0);
+    CHECK(limited.stats().peakBytes <= 2 * sizeof(FeaturePack::Reader::Row));
     {
         std::fstream pack(oldGeneration, std::ios::binary | std::ios::in | std::ios::out);
         pack.seekp(8);
@@ -930,6 +949,9 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     }
     CandidateFeatures corrupt(records, needed, dir);
     CHECK(corrupt.tiny(0)[0] == 1);
+    FeaturePack::Reader corruptReader(dir, records);
+    CHECK(corruptReader.get(0).tiny[0] == 1);
+    CHECK(corruptReader.stats().sourceReads == 2);
     {
         std::vector<uint8_t> changed(256, 42);
         std::ofstream file(u8path(records[2].tinyPath), std::ios::binary);
@@ -940,6 +962,18 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     CandidateFeatures refreshed(records, needed, dir);
     CHECK(refreshed.tiny(2)[0] == 42);
     CHECK(fs::exists(oldGeneration));
+    FeaturePack::Reader beforeChange(dir, records);
+    REQUIRE(beforeChange.stats().preloaded);
+    const auto sourceTime = fs::last_write_time(u8path(records[1].tinyPath));
+    {
+        std::vector<uint8_t> changed(256, 99);
+        std::ofstream file(u8path(records[1].tinyPath), std::ios::binary);
+        file.write(reinterpret_cast<const char *>(changed.data()), 256);
+    }
+    fs::last_write_time(u8path(records[1].tinyPath), sourceTime + std::chrono::seconds(1));
+    beforeChange.prepare({1});
+    CHECK(beforeChange.get(1).tiny[0] == 99);
+    CHECK(beforeChange.stats().sourceReads == 2);
 #ifdef _WIN32
     const auto generationBefore = publishedPath(".tiny.bin");
     ++records[0].featureVersion;
@@ -961,6 +995,9 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     CHECK(missing.tiny(2)[0] == 42);
     CHECK_FALSE(missing.hasTiny(0));
     CHECK_FALSE(missing.hasLbp(0));
+    FeaturePack::Reader missingReader(dir, records);
+    CHECK_FALSE(missingReader.get(0).tinyValid);
+    CHECK_FALSE(missingReader.get(0).lbpValid);
     fs::resize_file(publishedPath(".lbp.bin"), 5);
     CandidateFeatures truncated(records, needed, dir);
     CHECK(truncated.tiny(2)[0] == 42);

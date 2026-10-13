@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <list>
 #include <memory>
 #include <numeric>
 #include <stdexcept>
@@ -399,6 +400,312 @@ bool persist(File &file)
     return fclose(file.release()) == 0;
 }
 } // namespace
+
+// 一个会话持有同一代次；包可以预载，来源状态在第一次使用前才验证。
+struct FeaturePack::Reader::Impl
+{
+    using Row = Reader::Row;
+    using ReadStats = Reader::ReadStats;
+    const std::vector<ImageRecord> &records;
+    size_t budget;
+    ReadStats statistics;
+    Manifest manifest;
+    std::vector<Metadata> metadata;
+    std::vector<int> positions;
+    std::vector<uint8_t> checked;
+    std::vector<unsigned> seen;
+    unsigned generation = 0;
+    File tiny{nullptr, fclose}, lbp{nullptr, fclose};
+    std::vector<Row> rows;
+    std::list<int> order;
+    struct Cached
+    {
+        Row row;
+        std::list<int>::iterator position;
+    };
+    std::unordered_map<int, Cached> cache;
+    Row uncached;
+
+    static bool seek(FILE *file, uint64_t offset)
+    {
+#ifdef _WIN32
+        return _fseeki64(file, static_cast<__int64>(offset), SEEK_SET) == 0;
+#else
+        return fseeko(file, static_cast<off_t>(offset), SEEK_SET) == 0;
+#endif
+    }
+
+    Impl(const std::string &directory, const std::vector<ImageRecord> &input, size_t bytes)
+        : records(input), budget(bytes), positions(input.size(), -1), checked(input.size(), 0), seen(input.size(), 0)
+    {
+        std::unordered_map<int, int> ids;
+        for (size_t i = 0; i < records.size(); ++i)
+        {
+            if (records[i].id < 0 || !ids.emplace(records[i].id, static_cast<int>(i)).second)
+            {
+                throw std::invalid_argument("invalid feature record IDs");
+            }
+        }
+        if (directory.empty() || !readManifest(directory, manifest) ||
+            !readMetadata(directory, manifest, records.size(), metadata))
+        {
+            return;
+        }
+        int previous = -1;
+        for (size_t i = 0; i < metadata.size(); ++i)
+        {
+            const auto &entry = metadata[i];
+            const auto index = ids.find(entry.id);
+            if (entry.id <= previous || index == ids.end() || entry.tinyValid > 1 || entry.lbpValid > 1)
+            {
+                return;
+            }
+            previous = entry.id;
+            positions[index->second] = static_cast<int>(i);
+        }
+        const auto tinyPath = generationPath(directory, manifest, ".tiny.bin");
+        const auto lbpPath = generationPath(directory, manifest, ".lbp.bin");
+        std::error_code error;
+        const auto tinySize = fs::file_size(tinyPath, error);
+        if (error || tinySize != 4 + static_cast<uint64_t>(records.size()) * 260)
+        {
+            return;
+        }
+        const auto lbpSize = fs::file_size(lbpPath, error);
+        if (error || lbpSize != 4 + static_cast<uint64_t>(records.size()) * 1028)
+        {
+            return;
+        }
+        tiny = openFile(tinyPath, "rb");
+        lbp = openFile(lbpPath, "rb");
+        if (tiny)
+        {
+            setvbuf(tiny.get(), nullptr, _IOFBF, 64 * 1024);
+        }
+        if (lbp)
+        {
+            setvbuf(lbp.get(), nullptr, _IOFBF, 64 * 1024);
+        }
+        uint32_t tc = 0, lc = 0;
+        if (!tiny || !lbp || fread(&tc, 4, 1, tiny.get()) != 1 || fread(&lc, 4, 1, lbp.get()) != 1 ||
+            tc != records.size() || lc != tc)
+        {
+            tiny.reset();
+            lbp.reset();
+            return;
+        }
+        if (records.size() <= budget / sizeof(Row))
+        {
+            rows.resize(records.size());
+            for (size_t i = 0; i < metadata.size(); ++i)
+            {
+                if (!readPacked(static_cast<int>(i), rows[ids.at(metadata[i].id)], false))
+                {
+                    // 预载发现半包/损坏时不接受该代次，来源按需读取，避免全库回退 I/O。
+                    std::vector<Row>().swap(rows);
+                    tiny.reset();
+                    lbp.reset();
+                    return;
+                }
+            }
+            statistics.preloaded = true;
+            statistics.peakBytes = rows.size() * sizeof(Row);
+        }
+    }
+
+    bool readPacked(int position, Row &row, bool reposition)
+    {
+        if (!tiny || !lbp || position < 0)
+        {
+            return false;
+        }
+        if (reposition && (!seek(tiny.get(), 4 + static_cast<uint64_t>(position) * 260) ||
+                           !seek(lbp.get(), 4 + static_cast<uint64_t>(position) * 1028)))
+        {
+            return false;
+        }
+        int32_t ti = -1, li = -1;
+        const auto &entry = metadata[position];
+        if (fread(&ti, 4, 1, tiny.get()) != 1 || fread(row.tiny.data(), 1, 256, tiny.get()) != 256 ||
+            fread(&li, 4, 1, lbp.get()) != 1 || fread(row.lbp.data(), 4, 256, lbp.get()) != 256 || ti != entry.id ||
+            li != ti || hashBytes(row.tiny.data(), 256) != entry.tinyHash ||
+            hashBytes(row.lbp.data(), 1024) != entry.lbpHash)
+        {
+            return false;
+        }
+        row.tinyValid = entry.tinyValid != 0;
+        row.lbpValid = entry.lbpValid != 0;
+        return true;
+    }
+
+    void load(int index, Row &row, const StampSampler *sampler)
+    {
+        const auto &record = records[index];
+        const auto ts = sampler ? sampler->get(record.tinyPath) : stamp(record.tinyPath);
+        const auto ls = sampler ? sampler->get(record.histPath) : stamp(record.histPath);
+        const int position = positions[index];
+        if (tiny && lbp && position >= 0)
+        {
+            const auto &saved = metadata[position];
+            if (saved.version == record.featureVersion &&
+                saved.imageHash == hashBytes(record.fileHash.data(), record.fileHash.size()) && saved.tiny == ts &&
+                saved.lbp == ls && (statistics.preloaded || readPacked(position, row, true)))
+            {
+                ++statistics.packedRows;
+                return;
+            }
+        }
+        if (!record.tinyPath.empty() && ts.size == 256)
+        {
+            ++statistics.sourceReads;
+        }
+        row.tinyValid = readSource(record.tinyPath, ts, row.tiny.data(), 256);
+        if (!row.tinyValid)
+        {
+            row.tiny.fill(0);
+        }
+        if (!record.histPath.empty() && ls.size == 1024)
+        {
+            ++statistics.sourceReads;
+        }
+        row.lbpValid =
+            readSource(record.histPath, ls, row.lbp.data(), 1024) && std::all_of(row.lbp.begin(), row.lbp.end(),
+                                                                                 [](float value)
+                                                                                 {
+                                                                                     return std::isfinite(value);
+                                                                                 });
+        if (!row.lbpValid)
+        {
+            row.lbp.fill(0);
+        }
+    }
+
+    const Row &get(int index, const StampSampler *sampler = nullptr)
+    {
+        if (index < 0 || static_cast<size_t>(index) >= records.size())
+        {
+            throw std::out_of_range("invalid feature index");
+        }
+        if (statistics.preloaded)
+        {
+            if (!checked[index])
+            {
+                ++statistics.misses;
+                load(index, rows[index], sampler);
+                checked[index] = 1;
+            }
+            else
+            {
+                ++statistics.hits;
+            }
+            return rows[index];
+        }
+        auto existing = cache.find(index);
+        if (existing != cache.end())
+        {
+            ++statistics.hits;
+            order.splice(order.begin(), order, existing->second.position);
+            return existing->second.row;
+        }
+        ++statistics.misses;
+        Row row;
+        load(index, row, sampler);
+        if (budget < sizeof(Row))
+        {
+            uncached = std::move(row);
+            statistics.peakBytes = sizeof(Row); // 一个最小特征行独占，避免非法缩减特征。
+            return uncached;
+        }
+        while (cache.size() >= budget / sizeof(Row))
+        {
+            cache.erase(order.back());
+            order.pop_back();
+            ++statistics.evictions;
+        }
+        order.push_front(index);
+        const auto inserted = cache.emplace(index, Cached{std::move(row), order.begin()});
+        statistics.peakBytes = std::max(statistics.peakBytes, cache.size() * sizeof(Row));
+        return inserted.first->second.row;
+    }
+
+    void prepare(const std::vector<int> &candidates)
+    {
+        if (++generation == 0)
+        {
+            std::fill(seen.begin(), seen.end(), 0);
+            ++generation;
+        }
+        std::vector<int> needed;
+        for (int index : candidates)
+        {
+            if (index < 0)
+            {
+                continue;
+            }
+            if (static_cast<size_t>(index) >= records.size())
+            {
+                throw std::out_of_range("invalid feature index");
+            }
+            if (seen[index] == generation)
+            {
+                continue;
+            }
+            seen[index] = generation;
+            if (statistics.preloaded)
+            {
+                if (!checked[index])
+                {
+                    needed.push_back(index);
+                }
+            }
+            else
+            {
+                auto existing = cache.find(index);
+                if (existing == cache.end())
+                {
+                    needed.push_back(index);
+                }
+                else
+                {
+                    // 先固定本批已缓存的访问次序，新条目才能优先淘汰批次外的数据。
+                    order.splice(order.begin(), order, existing->second.position);
+                }
+            }
+        }
+        if (needed.empty())
+        {
+            return;
+        }
+        const StampSampler sampler(records, needed);
+        std::sort(needed.begin(), needed.end(),
+                  [&](int left, int right)
+                  {
+                      return positions[left] < positions[right];
+                  });
+        for (int index : needed)
+        {
+            get(index, &sampler);
+        }
+    }
+};
+
+FeaturePack::Reader::Reader(const std::string &directory, const std::vector<ImageRecord> &records, size_t budget)
+    : m_impl(std::make_unique<Impl>(directory, records, budget))
+{
+}
+FeaturePack::Reader::~Reader() = default;
+void FeaturePack::Reader::prepare(const std::vector<int> &candidates)
+{
+    m_impl->prepare(candidates);
+}
+const FeaturePack::Reader::Row &FeaturePack::Reader::get(int index)
+{
+    return m_impl->get(index);
+}
+const FeaturePack::Reader::ReadStats &FeaturePack::Reader::stats() const
+{
+    return m_impl->statistics;
+}
 
 bool FeaturePack::load(const std::string &directory, const std::vector<ImageRecord> &records,
                        const std::vector<int> &needed, std::vector<uint8_t> &tiny, std::vector<float> &lbp,
