@@ -967,6 +967,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     WorstTiles worstTiles;
     size_t matchingBatches = 0, matchingPeakBytes = 0, maximumBatchTiles = 0;
     double matchingWallMs = 0;
+    bool matchingPrefetch = false;
     FeaturePack::Reader::ReadStats featureReadStats;
 
     int N = cfg.candidates;  // 候选数量，GPU 路径需提前确定，用于 benchmark
@@ -1042,6 +1043,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << "  Score temporary bytes: " << scoreTimings.peakTemporaryBytes << "\n";
         }
         std::cout << "  Matching batches: " << matchingBatches << "\n"
+                  << "  Matching prefetch: " << matchingPrefetch << "\n"
                   << "  Matching wall: " << matchingWallMs << " ms\n"
                   << "  Matching max tiles: " << maximumBatchTiles << "\n"
                   << "  Matching buffer peak bytes: " << matchingPeakBytes << "\n"
@@ -1233,11 +1235,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::vector<std::pair<double, int>> scored;
         scored.reserve(N);
         bool hasCandidates = false;
-        std::cout << "Matching: ordered batches, max " << batchRows << " tiles" << std::endl;
-        for (int first = 0; first < totalTiles;)
+        MatchingBuffers ahead;
+        auto prepare = [&](int first, int count, MatchingBuffers &buffers)
         {
-            const int count = static_cast<int>(std::min<size_t>(batchRows, totalTiles - first));
-            ++matchingBatches;
             buffers.resize(count, featBytes, N, cfg.useGpu, cfg.analyze);
             auto &allTL = buffers.l;
             auto &allTA = buffers.a;
@@ -1451,6 +1451,48 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     entropyDistribution.push_back(entropy);
                 }
             }
+            return true;
+        };
+        const size_t scratch = checkedMatchProduct(N, sizeof(int) + sizeof(std::pair<double, int>)) +
+                               FeatureIndex::kDimension * sizeof(float);
+        const bool prefetch =
+            cfg.useGpu && totalTiles > batchRows && m_limits.hostBytes >= scratch &&
+            gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze) <= (m_limits.hostBytes - scratch) / 2;
+        matchingPrefetch = prefetch;
+        bool preparedNext = false;
+        // 池必须在缓冲/prepare 之后创建，错误退出也会先等待预取线程，再销毁它引用的数据。
+        std::unique_ptr<WorkerPool> prefetchWorkers;
+        if (prefetch)
+        {
+            prefetchWorkers = std::make_unique<WorkerPool>(1);
+        }
+        if (!prepare(0, static_cast<int>(batchRows), buffers))
+        {
+            return false;
+        }
+        std::cout << "Matching: ordered batches, max " << batchRows << " tiles"
+                  << (prefetch ? " (one batch ahead)" : "") << std::endl;
+        for (int first = 0; first < totalTiles;)
+        {
+            const int count = static_cast<int>(std::min<size_t>(batchRows, totalTiles - first));
+            const int next = first + count;
+            const int nextCount = static_cast<int>(std::min<size_t>(batchRows, totalTiles - next));
+            ++matchingBatches;
+            auto &allTL = buffers.l;
+            auto &allTA = buffers.a;
+            auto &allTB = buffers.b;
+            auto &allEdge = buffers.edge;
+            auto &allGrid = buffers.grid;
+            auto &allTiny = buffers.tiny;
+            auto &allLBP = buffers.lbp;
+            auto &allIndices = buffers.indices;
+            auto &allScores = buffers.scores;
+            auto &tileLabW = buffers.labW;
+            auto &tileGridW = buffers.gridW;
+            auto &tileTinyW = buffers.tinyW;
+            auto &tileEdgeW = buffers.edgeW;
+            auto &tileLbpW = buffers.lbpW;
+            auto &tileGrid4x4 = buffers.grid4;
             if (cfg.useGpu)
             {
                 const auto scoreStart = Clock::now();
@@ -1471,6 +1513,16 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 scoreTimings.peakTemporaryBytes =
                     std::max(scoreTimings.peakTemporaryBytes, batchTimings.peakTemporaryBytes);
                 msGPUScore += Ms(Clock::now() - scoreStart).count();
+                if (prefetch && nextCount > 0)
+                {
+                    // 下一批只准备与邻域状态无关的数据；评分和选择仍由当前线程顺序执行。
+                    preparedNext = false;
+                    prefetchWorkers->start(1,
+                                           [&, next, nextCount](size_t)
+                                           {
+                                               preparedNext = prepare(next, nextCount, ahead);
+                                           });
+                }
                 const auto selectionStart = Clock::now();
                 if (cfg.analyze)
                 {
@@ -1866,13 +1918,32 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
                 msSelect += Ms(Clock::now() - selectionStart).count();
             }
+            if (prefetch && nextCount > 0)
+            {
+                prefetchWorkers->wait();
+                if (!preparedNext)
+                {
+                    return false;
+                }
+            }
             const size_t temporary = featureReader ? featureReader->stats().temporaryPeakBytes : 0;
-            matchingPeakBytes =
-                std::max(matchingPeakBytes, buffers.capacityBytes() + temporary + idxs.capacity() * sizeof(int) +
-                                                scored.capacity() * sizeof(std::pair<double, int>) +
-                                                tileVector.capacity() * sizeof(float));
+            matchingPeakBytes = std::max(matchingPeakBytes, buffers.capacityBytes() + ahead.capacityBytes() +
+                                                                temporary + idxs.capacity() * sizeof(int) +
+                                                                scored.capacity() * sizeof(std::pair<double, int>) +
+                                                                tileVector.capacity() * sizeof(float));
             first += count;
             std::cout << "\r  matching " << first << "/" << totalTiles << std::flush;
+            if (nextCount > 0)
+            {
+                if (prefetch)
+                {
+                    std::swap(buffers, ahead);
+                }
+                else if (!prepare(first, nextCount, buffers))
+                {
+                    return false;
+                }
+            }
         }
         if (featureReader)
         {

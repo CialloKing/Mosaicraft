@@ -6,6 +6,7 @@
 #include <exception>
 #include <functional>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -46,20 +47,42 @@ class WorkerPool
 
     void run(std::size_t count, std::function<void(std::size_t)> job)
     {
-        std::unique_lock<std::mutex> lock(m_mutex);
+        start(count, std::move(job));
+        wait();
+    }
+
+    // start/wait 允许任务内预取下一批；同一个池同时只能持有一个批次。
+    void start(std::size_t count, std::function<void(std::size_t)> job)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_running)
+        {
+            throw std::logic_error("worker batch already running");
+        }
         m_job = std::move(job);
         m_count = count;
         m_next = 0;
         m_error = nullptr;
         m_remaining = m_threads.size();
+        m_running = true;
         ++m_generation;
         m_ready.notify_all();
+    }
+
+    void wait()
+    {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        if (!m_running)
+        {
+            return;
+        }
         m_done.wait(lock,
                     [this]()
                     {
                         return m_remaining == 0;
                     });
         m_job = {};
+        m_running = false;
         if (m_error)
         {
             std::rethrow_exception(m_error);
@@ -129,6 +152,7 @@ class WorkerPool
     std::atomic<std::size_t> m_next{0};
     std::size_t m_count = 0, m_remaining = 0, m_generation = 0;
     bool m_stop = false;
+    bool m_running = false;
 };
 
 } // namespace mosaicraft

@@ -108,4 +108,18 @@ struct MatchingBuffers
         return result;
     }
 };
+
+inline size_t gpuMatchingBufferBytes(size_t rows, size_t imageBytes, int candidates, bool analyze)
+{
+    const size_t imageStorage = checkedMatchProduct(std::min<size_t>(rows, 256), imageBytes);
+    const size_t rowBytes = 2048 + 12 * sizeof(double) + 196 * sizeof(float) +
+                            checkedMatchProduct(candidates, sizeof(int) + sizeof(double)) +
+                            (analyze ? 48 * sizeof(float) + sizeof(std::vector<float>) : 0);
+    const size_t featureStorage = checkedMatchProduct(rows, rowBytes);
+    if (imageStorage > std::numeric_limits<size_t>::max() - featureStorage)
+    {
+        throw std::overflow_error("matching buffer size overflow");
+    }
+    return imageStorage + featureStorage;
+}
 } // namespace mosaicraft

@@ -6,6 +6,7 @@
 #include "../core/MatchingAccess.h"
 #include "../core/MosaicOutput.h"
 #include "../core/PngStreamWriter.h"
+#include "../core/WorkerPool.h"
 #include <deque>
 #include <limits>
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
@@ -1057,7 +1058,46 @@ TEST_CASE("output reports incomplete PNG and DeepZoom while empty tiles remain l
 TEST_CASE("matching batches preserve seeded choices, padding and empty batches")
 {
     const MatchingLimits limits;
+    WorkerPool prefetch(1);
+    std::atomic<bool> entered{false}, release{false};
+    prefetch.start(1,
+                   [&](size_t)
+                   {
+                       entered = true;
+                       while (!release.load())
+                       {
+                           std::this_thread::yield();
+                       }
+                   });
+    while (!entered.load())
+    {
+        std::this_thread::yield();
+    }
+    CHECK_THROWS_AS(prefetch.start(0,
+                                   [](size_t)
+                                   {
+                                   }),
+                    std::logic_error);
+    release = true;
+    prefetch.wait();
+    prefetch.start(1,
+                   [](size_t)
+                   {
+                       throw std::runtime_error("prefetch fault");
+                   });
+    CHECK_THROWS_AS(prefetch.wait(), std::runtime_error);
+    prefetch.run(1,
+                 [&](size_t)
+                 {
+                     entered = false;
+                 });
+    CHECK_FALSE(entered.load());
     CHECK(matchingBatchRows(limits, 180, 320, 150, 100, true) == 1024);
+    MatchingBuffers gpuBuffers;
+    gpuBuffers.resize(1024, 180 * 320 * 3, 150, true, true);
+    CHECK(gpuBuffers.capacityBytes() <= gpuMatchingBufferBytes(1024, 180 * 320 * 3, 150, true));
+    CHECK(2 * gpuMatchingBufferBytes(1024, 180 * 320 * 3, 150, true) < limits.hostBytes);
+    CHECK(2 * gpuMatchingBufferBytes(256, 180 * 320 * 3, 150, true) > 64 * 1024 * 1024);
     CHECK(matchingBatchRows(MatchingLimits{1, 1, 1024}, 180, 320, 150, 100, false) == 1);
     CHECK(matchingBatchRows(limits, 180, 320, 10000, 1000000, false) < 1024);
     CHECK_THROWS_AS(checkedMatchProduct(std::numeric_limits<size_t>::max(), 2), std::overflow_error);
