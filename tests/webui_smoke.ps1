@@ -405,6 +405,16 @@ try {
     Assert-True ($badTile.Json.ok -eq $false) "invalid tileW should return ok=false"
     Assert-True ($badTile.Json.message -eq "tileW must be at least 4") "invalid tileW message should be explicit"
 
+    foreach ($strength in @(-0.01, 0.51)) {
+        $badStrength = Invoke-ApiResponse -Method "POST" -Path "/api/jobs/mosaic" -Body @{
+            inputPath = $targetPath
+            colorAdjust = $true
+            colorStrength = $strength
+        }
+        Assert-True ($badStrength.StatusCode -eq 400) "invalid colorStrength should return HTTP 400"
+        Assert-True ($badStrength.Json.message -eq "colorStrength must be between 0.000000 and 0.500000") "colorStrength bounds should be explicit"
+    }
+
     $badUsage = Invoke-ApiResponse -Method "GET" -Path "/api/db/usage?db=missing.db&limit=0"
     Assert-True ($badUsage.StatusCode -eq 400) "invalid usage limit should return HTTP 400"
     Assert-True ($badUsage.Json.ok -eq $false) "invalid usage limit should return ok=false"
@@ -445,7 +455,7 @@ try {
     Assert-True ([int]$inspect.inspect.height -eq 64) "inspect height should be 64"
     Assert-True ($inspect.inspect.databaseAvailable -eq $true) "inspect should see the database"
 
-    $mosaic = Invoke-Api -Method "POST" -Path "/api/jobs/mosaic" -Body @{
+    $mosaicBody = @{
         inputPath = $targetPath
         dbPath = $dbPath
         outputPath = $mosaicPath
@@ -461,10 +471,29 @@ try {
         topNrandom = 1
         pngLevel = 1
     }
+    $mosaic = Invoke-Api -Method "POST" -Path "/api/jobs/mosaic" -Body $mosaicBody
     Assert-True ($mosaic.ok -eq $true -and $null -ne $mosaic.job) "mosaic job was not accepted"
     Assert-JobSnapshot -Job $mosaic.job -ExpectedType "mosaic" -ExpectedInputPath $targetPath -ExpectedOutputPath $mosaicPath
     Wait-JobSucceeded -JobId $mosaic.job.id -Label "mosaic" -ExpectedType "mosaic" -ExpectedInputPath $targetPath -ExpectedOutputPath $mosaicPath | Out-Null
     Assert-True (Test-Path -LiteralPath $mosaicPath) "mosaic output was not created"
+
+    foreach ($case in @(
+        @{ Name = "zero"; Strength = 0.0 },
+        @{ Name = "default"; Strength = 0.04 },
+        @{ Name = "maximum"; Strength = 0.5 }
+    )) {
+        $adjustedBody = $mosaicBody.Clone()
+        $adjustedBody.outputPath = Join-Path $outputDir ("adjusted-" + $case.Name + ".png")
+        $adjustedBody.colorAdjust = $true
+        $adjustedBody.colorStrength = $case.Strength
+        $adjustedBody.useGpu = $true
+        $adjusted = Invoke-Api -Method "POST" -Path "/api/jobs/mosaic" -Body $adjustedBody
+        Assert-True ($adjusted.ok -eq $true) "brightness job was not accepted"
+        Wait-JobSucceeded -JobId $adjusted.job.id -Label ("brightness-" + $case.Name) -ExpectedType "mosaic" -ExpectedInputPath $targetPath -ExpectedOutputPath $adjustedBody.outputPath | Out-Null
+        $adjustedInspect = Invoke-Api -Method "POST" -Path "/api/inspect" -Body @{ imagePath = $adjustedBody.outputPath }
+        Assert-True ($adjustedInspect.ok -eq $true) "adjusted PNG should decode"
+        Assert-True ([int]$adjustedInspect.inspect.width -eq 36 -and [int]$adjustedInspect.inspect.height -eq 64) "adjusted PNG dimensions should match"
+    }
 
     $usage = Invoke-Api -Method "POST" -Path "/api/db/usage" -Body @{
         dbPath = $dbPath

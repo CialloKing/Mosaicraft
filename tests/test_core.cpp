@@ -14,6 +14,7 @@
 #include "../core/ApiJson.h"
 #include "../core/ApiMetadata.h"
 #include "../core/ApiRequestParser.h"
+#include "../core/BrightnessAdjustment.h"
 #include "../core/FeatureUtils.h"
 #include "../core/JobManager.h"
 #include "../core/LegacyRun.h"
@@ -29,6 +30,81 @@
 #include <algorithm>
 
 using namespace mosaicraft;
+
+TEST_CASE("brightness factors are symmetric and seeded sampling preserves bounds")
+{
+    const double strengths[] =
+    {
+        0.0, 0.04, 0.5
+    };
+    for (double strength : strengths)
+    {
+        double sum = 0.0;
+        for (int sample = 0; sample <= 1000; ++sample)
+        {
+            const double factor = detail::brightnessFactor(sample, strength);
+            CHECK(factor >= 1.0 - strength);
+            CHECK(factor <= 1.0 + strength);
+            CHECK(factor + detail::brightnessFactor(1000 - sample, strength) == doctest::Approx(2.0));
+            sum += factor;
+        }
+        CHECK(detail::brightnessFactor(0, strength) == doctest::Approx(1.0 - strength));
+        CHECK(detail::brightnessFactor(500, strength) == 1.0);
+        CHECK(detail::brightnessFactor(1000, strength) == doctest::Approx(1.0 + strength));
+        CHECK(sum / 1001.0 == doctest::Approx(1.0));
+        std::mt19937 rng(123), repeat(123);
+        for (int i = 0; i < 1001; ++i)
+        {
+            const double factor = detail::sampleBrightnessFactor(rng, strength);
+            CHECK(factor == detail::sampleBrightnessFactor(repeat, strength));
+            CHECK(factor >= 1.0 - strength);
+            CHECK(factor <= 1.0 + strength);
+        }
+    }
+    cv::Mat image(2, 3, CV_8UC3);
+    for (size_t i = 0; i < image.total() * image.elemSize(); ++i)
+    {
+        image.data[i] = static_cast<unsigned char>(i * 37 + 3);
+    }
+    const cv::Mat original = image.clone();
+    std::mt19937 rng(123), before = rng;
+    detail::adjustBrightness(image, 0.0, rng);
+    CHECK(cv::norm(image, original, cv::NORM_INF) == 0);
+    CHECK(rng == before);
+}
+
+TEST_CASE("brightness API defaults and strength limits retain explicit opt in")
+{
+    const char *bodies[] =
+    {
+        "{}", "{\"colorStrength\":0.5}"
+    };
+    for (const std::string body : bodies)
+    {
+        MosaicRequest request;
+        std::string error;
+        REQUIRE(parseMosaicRequestJson(body, request, error));
+        CHECK_FALSE(request.config.colorAdjust);
+        CHECK(request.config.colorStrength == (body == "{}" ? 0.04 : 0.5));
+    }
+    const double strengths[] =
+    {
+        0.0, 0.04, 0.5, -0.01, 0.51
+    };
+    for (double strength : strengths)
+    {
+        MosaicRequest request;
+        std::string error;
+        const bool valid = strength >= 0.0 && strength <= 0.5;
+        REQUIRE(parseMosaicRequestJson("{\"colorAdjust\":true,\"colorStrength\":" + std::to_string(strength) + "}",
+                                     request, error) == valid);
+        if (valid)
+        {
+            CHECK(request.config.colorAdjust);
+            CHECK(request.config.colorStrength == strength);
+        }
+    }
+}
 
 TEST_CASE("mean LAB ordering preserves gray threshold hue wrap and brightness transitions")
 {

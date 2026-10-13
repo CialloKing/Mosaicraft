@@ -1,6 +1,7 @@
 ﻿#include "MosaicEngine.h"
 #include "AnalysisTiles.h"
 #include "BenchmarkTimer.h"
+#include "BrightnessAdjustment.h"
 #include "BigTiffWriter.h"
 #include "CandidateFeatures.h"
 #include "Database.h"
@@ -53,23 +54,13 @@ namespace mosaicraft
 {
 
 // ============================================================
-// LAB 亮度微调：在 LAB 空间对 L 通道做随机乘数调整，模拟自然光照变化
-// 曾用 HSV 色相校正方案（仅调 H，S/V 不变），后改为 LAB 仅调亮度效果更自然
+// 在选图后的输出阶段微调 LAB L 通道，减少重复图片的视觉重复感。
 // ============================================================
 static void adjustColor(cv::Mat& img, double strength)
 {
-    cv::Mat lab;
-    cv::cvtColor(img, lab, cv::COLOR_BGR2Lab);
-    std::vector<cv::Mat> channels(3);
-    cv::split(lab, channels);
-    // channels[0]=L, [1]=A, [2]=B
-    // L 通道乘数因子：1.0 + ((rand(0..1000)-300)/1000)*strength ≈ [1-0.3s, 1+0.7s]
-    // 偏暗方向的非对称随机，模拟阴影和欠曝变化，thread_local 避免数据竞争
+    // 输出线程各自持有生成器，避免共享随机数状态产生数据竞争。
     thread_local std::mt19937 rng(std::random_device{}());
-    double lFactor = 1.0 + ((static_cast<int>(rng() % 1001) - 300) / 1000.0) * strength;
-    channels[0] = channels[0] * lFactor;
-    cv::merge(channels, lab);
-    cv::cvtColor(lab, img, cv::COLOR_Lab2BGR);
+    detail::adjustBrightness(img, strength, rng);
 }
 
 struct AnalysisReportContext

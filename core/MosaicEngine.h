@@ -47,9 +47,9 @@ public:
         std::string outputFormat = "jpg";  // 输出格式：jpg / png / webp / tiff
         bool   formatExplicit = false;    // 是否显式指定 --format（否则允许自动切换）
 
-        // 局部颜色校正：对每张候选图在 LAB L 通道随机微调亮度，减少视觉重复感
+        // 选图后对每个输出小块的 LAB L 通道施加对称随机扰动，减少视觉重复感。
         bool   colorAdjust = false;        // 默认关闭（远看有摩尔纹，待进一步优化）
-        double colorStrength = 0.04;       // LAB L 通道微调幅度（0.04 = ±4% 亮度）
+        double colorStrength = 0.04;       // L 通道最大相对扰动（0.04 = ±4%，乘数均值为 1）
 
         // Benchmark：输出各阶段耗时与统计（用于性能分析）
         bool benchmark = false;

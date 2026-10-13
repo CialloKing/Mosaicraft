@@ -1,5 +1,6 @@
 #include "../compute/CudaBackend.h"
 #include "../core/AnalysisTiles.h"
+#include "../core/BrightnessAdjustment.h"
 #include "../core/CandidateFeatures.h"
 #include "../core/GridDuplicateCache.h"
 #include "../core/ImageCache.h"
@@ -734,6 +735,49 @@ TEST_CASE("bounded cache shares immutable pixels and output modes agree")
     }
     CHECK_FALSE(writeMosaicOutput(config, utf8(workspace.root / "missing" / "out.png"),
         2, 3, 18, 32, records, selected, {}, stats));
+
+    config.colorAdjust = true;
+    config.outputFormat = "png";
+    auto adjust = [](cv::Mat &image, double strength)
+    {
+        // 每次使用同一测试种子，使输出模式比较不依赖线程调度。
+        std::mt19937 rng(123);
+        detail::adjustBrightness(image, strength, rng);
+    };
+    const cv::Mat sourcePixels = imreadUnicode(source);
+    cv::Mat expected = first->clone();
+    adjust(expected, config.colorStrength);
+    cv::Mat reference;
+    const std::vector<ImageRecord> library(1, records[0]);
+    const char *modes[] =
+    {
+        "batch", "stream"
+    };
+    for (const std::string mode : modes)
+    {
+        config.writeMode = mode;
+        const auto path = utf8(workspace.outputDir() / ("adjusted-" + mode + ".png"));
+        REQUIRE(writeIndexedMosaicOutput(config, path, 2, 3, 18, 32, library, selected, adjust, stats));
+        const cv::Mat pixels = imreadUnicode(path);
+        REQUIRE_FALSE(pixels.empty());
+        for (size_t i = 0; i < selected.size(); ++i)
+        {
+            if (selected[i] >= 0)
+            {
+                const int x = static_cast<int>(i % 2) * 18, y = static_cast<int>(i / 2) * 32;
+                CHECK(cv::norm(pixels(cv::Rect(x, y, 18, 32)), expected, cv::NORM_INF) == 0);
+            }
+        }
+        if (reference.empty())
+        {
+            reference = pixels;
+        }
+        else
+        {
+            CHECK(cv::norm(pixels, reference, cv::NORM_INF) == 0);
+        }
+    }
+    CHECK(cv::norm(imreadUnicode(source), sourcePixels, cv::NORM_INF) == 0);
 }
 
 TEST_CASE("worst tile snapshots retain bounded details and original tie order")
