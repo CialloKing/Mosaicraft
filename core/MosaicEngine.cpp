@@ -1,25 +1,25 @@
 ﻿#include "MosaicEngine.h"
-#include "MosaicOutput.h"
-#include "FeatureMatrix.h"
+#include "AnalysisTiles.h"
 #include "BenchmarkTimer.h"
-#include "GridDuplicateCache.h"
-#include <numeric>
 #include "BigTiffWriter.h"
+#include "CandidateFeatures.h"
 #include "Database.h"
 #include "DeepZoomWriter.h"
-#include "PngStreamWriter.h"
-#include "PngBatchWriter.h"
-#include "JpgStreamWriter.h"
-#include "JpgStreamWriter.h"
-#include "FeatureIndex.h"
 #include "FeatureExtractor.h"
-#include "RequestValidation.h"
+#include "FeatureIndex.h"
+#include "FeatureMatrix.h"
 #include "FeaturePack.h"
-#include "CandidateFeatures.h"
 #include "FeatureUtils.h"
+#include "GridDuplicateCache.h"
 #include "ImageCache.h"
+#include "JpgStreamWriter.h"
+#include "MosaicOutput.h"
+#include "PngBatchWriter.h"
+#include "PngStreamWriter.h"
+#include "RequestValidation.h"
 #include "UnicodeIO.h"
 #include "compute/CudaBackend.h"
+#include <numeric>
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -146,13 +146,9 @@ struct AnalysisReportContext
     const std::vector<int>& analyzeAnnRanks;
     const std::vector<int>& analyzeCat;
     const double* analyzeGridCellSum = nullptr;
-    const std::vector<double>& allTL;
-    const std::vector<double>& allTA;
-    const std::vector<double>& allTB;
-    const std::vector<double>& allEdge;
-    const FeatureMatrix<float, 192>& allGrid;
+    const WorstTiles &worstTiles;
     const std::vector<ImageRecord>& allRecords;
-    const std::vector<ImageRecord>& bestRecords;
+    const std::vector<int> &selected;
 };
 
 static void writeAnalysisReport(const AnalysisReportContext& ctx)
@@ -182,13 +178,9 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
     const auto& analyzeAnnRanks = ctx.analyzeAnnRanks;
     const auto& analyzeCat = ctx.analyzeCat;
     const double* analyzeGridCellSum = ctx.analyzeGridCellSum;
-    const auto& allTL = ctx.allTL;
-    const auto& allTA = ctx.allTA;
-    const auto& allTB = ctx.allTB;
-    const auto& allEdge = ctx.allEdge;
-    const auto& allGrid = ctx.allGrid;
+    const auto &worstTiles = ctx.worstTiles;
     const auto& allRecords = ctx.allRecords;
-    const auto& bestRecords = ctx.bestRecords;
+    const auto &selected = ctx.selected;
 
     if (!cfg.analyze || analyzeScores.empty() || analyzeGridCellSum == nullptr)
         return;
@@ -288,21 +280,20 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
     }
 
     std::cout << "  Worst 5 tiles:\n";
-    std::vector<std::pair<double,int>> worstIdx;
-    for (int i = 0; i < n; ++i)
-        worstIdx.push_back({analyzeScores[i], i});
-    std::sort(worstIdx.rbegin(), worstIdx.rend());
+    const auto worstIdx = worstTiles.ranks();
     for (int k = 0; k < std::min(5, n); ++k)
     {
-        int ti = worstIdx[k].second;
+        int sample = worstIdx[k].second;
+        int ti = worstTiles.at(sample).tile;
         int tx = ti % tilesX, ty = ti / tilesX;
         std::cout << "    (" << tx << "," << ty << ") score="
                   << std::fixed << std::setprecision(4) << worstIdx[k].first;
-        if (ti < static_cast<int>(analyzeCat.size()))
+        if (sample < static_cast<int>(analyzeCat.size()))
         {
-            const char* cn = (analyzeCat[ti]==0)?"Smooth":
-                             (analyzeCat[ti]==1)?"Edge":
-                             (analyzeCat[ti]==2)?"Texture":"Normal";
+            const char *cn = (analyzeCat[sample] == 0)   ? "Smooth"
+                             : (analyzeCat[sample] == 1) ? "Edge"
+                             : (analyzeCat[sample] == 2) ? "Texture"
+                                                         : "Normal";
             std::cout << " [" << cn << "]";
         }
         std::cout << "\n";
@@ -419,21 +410,23 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
     constexpr int kExport = 20;
     for (int k = 0; k < std::min(kExport, n); ++k)
     {
-        int ti = worstIdx[k].second;
+        int sample = worstIdx[k].second;
+        int ti = worstTiles.at(sample).tile;
         int tx = ti % tilesX, ty = ti / tilesX;
         char fname[256];
         cv::Mat tileROI = target(cv::Rect(tx*cfg.tileW, ty*cfg.tileH, cfg.tileW, cfg.tileH));
         cv::Mat tileBig;
         cv::resize(tileROI, tileBig, cv::Size(featW, featH), 0, 0, cv::INTER_NEAREST);
-        const char* cn = (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==0)?"S":
-                         (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==1)?"E":
-                         (ti < static_cast<int>(analyzeCat.size()) && analyzeCat[ti]==2)?"T":"N";
+        const char *cn = (sample < static_cast<int>(analyzeCat.size()) && analyzeCat[sample] == 0)   ? "S"
+                         : (sample < static_cast<int>(analyzeCat.size()) && analyzeCat[sample] == 1) ? "E"
+                         : (sample < static_cast<int>(analyzeCat.size()) && analyzeCat[sample] == 2) ? "T"
+                                                                                                     : "N";
         snprintf(fname, sizeof(fname), "%s/worst_%02d_s%.4f_%s_tile.png",
                  anaDir.c_str(), k, worstIdx[k].first, cn);
         imwriteUnicode(fname, tileBig);
-        if (ti < static_cast<int>(bestRecords.size()) && !bestRecords[ti].filePath.empty())
+        if (selected[ti] >= 0 && !allRecords[selected[ti]].filePath.empty())
         {
-            cv::Mat match = imreadUnicode(bestRecords[ti].filePath, cv::IMREAD_COLOR);
+            cv::Mat match = imreadUnicode(allRecords[selected[ti]].filePath, cv::IMREAD_COLOR);
             if (!match.empty())
             {
                 snprintf(fname, sizeof(fname), "%s/worst_%02d_match.png", anaDir.c_str(), k);
@@ -448,21 +441,26 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
         std::ofstream rpt(u8path(rptPath));
         rpt << "=== Worst Tile Analysis ===\n";
         for (int k = 0; k < std::min(kExport, n); ++k) {
-            int ti = worstIdx[k].second, tx = ti % tilesX, ty = ti / tilesX;
-            const auto& rec = bestRecords[ti];
-            double labD = labDistance(allTL[ti],allTA[ti],allTB[ti],rec.avgL,rec.avgA,rec.avgB);
-            double gridD = gridDistance8x8(allGrid[ti], rec.grid4x4, true);
-            double edgeD = std::abs(allEdge[ti] - rec.edgeDensity);
+            int sample = worstIdx[k].second;
+            int ti = worstTiles.at(sample).tile, tx = ti % tilesX, ty = ti / tilesX;
+            const auto &rec = allRecords[selected[ti]];
+            double labD = labDistance(worstTiles.at(sample).lab[0], worstTiles.at(sample).lab[1],
+                                      worstTiles.at(sample).lab[2], rec.avgL, rec.avgA, rec.avgB);
+            double gridD = gridDistance8x8(
+                std::vector<float>(worstTiles.at(sample).grid.begin(), worstTiles.at(sample).grid.end()), rec.grid4x4,
+                true);
+            double edgeD = std::abs(worstTiles.at(sample).edge - rec.edgeDensity);
             rpt << "\n#" << (k+1) << " tile(" << tx << "," << ty << ") score=" << worstIdx[k].first << "\n";
-            rpt << "  Tile  LAB=" << allTL[ti] << "," << allTA[ti] << "," << allTB[ti]
-                << " Edge=" << allEdge[ti] << "\n";
+            rpt << "  Tile  LAB=" << worstTiles.at(sample).lab[0] << "," << worstTiles.at(sample).lab[1] << ","
+                << worstTiles.at(sample).lab[2] << " Edge=" << worstTiles.at(sample).edge << "\n";
             rpt << "  Match LAB=" << rec.avgL << "," << rec.avgA << "," << rec.avgB
                 << " Edge=" << rec.edgeDensity << "\n";
             rpt << "  Dists: LAB=" << labD << " Grid=" << gridD << " Edge=" << edgeD << "\n";
             std::string cause;
             if (labD > 0.3) cause = "color mismatch (LAB dist " + std::to_string(labD).substr(0,4) + ")";
             else if (gridD > 0.5) cause = "spatial mismatch (Grid dist " + std::to_string(gridD).substr(0,4) + ")";
-            else if (allTL[ti] < 60) cause = "dark region (tile L=" + std::to_string((int)allTL[ti]) + ")";
+            else if (worstTiles.at(sample).lab[0] < 60)
+                cause = "dark region (tile L=" + std::to_string((int)worstTiles.at(sample).lab[0]) + ")";
             else if (rec.useCount > 10) cause = "popular image penalty (used " + std::to_string(rec.useCount) + "x)";
             else cause = "combined mismatch";
             rpt << "  Cause: " << cause << "\n";
@@ -475,14 +473,16 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
     if (sRange < 0.001) sRange = 0.001;
     int cellW = cfg.tileW;
     int cellH = cfg.tileH;
-    cv::Mat heat(tilesY * cellH, tilesX * cellW, CV_8UC3);
+    cv::Mat heat(tilesY * cellH, tilesX * cellW, CV_8UC3, cv::Scalar(64, 64, 64));
+    int sample = 0;
     for (int ty = 0; ty < tilesY; ++ty)
     {
         for (int tx = 0; tx < tilesX; ++tx)
         {
             int ti = ty * tilesX + tx;
-            if (ti >= n) continue;
-            double s = analyzeScores[ti];
+            if (selected[ti] < 0)
+                continue;
+            double s = analyzeScores[sample++];
             double t = (s - sMin) / sRange;
             cv::Vec3b color;
             if (t < 0.5)
@@ -592,11 +592,13 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
         constexpr int kShowWorst = 10;
         for (int k = 0; k < std::min(kShowWorst, n); ++k)
         {
-            int ti = worstIdx[k].second;
+            int sample = worstIdx[k].second;
+            int ti = worstTiles.at(sample).tile;
             int tx = ti % tilesX, ty = ti / tilesX;
-            const char* cn = (ti < (int)analyzeCat.size() && analyzeCat[ti]==0)?"S":
-                             (ti < (int)analyzeCat.size() && analyzeCat[ti]==1)?"E":
-                             (ti < (int)analyzeCat.size() && analyzeCat[ti]==2)?"T":"N";
+            const char *cn = (sample < (int)analyzeCat.size() && analyzeCat[sample] == 0)   ? "S"
+                             : (sample < (int)analyzeCat.size() && analyzeCat[sample] == 1) ? "E"
+                             : (sample < (int)analyzeCat.size() && analyzeCat[sample] == 2) ? "T"
+                                                                                            : "N";
             const char* cnFull = cn[0]=='S'?"Smooth":cn[0]=='E'?"Edge":cn[0]=='T'?"Texture":"Normal";
             html << "<div style=\"background:#0f3460;padding:4px;text-align:center\">\n";
             html << "<img src=\"worst_" << std::setfill('0') << std::setw(2) << k
@@ -1011,6 +1013,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::vector<int>    analyzeCat;       // 0=Smooth, 1=Edge, 2=Texture, 3=Normal
     double analyzeGridCellSum[64] = {0};   // 每个 cell 的累计 L2 误差，用于分析网格匹配质量
     FeatureCache analysisFeatureCache;
+    WorstTiles worstTiles;
 
     int N = cfg.candidates;  // 候选数量，GPU 路径需提前确定，用于 benchmark
 
@@ -1246,20 +1249,40 @@ bool MosaicEngine::generate(const std::string& targetPath,
     N = cfg.candidates;
 
     // 每个 tile 的最终选择结果：GPU 路径预分配，CPU 路径后续填充
-    std::vector<ImageRecord> bestRecords(totalTiles);
     std::vector<int> bestLibIdx(totalTiles, -1);
 
     // 输出 Mat：批量模式时直接拼接，流式模式时仅作占位
 
-    auto runAnalysis = [&](const std::string& analysisOutputPath) {
-        writeAnalysisReport(AnalysisReportContext{
-            cfg, db, analysisOutputPath, targetPath, targetHash, target,
-            totalTiles, tilesX, tilesY, outTileW, outTileH, featW, featH,
-            dbCount, matched.load(), analyzeScores, analyzeImageIds,
-            analyzeLabD, analyzeGridD, analyzeEdgeD, analyzeGaps,
-            analyzeRanks, analyzeAnnRanks, analyzeCat, analyzeGridCellSum,
-            allTL, allTA, allTB, allEdge, allGrid, allRecords, bestRecords
-        });
+    auto runAnalysis = [&](const std::string &analysisOutputPath)
+    {
+        writeAnalysisReport(AnalysisReportContext{cfg,
+                                                  db,
+                                                  analysisOutputPath,
+                                                  targetPath,
+                                                  targetHash,
+                                                  target,
+                                                  totalTiles,
+                                                  tilesX,
+                                                  tilesY,
+                                                  outTileW,
+                                                  outTileH,
+                                                  featW,
+                                                  featH,
+                                                  dbCount,
+                                                  matched.load(),
+                                                  analyzeScores,
+                                                  analyzeImageIds,
+                                                  analyzeLabD,
+                                                  analyzeGridD,
+                                                  analyzeEdgeD,
+                                                  analyzeGaps,
+                                                  analyzeRanks,
+                                                  analyzeAnnRanks,
+                                                  analyzeCat,
+                                                  analyzeGridCellSum,
+                                                  worstTiles,
+                                                  allRecords,
+                                                  bestLibIdx});
     };
 
     // 两个后端共用只读索引和并行粗筛；邻域相关的选择仍按 tile 顺序进行。
@@ -1600,7 +1623,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
             int pick = idxs[rankPos];
             int chosenLibIdx = indices[pick];
             bestLibIdx[ti] = chosenLibIdx;
-            bestRecords[ti] = allRecords[chosenLibIdx];
                     // --analyze: 记录每个 tile 的详细匹配数据，用于后续分析报告
             if (cfg.analyze)
             {
@@ -1617,6 +1639,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 double featScore = (cfg.labWeight*labD + cfg.gridWeight*gridD + cfg.tinyWeight*tinyD
                                   + cfg.edgeWeight*edgeD + cfg.lbpWeight*lbpD) / totalW;
                 analyzeScores.push_back(featScore);
+                worstTiles.remember(featScore, static_cast<int>(analyzeScores.size()) - 1, ti, allTL[ti], allTA[ti],
+                                    allTB[ti], allEdge[ti], allGrid[ti]);
                 analyzeImageIds.push_back(rec.id);
                 analyzeLabD.push_back(labD);
                 analyzeGridD.push_back(gridD);
@@ -1680,7 +1704,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
             }
                     // 更新滑动窗口和频次统计
-            int chosenId = bestRecords[ti].id;
+            int chosenId = allRecords[bestLibIdx[ti]].id;
             recentIds.push_back(chosenId);
             freqInWindow[chosenId]++;
                     lastUsedAt[chosenId] = ti;       // 记录最近使用位置
@@ -1741,7 +1765,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
         // Phase 1: ANN 搜索 + 特征评分 + 去重惩罚（CPU 路径）
         std::vector<int> bestLibIdxCpu(totalTiles, -1);
-        std::vector<ImageRecord> bestRecsCpu(totalTiles);
         std::deque<int> recentIds;
         std::unordered_map<int, int> freq;
         std::unordered_map<int, int> lastUsedAt;
@@ -1808,7 +1831,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
             thread_local std::mt19937 rng2(std::random_device{}());
             int pickIdx = scored[std::uniform_int_distribution<int>(0, topN - 1)(rng2)].second;
             bestLibIdxCpu[ti] = pickIdx;
-            bestRecsCpu[ti] = allRecords[pickIdx];
             // --analyze: ֻ��¼ʤ���ߵ��������ݣ�ÿ�� tile һ����
             if (cfg.analyze)
             {
@@ -1826,13 +1848,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
                             tileLbpW[ti] *
                                 (cpuFeatures.hasLbp(pickIdx) ? lbpDistance(allLBP[ti], cpuFeatures.lbp(pickIdx)) : 1.0);
                 analyzeScores.push_back(wS);
+                worstTiles.remember(wS, static_cast<int>(analyzeScores.size()) - 1, ti, allTL[ti], allTA[ti], allTB[ti],
+                                    allEdge[ti], allGrid[ti]);
                 analyzeImageIds.push_back(w.id);
                 analyzeLabD.push_back(wLabD);
                 analyzeGridD.push_back(wGridD);
                 analyzeEdgeD.push_back(wEdgeD);
             }
                         // 更新滑动窗口统计
-            int chosenId = bestRecsCpu[ti].id;
+            int chosenId = allRecords[bestLibIdxCpu[ti]].id;
             recentIds.push_back(chosenId); freq[chosenId]++; lastUsedAt[chosenId] = ti;
             recentGrids.push_back(pickIdx);
             while (static_cast<int>(recentGrids.size()) > GRID_DUP_WINDOW)
@@ -1856,15 +1880,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::cout << " done" << std::endl;
 
         msSelect = Ms(Clock::now() - tLast).count();
-        bestRecords = std::move(bestRecsCpu);
         bestLibIdx = std::move(bestLibIdxCpu);
     }
 
     releaseGpuLib();
     allIndices.clear();
     allIndices.shrink_to_fit();
-    if (!writeMosaicOutput(cfg, outputPath, tilesX, tilesY, outTileW, outTileH,
-                          bestRecords, bestLibIdx, adjustColor, outputStats))
+    if (!writeIndexedMosaicOutput(cfg, outputPath, tilesX, tilesY, outTileW, outTileH, allRecords, bestLibIdx,
+                                  adjustColor, outputStats))
     {
         return false;
     }

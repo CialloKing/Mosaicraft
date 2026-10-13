@@ -34,9 +34,10 @@ uint64_t availableMemory()
 }
 } // namespace
 
-bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &path, int tilesX, int tilesY, int tileW,
-                       int tileH, const std::vector<ImageRecord> &records, const std::vector<int> &selected,
-                       const std::function<void(cv::Mat &, double)> &adjustColor, OutputStats &stats)
+static bool writeOutput(const MosaicEngine::Config &config, const std::string &path, int tilesX, int tilesY, int tileW,
+                        int tileH, const std::function<const ImageRecord &(size_t)> &recordAt,
+                        const std::vector<int> &selected, const std::function<void(cv::Mat &, double)> &adjustColor,
+                        OutputStats &stats)
 {
     try
     {
@@ -45,17 +46,27 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
         stats = {};
         const int width = tilesX * tileW, height = tilesY * tileH;
         const size_t count = static_cast<size_t>(tilesX) * tilesY;
+        if (selected.size() != count)
+        {
+            throw std::invalid_argument("selection count does not match output grid");
+        }
         ImageCache cache(ImageCache::kDefaultBudget, config.benchmark);
         std::unordered_map<int, size_t> useCounts;
         for (size_t i = 0; i < count; ++i)
         {
             if (selected[i] >= 0)
             {
-                ++useCounts[records[i].id];
+                ++useCounts[recordAt(i).id];
             }
         }
         cache.setUseCounts(std::move(useCounts));
-        auto finish = [&](size_t i) { cache.finishUse(records[i].id, tileW, tileH); };
+        auto finish = [&](size_t i)
+        {
+            if (selected[i] >= 0)
+            {
+                cache.finishUse(recordAt(i).id, tileW, tileH);
+            }
+        };
         WorkerPool pool(static_cast<unsigned>(
             std::min<size_t>(count, std::min(8u, std::max(1u, std::thread::hardware_concurrency())))));
         std::atomic<int> failures{0};
@@ -68,7 +79,7 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
                 return {};
             }
             const auto loadStart = now();
-            auto image = cache.getShared(records[i].id, records[i].filePath, tileW, tileH);
+            auto image = cache.getShared(recordAt(i).id, recordAt(i).filePath, tileW, tileH);
             if (config.benchmark)
             {
                 loadingNs += std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - loadStart).count();
@@ -388,6 +399,34 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
         std::cerr << "ERROR: output failed: " << error.what() << std::endl;
         return false;
     }
+}
+
+bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &path, int tilesX, int tilesY, int tileW,
+                       int tileH, const std::vector<ImageRecord> &records, const std::vector<int> &selected,
+                       const std::function<void(cv::Mat &, double)> &adjustColor, OutputStats &stats)
+{
+    return writeOutput(
+        config, path, tilesX, tilesY, tileW, tileH,
+        [&](size_t i) -> const ImageRecord &
+        {
+            return records.at(i);
+        },
+        selected, adjustColor, stats);
+}
+
+bool writeIndexedMosaicOutput(const MosaicEngine::Config &config, const std::string &path, int tilesX, int tilesY,
+                              int tileW, int tileH, const std::vector<ImageRecord> &library,
+                              const std::vector<int> &selected,
+                              const std::function<void(cv::Mat &, double)> &adjustColor, OutputStats &stats)
+{
+    const ImageRecord missing;
+    return writeOutput(
+        config, path, tilesX, tilesY, tileW, tileH,
+        [&](size_t i) -> const ImageRecord &
+        {
+            return selected.at(i) < 0 ? missing : library.at(selected[i]);
+        },
+        selected, adjustColor, stats);
 }
 
 } // namespace mosaicraft

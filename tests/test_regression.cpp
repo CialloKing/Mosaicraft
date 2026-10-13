@@ -1,10 +1,11 @@
-#include "../core/PngStreamWriter.h"
+#include "../core/AnalysisTiles.h"
 #include "../core/CandidateFeatures.h"
 #include "../core/GridDuplicateCache.h"
-#include <deque>
-#include <limits>
 #include "../core/ImageCache.h"
 #include "../core/MosaicOutput.h"
+#include "../core/PngStreamWriter.h"
+#include <deque>
+#include <limits>
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
 
@@ -723,9 +724,31 @@ TEST_CASE("bounded cache shares immutable pixels and output modes agree")
         REQUIRE(writeMosaicOutput(config, stream, 2, 3, 18, 32, records, selected, {}, stats));
         CHECK(stats.failed == 1);
         CHECK(cv::norm(imreadUnicode(batch), imreadUnicode(stream), cv::NORM_INF) == 0);
+        const auto indexed = utf8(workspace.outputDir() / ("indexed." + format));
+        REQUIRE(writeIndexedMosaicOutput(config, indexed, 2, 3, 18, 32, {records[0]}, selected, {}, stats));
+        CHECK(stats.failed == 1);
+        CHECK(cv::norm(imreadUnicode(stream), imreadUnicode(indexed), cv::NORM_INF) == 0);
     }
     CHECK_FALSE(writeMosaicOutput(config, utf8(workspace.root / "missing" / "out.png"),
         2, 3, 18, 32, records, selected, {}, stats));
+}
+
+TEST_CASE("worst tile snapshots retain bounded details and original tie order")
+{
+    WorstTiles tiles;
+    std::array<float, 192> grid{};
+    for (int i = 0; i < 25; ++i)
+    {
+        grid.fill(static_cast<float>(i));
+        tiles.remember(1.0, i, i * 10, i, 2, 3, 0.1, grid);
+    }
+    const auto ranks = tiles.ranks();
+    REQUIRE(ranks.size() == 20);
+    CHECK(ranks.front().second == 24);
+    CHECK(ranks.back().second == 5);
+    CHECK(tiles.at(24).tile == 240);
+    CHECK(tiles.at(24).grid[191] == 24);
+    CHECK_THROWS_AS(tiles.at(0), std::out_of_range);
 }
 
 TEST_CASE("bounded grid comparisons preserve thresholds and ordered selections")

@@ -25,4 +25,10 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
                        int tileH, const std::vector<ImageRecord> &records, const std::vector<int> &selected,
                        const std::function<void(cv::Mat &, double)> &adjustColor, OutputStats &stats);
 
+// 选择结果保存图库下标；输出引用图库记录，不再为每个 tile 复制路径和 Grid。
+bool writeIndexedMosaicOutput(const MosaicEngine::Config &config, const std::string &path, int tilesX, int tilesY,
+                              int tileW, int tileH, const std::vector<ImageRecord> &library,
+                              const std::vector<int> &selected,
+                              const std::function<void(cv::Mat &, double)> &adjustColor, OutputStats &stats);
+
 } // namespace mosaicraft
