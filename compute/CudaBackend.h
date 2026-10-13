@@ -27,6 +27,18 @@ class FeatureWorkspace
     FeatureWorkspace &operator=(const FeatureWorkspace &) = delete;
 };
 
+// 生成任务跨主机批次复用评分显存，仍由 scoreBatch 检查可用显存和预算。
+class ScoreWorkspace
+{
+  public:
+    struct Impl;
+    std::unique_ptr<Impl> buffers;
+    ScoreWorkspace();
+    ~ScoreWorkspace();
+    ScoreWorkspace(const ScoreWorkspace &) = delete;
+    ScoreWorkspace &operator=(const ScoreWorkspace &) = delete;
+};
+
 struct CandidateData
 {
     const double *lab;
@@ -75,7 +87,7 @@ bool scoreBatch(int totalTiles, const double *h_tileL, const double *h_tileA, co
                 const float *h_tileLBP, const int *h_indices, int N, const GpuLibrary &lib, const double *h_labW,
                 const double *h_gridW, const double *h_tinyW, const double *h_edgeW, const double *h_lbpW,
                 double usePenalty, double *outScores, GpuTimings *timings = nullptr,
-                std::size_t temporaryBudget = 256ULL * 1024 * 1024);
+                std::size_t temporaryBudget = 256ULL * 1024 * 1024, ScoreWorkspace *workspace = nullptr);
 
 int matchOnGpu(double tL, double tA, double tB, const float *tileGrid, const std::uint8_t *tileTiny, double tileEdge,
                const float *tileLBP, const CandidateData &candidates, double labW, double gridW, double tinyW,

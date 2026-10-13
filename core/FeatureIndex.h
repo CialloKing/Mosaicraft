@@ -272,7 +272,23 @@ class FeatureIndex
             return indices;
         }
         unsigned workers = threads ? threads : std::min(8u, std::max(1u, std::thread::hardware_concurrency()));
-        WorkerPool pool(static_cast<unsigned>(std::min<size_t>(workers, count)));
+        WorkerPool pool(static_cast<unsigned>(std::max<size_t>(1, std::min<size_t>(workers, count))));
+        queryBatch(queries, k, indices, pool);
+        return indices;
+    }
+
+    void queryBatch(const std::vector<float> &queries, int k, std::vector<int> &indices, WorkerPool &pool) const
+    {
+        if (k <= 0 || queries.size() % kDimension != 0)
+        {
+            throw std::invalid_argument("invalid ANN batch");
+        }
+        const size_t count = queries.size() / kDimension;
+        if (count > std::numeric_limits<size_t>::max() / static_cast<size_t>(k))
+        {
+            throw std::overflow_error("ANN batch size overflow");
+        }
+        indices.assign(count * k, -1);
         pool.run(count,
                  [&](size_t i)
                  {
@@ -282,7 +298,6 @@ class FeatureIndex
                          indices[i * k + j] = idToAllRecordsIndex(ids[j]);
                      }
                  });
-        return indices;
     }
 
     int dimension() const

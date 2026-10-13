@@ -32,6 +32,7 @@ class FeaturePack
         struct ReadStats
         {
             size_t hits = 0, misses = 0, sourceReads = 0, packedRows = 0, evictions = 0, peakBytes = 0;
+            size_t temporaryPeakBytes = 0;
             bool preloaded = false;
         };
         Reader(const std::string &directory, const std::vector<ImageRecord> &records,
@@ -49,7 +50,8 @@ class FeaturePack
     };
     static bool load(const std::string &directory, const std::vector<ImageRecord> &records,
                      const std::vector<int> &needed, std::vector<uint8_t> &tiny, std::vector<float> &lbp,
-                     std::vector<uint8_t> &tinyValid, std::vector<uint8_t> &lbpValid);
+                     std::vector<uint8_t> &tinyValid, std::vector<uint8_t> &lbpValid,
+                     Reader::ReadStats *readStats = nullptr);
     static bool buildCache(const std::string &directory, const std::vector<ImageRecord> &records,
                            Stats *stats = nullptr);
     // Only the exclusive build lock may remove generations that another reader could still use.

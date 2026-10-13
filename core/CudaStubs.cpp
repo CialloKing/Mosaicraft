@@ -14,6 +14,12 @@ struct FeatureWorkspace::Impl
 FeatureWorkspace::FeatureWorkspace() = default;
 FeatureWorkspace::~FeatureWorkspace() = default;
 
+struct ScoreWorkspace::Impl
+{
+};
+ScoreWorkspace::ScoreWorkspace() = default;
+ScoreWorkspace::~ScoreWorkspace() = default;
+
 bool isCudaAvailable()
 {
     return false;
@@ -55,7 +61,8 @@ int matchWithIndices(double, double, double, const float *, const std::uint8_t *
 
 bool scoreBatch(int, const double *, const double *, const double *, const float *, const std::uint8_t *,
                 const double *, const float *, const int *, int, const GpuLibrary &, const double *, const double *,
-                const double *, const double *, const double *, double, double *, GpuTimings *, std::size_t)
+                const double *, const double *, const double *, double, double *, GpuTimings *, std::size_t,
+                ScoreWorkspace *)
 {
     return false;
 }

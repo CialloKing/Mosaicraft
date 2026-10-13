@@ -1384,10 +1384,12 @@ TEST_CASE("CUDA reuses feature workspace and scoring batches preserve scores")
         indices[i * 2 + 1] = i == 4 ? -1 : (i + 1) % count;
     }
     std::vector<double> full(count * candidates), batched(count * candidates);
-    auto score = [&](std::vector<double>& output, size_t budget)
+    ScoreWorkspace scoreWorkspace;
+    auto score = [&](std::vector<double> &output, size_t budget)
     {
-        return scoreBatch(count, l, a, b, grid.data(), tiny.data(), edge.data(), lbp.data(), indices,
-            candidates, library, weights, weights, weights, weights, weights, 0.01, output.data(), nullptr, budget);
+        return scoreBatch(count, l, a, b, grid.data(), tiny.data(), edge.data(), lbp.data(), indices, candidates,
+                          library, weights, weights, weights, weights, weights, 0.01, output.data(), nullptr, budget,
+                          &scoreWorkspace);
     };
     REQUIRE(score(full, 256 * 1024 * 1024));
     CHECK(full[0] == doctest::Approx(0.01));

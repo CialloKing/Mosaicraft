@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "MatchingBatch.h"
 
 #include <iostream>
 #include <string>
@@ -97,6 +98,13 @@ public:
                   const std::string& dbPath,
                   const std::string& outputPath,
                   const Config& config = Config());
+
+  private:
+    friend struct MatchingAccess;
+    MatchingLimits m_limits;
+    bool m_fixedSeed = false;
+    uint32_t m_seed = 0;
+    std::vector<int> *m_selectedObserver = nullptr;
 };
 
 } // namespace mosaicraft

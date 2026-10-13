@@ -1,6 +1,8 @@
 ﻿#pragma once
 #include <algorithm>
 #include <cstddef>
+#include <limits>
+#include <stdexcept>
 #include <vector>
 
 namespace mosaicraft
@@ -48,7 +50,7 @@ template <class T, std::size_t Columns> class FeatureMatrix
       private:
         Element *m_values;
     };
-    explicit FeatureMatrix(std::size_t rows) : m_values(rows * Columns)
+    explicit FeatureMatrix(std::size_t rows) : m_values(elements(rows))
     {
     }
     Row<T> operator[](std::size_t row)
@@ -63,8 +65,24 @@ template <class T, std::size_t Columns> class FeatureMatrix
     {
         return m_values.data();
     }
+    void resize(std::size_t rows)
+    {
+        m_values.resize(elements(rows));
+    }
+    std::size_t capacityBytes() const
+    {
+        return m_values.capacity() * sizeof(T);
+    }
 
   private:
+    static std::size_t elements(std::size_t rows)
+    {
+        if (rows > std::numeric_limits<std::size_t>::max() / Columns)
+        {
+            throw std::overflow_error("feature matrix size overflow");
+        }
+        return rows * Columns;
+    }
     std::vector<T> m_values;
 };
 } // namespace mosaicraft

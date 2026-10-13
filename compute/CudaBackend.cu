@@ -14,6 +14,15 @@
 namespace mosaicraft {
 namespace cuda {
 
+struct ScoreWorkspace::Impl
+{
+    DeviceBuffer<std::uint8_t> storage;
+};
+ScoreWorkspace::ScoreWorkspace() : buffers(std::make_unique<Impl>())
+{
+}
+ScoreWorkspace::~ScoreWorkspace() = default;
+
 namespace {
 
 
@@ -710,20 +719,15 @@ int matchWithIndices(
 // ============================================================
 // 批量评分：复用连续显存，按预算限制每次 kernel 的小块数量
 // ============================================================
-bool scoreBatch(
-    int totalTiles,
-    const double* h_tileL, const double* h_tileA, const double* h_tileB,
-    const float* h_tileGrid,     // [totalTiles * 192]，已扁平化
-    const std::uint8_t* h_tileTiny, // [totalTiles * 256]
-    const double* h_tileEdge,     // [totalTiles]
-    const float* h_tileLBP,       // [totalTiles * 256]
-    const int* h_indices,         // [totalTiles * N]，-1 表示无效候选
-    int N,
-    const GpuLibrary& lib,
-    const double* h_labW, const double* h_gridW,
-    const double* h_tinyW, const double* h_edgeW, const double* h_lbpW,
-    double usePenalty,
-    double* outScores, GpuTimings* timings, std::size_t temporaryBudget)
+bool scoreBatch(int totalTiles, const double *h_tileL, const double *h_tileA, const double *h_tileB,
+                const float *h_tileGrid,        // [totalTiles * 192]，已扁平化
+                const std::uint8_t *h_tileTiny, // [totalTiles * 256]
+                const double *h_tileEdge,       // [totalTiles]
+                const float *h_tileLBP,         // [totalTiles * 256]
+                const int *h_indices,           // [totalTiles * N]，-1 表示无效候选
+                int N, const GpuLibrary &lib, const double *h_labW, const double *h_gridW, const double *h_tinyW,
+                const double *h_edgeW, const double *h_lbpW, double usePenalty, double *outScores, GpuTimings *timings,
+                std::size_t temporaryBudget, ScoreWorkspace *workspace)
 {
     if (timings)
     {
@@ -752,7 +756,13 @@ bool scoreBatch(
         fprintf(stderr, "GPU scoring: insufficient temporary memory for one tile\n");
         return false;
     }
-    DeviceBuffer<std::uint8_t> storage;
+    ScoreWorkspace local;
+    auto &storage = (workspace ? workspace : &local)->buffers->storage;
+    if (storage.capacityBytes() > budget)
+    {
+        // 可用显存减少或调用方收紧预算时，旧容量不能绕过本次检查。
+        storage.reset();
+    }
     {
         PhaseTimer timer(timings ? &timings->allocationMs : nullptr);
         for (;;)

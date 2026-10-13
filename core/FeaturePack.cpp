@@ -236,9 +236,11 @@ bool readSource(const std::string &path, const Stamp &source, void *data, size_t
 
 bool loadFeatures(const std::string &directory, const std::vector<ImageRecord> &records, const std::vector<int> &needed,
                   std::vector<uint8_t> &tiny, std::vector<float> &lbp, std::vector<uint8_t> &tinyValid,
-                  std::vector<uint8_t> &lbpValid, std::vector<Metadata> &current)
+                  std::vector<uint8_t> &lbpValid, std::vector<Metadata> &current,
+                  FeaturePack::Reader::ReadStats *readStats = nullptr)
 {
     const size_t count = needed.size();
+    std::atomic<size_t> sourceReads{0};
     std::vector<int> slots(records.size(), -1);
     std::unordered_map<int, size_t> ids;
     ids.reserve(records.size());
@@ -353,6 +355,11 @@ bool loadFeatures(const std::string &directory, const std::vector<ImageRecord> &
                     }
                     const auto &record = records[needed[i]];
                     auto &metadata = current[i];
+                    if (readStats)
+                    {
+                        sourceReads += static_cast<size_t>(!record.tinyPath.empty() && metadata.tiny.size == 256) +
+                                       static_cast<size_t>(!record.histPath.empty() && metadata.lbp.size == 1024);
+                    }
                     tinyValid[i] = readSource(record.tinyPath, metadata.tiny, tiny.data() + i * 256, 256);
                     lbpValid[i] = readSource(record.histPath, metadata.lbp, lbp.data() + i * 256, 1024);
                     if (!tinyValid[i])
@@ -373,6 +380,13 @@ bool loadFeatures(const std::string &directory, const std::vector<ImageRecord> &
                     metadata.tinyHash = hashBytes(tiny.data() + i * 256, 256);
                     metadata.lbpHash = hashBytes(lbp.data() + i * 256, 1024);
                 });
+    if (readStats)
+    {
+        *readStats = {};
+        readStats->packedRows = std::count(matched.begin(), matched.end(), 1);
+        readStats->hits = readStats->packedRows;
+        readStats->sourceReads = sourceReads;
+    }
     return packed && std::all_of(matched.begin(), matched.end(),
                                  [](uint8_t value)
                                  {
@@ -415,6 +429,7 @@ struct FeaturePack::Reader::Impl
     std::vector<uint8_t> checked;
     std::vector<unsigned> seen;
     unsigned generation = 0;
+    std::vector<int> needed;
     File tiny{nullptr, fclose}, lbp{nullptr, fclose};
     std::vector<Row> rows;
     std::list<int> order;
@@ -635,7 +650,7 @@ struct FeaturePack::Reader::Impl
             std::fill(seen.begin(), seen.end(), 0);
             ++generation;
         }
-        std::vector<int> needed;
+        needed.clear();
         for (int index : candidates)
         {
             if (index < 0)
@@ -676,6 +691,7 @@ struct FeaturePack::Reader::Impl
         {
             return;
         }
+        statistics.temporaryPeakBytes = std::max(statistics.temporaryPeakBytes, needed.capacity() * sizeof(int));
         const StampSampler sampler(records, needed);
         std::sort(needed.begin(), needed.end(),
                   [&](int left, int right)
@@ -709,10 +725,10 @@ const FeaturePack::Reader::ReadStats &FeaturePack::Reader::stats() const
 
 bool FeaturePack::load(const std::string &directory, const std::vector<ImageRecord> &records,
                        const std::vector<int> &needed, std::vector<uint8_t> &tiny, std::vector<float> &lbp,
-                       std::vector<uint8_t> &tinyValid, std::vector<uint8_t> &lbpValid)
+                       std::vector<uint8_t> &tinyValid, std::vector<uint8_t> &lbpValid, Reader::ReadStats *readStats)
 {
     std::vector<Metadata> metadata;
-    return loadFeatures(directory, records, needed, tiny, lbp, tinyValid, lbpValid, metadata);
+    return loadFeatures(directory, records, needed, tiny, lbp, tinyValid, lbpValid, metadata, readStats);
 }
 
 bool FeaturePack::buildCache(const std::string &directory, const std::vector<ImageRecord> &records, Stats *stats)

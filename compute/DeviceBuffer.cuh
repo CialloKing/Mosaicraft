@@ -46,6 +46,10 @@ template <class T> class DeviceBuffer
     {
         return m_ptr;
     }
+    std::size_t capacityBytes() const
+    {
+        return m_capacity;
+    }
 
   private:
     T *m_ptr = nullptr;

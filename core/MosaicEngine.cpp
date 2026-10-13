@@ -53,53 +53,6 @@ namespace mosaicraft
 {
 
 // ============================================================
-// 特征缓存类：线程安全加载 tiny 和 LBP 特征数据
-// ============================================================
-class FeatureCache
-{
-public:
-    const std::vector<uint8_t>* loadTiny(int id, const std::string& path)
-    {
-        auto it = m_tiny.find(id);
-        if (it != m_tiny.end()) { return &it->second; }
-
-        std::ifstream ifs(u8path(path), std::ios::binary);
-        if (!ifs.is_open()) { return nullptr; }
-
-        std::vector<uint8_t> data(256);
-        ifs.read(reinterpret_cast<char*>(data.data()), 256);
-        if (ifs.gcount() != 256) { return nullptr; }
-
-        auto [ins, _] = m_tiny.emplace(id, std::move(data));
-        return &ins->second;
-    }
-
-    const std::vector<float>* loadLBP(int id, const std::string& path)
-    {
-        auto it = m_lbp.find(id);
-        if (it != m_lbp.end()) { return &it->second; }
-
-        std::ifstream ifs(u8path(path), std::ios::binary);
-        if (!ifs.is_open()) { return nullptr; }
-
-        std::vector<float> data(256);
-        ifs.read(reinterpret_cast<char*>(data.data()),
-                 256 * sizeof(float));
-        if (ifs.gcount() != static_cast<std::streamsize>(256 * sizeof(float)))
-        {
-            return nullptr;
-        }
-
-        auto [ins, _] = m_lbp.emplace(id, std::move(data));
-        return &ins->second;
-    }
-
-private:
-    std::unordered_map<int, std::vector<uint8_t>> m_tiny;
-    std::unordered_map<int, std::vector<float>> m_lbp;
-};
-
-// ============================================================
 // LAB 亮度微调：在 LAB 空间对 L 通道做随机乘数调整，模拟自然光照变化
 // 曾用 HSV 色相校正方案（仅调 H，S/V 不变），后改为 LAB 仅调亮度效果更自然
 // ============================================================
@@ -653,7 +606,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
     using Clock = std::chrono::steady_clock;
     using Ms = std::chrono::duration<double, std::milli>;
     auto tStart = Clock::now();
-    auto tLast  = tStart;
     double msNeighbor = 0, msSort = 0, msAnalysis = 0, msCPUFeatures = 0;
     OutputStats outputStats;
     double msFeat = 0, msANNBuild = 0, msANNLoad = 0, msANNQuery = 0, msGPUScore = 0, msSelect = 0, msPlace = 0, msEncode = 0, msCPUScore = 0;
@@ -834,6 +786,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     // 为 GPU 路径准备连续内存缓冲区，存放 tiny/LBP 特征数据
     cuda::GpuTimings featureTimings, scoreTimings, libraryTimings;
+    FeaturePack::Reader::ReadStats libraryReadStats;
     cuda::GpuLibrary gpuLib;
     struct LibraryGuard
     {
@@ -875,8 +828,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::vector<int> needed(dbCount);
         std::iota(needed.begin(), needed.end(), 0);
         std::vector<uint8_t> tinyValid, lbpValid;
-        const bool cacheLoaded =
-            FeaturePack::load(featDirCache, allRecords, needed, h_tiny, h_lbp, tinyValid, lbpValid);
+        const bool cacheLoaded = FeaturePack::load(featDirCache, allRecords, needed, h_tiny, h_lbp, tinyValid, lbpValid,
+                                                   cfg.benchmark ? &libraryReadStats : nullptr);
         if (!cacheLoaded)
         {
             std::cout << "  (validated feature cache miss, using source files)" << std::endl;
@@ -978,7 +931,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
         return false;
     }
     int totalTiles = static_cast<int>(totalTiles64);
-    int doneWidth = static_cast<int>(std::to_string(totalTiles).size());  // 计数器固定宽度
 
     // 进度期间隐藏光标，消除 \r 回行首时光标闪烁导致的"跳动"视觉
 #ifdef _WIN32
@@ -1012,8 +964,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::vector<int>    analyzeAnnRanks;  // winner 在 ANN Top200 中的排名 (0=未找到)
     std::vector<int>    analyzeCat;       // 0=Smooth, 1=Edge, 2=Texture, 3=Normal
     double analyzeGridCellSum[64] = {0};   // 每个 cell 的累计 L2 误差，用于分析网格匹配质量
-    FeatureCache analysisFeatureCache;
     WorstTiles worstTiles;
+    size_t matchingBatches = 0, matchingPeakBytes = 0, maximumBatchTiles = 0;
+    double matchingWallMs = 0;
+    FeaturePack::Reader::ReadStats featureReadStats;
 
     int N = cfg.candidates;  // 候选数量，GPU 路径需提前确定，用于 benchmark
 
@@ -1087,128 +1041,28 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << "  Score GPU download: " << scoreTimings.downloadMs << " ms\n"
                       << "  Score temporary bytes: " << scoreTimings.peakTemporaryBytes << "\n";
         }
+        std::cout << "  Matching batches: " << matchingBatches << "\n"
+                  << "  Matching wall: " << matchingWallMs << " ms\n"
+                  << "  Matching max tiles: " << maximumBatchTiles << "\n"
+                  << "  Matching buffer peak bytes: " << matchingPeakBytes << "\n"
+                  << "  Feature cache peak bytes: " << featureReadStats.peakBytes << "\n"
+                  << "  Feature cache hits: " << featureReadStats.hits << "\n"
+                  << "  Feature source reads: " << featureReadStats.sourceReads << "\n"
+                  << "  Feature cache evictions: " << featureReadStats.evictions << "\n"
+                  << "  Feature cache preloaded: " << featureReadStats.preloaded << "\n";
+        std::cout << "  Library feature source reads: " << libraryReadStats.sourceReads << "\n"
+                  << "  Library feature pack hits: " << libraryReadStats.packedRows << "\n";
         std::cout << "  === Total: " << msTotal     << " ms ===\n";
         if (totalTiles > 0)
             std::cout << "  Avg/tile:    " << (msTotal / totalTiles) << " ms\n";
         std::cout << std::flush;
     };
 
-    std::vector<double> allTL(totalTiles), allTA(totalTiles), allTB(totalTiles);
-    FeatureMatrix<float, 192> allGrid(totalTiles);
-    FeatureMatrix<uint8_t, 256> allTiny(totalTiles);
-    std::vector<double> allEdge(totalTiles);
-    FeatureMatrix<float, 256> allLBP(totalTiles);
-
-    // 特征数组：LAB颜色、8x8 Grid、Tiny、Edge、LBP，后续按需推导 4x4 Grid
-
-    int nThreads = std::thread::hardware_concurrency();
-    if (nThreads < 2) nThreads = 2;
-
-    // 记录准备阶段耗时：DB 加载 + GPU library 上传耗时
-    auto tPreFeat = Clock::now();
-    msPrep = Ms(tPreFeat - tLast).count();
-    tLast = tPreFeat;
-
-    // Phase 0: 特征提取，GPU 路径批量提取，CPU 路径多线程并行
-    if (cfg.useGpu)
-    {
-        const int batchSize = 256;
-        cuda::FeatureWorkspace workspace;
-        std::vector<uint8_t> images(batchSize * featBytes);
-        std::vector<double> lab(batchSize * 3);
-        WorkerPool preparationWorkers;
-        for (int first = 0; first < totalTiles; first += batchSize)
-        {
-            const int count = std::min(batchSize, totalTiles - first);
-            preparationWorkers.run(count,
-                                   [&](size_t i)
-                                   {
-                                       const int ti = first + i;
-                                       cv::Mat roi = target(cv::Rect((ti % tilesX) * cfg.tileW,
-                                                                     (ti / tilesX) * cfg.tileH, cfg.tileW, cfg.tileH));
-                                       cv::Mat resized;
-                                       cv::resize(roi, resized, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
-                                       std::memcpy(images.data() + i * featBytes, resized.data, featBytes);
-                                   });
-            const int result = cuda::extractFeaturesRaw(images.data(), count, featW, featH,
-                lab.data(), allGrid[first].data(), allTiny[first].data(),
-                allEdge.data() + first, allLBP[first].data(), &workspace,
-                cfg.benchmark ? &featureTimings : nullptr);
-            if (result < 0)
-            {
-                std::cerr << "ERROR: GPU feature extraction failed." << std::endl;
-                releaseGpuLib();
-                return false;
-            }
-            for (int i = 0; i < count; ++i)
-            {
-                allTL[first + i] = lab[i * 3];
-                allTA[first + i] = lab[i * 3 + 1];
-                allTB[first + i] = lab[i * 3 + 2];
-            }
-            std::cout << "\r  features " << first + count << "/" << totalTiles << std::flush;
-        }
-        std::cout << std::endl;
-    }
-
-    if (!cfg.useGpu)  // CPU 路径：多线程并行提取特征
-    {
-        std::atomic<int> featDone{0};
-        auto tCpuFeatStart = Clock::now();
-        std::vector<std::thread> featWorkers;
-        for (int t = 0; t < nThreads; ++t) {
-            featWorkers.emplace_back([&, t]() {
-                using Ns = std::chrono::nanoseconds;
-                for (int idx = t; idx < totalTiles; idx += nThreads) {
-                    int ty = idx / tilesX, tx = idx % tilesX;
-                    cv::Mat roi = target(cv::Rect(tx*cfg.tileW, ty*cfg.tileH, cfg.tileW, cfg.tileH));
-                    cv::Mat roiNative;
-                    auto t0 = cfg.benchmark ? Clock::now() : Clock::time_point{};
-                    cv::resize(roi, roiNative, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
-                    auto t1 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opResizeNs += std::chrono::duration_cast<Ns>(t1 - t0).count(); }
-                    cv::Mat lab; cv::cvtColor(roiNative, lab, cv::COLOR_BGR2Lab);
-                    cv::Scalar m = cv::mean(lab);
-                    allTL[idx]=m[0]; allTA[idx]=m[1]; allTB[idx]=m[2];
-                    auto t2 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opLabNs += std::chrono::duration_cast<Ns>(t2 - t1).count(); }
-                    allGrid[idx] = computeGrid8x8FromLab(lab);
-                    auto t3 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opGridNs += std::chrono::duration_cast<Ns>(t3 - t2).count(); }
-                    cv::Mat gray;
-                    cv::cvtColor(roiNative, gray, cv::COLOR_BGR2GRAY);
-                    allTiny[idx] = computeTinyImageFromGray(gray);
-                    auto t4 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opTinyNs += std::chrono::duration_cast<Ns>(t4 - t3).count(); }
-                    allEdge[idx] = computeEdgeDensityFromGray(gray);
-                    auto t5 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opEdgeNs += std::chrono::duration_cast<Ns>(t5 - t4).count(); }
-                    allLBP[idx] = computeLBPHistogramFromGray(gray);
-                    auto t6 = cfg.benchmark ? Clock::now() : Clock::time_point{}; if (cfg.benchmark) { opLbpNs += std::chrono::duration_cast<Ns>(t6 - t5).count(); }
-                    int d = ++featDone;
-                    if (d % 500 == 0 || d == totalTiles) {
-                        static std::mutex coutMutex;
-                        std::lock_guard<std::mutex> lock(coutMutex);
-                        double e = std::chrono::duration<double>(Clock::now() - tCpuFeatStart).count();
-                        double eta = (e / d) * (totalTiles - d);
-                        std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
-                        if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
-                        std::cout << "\r  features " << std::setw(doneWidth) << d << "/" << totalTiles
-                                  << " | ETA" << etas << std::flush;
-                    }
-                }
-            });
-        }
-        for (auto& w : featWorkers) w.join();
-        std::cout << std::endl;
-    }
-
-    auto tFeat = Clock::now();
-    msFeat = Ms(tFeat - tLast).count();
-    tLast = tFeat;
-
     std::atomic<int> matched{0};
     int loadFail = 0;
     int cntGrid = 0, cntMissGrid = 0;
     int cntTiny = 0, cntMissTiny = 0;
     int cntEdge = 0, cntMissEdge = 0;
-    int cntSmoothCat = 0, cntEdgeCat = 0, cntTextureCat = 0, cntNormalCat = 0;
-    double smoothSum = 0, edgeSum = 0, textureSum = 0, normalSum = 0;
     int cntLBP  = 0, cntMissLBP  = 0;
 
     // 自适应邻居窗口：基准 2 倍 tile 行宽，默认下限 300，上限 400
@@ -1285,607 +1139,784 @@ bool MosaicEngine::generate(const std::string& targetPath,
                                                   bestLibIdx});
     };
 
-    // 两个后端共用只读索引和并行粗筛；邻域相关的选择仍按 tile 顺序进行。
-    std::vector<int> allIndices;
+    // 可控匹配缓冲按预算分批；图库记录和精简选择结果仍独立持有。
+    const size_t batchRows =
+        std::min<size_t>(totalTiles, matchingBatchRows(m_limits, featW, featH, N, dbCount, cfg.useGpu));
+    maximumBatchTiles = batchRows;
+    int noCandidateCount = 0;
+    int grid4Top1 = 0, grid8Top1 = 0, top1Differ = 0;
+    int adaptiveSmoothCount = 0, adaptiveEdgeCount = 0, adaptiveTextureCount = 0, adaptiveNormalCount = 0;
+    std::vector<double> edgeDistribution, entropyDistribution;
+    std::mt19937 seededRng(m_seed);
+    const auto matchingStart = Clock::now();
+    auto &freq = freqInWindow;
+    auto downsampleGrid = [](const auto &g8, std::vector<float> &g4)
     {
-    FeatureIndex annIndex;
-    const std::string annPath = featDirCache.empty() ? "lib.ann196" : featDirCache + "/lib.ann196";
-    const auto indexStart = Clock::now();
-    bool loaded = annIndex.load(annPath, FeatureIndex::kDimension, allRecords);
-    msANNLoad = Ms(Clock::now() - indexStart).count();
-    if (!loaded)
-    {
-        const auto buildStart = Clock::now();
-        std::cout << "  building ANN index (196 dimensions)..." << std::flush;
-        if (!annIndex.build(allRecords))
+        g4.resize(48);
+        for (int r = 0; r < 4; ++r)
         {
-            releaseGpuLib();
-            return false;
-        }
-        if (!annIndex.save(annPath))
-        {
-            std::cerr << "WARNING: ANN cache could not be saved." << std::endl;
-        }
-        msANNBuild = Ms(Clock::now() - buildStart).count();
-    }
-    const auto queryStart = Clock::now();
-    std::vector<float> queries(static_cast<size_t>(totalTiles) * FeatureIndex::kDimension);
-    std::vector<float> tileVector;
-    for (int ti = 0; ti < totalTiles; ++ti)
-    {
-        buildTileVector(allTL[ti], allTA[ti], allTB[ti], allGrid[ti], allTiny[ti], allEdge[ti], allLBP[ti], tileVector);
-        std::copy(tileVector.begin(), tileVector.end(), queries.begin() + static_cast<size_t>(ti) * FeatureIndex::kDimension);
-    }
-    std::cout << "  collecting candidates (parallel)..." << std::flush;
-    allIndices = annIndex.queryBatch(queries, N);
-    // ANN 提供结构候选后再应用 L 亮度范围；两个评分后端共用过滤结果。
-    for (int ti = 0; ti < totalTiles; ++ti)
-    {
-        for (int j = 0; j < N; ++j)
-        {
-            auto& index = allIndices[static_cast<size_t>(ti) * N + j];
-            if (index >= 0 && std::abs(allRecords[index].avgL - allTL[ti]) > cfg.lRange)
+            for (int c = 0; c < 4; ++c)
             {
-                index = -1;
-            }
-        }
-    }
-    if (std::none_of(allIndices.begin(), allIndices.end(),
-                     [](int index)
-                     {
-                         return index >= 0;
-                     }))
-    {
-        std::cerr << "ERROR: No candidates within --l-range; increase the brightness range." << std::endl;
-        return false;
-    }
-    queries.clear();
-    queries.shrink_to_fit();
-    msANNQuery = Ms(Clock::now() - queryStart).count();
-    tLast = Clock::now();
-    std::cout << " done" << std::endl;
-
-    } // 查询完成即释放索引，避免与大图画布和编码缓冲同时占用内存。
-    const size_t totalWork = allIndices.size();
-
-        std::vector<double> tileLabW(totalTiles, nLabW);
-        std::vector<double> tileGridW(totalTiles, nGridW);
-        std::vector<double> tileTinyW(totalTiles, nTinyW);
-        std::vector<double> tileEdgeW(totalTiles, nEdgeW);
-        std::vector<double> tileLbpW(totalTiles, nLbpW);
-        int adaptiveSmoothCount = 0, adaptiveEdgeCount = 0, adaptiveTextureCount = 0, adaptiveNormalCount = 0;
-        if (cfg.adaptiveWeights)
-        {
-            for (int ti = 0; ti < totalTiles; ++ti)
-            {
-                double e = allEdge[ti];
-                double lbpEnt = 0.0;
-                for (int k = 0; k < 256; ++k)
+                for (int ch = 0; ch < 3; ++ch)
                 {
-                    float v = allLBP[ti][k];
-                    if (v > 0.0f) lbpEnt -= v * std::log2(v);
-                }
-                double lSum = 0, lSq = 0;
-                for (int k = 0; k < 64; ++k)
-                {
-                    double lv = allGrid[ti][k * 3];
-                    lSum += lv; lSq += lv * lv;
-                }
-                double lVar = lSq / 64.0 - (lSum / 64.0) * (lSum / 64.0);
-
-                if (e < 0.005 && lVar < 100.0)
-                {
-                    // Smooth: 低纹理区域，侧重 LAB 颜色和 Grid 结构匹配
-                    tileLabW[ti] = 0.25;
-                    tileGridW[ti] = 0.45;
-                    tileTinyW[ti] = 0.20;
-                    tileEdgeW[ti] = 0.05;
-                    tileLbpW[ti] = 0.05;
-                    adaptiveSmoothCount++;
-                }
-                else if (e > 0.01)
-                {
-                    // Edge-heavy: 边缘密度 > 0.01，侧重 Grid 和 Tiny 纹理
-                    tileLabW[ti] = 0.15;
-                    tileGridW[ti] = 0.40;
-                    tileTinyW[ti] = 0.25;
-                    tileEdgeW[ti] = 0.15;
-                    tileLbpW[ti] = 0.05;
-                    adaptiveEdgeCount++;
-                }
-                else if (lbpEnt > 3.0)
-                {
-                        // Texture-heavy: LBP 熵 > 3.0，侧重 LBP 纹理特征
-                    tileLabW[ti] = 0.15;
-                    tileGridW[ti] = 0.40;
-                    tileTinyW[ti] = 0.20;
-                    tileEdgeW[ti] = 0.05;
-                    tileLbpW[ti] = 0.20;
-                    adaptiveTextureCount++;
-                }
-                else
-                {
-                    adaptiveNormalCount++;
+                    float sum = 0;
+                    for (int dr = 0; dr < 2; ++dr)
+                    {
+                        for (int dc = 0; dc < 2; ++dc)
+                        {
+                            sum += g8[((r * 2 + dr) * 8 + (c * 2 + dc)) * 3 + ch];
+                        }
+                    }
+                    g4[(r * 4 + c) * 3 + ch] = sum / 4.0f;
                 }
             }
         }
-
-        if (cfg.useGpu && gpuLib.count > 0)
+    };
+    {
+        const auto preparationEnd = Clock::now();
+        msPrep = Ms(preparationEnd - tStart).count();
+        auto annIndex = std::make_unique<FeatureIndex>();
+        const std::string annPath = featDirCache.empty() ? "lib.ann196" : featDirCache + "/lib.ann196";
+        const auto indexStart = Clock::now();
+        bool loaded = annIndex->load(annPath, FeatureIndex::kDimension, allRecords);
+        msANNLoad = Ms(Clock::now() - indexStart).count();
+        if (!loaded)
         {
+            const auto buildStart = Clock::now();
+            std::cout << "  building ANN index (196 dimensions)..." << std::flush;
+            if (!annIndex->build(allRecords))
+            {
+                releaseGpuLib();
+                return false;
+            }
+            if (!annIndex->save(annPath))
+            {
+                std::cerr << "WARNING: ANN cache could not be saved." << std::endl;
+            }
+            msANNBuild = Ms(Clock::now() - buildStart).count();
+        }
 
-            // CUDA 批量评分与 CPU 使用上方同一组归一化权重。
-            std::cout << "  GPU scoring " << totalTiles << " x " << N;
+        WorkerPool queryWorkers;
+        unsigned featureThreads = cfg.useGpu ? std::min(8u, std::max(1u, std::thread::hardware_concurrency()))
+                                             : std::max(2u, std::thread::hardware_concurrency());
+        WorkerPool featureWorkers(static_cast<unsigned>(std::min<size_t>(batchRows, featureThreads)));
+        std::unique_ptr<cuda::FeatureWorkspace> workspace;
+        std::unique_ptr<cuda::ScoreWorkspace> scoreWorkspace;
+        if (cfg.useGpu)
+        {
+            workspace = std::make_unique<cuda::FeatureWorkspace>();
+            scoreWorkspace = std::make_unique<cuda::ScoreWorkspace>();
+        }
+        std::unique_ptr<FeaturePack::Reader> featureReader;
+        if (!cfg.useGpu || cfg.analyze)
+        {
+            const auto readStart = Clock::now();
+            featureReader = std::make_unique<FeaturePack::Reader>(cfg.useGpu ? std::string() : featDirCache, allRecords,
+                                                                  m_limits.featureBytes);
+            if (!cfg.useGpu)
+            {
+                msCPUFeatures += Ms(Clock::now() - readStart).count();
+            }
+        }
+        std::vector<std::vector<float>> libGrid4x4;
+        if (cfg.useGpu && cfg.analyze)
+        {
+            libGrid4x4.resize(dbCount);
+            for (int i = 0; i < dbCount; ++i)
+            {
+                downsampleGrid(allRecords[i].grid4x4, libGrid4x4[i]);
+            }
+        }
+        MatchingBuffers buffers;
+        std::vector<float> tileVector;
+        std::vector<int> idxs(N);
+        std::vector<std::pair<double, int>> scored;
+        scored.reserve(N);
+        bool hasCandidates = false;
+        std::cout << "Matching: ordered batches, max " << batchRows << " tiles" << std::endl;
+        for (int first = 0; first < totalTiles;)
+        {
+            const int count = static_cast<int>(std::min<size_t>(batchRows, totalTiles - first));
+            ++matchingBatches;
+            buffers.resize(count, featBytes, N, cfg.useGpu, cfg.analyze);
+            auto &allTL = buffers.l;
+            auto &allTA = buffers.a;
+            auto &allTB = buffers.b;
+            auto &allEdge = buffers.edge;
+            auto &allGrid = buffers.grid;
+            auto &allTiny = buffers.tiny;
+            auto &allLBP = buffers.lbp;
+            auto &allIndices = buffers.indices;
+            auto &allScores = buffers.scores;
+            auto &tileLabW = buffers.labW;
+            auto &tileGridW = buffers.gridW;
+            auto &tileTinyW = buffers.tinyW;
+            auto &tileEdgeW = buffers.edgeW;
+            auto &tileLbpW = buffers.lbpW;
+            auto &tileGrid4x4 = buffers.grid4;
+            const auto featureStart = Clock::now();
+            if (cfg.useGpu)
+            {
+                featureWorkers.run(count,
+                                   [&](size_t local)
+                                   {
+                                       const int ti = first + static_cast<int>(local);
+                                       cv::Mat roi = target(cv::Rect((ti % tilesX) * cfg.tileW,
+                                                                     (ti / tilesX) * cfg.tileH, cfg.tileW, cfg.tileH));
+                                       cv::Mat resized;
+                                       cv::resize(roi, resized, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
+                                       std::memcpy(buffers.images.data() + local * featBytes, resized.data, featBytes);
+                                   });
+                if (cuda::extractFeaturesRaw(buffers.images.data(), count, featW, featH, buffers.lab.data(),
+                                             allGrid.data(), allTiny.data(), allEdge.data(), allLBP.data(),
+                                             workspace.get(), cfg.benchmark ? &featureTimings : nullptr) < 0)
+                {
+                    std::cerr << "ERROR: GPU feature extraction failed." << std::endl;
+                    return false;
+                }
+                for (int local = 0; local < count; ++local)
+                {
+                    allTL[local] = buffers.lab[local * 3];
+                    allTA[local] = buffers.lab[local * 3 + 1];
+                    allTB[local] = buffers.lab[local * 3 + 2];
+                }
+            }
+            else
+            {
+                featureWorkers.run(count,
+                                   [&](size_t local)
+                                   {
+                                       using Ns = std::chrono::nanoseconds;
+                                       const int ti = first + static_cast<int>(local);
+                                       int ty = ti / tilesX, tx = ti % tilesX;
+                                       cv::Mat roi =
+                                           target(cv::Rect(tx * cfg.tileW, ty * cfg.tileH, cfg.tileW, cfg.tileH));
+                                       cv::Mat roiNative;
+                                       auto t0 = cfg.benchmark ? Clock::now() : Clock::time_point{};
+                                       cv::resize(roi, roiNative, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
+                                       auto t1 = cfg.benchmark ? Clock::now() : Clock::time_point{};
+                                       if (cfg.benchmark)
+                                       {
+                                           opResizeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
+                                       }
+                                       cv::Mat lab;
+                                       cv::cvtColor(roiNative, lab, cv::COLOR_BGR2Lab);
+                                       cv::Scalar m = cv::mean(lab);
+                                       allTL[local] = m[0];
+                                       allTA[local] = m[1];
+                                       allTB[local] = m[2];
+                                       auto t2 = cfg.benchmark ? Clock::now() : Clock::time_point{};
+                                       if (cfg.benchmark)
+                                       {
+                                           opLabNs += std::chrono::duration_cast<Ns>(t2 - t1).count();
+                                       }
+                                       allGrid[local] = computeGrid8x8FromLab(lab);
+                                       auto t3 = cfg.benchmark ? Clock::now() : Clock::time_point{};
+                                       if (cfg.benchmark)
+                                       {
+                                           opGridNs += std::chrono::duration_cast<Ns>(t3 - t2).count();
+                                       }
+                                       cv::Mat gray;
+                                       cv::cvtColor(roiNative, gray, cv::COLOR_BGR2GRAY);
+                                       allTiny[local] = computeTinyImageFromGray(gray);
+                                       auto t4 = cfg.benchmark ? Clock::now() : Clock::time_point{};
+                                       if (cfg.benchmark)
+                                       {
+                                           opTinyNs += std::chrono::duration_cast<Ns>(t4 - t3).count();
+                                       }
+                                       allEdge[local] = computeEdgeDensityFromGray(gray);
+                                       auto t5 = cfg.benchmark ? Clock::now() : Clock::time_point{};
+                                       if (cfg.benchmark)
+                                       {
+                                           opEdgeNs += std::chrono::duration_cast<Ns>(t5 - t4).count();
+                                       }
+                                       allLBP[local] = computeLBPHistogramFromGray(gray);
+                                       auto t6 = cfg.benchmark ? Clock::now() : Clock::time_point{};
+                                       if (cfg.benchmark)
+                                       {
+                                           opLbpNs += std::chrono::duration_cast<Ns>(t6 - t5).count();
+                                       }
+                                   });
+            }
+            msFeat += Ms(Clock::now() - featureStart).count();
+            const auto queryStart = Clock::now();
+            for (int local = 0; local < count; ++local)
+            {
+                buildTileVector(allTL[local], allTA[local], allTB[local], allGrid[local], allTiny[local],
+                                allEdge[local], allLBP[local], tileVector);
+                std::copy(tileVector.begin(), tileVector.end(),
+                          buffers.queries.begin() + static_cast<size_t>(local) * FeatureIndex::kDimension);
+            }
+            annIndex->queryBatch(buffers.queries, N, allIndices, queryWorkers);
+            for (int local = 0; local < count; ++local)
+            {
+                for (int j = 0; j < N; ++j)
+                {
+                    auto &index = allIndices[static_cast<size_t>(local) * N + j];
+                    if (index >= 0 && std::abs(allRecords[index].avgL - allTL[local]) > cfg.lRange)
+                    {
+                        index = -1;
+                    }
+                    hasCandidates = hasCandidates || index >= 0;
+                }
+            }
+            msANNQuery += Ms(Clock::now() - queryStart).count();
+            std::fill(tileLabW.begin(), tileLabW.end(), nLabW);
+            std::fill(tileGridW.begin(), tileGridW.end(), nGridW);
+            std::fill(tileTinyW.begin(), tileTinyW.end(), nTinyW);
+            std::fill(tileEdgeW.begin(), tileEdgeW.end(), nEdgeW);
+            std::fill(tileLbpW.begin(), tileLbpW.end(), nLbpW);
             if (cfg.adaptiveWeights)
             {
-                // 打印边缘和纹理统计分布，辅助权重校准
-                std::vector<double> edgeVals(totalTiles), lbpVals(totalTiles);
-                for (int ti = 0; ti < totalTiles; ++ti)
+                for (int ti = 0; ti < count; ++ti)
                 {
-                    edgeVals[ti] = allEdge[ti];
-                    double ent = 0.0;
+                    double e = allEdge[ti];
+                    double lbpEnt = 0.0;
                     for (int k = 0; k < 256; ++k)
                     {
                         float v = allLBP[ti][k];
                         if (v > 0.0f)
                         {
-                            ent -= v * std::log2(v);
+                            lbpEnt -= v * std::log2(v);
                         }
                     }
-                    lbpVals[ti] = ent;
-                }
-                std::sort(edgeVals.begin(), edgeVals.end());
-                std::sort(lbpVals.begin(), lbpVals.end());
-                auto pct = [&](const auto& v, double p)
-                {
-                    size_t idx = static_cast<size_t>(p * static_cast<double>(v.size()));
-                    if (idx >= v.size())
-                    {
-                        idx = v.size() - 1;
-                    }
-                    return v[idx];
-                };
-                std::cout << "\n  Edge:  P50=" << std::fixed << std::setprecision(3) << pct(edgeVals, 0.50)
-                          << " P90=" << pct(edgeVals, 0.90) << " P95=" << pct(edgeVals, 0.95)
-                          << " P99=" << pct(edgeVals, 0.99);
-                std::cout << "\n  LBP:   P50=" << std::setprecision(2) << pct(lbpVals, 0.50)
-                          << " P90=" << pct(lbpVals, 0.90) << " P95=" << pct(lbpVals, 0.95)
-                          << " P99=" << pct(lbpVals, 0.99);
-                std::cout << "\n  Class: S=" << adaptiveSmoothCount << " E=" << adaptiveEdgeCount
-                          << " T=" << adaptiveTextureCount << " N=" << adaptiveNormalCount;
-            }
-            std::cout << "..." << std::flush;
-            std::vector<double> allScores(totalWork, 1e30);
-            if (!cuda::scoreBatch(totalTiles, allTL.data(), allTA.data(), allTB.data(), allGrid.data(), allTiny.data(),
-                                  allEdge.data(), allLBP.data(), allIndices.data(), N, gpuLib, tileLabW.data(),
-                                  tileGridW.data(), tileTinyW.data(), tileEdgeW.data(), tileLbpW.data(), cfg.usePenalty,
-                                  allScores.data(), cfg.benchmark ? &scoreTimings : nullptr))
-            {
-                // 失败分数不能进入选图，否则会把未计算的候选当作正常结果。
-                std::cerr << "ERROR: GPU scoring failed; mosaic was not generated." << std::endl;
-                releaseGpuLib();
-                return false;
-            }
-            std::cout << " done" << std::endl;
-
-            // Phase C 结束（GPU 评分完成）
-        auto tGPU = Clock::now();
-        msGPUScore = Ms(tGPU - tLast).count();
-        tLast = tGPU;
-
-            // === Phase D: 选择最佳 tile + analyze 数据分析 ===
-            // 8x8 vs 4x4 Grid 对比实验（--analyze 模式）
-        std::vector<std::vector<float>> libGrid4x4, tileGrid4x4;
-        if (cfg.analyze)
-        {
-            BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
-            libGrid4x4.resize(dbCount);
-            tileGrid4x4.resize(totalTiles);
-                    // 构建库 4x4 Grid 特征
-        for (int i = 0; i < dbCount; ++i)
-        {
-            const auto& g8 = allRecords[i].grid4x4;
-            libGrid4x4[i].resize(48);
-            for (int r = 0; r < 4; ++r)
-            {
-                for (int c = 0; c < 4; ++c)
-                {
-                    for (int ch = 0; ch < 3; ++ch)
-                    {
-                        float sum = 0;
-                        for (int dr = 0; dr < 2; ++dr)
-                            for (int dc = 0; dc < 2; ++dc)
-                                sum += g8[((r*2+dr)*8 + (c*2+dc)) * 3 + ch];
-                        libGrid4x4[i][(r*4+c)*3 + ch] = sum / 4.0f;
-                    }
-                }
-            }
-        }
-            // 构建 tile 4x4 Grid 特征
-        for (int ti = 0; ti < totalTiles; ++ti)
-        {
-            const auto& g8 = allGrid[ti];
-            tileGrid4x4[ti].resize(48);
-            for (int r = 0; r < 4; ++r)
-            {
-                for (int c = 0; c < 4; ++c)
-                {
-                    for (int ch = 0; ch < 3; ++ch)
-                    {
-                        float sum = 0;
-                        for (int dr = 0; dr < 2; ++dr)
-                            for (int dc = 0; dc < 2; ++dc)
-                                sum += g8[((r*2+dr)*8 + (c*2+dc)) * 3 + ch];
-                        tileGrid4x4[ti][(r*4+c)*3 + ch] = sum / 4.0f;
-                    }
-                }
-            }
-        }
-            } // if (cfg.analyze) 结束
-
-        int grid4Top1 = 0, grid8Top1 = 0, top1Differ = 0;
-
-        if (cfg.analyze)
-        {
-            analyzeScores.reserve(totalTiles);
-            analyzeImageIds.reserve(totalTiles);
-            analyzeLabD.reserve(totalTiles);
-            analyzeGridD.reserve(totalTiles);
-            analyzeEdgeD.reserve(totalTiles);
-            analyzeGaps.reserve(totalTiles);
-            analyzeRanks.reserve(totalTiles);
-            analyzeAnnRanks.reserve(totalTiles);
-            analyzeCat.reserve(totalTiles);
-        }
-
-        std::cout << "  selecting best..." << std::flush;
-            int noCandidateCount = 0;  // 统计无候选的 tile 数量
-        std::vector<int> idxs(N);
-        for (int ti = 0; ti < totalTiles; ++ti)
-        {
-            const size_t rowOffset = static_cast<size_t>(ti) * static_cast<size_t>(N);
-            double* scores = &allScores[rowOffset];
-            const int* indices = &allIndices[rowOffset];
-                    // 统计有效候选数，跳过全为 -1 的 tile
-            int validCount = 0;
-            for (int j = 0; j < N; ++j)
-                if (indices[j] >= 0) validCount++;
-            if (validCount == 0)
-            {
-                noCandidateCount++;
-                continue;
-            }
-                    // 频次分级惩罚：1次轻微、2次中等、3+次重度（上限封顶）
-            const auto neighborStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
-            for (int j = 0; j < N; ++j)
-            {
-                int libIdx = indices[j];
-                if (libIdx < 0 || libIdx >= static_cast<int>(allRecords.size())) continue;
-                int imgId = allRecords[libIdx].id;
-                auto it = freqInWindow.find(imgId);
-                int cnt = (it != freqInWindow.end()) ? it->second : 0;
-                if (cnt >= 3)      { scores[j] += cfg.neighborPenalty; }
-                else if (cnt == 2) { scores[j] += cfg.neighborPenalty * 0.4; }
-                else if (cnt == 1) { scores[j] += cfg.neighborPenalty * 0.1; }
-                            // 强制间距：同一图片在 MIN_GAP 内复用加 500 分惩罚
-                auto gapIt = lastUsedAt.find(imgId);
-                if (gapIt != lastUsedAt.end() && (ti - gapIt->second) < MIN_GAP)
-                {
-                    scores[j] += 500.0;
-                }
-                            // Grid 去重：当前 tile 与最近窗口内 Grid 相似则加惩罚
-                for (const auto& rg : recentGrids)
-                {
-                    if (duplicateCache.similar(indices[j], rg, GRID_DUP_THRESHOLD))
-                    {
-                        scores[j] += GRID_DUP_PENALTY;
-                        break;
-                    }
-                }
-            }
-                    // Top-N 随机选取：从前 topN 个最佳候选中随机选择
-                // 8, 8 vs 4, 4 Grid 对比实验（--analyze 模式）
-            if (cfg.benchmark)
-            {
-                msNeighbor += Ms(Clock::now() - neighborStart).count();
-            }
-            if (cfg.analyze && validCount > 0)
-            {
-                BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
-                double best4 = 1e30, best8 = 1e30;
-                int best4idx = -1, best8idx = -1;
-                for (int j = 0; j < N; ++j)
-                {
-                    if (indices[j] < 0) continue;
-                                    // GPU scores 基于 8x8 grid，4x4 分数 = 原分数 - 8x8 grid项 + 4x4 grid项
-                    double grid8d = gridDistance8x8(allGrid[ti], allRecords[indices[j]].grid4x4, true);
-                    double grid4d = gridDistance(tileGrid4x4[ti], libGrid4x4[indices[j]]);
-                    double score4 = scores[j] - nGridW * grid8d + nGridW * grid4d;
-                    double score8 = scores[j];  // GPU , ,  8, 8
-                    if (score4 < best4) { best4 = score4; best4idx = indices[j]; }
-                    if (score8 < best8) { best8 = score8; best8idx = indices[j]; }
-                }
-                if (best4idx >= 0) grid4Top1++;
-                if (best8idx >= 0) grid8Top1++;
-                if (best4idx != best8idx) top1Differ++;
-            }
-
-            const auto sortStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
-            std::iota(idxs.begin(), idxs.end(), 0);
-            int topN = std::min(cfg.topNrandom, std::min(N, validCount));
-            std::partial_sort(idxs.begin(), idxs.begin() + topN, idxs.end(),
-                [&](int a, int b) { return scores[a] < scores[b]; });
-            if (cfg.benchmark)
-            {
-                msSort += Ms(Clock::now() - sortStart).count();
-            }
-            thread_local std::mt19937 rng(std::random_device{}());
-            int rankPos = std::uniform_int_distribution<int>(0, topN - 1)(rng);       // 随机选取 0-based 索引，存储时转为 rank-1
-            int pick = idxs[rankPos];
-            int chosenLibIdx = indices[pick];
-            bestLibIdx[ti] = chosenLibIdx;
-                    // --analyze: 记录每个 tile 的详细匹配数据，用于后续分析报告
-            if (cfg.analyze)
-            {
-                BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
-                const auto& rec = allRecords[chosenLibIdx];
-                double labD  = labDistance(allTL[ti], allTA[ti], allTB[ti], rec.avgL, rec.avgA, rec.avgB);
-                double gridD = gridDistance8x8(allGrid[ti], rec.grid4x4, true);
-                const auto* recTiny = rec.tinyPath.empty() ? nullptr : analysisFeatureCache.loadTiny(rec.id, rec.tinyPath);
-                const auto* recLBP = rec.histPath.empty() ? nullptr : analysisFeatureCache.loadLBP(rec.id, rec.histPath);
-                double tinyD = recTiny ? tinyMSE(allTiny[ti], *recTiny) : 1.0;
-                double edgeD = std::abs(allEdge[ti] - rec.edgeDensity);
-                double lbpD = recLBP ? lbpDistance(allLBP[ti], *recLBP) : 1.0;
-                double totalW = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight + cfg.edgeWeight + cfg.lbpWeight;
-                double featScore = (cfg.labWeight*labD + cfg.gridWeight*gridD + cfg.tinyWeight*tinyD
-                                  + cfg.edgeWeight*edgeD + cfg.lbpWeight*lbpD) / totalW;
-                analyzeScores.push_back(featScore);
-                worstTiles.remember(featScore, static_cast<int>(analyzeScores.size()) - 1, ti, allTL[ti], allTA[ti],
-                                    allTB[ti], allEdge[ti], allGrid[ti]);
-                analyzeImageIds.push_back(rec.id);
-                analyzeLabD.push_back(labD);
-                analyzeGridD.push_back(gridD);
-                analyzeEdgeD.push_back(edgeD);
-
-                            // Top-K Gap: winner vs true best 的分数差距，衡量随机选取代价
-                double winnerScore = scores[pick];
-                double gap = 0.0;
-                if (validCount >= 2)
-                {
-                    if (rankPos == 0)  // winner , , ,
-                        gap = scores[idxs[1]] - winnerScore;
-                                    else               // 未选第一名时，gap 为正
-                        gap = winnerScore - scores[idxs[0]];
-                }
-                analyzeGaps.push_back(gap);
-                analyzeRanks.push_back(rankPos + 1);  // 1-based rank in sorted Top-N
-
-                                        // ANN rank: winner 在 ANN 返回列表中的位置 (-1=未找到, 0=Top1)
-                int annRank = -1;
-                for (int j = 0; j < N; ++j)
-                {
-                    if (allIndices[static_cast<size_t>(ti) * static_cast<size_t>(N) + static_cast<size_t>(j)] == chosenLibIdx) { annRank = j; break; }
-                }
-                analyzeAnnRanks.push_back(annRank);
-
-                            // 记录 tile 分类（用于自适应权重分析）
-                int cat = 3;  // Normal
-                if (allEdge[ti] < 0.005)
-                {
                     double lSum = 0, lSq = 0;
                     for (int k = 0; k < 64; ++k)
                     {
                         double lv = allGrid[ti][k * 3];
-                        lSum += lv; lSq += lv * lv;
+                        lSum += lv;
+                        lSq += lv * lv;
                     }
                     double lVar = lSq / 64.0 - (lSum / 64.0) * (lSum / 64.0);
-                    if (lVar < 100.0) cat = 0;  // Smooth
+
+                    if (e < 0.005 && lVar < 100.0)
+                    {
+                        // Smooth: 低纹理区域，侧重 LAB 颜色和 Grid 结构匹配
+                        tileLabW[ti] = 0.25;
+                        tileGridW[ti] = 0.45;
+                        tileTinyW[ti] = 0.20;
+                        tileEdgeW[ti] = 0.05;
+                        tileLbpW[ti] = 0.05;
+                        adaptiveSmoothCount++;
+                    }
+                    else if (e > 0.01)
+                    {
+                        // Edge-heavy: 边缘密度 > 0.01，侧重 Grid 和 Tiny 纹理
+                        tileLabW[ti] = 0.15;
+                        tileGridW[ti] = 0.40;
+                        tileTinyW[ti] = 0.25;
+                        tileEdgeW[ti] = 0.15;
+                        tileLbpW[ti] = 0.05;
+                        adaptiveEdgeCount++;
+                    }
+                    else if (lbpEnt > 3.0)
+                    {
+                        // Texture-heavy: LBP 熵 > 3.0，侧重 LBP 纹理特征
+                        tileLabW[ti] = 0.15;
+                        tileGridW[ti] = 0.40;
+                        tileTinyW[ti] = 0.20;
+                        tileEdgeW[ti] = 0.05;
+                        tileLbpW[ti] = 0.20;
+                        adaptiveTextureCount++;
+                    }
+                    else
+                    {
+                        adaptiveNormalCount++;
+                    }
                 }
-                else if (allEdge[ti] > 0.01) { cat = 1; }  // Edge
-                else
+            }
+
+            if (cfg.useGpu && cfg.adaptiveWeights)
+            {
+                for (int local = 0; local < count; ++local)
                 {
-                    double lbpEnt = 0.0;
+                    edgeDistribution.push_back(allEdge[local]);
+                    double entropy = 0;
                     for (int k = 0; k < 256; ++k)
                     {
-                        float v = allLBP[ti][k];
-                        if (v > 0.0f) lbpEnt -= v * std::log2(v);
+                        float value = allLBP[local][k];
+                        if (value > 0.0f)
+                        {
+                            entropy -= value * std::log2(value);
+                        }
                     }
-                    if (lbpEnt > 3.0) cat = 2;  // Texture
-                }
-                analyzeCat.push_back(cat);
-
-                            // Grid 8x8 每个 cell 的 LAB 误差累计，用于分析网格匹配质量
-                for (int ci = 0; ci < 64; ++ci)
-                {
-                    int off = ci * 3;
-                    double dl = allGrid[ti][off] / 255.0 - rec.grid4x4[off] / 255.0;
-                    double da = allGrid[ti][off+1] / 255.0 - rec.grid4x4[off+1] / 255.0;
-                    double db = allGrid[ti][off+2] / 255.0 - rec.grid4x4[off+2] / 255.0;
-                    analyzeGridCellSum[ci] += std::sqrt(dl*dl + da*da + db*db);
+                    entropyDistribution.push_back(entropy);
                 }
             }
-                    // 更新滑动窗口和频次统计
-            int chosenId = allRecords[bestLibIdx[ti]].id;
-            recentIds.push_back(chosenId);
-            freqInWindow[chosenId]++;
-                    lastUsedAt[chosenId] = ti;       // 记录最近使用位置
-            recentGrids.push_back(chosenLibIdx);
-            while (static_cast<int>(recentGrids.size()) > GRID_DUP_WINDOW)
-                recentGrids.pop_front();
-            if (static_cast<int>(recentIds.size()) > cfg.neighborWindow)
+            if (cfg.useGpu)
             {
-                int oldId = recentIds.front();
-                recentIds.pop_front();
-                if (--freqInWindow[oldId] <= 0)
-                    freqInWindow.erase(oldId);
-            }
-            if (ti % 2000 == 0 || ti == totalTiles - 1) {
-                double e = std::chrono::duration<double>(Clock::now() - tLast).count();
-                double eta = (e / (ti+1)) * (totalTiles - (ti+1));
-                std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
-                if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
-                std::cout << "\r  selecting best " << std::setw(doneWidth) << (ti+1) << "/" << totalTiles
-                          << " | ETA" << etas << std::flush;
-            }
-        }
-        cntGrid = totalTiles; cntTiny = totalTiles;
-        cntEdge = totalTiles; cntLBP  = totalTiles;
-        if (noCandidateCount > 0)
-            std::cout << " (" << noCandidateCount << " tiles had no candidates!)";
-            // 8x8 Grid 对比实验结果
-        if (totalTiles > 0)
-        {
-            int validTiles = totalTiles - noCandidateCount;
-            if (cfg.analyze && validTiles > 0)
-            {
-                std::cout << "\n  Grid 8x8 experiment: "
-                          << "Top1 differ=" << top1Differ << "/" << validTiles
-                          << " (" << std::fixed << std::setprecision(1)
-                          << (100.0 * top1Differ / validTiles) << "%)";
-            }
-        }
-        std::cout << " done" << std::endl;
-
-            // Phase D 结束（选择完成）
-        auto tSelect = Clock::now();
-        msSelect = Ms(tSelect - tLast).count();
-        tLast = tSelect;
-        }
-    else
-    {
-        // --------------------------------------------------------
-        // CPU 路径：逐 tile 顺序处理，ANN 搜索 + 评分 + 贴图
-        // --------------------------------------------------------
-        const auto cpuFeatureStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
-        CandidateFeatures cpuFeatures(allRecords, allIndices, featDirCache);
-        if (cfg.benchmark)
-        {
-            msCPUFeatures = Ms(Clock::now() - cpuFeatureStart).count();
-        }
-        int noCandidateCount = 0;
-
-        // Phase 1: ANN 搜索 + 特征评分 + 去重惩罚（CPU 路径）
-        std::vector<int> bestLibIdxCpu(totalTiles, -1);
-        std::deque<int> recentIds;
-        std::unordered_map<int, int> freq;
-        std::unordered_map<int, int> lastUsedAt;
-        const int MIN_GAP = std::max(50, tilesX);
-        if (cfg.neighborWindow <= 0) cfg.neighborWindow = autoNeighborWindow();
-
-        std::cout << "  selecting best..." << std::flush;
-        auto tCpuSelectStart = Clock::now();
-        std::vector<std::pair<double, int>> scored;
-        scored.reserve(N);
-        for (int ti = 0; ti < totalTiles; ++ti)
-        {
-            scored.clear();
-            const auto scoreStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
-            for (int j = 0; j < N; ++j)
-            {
-                int li = allIndices[static_cast<size_t>(ti) * N + j];
-                if (li < 0)
+                const auto scoreStart = Clock::now();
+                cuda::GpuTimings batchTimings;
+                if (!cuda::scoreBatch(count, allTL.data(), allTA.data(), allTB.data(), allGrid.data(), allTiny.data(),
+                                      allEdge.data(), allLBP.data(), allIndices.data(), N, gpuLib, tileLabW.data(),
+                                      tileGridW.data(), tileTinyW.data(), tileEdgeW.data(), tileLbpW.data(),
+                                      cfg.usePenalty, allScores.data(), cfg.benchmark ? &batchTimings : nullptr,
+                                      256ULL * 1024 * 1024, scoreWorkspace.get()))
                 {
-                    continue;
+                    std::cerr << "ERROR: GPU scoring failed; mosaic was not generated." << std::endl;
+                    return false;
                 }
-                const auto& r = allRecords[li];
-
-                double labD = tileLabW[ti] * labDistance(allTL[ti], allTA[ti], allTB[ti], r.avgL, r.avgA, r.avgB);
-                double gridD = tileGridW[ti] * gridDistance8x8(allGrid[ti], r.grid4x4, true);
-                double edgeD = tileEdgeW[ti] * std::abs(allEdge[ti] - r.edgeDensity);
-                double s =
-                    labD + gridD +
-                    tileTinyW[ti] * (cpuFeatures.hasTiny(li) ? tinyMSE(allTiny[ti], cpuFeatures.tiny(li)) : 1.0) +
-                    edgeD +
-                    tileLbpW[ti] * (cpuFeatures.hasLbp(li) ? lbpDistance(allLBP[ti], cpuFeatures.lbp(li)) : 1.0) +
-                    r.useCount * cfg.usePenalty;
-                BenchmarkTimer neighborTimer(cfg.benchmark, msNeighbor);
-                auto it = freq.find(r.id);
-                int cnt = (it != freq.end()) ? it->second : 0;
-                if (cnt >= 3) s += cfg.neighborPenalty;
-                else if (cnt == 2) s += cfg.neighborPenalty * 0.4;
-                else if (cnt == 1) s += cfg.neighborPenalty * 0.1;
-                auto gapIt = lastUsedAt.find(r.id);  // 强制间距检查
-                if (gapIt != lastUsedAt.end() && (ti - gapIt->second) < MIN_GAP) s += 500.0;
-                for (const auto& rg : recentGrids)
+                scoreTimings.allocationMs += batchTimings.allocationMs;
+                scoreTimings.uploadMs += batchTimings.uploadMs;
+                scoreTimings.computeMs += batchTimings.computeMs;
+                scoreTimings.downloadMs += batchTimings.downloadMs;
+                scoreTimings.peakTemporaryBytes =
+                    std::max(scoreTimings.peakTemporaryBytes, batchTimings.peakTemporaryBytes);
+                msGPUScore += Ms(Clock::now() - scoreStart).count();
+                const auto selectionStart = Clock::now();
+                if (cfg.analyze)
                 {
-                    if (duplicateCache.similar(li, rg, GRID_DUP_THRESHOLD))
+                    for (int local = 0; local < count; ++local)
                     {
-                        s += GRID_DUP_PENALTY;
-                        break;
+                        downsampleGrid(allGrid[local], tileGrid4x4[local]);
                     }
                 }
-                scored.push_back({s, li});
-            }
-            if (cfg.benchmark)
-            {
-                // 候选评分包含原有邻域惩罚；排序和最终选图另计。
-                msCPUScore += Ms(Clock::now() - scoreStart).count();
-            }
-            if (scored.empty()) { noCandidateCount++; continue; }
-            const auto sortStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
-            const int topN = std::min(cfg.topNrandom, static_cast<int>(scored.size()));
-            std::partial_sort(scored.begin(), scored.begin() + topN, scored.end());
-            if (cfg.benchmark)
-            {
-                msSort += Ms(Clock::now() - sortStart).count();
-            }
-            thread_local std::mt19937 rng2(std::random_device{}());
-            int pickIdx = scored[std::uniform_int_distribution<int>(0, topN - 1)(rng2)].second;
-            bestLibIdxCpu[ti] = pickIdx;
-            // --analyze: ֻ��¼ʤ���ߵ��������ݣ�ÿ�� tile һ����
-            if (cfg.analyze)
-            {
-                BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
-                const auto& w = allRecords[pickIdx];
+                for (int local = 0; local < count; ++local)
+                {
+                    const int ti = first + local;
+                    const size_t rowOffset = static_cast<size_t>(local) * static_cast<size_t>(N);
+                    double *scores = &allScores[rowOffset];
+                    const int *indices = &allIndices[rowOffset];
+                    // 统计有效候选数，跳过全为 -1 的 tile
+                    int validCount = 0;
+                    for (int j = 0; j < N; ++j)
+                    {
+                        if (indices[j] >= 0)
+                        {
+                            validCount++;
+                        }
+                    }
+                    if (validCount == 0)
+                    {
+                        noCandidateCount++;
+                        continue;
+                    }
+                    // 频次分级惩罚：1次轻微、2次中等、3+次重度（上限封顶）
+                    const auto neighborStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
+                    for (int j = 0; j < N; ++j)
+                    {
+                        int libIdx = indices[j];
+                        if (libIdx < 0 || libIdx >= static_cast<int>(allRecords.size()))
+                        {
+                            continue;
+                        }
+                        int imgId = allRecords[libIdx].id;
+                        auto it = freqInWindow.find(imgId);
+                        int cnt = (it != freqInWindow.end()) ? it->second : 0;
+                        if (cnt >= 3)
+                        {
+                            scores[j] += cfg.neighborPenalty;
+                        }
+                        else if (cnt == 2)
+                        {
+                            scores[j] += cfg.neighborPenalty * 0.4;
+                        }
+                        else if (cnt == 1)
+                        {
+                            scores[j] += cfg.neighborPenalty * 0.1;
+                        }
+                        // 强制间距：同一图片在 MIN_GAP 内复用加 500 分惩罚
+                        auto gapIt = lastUsedAt.find(imgId);
+                        if (gapIt != lastUsedAt.end() && (ti - gapIt->second) < MIN_GAP)
+                        {
+                            scores[j] += 500.0;
+                        }
+                        // Grid 去重：当前 tile 与最近窗口内 Grid 相似则加惩罚
+                        for (const auto &rg : recentGrids)
+                        {
+                            if (duplicateCache.similar(indices[j], rg, GRID_DUP_THRESHOLD))
+                            {
+                                scores[j] += GRID_DUP_PENALTY;
+                                break;
+                            }
+                        }
+                    }
+                    // Top-N 随机选取：从前 topN 个最佳候选中随机选择
+                    // 8, 8 vs 4, 4 Grid 对比实验（--analyze 模式）
+                    if (cfg.benchmark)
+                    {
+                        msNeighbor += Ms(Clock::now() - neighborStart).count();
+                    }
+                    if (cfg.analyze && validCount > 0)
+                    {
+                        BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
+                        double best4 = 1e30, best8 = 1e30;
+                        int best4idx = -1, best8idx = -1;
+                        for (int j = 0; j < N; ++j)
+                        {
+                            if (indices[j] < 0)
+                            {
+                                continue;
+                            }
+                            // GPU scores 基于 8x8 grid，4x4 分数 = 原分数 - 8x8 grid项 + 4x4 grid项
+                            double grid8d = gridDistance8x8(allGrid[local], allRecords[indices[j]].grid4x4, true);
+                            double grid4d = gridDistance(tileGrid4x4[local], libGrid4x4[indices[j]]);
+                            double score4 = scores[j] - nGridW * grid8d + nGridW * grid4d;
+                            double score8 = scores[j]; // GPU , ,  8, 8
+                            if (score4 < best4)
+                            {
+                                best4 = score4;
+                                best4idx = indices[j];
+                            }
+                            if (score8 < best8)
+                            {
+                                best8 = score8;
+                                best8idx = indices[j];
+                            }
+                        }
+                        if (best4idx >= 0)
+                        {
+                            grid4Top1++;
+                        }
+                        if (best8idx >= 0)
+                        {
+                            grid8Top1++;
+                        }
+                        if (best4idx != best8idx)
+                        {
+                            top1Differ++;
+                        }
+                    }
 
-            // --analyze: 仅记录胜出者的匹配数据，每个 tile 一条记录
+                    const auto sortStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
+                    std::iota(idxs.begin(), idxs.end(), 0);
+                    int topN = std::min(cfg.topNrandom, std::min(N, validCount));
+                    std::partial_sort(idxs.begin(), idxs.begin() + topN, idxs.end(),
+                                      [&](int a, int b)
+                                      {
+                                          return scores[a] < scores[b];
+                                      });
+                    if (cfg.benchmark)
+                    {
+                        msSort += Ms(Clock::now() - sortStart).count();
+                    }
+                    thread_local std::mt19937 rng(std::random_device{}());
+                    int rankPos = std::uniform_int_distribution<int>(0, topN - 1)(
+                        m_fixedSeed ? seededRng : rng); // 随机选取 0-based 索引，存储时转为 rank-1
+                    int pick = idxs[rankPos];
+                    int chosenLibIdx = indices[pick];
+                    bestLibIdx[ti] = chosenLibIdx;
+                    // --analyze: 记录每个 tile 的详细匹配数据，用于后续分析报告
+                    if (cfg.analyze)
+                    {
+                        BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
+                        const auto &rec = allRecords[chosenLibIdx];
+                        double labD =
+                            labDistance(allTL[local], allTA[local], allTB[local], rec.avgL, rec.avgA, rec.avgB);
+                        double gridD = gridDistance8x8(allGrid[local], rec.grid4x4, true);
+                        const auto &features = featureReader->get(chosenLibIdx);
+                        const auto *recTiny = features.tinyValid ? &features.tiny : nullptr;
+                        const auto *recLBP = features.lbpValid ? &features.lbp : nullptr;
+                        double tinyD = recTiny ? tinyMSE(allTiny[local], *recTiny) : 1.0;
+                        double edgeD = std::abs(allEdge[local] - rec.edgeDensity);
+                        double lbpD = recLBP ? lbpDistance(allLBP[local], *recLBP) : 1.0;
+                        double totalW =
+                            cfg.labWeight + cfg.gridWeight + cfg.tinyWeight + cfg.edgeWeight + cfg.lbpWeight;
+                        double featScore = (cfg.labWeight * labD + cfg.gridWeight * gridD + cfg.tinyWeight * tinyD +
+                                            cfg.edgeWeight * edgeD + cfg.lbpWeight * lbpD) /
+                                           totalW;
+                        analyzeScores.push_back(featScore);
+                        worstTiles.remember(featScore, static_cast<int>(analyzeScores.size()) - 1, ti, allTL[local],
+                                            allTA[local], allTB[local], allEdge[local], allGrid[local]);
+                        analyzeImageIds.push_back(rec.id);
+                        analyzeLabD.push_back(labD);
+                        analyzeGridD.push_back(gridD);
+                        analyzeEdgeD.push_back(edgeD);
 
-                double wLabD = tileLabW[ti] * labDistance(allTL[ti], allTA[ti], allTB[ti], w.avgL, w.avgA, w.avgB);
-                double wGridD = tileGridW[ti] * gridDistance8x8(allGrid[ti], w.grid4x4, true);
-                double wEdgeD = tileEdgeW[ti] * std::abs(allEdge[ti] - w.edgeDensity);
-                double wS = wLabD + wGridD + wEdgeD +
-                            tileTinyW[ti] *
-                                (cpuFeatures.hasTiny(pickIdx) ? tinyMSE(allTiny[ti], cpuFeatures.tiny(pickIdx)) : 1.0) +
-                            tileLbpW[ti] *
-                                (cpuFeatures.hasLbp(pickIdx) ? lbpDistance(allLBP[ti], cpuFeatures.lbp(pickIdx)) : 1.0);
-                analyzeScores.push_back(wS);
-                worstTiles.remember(wS, static_cast<int>(analyzeScores.size()) - 1, ti, allTL[ti], allTA[ti], allTB[ti],
-                                    allEdge[ti], allGrid[ti]);
-                analyzeImageIds.push_back(w.id);
-                analyzeLabD.push_back(wLabD);
-                analyzeGridD.push_back(wGridD);
-                analyzeEdgeD.push_back(wEdgeD);
+                        // Top-K Gap: winner vs true best 的分数差距，衡量随机选取代价
+                        double winnerScore = scores[pick];
+                        double gap = 0.0;
+                        if (validCount >= 2)
+                        {
+                            if (rankPos == 0) // winner , , ,
+                            {
+                                gap = scores[idxs[1]] - winnerScore;
+                            }
+                            else // 未选第一名时，gap 为正
+                            {
+                                gap = winnerScore - scores[idxs[0]];
+                            }
+                        }
+                        analyzeGaps.push_back(gap);
+                        analyzeRanks.push_back(rankPos + 1); // 1-based rank in sorted Top-N
+
+                        // ANN rank: winner 在 ANN 返回列表中的位置 (-1=未找到, 0=Top1)
+                        int annRank = -1;
+                        for (int j = 0; j < N; ++j)
+                        {
+                            if (allIndices[static_cast<size_t>(local) * static_cast<size_t>(N) +
+                                           static_cast<size_t>(j)] == chosenLibIdx)
+                            {
+                                annRank = j;
+                                break;
+                            }
+                        }
+                        analyzeAnnRanks.push_back(annRank);
+
+                        // 记录 tile 分类（用于自适应权重分析）
+                        int cat = 3; // Normal
+                        if (allEdge[local] < 0.005)
+                        {
+                            double lSum = 0, lSq = 0;
+                            for (int k = 0; k < 64; ++k)
+                            {
+                                double lv = allGrid[local][k * 3];
+                                lSum += lv;
+                                lSq += lv * lv;
+                            }
+                            double lVar = lSq / 64.0 - (lSum / 64.0) * (lSum / 64.0);
+                            if (lVar < 100.0)
+                            {
+                                cat = 0; // Smooth
+                            }
+                        }
+                        else if (allEdge[local] > 0.01)
+                        {
+                            cat = 1;
+                        } // Edge
+                        else
+                        {
+                            double lbpEnt = 0.0;
+                            for (int k = 0; k < 256; ++k)
+                            {
+                                float v = allLBP[local][k];
+                                if (v > 0.0f)
+                                {
+                                    lbpEnt -= v * std::log2(v);
+                                }
+                            }
+                            if (lbpEnt > 3.0)
+                            {
+                                cat = 2; // Texture
+                            }
+                        }
+                        analyzeCat.push_back(cat);
+
+                        // Grid 8x8 每个 cell 的 LAB 误差累计，用于分析网格匹配质量
+                        for (int ci = 0; ci < 64; ++ci)
+                        {
+                            int off = ci * 3;
+                            double dl = allGrid[local][off] / 255.0 - rec.grid4x4[off] / 255.0;
+                            double da = allGrid[local][off + 1] / 255.0 - rec.grid4x4[off + 1] / 255.0;
+                            double db = allGrid[local][off + 2] / 255.0 - rec.grid4x4[off + 2] / 255.0;
+                            analyzeGridCellSum[ci] += std::sqrt(dl * dl + da * da + db * db);
+                        }
+                    }
+                    // 更新滑动窗口和频次统计
+                    int chosenId = allRecords[bestLibIdx[ti]].id;
+                    recentIds.push_back(chosenId);
+                    freqInWindow[chosenId]++;
+                    lastUsedAt[chosenId] = ti; // 记录最近使用位置
+                    recentGrids.push_back(chosenLibIdx);
+                    while (static_cast<int>(recentGrids.size()) > GRID_DUP_WINDOW)
+                    {
+                        recentGrids.pop_front();
+                    }
+                    if (static_cast<int>(recentIds.size()) > cfg.neighborWindow)
+                    {
+                        int oldId = recentIds.front();
+                        recentIds.pop_front();
+                        if (--freqInWindow[oldId] <= 0)
+                        {
+                            freqInWindow.erase(oldId);
+                        }
+                    }
+                }
+
+                msSelect += Ms(Clock::now() - selectionStart).count();
             }
-                        // 更新滑动窗口统计
-            int chosenId = allRecords[bestLibIdxCpu[ti]].id;
-            recentIds.push_back(chosenId); freq[chosenId]++; lastUsedAt[chosenId] = ti;
-            recentGrids.push_back(pickIdx);
-            while (static_cast<int>(recentGrids.size()) > GRID_DUP_WINDOW)
-                recentGrids.pop_front();
-            if ((int)recentIds.size() > cfg.neighborWindow) {
-                int old = recentIds.front(); recentIds.pop_front();
-                if (--freq[old] <= 0) freq.erase(old);
+            else
+            {
+                const auto readStart = Clock::now();
+                featureReader->prepare(allIndices);
+                const double readMs = Ms(Clock::now() - readStart).count();
+                msCPUFeatures += readMs;
+                msSelect += readMs;
+                const auto selectionStart = Clock::now();
+                for (int local = 0; local < count; ++local)
+                {
+                    const int ti = first + local;
+                    scored.clear();
+                    const auto scoreStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
+                    for (int j = 0; j < N; ++j)
+                    {
+                        int li = allIndices[static_cast<size_t>(local) * N + j];
+                        if (li < 0)
+                        {
+                            continue;
+                        }
+                        const auto &r = allRecords[li];
+                        const auto &features = featureReader->get(li);
+
+                        double labD = tileLabW[local] *
+                                      labDistance(allTL[local], allTA[local], allTB[local], r.avgL, r.avgA, r.avgB);
+                        double gridD = tileGridW[local] * gridDistance8x8(allGrid[local], r.grid4x4, true);
+                        double edgeD = tileEdgeW[local] * std::abs(allEdge[local] - r.edgeDensity);
+                        double s =
+                            labD + gridD +
+                            tileTinyW[local] * (features.tinyValid ? tinyMSE(allTiny[local], features.tiny) : 1.0) +
+                            edgeD +
+                            tileLbpW[local] * (features.lbpValid ? lbpDistance(allLBP[local], features.lbp) : 1.0) +
+                            r.useCount * cfg.usePenalty;
+                        BenchmarkTimer neighborTimer(cfg.benchmark, msNeighbor);
+                        auto it = freq.find(r.id);
+                        int cnt = (it != freq.end()) ? it->second : 0;
+                        if (cnt >= 3)
+                        {
+                            s += cfg.neighborPenalty;
+                        }
+                        else if (cnt == 2)
+                        {
+                            s += cfg.neighborPenalty * 0.4;
+                        }
+                        else if (cnt == 1)
+                        {
+                            s += cfg.neighborPenalty * 0.1;
+                        }
+                        auto gapIt = lastUsedAt.find(r.id); // 强制间距检查
+                        if (gapIt != lastUsedAt.end() && (ti - gapIt->second) < MIN_GAP)
+                        {
+                            s += 500.0;
+                        }
+                        for (const auto &rg : recentGrids)
+                        {
+                            if (duplicateCache.similar(li, rg, GRID_DUP_THRESHOLD))
+                            {
+                                s += GRID_DUP_PENALTY;
+                                break;
+                            }
+                        }
+                        scored.push_back({s, li});
+                    }
+                    if (cfg.benchmark)
+                    {
+                        // 候选评分包含原有邻域惩罚；排序和最终选图另计。
+                        msCPUScore += Ms(Clock::now() - scoreStart).count();
+                    }
+                    if (scored.empty())
+                    {
+                        noCandidateCount++;
+                        continue;
+                    }
+                    const auto sortStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
+                    const int topN = std::min(cfg.topNrandom, static_cast<int>(scored.size()));
+                    std::partial_sort(scored.begin(), scored.begin() + topN, scored.end());
+                    if (cfg.benchmark)
+                    {
+                        msSort += Ms(Clock::now() - sortStart).count();
+                    }
+                    thread_local std::mt19937 rng2(std::random_device{}());
+                    int pickIdx =
+                        scored[std::uniform_int_distribution<int>(0, topN - 1)(m_fixedSeed ? seededRng : rng2)].second;
+                    bestLibIdx[ti] = pickIdx;
+                    if (cfg.analyze)
+                    {
+                        BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
+                        const auto &w = allRecords[pickIdx];
+                        const auto &winnerFeatures = featureReader->get(pickIdx);
+
+                        // --analyze: 仅记录胜出者的匹配数据，每个 tile 一条记录
+
+                        double wLabD = tileLabW[local] *
+                                       labDistance(allTL[local], allTA[local], allTB[local], w.avgL, w.avgA, w.avgB);
+                        double wGridD = tileGridW[local] * gridDistance8x8(allGrid[local], w.grid4x4, true);
+                        double wEdgeD = tileEdgeW[local] * std::abs(allEdge[local] - w.edgeDensity);
+                        double wS =
+                            wLabD + wGridD + wEdgeD +
+                            tileTinyW[local] *
+                                (winnerFeatures.tinyValid ? tinyMSE(allTiny[local], winnerFeatures.tiny) : 1.0) +
+                            tileLbpW[local] *
+                                (winnerFeatures.lbpValid ? lbpDistance(allLBP[local], winnerFeatures.lbp) : 1.0);
+                        analyzeScores.push_back(wS);
+                        worstTiles.remember(wS, static_cast<int>(analyzeScores.size()) - 1, ti, allTL[local],
+                                            allTA[local], allTB[local], allEdge[local], allGrid[local]);
+                        analyzeImageIds.push_back(w.id);
+                        analyzeLabD.push_back(wLabD);
+                        analyzeGridD.push_back(wGridD);
+                        analyzeEdgeD.push_back(wEdgeD);
+                    }
+                    // 更新滑动窗口统计
+                    int chosenId = allRecords[bestLibIdx[ti]].id;
+                    recentIds.push_back(chosenId);
+                    freq[chosenId]++;
+                    lastUsedAt[chosenId] = ti;
+                    recentGrids.push_back(pickIdx);
+                    while (static_cast<int>(recentGrids.size()) > GRID_DUP_WINDOW)
+                    {
+                        recentGrids.pop_front();
+                    }
+                    if ((int)recentIds.size() > cfg.neighborWindow)
+                    {
+                        int old = recentIds.front();
+                        recentIds.pop_front();
+                        if (--freq[old] <= 0)
+                        {
+                            freq.erase(old);
+                        }
+                    }
+                }
+
+                msSelect += Ms(Clock::now() - selectionStart).count();
             }
-            if (ti % 5000 == 0 || ti == totalTiles-1) {
-                double e = std::chrono::duration<double>(Clock::now() - tCpuSelectStart).count();
-                double eta = (e / (ti+1)) * (totalTiles - (ti+1));
-                std::string etas = (eta < 1.0) ? " <1s" : (std::to_string(static_cast<int>(eta)) + "s");
-                if (etas.size() < 5) etas = std::string(5 - etas.size(), ' ') + etas;
-                std::cout << "\r  selecting " << std::setw(doneWidth) << (ti+1) << "/" << totalTiles
-                          << " | ETA" << etas << std::flush;
-            }
+            const size_t temporary = featureReader ? featureReader->stats().temporaryPeakBytes : 0;
+            matchingPeakBytes =
+                std::max(matchingPeakBytes, buffers.capacityBytes() + temporary + idxs.capacity() * sizeof(int) +
+                                                scored.capacity() * sizeof(std::pair<double, int>) +
+                                                tileVector.capacity() * sizeof(float));
+            first += count;
+            std::cout << "\r  matching " << first << "/" << totalTiles << std::flush;
         }
-        cntGrid = cntTiny = cntEdge = cntLBP = totalTiles;
-        if (noCandidateCount > 0)
-            std::cout << " (" << noCandidateCount << " tiles no candidates!)";
-        std::cout << " done" << std::endl;
-
-        msSelect = Ms(Clock::now() - tLast).count();
-        bestLibIdx = std::move(bestLibIdxCpu);
+        if (featureReader)
+        {
+            featureReadStats = featureReader->stats();
+        }
+        if (!hasCandidates)
+        {
+            std::cerr << "ERROR: No candidates within --l-range; increase the brightness range." << std::endl;
+            return false;
+        }
+    } // 索引、缓存、线程池及大批次缓冲在贴图/编码之前释放。
+    matchingWallMs = Ms(Clock::now() - matchingStart).count();
+    if (m_selectedObserver)
+    {
+        *m_selectedObserver = bestLibIdx;
+    }
+    std::cout << " done" << std::endl;
+    if (cfg.useGpu && cfg.adaptiveWeights)
+    {
+        std::sort(edgeDistribution.begin(), edgeDistribution.end());
+        std::sort(entropyDistribution.begin(), entropyDistribution.end());
+        auto pct = [](const auto &values, double p)
+        {
+            return values[std::min(values.size() - 1, static_cast<size_t>(p * values.size()))];
+        };
+        std::cout << "  Edge: P50=" << std::fixed << std::setprecision(3) << pct(edgeDistribution, 0.50)
+                  << " P90=" << pct(edgeDistribution, 0.90) << " P95=" << pct(edgeDistribution, 0.95)
+                  << " P99=" << pct(edgeDistribution, 0.99) << "\n"
+                  << "  LBP: P50=" << std::setprecision(2) << pct(entropyDistribution, 0.50)
+                  << " P90=" << pct(entropyDistribution, 0.90) << " P95=" << pct(entropyDistribution, 0.95)
+                  << " P99=" << pct(entropyDistribution, 0.99) << "\n"
+                  << "  Class: S=" << adaptiveSmoothCount << " E=" << adaptiveEdgeCount << " T=" << adaptiveTextureCount
+                  << " N=" << adaptiveNormalCount << "\n";
+    }
+    std::vector<double>().swap(edgeDistribution);
+    std::vector<double>().swap(entropyDistribution);
+    if (cfg.useGpu && cfg.analyze && totalTiles > noCandidateCount)
+    {
+        std::cout << "  Grid 8x8 experiment: Top1 differ=" << top1Differ << "/" << totalTiles - noCandidateCount
+                  << "\n";
+    }
+    cntGrid = cntTiny = cntEdge = cntLBP = totalTiles;
+    if (noCandidateCount)
+    {
+        std::cout << "  " << noCandidateCount << " tiles had no candidates\n";
+    }
+    if (!cfg.analyze)
+    {
+        target.release();
     }
 
     releaseGpuLib();
-    allIndices.clear();
-    allIndices.shrink_to_fit();
     if (!writeIndexedMosaicOutput(cfg, outputPath, tilesX, tilesY, outTileW, outTileH, allRecords, bestLibIdx,
                                   adjustColor, outputStats))
     {
@@ -1898,16 +1929,30 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::cout << "Mosaic saved: " << outputStats.path << " (" << matched << " / " << totalTiles
               << " tiles, loadFail=" << loadFail << ")" << std::endl;
     // 修正特征计数器：各路径可能在 return 前未完整设置
-    if (cntEdge + cntMissEdge == 0) { cntEdge = totalTiles; cntMissEdge = 0; }
-    if (cntGrid + cntMissGrid == 0) { cntGrid = totalTiles; cntMissGrid = 0; }
-    if (cntTiny + cntMissTiny == 0) { cntTiny = totalTiles; cntMissTiny = 0; }
-    if (cntLBP + cntMissLBP == 0)   { cntLBP  = totalTiles; cntMissLBP  = 0; }
+    if (cntEdge + cntMissEdge == 0)
+    {
+        cntEdge = totalTiles;
+        cntMissEdge = 0;
+    }
+    if (cntGrid + cntMissGrid == 0)
+    {
+        cntGrid = totalTiles;
+        cntMissGrid = 0;
+    }
+    if (cntTiny + cntMissTiny == 0)
+    {
+        cntTiny = totalTiles;
+        cntMissTiny = 0;
+    }
+    if (cntLBP + cntMissLBP == 0)
+    {
+        cntLBP = totalTiles;
+        cntMissLBP = 0;
+    }
     std::cout << "  Features used:"
-              << " grid=" << cntGrid << "/" << (cntGrid + cntMissGrid)
-              << " tiny=" << cntTiny << "/" << (cntTiny + cntMissTiny)
-              << " edge=" << cntEdge << "/" << (cntEdge + cntMissEdge)
-              << " lbp=" << cntLBP << "/" << (cntLBP + cntMissLBP)
-              << std::endl;
+              << " grid=" << cntGrid << "/" << (cntGrid + cntMissGrid) << " tiny=" << cntTiny << "/"
+              << (cntTiny + cntMissTiny) << " edge=" << cntEdge << "/" << (cntEdge + cntMissEdge) << " lbp=" << cntLBP
+              << "/" << (cntLBP + cntMissLBP) << std::endl;
 
     // 根据扩展名与 --format 自动切换或保持原路径格式一致
     {

@@ -1,7 +1,9 @@
+#include "../compute/CudaBackend.h"
 #include "../core/AnalysisTiles.h"
 #include "../core/CandidateFeatures.h"
 #include "../core/GridDuplicateCache.h"
 #include "../core/ImageCache.h"
+#include "../core/MatchingAccess.h"
 #include "../core/MosaicOutput.h"
 #include "../core/PngStreamWriter.h"
 #include <deque>
@@ -1050,6 +1052,109 @@ TEST_CASE("output reports incomplete PNG and DeepZoom while empty tiles remain l
     OutputStats stats;
     CHECK_FALSE(writeMosaicOutput(config, prefix, 1, 1, 18, 32, {record}, {0}, {}, stats));
     CHECK(fs::exists(u8path(prefix + "_files/_source_tiles/0_0.jpg")));
+}
+
+TEST_CASE("matching batches preserve seeded choices, padding and empty batches")
+{
+    const MatchingLimits limits;
+    CHECK(matchingBatchRows(limits, 180, 320, 150, 100, true) == 1024);
+    CHECK(matchingBatchRows(MatchingLimits{1, 1, 1024}, 180, 320, 150, 100, false) == 1);
+    CHECK(matchingBatchRows(limits, 180, 320, 10000, 1000000, false) < 1024);
+    CHECK_THROWS_AS(checkedMatchProduct(std::numeric_limits<size_t>::max(), 2), std::overflow_error);
+    FeatureMatrix<float, 192> matrix(10);
+    auto *storage = matrix.data();
+    matrix.resize(1);
+    CHECK(matrix.data() == storage);
+    CHECK_THROWS_AS(matrix.resize(std::numeric_limits<size_t>::max()), std::overflow_error);
+
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    writeTargetImage(workspace.targetPath());
+    auto build = makeBuildRequest(workspace);
+    build.normalizeWidth = 180;
+    build.normalizeHeight = 320;
+    REQUIRE(BuildService().run(build).ok);
+    {
+        Database db(build.dbPath);
+        const auto records = db.allRecords();
+        // 两种后端必须在缓存来源缺失时保留同样的惩罚规则。
+        fs::remove(u8path(records[0].tinyPath));
+        fs::remove(u8path(records[1].histPath));
+    }
+    auto request = makeMosaicRequest(workspace);
+    request.config.outW = 41;
+    request.config.outH = 73;
+    request.config.topNrandom = 3;
+    request.config.lRange = 255;
+    request.config.adaptiveWeights = true;
+    request.config.analyze = true;
+    for (bool gpu : {false, true})
+    {
+        if (gpu && !cuda::isCudaAvailable())
+        {
+            continue;
+        }
+        request.config.useGpu = gpu;
+        std::vector<int> reference;
+        cv::Mat expected;
+        for (size_t batch : {1, 3})
+        {
+            MosaicEngine engine;
+            MatchingAccess::configure(engine, MatchingLimits{limits.hostBytes, limits.featureBytes, batch}, true, 123);
+            std::vector<int> selected;
+            MatchingAccess::captureSelections(engine, selected);
+            REQUIRE(engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config));
+            const auto pixels = imreadUnicode(request.outputPath);
+            REQUIRE(selected.size() == 25);
+            if (batch == 1)
+            {
+                reference = selected;
+                expected = pixels;
+            }
+            else
+            {
+                CHECK(selected == reference);
+                CHECK(cv::norm(pixels, expected, cv::NORM_INF) == 0);
+            }
+        }
+    }
+    // 首批亮度不匹配，后续批次仍须继续；全程无候选则明确失败。
+    cv::Mat partial(64, 36, CV_8UC3, cv::Scalar(0, 0, 0));
+    partial(cv::Rect(18, 0, 18, 64)).setTo(cv::Scalar(119, 119, 119));
+    requireWriteImage(workspace.targetPath(), partial);
+    cv::Mat lab;
+    cv::cvtColor(partial(cv::Rect(18, 0, 18, 64)), lab, cv::COLOR_BGR2Lab);
+    sqlite3 *connection = nullptr;
+    REQUIRE(sqlite3_open(build.dbPath.c_str(), &connection) == SQLITE_OK);
+    const auto sql = "UPDATE images SET avg_l=" + std::to_string(cv::mean(lab)[0]);
+    const auto changed = sqlite3_exec(connection, sql.c_str(), nullptr, nullptr, nullptr);
+    sqlite3_close(connection);
+    REQUIRE(changed == SQLITE_OK);
+    request.config.outW = 36;
+    request.config.outH = 64;
+    request.config.lRange = 1; // CUDA 与 OpenCV 的灰阶 LAB 量化有原有差异。
+    request.config.analyze = false;
+    request.config.topNrandom = 1;
+    for (bool gpu : {false, true})
+    {
+        if (gpu && !cuda::isCudaAvailable())
+        {
+            continue;
+        }
+        request.config.useGpu = gpu;
+        MosaicEngine engine;
+        MatchingAccess::configure(engine, MatchingLimits{limits.hostBytes, limits.featureBytes, 1});
+        std::vector<int> selected;
+        MatchingAccess::captureSelections(engine, selected);
+        REQUIRE(engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config));
+        CHECK(selected.front() == -1);
+        CHECK(selected.back() >= 0);
+        partial.setTo(cv::Scalar(0, 0, 0));
+        requireWriteImage(workspace.targetPath(), partial);
+        CHECK_FALSE(engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config));
+        partial(cv::Rect(18, 0, 18, 64)).setTo(cv::Scalar(119, 119, 119));
+        requireWriteImage(workspace.targetPath(), partial);
+    }
 }
 
 TEST_CASE("PNG multirow writing preserves refresh boundaries and encoded bytes")
