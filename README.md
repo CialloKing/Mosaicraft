@@ -70,6 +70,7 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
 - **FeaturePack** — 特征合并读取，CPU/GPU 共用来源校验，完整同代次缓存通过单一清单发布
 - **建库流水线** — CPU 归一化与 GPU 特征提取并行；GPU 批量 256；CPU 特征按 64 MiB 像素预算、最多 256 张分批并行处理，顺序提交
 - **ImageCache** — 512 MiB 像素字节预算 LRU，共享只读图片；PNG/JPG/TIFF 固定线程池、双行流式输出
+- **有界匹配** — 默认主机批次缓冲 256 MiB、CPU 特征缓存 256 MiB、每批最多 1024 块；任务内复用 ANN、线程池与 CUDA 工作区
 - **Unicode 路径** — 图片及特征文件使用 Unicode 路径读取
 
 ---
@@ -322,4 +323,14 @@ ANN 使用 `features/lib.ann196` 和 `.meta` 缓存。缓存记录格式版本�
 
 五种特征及评分权重保持不变。TinyImage、LBP 的 512 维仍参与精排，粗筛不再存储其零值占位。GPU 评分临时显存上限为 256 MiB，任务内复用特征工作区。启动时 CUDA 不可用则使用 CPU；已开始的 CUDA 计算失败会返回服务错误。
 
-使用 `--benchmark` 查看索引加载/构建、查询、特征提取、CUDA 分配/传输/评分、邻域惩罚、排序、分析、输出和缓存统计。基准脚本 `scripts/benchmark.py` 的 `--analysis-mode off|on|both` 默认 `both`，分别保存普通生成及分析模式结果。当前 v6 缓存与建库优化的耗时、峰值内存和回归结果见 [第一轮性能报告](docs/PERFORMANCE_PHASE1.md)；[v1.14.1 性能报告](docs/PERFORMANCE_v1.14.1.md) 保留历史样本结果。
+使用 `--benchmark` 查看索引加载/构建、查询、特征提取、CUDA 分配/传输/评分、邻域惩罚、排序、分析、输出和缓存统计。基准脚本 `scripts/benchmark.py` 的 `--analysis-mode off|on|both` 默认 `both`，分别保存普通生成及分析模式结果。当前 v6 优化的耗时、峰值内存和回归结果见 [第二轮有界匹配报告](docs/PERFORMANCE_PHASE2.md) 与 [第一轮缓存及建库报告](docs/PERFORMANCE_PHASE1.md)；[v1.14.1 性能报告](docs/PERFORMANCE_v1.14.1.md) 保留历史样本结果。
+
+### 速度优先的有界匹配
+
+匹配按顺序分批完成目标特征、ANN 查询、亮度过滤、评分和选图。主机批次缓冲预算为 256 MiB，CPU 特征缓存载荷预算为 256 MiB，每批最多 1024 块；按特征尺寸、候选数量和缓存容量缩小批次，超预算单块独占一批。缓冲按需增长并复用，邻域去重、最近使用位置和随机数状态贯穿整个任务。CUDA 内部保留 256 张特征提取粒度；预算容得下两套缓冲时，下一批的特征和 ANN 与当前批的 CPU 选图重叠，最终选择仍按顺序执行。CUDA 评分临时显存继续受 256 MiB 及可用显存限制。
+
+有效特征包的完整载荷能放入缓存预算时，CPU 顺序预载并在首次使用记录前校验来源；大库或无有效包使用按需读取的 LRU。缓存损坏、旧缓存和中文路径沿用统一读取及回退规则。选图只保存图库索引，分析保存标量及最差 20 块的详细特征。匹配完成后释放 ANN、缓存和工作区；关闭分析时同时释放目标图。
+
+这些预算约束对应缓冲或特征载荷，未包含完整目标图、图库记录、ANN、缓存元数据及 LRU 管理结构、OpenCV/CUDA 工作区、512 MiB 图片缓存和输出缓冲，不能当作进程总内存上限。目标图仍完整解码，输出策略保持不变。运行中取消、分析数据落盘和 PNG 编码优化留待后续更新。
+
+显式构建 `mosaicraft_match_benchmark` 后，可用 `scripts/benchmark_bounded.py` 对比原 64/64 MiB、256 块方案与默认预算，并记录墙钟、匹配阶段、源特征读取、缓存命中和主机峰值内存。此工具复用 API JSON，允许基准指定小输出 tile，不增加生产 CLI/API 参数。
