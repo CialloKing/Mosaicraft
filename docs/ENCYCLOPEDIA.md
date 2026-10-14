@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-10-14 | 版本 / Version：v1.14.3
+> 最后更新 / Last updated：2026-10-15 | 版本 / Version：v1.14.4
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -355,6 +355,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.14.0 | 196维并行ANN、字节预算缓存、公共流式输出、CUDA缓冲复用与失败处理 | 见性能报告 |
 | 1.14.2 | 默认平均色HSV建库、可恢复全库重编号、v6特征一致性与API 2.0边界修复 | 见验证记录 |
 | 1.14.3 | 特征缓存一致性、有界建库与匹配、任务内缓存及工作区复用、无偏对称亮度调整 | 见性能记录 |
+| 1.14.4 | 基础图透明叠加、全图坐标逐块采样、CLI/API/Web UI 参数同步 | 见叠加验证记录 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -744,3 +745,13 @@ CPU/GPU 共用独立特征文件的 Unicode 读取和来源校验。缓存的 `f
 本机固定 160,000 块样本的 CUDA 总耗时中位数由 43.800 s 降至 33.168 s（约 24.3%），其他场景的收益及内存口径见 [第二轮验收记录](PERFORMANCE_PHASE2.md)。常规 CPU/CUDA 样本分别通过索引、输出哈希及解码像素比较；CUDA 大样本仍存在基线自身的浮点累加顺序与近似同分选图波动，不保证该场景逐字节一致。亮度调整关闭及零强度的 1600 块样本在两种后端中均与调整更新前完全一致。
 
 > **EN**: Version 1.14.3 ships validated feature-cache generations, bounded parallel library builds and bounded matching with task-local caches and reusable workspaces. Host matching buffers and CPU feature payload caches each have a 256 MiB budget, with at most 1024 tiles per batch; these are not process memory limits. Features remain v6 and the HTTP API remains 2.0. Optional brightness jitter remains off by default and now samples 1001 unbiased symmetric LAB L multipliers in `1±strength`; default strength 0.04 spans 0.96–1.04, and zero strength preserves pixels. The fixed local 160,000-tile CUDA benchmark improved by about 24.3%; the reports retain scene-specific results and the existing floating-point near-tie reproducibility limitation.
+
+### v1.14.4: 基础图透明叠加 (2026-10-15)
+
+新增 `--overlay-strength` / API `overlayStrength`，范围为有限数 `0..1`，默认 `0` 关闭。设置大于零的强度即可在选图后混合基础图，例如 `0.2` 为 80% 素材与 20% 基础图。Web UI 同步提供叠加强度输入框和命令生成；同步与异步生成接口均支持。匹配特征仍为 **v6**，HTTP API 合约仍为 **2.0**，无需重建图库。
+
+参考图沿用匹配流程的尺寸调整、upscale 和镜像补边，按全图像素中心坐标逐块双线性采样，跨块读取相邻像素，只有参考图外边界夹紧。普通、流式、分块和 DeepZoom 共用合成入口，DeepZoom 先合成源小图再生成金字塔。素材缓存保持只读，各位置修改独立副本；同时启用随机亮度调整时，先调整素材亮度，再叠加基础图。缺失素材沿用失败计数和背景，分析报告注明分数衡量选图质量，而非最终合成画面。
+
+CUDA 和 CPU-only 构建、完整 CTest、Web UI/API smoke、实际 CUDA 匹配及 24 次样图运行均已验证。关闭叠加的固定样本输出与 1.14.3 完全一致；同条件 PNG 样本的 20% 叠加耗时中位数约 13.37 s，原版约 13.38 s，此结果不代表其他图库或格式的性能。叠加仅保留目标工作图和每个工作线程的小块缓冲，不分配完整输出尺寸的基础图。输出面积相差四倍的两档样本中，新增工作线程缓冲预算均约 2.66 MiB；预算不代表进程总内存上限。详细方法、数据及效果边界见 [基础图叠加验证](BASE_IMAGE_OVERLAY_VERIFICATION.md)。
+
+> **EN**: Version 1.14.4 adds optional base-image overlay through `--overlay-strength` and API `overlayStrength`, with range 0–1 and default 0 (off). The Web UI, synchronous API and asynchronous jobs expose the same setting. Overlay blends the processed working target after matching and optional brightness jitter. Global-coordinate bilinear sampling is shared by regular, streaming, tiled and DeepZoom output; source tiles are composited before pyramid generation. Cached pixels remain immutable and matching features v6/API contract 2.0 stay compatible. Fixed default-output samples match 1.14.3 exactly. Validation covers CPU-only and actual CUDA matching, output paths, parameter bounds and 24 image runs; reported performance and memory budgets are scene-specific.
