@@ -154,6 +154,9 @@ class PinnedBuffer
 class TransferStream
 {
   public:
+    TransferStream() = default;
+    TransferStream(const TransferStream &) = delete;
+    TransferStream &operator=(const TransferStream &) = delete;
     ~TransferStream()
     {
         if (stream)

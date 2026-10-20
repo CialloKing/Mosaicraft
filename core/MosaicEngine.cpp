@@ -1227,23 +1227,44 @@ bool MosaicEngine::generate(const std::string& targetPath,
             workspace = std::make_unique<cuda::FeatureWorkspace>();
             scoreWorkspace = std::make_unique<cuda::ScoreWorkspace>();
             // 先预算并准备全部可选资源；计算开始后不能用同步重算掩盖异步错误。
+            const size_t scoreRowBytes = 9 * sizeof(double) + checkedMatchProduct(N, sizeof(int) + sizeof(double));
             while (batchRows > 1 &&
                    gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze) +
-                           std::min<size_t>(batchRows, 256) * 2072 + scratch > m_limits.hostBytes)
+                           std::min<size_t>(batchRows, 256) * 2072 + batchRows * scoreRowBytes + scratch >
+                       m_limits.hostBytes)
             {
                 batchRows /= 2;
             }
             maximumBatchTiles = batchRows;
             const size_t hostRows = gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, true);
-            if (m_limits.cudaPipeline && hostRows + scratch < m_limits.hostBytes)
+            const size_t scoreHost = batchRows * scoreRowBytes;
+            if (m_limits.cudaPipeline && hostRows + scratch + scoreHost < m_limits.hostBytes &&
+                scoreRowBytes < 256ULL * 1024 * 1024)
             {
                 cuda::FeaturePipelineConfig options;
-                options.maxTiles = static_cast<int>(std::min<size_t>(batchRows, 256));
+                options.maxTiles = static_cast<int>(batchRows);
                 options.width = featW;
                 options.height = featH;
-                options.hostBudget = m_limits.hostBytes - hostRows - scratch;
+                options.downloadTiny = cfg.analyze;
+                options.downloadLbp = cfg.analyze || cfg.adaptiveWeights;
+                options.hostBudget = m_limits.hostBytes - hostRows - scratch - scoreHost;
+                options.deviceBudget -= scoreRowBytes;
                 pipeline = workspace->preparePipeline(options, cfg.benchmark ? &featureTimings : nullptr);
-                pinnedBytes = workspace->pinnedBytes();
+                if (pipeline)
+                {
+                    const auto allocationStart = Clock::now();
+                    pipeline = scoreWorkspace->preparePipeline(static_cast<int>(batchRows), N, scoreHost,
+                                                                 workspace->residentBytes());
+                    scoreTimings.allocationMs += Ms(Clock::now() - allocationStart).count();
+                }
+                if (!pipeline)
+                {
+                    // 释放已部分准备的可选资源后，才允许使用完整的原同步 CUDA 路径。
+                    workspace->resetPipeline();
+                    scoreWorkspace->resetPipeline();
+                    featureTimings.pinnedBytes = featureTimings.residentBytes = featureTimings.pixelBytes = 0;
+                }
+                pinnedBytes = workspace->pinnedBytes() + scoreWorkspace->pinnedBytes();
             }
         }
         std::unique_ptr<FeaturePack::Reader> featureReader;
@@ -1296,14 +1317,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
             {
                 // CUDA 沿用原有 256 张提取粒度；外层较大批次仍统一查询、评分和顺序选图。
                 // 复用输入暂存，避免放大 kernel/暂存容量导致吞吐回退。
+                if (pipeline)
+                {
+                    workspace->beginBatch(count);
+                }
                 for (int piece = 0; piece < count; piece += 256)
                 {
                     const int pieceCount = std::min(256, count - piece);
                     auto *input = pipeline ? workspace->pipelineInput() : buffers.images.data();
-                    if (pipeline)
-                    {
-                        workspace->beginBatch(pieceCount);
-                    }
                     featureWorkers.run(
                         pieceCount,
                         [&](size_t local)
@@ -1316,7 +1337,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         });
                     if (pipeline)
                     {
-                        workspace->extract(0, pieceCount, buffers.lab.data() + piece * 3, allGrid[piece].data(),
+                        workspace->extract(piece, pieceCount, buffers.lab.data() + piece * 3, allGrid[piece].data(),
                                            allTiny[piece].data(), allEdge.data() + piece, allLBP[piece].data(),
                                            cfg.benchmark ? &featureTimings : nullptr);
                     }
@@ -1543,11 +1564,18 @@ bool MosaicEngine::generate(const std::string& targetPath,
             {
                 const auto scoreStart = Clock::now();
                 cuda::GpuTimings batchTimings;
-                if (!cuda::scoreBatch(count, allTL.data(), allTA.data(), allTB.data(), allGrid.data(), allTiny.data(),
+                const bool scoredOnGpu = pipeline
+                    ? cuda::scoreDeviceBatch(workspace->deviceView(0, count), allTL.data(), allTA.data(), allTB.data(),
+                                             allEdge.data(), allIndices.data(), N, gpuLib, tileLabW.data(),
+                                             tileGridW.data(), tileTinyW.data(), tileEdgeW.data(), tileLbpW.data(),
+                                             cfg.usePenalty, allScores.data(), *scoreWorkspace,
+                                             cfg.benchmark ? &batchTimings : nullptr)
+                    : cuda::scoreBatch(count, allTL.data(), allTA.data(), allTB.data(), allGrid.data(), allTiny.data(),
                                       allEdge.data(), allLBP.data(), allIndices.data(), N, gpuLib, tileLabW.data(),
                                       tileGridW.data(), tileTinyW.data(), tileEdgeW.data(), tileLbpW.data(),
                                       cfg.usePenalty, allScores.data(), cfg.benchmark ? &batchTimings : nullptr,
-                                      256ULL * 1024 * 1024 - workspace->residentBytes(), scoreWorkspace.get()))
+                                      256ULL * 1024 * 1024, scoreWorkspace.get());
+                if (!scoredOnGpu)
                 {
                     std::cerr << "ERROR: GPU scoring failed; mosaic was not generated." << std::endl;
                     return false;

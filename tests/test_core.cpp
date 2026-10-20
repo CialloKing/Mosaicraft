@@ -1492,6 +1492,26 @@ TEST_CASE("CUDA pipeline preserves features and drains failed work")
         CHECK_FALSE(pipeline.preparePipeline(config));
         CHECK(pipeline.pinnedBytes() == 0);
         config.hostBudget = 256ULL * 1024 * 1024;
+        config.downloadTiny = false;
+        config.downloadLbp = false;
+        REQUIRE(pipeline.preparePipeline(config));
+        std::copy(images.begin(), images.end(), pipeline.pipelineInput());
+        pipeline.beginBatch(3);
+        // 普通模式只下载 LAB/Grid；CPU Canny 和驻留的 Tiny/LBP 仍照常计算。
+        std::fill(tiny.begin(), tiny.end(), 77);
+        std::fill(lbp.begin(), lbp.end(), -1.0f);
+        pipeline.extract(0, 3, lab.data(), grid.data(), tiny.data(), edge.data(), lbp.data());
+        CHECK(std::all_of(tiny.begin(), tiny.end(), [](uint8_t v)
+                         {
+                             return v == 77;
+                         }));
+        CHECK(std::all_of(lbp.begin(), lbp.end(), [](float v)
+                         {
+                             return v == -1.0f;
+                         }));
+        CHECK(edge == expectedEdge);
+        CHECK(pipeline.pinnedBytes() == bytes + 3 * (24 + 768));
+        config.downloadTiny = config.downloadLbp = true;
         for (auto fault : {PipelineFault::PinnedAllocation, PipelineFault::DeviceAllocation})
         {
             config.testFault = fault;
@@ -1509,6 +1529,110 @@ TEST_CASE("CUDA pipeline preserves features and drains failed work")
                             std::runtime_error);
             CHECK_THROWS_AS(pipeline.deviceView(0, 3), std::invalid_argument);
             pipeline.resetPipeline();
+        }
+    }
+}
+
+TEST_CASE("CUDA resident scoring replays fixed features exactly across batch boundaries")
+{
+    using namespace mosaicraft::cuda;
+    if (!isCudaAvailable())
+    {
+        return;
+    }
+    FeatureWorkspace features;
+    FeaturePipelineConfig config;
+    config.maxTiles = 1024;
+    REQUIRE(features.preparePipeline(config));
+    std::vector<double> lab(1024 * 3), edge(1024), l(1024), a(1024), b(1024), weight(1024, 0.2);
+    std::vector<float> grid(1024 * 192), lbp(1024 * 256);
+    std::vector<uint8_t> tiny(1024 * 256);
+    std::vector<int> indices(1024 * 3);
+    for (int count : {256, 257, 1024, 7})
+    {
+        features.beginBatch(count);
+        for (int first = 0; first < count; first += 256)
+        {
+            const int rows = std::min(256, count - first);
+            for (size_t i = 0; i < static_cast<size_t>(rows) * 180 * 320 * 3; ++i)
+            {
+                features.pipelineInput()[i] = static_cast<uint8_t>((i * 17 + i / 97 + first) % 256);
+            }
+            features.extract(first, rows, lab.data() + first * 3, grid.data() + first * 192,
+                              tiny.data() + first * 256, edge.data() + first, lbp.data() + first * 256);
+        }
+        GpuLibrary library;
+        struct Cleanup
+        {
+            GpuLibrary &library;
+            ~Cleanup()
+            {
+                freeLibrary(library);
+            }
+        } cleanup{library};
+        int use[] = {1, 2, 3, 4};
+        uint8_t valid[] = {1, 0, 1, 1};
+        REQUIRE(uploadLibrary(library, lab.data(), grid.data(), tiny.data(), edge.data(), lbp.data(), use, 4,
+                              nullptr, valid, valid));
+        for (int i = 0; i < count; ++i)
+        {
+            l[i] = lab[i * 3];
+            a[i] = lab[i * 3 + 1];
+            b[i] = lab[i * 3 + 2];
+            indices[i * 3] = i % 4;
+            indices[i * 3 + 1] = (i + 1) % 4;
+            indices[i * 3 + 2] = -1;
+        }
+        std::vector<double> expected(count * 3), actual(count * 3);
+        // 只提取一次：旧评分上传同一份张量，新评分引用原显存，必须逐位相同。
+        REQUIRE(scoreBatch(count, l.data(), a.data(), b.data(), grid.data(), tiny.data(), edge.data(),
+                            lbp.data(), indices.data(), 3, library, weight.data(), weight.data(), weight.data(),
+                            weight.data(), weight.data(), 0.01, expected.data()));
+        ScoreWorkspace scores;
+        const auto view = features.deviceView(0, count);
+        auto replay = [&](const DeviceFeatureView &input)
+        {
+            return scoreDeviceBatch(input, l.data(), a.data(), b.data(), edge.data(), indices.data(), 3, library,
+                                     weight.data(), weight.data(), weight.data(), weight.data(), weight.data(),
+                                     0.01, actual.data(), scores);
+        };
+        for (int rows : {1024, 256, 1})
+        {
+            const size_t bytes = rows * (9 * sizeof(double) + 3 * (sizeof(int) + sizeof(double)));
+            REQUIRE(scores.preparePipeline(count, 3, bytes, features.residentBytes(),
+                                            features.residentBytes() + bytes));
+            REQUIRE(replay(view));
+            CHECK(actual == expected);
+            CHECK(scores.pinnedBytes() <= bytes);
+        }
+        CHECK_FALSE(scores.preparePipeline(count, 3, 1, features.residentBytes()));
+        for (auto fault : {PipelineFault::PinnedAllocation, PipelineFault::DeviceAllocation})
+        {
+            CHECK_FALSE(scores.preparePipeline(count, 3, 1024 * 108, features.residentBytes(),
+                                                256ULL * 1024 * 1024, fault));
+            CHECK(scores.pinnedBytes() == 0);
+        }
+        for (auto fault : {PipelineFault::AfterUpload, PipelineFault::BeforeWait})
+        {
+            REQUIRE(scores.preparePipeline(count, 3, 1024 * 108, features.residentBytes(),
+                                            256ULL * 1024 * 1024, fault));
+            CHECK_THROWS_AS(replay(view), std::runtime_error);
+            scores.resetPipeline();
+        }
+        REQUIRE(scores.preparePipeline(count, 3, 1024 * 108, features.residentBytes()));
+        auto invalid = view;
+        invalid.count = count + 1;
+        CHECK_FALSE(replay(invalid));
+        invalid = view;
+        invalid.first = -1;
+        CHECK_FALSE(replay(invalid));
+        features.beginBatch(1);
+        CHECK_FALSE(replay(view));
+        if (count == 7)
+        {
+            features.resetPipeline();
+            CHECK(view.state.expired());
+            CHECK_FALSE(replay(view));
         }
     }
 }

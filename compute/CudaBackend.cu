@@ -9,19 +9,88 @@
 #include <cstdio>
 #include <cstdint>
 #include <limits>
+#include <cstring>
 #include <vector>
 
 namespace mosaicraft {
 namespace cuda {
 
+struct ScorePipeline
+{
+    PinnedBuffer staging;
+    int maxTiles = 0, candidates = 0;
+    size_t residentBytes = 0;
+    PipelineFault testFault = PipelineFault::None;
+    TransferStream transfer;
+};
+
 struct ScoreWorkspace::Impl
 {
     DeviceBuffer<std::uint8_t> storage;
+    std::unique_ptr<ScorePipeline> pipeline;
 };
 ScoreWorkspace::ScoreWorkspace() : buffers(std::make_unique<Impl>())
 {
 }
 ScoreWorkspace::~ScoreWorkspace() = default;
+
+bool ScoreWorkspace::preparePipeline(int maxTiles, int candidates, size_t hostBudget, size_t residentBytes,
+                                     size_t temporaryBudget, PipelineFault testFault)
+{
+    resetPipeline();
+    if (maxTiles <= 0 || candidates <= 0 || maxTiles > std::numeric_limits<int>::max() / candidates)
+    {
+        throw std::invalid_argument("invalid CUDA score pipeline dimensions");
+    }
+    size_t freeBytes = 0, totalBytes = 0;
+    requireCuda(cudaMemGetInfo(&freeBytes, &totalBytes));
+    const size_t totalBudget = std::min<size_t>(temporaryBudget, 256ULL * 1024 * 1024);
+    if (residentBytes >= totalBudget)
+    {
+        return false;
+    }
+    const size_t rowBytes = 9 * sizeof(double) + static_cast<size_t>(candidates) * (sizeof(int) + sizeof(double));
+    const size_t budget = std::min({hostBudget, totalBudget - residentBytes, freeBytes / 2});
+    const size_t rows = std::min<size_t>(maxTiles, budget / rowBytes);
+    if (rows == 0)
+    {
+        return false;
+    }
+    try
+    {
+        auto p = std::make_unique<ScorePipeline>();
+        if (!optionalCudaAllocation(p->staging.allocate(rows * rowBytes)) ||
+            testFault == PipelineFault::PinnedAllocation ||
+            !optionalCudaAllocation(buffers->storage.allocate(rows * rowBytes)) ||
+            testFault == PipelineFault::DeviceAllocation || !p->transfer.create())
+        {
+            buffers->storage.reset();
+            return false;
+        }
+        p->maxTiles = static_cast<int>(rows);
+        p->candidates = candidates;
+        p->residentBytes = residentBytes;
+        p->testFault = testFault;
+        buffers->pipeline = std::move(p);
+        return true;
+    }
+    catch (const std::bad_alloc &)
+    {
+        buffers->storage.reset();
+        return false;
+    }
+}
+
+void ScoreWorkspace::resetPipeline()
+{
+    buffers->pipeline.reset();
+    buffers->storage.reset();
+}
+
+size_t ScoreWorkspace::pinnedBytes() const
+{
+    return buffers->pipeline ? buffers->pipeline->staging.capacityBytes() : 0;
+}
 
 namespace {
 
@@ -897,6 +966,101 @@ bool scoreBatch(int totalTiles, const double *h_tileL, const double *h_tileA, co
             }
         }
     }
+    return true;
+}
+
+// ============================================================
+// 已驻留特征的评分仍调用同一个 kernel，CPU 顺序选图只能在下载完成后开始。
+// ============================================================
+bool scoreDeviceBatch(const DeviceFeatureView &features, const double *l, const double *a, const double *b,
+                      const double *edge, const int *indices, int N, const GpuLibrary &lib, const double *labW,
+                      const double *gridW, const double *tinyW, const double *edgeW, const double *lbpW,
+                      double usePenalty, double *scores, ScoreWorkspace &workspace, GpuTimings *timings,
+                      size_t temporaryBudget)
+{
+    if (timings)
+    {
+        *timings = {};
+    }
+    auto state = features.state.lock();
+    auto *p = workspace.buffers->pipeline.get();
+    if (!state || !p || state->generation != features.generation || features.first < 0 || features.count <= 0 ||
+        features.first > state->ready || features.count > state->ready - features.first ||
+        N != p->candidates || features.count > std::numeric_limits<int>::max() / N ||
+        !l || !a || !b || !edge || !indices || !labW || !gridW || !tinyW || !edgeW || !lbpW || !scores ||
+        !hasValidLibrary(lib) || state->bytes > p->residentBytes)
+    {
+        return false;
+    }
+    auto &storage = workspace.buffers->storage;
+    size_t freeBytes = 0, totalBytes = 0;
+    requireCuda(cudaMemGetInfo(&freeBytes, &totalBytes));
+    const size_t budget = std::min<size_t>(temporaryBudget, 256ULL * 1024 * 1024);
+    if (p->residentBytes > budget || storage.capacityBytes() > budget - p->residentBytes ||
+        storage.capacityBytes() > freeBytes / 2)
+    {
+        return false;
+    }
+    if (timings)
+    {
+        timings->pinnedBytes = workspace.pinnedBytes();
+        timings->peakTemporaryBytes = storage.capacityBytes() + p->residentBytes;
+        timings->residentBytes = p->residentBytes;
+    }
+    auto &transfer = p->transfer;
+    StreamDrain drain(transfer.stream);
+    for (int first = 0; first < features.count; first += p->maxTiles)
+    {
+        const int count = std::min(p->maxTiles, features.count - first);
+        const size_t work = static_cast<size_t>(count) * N;
+        const size_t featureFirst = static_cast<size_t>(features.first + first);
+        auto *values = reinterpret_cast<double *>(p->staging.get());
+        auto *hostScores = values + count * 9;
+        auto *hostIndices = reinterpret_cast<int *>(hostScores + work);
+        const double *columns[] = {l, a, b, edge, labW, gridW, tinyW, edgeW, lbpW};
+        for (int column = 0; column < 9; ++column)
+        {
+            std::memcpy(values + column * count, columns[column] + first, count * sizeof(double));
+        }
+        std::memcpy(hostIndices, indices + static_cast<size_t>(first) * N, work * sizeof(int));
+        auto *device = reinterpret_cast<double *>(storage.get());
+        auto *deviceScores = device + count * 9;
+        auto *deviceIndices = reinterpret_cast<int *>(deviceScores + work);
+        transfer.mark(0);
+        requireCuda(cudaMemcpyAsync(device, values, count * 9 * sizeof(double), cudaMemcpyHostToDevice,
+                                    transfer.stream));
+        requireCuda(cudaMemcpyAsync(deviceIndices, hostIndices, work * sizeof(int), cudaMemcpyHostToDevice,
+                                    transfer.stream));
+        if (p->testFault == PipelineFault::AfterUpload)
+        {
+            throw std::runtime_error("injected score failure after upload");
+        }
+        transfer.mark(1);
+        const int blockSize = 256;
+        scoreBatchKernel<<<static_cast<int>((work + blockSize - 1) / blockSize), blockSize, 0, transfer.stream>>>(
+            count, device, device + count, device + count * 2, state->grid + featureFirst * 192,
+            state->tiny + featureFirst * 256, device + count * 3, state->lbp + featureFirst * 256, deviceIndices, N,
+            lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use, lib.d_tinyValid, lib.d_lbpValid,
+            lib.count, device + count * 4, device + count * 5, device + count * 6, device + count * 7,
+            device + count * 8, usePenalty, deviceScores);
+        requireCuda(cudaGetLastError());
+        transfer.mark(2);
+        requireCuda(cudaMemcpyAsync(hostScores, deviceScores, work * sizeof(double), cudaMemcpyDeviceToHost,
+                                    transfer.stream));
+        transfer.mark(3);
+        if (p->testFault == PipelineFault::BeforeWait)
+        {
+            throw std::runtime_error("injected score failure before completion");
+        }
+        transfer.finish(timings);
+        std::memcpy(scores + static_cast<size_t>(first) * N, hostScores, work * sizeof(double));
+        if (timings)
+        {
+            timings->uploadBytes += count * 9 * sizeof(double) + work * sizeof(int);
+            timings->downloadBytes += work * sizeof(double);
+        }
+    }
+    drain.complete();
     return true;
 }
 

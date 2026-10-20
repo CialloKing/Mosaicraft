@@ -923,10 +923,19 @@ void FeatureWorkspace::extract(int first, int count, double *lab, float *grid, u
         extractPipelined<W, H>(*p, first, count, lab, grid, tiny, edge, lbp, timings);                            \
         return;                                                                                                \
     }
-    EXTRACT_PIPELINE(180, 320)
-    EXTRACT_PIPELINE(320, 180)
-    EXTRACT_PIPELINE(360, 640)
-    EXTRACT_PIPELINE(640, 360)
+    try
+    {
+        EXTRACT_PIPELINE(180, 320)
+        EXTRACT_PIPELINE(320, 180)
+        EXTRACT_PIPELINE(360, 640)
+        EXTRACT_PIPELINE(640, 360)
+    }
+    catch (...)
+    {
+        ++p->state->generation;
+        p->state->count = p->state->ready = 0;
+        throw;
+    }
 #undef EXTRACT_PIPELINE
 }
 

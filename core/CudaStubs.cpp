@@ -53,6 +53,24 @@ struct ScoreWorkspace::Impl
 ScoreWorkspace::ScoreWorkspace() = default;
 ScoreWorkspace::~ScoreWorkspace() = default;
 
+bool ScoreWorkspace::preparePipeline(int, int, std::size_t, std::size_t, std::size_t, PipelineFault)
+{
+    return false;
+}
+void ScoreWorkspace::resetPipeline()
+{
+}
+std::size_t ScoreWorkspace::pinnedBytes() const
+{
+    return 0;
+}
+bool scoreDeviceBatch(const DeviceFeatureView &, const double *, const double *, const double *, const double *,
+                      const int *, int, const GpuLibrary &, const double *, const double *, const double *,
+                      const double *, const double *, double, double *, ScoreWorkspace &, GpuTimings *, std::size_t)
+{
+    return false;
+}
+
 bool isCudaAvailable()
 {
     return false;
