@@ -1437,6 +1437,82 @@ TEST_CASE("bruteforce removal preserves moved labels and removes the last label"
     CHECK(index.searchKnn(point, 3).empty());
 }
 
+TEST_CASE("CUDA pipeline preserves features and drains failed work")
+{
+    using namespace mosaicraft::cuda;
+    if (!isCudaAvailable())
+    {
+        return;
+    }
+    for (auto size : {cv::Size(180, 320), cv::Size(320, 180), cv::Size(360, 640), cv::Size(640, 360)})
+    {
+        FeatureWorkspace legacy, pipeline;
+        FeaturePipelineConfig config;
+        config.maxTiles = 3;
+        config.width = size.width;
+        config.height = size.height;
+        const size_t bytes = static_cast<size_t>(size.area()) * 3 * config.maxTiles;
+        std::vector<uint8_t> images(bytes), tiny(3 * 256), expectedTiny(3 * 256);
+        for (size_t i = 0; i < bytes; ++i)
+        {
+            images[i] = static_cast<uint8_t>((i * 17 + i / 97) % 256);
+        }
+        std::vector<double> lab(9), expectedLab(9), edge(3), expectedEdge(3);
+        std::vector<float> grid(3 * 192), expectedGrid(3 * 192), lbp(3 * 256), expectedLbp(3 * 256);
+        REQUIRE(extractFeaturesRaw(images.data(), 3, size.width, size.height, expectedLab.data(),
+                                   expectedGrid.data(), expectedTiny.data(), expectedEdge.data(),
+                                   expectedLbp.data(), &legacy) == 0);
+        GpuTimings timings;
+        REQUIRE(pipeline.preparePipeline(config, &timings));
+        CHECK(pipeline.pinnedBytes() == bytes + 3 * 2072);
+        auto *input = pipeline.pipelineInput();
+        std::copy(images.begin(), images.end(), input);
+        pipeline.beginBatch(3);
+        pipeline.extract(0, 3, lab.data(), grid.data(), tiny.data(), edge.data(), lbp.data(), &timings);
+        CHECK(tiny == expectedTiny);
+        CHECK(lbp == expectedLbp);
+        CHECK(edge == expectedEdge);
+        for (size_t i = 0; i < lab.size(); ++i)
+        {
+            CHECK(std::abs(lab[i] - expectedLab[i]) < 0.001);
+        }
+        for (size_t i = 0; i < grid.size(); ++i)
+        {
+            CHECK(std::abs(grid[i] - expectedGrid[i]) < 0.001f);
+        }
+        CHECK(timings.uploadBytes == bytes);
+        CHECK(timings.downloadBytes == 3 * 2072);
+        CHECK(timings.eventComputeMs > 0);
+        pipeline.beginBatch(1);
+        pipeline.extract(0, 1, lab.data(), grid.data(), tiny.data(), edge.data(), lbp.data());
+        CHECK(pipeline.pipelineInput() == input);
+        CHECK_THROWS_AS(pipeline.extract(0, 1, lab.data(), grid.data(), tiny.data(), edge.data(), lbp.data()),
+                        std::invalid_argument);
+        config.hostBudget = bytes;
+        CHECK_FALSE(pipeline.preparePipeline(config));
+        CHECK(pipeline.pinnedBytes() == 0);
+        config.hostBudget = 256ULL * 1024 * 1024;
+        for (auto fault : {PipelineFault::PinnedAllocation, PipelineFault::DeviceAllocation})
+        {
+            config.testFault = fault;
+            CHECK_FALSE(pipeline.preparePipeline(config));
+            CHECK(pipeline.pipelineInput() == nullptr);
+            CHECK(pipeline.residentBytes() == 0);
+        }
+        for (auto fault : {PipelineFault::AfterUpload, PipelineFault::CpuTask, PipelineFault::BeforeWait})
+        {
+            config.testFault = fault;
+            REQUIRE(pipeline.preparePipeline(config));
+            std::copy(images.begin(), images.end(), pipeline.pipelineInput());
+            pipeline.beginBatch(3);
+            CHECK_THROWS_AS(pipeline.extract(0, 3, lab.data(), grid.data(), tiny.data(), edge.data(), lbp.data()),
+                            std::runtime_error);
+            CHECK_THROWS_AS(pipeline.deviceView(0, 3), std::invalid_argument);
+            pipeline.resetPipeline();
+        }
+    }
+}
+
 TEST_CASE("CUDA reuses feature workspace and scoring batches preserve scores")
 {
     using namespace mosaicraft::cuda;

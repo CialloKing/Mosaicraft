@@ -2,6 +2,7 @@
 #include "compute/CudaBackend.h"
 #include <cfloat>
 #include <cstdio>
+#include <stdexcept>
 
 namespace mosaicraft
 {
@@ -13,6 +14,38 @@ struct FeatureWorkspace::Impl
 };
 FeatureWorkspace::FeatureWorkspace() = default;
 FeatureWorkspace::~FeatureWorkspace() = default;
+
+bool FeatureWorkspace::preparePipeline(const FeaturePipelineConfig &, GpuTimings *)
+{
+    return false;
+}
+void FeatureWorkspace::resetPipeline()
+{
+}
+std::uint8_t *FeatureWorkspace::pipelineInput()
+{
+    return nullptr;
+}
+std::size_t FeatureWorkspace::pinnedBytes() const
+{
+    return 0;
+}
+std::size_t FeatureWorkspace::residentBytes() const
+{
+    return 0;
+}
+void FeatureWorkspace::beginBatch(int)
+{
+    throw std::runtime_error("CUDA is not available");
+}
+void FeatureWorkspace::extract(int, int, double *, float *, std::uint8_t *, double *, float *, GpuTimings *)
+{
+    throw std::runtime_error("CUDA is not available");
+}
+DeviceFeatureView FeatureWorkspace::deviceView(int, int) const
+{
+    throw std::runtime_error("CUDA is not available");
+}
 
 struct ScoreWorkspace::Impl
 {

@@ -19,6 +19,30 @@ struct GpuTimings
     std::size_t peakTemporaryBytes = 0;
 };
 
+// 仅内部回归注入；生产配置不暴露故障或流水线开关。
+enum class PipelineFault
+{
+    None, PinnedAllocation, DeviceAllocation, AfterUpload, CpuTask, BeforeWait
+};
+
+struct FeaturePipelineConfig
+{
+    int maxTiles = 256, width = 180, height = 320;
+    bool downloadTiny = true, downloadLbp = true;
+    std::size_t hostBudget = 256ULL * 1024 * 1024;
+    std::size_t deviceBudget = 256ULL * 1024 * 1024;
+    PipelineFault testFault = PipelineFault::None;
+};
+
+struct DeviceFeatureState;
+struct DeviceFeatureView
+{
+    // 弱引用防止任务结束后的视图继续访问已释放显存；generation 防止跨批误用。
+    std::weak_ptr<const DeviceFeatureState> state;
+    std::uint64_t generation = 0;
+    int first = 0, count = 0;
+};
+
 // 每次建库或生成任务独占，不跨线程共享。
 class FeatureWorkspace
 {
@@ -29,6 +53,16 @@ class FeatureWorkspace
     ~FeatureWorkspace();
     FeatureWorkspace(const FeatureWorkspace &) = delete;
     FeatureWorkspace &operator=(const FeatureWorkspace &) = delete;
+    // 只有计算开始前的可选资源不足返回 false；运行期错误抛出并收束本任务 stream。
+    bool preparePipeline(const FeaturePipelineConfig &config, GpuTimings *timings = nullptr);
+    void resetPipeline();
+    std::uint8_t *pipelineInput();
+    std::size_t pinnedBytes() const;
+    std::size_t residentBytes() const;
+    void beginBatch(int count);
+    void extract(int first, int count, double *lab, float *grid, std::uint8_t *tiny, double *edge, float *lbp,
+                 GpuTimings *timings = nullptr);
+    DeviceFeatureView deviceView(int first, int count) const;
 };
 
 // 生成任务跨主机批次复用评分显存，仍由 scoreBatch 检查可用显存和预算。

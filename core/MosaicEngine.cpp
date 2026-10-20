@@ -1156,7 +1156,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     };
 
     // 可控匹配缓冲按预算分批；图库记录和精简选择结果仍独立持有。
-    const size_t batchRows =
+    size_t batchRows =
         std::min<size_t>(totalTiles, matchingBatchRows(m_limits, featW, featH, N, dbCount, cfg.useGpu));
     maximumBatchTiles = batchRows;
     int noCandidateCount = 0;
@@ -1218,10 +1218,33 @@ bool MosaicEngine::generate(const std::string& targetPath,
         WorkerPool featureWorkers(static_cast<unsigned>(std::min<size_t>(batchRows, featureThreads)));
         std::unique_ptr<cuda::FeatureWorkspace> workspace;
         std::unique_ptr<cuda::ScoreWorkspace> scoreWorkspace;
+        const size_t scratch = checkedMatchProduct(N, sizeof(int) + sizeof(std::pair<double, int>)) +
+                               FeatureIndex::kDimension * sizeof(float);
+        bool pipeline = false;
+        size_t pinnedBytes = 0;
         if (cfg.useGpu)
         {
             workspace = std::make_unique<cuda::FeatureWorkspace>();
             scoreWorkspace = std::make_unique<cuda::ScoreWorkspace>();
+            // 先预算并准备全部可选资源；计算开始后不能用同步重算掩盖异步错误。
+            while (batchRows > 1 &&
+                   gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze) +
+                           std::min<size_t>(batchRows, 256) * 2072 + scratch > m_limits.hostBytes)
+            {
+                batchRows /= 2;
+            }
+            maximumBatchTiles = batchRows;
+            const size_t hostRows = gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, true);
+            if (m_limits.cudaPipeline && hostRows + scratch < m_limits.hostBytes)
+            {
+                cuda::FeaturePipelineConfig options;
+                options.maxTiles = static_cast<int>(std::min<size_t>(batchRows, 256));
+                options.width = featW;
+                options.height = featH;
+                options.hostBudget = m_limits.hostBytes - hostRows - scratch;
+                pipeline = workspace->preparePipeline(options, cfg.benchmark ? &featureTimings : nullptr);
+                pinnedBytes = workspace->pinnedBytes();
+            }
         }
         std::unique_ptr<FeaturePack::Reader> featureReader;
         if (!cfg.useGpu || cfg.analyze)
@@ -1252,7 +1275,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         MatchingBuffers ahead;
         auto prepare = [&](int first, int count, MatchingBuffers &buffers)
         {
-            buffers.resize(count, featBytes, N, cfg.useGpu, cfg.analyze);
+            buffers.resize(count, featBytes, N, cfg.useGpu, cfg.analyze, pipeline);
             auto &allTL = buffers.l;
             auto &allTA = buffers.a;
             auto &allTB = buffers.b;
@@ -1276,6 +1299,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 for (int piece = 0; piece < count; piece += 256)
                 {
                     const int pieceCount = std::min(256, count - piece);
+                    auto *input = pipeline ? workspace->pipelineInput() : buffers.images.data();
+                    if (pipeline)
+                    {
+                        workspace->beginBatch(pieceCount);
+                    }
                     featureWorkers.run(
                         pieceCount,
                         [&](size_t local)
@@ -1283,11 +1311,16 @@ bool MosaicEngine::generate(const std::string& targetPath,
                             const int ti = first + piece + static_cast<int>(local);
                             cv::Mat roi = target(
                                 cv::Rect((ti % tilesX) * cfg.tileW, (ti / tilesX) * cfg.tileH, cfg.tileW, cfg.tileH));
-                            cv::Mat resized;
+                            cv::Mat resized(featH, featW, CV_8UC3, input + local * featBytes);
                             cv::resize(roi, resized, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
-                            std::memcpy(buffers.images.data() + local * featBytes, resized.data, featBytes);
                         });
-                    if (cuda::extractFeaturesRaw(buffers.images.data(), pieceCount, featW, featH,
+                    if (pipeline)
+                    {
+                        workspace->extract(0, pieceCount, buffers.lab.data() + piece * 3, allGrid[piece].data(),
+                                           allTiny[piece].data(), allEdge.data() + piece, allLBP[piece].data(),
+                                           cfg.benchmark ? &featureTimings : nullptr);
+                    }
+                    else if (cuda::extractFeaturesRaw(input, pieceCount, featW, featH,
                                                  buffers.lab.data() + piece * 3, allGrid[piece].data(),
                                                  allTiny[piece].data(), allEdge.data() + piece, allLBP[piece].data(),
                                                  workspace.get(), cfg.benchmark ? &featureTimings : nullptr) < 0)
@@ -1467,11 +1500,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
             return true;
         };
-        const size_t scratch = checkedMatchProduct(N, sizeof(int) + sizeof(std::pair<double, int>)) +
-                               FeatureIndex::kDimension * sizeof(float);
         const bool prefetch =
-            cfg.useGpu && totalTiles > batchRows && m_limits.hostBytes >= scratch &&
-            gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze) <= (m_limits.hostBytes - scratch) / 2;
+            cfg.useGpu && totalTiles > batchRows && m_limits.hostBytes >= scratch + pinnedBytes &&
+            gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, pipeline) <=
+                (m_limits.hostBytes - scratch - pinnedBytes) / 2;
         matchingPrefetch = prefetch;
         bool preparedNext = false;
         // 池必须在缓冲/prepare 之后创建，错误退出也会先等待预取线程，再销毁它引用的数据。
@@ -1515,7 +1547,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                                       allEdge.data(), allLBP.data(), allIndices.data(), N, gpuLib, tileLabW.data(),
                                       tileGridW.data(), tileTinyW.data(), tileEdgeW.data(), tileLbpW.data(),
                                       cfg.usePenalty, allScores.data(), cfg.benchmark ? &batchTimings : nullptr,
-                                      256ULL * 1024 * 1024, scoreWorkspace.get()))
+                                      256ULL * 1024 * 1024 - workspace->residentBytes(), scoreWorkspace.get()))
                 {
                     std::cerr << "ERROR: GPU scoring failed; mosaic was not generated." << std::endl;
                     return false;
@@ -1949,7 +1981,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
             const size_t temporary = featureReader ? featureReader->stats().temporaryPeakBytes : 0;
             matchingPeakBytes = std::max(matchingPeakBytes, buffers.capacityBytes() + ahead.capacityBytes() +
-                                                                temporary + idxs.capacity() * sizeof(int) +
+                                                                temporary + pinnedBytes + idxs.capacity() * sizeof(int) +
                                                                 scored.capacity() * sizeof(std::pair<double, int>) +
                                                                 tileVector.capacity() * sizeof(float));
             first += count;

@@ -12,6 +12,7 @@ struct MatchingLimits
     size_t hostBytes = 256ULL * 1024 * 1024;
     size_t featureBytes = 256ULL * 1024 * 1024;
     size_t maxTiles = 1024;
+    bool cudaPipeline = true;
 };
 
 inline size_t checkedMatchProduct(size_t left, size_t right)
@@ -61,7 +62,7 @@ struct MatchingBuffers
     std::vector<uint8_t> images;
     std::vector<std::vector<float>> grid4;
 
-    void resize(size_t count, size_t imageBytes, int candidates, bool gpu, bool analyze)
+    void resize(size_t count, size_t imageBytes, int candidates, bool gpu, bool analyze, bool pinnedInput = false)
     {
         l.resize(count);
         a.resize(count);
@@ -79,7 +80,10 @@ struct MatchingBuffers
         indices.resize(checkedMatchProduct(count, candidates));
         if (gpu)
         {
-            images.resize(checkedMatchProduct(std::min<size_t>(count, 256), imageBytes));
+            if (!pinnedInput)
+            {
+                images.resize(checkedMatchProduct(std::min<size_t>(count, 256), imageBytes));
+            }
             lab.resize(count * 3);
             scores.resize(checkedMatchProduct(count, candidates));
             if (analyze)
@@ -109,9 +113,10 @@ struct MatchingBuffers
     }
 };
 
-inline size_t gpuMatchingBufferBytes(size_t rows, size_t imageBytes, int candidates, bool analyze)
+inline size_t gpuMatchingBufferBytes(size_t rows, size_t imageBytes, int candidates, bool analyze,
+                                     bool pinnedInput = false)
 {
-    const size_t imageStorage = checkedMatchProduct(std::min<size_t>(rows, 256), imageBytes);
+    const size_t imageStorage = pinnedInput ? 0 : checkedMatchProduct(std::min<size_t>(rows, 256), imageBytes);
     const size_t rowBytes = 2048 + 12 * sizeof(double) + 196 * sizeof(float) +
                             checkedMatchProduct(candidates, sizeof(int) + sizeof(double)) +
                             (analyze ? 48 * sizeof(float) + sizeof(std::vector<float>) : 0);

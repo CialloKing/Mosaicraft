@@ -23,6 +23,18 @@ namespace
 
 } // namespace
 
+struct FeaturePipeline
+{
+    FeaturePipelineConfig config;
+    PinnedBuffer input, download;
+    DeviceBuffer<uint8_t> images, tiny;
+    DeviceBuffer<float> grid, lbp;
+    DeviceBuffer<double> lab, bright, contrast, edge;
+    std::shared_ptr<DeviceFeatureState> state = std::make_shared<DeviceFeatureState>();
+    std::unique_ptr<WorkerPool> workers;
+    TransferStream transfer;
+};
+
 struct FeatureWorkspace::Impl
 {
     DeviceBuffer<uint8_t> images, tiny;
@@ -32,11 +44,119 @@ struct FeatureWorkspace::Impl
     std::vector<float> h_grid, h_lbp;
     std::vector<double> h_lab, h_bright, h_contrast, h_edge;
     std::unique_ptr<WorkerPool> cpuWorkers;
+    std::unique_ptr<FeaturePipeline> pipeline;
 };
 FeatureWorkspace::FeatureWorkspace() : buffers(std::make_unique<Impl>())
 {
 }
 FeatureWorkspace::~FeatureWorkspace() = default;
+
+bool FeatureWorkspace::preparePipeline(const FeaturePipelineConfig &config, GpuTimings *timings)
+{
+    resetPipeline();
+    const bool supported = (config.width == 180 && config.height == 320) ||
+                           (config.width == 320 && config.height == 180) ||
+                           (config.width == 360 && config.height == 640) ||
+                           (config.width == 640 && config.height == 360);
+    if (!supported || config.maxTiles <= 0 || config.maxTiles > 1024)
+    {
+        throw std::invalid_argument("invalid CUDA feature pipeline dimensions");
+    }
+    PhaseTimer timer(timings ? &timings->allocationMs : nullptr);
+    const size_t rows = config.maxTiles, chunk = std::min<size_t>(rows, 256);
+    const size_t pixels = chunk * config.width * config.height * 3;
+    const size_t download = chunk * (3 * sizeof(double) + 192 * sizeof(float) +
+                                     (config.downloadTiny ? 256 : 0) +
+                                     (config.downloadLbp ? 256 * sizeof(float) : 0));
+    const size_t resident = rows * (448 * sizeof(float) + 256);
+    size_t freeBytes = 0, totalBytes = 0;
+    requireCuda(cudaMemGetInfo(&freeBytes, &totalBytes));
+    if (pixels + download > config.hostBudget || resident > config.deviceBudget ||
+        pixels + resident + chunk * 6 * sizeof(double) > freeBytes / 2)
+    {
+        return false;
+    }
+    try
+    {
+        auto p = std::make_unique<FeaturePipeline>();
+        p->config = config;
+        if (!optionalCudaAllocation(p->input.allocate(pixels)) ||
+            config.testFault == PipelineFault::PinnedAllocation ||
+            !optionalCudaAllocation(p->download.allocate(download)) ||
+            !optionalCudaAllocation(p->images.allocate(pixels)) ||
+            config.testFault == PipelineFault::DeviceAllocation ||
+            !optionalCudaAllocation(p->grid.allocate(rows * 192 * sizeof(float))) ||
+            !optionalCudaAllocation(p->tiny.allocate(rows * 256)) ||
+            !optionalCudaAllocation(p->lbp.allocate(rows * 256 * sizeof(float))) ||
+            !optionalCudaAllocation(p->lab.allocate(chunk * 3 * sizeof(double))) ||
+            !optionalCudaAllocation(p->bright.allocate(chunk * sizeof(double))) ||
+            !optionalCudaAllocation(p->contrast.allocate(chunk * sizeof(double))) ||
+            !optionalCudaAllocation(p->edge.allocate(chunk * sizeof(double))) || !p->transfer.create())
+        {
+            return false;
+        }
+        p->workers = std::make_unique<WorkerPool>();
+        p->state->grid = p->grid.get();
+        p->state->lbp = p->lbp.get();
+        p->state->tiny = p->tiny.get();
+        p->state->bytes = resident;
+        buffers->pipeline = std::move(p);
+        if (timings)
+        {
+            timings->pinnedBytes = pinnedBytes();
+            timings->residentBytes = residentBytes();
+            timings->pixelBytes = pixels;
+        }
+        return true;
+    }
+    catch (const std::bad_alloc &)
+    {
+        return false;
+    }
+}
+
+void FeatureWorkspace::resetPipeline()
+{
+    buffers->pipeline.reset();
+}
+
+uint8_t *FeatureWorkspace::pipelineInput()
+{
+    return buffers->pipeline ? buffers->pipeline->input.get() : nullptr;
+}
+
+size_t FeatureWorkspace::pinnedBytes() const
+{
+    const auto *p = buffers->pipeline.get();
+    return p ? p->input.capacityBytes() + p->download.capacityBytes() : 0;
+}
+
+size_t FeatureWorkspace::residentBytes() const
+{
+    return buffers->pipeline ? buffers->pipeline->state->bytes : 0;
+}
+
+void FeatureWorkspace::beginBatch(int count)
+{
+    auto *p = buffers->pipeline.get();
+    if (!p || count <= 0 || count > p->config.maxTiles)
+    {
+        throw std::invalid_argument("invalid CUDA feature batch");
+    }
+    ++p->state->generation;
+    p->state->count = count;
+    p->state->ready = 0;
+}
+
+DeviceFeatureView FeatureWorkspace::deviceView(int first, int count) const
+{
+    const auto *p = buffers->pipeline.get();
+    if (!p || first < 0 || count <= 0 || first > p->state->ready || count > p->state->ready - first)
+    {
+        throw std::invalid_argument("CUDA device features are not ready");
+    }
+    return {p->state, p->state->generation, first, count};
+}
 
 // ============================================================
 // GPU 常量：归一化图尺寸 — 模板化以支持常见分辨率
@@ -702,6 +822,113 @@ int launchKernel(const uint8_t *h_images, int N, double *h_avgLAB, float *h_grid
     return 0;
 }
 } // anonymous namespace
+
+namespace
+{
+template <int W, int H>
+void extractPipelined(FeaturePipeline &p, int first, int count, double *lab, float *grid, uint8_t *tiny,
+                      double *edge, float *lbp, GpuTimings *timings)
+{
+    const size_t rows = static_cast<size_t>(count), imgBytes = W * H * 3;
+    auto &transfer = p.transfer;
+    StreamDrain drain(transfer.stream);
+    // ready 仅在 CPU 和 GPU 均成功完成后推进；失败批次不能生成可评分的视图。
+    transfer.mark(0);
+    requireCuda(cudaMemcpyAsync(p.images.get(), p.input.get(), rows * imgBytes, cudaMemcpyHostToDevice,
+                                transfer.stream));
+    if (p.config.testFault == PipelineFault::AfterUpload)
+    {
+        throw std::runtime_error("injected CUDA failure after upload");
+    }
+    transfer.mark(1);
+    featureKernel<W, H><<<count, W, 0, transfer.stream>>>(
+        p.images.get(), p.grid.get() + first * 192, p.tiny.get() + first * 256,
+        p.lbp.get() + first * 256, p.lab.get(), p.bright.get(), p.contrast.get(), p.edge.get(), count);
+    requireCuda(cudaGetLastError());
+    transfer.mark(2);
+    auto *hostLab = reinterpret_cast<double *>(p.download.get());
+    auto *hostGrid = reinterpret_cast<float *>(hostLab + rows * 3);
+    auto *hostLbp = hostGrid + rows * 192;
+    auto *hostTiny = reinterpret_cast<uint8_t *>(hostLbp + (p.config.downloadLbp ? rows * 256 : 0));
+    requireCuda(cudaMemcpyAsync(hostLab, p.lab.get(), rows * 3 * sizeof(double), cudaMemcpyDeviceToHost,
+                                transfer.stream));
+    requireCuda(cudaMemcpyAsync(hostGrid, p.grid.get() + first * 192, rows * 192 * sizeof(float),
+                                cudaMemcpyDeviceToHost, transfer.stream));
+    if (p.config.downloadLbp)
+    {
+        requireCuda(cudaMemcpyAsync(hostLbp, p.lbp.get() + first * 256, rows * 256 * sizeof(float),
+                                    cudaMemcpyDeviceToHost, transfer.stream));
+    }
+    if (p.config.downloadTiny)
+    {
+        requireCuda(cudaMemcpyAsync(hostTiny, p.tiny.get() + first * 256, rows * 256,
+                                    cudaMemcpyDeviceToHost, transfer.stream));
+    }
+    transfer.mark(3);
+    {
+        PhaseTimer timer(timings ? &timings->cannyMs : nullptr);
+        // CPU 与 DMA 只读同一份锁页 BGR。run 收束所有任务（包括异常），随后再等待 GPU。
+        p.workers->run(rows,
+                       [&](size_t i)
+                       {
+                           if (p.config.testFault == PipelineFault::CpuTask && i == 0)
+                           {
+                               throw std::runtime_error("injected Canny worker failure");
+                           }
+                           cv::Mat bgr(H, W, CV_8UC3, p.input.get() + i * imgBytes), gray;
+                           cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
+                           edge[i] = computeEdgeDensityFromGray(gray);
+                       });
+    }
+    if (p.config.testFault == PipelineFault::BeforeWait)
+    {
+        throw std::runtime_error("injected CUDA failure before completion");
+    }
+    transfer.finish(timings);
+    drain.complete();
+    std::memcpy(lab, hostLab, rows * 3 * sizeof(double));
+    std::memcpy(grid, hostGrid, rows * 192 * sizeof(float));
+    if (p.config.downloadLbp)
+    {
+        std::memcpy(lbp, hostLbp, rows * 256 * sizeof(float));
+    }
+    if (p.config.downloadTiny)
+    {
+        std::memcpy(tiny, hostTiny, rows * 256);
+    }
+    p.state->ready += count;
+    if (timings)
+    {
+        timings->uploadBytes += rows * imgBytes;
+        timings->downloadBytes += rows * (3 * sizeof(double) + 192 * sizeof(float) +
+                                          (p.config.downloadLbp ? 256 * sizeof(float) : 0) +
+                                          (p.config.downloadTiny ? 256 : 0));
+    }
+}
+} // namespace
+
+void FeatureWorkspace::extract(int first, int count, double *lab, float *grid, uint8_t *tiny, double *edge,
+                               float *lbp, GpuTimings *timings)
+{
+    auto *p = buffers->pipeline.get();
+    if (!p || count <= 0 || count > 256 || first != p->state->ready ||
+        count > p->state->count - first || !lab || !grid || !edge ||
+        (p->config.downloadTiny && !tiny) || (p->config.downloadLbp && !lbp))
+    {
+        throw std::invalid_argument("invalid CUDA feature extraction range");
+    }
+#define EXTRACT_PIPELINE(W, H)                                                                                  \
+    if (p->config.width == W && p->config.height == H)                                                           \
+    {                                                                                                          \
+        extractPipelined<W, H>(*p, first, count, lab, grid, tiny, edge, lbp, timings);                            \
+        return;                                                                                                \
+    }
+    EXTRACT_PIPELINE(180, 320)
+    EXTRACT_PIPELINE(320, 180)
+    EXTRACT_PIPELINE(360, 640)
+    EXTRACT_PIPELINE(640, 360)
+#undef EXTRACT_PIPELINE
+}
 
 // 带尺寸参数的版本
 int extractFeaturesRaw(const uint8_t *h_images, int N, int imgW, int imgH, double *h_avgLAB, float *h_grid,
