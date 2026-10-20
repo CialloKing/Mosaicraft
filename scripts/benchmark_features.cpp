@@ -11,14 +11,23 @@ using namespace mosaicraft;
 // 显式比较同一数据库全库特征的逐文件读取与经过校验的包读取。
 int main(int argc, char **argv)
 {
-    if (argc != 3)
+    if (argc != 3 && argc != 4)
     {
-        std::cerr << "usage: benchmark_features <snapshot.db> <features directory>\n";
+        std::cerr << "usage: benchmark_features <snapshot.db> <features directory> [--build-cache]\n";
         return 1;
     }
     Database database(argv[1]);
     const auto records = database.allRecords();
     const std::string directory = argv[2];
+    if (argc == 4)
+    {
+        if (std::string(argv[3]) != "--build-cache")
+        {
+            return 1;
+        }
+        // 基准只对调用者指定的私有快照建立缓存，避免修改真实图库的使用计数。
+        return FeaturePack::buildCache(directory, records) ? 0 : 1;
+    }
     std::vector<int> candidates(records.size());
     std::iota(candidates.begin(), candidates.end(), 0);
     std::cout << "candidates=" << candidates.size() << '\n';

@@ -678,7 +678,14 @@ int launchKernel(const uint8_t *h_images, int N, double *h_avgLAB, float *h_grid
             return -1;
         }
     }
+    if (timings)
+    {
+        timings->uploadBytes += static_cast<size_t>(N) * imgBytes;
+        timings->downloadBytes += static_cast<size_t>(N) * (4 * sizeof(double) + 448 * sizeof(float) + 256);
+        timings->pixelBytes = std::max(timings->pixelBytes, d_img.capacityBytes());
+    }
     // 查询特征必须与建库使用相同的 Canny 双阈值，不能把近似梯度计数混入同一列。
+    PhaseTimer cannyTimer(timings ? &timings->cannyMs : nullptr);
     if (!buffers.cpuWorkers)
     {
         buffers.cpuWorkers = std::make_unique<WorkerPool>();

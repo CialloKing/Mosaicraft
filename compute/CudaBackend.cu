@@ -785,6 +785,8 @@ bool scoreBatch(int totalTiles, const double *h_tileL, const double *h_tileA, co
     if (timings)
     {
         timings->peakTemporaryBytes = static_cast<std::size_t>(batchSize) * bytesPerTile;
+        timings->uploadBytes = static_cast<std::size_t>(totalTiles) * (bytesPerTile - N * sizeof(double));
+        timings->downloadBytes = static_cast<std::size_t>(totalTiles) * N * sizeof(double);
     }
     for (int first = 0; first < totalTiles; first += batchSize)
     {

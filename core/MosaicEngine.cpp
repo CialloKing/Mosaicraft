@@ -1033,10 +1033,27 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << "  Feature GPU upload: " << featureTimings.uploadMs << " ms\n"
                       << "  Feature GPU compute: " << featureTimings.computeMs << " ms\n"
                       << "  Feature GPU download: " << featureTimings.downloadMs << " ms\n"
+                      << "  Feature CPU Canny: " << featureTimings.cannyMs << " ms\n"
+                      << "  Feature GPU wait: " << featureTimings.waitMs << " ms\n"
+                      << "  Feature CUDA event upload: " << featureTimings.eventUploadMs << " ms\n"
+                      << "  Feature CUDA event compute: " << featureTimings.eventComputeMs << " ms\n"
+                      << "  Feature CUDA event download: " << featureTimings.eventDownloadMs << " ms\n"
+                      << "  Feature upload bytes: " << featureTimings.uploadBytes << "\n"
+                      << "  Feature download bytes: " << featureTimings.downloadBytes << "\n"
+                      << "  Feature pinned bytes: " << featureTimings.pinnedBytes << "\n"
+                      << "  Feature resident bytes: " << featureTimings.residentBytes << "\n"
+                      << "  Feature device pixel bytes: " << featureTimings.pixelBytes << "\n"
                       << "  Score GPU allocation: " << scoreTimings.allocationMs << " ms\n"
                       << "  Score GPU upload: " << scoreTimings.uploadMs << " ms\n"
                       << "  Score GPU compute: " << scoreTimings.computeMs << " ms\n"
                       << "  Score GPU download: " << scoreTimings.downloadMs << " ms\n"
+                      << "  Score GPU wait: " << scoreTimings.waitMs << " ms\n"
+                      << "  Score CUDA event upload: " << scoreTimings.eventUploadMs << " ms\n"
+                      << "  Score CUDA event compute: " << scoreTimings.eventComputeMs << " ms\n"
+                      << "  Score CUDA event download: " << scoreTimings.eventDownloadMs << " ms\n"
+                      << "  Score upload bytes: " << scoreTimings.uploadBytes << "\n"
+                      << "  Score download bytes: " << scoreTimings.downloadBytes << "\n"
+                      << "  Score pinned bytes: " << scoreTimings.pinnedBytes << "\n"
                       << "  Score temporary bytes: " << scoreTimings.peakTemporaryBytes << "\n";
         }
         std::cout << "  Matching batches: " << matchingBatches << "\n"
@@ -1507,6 +1524,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 scoreTimings.uploadMs += batchTimings.uploadMs;
                 scoreTimings.computeMs += batchTimings.computeMs;
                 scoreTimings.downloadMs += batchTimings.downloadMs;
+                scoreTimings.waitMs += batchTimings.waitMs;
+                scoreTimings.eventUploadMs += batchTimings.eventUploadMs;
+                scoreTimings.eventComputeMs += batchTimings.eventComputeMs;
+                scoreTimings.eventDownloadMs += batchTimings.eventDownloadMs;
+                scoreTimings.uploadBytes += batchTimings.uploadBytes;
+                scoreTimings.downloadBytes += batchTimings.downloadBytes;
+                scoreTimings.pinnedBytes = std::max(scoreTimings.pinnedBytes, batchTimings.pinnedBytes);
                 scoreTimings.peakTemporaryBytes =
                     std::max(scoreTimings.peakTemporaryBytes, batchTimings.peakTemporaryBytes);
                 msGPUScore += Ms(Clock::now() - scoreStart).count();

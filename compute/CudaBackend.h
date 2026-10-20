@@ -12,6 +12,10 @@ namespace cuda
 struct GpuTimings
 {
     double allocationMs = 0, uploadMs = 0, computeMs = 0, downloadMs = 0;
+    double cannyMs = 0, waitMs = 0;
+    // Event 时间是设备时间；上面的同步路径计时保持原有主机墙钟口径。
+    double eventUploadMs = 0, eventComputeMs = 0, eventDownloadMs = 0;
+    std::size_t uploadBytes = 0, downloadBytes = 0, pinnedBytes = 0, residentBytes = 0, pixelBytes = 0;
     std::size_t peakTemporaryBytes = 0;
 };
 

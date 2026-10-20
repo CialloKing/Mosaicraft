@@ -29,6 +29,9 @@ def main():
     parser.add_argument("--snapshot", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument("--analysis-mode", choices=("normal", "analysis"), default="normal")
+    parser.add_argument("--skip-small", action="store_true", help="compare baseline/default only")
+    parser.add_argument("--indices", action="store_true", help="capture ordered selections")
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("runs must be positive")
@@ -39,10 +42,15 @@ def main():
     if database == snapshot:
         parser.error("snapshot must differ from disposable run.db")
     request = json.loads(args.request.read_text(encoding="utf-8-sig"))
-    request.update(topNrandom=1, colorAdjust=False, analyze=False)
+    request.update(topNrandom=1, colorAdjust=False, analyze=args.analysis_mode == "analysis")
     variants = [("small", args.exe.resolve(), ["small"]), ("default", args.exe.resolve(), [])]
+    if args.skip_small:
+        variants = variants[1:]
     if args.baseline_exe:
         variants.insert(0, ("baseline", args.baseline_exe.resolve(), []))
+    if args.indices:
+        variants = [(name, exe, ["small-indices" if suffix else "indices"])
+                    for name, exe, suffix in variants]
     manifest = dict(snapshot_sha256=digest(snapshot), request=request,
                     target_sha256=digest(Path(request["inputPath"])),
                     executables={name: dict(path=str(exe), sha256=digest(exe)) for name, exe, _ in variants},
@@ -75,11 +83,13 @@ def main():
             phases = {key.strip(): float(value) for key, value in
                       re.findall(r"^\s*([^\r\n:]+):\s*([\d.]+)\s*ms", text, re.MULTILINE)}
             counters = {key.strip(): int(value) for key, value in re.findall(
-                r"^\s*((?:Matching|Feature cache|Feature source|Library feature|Image |Score temporary)[^\r\n:]+):\s*(\d+)\s*$",
+                r"^\s*((?:Matching|Feature |Library feature|Image |Score )[^\r\n:]+):\s*(\d+)\s*$",
                 text, re.MULTILINE)}
             record = dict(variant=name, run=run, warmup=run == 0, wall_seconds=seconds,
                           peak_rss_bytes=peak or None, phases_ms=phases, counters=counters,
                           output_sha256=digest(output), output_bytes=output.stat().st_size)
+            if args.indices:
+                record["indices_sha256"] = digest(Path(str(output) + ".indices.bin"))
             records.append(record)
             (folder / "results.json").write_text(json.dumps(records, indent=2), encoding="utf-8")
             print(json.dumps(record), flush=True)
