@@ -190,6 +190,28 @@ inline double computeEdgeDensityFromGray(const cv::Mat &gray)
     return static_cast<double>(cv::countNonZero(edges)) / gray.total();
 }
 
+inline float compatibleLbpCount(uint32_t count)
+{
+    // 原 CPU 按像素执行 float += 1；到 2^24 后再加 1 会舍回原值。
+    return static_cast<float>(std::min(count, uint32_t{1} << 24));
+}
+
+template <class Histogram> inline void normalizeLbpHistogram(Histogram &hist)
+{
+    float sum = 0.0f;
+    for (float value : hist)
+    {
+        sum += value;
+    }
+    if (sum > 0.0f)
+    {
+        for (float &value : hist)
+        {
+            value /= sum;
+        }
+    }
+}
+
 inline std::vector<float> computeLBPHistogramFromGray(const cv::Mat &gray)
 {
     std::vector<float> hist(256, 0.0f);
@@ -213,18 +235,7 @@ inline std::vector<float> computeLBPHistogramFromGray(const cv::Mat &gray)
             hist[code] += 1.0f;
         }
     }
-    float sum = 0.0f;
-    for (float v : hist)
-    {
-        sum += v;
-    }
-    if (sum > 0.0f)
-    {
-        for (float &v : hist)
-        {
-            v /= sum;
-        }
-    }
+    normalizeLbpHistogram(hist);
     return hist;
 }
 

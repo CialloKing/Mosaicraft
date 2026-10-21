@@ -1,5 +1,7 @@
 ﻿#include "../core/FeatureIndex.h"
 #include "../compute/CudaBackend.h"
+#include "../compute/CompatibleFeatures.h"
+#include "../core/FeatureExtractor.h"
 // ============================================================
 // Mosaicraft 核心单元测试 (doctest)
 // 跨平台：Windows / Linux / macOS
@@ -32,6 +34,103 @@
 #include <algorithm>
 
 using namespace mosaicraft;
+
+TEST_CASE("dynamic CUDA features exactly reproduce CPU integers statistics and strided inputs")
+{
+    using namespace mosaicraft::cuda;
+    CHECK(compatibleLbpCount((1u << 24) - 1) == 16777215.0f);
+    CHECK(compatibleLbpCount((1u << 24) + 1) == 16777216.0f);
+    CHECK(compatibleLbpCount(67108864) == 16777216.0f);
+    if (!isCudaAvailable())
+    {
+        return;
+    }
+    WorkerPool workers(3);
+    CompatibleFeatureWorkspace workspace;
+    for (auto size : {cv::Size(1, 1), cv::Size(7, 9), cv::Size(8, 8), cv::Size(9, 17), cv::Size(16, 16),
+                      cv::Size(72, 128), cv::Size(255, 257), cv::Size(256, 256), cv::Size(512, 512),
+                      cv::Size(1537, 97), cv::Size(8192, 1), cv::Size(1, 8192)})
+    {
+        CAPTURE(size.width);
+        CAPTURE(size.height);
+        cv::Mat storage(size.height + 2, size.width + 3, CV_8UC3);
+        cv::RNG random(134);
+        random.fill(storage, cv::RNG::UNIFORM, 0, 256);
+        auto image = storage(cv::Rect(1, 1, size.width, size.height));
+        REQUIRE(workspace.prepare(size.width, size.height, 3, 64ULL * 1024 * 1024, true));
+        std::vector<ImageRecord> records(3);
+        std::vector<CompatibleFeature> features;
+        CompatibleTimings timings;
+        workspace.extract({image, image, image}, features, workers, {&records[0], &records[1], &records[2]}, &timings);
+        REQUIRE(features.size() == 3);
+        ImageRecord expected;
+        FeatureExtractor().compute(image, expected);
+        const auto tiny = computeTinyImage(image);
+        const auto hist = computeLBPHistogram(image);
+        for (size_t i = 0; i < features.size(); ++i)
+        {
+            CHECK(features[i].lab[0] == expected.avgL);
+            CHECK(features[i].lab[1] == expected.avgA);
+            CHECK(features[i].lab[2] == expected.avgB);
+            CHECK(std::equal(features[i].grid.begin(), features[i].grid.end(), expected.grid4x4.begin()));
+            CHECK(std::equal(features[i].tiny.begin(), features[i].tiny.end(), tiny.begin()));
+            CHECK(std::equal(features[i].lbp.begin(), features[i].lbp.end(), hist.begin()));
+            CHECK(features[i].edge == expected.edgeDensity);
+            CHECK(records[i].meanBrightness == expected.meanBrightness);
+            CHECK(records[i].stdBrightness == expected.stdBrightness);
+            CHECK(records[i].contrast == expected.contrast);
+            CHECK(records[i].saturation == expected.saturation);
+            CHECK(records[i].colorVariance == expected.colorVariance);
+        }
+        CHECK(timings.images == 3);
+        CHECK(timings.gpu.eventComputeMs > 0);
+        CHECK(timings.gpu.uploadBytes == static_cast<size_t>(size.area()) * 12);
+        const auto before = features[0];
+        workspace.extract({image}, features, workers);
+        CHECK(features.size() == 1);
+        CHECK(features[0].grid == before.grid);
+        CHECK(features[0].lbp == before.lbp);
+        CHECK(features[0].edge == before.edge);
+        CHECK_THROWS_AS(workspace.extract({cv::Mat()}, features, workers), std::invalid_argument);
+    }
+}
+
+TEST_CASE("dynamic CUDA budgets and faults never publish partial features")
+{
+    using namespace mosaicraft::cuda;
+    if (!isCudaAvailable())
+    {
+        return;
+    }
+    CompatibleFeatureWorkspace workspace;
+    REQUIRE(workspace.prepare(256, 256, 256, 64ULL * 1024 * 1024, true));
+    CHECK(workspace.capacity() > 1);
+    CHECK(workspace.capacity() < 256);
+    CHECK(workspace.hostBytes() <= 64ULL * 1024 * 1024);
+    CHECK(workspace.deviceBytes() <= 256ULL * 1024 * 1024);
+    CHECK_FALSE(workspace.prepare(8192, 8192, 1, 64ULL * 1024 * 1024));
+    CHECK_FALSE(workspace.prepare(32, 32, 1, 1));
+    CHECK(workspace.capacity() == 0);
+    CHECK_THROWS_AS(workspace.prepare(8193, 1, 1, 1), std::invalid_argument);
+    for (auto fault : {PipelineFault::PinnedAllocation, PipelineFault::DeviceAllocation})
+    {
+        CHECK_FALSE(workspace.prepare(32, 32, 1, 1024 * 1024, false, 1024 * 1024, fault));
+        CHECK(workspace.hostBytes() == 0);
+        CHECK(workspace.deviceBytes() == 0);
+    }
+    WorkerPool workers(2);
+    cv::Mat image(32, 32, CV_8UC3, cv::Scalar(25, 60, 128));
+    std::vector<CompatibleFeature> features;
+    for (auto fault : {PipelineFault::AfterUpload, PipelineFault::CpuTask, PipelineFault::BeforeWait})
+    {
+        REQUIRE(workspace.prepare(32, 32, 1, 1024 * 1024, false, 1024 * 1024, fault));
+        CHECK_THROWS_AS(workspace.extract({image}, features, workers), std::runtime_error);
+        CHECK(features.empty());
+    }
+    REQUIRE(workspace.prepare(32, 32, 1, 1024 * 1024));
+    workspace.extract({image}, features, workers);
+    CHECK(features.size() == 1);
+}
 
 TEST_CASE("brightness factors are symmetric and seeded sampling preserves bounds")
 {

@@ -65,6 +65,7 @@ endif()
 if (MOSAICRAFT_CUDA)
 set(CUDA_OBJ1 "${CMAKE_BINARY_DIR}/CudaBackend${CUDA_OBJ_EXT}")
 set(CUDA_OBJ2 "${CMAKE_BINARY_DIR}/FeatureExtractorCuda${CUDA_OBJ_EXT}")
+set(CUDA_OBJ3 "${CMAKE_BINARY_DIR}/CompatibleFeatures${CUDA_OBJ_EXT}")
 
 add_custom_command(
     OUTPUT ${CUDA_OBJ1}
@@ -100,6 +101,24 @@ add_custom_command(
     COMMENT "Compiling FeatureExtractorCuda.cu..."
 )
 
+add_custom_command(
+    OUTPUT ${CUDA_OBJ3}
+    COMMAND "${CUDAToolkit_BIN_DIR}/nvcc${CMAKE_EXECUTABLE_SUFFIX}"
+        -c "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.cu"
+        -o "${CUDA_OBJ3}"
+        -arch=${CUDA_ARCH} -std=c++17
+        -ccbin "${CMAKE_CXX_COMPILER}"
+        -I"${CMAKE_SOURCE_DIR}"
+        -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
+        -I"${VCPKG_TRIPLET_INCLUDE}"
+        -I"${TIFF_INCLUDE_DIR}"
+        ${NVCC_EXTRA_FLAGS}
+    DEPENDS "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.cu" "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.h"
+        "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh"
+        "${CMAKE_SOURCE_DIR}/core/FeatureUtils.h" "${CMAKE_SOURCE_DIR}/core/FeatureExtractor.h"
+        "${CMAKE_SOURCE_DIR}/core/WorkerPool.h"
+    COMMENT "Compiling CPU-compatible dynamic CUDA features..."
+)
 endif()  # MOSAICRAFT_CUDA
 # ============================================================
 # 核心静态库（CPU）
@@ -156,6 +175,7 @@ if (MOSAICRAFT_CUDA)
 add_library(mosaicraft_cuda STATIC
     ${CUDA_OBJ1}
     ${CUDA_OBJ2}
+    ${CUDA_OBJ3}
 )
 target_include_directories(mosaicraft_cuda PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

@@ -1,5 +1,6 @@
 ﻿// CudaStubs.cpp — 无 CUDA 时的空实现（在 MOSAICRAFT_CUDA=OFF 时编译）
 #include "compute/CudaBackend.h"
+#include "compute/CompatibleFeatures.h"
 #include <cfloat>
 #include <cstdio>
 #include <stdexcept>
@@ -8,6 +9,33 @@ namespace mosaicraft
 {
 namespace cuda
 {
+
+struct CompatibleFeatureWorkspace::Impl
+{
+};
+CompatibleFeatureWorkspace::CompatibleFeatureWorkspace() = default;
+CompatibleFeatureWorkspace::~CompatibleFeatureWorkspace() = default;
+bool CompatibleFeatureWorkspace::prepare(int, int, int, size_t, bool, size_t, PipelineFault)
+{
+    return false;
+}
+int CompatibleFeatureWorkspace::capacity() const
+{
+    return 0;
+}
+size_t CompatibleFeatureWorkspace::hostBytes() const
+{
+    return 0;
+}
+size_t CompatibleFeatureWorkspace::deviceBytes() const
+{
+    return 0;
+}
+void CompatibleFeatureWorkspace::extract(const std::vector<cv::Mat> &, std::vector<CompatibleFeature> &,
+                                         WorkerPool &, const std::vector<ImageRecord *> &, CompatibleTimings *)
+{
+    throw std::runtime_error("CUDA is not available");
+}
 
 struct FeatureWorkspace::Impl
 {

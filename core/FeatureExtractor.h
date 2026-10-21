@@ -34,6 +34,9 @@ public:
     // OpenCV 的颜色统计和 Canny 定义由两种后端共享，避免同一数据库列有两种语义。
     static void computeStatistics(const cv::Mat& bgr, ImageRecord& record,
                                   const cv::Mat& lab = {}, const cv::Mat& gray = {});
+    // 两种 CPU 兼容提取路径共用落盘检查，不改变特征文件格式。
+    static void saveFeatures(ImageRecord &record, const std::string &directory, const std::string &stem,
+                             const uint8_t *tiny, const float *lbp);
 };
 
 } // namespace mosaicraft
