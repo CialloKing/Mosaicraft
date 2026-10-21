@@ -20,6 +20,7 @@
 #include "RequestValidation.h"
 #include "UnicodeIO.h"
 #include "compute/CudaBackend.h"
+#include "compute/CompatibleFeatures.h"
 #include <numeric>
 
 #include <opencv2/imgcodecs.hpp>
@@ -581,6 +582,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                              const std::string& outputPath,
                              const Config& config)
 {
+    m_compatibleFeatureImages = 0;
     // 检查 CUDA 可用性，GPU 不可用时默认回退 CPU
     MosaicRequest validated{targetPath, dbPath, outputPath, config};
     std::string validationError;
@@ -792,11 +794,19 @@ bool MosaicEngine::generate(const std::string& targetPath,
     auto releaseGpuLib = [&]() {
         if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);
     };
-    if (cfg.useGpu && !((featW == 180 && featH == 320) || (featW == 320 && featH == 180)
-        || (featW == 360 && featH == 640) || (featW == 640 && featH == 360)))
+    bool compatibleFeatures = cfg.useGpu && !cuda::hasTemplateFeatures(featW, featH);
+    if (compatibleFeatures)
     {
-        std::cout << "Feature size uses CPU extraction and scoring." << std::endl;
+        // 原自定义尺寸使用 CPU 评分。单独选择提取后端，避免改变评分精度及平分顺序。
         cfg.useGpu = false;
+    }
+    if (cfg.useGpu)
+    {
+        std::cout << "Feature backend: template CUDA; scoring: CUDA." << std::endl;
+    }
+    else if (!compatibleFeatures)
+    {
+        std::cout << "Feature backend: CPU; scoring: CPU." << std::endl;
     }
     if (cfg.useGpu && cuda::isCudaAvailable())
     {
@@ -1221,6 +1231,29 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::unique_ptr<cuda::ScoreWorkspace> scoreWorkspace;
         const size_t scratch = checkedMatchProduct(N, sizeof(int) + sizeof(std::pair<double, int>)) +
                                FeatureIndex::kDimension * sizeof(float);
+        cuda::CompatibleFeatureWorkspace compatible;
+        cuda::CompatibleTimings compatibleTimings;
+        std::vector<cv::Mat> compatibleImages;
+        std::vector<cuda::CompatibleFeature> compatibleValues;
+        if (compatibleFeatures)
+        {
+            const size_t requestedRows = std::min<size_t>(batchRows, 256);
+            const size_t hostRows = cpuMatchingBufferBytes(requestedRows, N);
+            compatibleFeatures = hostRows < m_limits.hostBytes && scratch < m_limits.hostBytes - hostRows &&
+                compatible.prepare(featW, featH, static_cast<int>(requestedRows),
+                                   m_limits.hostBytes - hostRows - scratch);
+            if (compatibleFeatures)
+            {
+                batchRows = static_cast<size_t>(compatible.capacity());
+                maximumBatchTiles = batchRows;
+            }
+            std::cout << "Feature backend: " << (compatibleFeatures ? "generic CUDA (CPU compatible)" : "CPU")
+                      << "; scoring: CPU." << std::endl;
+            if (!compatibleFeatures)
+            {
+                std::cout << "  Generic CUDA resources unavailable; using CPU before extraction." << std::endl;
+            }
+        }
         bool pipeline = false;
         size_t pinnedBytes = 0;
         if (cfg.useGpu)
@@ -1361,6 +1394,30 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     allTL[local] = buffers.lab[local * 3];
                     allTA[local] = buffers.lab[local * 3 + 1];
                     allTB[local] = buffers.lab[local * 3 + 2];
+                }
+            }
+            else if (compatibleFeatures)
+            {
+                compatibleImages.resize(count);
+                featureWorkers.run(count, [&](size_t local)
+                {
+                    const int ti = first + static_cast<int>(local);
+                    const auto roi = target(cv::Rect((ti % tilesX) * cfg.tileW, (ti / tilesX) * cfg.tileH,
+                                                    cfg.tileW, cfg.tileH));
+                    cv::resize(roi, compatibleImages[local], cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
+                });
+                compatible.extract(compatibleImages, compatibleValues, featureWorkers, {}, &compatibleTimings);
+                m_compatibleFeatureImages += count;
+                for (int local = 0; local < count; ++local)
+                {
+                    const auto &feature = compatibleValues[local];
+                    allTL[local] = feature.lab[0];
+                    allTA[local] = feature.lab[1];
+                    allTB[local] = feature.lab[2];
+                    allEdge[local] = feature.edge;
+                    std::copy(feature.grid.begin(), feature.grid.end(), allGrid[local].data());
+                    std::copy(feature.tiny.begin(), feature.tiny.end(), allTiny[local].data());
+                    std::copy(feature.lbp.begin(), feature.lbp.end(), allLBP[local].data());
                 }
             }
             else
@@ -2015,7 +2072,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
             const size_t temporary = featureReader ? featureReader->stats().temporaryPeakBytes : 0;
             matchingPeakBytes = std::max(matchingPeakBytes, buffers.capacityBytes() + ahead.capacityBytes() +
-                                                                temporary + pinnedBytes + idxs.capacity() * sizeof(int) +
+                                                                temporary + pinnedBytes + compatible.hostBytes() +
+                                                                idxs.capacity() * sizeof(int) +
                                                                 scored.capacity() * sizeof(std::pair<double, int>) +
                                                                 tileVector.capacity() * sizeof(float));
             first += count;
@@ -2035,6 +2093,16 @@ bool MosaicEngine::generate(const std::string& targetPath,
         if (featureReader)
         {
             featureReadStats = featureReader->stats();
+        }
+        if (compatibleFeatures)
+        {
+            std::cout << "\n  Generic CUDA: " << compatibleTimings.images << " images, "
+                      << compatibleTimings.batches << " batches; host/device buffers "
+                      << compatible.hostBytes() << "/" << compatible.deviceBytes() << " bytes; preprocess "
+                      << compatibleTimings.prepareMs << " ms, CPU completion " << compatibleTimings.cpuMs
+                      << " ms, device upload/compute/download " << compatibleTimings.gpu.eventUploadMs << "/"
+                      << compatibleTimings.gpu.eventComputeMs << "/" << compatibleTimings.gpu.eventDownloadMs
+                      << " ms" << std::endl;
         }
         if (!hasCandidates)
         {

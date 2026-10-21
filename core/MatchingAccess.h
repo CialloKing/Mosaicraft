@@ -16,5 +16,9 @@ struct MatchingAccess
     {
         engine.m_selectedObserver = &selected;
     }
+    static size_t compatibleFeatureImages(const MosaicEngine &engine)
+    {
+        return engine.m_compatibleFeatureImages;
+    }
 };
 } // namespace mosaicraft

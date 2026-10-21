@@ -10,6 +10,7 @@
 #include "UnicodeIO.h"
 #include "WorkerPool.h"
 #include "compute/CudaBackend.h"
+#include "compute/CompatibleFeatures.h"
 #ifdef MOSAICRAFT_CUDA
 #include "compute/FeatureExtractorCuda.h"
 #endif
@@ -299,10 +300,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     FeatureExtractor extractor;
     bool gpuOk = false;
 #ifdef MOSAICRAFT_CUDA
-    gpuOk = cuda::isCudaAvailable() && ((request.normalizeWidth == 180 && request.normalizeHeight == 320) ||
-                                        (request.normalizeWidth == 320 && request.normalizeHeight == 180) ||
-                                        (request.normalizeWidth == 360 && request.normalizeHeight == 640) ||
-                                        (request.normalizeWidth == 640 && request.normalizeHeight == 360));
+    gpuOk = cuda::isCudaAvailable() && cuda::hasTemplateFeatures(request.normalizeWidth, request.normalizeHeight);
 #endif
     constexpr int GPU_BATCH = 256;
     int inserted = 0;
@@ -312,7 +310,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     std::exception_ptr gpuError;
     if (gpuOk && !request.normalizeOnly)
     {
-        std::cout << "Normalizing + Features: GPU (batch " << GPU_BATCH << ", pipelined)" << std::endl;
+        std::cout << "Normalizing + Features: template CUDA (batch " << GPU_BATCH << ", pipelined)" << std::endl;
         gpuThread = std::thread(
             [&]()
             {
@@ -586,10 +584,26 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         constexpr size_t pixelBudget = 64ULL * 1024 * 1024;
         const size_t pixelsPerImage = static_cast<size_t>(request.normalizeWidth) * request.normalizeHeight * 3;
         // 同目录输入的尺寸可能不同，单张处理保证超预算图片独占批次。
-        const size_t batchLimit =
+        size_t batchLimit =
             inputIsOutput ? 1 : std::min<size_t>(256, std::max<size_t>(1, pixelBudget / pixelsPerImage));
         WorkerPool workers(request.threads > 0 ? static_cast<unsigned>(request.threads) : 0);
-        std::cout << "Features: CPU (ordered batches, max " << batchLimit << " images, 64 MiB pixels)" << std::endl;
+        cuda::CompatibleFeatureWorkspace compatible;
+        cuda::CompatibleTimings compatibleTimings;
+        const bool compatibleRequested = cuda::isCudaAvailable() &&
+            !cuda::hasTemplateFeatures(request.normalizeWidth, request.normalizeHeight);
+        const bool compatibleReady = compatibleRequested &&
+            compatible.prepare(request.normalizeWidth, request.normalizeHeight, static_cast<int>(batchLimit),
+                               pixelBudget, true);
+        if (compatibleReady)
+        {
+            batchLimit = static_cast<size_t>(compatible.capacity());
+        }
+        std::cout << "Features: " << (compatibleReady ? "generic CUDA (CPU compatible)" : "CPU")
+                  << " (ordered batches, max " << batchLimit << " images, 64 MiB buffer budget)" << std::endl;
+        if (compatibleRequested && !compatibleReady)
+        {
+            std::cout << "  Generic CUDA resources unavailable; using CPU before extraction." << std::endl;
+        }
         for (size_t first = 0; first < files.size(); first += batchLimit)
         {
             const size_t count = std::min(batchLimit, files.size() - first);
@@ -667,6 +681,36 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 }
                 ready[i] = 1;
             }
+            // 自定义尺寸保留 CPU 的去重和提交顺序；只把已准备好的像素统计交给 GPU。
+            std::vector<cv::Mat> compatibleImages;
+            std::vector<ImageRecord *> statistics;
+            std::vector<int> featureRows(count, -1);
+            std::vector<cuda::CompatibleFeature> features;
+            bool useCompatible = compatibleReady;
+            for (size_t i = 0; i < count && useCompatible; ++i)
+            {
+                if (ready[i])
+                {
+                    // 同目录建库允许混合原始尺寸，沿用原 CPU 行为，不能冒用归一化元数据。
+                    useCompatible = images[i].cols == request.normalizeWidth &&
+                                    images[i].rows == request.normalizeHeight;
+                    featureRows[i] = static_cast<int>(compatibleImages.size());
+                    compatibleImages.push_back(images[i]);
+                    statistics.push_back(&records[i]);
+                }
+            }
+            if (useCompatible && !compatibleImages.empty())
+            {
+                try
+                {
+                    compatible.extract(compatibleImages, features, workers, statistics, &compatibleTimings);
+                }
+                catch (const std::exception &error)
+                {
+                    // CUDA 运行期失败中止本批；此时尚未写特征文件或开始数据库事务。
+                    return ServiceResult::failure(1, error.what());
+                }
+            }
             workers.run(count,
                         [&](size_t i)
                         {
@@ -676,8 +720,23 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                             }
                             try
                             {
-                                FeatureExtractor featureExtractor;
-                                featureExtractor.compute(images[i], records[i], featDir, "hash_" + records[i].fileHash);
+                                if (useCompatible)
+                                {
+                                    const auto &feature = features.at(static_cast<size_t>(featureRows[i]));
+                                    auto &record = records[i];
+                                    record.avgL = feature.lab[0];
+                                    record.avgA = feature.lab[1];
+                                    record.avgB = feature.lab[2];
+                                    record.grid4x4.assign(feature.grid.begin(), feature.grid.end());
+                                    FeatureExtractor::saveFeatures(record, featDir, "hash_" + record.fileHash,
+                                                                   feature.tiny.data(), feature.lbp.data());
+                                    record.featureVersion = FeatureExtractor::featureVersion();
+                                }
+                                else
+                                {
+                                    FeatureExtractor featureExtractor;
+                                    featureExtractor.compute(images[i], records[i], featDir, "hash_" + records[i].fileHash);
+                                }
                             }
                             catch (const std::exception &error)
                             {
@@ -726,6 +785,16 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                       << " skip:" << skipped << ")   " << std::flush;
         }
         std::cout << std::endl;
+        if (compatibleReady)
+        {
+            std::cout << "  Generic CUDA: " << compatibleTimings.images << " images, "
+                      << compatibleTimings.batches << " batches; host/device buffers "
+                      << compatible.hostBytes() << "/" << compatible.deviceBytes() << " bytes; preprocess "
+                      << compatibleTimings.prepareMs << " ms, CPU completion " << compatibleTimings.cpuMs
+                      << " ms, device upload/compute/download " << compatibleTimings.gpu.eventUploadMs << "/"
+                      << compatibleTimings.gpu.eventComputeMs << "/" << compatibleTimings.gpu.eventDownloadMs
+                      << " ms" << std::endl;
+        }
     }
 
     if (request.normalizeOnly)

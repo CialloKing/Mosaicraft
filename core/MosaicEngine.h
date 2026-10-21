@@ -108,6 +108,7 @@ public:
     bool m_fixedSeed = false;
     uint32_t m_seed = 0;
     std::vector<int> *m_selectedObserver = nullptr;
+    size_t m_compatibleFeatureImages = 0;
 };
 
 } // namespace mosaicraft

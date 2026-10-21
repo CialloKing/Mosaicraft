@@ -113,6 +113,13 @@ struct MatchingBuffers
     }
 };
 
+inline size_t cpuMatchingBufferBytes(size_t rows, int candidates)
+{
+    // Grid/Tiny/LBP、LAB/edge、五权重、ANN 查询及候选索引；图像由提取工作区另计。
+    return checkedMatchProduct(rows, 2048 + 9 * sizeof(double) + 196 * sizeof(float) +
+                                      checkedMatchProduct(candidates, sizeof(int)));
+}
+
 inline size_t gpuMatchingBufferBytes(size_t rows, size_t imageBytes, int candidates, bool analyze,
                                      bool pinnedInput = false)
 {

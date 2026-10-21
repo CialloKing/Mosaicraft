@@ -2,6 +2,8 @@
 #include "../core/AnalysisTiles.h"
 #include "../core/BrightnessAdjustment.h"
 #include "../core/CandidateFeatures.h"
+#include "../core/FeatureExtractor.h"
+#include "../core/FeatureUtils.h"
 #include "../core/GridDuplicateCache.h"
 #include "../core/ImageCache.h"
 #include "../core/MatchingAccess.h"
@@ -177,6 +179,106 @@ MosaicRequest makeMosaicRequest(const TempWorkspace& workspace)
 }
 
 } // namespace
+
+TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encoded pixels")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    writeTargetImage(workspace.targetPath());
+    auto build = makeBuildRequest(workspace);
+    build.normalizeWidth = 255;
+    build.normalizeHeight = 257;
+    build.threads = 3;
+    REQUIRE(BuildService().run(build).ok);
+    auto bytes = [](const fs::path &path)
+    {
+        std::ifstream input(path, std::ios::binary);
+        return std::vector<char>(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+    };
+    std::vector<ImageRecord> original;
+    {
+        Database db(build.dbPath);
+        original = db.allRecords();
+        REQUIRE(original.size() == 10);
+        for (const auto &record : original)
+        {
+            ImageRecord expected;
+            FeatureExtractor().compute(imreadUnicode(record.filePath), expected, utf8(workspace.outputDir()), "cpu");
+            CHECK(record.avgL == expected.avgL);
+            CHECK(record.avgA == expected.avgA);
+            CHECK(record.avgB == expected.avgB);
+            CHECK(record.grid4x4 == expected.grid4x4);
+            CHECK(record.edgeDensity == expected.edgeDensity);
+            CHECK(bytes(u8path(record.tinyPath)) == bytes(u8path(expected.tinyPath)));
+            CHECK(bytes(u8path(record.histPath)) == bytes(u8path(expected.histPath)));
+        }
+    }
+    build.appendMode = true;
+    REQUIRE(BuildService().run(build).ok);
+    {
+        Database db(build.dbPath);
+        const auto repeated = db.allRecords();
+        REQUIRE(repeated.size() == original.size());
+        for (size_t i = 0; i < original.size(); ++i)
+        {
+            CHECK(repeated[i].id == original[i].id);
+            CHECK(repeated[i].filePath == original[i].filePath);
+            CHECK(repeated[i].fileHash == original[i].fileHash);
+        }
+    }
+    fs::remove(u8path(original[0].tinyPath));
+    fs::remove(u8path(original[1].histPath));
+    auto request = makeMosaicRequest(workspace);
+    request.config.outW = 41;
+    request.config.outH = 73;
+    request.config.lRange = 255;
+    request.config.topNrandom = 3;
+    request.config.adaptiveWeights = true;
+    request.config.overlayStrength = 0.35;
+    for (bool analyze : {false, true})
+    {
+        request.config.analyze = analyze;
+        std::vector<int> reference;
+        std::vector<char> encoded, report;
+        // CPU、通用核小/大批次，以及计算前预算不足的 CPU 回退。
+        for (int profile = 0; profile < 4; ++profile)
+        {
+            sqlite3 *connection = nullptr;
+            REQUIRE(sqlite3_open(build.dbPath.c_str(), &connection) == SQLITE_OK);
+            REQUIRE(sqlite3_exec(connection, "UPDATE images SET use_count=0", nullptr, nullptr, nullptr) == SQLITE_OK);
+            sqlite3_close(connection);
+            MosaicEngine engine;
+            request.config.useGpu = profile != 0;
+            MatchingLimits limits;
+            limits.maxTiles = profile == 1 ? 3 : 256;
+            if (profile == 3)
+            {
+                limits.hostBytes = 64 * 1024;
+            }
+            MatchingAccess::configure(engine, limits, true, 123);
+            std::vector<int> selected;
+            MatchingAccess::captureSelections(engine, selected);
+            REQUIRE(engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config));
+            CHECK(MatchingAccess::compatibleFeatureImages(engine) ==
+                  ((profile == 1 || profile == 2) && cuda::isCudaAvailable() ? selected.size() : 0));
+            const auto output = bytes(u8path(request.outputPath));
+            const auto analysis = analyze ? bytes(workspace.outputDir() / "mosaic_analysis" / "worst_report.txt")
+                                         : std::vector<char>();
+            if (profile == 0)
+            {
+                reference = selected;
+                encoded = output;
+                report = analysis;
+            }
+            else
+            {
+                CHECK(selected == reference);
+                CHECK(output == encoded);
+                CHECK(analysis == report);
+            }
+        }
+    }
+}
 
 TEST_CASE("regression: build, inspect, and render a small mosaic")
 {
@@ -1252,7 +1354,7 @@ TEST_CASE("CPU build rolls back a failing ordered batch")
     REQUIRE(triggerResult == SQLITE_OK);
     auto request = makeBuildRequest(workspace);
     request.normalizeWidth = 72;
-    request.normalizeHeight = 128; // 非 CUDA 模板尺寸，两种构建都验收 CPU 批次。
+    request.normalizeHeight = 128; // 自定义尺寸保留顺序事务，CUDA 提取也必须整批回滚。
     request.threads = 4;
     CHECK_FALSE(BuildService().run(request).ok);
     Database database(utf8(workspace.dbPath()), Database::OpenMode::Existing);
