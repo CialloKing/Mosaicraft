@@ -1002,9 +1002,20 @@ bool scoreDeviceBatch(const DeviceFeatureView &features, const double *l, const 
     auto &storage = workspace.buffers->storage;
     size_t freeBytes = 0, totalBytes = 0;
     requireCuda(cudaMemGetInfo(&freeBytes, &totalBytes));
+    // 仅在工作区回归注入时模拟显存余量，避免测试占满设备而影响其他任务。
+    if (p->testFault == PipelineFault::FreeMemoryAtScoreCapacity)
+    {
+        freeBytes = storage.capacityBytes();
+    }
+    else if (p->testFault == PipelineFault::FreeMemoryBelowScoreCapacity)
+    {
+        freeBytes = storage.capacityBytes() - 1;
+    }
     const size_t budget = std::min<size_t>(temporaryBudget, 256ULL * 1024 * 1024);
+    // freeBytes 已扣除 storage；按准备阶段的一半余量规则，capacity <= (free + capacity) / 2
+    // 等价于 capacity <= free。直接比较既避免重复扣除，也避免容量相加溢出。
     if (p->residentBytes > budget || storage.capacityBytes() > budget - p->residentBytes ||
-        storage.capacityBytes() > freeBytes / 2)
+        storage.capacityBytes() > freeBytes)
     {
         return false;
     }

@@ -22,7 +22,8 @@ struct GpuTimings
 // 仅内部回归注入；生产配置不暴露故障或流水线开关。
 enum class PipelineFault
 {
-    None, PinnedAllocation, DeviceAllocation, AfterUpload, CpuTask, BeforeWait
+    None, PinnedAllocation, DeviceAllocation, AfterUpload, CpuTask, BeforeWait,
+    FreeMemoryAtScoreCapacity, FreeMemoryBelowScoreCapacity
 };
 
 struct FeaturePipelineConfig

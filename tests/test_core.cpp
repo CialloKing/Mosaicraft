@@ -1610,6 +1610,13 @@ TEST_CASE("CUDA resident scoring replays fixed features exactly across batch bou
             CHECK(scores.pinnedBytes() <= bytes);
         }
         CHECK_FALSE(scores.preparePipeline(count, 3, 1, features.residentBytes()));
+        REQUIRE(scores.preparePipeline(count, 3, 1024 * 108, features.residentBytes(), 256ULL * 1024 * 1024,
+                                        PipelineFault::FreeMemoryAtScoreCapacity));
+        REQUIRE(replay(view));
+        CHECK(std::memcmp(actual.data(), expected.data(), expected.size() * sizeof(double)) == 0);
+        REQUIRE(scores.preparePipeline(count, 3, 1024 * 108, features.residentBytes(), 256ULL * 1024 * 1024,
+                                        PipelineFault::FreeMemoryBelowScoreCapacity));
+        CHECK_FALSE(replay(view));
         for (auto fault : {PipelineFault::PinnedAllocation, PipelineFault::DeviceAllocation})
         {
             CHECK_FALSE(scores.preparePipeline(count, 3, 1024 * 108, features.residentBytes(),
