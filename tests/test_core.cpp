@@ -27,6 +27,7 @@
 #include <cmath>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <algorithm>
 
@@ -1518,6 +1519,9 @@ TEST_CASE("CUDA pipeline preserves features and drains failed work")
             CHECK_FALSE(pipeline.preparePipeline(config));
             CHECK(pipeline.pipelineInput() == nullptr);
             CHECK(pipeline.residentBytes() == 0);
+            REQUIRE(extractFeaturesRaw(images.data(), 1, size.width, size.height, lab.data(), grid.data(),
+                                       tiny.data(), edge.data(), lbp.data(), &pipeline) == 0);
+            CHECK(edge[0] == expectedEdge[0]);
         }
         for (auto fault : {PipelineFault::AfterUpload, PipelineFault::CpuTask, PipelineFault::BeforeWait})
         {
@@ -1602,7 +1606,7 @@ TEST_CASE("CUDA resident scoring replays fixed features exactly across batch bou
             REQUIRE(scores.preparePipeline(count, 3, bytes, features.residentBytes(),
                                             features.residentBytes() + bytes));
             REQUIRE(replay(view));
-            CHECK(actual == expected);
+            CHECK(std::memcmp(actual.data(), expected.data(), expected.size() * sizeof(double)) == 0);
             CHECK(scores.pinnedBytes() <= bytes);
         }
         CHECK_FALSE(scores.preparePipeline(count, 3, 1, features.residentBytes()));
@@ -1620,6 +1624,15 @@ TEST_CASE("CUDA resident scoring replays fixed features exactly across batch bou
             scores.resetPipeline();
         }
         REQUIRE(scores.preparePipeline(count, 3, 1024 * 108, features.residentBytes()));
+        const int tail = count - 3;
+        REQUIRE(scoreDeviceBatch(features.deviceView(tail, 3), l.data() + tail, a.data() + tail,
+                                  b.data() + tail, edge.data() + tail, indices.data() + tail * 3, 3, library,
+                                  weight.data() + tail, weight.data() + tail, weight.data() + tail,
+                                  weight.data() + tail, weight.data() + tail, 0.01, actual.data(), scores));
+        CHECK(std::memcmp(actual.data(), expected.data() + tail * 3, 9 * sizeof(double)) == 0);
+        CHECK_FALSE(scoreDeviceBatch(view, l.data(), a.data(), b.data(), edge.data(), indices.data(), 3, library,
+                                    weight.data(), weight.data(), weight.data(), weight.data(), weight.data(),
+                                    0.01, actual.data(), scores, nullptr, features.residentBytes()));
         auto invalid = view;
         invalid.count = count + 1;
         CHECK_FALSE(replay(invalid));

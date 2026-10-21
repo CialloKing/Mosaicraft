@@ -1353,6 +1353,7 @@ TEST_CASE("matching batches preserve seeded choices, padding and empty batches")
     request.config.lRange = 255;
     request.config.adaptiveWeights = true;
     request.config.analyze = true;
+    request.config.overlayStrength = 0.35;
     for (bool gpu : {false, true})
     {
         if (gpu && !cuda::isCudaAvailable())
@@ -1362,24 +1363,37 @@ TEST_CASE("matching batches preserve seeded choices, padding and empty batches")
         request.config.useGpu = gpu;
         std::vector<int> reference;
         cv::Mat expected;
-        for (size_t batch : {1, 3})
+        std::string expectedBytes;
+        const std::pair<size_t, bool> profiles[] = {{1, false}, {3, false}, {1, true}, {3, true}};
+        for (const auto &profile : profiles)
         {
+            const auto batch = profile.first;
+            const bool pipeline = profile.second;
+            if (!gpu && pipeline)
+            {
+                continue;
+            }
             MosaicEngine engine;
-            MatchingAccess::configure(engine, MatchingLimits{limits.hostBytes, limits.featureBytes, batch}, true, 123);
+            MatchingAccess::configure(engine, MatchingLimits{limits.hostBytes, limits.featureBytes, batch, pipeline},
+                                       true, 123);
             std::vector<int> selected;
             MatchingAccess::captureSelections(engine, selected);
             REQUIRE(engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config));
             const auto pixels = imreadUnicode(request.outputPath);
+            std::ifstream encoded(u8path(request.outputPath), std::ios::binary);
+            const std::string bytes(std::istreambuf_iterator<char>(encoded), {});
             REQUIRE(selected.size() == 25);
-            if (batch == 1)
+            if (batch == 1 && !pipeline)
             {
                 reference = selected;
                 expected = pixels;
+                expectedBytes = bytes;
             }
             else
             {
                 CHECK(selected == reference);
                 CHECK(cv::norm(pixels, expected, cv::NORM_INF) == 0);
+                CHECK(bytes == expectedBytes);
             }
         }
     }

@@ -613,6 +613,13 @@ bool uploadLibrary(GpuLibrary &lib, const double *h_lab, const float *h_grid, co
     }
     }
     lib.count = N;
+    if (timings)
+    {
+        timings->residentBytes = static_cast<size_t>(N) *
+            (4 * sizeof(double) + 448 * sizeof(float) + 256 + sizeof(int) +
+             (tinyValid ? 1 : 0) + (lbpValid ? 1 : 0));
+        timings->uploadBytes += timings->residentBytes;
+    }
     return true;
 }
 
@@ -853,7 +860,7 @@ bool scoreBatch(int totalTiles, const double *h_tileL, const double *h_tileA, co
     }
     if (timings)
     {
-        timings->peakTemporaryBytes = static_cast<std::size_t>(batchSize) * bytesPerTile;
+        timings->peakTemporaryBytes = storage.capacityBytes();
         timings->uploadBytes = static_cast<std::size_t>(totalTiles) * (bytesPerTile - N * sizeof(double));
         timings->downloadBytes = static_cast<std::size_t>(totalTiles) * N * sizeof(double);
     }

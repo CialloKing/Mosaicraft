@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
 import sqlite3
 import statistics
 import subprocess
@@ -32,6 +33,7 @@ def main():
     parser.add_argument("--analysis-mode", choices=("normal", "analysis"), default="normal")
     parser.add_argument("--skip-small", action="store_true", help="compare baseline/default only")
     parser.add_argument("--indices", action="store_true", help="capture ordered selections")
+    parser.add_argument("--pixels", action="store_true", help="hash decoded pixels after timing (requires OpenCV)")
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("runs must be positive")
@@ -83,13 +85,24 @@ def main():
             phases = {key.strip(): float(value) for key, value in
                       re.findall(r"^\s*([^\r\n:]+):\s*([\d.]+)\s*ms", text, re.MULTILINE)}
             counters = {key.strip(): int(value) for key, value in re.findall(
-                r"^\s*((?:Matching|Feature |Library feature|Image |Score )[^\r\n:]+):\s*(\d+)\s*$",
+                r"^\s*((?:Matching|Feature |Library |Image |Score )[^\r\n:]+):\s*(\d+)\s*$",
                 text, re.MULTILINE)}
             record = dict(variant=name, run=run, warmup=run == 0, wall_seconds=seconds,
                           peak_rss_bytes=peak or None, phases_ms=phases, counters=counters,
                           output_sha256=digest(output), output_bytes=output.stat().st_size)
             if args.indices:
-                record["indices_sha256"] = digest(Path(str(output) + ".indices.bin"))
+                indices = Path(str(output) + ".indices.bin")
+                record["indices_sha256"] = digest(indices)
+                shutil.copyfile(indices, folder / f"{name}-{run}.indices.bin")
+            if args.pixels:
+                import cv2
+                import numpy as np
+                pixels = cv2.imdecode(np.fromfile(output, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+                if pixels is None:
+                    raise RuntimeError(f"Cannot decode {output}")
+                record["pixel_shape"] = list(pixels.shape)
+                record["pixels_sha256"] = hashlib.sha256(memoryview(pixels)).hexdigest()
+                del pixels
             records.append(record)
             (folder / "results.json").write_text(json.dumps(records, indent=2), encoding="utf-8")
             print(json.dumps(record), flush=True)

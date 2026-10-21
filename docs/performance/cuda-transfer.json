@@ -1,0 +1,3009 @@
+{
+  "date": "2026-10-21",
+  "baseline": {
+    "commit": "3d163db3f85b90d7f93f01fa17ad3dff718c4fcd",
+    "rows": 45625,
+    "source_db_sha256": "3571d04f2d9b51411fce39a41a132dee093eb75586745a24a2ca4fe180ed7e5a",
+    "snapshot_sha256": "ac0ecc23432efc8da3801e7b853b31712e76f87183fc0339df6076c1023602c7",
+    "target_sha256": "5e10a27f294e28bb58e07d2c9c987152806ea856e9eb4bc5ff14f3ea0554d8ff",
+    "executables": {
+      "baseline-cuda\\mosaicraft.exe": "9ae9f479bcd1b26ba53b17757b6c60a31cd07f070473f2a47e0ae88efea5113a",
+      "baseline-cuda\\MosaicraftWebUI.exe": "c5b787555cd141d2f3304121098c0ceb54773651324fb0fd3b53d221586896fa",
+      "baseline-cuda\\mosaicraft_match_benchmark.exe": "561e241d20eeb2ac5fdb18801490f440dd219ed284606a0bd57a224557bb06e1",
+      "baseline-cpu\\mosaicraft.exe": "b1467acb651088ad1b20497bde79392f2ae48178c1ce4f580b05092bcfad58e8",
+      "baseline-cpu\\MosaicraftWebUI.exe": "7ceaa408e3643087ff93877ccbb57155a10f220e558b0c287c6da9fe0c2f174a",
+      "baseline-cpu\\mosaicraft_match_benchmark.exe": "fd947e67f17a8b98fdd8017ce3db5a3cdb6ff0abbfed07cd51d0731d0a6321d8"
+    }
+  },
+  "environment": {
+    "os": "Windows 10 19045 x64",
+    "cpu": "AMD Ryzen 9 7940H (8C/16T)",
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU (8188 MiB)",
+    "driver": "616.92",
+    "cuda": "13.3.33",
+    "compiler": "Visual Studio 18 2026 Release",
+    "opencv": "4.12"
+  },
+  "protocol": {
+    "warmups_per_variant": 1,
+    "formal_runs_per_variant": 3,
+    "alternating_order": true,
+    "restore_database_counts_each_run": true,
+    "source_database_unchanged": true,
+    "target_size_small": [
+      360,
+      640
+    ],
+    "target_size_large": [
+      3600,
+      6400
+    ],
+    "input_tile": [
+      9,
+      16
+    ],
+    "feature_size": [
+      180,
+      320
+    ],
+    "output_size": [
+      7200,
+      12800
+    ],
+    "top_n": 1,
+    "color_adjust": false,
+    "process_memory": "PeakWorkingSetSize; 25 ms polling; excludes VRAM"
+  },
+  "tests": {
+    "cuda_unit": 54,
+    "cuda_regression": 21,
+    "cpu_unit": 54,
+    "cpu_regression": 21,
+    "cuda_webui_api_smoke": true,
+    "cpu_webui_api_smoke": true
+  },
+  "sample_columns": [
+    "variant",
+    "run",
+    "warmup",
+    "wall_seconds",
+    "Features_ms",
+    "Matching_wall_ms",
+    "peak_rss_bytes",
+    "output_hash_index"
+  ],
+  "scenarios": [
+    {
+      "scenario": "cpu_jpg-analysis",
+      "medians": {
+        "baseline": {
+          "wall_seconds": 4.381933600001503,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1412.2,
+            "Features": 198.1,
+            "Resize": 95.5,
+            "LAB": 1886.8,
+            "Grid": 167.4,
+            "Tiny": 211.5,
+            "Edge": 310.7,
+            "LBP": 461.4,
+            "ANN load": 236.9,
+            "ANN query": 49.1,
+            "CPU scoring": 420.7,
+            "Selection": 197.9,
+            "CPU feature loading": 303.9,
+            "Neighbor penalties": 230.9,
+            "Candidate sorting": 0.3,
+            "Analysis": 1077.2,
+            "Output loading (worker sum)": 1030.9,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 0.0,
+            "Row encoding": 0.0,
+            "Producer wait": 0.0,
+            "Consumer wait": 0.0,
+            "Placement": 164.1,
+            "Encoding": 431.8,
+            "Matching wall": 1225.7,
+            "=== Total": 4328.8,
+            "Avg/tile": 2.7
+          },
+          "peak_rss_bytes": 501633024,
+          "counters": {
+            "Image cache hits": 654,
+            "Image decodes": 946,
+            "Image cache peak bytes": 43718400,
+            "Image shared loads": 0,
+            "Matching batches": 2,
+            "Matching prefetch": 0,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 3664708,
+            "Feature cache peak bytes": 58582500,
+            "Feature cache hits": 204672,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 1,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 0
+          }
+        },
+        "default": {
+          "wall_seconds": 4.3750443999888375,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1388.1,
+            "Features": 195.2,
+            "Resize": 91.4,
+            "LAB": 1877.0,
+            "Grid": 162.4,
+            "Tiny": 213.9,
+            "Edge": 275.0,
+            "LBP": 436.2,
+            "ANN load": 240.2,
+            "ANN query": 48.7,
+            "CPU scoring": 392.9,
+            "Selection": 193.4,
+            "CPU feature loading": 294.8,
+            "Neighbor penalties": 212.8,
+            "Candidate sorting": 0.4,
+            "Analysis": 1067.4,
+            "Output loading (worker sum)": 1031.5,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 0.0,
+            "Row encoding": 0.0,
+            "Producer wait": 0.0,
+            "Consumer wait": 0.0,
+            "Placement": 162.9,
+            "Encoding": 422.9,
+            "Matching wall": 1213.3,
+            "=== Total": 4315.6,
+            "Avg/tile": 2.7
+          },
+          "peak_rss_bytes": 500555776,
+          "counters": {
+            "Image cache hits": 654,
+            "Image decodes": 946,
+            "Image cache peak bytes": 43891200,
+            "Image shared loads": 0,
+            "Matching batches": 2,
+            "Matching prefetch": 0,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 3664708,
+            "Feature cache peak bytes": 58582500,
+            "Feature cache hits": 204672,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 1,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 0
+          }
+        }
+      },
+      "wall_change_percent": -0.15721826575972875,
+      "features_change_percent": -1.463907117617369,
+      "all_hashes_equal": {
+        "indices_sha256": true,
+        "output_sha256": true,
+        "pixels_sha256": true
+      },
+      "executables": {
+        "baseline": "fd947e67f17a8b98fdd8017ce3db5a3cdb6ff0abbfed07cd51d0731d0a6321d8",
+        "default": "abaf77abd35438c1bfabf4ce6c2e8a59cd99879844ef9fad6a2cd289bcf25539"
+      },
+      "samples": [
+        [
+          "baseline",
+          0,
+          true,
+          4.280866999994032,
+          195.8,
+          1172.2,
+          502239232,
+          0
+        ],
+        [
+          "default",
+          0,
+          true,
+          4.447868799994467,
+          196.1,
+          1188.7,
+          500805632,
+          0
+        ],
+        [
+          "default",
+          1,
+          false,
+          4.613655399996787,
+          189.5,
+          1222.2,
+          500555776,
+          0
+        ],
+        [
+          "baseline",
+          1,
+          false,
+          4.3828158999967854,
+          194.6,
+          1225.7,
+          501633024,
+          0
+        ],
+        [
+          "baseline",
+          2,
+          false,
+          4.381933600001503,
+          198.1,
+          1227.8,
+          501198848,
+          0
+        ],
+        [
+          "default",
+          2,
+          false,
+          4.262485400016885,
+          195.2,
+          1140.3,
+          497614848,
+          0
+        ],
+        [
+          "default",
+          3,
+          false,
+          4.3750443999888375,
+          198.4,
+          1213.3,
+          498257920,
+          0
+        ],
+        [
+          "baseline",
+          3,
+          false,
+          4.351928499992937,
+          203.8,
+          1208.8,
+          500637696,
+          0
+        ]
+      ]
+    },
+    {
+      "scenario": "cpu_jpg-normal",
+      "medians": {
+        "baseline": {
+          "wall_seconds": 3.3440887999895494,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1406.2,
+            "Features": 198.3,
+            "Resize": 96.2,
+            "LAB": 1875.4,
+            "Grid": 169.6,
+            "Tiny": 224.8,
+            "Edge": 301.4,
+            "LBP": 453.3,
+            "ANN load": 237.0,
+            "ANN query": 50.8,
+            "CPU scoring": 400.9,
+            "Selection": 201.2,
+            "CPU feature loading": 304.4,
+            "Neighbor penalties": 215.2,
+            "Candidate sorting": 0.3,
+            "Analysis": 0.0,
+            "Output loading (worker sum)": 1013.1,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 0.0,
+            "Row encoding": 0.0,
+            "Producer wait": 0.0,
+            "Consumer wait": 0.0,
+            "Placement": 165.5,
+            "Encoding": 415.7,
+            "Matching wall": 1199.3,
+            "=== Total": 3195.1,
+            "Avg/tile": 2.0
+          },
+          "peak_rss_bytes": 499523584,
+          "counters": {
+            "Image cache hits": 654,
+            "Image decodes": 946,
+            "Image cache peak bytes": 43891200,
+            "Image shared loads": 0,
+            "Matching batches": 2,
+            "Matching prefetch": 0,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 3664708,
+            "Feature cache peak bytes": 58582500,
+            "Feature cache hits": 203072,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 1,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 0
+          }
+        },
+        "default": {
+          "wall_seconds": 3.384332399989944,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1425.5,
+            "Features": 197.3,
+            "Resize": 94.9,
+            "LAB": 1884.8,
+            "Grid": 169.6,
+            "Tiny": 207.9,
+            "Edge": 312.5,
+            "LBP": 458.7,
+            "ANN load": 247.7,
+            "ANN query": 51.0,
+            "CPU scoring": 417.5,
+            "Selection": 201.3,
+            "CPU feature loading": 305.4,
+            "Neighbor penalties": 230.4,
+            "Candidate sorting": 0.4,
+            "Analysis": 0.0,
+            "Output loading (worker sum)": 1033.2,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 0.0,
+            "Row encoding": 0.0,
+            "Producer wait": 0.0,
+            "Consumer wait": 0.0,
+            "Placement": 164.6,
+            "Encoding": 430.9,
+            "Matching wall": 1230.9,
+            "=== Total": 3286.5,
+            "Avg/tile": 2.1
+          },
+          "peak_rss_bytes": 500015104,
+          "counters": {
+            "Image cache hits": 654,
+            "Image decodes": 946,
+            "Image cache peak bytes": 43891200,
+            "Image shared loads": 0,
+            "Matching batches": 2,
+            "Matching prefetch": 0,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 3664708,
+            "Feature cache peak bytes": 58582500,
+            "Feature cache hits": 203072,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 1,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 0
+          }
+        }
+      },
+      "wall_change_percent": 1.2034249808354547,
+      "features_change_percent": -0.5042864346949116,
+      "all_hashes_equal": {
+        "indices_sha256": true,
+        "output_sha256": true,
+        "pixels_sha256": true
+      },
+      "executables": {
+        "baseline": "fd947e67f17a8b98fdd8017ce3db5a3cdb6ff0abbfed07cd51d0731d0a6321d8",
+        "default": "abaf77abd35438c1bfabf4ce6c2e8a59cd99879844ef9fad6a2cd289bcf25539"
+      },
+      "samples": [
+        [
+          "baseline",
+          0,
+          true,
+          3.445740899973316,
+          200.3,
+          1167.8,
+          497504256,
+          0
+        ],
+        [
+          "default",
+          0,
+          true,
+          3.4811978999932762,
+          202.5,
+          1227.2,
+          499499008,
+          0
+        ],
+        [
+          "default",
+          1,
+          false,
+          3.357167499983916,
+          197.1,
+          1230.9,
+          497184768,
+          0
+        ],
+        [
+          "baseline",
+          1,
+          false,
+          3.3440887999895494,
+          196.4,
+          1199.0,
+          497356800,
+          0
+        ],
+        [
+          "baseline",
+          2,
+          false,
+          3.423266400001012,
+          205.6,
+          1225.4,
+          496508928,
+          0
+        ],
+        [
+          "default",
+          2,
+          false,
+          3.384332399989944,
+          201.9,
+          1258.5,
+          500015104,
+          0
+        ],
+        [
+          "default",
+          3,
+          false,
+          3.432409999979427,
+          197.3,
+          1230.7,
+          497991680,
+          0
+        ],
+        [
+          "baseline",
+          3,
+          false,
+          3.3306711000041105,
+          198.3,
+          1199.3,
+          499523584,
+          0
+        ]
+      ]
+    },
+    {
+      "scenario": "cpu_large-analysis",
+      "medians": {
+        "baseline": {
+          "wall_seconds": 61.06995720000123,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1397.5,
+            "Features": 11046.1,
+            "Resize": 10658.1,
+            "LAB": 51095.4,
+            "Grid": 17206.2,
+            "Tiny": 22240.2,
+            "Edge": 25832.0,
+            "LBP": 46018.2,
+            "ANN load": 235.5,
+            "ANN query": 3122.5,
+            "CPU scoring": 27634.9,
+            "Selection": 1829.0,
+            "CPU feature loading": 1682.4,
+            "Neighbor penalties": 13685.1,
+            "Candidate sorting": 28.9,
+            "Analysis": 8528.3,
+            "Output loading (worker sum)": 5825.6,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 49.0,
+            "Row encoding": 7057.9,
+            "Producer wait": 5982.9,
+            "Consumer wait": 65.9,
+            "Placement": 1156.4,
+            "Encoding": 7106.7,
+            "Matching wall": 44048.4,
+            "=== Total": 61010.2,
+            "Avg/tile": 0.4
+          },
+          "peak_rss_bytes": 306081792,
+          "counters": {
+            "Image cache hits": 155146,
+            "Image decodes": 4854,
+            "Image cache peak bytes": 4027968,
+            "Image shared loads": 0,
+            "Matching batches": 157,
+            "Matching prefetch": 0,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 3606268,
+            "Feature cache peak bytes": 58582500,
+            "Feature cache hits": 20086368,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 1,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 0
+          }
+        },
+        "default": {
+          "wall_seconds": 60.56807520001894,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1428.1,
+            "Features": 11031.2,
+            "Resize": 10357.0,
+            "LAB": 51095.0,
+            "Grid": 17205.7,
+            "Tiny": 22188.8,
+            "Edge": 26451.4,
+            "LBP": 45575.5,
+            "ANN load": 247.2,
+            "ANN query": 3200.6,
+            "CPU scoring": 27069.2,
+            "Selection": 1822.1,
+            "CPU feature loading": 1676.6,
+            "Neighbor penalties": 13404.2,
+            "Candidate sorting": 33.4,
+            "Analysis": 8493.3,
+            "Output loading (worker sum)": 5872.7,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 48.8,
+            "Row encoding": 7022.8,
+            "Producer wait": 5936.1,
+            "Consumer wait": 66.5,
+            "Placement": 1168.0,
+            "Encoding": 7072.1,
+            "Matching wall": 43490.1,
+            "=== Total": 60524.9,
+            "Avg/tile": 0.4
+          },
+          "peak_rss_bytes": 306434048,
+          "counters": {
+            "Image cache hits": 155146,
+            "Image decodes": 4854,
+            "Image cache peak bytes": 4027968,
+            "Image shared loads": 0,
+            "Matching batches": 157,
+            "Matching prefetch": 0,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 3606268,
+            "Feature cache peak bytes": 58582500,
+            "Feature cache hits": 20086368,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 1,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 0
+          }
+        }
+      },
+      "wall_change_percent": -0.8218148873735842,
+      "features_change_percent": -0.1348892369252508,
+      "all_hashes_equal": {
+        "indices_sha256": true,
+        "output_sha256": true,
+        "pixels_sha256": true
+      },
+      "executables": {
+        "baseline": "fd947e67f17a8b98fdd8017ce3db5a3cdb6ff0abbfed07cd51d0731d0a6321d8",
+        "default": "abaf77abd35438c1bfabf4ce6c2e8a59cd99879844ef9fad6a2cd289bcf25539"
+      },
+      "samples": [
+        [
+          "baseline",
+          0,
+          true,
+          63.982594900007825,
+          11245.1,
+          45470.8,
+          306421760,
+          1
+        ],
+        [
+          "default",
+          0,
+          true,
+          62.2704579999845,
+          10983.2,
+          43931.3,
+          306479104,
+          1
+        ],
+        [
+          "default",
+          1,
+          false,
+          61.717590200016275,
+          11148.3,
+          44587.2,
+          306221056,
+          1
+        ],
+        [
+          "baseline",
+          1,
+          false,
+          61.06995720000123,
+          11096.6,
+          44048.4,
+          306012160,
+          1
+        ],
+        [
+          "baseline",
+          2,
+          false,
+          60.28752730000997,
+          10983.2,
+          43244.2,
+          305729536,
+          1
+        ],
+        [
+          "default",
+          2,
+          false,
+          60.56807520001894,
+          11031.2,
+          43490.1,
+          306434048,
+          1
+        ],
+        [
+          "default",
+          3,
+          false,
+          60.53546280000592,
+          10941.9,
+          43328.7,
+          306049024,
+          1
+        ],
+        [
+          "baseline",
+          3,
+          false,
+          62.007295499992324,
+          11046.1,
+          44773.9,
+          306081792,
+          1
+        ]
+      ]
+    },
+    {
+      "scenario": "cpu_large-normal",
+      "medians": {
+        "baseline": {
+          "wall_seconds": 53.81379359998391,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1450.4,
+            "Features": 11150.7,
+            "Resize": 10491.9,
+            "LAB": 51500.6,
+            "Grid": 17446.6,
+            "Tiny": 22493.1,
+            "Edge": 26582.8,
+            "LBP": 45995.5,
+            "ANN load": 246.9,
+            "ANN query": 3156.7,
+            "CPU scoring": 28553.7,
+            "Selection": 1726.0,
+            "CPU feature loading": 1702.9,
+            "Neighbor penalties": 14380.8,
+            "Candidate sorting": 30.6,
+            "Analysis": 0.0,
+            "Output loading (worker sum)": 5798.2,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 49.0,
+            "Row encoding": 7224.4,
+            "Producer wait": 6144.9,
+            "Consumer wait": 67.4,
+            "Placement": 1151.5,
+            "Encoding": 7273.8,
+            "Matching wall": 44917.6,
+            "=== Total": 53665.8,
+            "Avg/tile": 0.3
+          },
+          "peak_rss_bytes": 301010944,
+          "counters": {
+            "Image cache hits": 155146,
+            "Image decodes": 4854,
+            "Image cache peak bytes": 4027968,
+            "Image shared loads": 0,
+            "Matching batches": 157,
+            "Matching prefetch": 0,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 3606268,
+            "Feature cache peak bytes": 58582500,
+            "Feature cache hits": 19926368,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 1,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 0
+          }
+        },
+        "default": {
+          "wall_seconds": 54.75430570001481,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1471.6,
+            "Features": 11255.6,
+            "Resize": 10637.6,
+            "LAB": 51553.9,
+            "Grid": 17483.7,
+            "Tiny": 23110.8,
+            "Edge": 27128.3,
+            "LBP": 46326.7,
+            "ANN load": 242.7,
+            "ANN query": 3298.9,
+            "CPU scoring": 29150.9,
+            "Selection": 1779.4,
+            "CPU feature loading": 1736.4,
+            "Neighbor penalties": 14943.2,
+            "Candidate sorting": 36.3,
+            "Analysis": 0.0,
+            "Output loading (worker sum)": 5859.9,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 51.6,
+            "Row encoding": 7218.5,
+            "Producer wait": 6132.1,
+            "Consumer wait": 65.3,
+            "Placement": 1168.2,
+            "Encoding": 7270.5,
+            "Matching wall": 45898.9,
+            "=== Total": 54698.9,
+            "Avg/tile": 0.3
+          },
+          "peak_rss_bytes": 301355008,
+          "counters": {
+            "Image cache hits": 155146,
+            "Image decodes": 4854,
+            "Image cache peak bytes": 4027968,
+            "Image shared loads": 0,
+            "Matching batches": 157,
+            "Matching prefetch": 0,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 3606268,
+            "Feature cache peak bytes": 58582500,
+            "Feature cache hits": 19926368,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 1,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 0
+          }
+        }
+      },
+      "wall_change_percent": 1.7477156637980995,
+      "features_change_percent": 0.9407481144681373,
+      "all_hashes_equal": {
+        "indices_sha256": true,
+        "output_sha256": true,
+        "pixels_sha256": true
+      },
+      "executables": {
+        "baseline": "fd947e67f17a8b98fdd8017ce3db5a3cdb6ff0abbfed07cd51d0731d0a6321d8",
+        "default": "abaf77abd35438c1bfabf4ce6c2e8a59cd99879844ef9fad6a2cd289bcf25539"
+      },
+      "samples": [
+        [
+          "baseline",
+          0,
+          true,
+          56.64199590001954,
+          11267.2,
+          47563.9,
+          301060096,
+          1
+        ],
+        [
+          "default",
+          0,
+          true,
+          53.804221600003075,
+          11206.9,
+          44962.7,
+          301367296,
+          1
+        ],
+        [
+          "default",
+          1,
+          false,
+          54.75430570001481,
+          11255.6,
+          45898.9,
+          300527616,
+          1
+        ],
+        [
+          "baseline",
+          1,
+          false,
+          53.81379359998391,
+          11150.7,
+          44917.6,
+          300871680,
+          1
+        ],
+        [
+          "baseline",
+          2,
+          false,
+          54.11651839999831,
+          11177.0,
+          45184.1,
+          300806144,
+          1
+        ],
+        [
+          "default",
+          2,
+          false,
+          55.63488070000312,
+          11311.6,
+          46557.9,
+          301355008,
+          1
+        ],
+        [
+          "default",
+          3,
+          false,
+          54.03182579998975,
+          11210.3,
+          45237.0,
+          301101056,
+          1
+        ],
+        [
+          "baseline",
+          3,
+          false,
+          53.428611099981936,
+          11127.6,
+          44442.8,
+          301010944,
+          1
+        ]
+      ]
+    },
+    {
+      "scenario": "cuda_jpg-analysis",
+      "medians": {
+        "baseline": {
+          "wall_seconds": 4.671718500001589,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1886.9,
+            "Features": 137.7,
+            "ANN load": 241.9,
+            "ANN query": 47.1,
+            "GPU scoring": 14.5,
+            "CPU scoring": 0.0,
+            "Selection": 570.7,
+            "CPU feature loading": 0.0,
+            "Neighbor penalties": 285.3,
+            "Candidate sorting": 0.5,
+            "Analysis": 1312.7,
+            "Output loading (worker sum)": 1031.2,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 0.0,
+            "Row encoding": 0.0,
+            "Producer wait": 0.0,
+            "Consumer wait": 0.0,
+            "Placement": 167.5,
+            "Encoding": 441.4,
+            "Library GPU allocation": 89.8,
+            "Library GPU upload": 17.3,
+            "Feature GPU allocation": 0.5,
+            "Feature GPU upload": 47.7,
+            "Feature GPU compute": 36.7,
+            "Feature GPU download": 1.9,
+            "Score GPU allocation": 0.2,
+            "Score GPU upload": 2.1,
+            "Score GPU compute": 11.6,
+            "Score GPU download": 0.5,
+            "Matching wall": 993.1,
+            "=== Total": 4513.5,
+            "Avg/tile": 2.8
+          },
+          "peak_rss_bytes": 610045952,
+          "counters": {
+            "Image cache hits": 641,
+            "Image decodes": 959,
+            "Image cache peak bytes": 43545600,
+            "Image shared loads": 0,
+            "Score temporary bytes": 4014080,
+            "Matching batches": 2,
+            "Matching prefetch": 1,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 96387784,
+            "Feature cache peak bytes": 1231356,
+            "Feature cache hits": 641,
+            "Feature source reads": 1918,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        },
+        "default": {
+          "wall_seconds": 4.628589400002966,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1856.6,
+            "Features": 76.1,
+            "ANN load": 236.4,
+            "ANN query": 48.2,
+            "GPU scoring": 12.6,
+            "CPU scoring": 0.0,
+            "Selection": 540.6,
+            "CPU feature loading": 0.0,
+            "Neighbor penalties": 252.5,
+            "Candidate sorting": 0.5,
+            "Analysis": 1315.1,
+            "Output loading (worker sum)": 1021.2,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 0.0,
+            "Row encoding": 0.0,
+            "Producer wait": 0.0,
+            "Consumer wait": 0.0,
+            "Placement": 164.1,
+            "Encoding": 433.6,
+            "Library GPU allocation": 86.7,
+            "Library GPU upload": 16.6,
+            "Feature GPU allocation": 4.5,
+            "Feature GPU upload": 0.0,
+            "Feature GPU compute": 0.0,
+            "Feature GPU download": 0.0,
+            "Feature CPU Canny": 33.9,
+            "Feature GPU wait": 16.5,
+            "Feature CUDA event upload": 22.4,
+            "Feature CUDA event compute": 30.7,
+            "Feature CUDA event download": 1.2,
+            "Score GPU allocation": 0.6,
+            "Score GPU upload": 0.0,
+            "Score GPU compute": 0.0,
+            "Score GPU download": 0.0,
+            "Score GPU wait": 11.2,
+            "Score CUDA event upload": 0.2,
+            "Score CUDA event compute": 11.4,
+            "Score CUDA event download": 0.3,
+            "Matching wall": 909.1,
+            "=== Total": 4464.8,
+            "Avg/tile": 2.8
+          },
+          "peak_rss_bytes": 610619392,
+          "counters": {
+            "Image cache hits": 641,
+            "Image decodes": 959,
+            "Image cache peak bytes": 43545600,
+            "Image shared loads": 0,
+            "Library device bytes": 95173750,
+            "Feature upload bytes": 276480000,
+            "Feature download bytes": 3315200,
+            "Feature pinned bytes": 44767232,
+            "Feature resident bytes": 2097152,
+            "Feature device pixel bytes": 44236800,
+            "Score upload bytes": 1075200,
+            "Score download bytes": 1920000,
+            "Score pinned bytes": 1916928,
+            "Score temporary bytes": 4014080,
+            "Matching batches": 2,
+            "Matching prefetch": 1,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 54598344,
+            "Feature cache peak bytes": 1231356,
+            "Feature cache hits": 641,
+            "Feature source reads": 1918,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        }
+      },
+      "wall_change_percent": -0.9231956077535131,
+      "features_change_percent": -44.734931009440814,
+      "all_hashes_equal": {
+        "indices_sha256": true,
+        "output_sha256": true,
+        "pixels_sha256": true
+      },
+      "executables": {
+        "baseline": "561e241d20eeb2ac5fdb18801490f440dd219ed284606a0bd57a224557bb06e1",
+        "default": "bc81920b3ce16c56b251de24cc7a2b5d24bee1b5a77b40943ff9974e35877f70"
+      },
+      "samples": [
+        [
+          "baseline",
+          0,
+          true,
+          4.702796900004614,
+          138.2,
+          1060.4,
+          610689024,
+          2
+        ],
+        [
+          "default",
+          0,
+          true,
+          4.78766520001227,
+          82.3,
+          943.0,
+          610467840,
+          2
+        ],
+        [
+          "default",
+          1,
+          false,
+          4.754475900001125,
+          75.1,
+          909.1,
+          610430976,
+          2
+        ],
+        [
+          "baseline",
+          1,
+          false,
+          4.649593699985417,
+          137.1,
+          929.4,
+          608849920,
+          2
+        ],
+        [
+          "baseline",
+          2,
+          false,
+          4.7126023999881,
+          145.2,
+          1029.0,
+          609775616,
+          2
+        ],
+        [
+          "default",
+          2,
+          false,
+          4.628589400002966,
+          79.8,
+          938.4,
+          610619392,
+          2
+        ],
+        [
+          "default",
+          3,
+          false,
+          4.472581500012893,
+          76.1,
+          845.3,
+          609845248,
+          2
+        ],
+        [
+          "baseline",
+          3,
+          false,
+          4.671718500001589,
+          137.7,
+          993.1,
+          610045952,
+          2
+        ]
+      ]
+    },
+    {
+      "scenario": "cuda_jpg-normal",
+      "medians": {
+        "baseline": {
+          "wall_seconds": 3.3174265999987256,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1980.9,
+            "Features": 143.7,
+            "ANN load": 237.7,
+            "ANN query": 48.0,
+            "GPU scoring": 14.7,
+            "CPU scoring": 0.0,
+            "Selection": 202.9,
+            "CPU feature loading": 0.0,
+            "Neighbor penalties": 201.0,
+            "Candidate sorting": 0.4,
+            "Analysis": 0.0,
+            "Output loading (worker sum)": 1021.8,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 0.0,
+            "Row encoding": 0.0,
+            "Producer wait": 0.0,
+            "Consumer wait": 0.0,
+            "Placement": 169.1,
+            "Encoding": 453.5,
+            "Library GPU allocation": 110.0,
+            "Library GPU upload": 17.0,
+            "Feature GPU allocation": 0.4,
+            "Feature GPU upload": 49.2,
+            "Feature GPU compute": 38.6,
+            "Feature GPU download": 2.0,
+            "Score GPU allocation": 0.2,
+            "Score GPU upload": 2.3,
+            "Score GPU compute": 11.5,
+            "Score GPU download": 0.5,
+            "Matching wall": 600.6,
+            "=== Total": 3190.2,
+            "Avg/tile": 2.0
+          },
+          "peak_rss_bytes": 609402880,
+          "counters": {
+            "Image cache hits": 641,
+            "Image decodes": 959,
+            "Image cache peak bytes": 43545600,
+            "Image shared loads": 0,
+            "Score temporary bytes": 4014080,
+            "Matching batches": 2,
+            "Matching prefetch": 1,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 96042184,
+            "Feature cache peak bytes": 0,
+            "Feature cache hits": 0,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        },
+        "default": {
+          "wall_seconds": 3.236818300007144,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1933.7,
+            "Features": 82.0,
+            "ANN load": 237.9,
+            "ANN query": 51.8,
+            "GPU scoring": 12.5,
+            "CPU scoring": 0.0,
+            "Selection": 229.3,
+            "CPU feature loading": 0.0,
+            "Neighbor penalties": 227.1,
+            "Candidate sorting": 0.5,
+            "Analysis": 0.0,
+            "Output loading (worker sum)": 1053.8,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 0.0,
+            "Row encoding": 0.0,
+            "Producer wait": 0.0,
+            "Consumer wait": 0.0,
+            "Placement": 175.4,
+            "Encoding": 441.3,
+            "Library GPU allocation": 87.9,
+            "Library GPU upload": 17.0,
+            "Feature GPU allocation": 4.5,
+            "Feature GPU upload": 0.0,
+            "Feature GPU compute": 0.0,
+            "Feature GPU download": 0.0,
+            "Feature CPU Canny": 36.8,
+            "Feature GPU wait": 19.5,
+            "Feature CUDA event upload": 22.2,
+            "Feature CUDA event compute": 36.6,
+            "Feature CUDA event download": 1.3,
+            "Score GPU allocation": 0.5,
+            "Score GPU upload": 0.0,
+            "Score GPU compute": 0.0,
+            "Score GPU download": 0.0,
+            "Score GPU wait": 11.0,
+            "Score CUDA event upload": 0.2,
+            "Score CUDA event compute": 11.2,
+            "Score CUDA event download": 0.3,
+            "Matching wall": 593.7,
+            "=== Total": 3111.7,
+            "Avg/tile": 1.9
+          },
+          "peak_rss_bytes": 608473088,
+          "counters": {
+            "Image cache hits": 641,
+            "Image decodes": 959,
+            "Image cache peak bytes": 43372800,
+            "Image shared loads": 0,
+            "Library device bytes": 95173750,
+            "Feature upload bytes": 276480000,
+            "Feature download bytes": 1267200,
+            "Feature pinned bytes": 44439552,
+            "Feature resident bytes": 2097152,
+            "Feature device pixel bytes": 44236800,
+            "Score upload bytes": 1075200,
+            "Score download bytes": 1920000,
+            "Score pinned bytes": 1916928,
+            "Score temporary bytes": 4014080,
+            "Matching batches": 2,
+            "Matching prefetch": 1,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 53925064,
+            "Feature cache peak bytes": 0,
+            "Feature cache hits": 0,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        }
+      },
+      "wall_change_percent": -2.4298442651786933,
+      "features_change_percent": -42.936673625608904,
+      "all_hashes_equal": {
+        "indices_sha256": true,
+        "output_sha256": true,
+        "pixels_sha256": true
+      },
+      "executables": {
+        "baseline": "561e241d20eeb2ac5fdb18801490f440dd219ed284606a0bd57a224557bb06e1",
+        "default": "bc81920b3ce16c56b251de24cc7a2b5d24bee1b5a77b40943ff9974e35877f70"
+      },
+      "samples": [
+        [
+          "baseline",
+          0,
+          true,
+          3.269984399987152,
+          134.6,
+          638.0,
+          609460224,
+          2
+        ],
+        [
+          "default",
+          0,
+          true,
+          3.419407000008505,
+          84.3,
+          659.4,
+          608620544,
+          2
+        ],
+        [
+          "default",
+          1,
+          false,
+          3.236818300007144,
+          85.4,
+          574.7,
+          608387072,
+          2
+        ],
+        [
+          "baseline",
+          1,
+          false,
+          3.3142690999957267,
+          143.7,
+          600.6,
+          608149504,
+          2
+        ],
+        [
+          "baseline",
+          2,
+          false,
+          3.3174265999987256,
+          148.7,
+          719.7,
+          609402880,
+          2
+        ],
+        [
+          "default",
+          2,
+          false,
+          3.5389408000046387,
+          82.0,
+          621.6,
+          608473088,
+          2
+        ],
+        [
+          "default",
+          3,
+          false,
+          3.213711299991701,
+          80.3,
+          593.7,
+          608251904,
+          2
+        ],
+        [
+          "baseline",
+          3,
+          false,
+          3.3412858999799937,
+          126.8,
+          588.2,
+          608882688,
+          2
+        ]
+      ]
+    },
+    {
+      "scenario": "cuda_large-analysis",
+      "medians": {
+        "baseline": {
+          "wall_seconds": 49.656695899990154,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1879.2,
+            "Features": 14342.1,
+            "ANN load": 237.7,
+            "ANN query": 3188.6,
+            "GPU scoring": 1906.3,
+            "CPU scoring": 0.0,
+            "Selection": 28952.4,
+            "CPU feature loading": 0.0,
+            "Neighbor penalties": 19918.2,
+            "Candidate sorting": 50.6,
+            "Analysis": 17404.8,
+            "Output loading (worker sum)": 5919.4,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 49.2,
+            "Row encoding": 7317.0,
+            "Producer wait": 6224.0,
+            "Consumer wait": 67.4,
+            "Placement": 1175.3,
+            "Encoding": 7366.6,
+            "Library GPU allocation": 94.0,
+            "Library GPU upload": 16.4,
+            "Feature GPU allocation": 1.0,
+            "Feature GPU upload": 4595.9,
+            "Feature GPU compute": 4500.1,
+            "Feature GPU download": 192.9,
+            "Score GPU allocation": 0.2,
+            "Score GPU upload": 179.0,
+            "Score GPU compute": 1666.5,
+            "Score GPU download": 44.1,
+            "Matching wall": 31255.3,
+            "=== Total": 49493.0,
+            "Avg/tile": 0.3
+          },
+          "peak_rss_bytes": 464592896,
+          "counters": {
+            "Image cache hits": 155110,
+            "Image decodes": 4890,
+            "Image cache peak bytes": 4057344,
+            "Image shared loads": 0,
+            "Score temporary bytes": 4014080,
+            "Matching batches": 157,
+            "Matching prefetch": 1,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 98602696,
+            "Feature cache peak bytes": 6278760,
+            "Feature cache hits": 155110,
+            "Feature source reads": 9780,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        },
+        "default": {
+          "wall_seconds": 46.29045150001184,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1852.9,
+            "Features": 7976.3,
+            "ANN load": 239.4,
+            "ANN query": 3253.4,
+            "GPU scoring": 1426.4,
+            "CPU scoring": 0.0,
+            "Selection": 26548.0,
+            "CPU feature loading": 0.0,
+            "Neighbor penalties": 18125.0,
+            "Candidate sorting": 46.4,
+            "Analysis": 16613.2,
+            "Output loading (worker sum)": 6026.9,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 49.2,
+            "Row encoding": 7255.8,
+            "Producer wait": 6142.8,
+            "Consumer wait": 68.0,
+            "Placement": 1194.0,
+            "Encoding": 7304.8,
+            "Library GPU allocation": 100.9,
+            "Library GPU upload": 16.6,
+            "Feature GPU allocation": 4.4,
+            "Feature GPU upload": 0.0,
+            "Feature GPU compute": 0.0,
+            "Feature GPU download": 0.0,
+            "Feature CPU Canny": 3488.4,
+            "Feature GPU wait": 2375.0,
+            "Feature CUDA event upload": 2224.9,
+            "Feature CUDA event compute": 3580.4,
+            "Feature CUDA event download": 131.0,
+            "Score GPU allocation": 0.4,
+            "Score GPU upload": 0.0,
+            "Score GPU compute": 0.0,
+            "Score GPU download": 0.0,
+            "Score GPU wait": 1358.2,
+            "Score CUDA event upload": 23.0,
+            "Score CUDA event compute": 1304.9,
+            "Score CUDA event download": 31.6,
+            "Matching wall": 28335.8,
+            "=== Total": 46008.1,
+            "Avg/tile": 0.3
+          },
+          "peak_rss_bytes": 427286528,
+          "counters": {
+            "Image cache hits": 155110,
+            "Image decodes": 4890,
+            "Image cache peak bytes": 4057344,
+            "Image shared loads": 0,
+            "Library device bytes": 95173750,
+            "Feature upload bytes": 27648000000,
+            "Feature download bytes": 331520000,
+            "Feature pinned bytes": 44767232,
+            "Feature resident bytes": 2097152,
+            "Feature device pixel bytes": 44236800,
+            "Score upload bytes": 107520000,
+            "Score download bytes": 192000000,
+            "Score pinned bytes": 1916928,
+            "Score temporary bytes": 4014080,
+            "Matching batches": 157,
+            "Matching prefetch": 1,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 56813256,
+            "Feature cache peak bytes": 6278760,
+            "Feature cache hits": 155110,
+            "Feature source reads": 9780,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        }
+      },
+      "wall_change_percent": -6.77903420468815,
+      "features_change_percent": -44.38541078363698,
+      "all_hashes_equal": {
+        "indices_sha256": false,
+        "output_sha256": false,
+        "pixels_sha256": false
+      },
+      "executables": {
+        "baseline": "561e241d20eeb2ac5fdb18801490f440dd219ed284606a0bd57a224557bb06e1",
+        "default": "bc81920b3ce16c56b251de24cc7a2b5d24bee1b5a77b40943ff9974e35877f70"
+      },
+      "samples": [
+        [
+          "baseline",
+          0,
+          true,
+          55.39566819998436,
+          14672.5,
+          35753.3,
+          464474112,
+          3
+        ],
+        [
+          "default",
+          0,
+          true,
+          48.82993800000986,
+          8331.7,
+          28350.2,
+          426614784,
+          4
+        ],
+        [
+          "default",
+          1,
+          false,
+          50.30407579999883,
+          7924.0,
+          31912.0,
+          427286528,
+          3
+        ],
+        [
+          "baseline",
+          1,
+          false,
+          49.656695899990154,
+          14298.1,
+          31255.3,
+          464404480,
+          3
+        ],
+        [
+          "baseline",
+          2,
+          false,
+          50.00155400001677,
+          14389.8,
+          31896.7,
+          463945728,
+          3
+        ],
+        [
+          "default",
+          2,
+          false,
+          46.10109439998632,
+          8251.8,
+          28093.7,
+          425828352,
+          3
+        ],
+        [
+          "default",
+          3,
+          false,
+          46.29045150001184,
+          7976.3,
+          28335.8,
+          426336256,
+          3
+        ],
+        [
+          "baseline",
+          3,
+          false,
+          49.059319199994206,
+          14342.1,
+          30986.7,
+          464592896,
+          4
+        ]
+      ]
+    },
+    {
+      "scenario": "cuda_large-normal",
+      "medians": {
+        "baseline": {
+          "wall_seconds": 30.968586899980437,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1750.5,
+            "Features": 13091.1,
+            "ANN load": 239.2,
+            "ANN query": 3006.5,
+            "GPU scoring": 1357.0,
+            "CPU scoring": 0.0,
+            "Selection": 19985.8,
+            "CPU feature loading": 0.0,
+            "Neighbor penalties": 19762.6,
+            "Candidate sorting": 54.3,
+            "Analysis": 0.0,
+            "Output loading (worker sum)": 5957.0,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 49.2,
+            "Row encoding": 7553.0,
+            "Producer wait": 6459.8,
+            "Consumer wait": 68.5,
+            "Placement": 1185.9,
+            "Encoding": 7604.0,
+            "Library GPU allocation": 98.0,
+            "Library GPU upload": 15.9,
+            "Feature GPU allocation": 0.8,
+            "Feature GPU upload": 4602.0,
+            "Feature GPU compute": 3362.6,
+            "Feature GPU download": 175.1,
+            "Score GPU allocation": 0.2,
+            "Score GPU upload": 152.8,
+            "Score GPU compute": 1142.9,
+            "Score GPU download": 40.7,
+            "Matching wall": 21747.8,
+            "=== Total": 30841.9,
+            "Avg/tile": 0.2
+          },
+          "peak_rss_bytes": 435802112,
+          "counters": {
+            "Image cache hits": 155110,
+            "Image decodes": 4890,
+            "Image cache peak bytes": 4057344,
+            "Image shared loads": 0,
+            "Score temporary bytes": 4014080,
+            "Matching batches": 157,
+            "Matching prefetch": 1,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 98160328,
+            "Feature cache peak bytes": 0,
+            "Feature cache hits": 0,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        },
+        "default": {
+          "wall_seconds": 29.102788199990755,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1702.1,
+            "Features": 7310.0,
+            "ANN load": 227.8,
+            "ANN query": 3240.5,
+            "GPU scoring": 1135.4,
+            "CPU scoring": 0.0,
+            "Selection": 18274.0,
+            "CPU feature loading": 0.0,
+            "Neighbor penalties": 18075.9,
+            "Candidate sorting": 49.9,
+            "Analysis": 0.0,
+            "Output loading (worker sum)": 5948.4,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 48.9,
+            "Row encoding": 7382.5,
+            "Producer wait": 6280.7,
+            "Consumer wait": 67.0,
+            "Placement": 1180.4,
+            "Encoding": 7431.8,
+            "Library GPU allocation": 93.0,
+            "Library GPU upload": 16.0,
+            "Feature GPU allocation": 6.7,
+            "Feature GPU upload": 0.0,
+            "Feature GPU compute": 0.0,
+            "Feature GPU download": 0.0,
+            "Feature CPU Canny": 3477.6,
+            "Feature GPU wait": 1734.8,
+            "Feature CUDA event upload": 2203.1,
+            "Feature CUDA event compute": 3006.4,
+            "Feature CUDA event download": 88.6,
+            "Score GPU allocation": 0.8,
+            "Score GPU upload": 0.0,
+            "Score GPU compute": 0.0,
+            "Score GPU download": 0.0,
+            "Score GPU wait": 1073.0,
+            "Score CUDA event upload": 22.0,
+            "Score CUDA event compute": 1026.2,
+            "Score CUDA event download": 30.5,
+            "Matching wall": 19739.6,
+            "=== Total": 28968.5,
+            "Avg/tile": 0.2
+          },
+          "peak_rss_bytes": 397168640,
+          "counters": {
+            "Image cache hits": 155110,
+            "Image decodes": 4890,
+            "Image cache peak bytes": 4057344,
+            "Image shared loads": 0,
+            "Library device bytes": 95173750,
+            "Feature upload bytes": 27648000000,
+            "Feature download bytes": 126720000,
+            "Feature pinned bytes": 44439552,
+            "Feature resident bytes": 2097152,
+            "Feature device pixel bytes": 44236800,
+            "Score upload bytes": 107520000,
+            "Score download bytes": 192000000,
+            "Score pinned bytes": 1916928,
+            "Score temporary bytes": 4014080,
+            "Matching batches": 157,
+            "Matching prefetch": 1,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 56043208,
+            "Feature cache peak bytes": 0,
+            "Feature cache hits": 0,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        }
+      },
+      "wall_change_percent": -6.024810579881057,
+      "features_change_percent": -44.1605365477309,
+      "all_hashes_equal": {
+        "indices_sha256": false,
+        "output_sha256": false,
+        "pixels_sha256": false
+      },
+      "executables": {
+        "baseline": "561e241d20eeb2ac5fdb18801490f440dd219ed284606a0bd57a224557bb06e1",
+        "default": "bc81920b3ce16c56b251de24cc7a2b5d24bee1b5a77b40943ff9974e35877f70"
+      },
+      "samples": [
+        [
+          "baseline",
+          0,
+          true,
+          28.559645399975125,
+          12551.2,
+          19352.3,
+          435613696,
+          4
+        ],
+        [
+          "default",
+          0,
+          true,
+          25.529125100001693,
+          7009.3,
+          16862.0,
+          397045760,
+          3
+        ],
+        [
+          "default",
+          1,
+          false,
+          25.943777199980104,
+          6986.5,
+          17100.2,
+          396451840,
+          4
+        ],
+        [
+          "baseline",
+          1,
+          false,
+          30.968586899980437,
+          13091.1,
+          21747.8,
+          435802112,
+          3
+        ],
+        [
+          "baseline",
+          2,
+          false,
+          29.535199300007662,
+          12580.1,
+          20017.6,
+          435265536,
+          3
+        ],
+        [
+          "default",
+          2,
+          false,
+          29.102788199990755,
+          7310.0,
+          19739.6,
+          397164544,
+          3
+        ],
+        [
+          "default",
+          3,
+          false,
+          30.7173477000033,
+          7518.6,
+          20950.5,
+          397168640,
+          3
+        ],
+        [
+          "baseline",
+          3,
+          false,
+          33.42192909997539,
+          13517.0,
+          23588.0,
+          435736576,
+          3
+        ]
+      ]
+    },
+    {
+      "scenario": "cuda_png-analysis",
+      "medians": {
+        "baseline": {
+          "wall_seconds": 9.276581400015857,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1871.0,
+            "Features": 130.7,
+            "ANN load": 240.7,
+            "ANN query": 47.4,
+            "GPU scoring": 15.7,
+            "CPU scoring": 0.0,
+            "Selection": 537.2,
+            "CPU feature loading": 0.0,
+            "Neighbor penalties": 258.2,
+            "Candidate sorting": 0.5,
+            "Analysis": 1303.9,
+            "Output loading (worker sum)": 1036.8,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 43.4,
+            "Row encoding": 5256.9,
+            "Producer wait": 4838.5,
+            "Consumer wait": 7.1,
+            "Placement": 188.6,
+            "Encoding": 5300.6,
+            "Library GPU allocation": 88.2,
+            "Library GPU upload": 17.1,
+            "Feature GPU allocation": 0.5,
+            "Feature GPU upload": 46.7,
+            "Feature GPU compute": 31.7,
+            "Feature GPU download": 1.8,
+            "Score GPU allocation": 0.2,
+            "Score GPU upload": 2.1,
+            "Score GPU compute": 12.7,
+            "Score GPU download": 0.5,
+            "Matching wall": 934.3,
+            "=== Total": 9127.0,
+            "Avg/tile": 5.7
+          },
+          "peak_rss_bytes": 372314112,
+          "counters": {
+            "Image cache hits": 641,
+            "Image decodes": 959,
+            "Image cache peak bytes": 43372800,
+            "Image shared loads": 0,
+            "Score temporary bytes": 4014080,
+            "Matching batches": 2,
+            "Matching prefetch": 1,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 96387784,
+            "Feature cache peak bytes": 1231356,
+            "Feature cache hits": 641,
+            "Feature source reads": 1918,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        },
+        "default": {
+          "wall_seconds": 9.245966899994528,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1846.3,
+            "Features": 80.7,
+            "ANN load": 238.0,
+            "ANN query": 48.7,
+            "GPU scoring": 14.6,
+            "CPU scoring": 0.0,
+            "Selection": 528.7,
+            "CPU feature loading": 0.0,
+            "Neighbor penalties": 251.1,
+            "Candidate sorting": 0.5,
+            "Analysis": 1333.3,
+            "Output loading (worker sum)": 1022.0,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 41.6,
+            "Row encoding": 5143.5,
+            "Producer wait": 4725.9,
+            "Consumer wait": 7.0,
+            "Placement": 185.9,
+            "Encoding": 5186.2,
+            "Library GPU allocation": 86.8,
+            "Library GPU upload": 16.7,
+            "Feature GPU allocation": 4.5,
+            "Feature GPU upload": 0.0,
+            "Feature GPU compute": 0.0,
+            "Feature GPU download": 0.0,
+            "Feature CPU Canny": 35.5,
+            "Feature GPU wait": 20.5,
+            "Feature CUDA event upload": 22.2,
+            "Feature CUDA event compute": 35.1,
+            "Feature CUDA event download": 1.9,
+            "Score GPU allocation": 0.5,
+            "Score GPU upload": 0.0,
+            "Score GPU compute": 0.0,
+            "Score GPU download": 0.0,
+            "Score GPU wait": 13.0,
+            "Score CUDA event upload": 0.3,
+            "Score CUDA event compute": 13.2,
+            "Score CUDA event download": 0.3,
+            "Matching wall": 905.5,
+            "=== Total": 9059.8,
+            "Avg/tile": 5.7
+          },
+          "peak_rss_bytes": 334340096,
+          "counters": {
+            "Image cache hits": 641,
+            "Image decodes": 959,
+            "Image cache peak bytes": 43372800,
+            "Image shared loads": 0,
+            "Library device bytes": 95173750,
+            "Feature upload bytes": 276480000,
+            "Feature download bytes": 3315200,
+            "Feature pinned bytes": 44767232,
+            "Feature resident bytes": 2097152,
+            "Feature device pixel bytes": 44236800,
+            "Score upload bytes": 1075200,
+            "Score download bytes": 1920000,
+            "Score pinned bytes": 1916928,
+            "Score temporary bytes": 4014080,
+            "Matching batches": 2,
+            "Matching prefetch": 1,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 54598344,
+            "Feature cache peak bytes": 1231356,
+            "Feature cache hits": 641,
+            "Feature source reads": 1918,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        }
+      },
+      "wall_change_percent": -0.330019203208598,
+      "features_change_percent": -38.25554705432287,
+      "all_hashes_equal": {
+        "indices_sha256": true,
+        "output_sha256": true,
+        "pixels_sha256": true
+      },
+      "executables": {
+        "baseline": "561e241d20eeb2ac5fdb18801490f440dd219ed284606a0bd57a224557bb06e1",
+        "default": "bc81920b3ce16c56b251de24cc7a2b5d24bee1b5a77b40943ff9974e35877f70"
+      },
+      "samples": [
+        [
+          "baseline",
+          0,
+          true,
+          9.326681900012773,
+          148.8,
+          1038.6,
+          372269056,
+          5
+        ],
+        [
+          "default",
+          0,
+          true,
+          9.327563899976667,
+          81.3,
+          930.8,
+          334532608,
+          5
+        ],
+        [
+          "default",
+          1,
+          false,
+          9.245966899994528,
+          80.0,
+          916.2,
+          333852672,
+          5
+        ],
+        [
+          "baseline",
+          1,
+          false,
+          9.276581400015857,
+          126.4,
+          929.0,
+          371982336,
+          5
+        ],
+        [
+          "baseline",
+          2,
+          false,
+          9.463581399992108,
+          134.8,
+          982.8,
+          371888128,
+          5
+        ],
+        [
+          "default",
+          2,
+          false,
+          9.299201200017706,
+          84.0,
+          905.5,
+          333955072,
+          5
+        ],
+        [
+          "default",
+          3,
+          false,
+          9.090240099991206,
+          80.7,
+          863.0,
+          334340096,
+          5
+        ],
+        [
+          "baseline",
+          3,
+          false,
+          9.270856600021943,
+          130.7,
+          934.3,
+          372314112,
+          5
+        ]
+      ]
+    },
+    {
+      "scenario": "cuda_png-normal",
+      "medians": {
+        "baseline": {
+          "wall_seconds": 8.234768900001654,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1912.2,
+            "Features": 139.3,
+            "ANN load": 247.3,
+            "ANN query": 52.2,
+            "GPU scoring": 14.6,
+            "CPU scoring": 0.0,
+            "Selection": 227.4,
+            "CPU feature loading": 0.0,
+            "Neighbor penalties": 225.3,
+            "Candidate sorting": 0.5,
+            "Analysis": 0.0,
+            "Output loading (worker sum)": 1041.6,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 45.3,
+            "Row encoding": 5458.7,
+            "Producer wait": 5026.8,
+            "Consumer wait": 8.2,
+            "Placement": 189.8,
+            "Encoding": 5509.3,
+            "Library GPU allocation": 97.3,
+            "Library GPU upload": 17.4,
+            "Feature GPU allocation": 0.5,
+            "Feature GPU upload": 48.7,
+            "Feature GPU compute": 34.9,
+            "Feature GPU download": 2.0,
+            "Score GPU allocation": 0.3,
+            "Score GPU upload": 3.0,
+            "Score GPU compute": 10.8,
+            "Score GPU download": 0.5,
+            "Matching wall": 647.7,
+            "=== Total": 8090.4,
+            "Avg/tile": 5.1
+          },
+          "peak_rss_bytes": 361205760,
+          "counters": {
+            "Image cache hits": 641,
+            "Image decodes": 959,
+            "Image cache peak bytes": 43372800,
+            "Image shared loads": 0,
+            "Score temporary bytes": 4014080,
+            "Matching batches": 2,
+            "Matching prefetch": 1,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 96042184,
+            "Feature cache peak bytes": 0,
+            "Feature cache hits": 0,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        },
+        "default": {
+          "wall_seconds": 7.9745528000057675,
+          "phases_ms": {
+            "Prep (DB+GPU)": 1880.6,
+            "Features": 76.2,
+            "ANN load": 247.4,
+            "ANN query": 50.1,
+            "GPU scoring": 13.3,
+            "CPU scoring": 0.0,
+            "Selection": 220.7,
+            "CPU feature loading": 0.0,
+            "Neighbor penalties": 218.6,
+            "Candidate sorting": 0.5,
+            "Analysis": 0.0,
+            "Output loading (worker sum)": 1040.8,
+            "Overlay sampling (worker sum)": 0.0,
+            "Overlay blending (worker sum)": 0.0,
+            "Color conversion": 43.8,
+            "Row encoding": 5299.3,
+            "Producer wait": 4875.4,
+            "Consumer wait": 7.2,
+            "Placement": 191.0,
+            "Encoding": 5343.7,
+            "Library GPU allocation": 90.6,
+            "Library GPU upload": 17.0,
+            "Feature GPU allocation": 6.9,
+            "Feature GPU upload": 0.0,
+            "Feature GPU compute": 0.0,
+            "Feature GPU download": 0.0,
+            "Feature CPU Canny": 35.8,
+            "Feature GPU wait": 14.7,
+            "Feature CUDA event upload": 22.4,
+            "Feature CUDA event compute": 30.2,
+            "Feature CUDA event download": 1.0,
+            "Score GPU allocation": 0.5,
+            "Score GPU upload": 0.0,
+            "Score GPU compute": 0.0,
+            "Score GPU download": 0.0,
+            "Score GPU wait": 11.9,
+            "Score CUDA event upload": 0.2,
+            "Score CUDA event compute": 12.1,
+            "Score CUDA event download": 0.3,
+            "Matching wall": 596.5,
+            "=== Total": 7843.0,
+            "Avg/tile": 4.9
+          },
+          "peak_rss_bytes": 322752512,
+          "counters": {
+            "Image cache hits": 641,
+            "Image decodes": 959,
+            "Image cache peak bytes": 43372800,
+            "Image shared loads": 0,
+            "Library device bytes": 95173750,
+            "Feature upload bytes": 276480000,
+            "Feature download bytes": 1267200,
+            "Feature pinned bytes": 44439552,
+            "Feature resident bytes": 2097152,
+            "Feature device pixel bytes": 44236800,
+            "Score upload bytes": 1075200,
+            "Score download bytes": 1920000,
+            "Score pinned bytes": 1916928,
+            "Score temporary bytes": 4014080,
+            "Matching batches": 2,
+            "Matching prefetch": 1,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 53925064,
+            "Feature cache peak bytes": 0,
+            "Feature cache hits": 0,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        }
+      },
+      "wall_change_percent": -3.159968460023632,
+      "features_change_percent": -45.29791816223977,
+      "all_hashes_equal": {
+        "indices_sha256": true,
+        "output_sha256": true,
+        "pixels_sha256": true
+      },
+      "executables": {
+        "baseline": "561e241d20eeb2ac5fdb18801490f440dd219ed284606a0bd57a224557bb06e1",
+        "default": "bc81920b3ce16c56b251de24cc7a2b5d24bee1b5a77b40943ff9974e35877f70"
+      },
+      "samples": [
+        [
+          "baseline",
+          0,
+          true,
+          8.274214799981564,
+          134.9,
+          611.6,
+          360890368,
+          5
+        ],
+        [
+          "default",
+          0,
+          true,
+          8.306502899999032,
+          82.3,
+          568.1,
+          322654208,
+          5
+        ],
+        [
+          "default",
+          1,
+          false,
+          8.244632299989462,
+          73.9,
+          557.3,
+          322752512,
+          5
+        ],
+        [
+          "baseline",
+          1,
+          false,
+          8.234768900001654,
+          139.3,
+          647.7,
+          361205760,
+          5
+        ],
+        [
+          "baseline",
+          2,
+          false,
+          8.622297699999763,
+          144.6,
+          663.9,
+          360800256,
+          5
+        ],
+        [
+          "default",
+          2,
+          false,
+          7.924191500002053,
+          76.2,
+          604.3,
+          322576384,
+          5
+        ],
+        [
+          "default",
+          3,
+          false,
+          7.9745528000057675,
+          80.7,
+          596.5,
+          322252800,
+          5
+        ],
+        [
+          "baseline",
+          3,
+          false,
+          8.083506099996157,
+          135.9,
+          629.9,
+          360779776,
+          5
+        ]
+      ]
+    }
+  ],
+  "budget_validation": [
+    {
+      "mode": "normal",
+      "variants": {
+        "small": {
+          "host_budget_bytes": 67108864,
+          "matching_peak_bytes": 47343304,
+          "counters": {
+            "Image cache hits": 155110,
+            "Image decodes": 4890,
+            "Image cache peak bytes": 4057344,
+            "Image shared loads": 0,
+            "Library device bytes": 95173750,
+            "Feature upload bytes": 27648000000,
+            "Feature download bytes": 126720000,
+            "Feature pinned bytes": 44439552,
+            "Feature resident bytes": 524288,
+            "Feature device pixel bytes": 44236800,
+            "Score upload bytes": 107520000,
+            "Score download bytes": 192000000,
+            "Score pinned bytes": 479232,
+            "Score temporary bytes": 1003520,
+            "Matching batches": 625,
+            "Matching prefetch": 1,
+            "Matching max tiles": 256,
+            "Matching buffer peak bytes": 47343304,
+            "Feature cache peak bytes": 0,
+            "Feature cache hits": 0,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        },
+        "default": {
+          "host_budget_bytes": 268435456,
+          "matching_peak_bytes": 56043208,
+          "counters": {
+            "Image cache hits": 155110,
+            "Image decodes": 4890,
+            "Image cache peak bytes": 4057344,
+            "Image shared loads": 0,
+            "Library device bytes": 95173750,
+            "Feature upload bytes": 27648000000,
+            "Feature download bytes": 126720000,
+            "Feature pinned bytes": 44439552,
+            "Feature resident bytes": 2097152,
+            "Feature device pixel bytes": 44236800,
+            "Score upload bytes": 107520000,
+            "Score download bytes": 192000000,
+            "Score pinned bytes": 1916928,
+            "Score temporary bytes": 4014080,
+            "Matching batches": 157,
+            "Matching prefetch": 1,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 56043208,
+            "Feature cache peak bytes": 0,
+            "Feature cache hits": 0,
+            "Feature source reads": 0,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        }
+      },
+      "samples": [
+        [
+          "small",
+          0,
+          true,
+          26.13606119999895,
+          7085.2,
+          17483.2,
+          386842624,
+          3
+        ],
+        [
+          "default",
+          0,
+          true,
+          25.633304399991175,
+          6967.9,
+          16919.4,
+          396296192,
+          3
+        ],
+        [
+          "default",
+          1,
+          false,
+          25.65871240000706,
+          6971.6,
+          17067.6,
+          396935168,
+          3
+        ],
+        [
+          "small",
+          1,
+          false,
+          26.763138699985575,
+          7158.1,
+          17825.3,
+          387624960,
+          3
+        ]
+      ]
+    },
+    {
+      "mode": "analysis",
+      "variants": {
+        "small": {
+          "host_budget_bytes": 67108864,
+          "matching_peak_bytes": 47781576,
+          "counters": {
+            "Image cache hits": 155110,
+            "Image decodes": 4890,
+            "Image cache peak bytes": 4057344,
+            "Image shared loads": 0,
+            "Library device bytes": 95173750,
+            "Feature upload bytes": 27648000000,
+            "Feature download bytes": 331520000,
+            "Feature pinned bytes": 44767232,
+            "Feature resident bytes": 524288,
+            "Feature device pixel bytes": 44236800,
+            "Score upload bytes": 107520000,
+            "Score download bytes": 192000000,
+            "Score pinned bytes": 479232,
+            "Score temporary bytes": 1003520,
+            "Matching batches": 625,
+            "Matching prefetch": 1,
+            "Matching max tiles": 256,
+            "Matching buffer peak bytes": 47781576,
+            "Feature cache peak bytes": 6278760,
+            "Feature cache hits": 155110,
+            "Feature source reads": 9780,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        },
+        "default": {
+          "host_budget_bytes": 268435456,
+          "matching_peak_bytes": 56813256,
+          "counters": {
+            "Image cache hits": 155110,
+            "Image decodes": 4890,
+            "Image cache peak bytes": 4057344,
+            "Image shared loads": 0,
+            "Library device bytes": 95173750,
+            "Feature upload bytes": 27648000000,
+            "Feature download bytes": 331520000,
+            "Feature pinned bytes": 44767232,
+            "Feature resident bytes": 2097152,
+            "Feature device pixel bytes": 44236800,
+            "Score upload bytes": 107520000,
+            "Score download bytes": 192000000,
+            "Score pinned bytes": 1916928,
+            "Score temporary bytes": 4014080,
+            "Matching batches": 157,
+            "Matching prefetch": 1,
+            "Matching max tiles": 1024,
+            "Matching buffer peak bytes": 56813256,
+            "Feature cache peak bytes": 6278760,
+            "Feature cache hits": 155110,
+            "Feature source reads": 9780,
+            "Feature cache evictions": 0,
+            "Feature cache preloaded": 0,
+            "Library feature source reads": 0,
+            "Library feature pack hits": 45625
+          }
+        }
+      },
+      "samples": [
+        [
+          "small",
+          0,
+          true,
+          45.785629300022265,
+          8910.2,
+          28825.6,
+          417112064,
+          3
+        ],
+        [
+          "default",
+          0,
+          true,
+          41.23026250000112,
+          7754.7,
+          24151.6,
+          426749952,
+          3
+        ],
+        [
+          "default",
+          1,
+          false,
+          40.41344539998681,
+          7633.8,
+          24354.7,
+          426151936,
+          3
+        ],
+        [
+          "small",
+          1,
+          false,
+          41.67002059999504,
+          8420.5,
+          25504.3,
+          416587776,
+          3
+        ]
+      ]
+    }
+  ],
+  "output_hashes": [
+    {
+      "output_sha256": "bf23b0437550fa0dfa7b52df4867a06302563532c2da655108b8c9b8f18f05f1",
+      "indices_sha256": "e203ef7f15f413e4ae7659f8e4eae90343c661cf7631589d36e0b2d975265225",
+      "pixels_sha256": "95f195f48e1dadd661afab2e63ecf2f945a3df29ed008593cc408208b79e2cc8",
+      "pixel_shape": [
+        12800,
+        7200,
+        3
+      ]
+    },
+    {
+      "output_sha256": "51a049793fc29124d129ab397eef566b078b4065c7fa308f94ce7f52444cfd8a",
+      "indices_sha256": "12df957b93d5e668957262b4668610595b27bc4347aebe06d1ba1cac0dd5ffa5",
+      "pixels_sha256": "5a55c5842ff21ede0be9225b4f6d718fb912af9538658e59693bfb2d2c60d935",
+      "pixel_shape": [
+        12800,
+        7200,
+        3
+      ]
+    },
+    {
+      "output_sha256": "a2ef556707b57cdcaa61cb58386c6f7008b535b7c6ed2da19b1fbb438c656119",
+      "indices_sha256": "ca9904e80852f90269281abe74032ccd758b935afc3d3de4a724c432c953a24d",
+      "pixels_sha256": "06554eb92f8e6e8e4f89f6f2c07f9ceb9f3c00fc5e9a5fa35d456319f3dddb75",
+      "pixel_shape": [
+        12800,
+        7200,
+        3
+      ]
+    },
+    {
+      "output_sha256": "74f930f92d280dd4a48c597c625ee94aee48c93667d17f098e6445f7ecb0cb6a",
+      "indices_sha256": "f4c0fe768a009410142c36413cf0aa87c22a326f8e36fe36f0d5744358f452ae",
+      "pixels_sha256": "63fc52763f9d9be724c3cc9f7952e77c962415934861ba85b91ef2ef5d43f769",
+      "pixel_shape": [
+        12800,
+        7200,
+        3
+      ]
+    },
+    {
+      "output_sha256": "99e0d65bbb733126dbdbf0b5c2a6002e4347ca402fd461b6348807b3a5b5b7ec",
+      "indices_sha256": "53fca8432394800f95f7590ecce09b27a4659ec06b3533cccc6235852fea3876",
+      "pixels_sha256": "162f43a3aabce2330b198472fc3824ad81eaa1b6adbe84b48d7121cb9d081a7a",
+      "pixel_shape": [
+        12800,
+        7200,
+        3
+      ]
+    },
+    {
+      "output_sha256": "f11079b502ac66d8a0b9be3c6268d22fffe3a7015f6faca9e9397dccd99c26e2",
+      "indices_sha256": "ca9904e80852f90269281abe74032ccd758b935afc3d3de4a724c432c953a24d",
+      "pixels_sha256": "a53201fa9f00482c4b030b87e97507609fc35779358659af8a25924da7ad233f",
+      "pixel_shape": [
+        12800,
+        7200,
+        3
+      ]
+    }
+  ],
+  "replay": {
+    "tile": 42823,
+    "exact_binary64_scores": 4800,
+    "stable_Canny_Tiny_LBP": true,
+    "columns": [
+      "path",
+      "run",
+      "LAB_L",
+      "winner_library_index",
+      "score"
+    ],
+    "samples": [
+      [
+        "legacy",
+        0,
+        35.10721969604492,
+        40,
+        540.2077027978335
+      ],
+      [
+        "pipeline",
+        1,
+        35.10721969604492,
+        40,
+        540.2077028022843
+      ],
+      [
+        "legacy",
+        2,
+        35.10722351074219,
+        40,
+        540.2077027921248
+      ],
+      [
+        "pipeline",
+        3,
+        35.10722351074219,
+        40,
+        540.2077027913599
+      ],
+      [
+        "legacy",
+        4,
+        35.10722351074219,
+        40,
+        540.2077027970728
+      ],
+      [
+        "pipeline",
+        5,
+        35.10722351074219,
+        40,
+        540.2077027963481
+      ],
+      [
+        "legacy",
+        6,
+        35.10721969604492,
+        40,
+        540.2077028023285
+      ],
+      [
+        "pipeline",
+        7,
+        35.10722351074219,
+        40,
+        540.2077027913278
+      ],
+      [
+        "legacy",
+        8,
+        35.10722351074219,
+        12,
+        540.2077027994583
+      ],
+      [
+        "pipeline",
+        9,
+        35.10722351074219,
+        40,
+        540.2077027970164
+      ],
+      [
+        "legacy",
+        10,
+        35.10722351074219,
+        40,
+        540.207702790874
+      ],
+      [
+        "pipeline",
+        11,
+        35.10721969604492,
+        40,
+        540.2077028004336
+      ],
+      [
+        "legacy",
+        12,
+        35.10722351074219,
+        40,
+        540.2077027955463
+      ],
+      [
+        "pipeline",
+        13,
+        35.10722351074219,
+        40,
+        540.2077027879054
+      ],
+      [
+        "legacy",
+        14,
+        35.10722351074219,
+        40,
+        540.207702791079
+      ],
+      [
+        "pipeline",
+        15,
+        35.10721969604492,
+        40,
+        540.2077027951593
+      ],
+      [
+        "legacy",
+        16,
+        35.10722351074219,
+        40,
+        540.207702795454
+      ],
+      [
+        "pipeline",
+        17,
+        35.10722351074219,
+        40,
+        540.2077027918499
+      ],
+      [
+        "legacy",
+        18,
+        35.10722351074219,
+        12,
+        540.2077027998222
+      ],
+      [
+        "pipeline",
+        19,
+        35.10721969604492,
+        40,
+        540.2077027961355
+      ],
+      [
+        "legacy",
+        20,
+        35.10722351074219,
+        40,
+        540.2077027803667
+      ],
+      [
+        "pipeline",
+        21,
+        35.10722351074219,
+        40,
+        540.2077027816733
+      ],
+      [
+        "legacy",
+        22,
+        35.10722351074219,
+        12,
+        540.2077027989144
+      ],
+      [
+        "pipeline",
+        23,
+        35.10721969604492,
+        40,
+        540.2077027984557
+      ],
+      [
+        "legacy",
+        24,
+        35.10722351074219,
+        40,
+        540.2077027789314
+      ],
+      [
+        "pipeline",
+        25,
+        35.10722351074219,
+        40,
+        540.2077027939902
+      ],
+      [
+        "legacy",
+        26,
+        35.10722351074219,
+        40,
+        540.2077027927799
+      ],
+      [
+        "pipeline",
+        27,
+        35.10722351074219,
+        40,
+        540.2077027913714
+      ],
+      [
+        "legacy",
+        28,
+        35.10721969604492,
+        40,
+        540.2077027951898
+      ],
+      [
+        "pipeline",
+        29,
+        35.10722351074219,
+        40,
+        540.2077027834824
+      ],
+      [
+        "legacy",
+        30,
+        35.10722351074219,
+        40,
+        540.207702801094
+      ],
+      [
+        "pipeline",
+        31,
+        35.10722351074219,
+        40,
+        540.2077027935421
+      ],
+      [
+        "legacy",
+        32,
+        35.10722351074219,
+        40,
+        540.2077027823749
+      ],
+      [
+        "pipeline",
+        33,
+        35.10722351074219,
+        40,
+        540.2077027943757
+      ],
+      [
+        "legacy",
+        34,
+        35.10722351074219,
+        12,
+        540.2077028011837
+      ],
+      [
+        "pipeline",
+        35,
+        35.10721969604492,
+        40,
+        540.20770280608
+      ],
+      [
+        "legacy",
+        36,
+        35.10722351074219,
+        40,
+        540.207702790363
+      ],
+      [
+        "pipeline",
+        37,
+        35.10722351074219,
+        40,
+        540.2077027903803
+      ],
+      [
+        "legacy",
+        38,
+        35.10721969604492,
+        40,
+        540.2077027978653
+      ],
+      [
+        "pipeline",
+        39,
+        35.10721969604492,
+        40,
+        540.2077028042722
+      ],
+      [
+        "legacy",
+        40,
+        35.10721969604492,
+        40,
+        540.207702801437
+      ],
+      [
+        "pipeline",
+        41,
+        35.10722351074219,
+        40,
+        540.2077027944014
+      ],
+      [
+        "legacy",
+        42,
+        35.10722351074219,
+        40,
+        540.2077027836374
+      ],
+      [
+        "pipeline",
+        43,
+        35.10722351074219,
+        12,
+        540.2077027995325
+      ],
+      [
+        "legacy",
+        44,
+        35.10721969604492,
+        40,
+        540.2077027896603
+      ],
+      [
+        "pipeline",
+        45,
+        35.10722351074219,
+        40,
+        540.2077027919863
+      ],
+      [
+        "legacy",
+        46,
+        35.10722351074219,
+        40,
+        540.2077027959704
+      ],
+      [
+        "pipeline",
+        47,
+        35.10721969604492,
+        40,
+        540.2077027972632
+      ],
+      [
+        "legacy",
+        48,
+        35.10721969604492,
+        40,
+        540.2077027981913
+      ],
+      [
+        "pipeline",
+        49,
+        35.10722351074219,
+        40,
+        540.2077027975866
+      ],
+      [
+        "legacy",
+        50,
+        35.10722351074219,
+        40,
+        540.2077027919536
+      ],
+      [
+        "pipeline",
+        51,
+        35.10721969604492,
+        40,
+        540.2077027974838
+      ],
+      [
+        "legacy",
+        52,
+        35.10722351074219,
+        40,
+        540.2077027982547
+      ],
+      [
+        "pipeline",
+        53,
+        35.10722351074219,
+        40,
+        540.2077027930649
+      ],
+      [
+        "legacy",
+        54,
+        35.10722351074219,
+        40,
+        540.2077027938892
+      ],
+      [
+        "pipeline",
+        55,
+        35.10722351074219,
+        40,
+        540.2077027913649
+      ],
+      [
+        "legacy",
+        56,
+        35.10721969604492,
+        40,
+        540.207702795894
+      ],
+      [
+        "pipeline",
+        57,
+        35.10722351074219,
+        40,
+        540.2077027899786
+      ],
+      [
+        "legacy",
+        58,
+        35.10721969604492,
+        40,
+        540.2077027994551
+      ],
+      [
+        "pipeline",
+        59,
+        35.10722351074219,
+        40,
+        540.207702784768
+      ],
+      [
+        "legacy",
+        60,
+        35.10721969604492,
+        40,
+        540.2077027907435
+      ],
+      [
+        "pipeline",
+        61,
+        35.10721969604492,
+        40,
+        540.2077027999478
+      ],
+      [
+        "legacy",
+        62,
+        35.10721969604492,
+        40,
+        540.2077027869304
+      ],
+      [
+        "pipeline",
+        63,
+        35.10722351074219,
+        40,
+        540.2077027896062
+      ]
+    ],
+    "affected_tiles": [
+      42823,
+      42824,
+      42840,
+      43624,
+      43625
+    ],
+    "limitation": "Original and optimized CUDA binaries each produce the same two outputs. Fixed-feature scoring is bitwise identical; repeated LAB/Grid extraction retains the original floating atomic accumulation variation."
+  }
+}

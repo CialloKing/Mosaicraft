@@ -1029,6 +1029,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         {
             std::cout << "  Library GPU allocation: " << libraryTimings.allocationMs << " ms\n"
                       << "  Library GPU upload: " << libraryTimings.uploadMs << " ms\n"
+                      << "  Library device bytes: " << libraryTimings.residentBytes << "\n"
                       << "  Feature GPU allocation: " << featureTimings.allocationMs << " ms\n"
                       << "  Feature GPU upload: " << featureTimings.uploadMs << " ms\n"
                       << "  Feature GPU compute: " << featureTimings.computeMs << " ms\n"
@@ -1236,6 +1237,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 batchRows /= 2;
             }
             maximumBatchTiles = batchRows;
+            if (gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze) + scratch > m_limits.hostBytes)
+            {
+                std::cerr << "ERROR: Matching host budget cannot hold one CUDA tile." << std::endl;
+                return false;
+            }
             const size_t hostRows = gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, true);
             const size_t scoreHost = batchRows * scoreRowBytes;
             if (m_limits.cudaPipeline && hostRows + scratch + scoreHost < m_limits.hostBytes &&
