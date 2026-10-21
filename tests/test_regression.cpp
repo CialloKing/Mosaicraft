@@ -238,6 +238,7 @@ TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encode
     for (bool analyze : {false, true})
     {
         request.config.analyze = analyze;
+        request.config.lRange = analyze ? 20 : 255;
         std::vector<int> reference;
         std::vector<char> encoded, report;
         // CPU、通用核小/大批次，以及计算前预算不足的 CPU 回退。

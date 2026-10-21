@@ -145,7 +145,11 @@ bool CompatibleFeatureWorkspace::prepare(int width, int height, int maxImages, s
                            sizeof(CompatibleFeature) + sizeof(cv::Mat) + sizeof(ImageRecord *);
     const size_t deviceRow = pixels * 4 + (blocks + 1) * sizeof(IntegerFeatures);
     size_t free = 0, total = 0;
-    requireCuda(cudaMemGetInfo(&free, &total));
+    // 首次查询也可能因 CUDA 上下文分配不足而失败，此时尚未提交计算。
+    if (!optionalCudaAllocation(cudaMemGetInfo(&free, &total)))
+    {
+        return false;
+    }
     const size_t budget = std::min({deviceBudget, size_t(256ULL * 1024 * 1024), free / 2});
     const size_t count = std::min({size_t(maxImages), size_t(256), hostBudget / hostRow, budget / deviceRow});
     if (count == 0)

@@ -299,6 +299,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
 
     FeatureExtractor extractor;
     bool gpuOk = false;
+    bool usedCompatibleFeatures = false;
 #ifdef MOSAICRAFT_CUDA
     gpuOk = cuda::isCudaAvailable() && cuda::hasTemplateFeatures(request.normalizeWidth, request.normalizeHeight);
 #endif
@@ -466,10 +467,6 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                     queueFullCV.notify_all();
                 }
             });
-    }
-    else if (!request.normalizeOnly)
-    {
-        std::cout << "Features: CPU" << std::endl;
     }
 
     if (!inputIsOutput)
@@ -704,6 +701,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 try
                 {
                     compatible.extract(compatibleImages, features, workers, statistics, &compatibleTimings);
+                    usedCompatibleFeatures = true;
                 }
                 catch (const std::exception &error)
                 {
@@ -834,7 +832,8 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     auto gpuMs = gpuOk && gpuDone.load() == 0 ? 0 : std::chrono::duration_cast<Ms>(tColorStart - tGpuStart).count();
 
     std::cout << "  Phase timing: normalize " << std::fixed << std::setprecision(1) << normMs / 1000.0
-              << "s | " << (gpuOk ? "GPU" : "CPU") << " features " << gpuMs / 1000.0
+              << "s | " << (gpuOk ? "template CUDA" : usedCompatibleFeatures ? "generic CUDA" : "CPU")
+              << " features " << gpuMs / 1000.0
               << "s | color ordering " << colorSeconds << "s";
     std::cout << std::endl;
 
@@ -864,8 +863,11 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     std::cout << "Feature resolution: " << request.normalizeWidth << "x" << request.normalizeHeight << std::endl;
     const auto wallMs =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - commandStart).count();
-    std::cout << "  Build total (wall, including scan/cache): " << wallMs << " ms\n"
-              << "  GPU normalization/features overlap; child timings are not additive.\n";
+    std::cout << "  Build total (wall, including scan/cache): " << wallMs << " ms\n";
+    if (gpuOk)
+    {
+        std::cout << "  GPU normalization/features overlap; child timings are not additive.\n";
+    }
 
     return ServiceResult::success("build completed");
 }

@@ -93,6 +93,19 @@ TEST_CASE("dynamic CUDA features exactly reproduce CPU integers statistics and s
         CHECK(features[0].edge == before.edge);
         CHECK_THROWS_AS(workspace.extract({cv::Mat()}, features, workers), std::invalid_argument);
     }
+    // 同时越过 LAB uint32 总和与 LBP float += 1 的 2^24 边界。
+    cv::Mat large(2060, 8192, CV_8UC3, cv::Scalar(255, 255, 255));
+    cv::RNG random(42);
+    auto corner = large(cv::Rect(0, 0, 128, 128));
+    random.fill(corner, cv::RNG::UNIFORM, 0, 256);
+    REQUIRE(workspace.prepare(large.cols, large.rows, 1, 256ULL * 1024 * 1024));
+    std::vector<CompatibleFeature> features;
+    workspace.extract({large}, features, workers);
+    cv::Mat lab;
+    cv::cvtColor(large, lab, cv::COLOR_BGR2Lab);
+    CHECK(features[0].lab[0] == cv::mean(lab)[0]);
+    const auto hist = computeLBPHistogram(large);
+    CHECK(std::equal(features[0].lbp.begin(), features[0].lbp.end(), hist.begin()));
 }
 
 TEST_CASE("dynamic CUDA budgets and faults never publish partial features")
@@ -130,6 +143,21 @@ TEST_CASE("dynamic CUDA budgets and faults never publish partial features")
     REQUIRE(workspace.prepare(32, 32, 1, 1024 * 1024));
     workspace.extract({image}, features, workers);
     CHECK(features.size() == 1);
+    const auto reference = features.front();
+    REQUIRE(workspace.prepare(32, 32, 256, 64ULL * 1024 * 1024));
+    REQUIRE(workspace.capacity() == 256);
+    for (size_t count : {size_t(256), size_t(1), size_t(7)})
+    {
+        workspace.extract(std::vector<cv::Mat>(count, image), features, workers);
+        REQUIRE(features.size() == count);
+        for (const auto &feature : features)
+        {
+            CHECK(feature.lab == reference.lab);
+            CHECK(feature.grid == reference.grid);
+            CHECK(feature.lbp == reference.lbp);
+        }
+    }
+    CHECK_THROWS_AS(workspace.extract(std::vector<cv::Mat>(257, image), features, workers), std::invalid_argument);
 }
 
 TEST_CASE("brightness factors are symmetric and seeded sampling preserves bounds")

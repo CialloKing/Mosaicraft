@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-10-15 | 版本 / Version：v1.14.4
+> 最后更新 / Last updated：2026-10-22 | 版本 / Version：v1.14.4（含未发布更新）
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -25,6 +25,10 @@
 > **EN**: Mosaicraft is a GPU-accelerated photo mosaic generator. It indexes thousands of library images, divides the target image into tiles, matches each tile to the most similar library image via a two-stage ANN+GPU pipeline, and assembles the result at massive resolutions (up to 50,040×75,200 pixels, 376 megapixels).
 
 Mosaicraft 是一个 GPU 加速的照片马赛克拼贴生成器。将数千张图库图片建立索引，目标图分割为小格后逐格匹配最相似图片，拼接输出超大分辨率马赛克。
+
+当前四种固定尺寸 180×320、320×180、360×640、640×360 使用模板 CUDA 提取和评分；其他合法尺寸（宽高各 1～8192）使用与原 CPU 精确兼容的通用 CUDA 特征统计，并保留 CPU 评分和选图。计算前资源不足时回退 CPU；v6 特征及数据库格式不变，旧自定义尺寸图库无需重建。详见 [动态尺寸 CUDA 验证记录](DYNAMIC_CUDA_FEATURES.md)。
+
+> **EN**: Fixed sizes retain template CUDA extraction and scoring. Other valid dimensions (1–8192 per axis) use CPU-compatible generic CUDA feature statistics with CPU scoring and selection. Resource shortages before computation fall back to CPU. Features remain v6; existing custom-size libraries need no rebuild.
 
 ### 核心能力
 
@@ -457,13 +461,13 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 
 ## 10. 已知限制与未来方向 / Limitations & Roadmap
 
-> **EN**: Known limits: WebP has a 16,383px cap, independently computed CPU/GPU floating-point features can differ, and edge density has limited discrimination at tile scale. Appends are supported and renumber the entire library by color. Roadmap: face/saliency weighting and GUI.
+> **EN**: Known limits: WebP has a 16,383px cap, template CUDA and CPU floating-point features can differ, and edge density has limited discrimination at tile scale. Generic CUDA preserves CPU feature rounding in the same OpenCV/build environment. Appends are supported and renumber the entire library by color. Roadmap: face/saliency weighting and GUI.
 
 ### 已知限制
 
 - WebP 限制 16383px（低于 JPEG 65500px）
 - ANN 只读查询支持并发，v1.14.0 默认最多 8 线程；构建/修改索引期间不执行查询
-- 小块放大后边缘特征的区分度有限；CPU/CUDA 均使用 Canny 定义，其他浮点特征仍可能有精度差异
+- 小块放大后边缘特征的区分度有限；CPU/CUDA 均使用 Canny 定义，模板 CUDA 的其他浮点特征仍可能与 CPU 有精度差异；通用 CUDA 在相同 OpenCV/构建环境中保留 CPU 舍入结果
 - 自适应权重当前版退步，已冻结
 - `--append` 支持增量建库；完成时按颜色重排全库，旧图片文件名可能改变
 
@@ -505,7 +509,7 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 - DB 自包含: 统一目录内包含 `mosaicraft.db`
 - DB 元数据: `meta` 表存储 `feature_w/h`，支持多分辨率适配
 - `--normalize-size <WxH>` 自动统一归一化分辨率
-- GPU 多分辨率: 180x320 / 320x180 / 360x640 / 640x360
+- GPU 多分辨率（v1.12 当时的模板范围）: 180x320 / 320x180 / 360x640 / 640x360；当前自定义尺寸支持见上文动态尺寸说明
 - 输出 tile 自动匹配 DB 尺寸(横图320x180, 竖图180x320)
 
 **性能 (45K 图库, RTX 4060)**

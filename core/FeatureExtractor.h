@@ -22,7 +22,7 @@ class FeatureExtractor
 public:
     FeatureExtractor() = default;
 
-    // 从归一化图（180×320 BGR）提取特征，填充 rec 各字段。
+    // 从归一化 BGR 图提取特征，填充 rec 各字段，不限于模板尺寸。
     // featDir  + baseName 非空时，TinyImage 写入 featDir/baseName.tiny
     void compute(const cv::Mat& normalizedBGR,
                  ImageRecord& rec,
