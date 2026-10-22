@@ -1,4 +1,5 @@
-﻿#include "MosaicEngine.h"
+#include "MatchingScore.h"
+#include "MosaicEngine.h"
 #include "AnalysisTiles.h"
 #include "BenchmarkTimer.h"
 #include "BrightnessAdjustment.h"
@@ -592,10 +593,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         return false;
     }
     Config cfg = validated.config;
-    if (cfg.useGpu && !cuda::isCudaAvailable())
-    {
-        cfg.useGpu = false;
-    }
+    const bool cudaEnabled = cfg.useGpu && cuda::isCudaAvailable();
 
     // Benchmark 计时变量
     using Clock = std::chrono::steady_clock;
@@ -619,7 +617,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::atomic<int64_t> opPlaceResizeNs{0};
     std::atomic<int64_t> opPlaceCopyNs{0};
 
-    std::cout << "GPU: " << (cfg.useGpu ? "CUDA enabled" : "disabled (CPU only)") << std::endl;
+    std::cout << "GPU: " << (cudaEnabled ? "CUDA enabled" : "disabled (CPU only)") << std::endl;
     cfg.print();
 
     cv::Mat target = imreadUnicode(targetPath, cv::IMREAD_COLOR);
@@ -794,13 +792,17 @@ bool MosaicEngine::generate(const std::string& targetPath,
     auto releaseGpuLib = [&]() {
         if (gpuLib.count > 0) cuda::freeLibrary(gpuLib);
     };
-    bool compatibleFeatures = cfg.useGpu && !cuda::hasTemplateFeatures(featW, featH);
-    if (compatibleFeatures)
+    MatchingBackends backends;
+    if (cudaEnabled)
     {
-        // 原自定义尺寸使用 CPU 评分。单独选择提取后端，避免改变评分精度及平分顺序。
-        cfg.useGpu = false;
+        backends.features = cuda::hasTemplateFeatures(featW, featH)
+            ? FeatureBackend::TemplateCuda : FeatureBackend::CompatibleCuda;
+        backends.scoring = backends.features == FeatureBackend::TemplateCuda
+            ? ScoreBackend::TemplateCuda : ScoreBackend::Cpu;
     }
-    if (cfg.useGpu)
+    const bool templateCuda = backends.scoring == ScoreBackend::TemplateCuda;
+    bool compatibleFeatures = backends.features == FeatureBackend::CompatibleCuda;
+    if (templateCuda)
     {
         std::cout << "Feature backend: template CUDA; scoring: CUDA." << std::endl;
     }
@@ -808,7 +810,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     {
         std::cout << "Feature backend: CPU; scoring: CPU." << std::endl;
     }
-    if (cfg.useGpu && cuda::isCudaAvailable())
+    if (templateCuda && cuda::isCudaAvailable())
     {
         std::vector<double>  h_lab(dbCount * 3);
         std::vector<float>   h_grid(dbCount * 192);
@@ -1035,7 +1037,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             std::cout << "    Resize:   " << std::setprecision(1) << toMs(opPlaceResizeNs) << " ms\n";
             std::cout << "    Copy:     " << std::setprecision(1) << toMs(opPlaceCopyNs) << " ms\n";
         }
-        if (cfg.useGpu)
+        if (templateCuda)
         {
             std::cout << "  Library GPU allocation: " << libraryTimings.allocationMs << " ms\n"
                       << "  Library GPU upload: " << libraryTimings.uploadMs << " ms\n"
@@ -1168,7 +1170,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     // 可控匹配缓冲按预算分批；图库记录和精简选择结果仍独立持有。
     size_t batchRows =
-        std::min<size_t>(totalTiles, matchingBatchRows(m_limits, featW, featH, N, dbCount, cfg.useGpu));
+        std::min<size_t>(totalTiles, matchingBatchRows(m_limits, featW, featH, N, dbCount, templateCuda));
     maximumBatchTiles = batchRows;
     int noCandidateCount = 0;
     int grid4Top1 = 0, grid8Top1 = 0, top1Differ = 0;
@@ -1224,7 +1226,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
 
         WorkerPool queryWorkers;
-        unsigned featureThreads = cfg.useGpu ? std::min(8u, std::max(1u, std::thread::hardware_concurrency()))
+        unsigned featureThreads = templateCuda ? std::min(8u, std::max(1u, std::thread::hardware_concurrency()))
                                              : std::max(2u, std::thread::hardware_concurrency());
         WorkerPool featureWorkers(static_cast<unsigned>(std::min<size_t>(batchRows, featureThreads)));
         std::unique_ptr<cuda::FeatureWorkspace> workspace;
@@ -1242,6 +1244,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             compatibleFeatures = hostRows < m_limits.hostBytes && scratch < m_limits.hostBytes - hostRows &&
                 compatible.prepare(featW, featH, static_cast<int>(requestedRows),
                                    m_limits.hostBytes - hostRows - scratch);
+            backends.features = compatibleFeatures ? FeatureBackend::CompatibleCuda : FeatureBackend::Cpu;
             if (compatibleFeatures)
             {
                 batchRows = static_cast<size_t>(compatible.capacity());
@@ -1256,7 +1259,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         bool pipeline = false;
         size_t pinnedBytes = 0;
-        if (cfg.useGpu)
+        if (templateCuda)
         {
             workspace = std::make_unique<cuda::FeatureWorkspace>();
             scoreWorkspace = std::make_unique<cuda::ScoreWorkspace>();
@@ -1307,18 +1310,18 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
         }
         std::unique_ptr<FeaturePack::Reader> featureReader;
-        if (!cfg.useGpu || cfg.analyze)
+        if (!templateCuda || cfg.analyze)
         {
             const auto readStart = Clock::now();
-            featureReader = std::make_unique<FeaturePack::Reader>(cfg.useGpu ? std::string() : featDirCache, allRecords,
+            featureReader = std::make_unique<FeaturePack::Reader>(templateCuda ? std::string() : featDirCache, allRecords,
                                                                   m_limits.featureBytes);
-            if (!cfg.useGpu)
+            if (!templateCuda)
             {
                 msCPUFeatures += Ms(Clock::now() - readStart).count();
             }
         }
         std::vector<std::vector<float>> libGrid4x4;
-        if (cfg.useGpu && cfg.analyze)
+        if (templateCuda && cfg.analyze)
         {
             libGrid4x4.resize(dbCount);
             for (int i = 0; i < dbCount; ++i)
@@ -1335,7 +1338,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         MatchingBuffers ahead;
         auto prepare = [&](int first, int count, MatchingBuffers &buffers)
         {
-            buffers.resize(count, featBytes, N, cfg.useGpu, cfg.analyze, pipeline);
+            buffers.resize(count, featBytes, N, templateCuda, cfg.analyze, pipeline);
             auto &allTL = buffers.l;
             auto &allTA = buffers.a;
             auto &allTB = buffers.b;
@@ -1352,7 +1355,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             auto &tileLbpW = buffers.lbpW;
             auto &tileGrid4x4 = buffers.grid4;
             const auto featureStart = Clock::now();
-            if (cfg.useGpu)
+            if (templateCuda)
             {
                 // CUDA 沿用原有 256 张提取粒度；外层较大批次仍统一查询、评分和顺序选图。
                 // 复用输入暂存，避免放大 kernel/暂存容量导致吞吐回退。
@@ -1565,7 +1568,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
             }
 
-            if (cfg.useGpu && cfg.adaptiveWeights)
+            if (templateCuda && cfg.adaptiveWeights)
             {
                 for (int local = 0; local < count; ++local)
                 {
@@ -1585,7 +1588,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             return true;
         };
         const bool prefetch =
-            cfg.useGpu && totalTiles > batchRows && m_limits.hostBytes >= scratch + pinnedBytes &&
+            templateCuda && totalTiles > batchRows && m_limits.hostBytes >= scratch + pinnedBytes &&
             gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, pipeline) <=
                 (m_limits.hostBytes - scratch - pinnedBytes) / 2;
         matchingPrefetch = prefetch;
@@ -1623,7 +1626,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             auto &tileEdgeW = buffers.edgeW;
             auto &tileLbpW = buffers.lbpW;
             auto &tileGrid4x4 = buffers.grid4;
-            if (cfg.useGpu)
+            if (templateCuda)
             {
                 const auto scoreStart = Clock::now();
                 cuda::GpuTimings batchTimings;
@@ -1952,16 +1955,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         const auto &r = allRecords[li];
                         const auto &features = featureReader->get(li);
 
-                        double labD = tileLabW[local] *
-                                      labDistance(allTL[local], allTA[local], allTB[local], r.avgL, r.avgA, r.avgB);
-                        double gridD = tileGridW[local] * gridDistance8x8(allGrid[local], r.grid4x4, true);
-                        double edgeD = tileEdgeW[local] * std::abs(allEdge[local] - r.edgeDensity);
-                        double s =
-                            labD + gridD +
-                            tileTinyW[local] * (features.tinyValid ? tinyMSE(allTiny[local], features.tiny) : 1.0) +
-                            edgeD +
-                            tileLbpW[local] * (features.lbpValid ? lbpDistance(allLBP[local], features.lbp) : 1.0) +
-                            r.useCount * cfg.usePenalty;
+                        double s = cpuBaseScore(buffers, local, r, features, cfg.usePenalty);
                         BenchmarkTimer neighborTimer(cfg.benchmark, msNeighbor);
                         auto it = freq.find(r.id);
                         int cnt = (it != freq.end()) ? it->second : 0;
@@ -2116,7 +2110,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         *m_selectedObserver = bestLibIdx;
     }
     std::cout << " done" << std::endl;
-    if (cfg.useGpu && cfg.adaptiveWeights)
+    if (templateCuda && cfg.adaptiveWeights)
     {
         std::sort(edgeDistribution.begin(), edgeDistribution.end());
         std::sort(entropyDistribution.begin(), entropyDistribution.end());
@@ -2135,7 +2129,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
     std::vector<double>().swap(edgeDistribution);
     std::vector<double>().swap(entropyDistribution);
-    if (cfg.useGpu && cfg.analyze && totalTiles > noCandidateCount)
+    if (templateCuda && cfg.analyze && totalTiles > noCandidateCount)
     {
         std::cout << "  Grid 8x8 experiment: Top1 differ=" << top1Differ << "/" << totalTiles - noCandidateCount
                   << "\n";

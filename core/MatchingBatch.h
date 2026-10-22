@@ -7,6 +7,22 @@
 
 namespace mosaicraft
 {
+enum class FeatureBackend
+{
+    Cpu, TemplateCuda, CompatibleCuda
+};
+
+enum class ScoreBackend
+{
+    Cpu, TemplateCuda, CompatibleCuda
+};
+
+struct MatchingBackends
+{
+    FeatureBackend features = FeatureBackend::Cpu;
+    ScoreBackend scoring = ScoreBackend::Cpu;
+};
+
 struct MatchingLimits
 {
     size_t hostBytes = 256ULL * 1024 * 1024;
