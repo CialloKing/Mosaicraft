@@ -378,6 +378,7 @@ TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encode
         request.config.analyze = analyze;
         request.config.lRange = analyze ? 20 : 255;
         std::vector<int> reference;
+        std::vector<int> referenceUsage;
         std::vector<char> encoded, report;
         // 四种后端组合、小/大批次、联合预算及两种能力的独立分配回退。
         for (int profile = 0; profile < 10; ++profile)
@@ -424,17 +425,24 @@ TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encode
                     cuda::isCudaAvailable() ? selected.size() : 0));
             CHECK(MatchingAccess::compatibleTemporaryBytes(engine) <= limits.deviceBytes);
             const auto output = bytes(u8path(request.outputPath));
+            std::vector<int> usage;
+            for (const auto &record : Database(build.dbPath).allRecords())
+            {
+                usage.push_back(record.useCount);
+            }
             const auto analysis = analyze ? bytes(workspace.outputDir() / "mosaic_analysis" / "worst_report.txt")
                                          : std::vector<char>();
             if (profile == 0)
             {
                 reference = selected;
+                referenceUsage = usage;
                 encoded = output;
                 report = analysis;
             }
             else
             {
                 CHECK(selected == reference);
+                CHECK(usage == referenceUsage);
                 CHECK(output == encoded);
                 CHECK(analysis == report);
             }

@@ -79,7 +79,8 @@ int main(int argc, char **argv)
     report["library_upload_ms"] = upload.uploadMs;
     report["resident_bytes"] = scoring.libraryBytes();
     report["temporary_bytes"] = scoring.deviceBytes();
-    report["pinned_bytes"] = scoring.hostBytes();
+    report["pinned_bytes"] = upload.pinnedBytes;
+    report["host_bytes"] = scoring.hostBytes();
     using Clock = std::chrono::steady_clock;
     for (int run = 0; run < 4; ++run)
     {

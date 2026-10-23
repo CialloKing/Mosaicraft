@@ -41,7 +41,7 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
 
 ### ⚡ GPU 加速
 - **建库特征提取** — GPU 批量计算；CPU 归一化、Canny 和落盘校验保证 v6 特征语义一致
-- **匹配精排** — 四种模板尺寸使用 CUDA 五特征评分；自定义尺寸保留 CPU 评分和选图
+- **匹配精排** — 四种模板沿用原 CUDA 评分；自定义尺寸默认使用 CPU 兼容 CUDA 评分，保留原 CPU 排序、邻域处理和选图
 - **多分辨率** — 180×320 / 320×180 / 360×640 / 640×360 沿用模板内核；其他合法尺寸使用与 CPU 精确兼容的通用 CUDA 特征统计，宽高各支持 1～8192，资源不足时回退 CPU
 - **纯 CPU 模式** — `-D MOSAICRAFT_CUDA=OFF` 即可无 NVIDIA 平台编译
 
@@ -289,7 +289,8 @@ Mosaicraft/
 ├── compute/                    # CUDA 加速
 │   ├── CudaBackend.cu          # GPU 评分
 │   ├── FeatureExtractorCuda.cu # 模板 GPU 特征提取
-│   └── CompatibleFeatures.cu   # 动态尺寸 CPU 兼容 CUDA 统计
+│   ├── CompatibleFeatures.cu   # 动态尺寸 CPU 兼容 CUDA 统计
+│   └── CompatibleScoring.cu    # 与图像尺寸无关的 CPU 兼容 CUDA 评分
 ├── tools/
 │   └── command-builder/        # Web 命令生成器
 ├── docs/
@@ -347,8 +348,8 @@ ANN 使用 `features/lib.ann196` 和 `.meta` 缓存。缓存记录格式版本�
 
 这些预算约束对应缓冲或特征载荷，未包含完整目标图、图库记录、ANN、缓存元数据及 LRU 管理结构、OpenCV 算子内部工作区、512 MiB 图片缓存和输出缓冲，不能当作进程总内存上限。目标图仍完整解码，输出策略保持不变。运行中取消、分析数据落盘和 PNG 编码优化留待后续更新。
 
-自定义尺寸的通用 CUDA 提取纳入上述 256 MiB 主机预算，最多 256 块；建库使用 64 MiB 工作缓冲预算。BGR、LAB、灰度、锁页暂存及统计输出计入主机预算，像素和整数归约暂存计入不超过 256 MiB 且受可用显存约束的设备预算。单张超预算或计算前资源不足时使用 CPU；已经提交 CUDA 工作后发生复制、内核或同步错误会结束任务并报告错误。
+自定义尺寸的通用 CUDA 提取纳入上述 256 MiB 主机预算，最多 256 块；建库使用 64 MiB 工作缓冲预算。BGR、LAB、灰度、锁页暂存及统计输出计入主机预算，像素、整数归约和兼容评分的设备暂存合计不超过 256 MiB，并受可用显存约束。评分常驻图库单独计量，按块校验和上传，不额外复制整库到主机数组。提取与评分独立准备资源：提取超预算仍可使用 GPU 评分，评分资源不足保留可用提取后端；已经提交 CUDA 工作后发生复制、内核或同步错误会结束任务并报告错误。
 
-通用路径保留 OpenCV 颜色转换、TinyImage、Canny、入库统计及 CPU 评分，只加速 LAB、8×8 分区和 LBP 整数统计。特征版本仍为 v6，旧自定义尺寸图库无需重建，生成 `--cpu` 和 CPU-only 构建保持纯 CPU。相同 OpenCV/构建环境、输入像素、图库快照、使用计数和随机种子下，通用路径与原 CPU 的特征和最终选图一致；不承诺跨 OpenCV 版本逐字节一致。验证和性能数据见 [动态尺寸 CUDA 验证记录](docs/DYNAMIC_CUDA_FEATURES.md)。
+通用提取保留 OpenCV 颜色转换、TinyImage、Canny 和入库统计，加速 LAB、8×8 分区和 LBP 整数统计。自定义尺寸默认使用新的 CPU 兼容 CUDA 候选评分；ANN、邻域惩罚、平分排序、随机选择和分析继续复用原 CPU 路径。特征版本仍为 v6，旧自定义尺寸图库无需重建，生成 `--cpu` 和 CPU-only 构建保持纯 CPU。相同 OpenCV/构建环境、输入像素、图库快照、使用计数和随机种子下，通用路径与原 CPU 的特征和最终选图一致；不承诺跨 OpenCV 版本逐字节一致。验证和性能数据见 [动态尺寸特征验证](docs/DYNAMIC_CUDA_FEATURES.md)及 [独立 CUDA 评分验证](docs/INDEPENDENT_CUDA_SCORING.md)。
 
 显式构建 `mosaicraft_match_benchmark` 后，可用 `scripts/benchmark_bounded.py` 对比原 64/64 MiB、256 块方案与默认预算，并记录墙钟、匹配阶段、源特征读取、缓存命中和主机峰值内存。此工具复用 API JSON，允许基准指定小输出 tile，不增加生产 CLI/API 参数。
