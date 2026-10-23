@@ -66,6 +66,7 @@ if (MOSAICRAFT_CUDA)
 set(CUDA_OBJ1 "${CMAKE_BINARY_DIR}/CudaBackend${CUDA_OBJ_EXT}")
 set(CUDA_OBJ2 "${CMAKE_BINARY_DIR}/FeatureExtractorCuda${CUDA_OBJ_EXT}")
 set(CUDA_OBJ3 "${CMAKE_BINARY_DIR}/CompatibleFeatures${CUDA_OBJ_EXT}")
+set(CUDA_OBJ4 "${CMAKE_BINARY_DIR}/CompatibleScoring${CUDA_OBJ_EXT}")
 
 add_custom_command(
     OUTPUT ${CUDA_OBJ1}
@@ -96,7 +97,7 @@ add_custom_command(
         -I"${TIFF_INCLUDE_DIR}"
         ${NVCC_EXTRA_FLAGS}
     DEPENDS "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu" "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.h" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh"
-        "${CMAKE_SOURCE_DIR}/core/FeatureUtils.h" "${CMAKE_SOURCE_DIR}/core/FeatureExtractor.h" "${CMAKE_SOURCE_DIR}/core/UnicodeIO.h"
+        "${CMAKE_SOURCE_DIR}/core/FeatureUtils.h" "${CMAKE_SOURCE_DIR}/core/GridWeights.inc" "${CMAKE_SOURCE_DIR}/core/FeatureExtractor.h" "${CMAKE_SOURCE_DIR}/core/UnicodeIO.h"
         "${CMAKE_SOURCE_DIR}/core/WorkerPool.h"
     COMMENT "Compiling FeatureExtractorCuda.cu..."
 )
@@ -115,9 +116,26 @@ add_custom_command(
         ${NVCC_EXTRA_FLAGS}
     DEPENDS "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.cu" "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.h"
         "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh"
-        "${CMAKE_SOURCE_DIR}/core/FeatureUtils.h" "${CMAKE_SOURCE_DIR}/core/FeatureExtractor.h"
+        "${CMAKE_SOURCE_DIR}/core/FeatureUtils.h" "${CMAKE_SOURCE_DIR}/core/GridWeights.inc" "${CMAKE_SOURCE_DIR}/core/FeatureExtractor.h"
         "${CMAKE_SOURCE_DIR}/core/WorkerPool.h"
     COMMENT "Compiling CPU-compatible dynamic CUDA features..."
+)
+# 只约束新评分内核；原模板的编译选项与算术保持不变。
+add_custom_command(
+    OUTPUT ${CUDA_OBJ4}
+    COMMAND "${CUDAToolkit_BIN_DIR}/nvcc${CMAKE_EXECUTABLE_SUFFIX}"
+        -c "${CMAKE_SOURCE_DIR}/compute/CompatibleScoring.cu"
+        -o "${CUDA_OBJ4}"
+        -arch=${CUDA_ARCH} -std=c++17 --fmad=false --prec-div=true --prec-sqrt=true --ftz=false
+        -ccbin "${CMAKE_CXX_COMPILER}"
+        -I"${CMAKE_SOURCE_DIR}"
+        -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
+        -I"${VCPKG_TRIPLET_INCLUDE}"
+        ${NVCC_EXTRA_FLAGS}
+    DEPENDS "${CMAKE_SOURCE_DIR}/compute/CompatibleScoring.cu" "${CMAKE_SOURCE_DIR}/compute/CompatibleScoring.h"
+        "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh"
+        "${CMAKE_SOURCE_DIR}/core/MatchingBatch.h" "${CMAKE_SOURCE_DIR}/core/GridWeights.inc"
+    COMMENT "Compiling CPU-compatible CUDA scoring..."
 )
 endif()  # MOSAICRAFT_CUDA
 # ============================================================
@@ -176,6 +194,7 @@ add_library(mosaicraft_cuda STATIC
     ${CUDA_OBJ1}
     ${CUDA_OBJ2}
     ${CUDA_OBJ3}
+    ${CUDA_OBJ4}
 )
 target_include_directories(mosaicraft_cuda PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -298,3 +317,6 @@ target_link_libraries(mosaicraft_cuda_replay PRIVATE mosaicraft_core mosaicraft_
 
 add_executable(mosaicraft_compatible_benchmark EXCLUDE_FROM_ALL scripts/benchmark_compatible.cpp)
 target_link_libraries(mosaicraft_compatible_benchmark PRIVATE mosaicraft_core mosaicraft_cuda)
+
+add_executable(mosaicraft_score_benchmark EXCLUDE_FROM_ALL scripts/benchmark_scoring.cpp)
+target_link_libraries(mosaicraft_score_benchmark PRIVATE mosaicraft_core mosaicraft_cuda)

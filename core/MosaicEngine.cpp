@@ -1,3 +1,4 @@
+#include "compute/CompatibleScoring.h"
 #include "MatchingScore.h"
 #include "MosaicEngine.h"
 #include "AnalysisTiles.h"
@@ -584,6 +585,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                              const Config& config)
 {
     m_compatibleFeatureImages = 0;
+    m_compatibleScoreTiles = 0;
+    m_compatibleTemporaryBytes = 0;
     // 检查 CUDA 可用性，GPU 不可用时默认回退 CPU
     MosaicRequest validated{targetPath, dbPath, outputPath, config};
     std::string validationError;
@@ -798,17 +801,17 @@ bool MosaicEngine::generate(const std::string& targetPath,
         backends.features = cuda::hasTemplateFeatures(featW, featH)
             ? FeatureBackend::TemplateCuda : FeatureBackend::CompatibleCuda;
         backends.scoring = backends.features == FeatureBackend::TemplateCuda
-            ? ScoreBackend::TemplateCuda : ScoreBackend::Cpu;
+            ? ScoreBackend::TemplateCuda : (m_limits.compatibleScoring ? ScoreBackend::CompatibleCuda : ScoreBackend::Cpu);
+        if (backends.features == FeatureBackend::CompatibleCuda && !m_limits.compatibleFeatures)
+        {
+            backends.features = FeatureBackend::Cpu;
+        }
     }
     const bool templateCuda = backends.scoring == ScoreBackend::TemplateCuda;
     bool compatibleFeatures = backends.features == FeatureBackend::CompatibleCuda;
     if (templateCuda)
     {
         std::cout << "Feature backend: template CUDA; scoring: CUDA." << std::endl;
-    }
-    else if (!compatibleFeatures)
-    {
-        std::cout << "Feature backend: CPU; scoring: CPU." << std::endl;
     }
     if (templateCuda && cuda::isCudaAvailable())
     {
@@ -1069,6 +1072,19 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << "  Score pinned bytes: " << scoreTimings.pinnedBytes << "\n"
                       << "  Score temporary bytes: " << scoreTimings.peakTemporaryBytes << "\n";
         }
+        if (backends.scoring == ScoreBackend::CompatibleCuda)
+        {
+            std::cout << "  Library GPU upload: " << libraryTimings.uploadMs << " ms\n"
+                      << "  Library device bytes: " << libraryTimings.residentBytes << "\n"
+                      << "  Score GPU allocation: " << scoreTimings.allocationMs << " ms\n"
+                      << "  Score packing and copy: " << scoreTimings.uploadMs + scoreTimings.downloadMs << " ms\n"
+                      << "  Score CUDA event upload: " << scoreTimings.eventUploadMs << " ms\n"
+                      << "  Score CUDA event compute: " << scoreTimings.eventComputeMs << " ms\n"
+                      << "  Score CUDA event download: " << scoreTimings.eventDownloadMs << " ms\n"
+                      << "  Score pinned bytes: " << scoreTimings.pinnedBytes << "\n"
+                      << "  Score temporary bytes: " << scoreTimings.peakTemporaryBytes << "\n"
+                      << "  Matching combined device temporary bytes: " << m_compatibleTemporaryBytes << "\n";
+        }
         std::cout << "  Matching batches: " << matchingBatches << "\n"
                   << "  Matching prefetch: " << matchingPrefetch << "\n"
                   << "  Matching wall: " << matchingWallMs << " ms\n"
@@ -1234,6 +1250,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
         const size_t scratch = checkedMatchProduct(N, sizeof(int) + sizeof(std::pair<double, int>)) +
                                FeatureIndex::kDimension * sizeof(float);
         cuda::CompatibleFeatureWorkspace compatible;
+        cuda::CompatibleScoreWorkspace compatibleScore;
+        const size_t deviceBudget = std::min(m_limits.deviceBytes, size_t(256ULL * 1024 * 1024));
         cuda::CompatibleTimings compatibleTimings;
         std::vector<cv::Mat> compatibleImages;
         std::vector<cuda::CompatibleFeature> compatibleValues;
@@ -1243,15 +1261,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
             const size_t hostRows = cpuMatchingBufferBytes(requestedRows, N);
             compatibleFeatures = hostRows < m_limits.hostBytes && scratch < m_limits.hostBytes - hostRows &&
                 compatible.prepare(featW, featH, static_cast<int>(requestedRows),
-                                   m_limits.hostBytes - hostRows - scratch);
+                                   m_limits.hostBytes - hostRows - scratch, false, deviceBudget, m_limits.featureFault);
             backends.features = compatibleFeatures ? FeatureBackend::CompatibleCuda : FeatureBackend::Cpu;
             if (compatibleFeatures)
             {
                 batchRows = static_cast<size_t>(compatible.capacity());
                 maximumBatchTiles = batchRows;
             }
-            std::cout << "Feature backend: " << (compatibleFeatures ? "generic CUDA (CPU compatible)" : "CPU")
-                      << "; scoring: CPU." << std::endl;
             if (!compatibleFeatures)
             {
                 std::cout << "  Generic CUDA resources unavailable; using CPU before extraction." << std::endl;
@@ -1320,6 +1336,75 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 msCPUFeatures += Ms(Clock::now() - readStart).count();
             }
         }
+        if (backends.scoring == ScoreBackend::CompatibleCuda)
+        {
+            const auto allocationStart = Clock::now();
+            // 先保留提取工作区；仅在连一行评分都放不下时缩小提取批次。
+            const size_t scoreMinimum = 2048 + 9 * sizeof(double) +
+                size_t(N) * (sizeof(int) + sizeof(double)) + 8 + 3 * sizeof(int);
+            size_t rows = std::min<size_t>(batchRows, 256);
+            bool ready = false;
+            for (;;)
+            {
+                const size_t hostRows = cpuMatchingBufferBytes(rows, N) +
+                    rows * N * (sizeof(double) + 2 * sizeof(int)) + scratch;
+                const size_t hostUsed = hostRows + compatible.hostBytes();
+                const size_t remainingHost = hostUsed < m_limits.hostBytes ? m_limits.hostBytes - hostUsed : 0;
+                const size_t remainingDevice = compatible.deviceBytes() < deviceBudget
+                    ? deviceBudget - compatible.deviceBytes() : 0;
+                if (remainingHost >= scoreMinimum && remainingDevice >= scoreMinimum)
+                {
+                    ready = compatibleScore.prepare(static_cast<int>(rows), N, dbCount, remainingHost,
+                                                     remainingDevice, m_limits.scoreFault);
+                    break;
+                }
+                if (rows == 1)
+                {
+                    break;
+                }
+                rows = std::max<size_t>(1, rows / 2);
+                if (compatibleFeatures)
+                {
+                    const size_t reserved = cpuMatchingBufferBytes(rows, N) + scratch;
+                    compatibleFeatures = reserved < m_limits.hostBytes &&
+                        compatible.prepare(featW, featH, static_cast<int>(rows), m_limits.hostBytes - reserved,
+                                           false, deviceBudget, m_limits.featureFault);
+                    backends.features = compatibleFeatures ? FeatureBackend::CompatibleCuda : FeatureBackend::Cpu;
+                    if (compatibleFeatures)
+                    {
+                        rows = std::min(rows, size_t(compatible.capacity()));
+                    }
+                }
+            }
+            scoreTimings.allocationMs += Ms(Clock::now() - allocationStart).count();
+            if (ready)
+            {
+                batchRows = static_cast<size_t>(compatibleScore.capacity());
+                pinnedBytes += compatibleScore.hostBytes();
+                m_compatibleTemporaryBytes = compatible.deviceBytes() + compatibleScore.deviceBytes();
+                // Reader 保留原来源校验及缺失标志，上传暂存按块复用，不复制整库到另一份主机数组。
+                compatibleScore.uploadLibrary(allRecords, *featureReader, &libraryTimings);
+                libraryReadStats = featureReader->stats();
+            }
+            else
+            {
+                backends.scoring = ScoreBackend::Cpu;
+                // 评分准备失败不牺牲已经可用的提取能力。
+                batchRows = compatibleFeatures ? size_t(compatible.capacity()) : batchRows;
+                std::cout << "  Compatible CUDA scoring unavailable: "
+                          << (rows == 1 && compatibleScore.capacity() == 0 &&
+                              std::string(compatibleScore.preparationFailure()) == "not prepared"
+                              ? "combined host/device budget cannot hold one row"
+                              : compatibleScore.preparationFailure()) << "; using CPU scoring." << std::endl;
+            }
+            maximumBatchTiles = batchRows;
+        }
+        if (!templateCuda)
+        {
+            std::cout << "Feature backend: " << (compatibleFeatures ? "generic CUDA (CPU compatible)" : "CPU")
+                      << "; scoring: " << (backends.scoring == ScoreBackend::CompatibleCuda
+                          ? "compatible CUDA" : "CPU") << "." << std::endl;
+        }
         std::vector<std::vector<float>> libGrid4x4;
         if (templateCuda && cfg.analyze)
         {
@@ -1339,6 +1424,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
         auto prepare = [&](int first, int count, MatchingBuffers &buffers)
         {
             buffers.resize(count, featBytes, N, templateCuda, cfg.analyze, pipeline);
+            if (backends.scoring == ScoreBackend::CompatibleCuda)
+            {
+                buffers.scores.resize(size_t(count) * N);
+            }
             auto &allTL = buffers.l;
             auto &allTA = buffers.a;
             auto &allTB = buffers.b;
@@ -1934,11 +2023,23 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
             else
             {
-                const auto readStart = Clock::now();
-                featureReader->prepare(allIndices);
-                const double readMs = Ms(Clock::now() - readStart).count();
-                msCPUFeatures += readMs;
-                msSelect += readMs;
+                const bool gpuScoring = backends.scoring == ScoreBackend::CompatibleCuda;
+                if (gpuScoring)
+                {
+                    const auto scoreStart = Clock::now();
+                    compatibleScore.score(buffers, count, cfg.usePenalty, allScores.data(), &scoreTimings);
+                    msGPUScore += Ms(Clock::now() - scoreStart).count();
+                    m_compatibleScoreTiles += count;
+                }
+                // 分析仍读取原 CPU 特征；普通 GPU 评分无需重复读取所有候选。
+                if (!gpuScoring || cfg.analyze)
+                {
+                    const auto readStart = Clock::now();
+                    featureReader->prepare(allIndices);
+                    const double readMs = Ms(Clock::now() - readStart).count();
+                    msCPUFeatures += readMs;
+                    msSelect += readMs;
+                }
                 const auto selectionStart = Clock::now();
                 for (int local = 0; local < count; ++local)
                 {
@@ -1953,9 +2054,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                             continue;
                         }
                         const auto &r = allRecords[li];
-                        const auto &features = featureReader->get(li);
-
-                        double s = cpuBaseScore(buffers, local, r, features, cfg.usePenalty);
+                        double s = gpuScoring ? allScores[size_t(local) * N + j]
+                            : cpuBaseScore(buffers, local, r, featureReader->get(li), cfg.usePenalty);
                         BenchmarkTimer neighborTimer(cfg.benchmark, msNeighbor);
                         auto it = freq.find(r.id);
                         int cnt = (it != freq.end()) ? it->second : 0;
@@ -2097,6 +2197,16 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << " ms, device upload/compute/download " << compatibleTimings.gpu.eventUploadMs << "/"
                       << compatibleTimings.gpu.eventComputeMs << "/" << compatibleTimings.gpu.eventDownloadMs
                       << " ms" << std::endl;
+        }
+        if (backends.scoring == ScoreBackend::CompatibleCuda)
+        {
+            std::cout << "\n  Compatible CUDA scoring: " << m_compatibleScoreTiles << " tiles; library "
+                      << compatibleScore.libraryBytes() << " bytes, combined device temporary "
+                      << m_compatibleTemporaryBytes << " bytes; library upload " << libraryTimings.uploadMs
+                      << " ms, score packing/copy " << scoreTimings.uploadMs + scoreTimings.downloadMs
+                      << " ms, device upload/kernel/download " << scoreTimings.eventUploadMs << "/"
+                      << scoreTimings.eventComputeMs << "/" << scoreTimings.eventDownloadMs << " ms"
+                      << std::endl;
         }
         if (!hasCandidates)
         {

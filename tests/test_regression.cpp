@@ -1,4 +1,6 @@
 #include "../compute/CudaBackend.h"
+#include "../compute/CompatibleScoring.h"
+#include "../core/MatchingScore.h"
 #include "../core/AnalysisTiles.h"
 #include "../core/BrightnessAdjustment.h"
 #include "../core/CandidateFeatures.h"
@@ -180,6 +182,142 @@ MosaicRequest makeMosaicRequest(const TempWorkspace& workspace)
 
 } // namespace
 
+TEST_CASE("compatible CUDA scores are exact and failures never publish partial results")
+{
+    using namespace mosaicraft::cuda;
+    CompatibleScoreWorkspace scoring;
+    if (!isCudaAvailable())
+    {
+        CHECK_FALSE(scoring.prepare(1, 1, 1, 1024 * 1024));
+        return;
+    }
+    TempWorkspace workspace;
+    std::vector<ImageRecord> records(67);
+    cv::RNG rng(5739);
+    for (size_t i = 0; i < records.size(); ++i)
+    {
+        cv::Mat image(17, 31, CV_8UC3);
+        rng.fill(image, cv::RNG::UNIFORM, 0, 256);
+        FeatureExtractor().compute(image, records[i], utf8(workspace.outputDir()), std::to_string(i));
+        records[i].id = static_cast<int>(i);
+        records[i].useCount = static_cast<int>(i * 37);
+        if (i % 2)
+        {
+            for (float &value : records[i].grid4x4)
+            {
+                value = rng.uniform(0.0f, 255.0f);
+            }
+        }
+    }
+    records[0].tinyPath.clear();
+    records[1].histPath.clear();
+    records[3] = records[2];
+    records[3].id = 3; // 完全平分的两个图库索引。
+    REQUIRE(FeaturePack::buildCache(utf8(workspace.outputDir()), records));
+    FeaturePack::Reader reader(utf8(workspace.outputDir()), records);
+    const int candidates = 73;
+    MatchingBuffers tiles;
+    tiles.resize(256, 0, candidates, false, false);
+    for (int row = 0; row < 256; ++row)
+    {
+        const auto &record = records[row % records.size()];
+        const auto &features = reader.get(row % records.size());
+        tiles.l[row] = record.avgL;
+        tiles.a[row] = record.avgA;
+        tiles.b[row] = record.avgB;
+        tiles.edge[row] = record.edgeDensity;
+        tiles.grid[row] = record.grid4x4;
+        std::copy(features.tiny.begin(), features.tiny.end(), tiles.tiny[row].data());
+        std::copy(features.lbp.begin(), features.lbp.end(), tiles.lbp[row].data());
+        if (row % 3)
+        {
+            for (int bin = 0; bin < 256; ++bin)
+            {
+                tiles.lbp[row][bin] = std::nextafter(tiles.lbp[row][bin], 1.0f);
+            }
+            for (int cell = 0; cell < 192; ++cell)
+            {
+                tiles.grid[row][cell] = std::nextafter(tiles.grid[row][cell], 0.0f);
+            }
+        }
+        tiles.labW[row] = row % 7 == 0 ? 0 : rng.uniform(0.0, 1.0);
+        tiles.gridW[row] = rng.uniform(0.0, 1.0);
+        tiles.tinyW[row] = rng.uniform(0.0, 1.0);
+        tiles.edgeW[row] = rng.uniform(0.0, 1.0);
+        tiles.lbpW[row] = rng.uniform(0.0, 1.0);
+        for (int j = 0; j < candidates; ++j)
+        {
+            tiles.indices[size_t(row) * candidates + j] = j < 67 ? j : (j % 2 ? -1 : 67);
+        }
+    }
+    constexpr size_t budget = 1024 * 1024;
+    REQUIRE(scoring.prepare(256, candidates, 67, budget, budget));
+    REQUIRE(scoring.capacity() == 256);
+    GpuTimings upload, timing;
+    scoring.uploadLibrary(records, reader, &upload);
+    CHECK(upload.uploadBytes == scoring.libraryBytes());
+    for (int count : {256, 1, 7})
+    {
+        for (double penalty : {0.0, 0.01, 0.123456789})
+        {
+            std::vector<double> result(size_t(count) * candidates);
+            scoring.score(tiles, count, penalty, result.data(), &timing);
+            for (int row = 0; row < count; ++row)
+            {
+                for (int j = 0; j < candidates; ++j)
+                {
+                    const double expected = j < 67 ? cpuBaseScore(tiles, row, records[j], reader.get(j), penalty)
+                                                    : std::numeric_limits<double>::max();
+                    CAPTURE(row);
+                    CAPTURE(j);
+                    CAPTURE(penalty);
+                    REQUIRE(result[size_t(row) * candidates + j] == expected);
+                }
+            }
+        }
+    }
+    CHECK(timing.eventComputeMs > 0);
+    CHECK(timing.downloadBytes > 0);
+    CHECK(scoring.hostBytes() <= budget);
+    CHECK(scoring.deviceBytes() <= budget);
+    std::vector<double> result(candidates, -1234);
+    CHECK_THROWS_AS(scoring.score(tiles, 257, 0, result.data()), std::invalid_argument);
+    CHECK_FALSE(scoring.prepare(1, candidates, 67, 1));
+    CHECK_FALSE(scoring.prepare(1, candidates, 67, budget, 1));
+    for (auto fault : {CompatibleScoreFault::LibraryAllocation, CompatibleScoreFault::TemporaryAllocation,
+                       CompatibleScoreFault::PinnedAllocation})
+    {
+        CHECK_FALSE(scoring.prepare(1, candidates, 67, budget, budget, fault));
+        CHECK(scoring.hostBytes() == 0);
+        CHECK(scoring.deviceBytes() == 0);
+        CHECK(scoring.libraryBytes() == 0);
+    }
+    for (auto fault : {CompatibleScoreFault::LibraryUpload, CompatibleScoreFault::ScoreUpload,
+                       CompatibleScoreFault::Kernel, CompatibleScoreFault::Synchronize})
+    {
+        REQUIRE(scoring.prepare(1, candidates, 67, budget, budget, fault));
+        if (fault == CompatibleScoreFault::LibraryUpload)
+        {
+            CHECK_THROWS_AS(scoring.uploadLibrary(records, reader), std::runtime_error);
+        }
+        else
+        {
+            scoring.uploadLibrary(records, reader);
+            CHECK_THROWS_AS(scoring.score(tiles, 1, 0, result.data()), std::runtime_error);
+        }
+        CHECK(std::all_of(result.begin(), result.end(), [](double value)
+        {
+            return value == -1234;
+        }));
+        CHECK_THROWS_AS(scoring.score(tiles, 1, 0, result.data()), std::invalid_argument);
+    }
+    REQUIRE(scoring.prepare(256, candidates, 67, 16384, 16384));
+    CHECK(scoring.capacity() < 256);
+    scoring.uploadLibrary(records, reader);
+    scoring.score(tiles, 1, 0, result.data());
+    CHECK(result[2] == result[3]);
+}
+
 TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encoded pixels")
 {
     TempWorkspace workspace;
@@ -241,8 +379,8 @@ TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encode
         request.config.lRange = analyze ? 20 : 255;
         std::vector<int> reference;
         std::vector<char> encoded, report;
-        // CPU、通用核小/大批次，以及计算前预算不足的 CPU 回退。
-        for (int profile = 0; profile < 4; ++profile)
+        // 四种后端组合、小/大批次、联合预算及两种能力的独立分配回退。
+        for (int profile = 0; profile < 10; ++profile)
         {
             sqlite3 *connection = nullptr;
             REQUIRE(sqlite3_open(build.dbPath.c_str(), &connection) == SQLITE_OK);
@@ -256,12 +394,35 @@ TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encode
             {
                 limits.hostBytes = 64 * 1024;
             }
+            limits.compatibleFeatures = profile != 4;
+            limits.compatibleScoring = profile != 5;
+            if (profile == 6)
+            {
+                limits.featureFault = cuda::PipelineFault::DeviceAllocation;
+            }
+            if (profile == 7)
+            {
+                limits.scoreFault = cuda::CompatibleScoreFault::LibraryAllocation;
+            }
+            if (profile == 8)
+            {
+                limits.scoreFault = cuda::CompatibleScoreFault::PinnedAllocation;
+            }
+            if (profile == 9)
+            {
+                limits.deviceBytes = 1024 * 1024;
+            }
             MatchingAccess::configure(engine, limits, true, 123);
             std::vector<int> selected;
             MatchingAccess::captureSelections(engine, selected);
             REQUIRE(engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config));
             CHECK(MatchingAccess::compatibleFeatureImages(engine) ==
-                  ((profile == 1 || profile == 2) && cuda::isCudaAvailable() ? selected.size() : 0));
+                  ((profile == 1 || profile == 2 || profile == 5 || profile == 7 || profile == 8 || profile == 9) &&
+                    cuda::isCudaAvailable() ? selected.size() : 0));
+            CHECK(MatchingAccess::compatibleScoreTiles(engine) ==
+                  ((profile == 1 || profile == 2 || profile == 3 || profile == 4 || profile == 6 || profile == 9) &&
+                    cuda::isCudaAvailable() ? selected.size() : 0));
+            CHECK(MatchingAccess::compatibleTemporaryBytes(engine) <= limits.deviceBytes);
             const auto output = bytes(u8path(request.outputPath));
             const auto analysis = analyze ? bytes(workspace.outputDir() / "mosaic_analysis" / "worst_report.txt")
                                          : std::vector<char>();
@@ -279,6 +440,31 @@ TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encode
             }
         }
     }
+    if (cuda::isCudaAvailable())
+    {
+        request.config.useGpu = true;
+        for (auto fault : {cuda::CompatibleScoreFault::LibraryUpload, cuda::CompatibleScoreFault::ScoreUpload,
+                           cuda::CompatibleScoreFault::Kernel, cuda::CompatibleScoreFault::Synchronize})
+        {
+            const auto before = Database(build.dbPath).allRecords();
+            const auto output = bytes(u8path(request.outputPath));
+            MosaicEngine engine;
+            MatchingLimits limits;
+            limits.maxTiles = 3;
+            limits.scoreFault = fault;
+            MatchingAccess::configure(engine, limits, true, 123);
+            CHECK_THROWS_AS(engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config),
+                            std::runtime_error);
+            const auto after = Database(build.dbPath).allRecords();
+            REQUIRE(after.size() == before.size());
+            for (size_t i = 0; i < before.size(); ++i)
+            {
+                CHECK(after[i].useCount == before[i].useCount);
+            }
+            CHECK(bytes(u8path(request.outputPath)) == output);
+        }
+    }
+
 }
 
 TEST_CASE("regression: build, inspect, and render a small mosaic")

@@ -1,4 +1,5 @@
-﻿// CudaStubs.cpp — 无 CUDA 时的空实现（在 MOSAICRAFT_CUDA=OFF 时编译）
+#include "compute/CompatibleScoring.h"
+// CudaStubs.cpp — 无 CUDA 时的空实现（在 MOSAICRAFT_CUDA=OFF 时编译）
 #include "compute/CudaBackend.h"
 #include "compute/CompatibleFeatures.h"
 #include <cfloat>
@@ -9,6 +10,44 @@ namespace mosaicraft
 {
 namespace cuda
 {
+
+struct CompatibleScoreWorkspace::Impl
+{
+};
+CompatibleScoreWorkspace::CompatibleScoreWorkspace() = default;
+CompatibleScoreWorkspace::~CompatibleScoreWorkspace() = default;
+bool CompatibleScoreWorkspace::prepare(int, int, int, size_t, size_t, CompatibleScoreFault)
+{
+    return false;
+}
+int CompatibleScoreWorkspace::capacity() const
+{
+    return 0;
+}
+size_t CompatibleScoreWorkspace::hostBytes() const
+{
+    return 0;
+}
+size_t CompatibleScoreWorkspace::deviceBytes() const
+{
+    return 0;
+}
+size_t CompatibleScoreWorkspace::libraryBytes() const
+{
+    return 0;
+}
+const char *CompatibleScoreWorkspace::preparationFailure() const
+{
+    return "CUDA is not available";
+}
+void CompatibleScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &, FeaturePack::Reader &, GpuTimings *)
+{
+    throw std::runtime_error("CUDA is not available");
+}
+void CompatibleScoreWorkspace::score(const MatchingBuffers &, int, double, double *, GpuTimings *)
+{
+    throw std::runtime_error("CUDA is not available");
+}
 
 struct CompatibleFeatureWorkspace::Impl
 {

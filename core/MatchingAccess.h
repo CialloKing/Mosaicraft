@@ -20,5 +20,13 @@ struct MatchingAccess
     {
         return engine.m_compatibleFeatureImages;
     }
+    static size_t compatibleScoreTiles(const MosaicEngine &engine)
+    {
+        return engine.m_compatibleScoreTiles;
+    }
+    static size_t compatibleTemporaryBytes(const MosaicEngine &engine)
+    {
+        return engine.m_compatibleTemporaryBytes;
+    }
 };
 } // namespace mosaicraft

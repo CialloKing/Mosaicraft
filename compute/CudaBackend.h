@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -24,6 +24,13 @@ enum class PipelineFault
 {
     None, PinnedAllocation, DeviceAllocation, AfterUpload, CpuTask, BeforeWait,
     FreeMemoryAtScoreCapacity, FreeMemoryBelowScoreCapacity
+};
+
+// 内部故障注入，不进入 CLI/API。运行期故障必须传播，不能切换后端重算。
+enum class CompatibleScoreFault
+{
+    None, LibraryAllocation, TemporaryAllocation, PinnedAllocation,
+    LibraryUpload, ScoreUpload, Kernel, Synchronize
 };
 
 struct FeaturePipelineConfig

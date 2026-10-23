@@ -109,6 +109,8 @@ public:
     uint32_t m_seed = 0;
     std::vector<int> *m_selectedObserver = nullptr;
     size_t m_compatibleFeatureImages = 0;
+    size_t m_compatibleScoreTiles = 0;
+    size_t m_compatibleTemporaryBytes = 0;
 };
 
 } // namespace mosaicraft

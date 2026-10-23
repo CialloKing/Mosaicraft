@@ -1,6 +1,7 @@
 #pragma once
 #include "FeatureMatrix.h"
 #include "FeaturePack.h"
+#include "compute/CudaBackend.h"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -29,6 +30,11 @@ struct MatchingLimits
     size_t featureBytes = 256ULL * 1024 * 1024;
     size_t maxTiles = 1024;
     bool cudaPipeline = true;
+    // 仅内部验证注入，生产请求仍只保留原 useGpu 意愿。
+    bool compatibleFeatures = true, compatibleScoring = true;
+    size_t deviceBytes = 256ULL * 1024 * 1024;
+    cuda::PipelineFault featureFault = cuda::PipelineFault::None;
+    cuda::CompatibleScoreFault scoreFault = cuda::CompatibleScoreFault::None;
 };
 
 inline size_t checkedMatchProduct(size_t left, size_t right)

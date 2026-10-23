@@ -32,7 +32,7 @@ struct CompatibleTimings
     size_t images = 0, batches = 0;
 };
 
-// 通用核只替换整数统计；颜色转换、舍入及评分继续使用 CPU 的 v6 语义。
+// 通用核只替换整数统计；颜色转换及舍入继续使用 CPU 的 v6 语义，评分独立选择后端。
 class CompatibleFeatureWorkspace
 {
   public:
