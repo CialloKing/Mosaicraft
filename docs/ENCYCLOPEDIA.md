@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-10-22 | 版本 / Version：v1.14.4（含未发布更新）
+> 最后更新 / Last updated：2026-10-23 | 版本 / Version：v1.14.5
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -360,6 +360,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.14.2 | 默认平均色HSV建库、可恢复全库重编号、v6特征一致性与API 2.0边界修复 | 见验证记录 |
 | 1.14.3 | 特征缓存一致性、有界建库与匹配、任务内缓存及工作区复用、无偏对称亮度调整 | 见性能记录 |
 | 1.14.4 | 基础图透明叠加、全图坐标逐块采样、CLI/API/Web UI 参数同步 | 见叠加验证记录 |
+| 1.14.5 | CUDA 传输复用、动态尺寸特征提取、独立 CPU 兼容 CUDA 评分 | 见性能与兼容说明 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -759,3 +760,15 @@ CPU/GPU 共用独立特征文件的 Unicode 读取和来源校验。缓存的 `f
 CUDA 和 CPU-only 构建、完整 CTest、Web UI/API smoke、实际 CUDA 匹配及 24 次样图运行均已验证。关闭叠加的固定样本输出与 1.14.3 完全一致；同条件 PNG 样本的 20% 叠加耗时中位数约 13.37 s，原版约 13.38 s，此结果不代表其他图库或格式的性能。叠加仅保留目标工作图和每个工作线程的小块缓冲，不分配完整输出尺寸的基础图。输出面积相差四倍的两档样本中，新增工作线程缓冲预算均约 2.66 MiB；预算不代表进程总内存上限。详细方法、数据及效果边界见 [基础图叠加验证](BASE_IMAGE_OVERLAY_VERIFICATION.md)。
 
 > **EN**: Version 1.14.4 adds optional base-image overlay through `--overlay-strength` and API `overlayStrength`, with range 0–1 and default 0 (off). The Web UI, synchronous API and asynchronous jobs expose the same setting. Overlay blends the processed working target after matching and optional brightness jitter. Global-coordinate bilinear sampling is shared by regular, streaming, tiled and DeepZoom output; source tiles are composited before pyramid generation. Cached pixels remain immutable and matching features v6/API contract 2.0 stay compatible. Fixed default-output samples match 1.14.3 exactly. Validation covers CPU-only and actual CUDA matching, output paths, parameter bounds and 24 image runs; reported performance and memory budgets are scene-specific.
+
+### v1.14.5: 动态尺寸 CUDA 与提取、评分独立加速 (2026-10-23)
+
+本版本发布 CUDA 传输流水线优化、通用尺寸特征统计与 CPU 兼容 CUDA 候选评分。四种固定模板保留原有内核算术，通过任务内锁页缓冲、异步传输与 CPU Canny 重叠、设备特征复用减少重复工作。其他合法尺寸（宽高各 1～8192）默认尝试通用 CUDA 提取和兼容评分，无需增加 CLI/API 参数。特征版本仍为 **v6**，HTTP API 合约仍为 **2.0**，现有 v6 图库无需重建。
+
+自定义尺寸继续使用原 OpenCV 预处理，GPU 归约 LAB、Grid 和 LBP 的整数统计，CPU 按原运算顺序完成特征收尾；兼容评分严格保持原 CPU 算术、缺失特征惩罚与使用次数惩罚。CPU 保留 ANN、邻域处理、排序、随机选图和分析。相同标准构建/OpenCV 环境、输入、图库快照、使用计数和随机种子下，特征、分数及最终选图保持精确一致；不承诺跨 OpenCV 版本一致。
+
+提取和评分独立准备资源、独立回退。两者的设备暂存合计不超过 256 MiB，常驻图库单独计量；按预算缩小批次。计算前资源不足可回退对应 CPU 能力，上传、内核和同步故障则收束并报错。`--cpu`、无 CUDA 和 CPU-only 构建保持纯 CPU。修复原评分工作区显存余量重复扣减。
+
+CUDA/CPU-only CTest、两套 Web UI/API smoke、真实 GPU 精确回归及 Compute Sanitizer 已完成，动态特征和兼容评分内存检查均为 0 错误。两项新增能力合并后的直接对比使用私有 96 张图库、25,600 块：256×256 普通/分析总耗时减少 21.5% / 18.2%，512×512 普通减少 8.0%、分析基本持平；1600 块的 256×256 短任务反而慢 10.3%～13.6%。这些是固定本机样本的完整生成结果，不能用评分内核倍数推算整个生成过程，也不承诺所有场景提速。详见 [v1.14.5 性能与兼容说明](PERFORMANCE_v1.14.5.md)、[传输流水线验证](CUDA_TRANSFER_PIPELINE.md)、[动态特征验证](DYNAMIC_CUDA_FEATURES.md)和 [独立评分验证](INDEPENDENT_CUDA_SCORING.md)。
+
+> **EN**: Version 1.14.5 ships reusable asynchronous CUDA transfers, generic feature statistics for valid custom dimensions, and independently selected CPU-compatible CUDA scoring. Existing v6 libraries, CLI/API parameters and API contract 2.0 remain compatible. Custom-size preprocessing, scoring arithmetic, missing-feature penalties and CPU selection semantics are preserved under the same build and inputs. Resource shortages before submission fall back independently; runtime failures abort. A direct 96-image, 25,600-tile comparison reduced total generation time by 18.2–21.5% at 256×256 and 8.0% for normal generation at 512×512, while 512×512 analysis was essentially unchanged. Short 256×256 tasks became 10.3–13.6% slower. See the report for exact baselines, full samples and scope.
