@@ -25,9 +25,6 @@ jobs:
           - platform: macos-arm64
             runner: macos-15
             triplet: arm64-osx-release
-          - platform: macos-x64
-            runner: macos-15-intel
-            triplet: x64-osx-release
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
@@ -76,8 +73,6 @@ jobs:
             runner: ubuntu-22.04
           - platform: macos-arm64
             runner: macos-15
-          - platform: macos-x64
-            runner: macos-15-intel
     runs-on: ${{ matrix.runner }}
     defaults:
       run:

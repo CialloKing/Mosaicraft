@@ -136,7 +136,7 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 
 `verify-release-asset.ps1 -ArchivePath <path> -RequireStandalone` 可独立验收 ZIP/tar.gz，`-ZipPath` 仍可使用。脚本检查哈希、元数据、文档、CLI 和包内 Web UI/API；远端附件还校验 tag 对应提交。
 
-日常 CI 运行 Windows/Linux CPU 检查；手动或标签触发四平台 CPU 打包及 Windows/Linux CUDA 候选，并在独立 job 验收。工作流不自动发布 Release。正式发布需四平台 CPU 包通过，以及同一提交的本机 Windows CUDA GPU 验收。详见 [CI 与打包](docs/CI_PACKAGING.md) 和 [Release Checklist](docs/RELEASE_CHECKLIST.md)。
+日常 CI 运行 Windows/Linux CPU 检查；手动或标签触发 Windows x64、Linux x64、macOS ARM64 三平台 CPU 打包及 Windows/Linux CUDA 候选，并在独立 job 验收。工作流不自动发布 Release。正式发布需三平台 CPU 包通过，以及同一提交的本机 Windows CUDA GPU 验收。详见 [CI 与打包](docs/CI_PACKAGING.md) 和 [Release Checklist](docs/RELEASE_CHECKLIST.md)。
 
 ---
 
@@ -323,7 +323,7 @@ Mosaicraft/
 │   └── webui_smoke.ps1         # Web UI/API 真实 smoke 验证
 ├── .github/workflows/
 │   ├── ci.yml                  # Windows/Linux CPU 日常检查
-│   └── packages.yml            # 四平台 CPU 包及 CUDA 候选
+│   └── packages.yml            # 三平台 CPU 包及 CUDA 候选
 ├── CMakeLists.txt
 └── README.md
 ```

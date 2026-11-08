@@ -2,7 +2,7 @@
 # 更新方法：下载对应版本的单头文件覆盖本地路径
 # ============================================================
 
-# 原生依赖由 vcpkg.json 固定，四个自定义 triplet 仅构建 Release 动态库。
+# 原生依赖由 vcpkg.json 固定，三个自定义 triplet 仅构建 Release 动态库。
 vcpkg        a0400024711b283056538ac19ced80b91a83c24c  https://github.com/microsoft/vcpkg
 OpenCV       4.12.0#5   core/imgproc/imgcodecs; jpeg/png/tiff/webp/intrinsics/thread
 libjpeg-turbo 3.1.4.1

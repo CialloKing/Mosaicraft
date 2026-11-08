@@ -2,7 +2,7 @@
 
 发布日期 / Applies to：v1.14.0 及后续版本
 
-本清单定义正式发布的准入标准。四个平台的 CPU 包全部验收通过后，使用同一提交在本机完成 Windows CUDA GPU 验收。云端 CUDA 仅是候选包；工作流不自动发布 Release。详细环境和缓存规则见 [CI 与打包](CI_PACKAGING.md)。
+本清单定义正式发布的准入标准。Windows x64、Linux x64、macOS ARM64 三个平台的 CPU 包全部验收通过后，使用同一提交在本机完成 Windows CUDA GPU 验收。云端 CUDA 仅是候选包；工作流不自动发布 Release。详细环境和缓存规则见 [CI 与打包](CI_PACKAGING.md)。
 
 ## 1. 发布前状态
 
@@ -61,7 +61,7 @@ gh run view <run-id> --json status,conclusion,url,jobs
 
 - 最新 `CI` workflow 必须通过
 - Windows/Linux CPU 日常构建、CTest 和 Web UI/API smoke 必须通过
-- 手动触发同一提交的 `Native packages`，四平台 CPU 构建、打包和独立附件验收必须全部通过
+- 手动触发同一提交的 `Native packages`，三平台 CPU 构建、打包和独立附件验收必须全部通过
 - 保存 CPU 包、SHA256 及工作流链接；Windows ZIP、Linux/macOS tar.gz
 
 说明：
@@ -72,7 +72,7 @@ gh run view <run-id> --json status,conclusion,url,jobs
 
 ## 5. 创建 GitHub Release
 
-仅当四平台 CPU 包和本机 Windows CUDA 包的同提交验收全部通过后创建 release。Linux CUDA 和所有 `_candidate` 包不进入正式附件。创建 Release 仍由维护者显式执行，当前 CI 没有发布权限。
+仅当三平台 CPU 包和本机 Windows CUDA 包的同提交验收全部通过后创建 release。Linux CUDA 和所有 `_candidate` 包不进入正式附件。创建 Release 仍由维护者显式执行，当前 CI 没有发布权限。
 
 ```powershell
 gh release create v<version> `
@@ -86,7 +86,7 @@ GitHub Release 正文必须保持简洁，只包含：
 - 各平台下载哪个 ZIP/tar.gz
 - 解压后如何启动 `MosaicraftWebUI.exe`
 - CLI 用户如何运行 `mosaicraft.exe --help`
-- Windows 10 22H2 x64、Ubuntu 22.04/glibc 2.35、macOS 13 及 CUDA 运行环境说明
+- Windows 10 22H2 x64、Ubuntu 22.04/glibc 2.35、macOS 13 ARM64 及 CUDA 运行环境说明
 - SHA256
 
 完整变更、CI、发布脚本和验证细节保留在 `docs/ENCYCLOPEDIA.md`、README 和项目文档中，不直接展开到 GitHub Release 页面。

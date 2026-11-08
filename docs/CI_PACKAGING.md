@@ -7,13 +7,12 @@
 | Windows x64 | windows-2025-vs2026 | ZIP | ZIP candidate |
 | Linux x64 | ubuntu-22.04 | tar.gz | tar.gz candidate |
 | macOS ARM64 | macos-15 | tar.gz | 无 |
-| macOS x64 | macos-15-intel | tar.gz | 无 |
 
-支持基线为 Windows 10 22H2 x64、Ubuntu 22.04/glibc 2.35、macOS 13。没有安装器、DMG、Universal 2 或 Developer ID 公证。macOS 包使用 ad-hoc 签名；这不等于 Apple 公证。
+支持基线为 Windows 10 22H2 x64、Ubuntu 22.04/glibc 2.35、macOS 13 ARM64。没有安装器、DMG、Universal 2 或 Developer ID 公证。macOS 包使用 ad-hoc 签名；这不等于 Apple 公证。
 
 ## 固定依赖与缓存
 
-`vcpkg.json` 同时固定工具仓库和依赖基线为 `a0400024711b283056538ac19ced80b91a83c24c`。OpenCV 4.12.0 仅启用 jpeg/png/tiff/webp/intrinsics/thread，产品仅链接 core/imgproc/imgcodecs。TIFF 保留 JPEG、LZMA、ZIP 编解码。四个自定义 triplet 只构建 Release 动态库，Windows 使用动态 CRT。
+`vcpkg.json` 同时固定工具仓库和依赖基线为 `a0400024711b283056538ac19ced80b91a83c24c`。OpenCV 4.12.0 仅启用 jpeg/png/tiff/webp/intrinsics/thread，产品仅链接 core/imgproc/imgcodecs。TIFF 保留 JPEG、LZMA、ZIP 编解码。三个自定义 triplet 只构建 Release 动态库，Windows 使用动态 CRT。
 
 缓存键包含平台、架构、实际编译器/SDK/CMake/vcpkg 指纹、vcpkg 提交和当前依赖配置哈希。产品版本、README、普通源码不影响依赖缓存；CPU/CUDA 共享同一键。PR 只读取缓存，main/tag 在依赖安装成功后立即保存，项目测试失败不会丢掉成功构建的依赖。GitHub 仍可能淘汰超过七天未访问的缓存。
 
@@ -25,7 +24,7 @@
 ./scripts/release.ps1 -BuildDir build/package-cpu -NoCuda -OutputDir build/archives
 ```
 
-Linux/macOS 分别选择 x64-linux-release、arm64-osx-release 或 x64-osx-release。Linux 打包还需要 patchelf。每种运行时使用独立构建目录。CMake 递归收集第三方运行库，Linux 使用相对 RPATH，macOS 修正加载路径后签名；Unix tar.gz 保留执行权限和符号链接。包内附有第三方许可证。
+Linux/macOS 分别选择 x64-linux-release、arm64-osx-release。Linux 打包还需要 patchelf。每种运行时使用独立构建目录。CMake 递归收集第三方运行库，Linux 使用相对 RPATH，macOS 修正加载路径后签名；Unix tar.gz 保留执行权限和符号链接。包内附有第三方许可证。
 
 ## CUDA 验收状态
 
@@ -44,7 +43,7 @@ Linux/macOS 分别选择 x64-linux-release、arm64-osx-release 或 x64-osx-relea
 
 ## 独立包验收
 
-CPU 四个平台和 CUDA 两个平台均在独立的新 job 下载附件，不安装项目依赖或 CUDA Toolkit。验证 CLI、API、图片生成、中文与空格路径、依赖加载位置，以及 Unix 执行权限和 macOS 签名。CUDA 候选在无 GPU 环境验证回退运行，仍标记 `not-run`。
+CPU 三个平台和 CUDA 两个平台均在独立的新 job 下载附件，不安装项目依赖或 CUDA Toolkit。验证 CLI、API、图片生成、中文与空格路径、依赖加载位置，以及 Unix 执行权限和 macOS 签名。CUDA 候选在无 GPU 环境验证回退运行，仍标记 `not-run`。
 
 ```powershell
 ./scripts/verify-release-asset.ps1 -ArchivePath <archive> -RequireStandalone
