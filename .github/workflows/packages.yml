@@ -1,0 +1,99 @@
+name: Native packages
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      cache-namespace:
+        description: Dependency cache namespace
+        default: deps-v1
+permissions:
+  contents: read
+jobs:
+  cpu-package:
+    name: Package ${{ matrix.platform }} CPU-only
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            runner: windows-2025-vs2026
+            triplet: x64-windows-release
+          - platform: linux-x64
+            runner: ubuntu-22.04
+            triplet: x64-linux-release
+          - platform: macos-arm64
+            runner: macos-15
+            triplet: arm64-osx-release
+          - platform: macos-x64
+            runner: macos-15-intel
+            triplet: x64-osx-release
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/dependencies
+        with:
+          triplet: ${{ matrix.triplet }}
+          cache-namespace: ${{ inputs.cache-namespace || 'deps-v1' }}
+      - name: Install packaging tool
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends patchelf
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build, test and package CPU Release
+        run: ./scripts/release.ps1 -BuildDir build/package-cpu -NoCuda -OutputDir build/archives
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cpu-${{ matrix.platform }}
+          path: build/archives/*
+          if-no-files-found: error
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: package-diagnostics-${{ matrix.platform }}
+          path: |
+            build/dependency-state/
+            build/package-cpu/Testing/Temporary/
+            build/package-cpu/release-timings.json
+          if-no-files-found: ignore
+  cpu-verify:
+    name: Standalone ${{ matrix.platform }} CPU-only
+    needs: cpu-package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            runner: windows-2025-vs2026
+          - platform: linux-x64
+            runner: ubuntu-22.04
+          - platform: macos-arm64
+            runner: macos-15
+          - platform: macos-x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: cpu-${{ matrix.platform }}
+          path: build/download
+      # Do not install vcpkg or project build dependencies in this fresh job.
+      - name: Verify archive without build dependencies
+        run: |
+          $archive = @(Get-ChildItem build/download -File | Where-Object { $_.Name -match '\.(zip|tar\.gz)$' })
+          if ($archive.Count -ne 1) { throw 'Expected exactly one native archive' }
+          $hash = ((Get-Content "$($archive[0].FullName).sha256" -Raw) -split '\s+')[0]
+          ./scripts/verify-release-asset.ps1 -ArchivePath $archive[0].FullName -ExpectedSha256 $hash -ExpectedCommit '${{ github.sha }}' -ExpectedRuntime cpu-only -RequireStandalone

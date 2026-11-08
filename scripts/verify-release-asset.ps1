@@ -5,6 +5,8 @@ param(
     [Alias('ZipPath')][string]$ArchivePath = "",
     [string]$ExpectedVersion = "",
     [string]$ExpectedSha256 = "",
+    [string]$ExpectedCommit = "",
+    [ValidateSet('', 'cpu-only', 'cuda')][string]$ExpectedRuntime = '',
     [string]$DownloadDir = "",
     [int]$TimeoutSeconds = 90,
     [switch]$SkipSmoke,
@@ -395,6 +397,14 @@ function Assert-BuildInfo
     if ($TagCommitHash -and $commit.ToLowerInvariant() -ne $TagCommitHash.ToLowerInvariant())
     {
         throw "BUILD_INFO commit does not match release tag. package=$commit tag=$TagCommitHash"
+    }
+    if ($ExpectedCommit -and $commit -ne $ExpectedCommit)
+    {
+        throw "BUILD_INFO commit does not match expected commit: $commit"
+    }
+    if ($ExpectedRuntime -and $info['Runtime'] -ne $ExpectedRuntime)
+    {
+        throw "BUILD_INFO runtime does not match expected runtime"
     }
 }
 

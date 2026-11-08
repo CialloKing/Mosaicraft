@@ -23,6 +23,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 . (Join-Path $PSScriptRoot 'Archive.ps1')
+$script:stageTimings = [ordered]@{}
 
 function Invoke-Native {
     param(
@@ -60,7 +61,13 @@ function Invoke-Step {
 
     Write-Host ""
     Write-Host "==> $Label"
+    $timer = [Diagnostics.Stopwatch]::StartNew()
     & $Action
+    $script:stageTimings[$Label] = $timer.Elapsed.TotalSeconds
+    if ($env:GITHUB_STEP_SUMMARY)
+    {
+        "$Label : $([math]::Round($timer.Elapsed.TotalSeconds, 2)) s" | Add-Content $env:GITHUB_STEP_SUMMARY
+    }
 }
 
 function Resolve-RepoPath {
@@ -666,7 +673,9 @@ try {
         Write-Host "Package: $($item.FullName)"
         Write-Host "Size: $($item.Length)"
         Write-Host "SHA256: $($hash.Hash)"
+        if ($env:GITHUB_OUTPUT) { "archive-path=$archivePath" | Add-Content $env:GITHUB_OUTPUT }
     }
+    $script:stageTimings | ConvertTo-Json | Set-Content (Join-Path $buildPath 'release-timings.json')
 }
 finally {
     if (-not $KeepWorkspace) {
