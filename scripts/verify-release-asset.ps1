@@ -7,6 +7,7 @@ param(
     [string]$ExpectedSha256 = "",
     [string]$ExpectedCommit = "",
     [ValidateSet('', 'cpu-only', 'cuda')][string]$ExpectedRuntime = '',
+    [ValidateSet('', 'passed', 'not-run', 'not-applicable')][string]$ExpectedGpuValidation = '',
     [string]$DownloadDir = "",
     [int]$TimeoutSeconds = 90,
     [switch]$SkipSmoke,
@@ -256,13 +257,21 @@ function Select-ReleaseAsset
 
 function Get-ReleaseBodySha256
 {
-    param([string]$Body)
+    param([string]$Body, [string]$Name, [bool]$SingleArchive)
 
     if (-not $Body)
     {
         return ""
     }
 
+    foreach ($line in $Body -split "`n")
+    {
+        if ($line.Contains($Name) -and $line -match '(?i)\b([0-9a-f]{64})\b')
+        {
+            return Normalize-Sha256 -Value $Matches[1]
+        }
+    }
+    if (-not $SingleArchive) { return '' }
     $matches = [regex]::Matches($Body, '(?i)SHA256:\s*`?([0-9a-f]{64})`?')
     if ($matches.Count -eq 0)
     {
@@ -406,6 +415,17 @@ function Assert-BuildInfo
     {
         throw "BUILD_INFO runtime does not match expected runtime"
     }
+    # Missing GPU metadata is accepted for ordinary verification of historical packages.
+    if ($ExpectedGpuValidation -and $info['GpuValidation'] -ne $ExpectedGpuValidation)
+    {
+        throw 'BUILD_INFO GPU validation does not match the required state'
+    }
+    if ($info.ContainsKey('GpuValidation'))
+    {
+        if ($info['GpuValidation'] -notin @('passed', 'not-run', 'not-applicable')) { throw 'Invalid GPU validation state' }
+        if ($info['Runtime'] -eq 'cpu-only' -and $info['GpuValidation'] -ne 'not-applicable') { throw 'CPU package has CUDA validation metadata' }
+        if ($info['Runtime'] -eq 'cuda' -and $info['GpuValidation'] -eq 'not-run' -and $PackageName -notmatch '_candidate\.') { throw 'Unvalidated CUDA package must be named candidate' }
+    }
 }
 
 function Get-PowerShellCommand
@@ -518,7 +538,8 @@ try
             $script:release = Read-GitHubRelease -RepositoryName $Repository -ReleaseTag $Tag
             $script:releaseUrl = Get-ObjectPropertyText -Object $script:release -Name "url"
             $script:asset = Select-ReleaseAsset -Release $script:release -RequestedName $AssetName
-            $script:releaseBodyHash = Get-ReleaseBodySha256 -Body (Get-ObjectPropertyText -Object $script:release -Name "body")
+            $archiveCount = @($script:release.assets | Where-Object { $_.name -match '\.(zip|tar\.gz)$' }).Count
+            $script:releaseBodyHash = Get-ReleaseBodySha256 -Body (Get-ObjectPropertyText -Object $script:release -Name "body") -Name $script:asset.name -SingleArchive ($archiveCount -eq 1)
             $script:assetDigestHash = Normalize-Sha256 -Value (Get-ObjectPropertyText -Object $script:asset -Name "digest")
             $script:tagCommitHash = Read-GitHubTagCommitSha -RepositoryName $Repository -ReleaseTag $Tag
             Write-Host "Release: $script:releaseUrl"

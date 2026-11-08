@@ -96,4 +96,88 @@ jobs:
           $archive = @(Get-ChildItem build/download -File | Where-Object { $_.Name -match '\.(zip|tar\.gz)$' })
           if ($archive.Count -ne 1) { throw 'Expected exactly one native archive' }
           $hash = ((Get-Content "$($archive[0].FullName).sha256" -Raw) -split '\s+')[0]
-          ./scripts/verify-release-asset.ps1 -ArchivePath $archive[0].FullName -ExpectedSha256 $hash -ExpectedCommit '${{ github.sha }}' -ExpectedRuntime cpu-only -RequireStandalone
+          ./scripts/verify-release-asset.ps1 -ArchivePath $archive[0].FullName -ExpectedSha256 $hash -ExpectedCommit '${{ github.sha }}' -ExpectedRuntime cpu-only -ExpectedGpuValidation not-applicable -RequireStandalone
+  cuda-candidate:
+    name: Candidate ${{ matrix.platform }} CUDA
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            runner: windows-2025-vs2026
+            triplet: x64-windows-release
+          - platform: linux-x64
+            runner: ubuntu-22.04
+            triplet: x64-linux-release
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/dependencies
+        with:
+          triplet: ${{ matrix.triplet }}
+          cache-namespace: ${{ inputs.cache-namespace || 'deps-v1' }}
+      - name: Install hash-locked CUDA 13.3 compiler and runtime
+        run: ./scripts/setup-cuda.ps1
+      - name: Install packaging tool
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends patchelf
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build, test and package unvalidated CUDA candidate
+        run: ./scripts/release.ps1 -BuildDir build/package-cuda -CudaValidation BuildOnly -OutputDir build/archives
+      - name: Prove Required mode rejects a runner without GPU
+        run: |
+          $extension = if ($IsWindows) { '.exe' } else { '' }
+          $probe = & "./build/package-cuda/Release/bin/mosaicraft_tests$extension" --require-cuda 2>&1 | Out-String
+          if ($LASTEXITCODE -eq 0 -or $probe -notmatch 'requires an available CUDA device') { throw "Unexpected GPU-required result: $probe" }
+          $global:LASTEXITCODE = 0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cuda-candidate-${{ matrix.platform }}
+          path: build/archives/*
+          if-no-files-found: error
+      - name: Upload CUDA diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cuda-diagnostics-${{ matrix.platform }}
+          path: |
+            build/dependency-state/
+            build/package-cuda/Testing/Temporary/
+            build/package-cuda/release-timings.json
+          if-no-files-found: ignore
+  cuda-verify:
+    name: Standalone ${{ matrix.platform }} CUDA candidate
+    needs: cuda-candidate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            runner: windows-2025-vs2026
+          - platform: linux-x64
+            runner: ubuntu-22.04
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: cuda-candidate-${{ matrix.platform }}
+          path: build/download
+      - name: Verify candidate without CUDA toolkit or GPU
+        run: |
+          $archive = @(Get-ChildItem build/download -File | Where-Object { $_.Name -match '_candidate\.(zip|tar\.gz)$' })
+          if ($archive.Count -ne 1) { throw 'Expected exactly one CUDA candidate' }
+          $hash = ((Get-Content "$($archive[0].FullName).sha256" -Raw) -split '\s+')[0]
+          ./scripts/verify-release-asset.ps1 -ArchivePath $archive[0].FullName -ExpectedSha256 $hash -ExpectedCommit '${{ github.sha }}' -ExpectedRuntime cuda -ExpectedGpuValidation not-run -RequireStandalone

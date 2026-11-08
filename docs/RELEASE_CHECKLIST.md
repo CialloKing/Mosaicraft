@@ -2,7 +2,7 @@
 
 发布日期 / Applies to：v1.14.0 及后续版本
 
-本清单定义正式发布的准入标准。正式 CUDA 包仍由本机或专用 GPU 环境构建；GitHub Actions CPU-only CI 是基础门禁，不替代 CUDA 发布包。
+本清单定义正式发布的准入标准。四个平台的 CPU 包全部验收通过后，使用同一提交在本机完成 Windows CUDA GPU 验收。云端 CUDA 仅是候选包；工作流不自动发布 Release。详细环境和缓存规则见 [CI 与打包](CI_PACKAGING.md)。
 
 ## 1. 发布前状态
 
@@ -28,12 +28,13 @@
 ## 3. 本机 CUDA 发布包
 
 ```powershell
-.\scripts\release.ps1 -BuildDir build -Configuration Release
+.\scripts\release.ps1 -BuildDir build/package-cuda-local -CudaValidation Required -OutputDir build/archives
 ```
 
 脚本必须完成：
 
 - CUDA Release 配置和构建
+- 必需 GPU 探测通过；无可用 GPU 时失败，禁止跳过测试、smoke 和解压验证
 - `mosaicraft_tests`
 - `mosaicraft_regression_tests`
 - Web UI/API smoke
@@ -41,7 +42,7 @@
 - 正式打包前 git 工作区必须保持干净，包内 `BUILD_INFO.txt` 才能准确对应 tag commit
 - 解压发布包并验证包内 CLI `--version`
 - 验证包内文档规则：必须包含 `ENCYCLOPEDIA.md`，不得包含 `CHANGELOG.md` 或 `RELEASE_NOTES_*`
-- 写入并验证 `BUILD_INFO.txt`，记录版本、包名、运行时和 git commit
+- 写入并验证 `BUILD_INFO.txt`，记录版本、平台、架构、运行时、git commit 和 `GpuValidation: passed`
 - 使用包内 `MosaicraftWebUI.exe` 再跑 Web UI/API smoke
 - 输出 SHA256
 
@@ -59,9 +60,9 @@ gh run view <run-id> --json status,conclusion,url,jobs
 要求：
 
 - 最新 `CI` workflow 必须通过
-- `Windows CPU-only` job 必须通过
-- `Release gate` 必须完成
-- `Mosaicraft_v<version>_windows-x64_cpu-only_ci-cpu.zip` artifact 必须上传成功
+- Windows/Linux CPU 日常构建、CTest 和 Web UI/API smoke 必须通过
+- 手动触发同一提交的 `Native packages`，四平台 CPU 构建、打包和独立附件验收必须全部通过
+- 保存 CPU 包、SHA256 及工作流链接；Windows ZIP、Linux/macOS tar.gz
 
 说明：
 
@@ -71,7 +72,7 @@ gh run view <run-id> --json status,conclusion,url,jobs
 
 ## 5. 创建 GitHub Release
 
-仅当本机 CUDA 发布包和远端 CPU-only CI 都通过后创建 release。
+仅当四平台 CPU 包和本机 Windows CUDA 包的同提交验收全部通过后创建 release。Linux CUDA 和所有 `_candidate` 包不进入正式附件。创建 Release 仍由维护者显式执行，当前 CI 没有发布权限。
 
 ```powershell
 gh release create v<version> `
@@ -82,28 +83,28 @@ gh release create v<version> `
 
 GitHub Release 正文必须保持简洁，只包含：
 
-- 下载哪个 zip
+- 各平台下载哪个 ZIP/tar.gz
 - 解压后如何启动 `MosaicraftWebUI.exe`
 - CLI 用户如何运行 `mosaicraft.exe --help`
-- Windows x64 / CUDA 运行环境说明
+- Windows 10 22H2 x64、Ubuntu 22.04/glibc 2.35、macOS 13 及 CUDA 运行环境说明
 - SHA256
 
 完整变更、CI、发布脚本和验证细节保留在 `docs/ENCYCLOPEDIA.md`、README 和项目文档中，不直接展开到 GitHub Release 页面。
 
 ## 6. 发布后真实附件验收
 
-创建或替换 GitHub Release 附件后，必须从 GitHub Release 重新下载真实 zip 验收。
+创建或替换 GitHub Release 附件后，必须在对应平台重新下载真实附件验收。
 
 ```powershell
-.\scripts\verify-release-asset.ps1 -Tag v<version>
+.\scripts\verify-release-asset.ps1 -Tag v<version> -AssetName <archive-name> -RequireStandalone
 ```
 
 脚本必须完成：
 
-- 读取 GitHub Release 元数据并选择 zip 资产
+- 读取 GitHub Release 元数据并明确选择 ZIP/tar.gz 资产
 - 下载真实 Release 附件
 - 校验 GitHub asset digest、Release 页面 SHA256 和本地文件 SHA256 一致
-- 解压 zip 并检查 CLI、Web UI、`index.html`、README、API、百科、`BUILD_INFO.txt`、license 和第三方版本清单
+- 解压附件并检查 CLI、Web UI、`index.html`、README、API、百科、`BUILD_INFO.txt`、license 和第三方版本清单
 - 校验包内 `BUILD_INFO.txt` 的 commit 与 GitHub tag 指向的 commit 一致
 - 确认包内没有 `CHANGELOG.md` 或 `RELEASE_NOTES_*`
 - 验证包内 CLI `--version`、CLI `--help` 和 Web UI `--help`
@@ -116,22 +117,19 @@ GitHub Release 正文必须保持简洁，只包含：
 - 发布包文档规则验证失败
 - 远端 CPU-only CI 未完成或失败
 - `docs/ENCYCLOPEDIA.md` 当前版本记录缺失
-- zip 不是由 `scripts/release.ps1` 生成
+- 附件不是由 `scripts/release.ps1` 生成，或 CUDA 包的 GPU 验收状态不是 `passed`
 - 未记录 SHA256
 - GitHub Release 真实附件未通过 `scripts/verify-release-asset.ps1`
 
-## 8. CUDA CI 后续方案
+## 8. 云端 CUDA 候选
 
 当前策略：
 
-- GitHub hosted runner 跑 CPU-only 基础门禁
-- 本机或专用 GPU 机器生成正式 CUDA 包
+- GitHub hosted runner 生成 Windows/Linux CUDA 13.3、sm_89 候选，运行完整 CPU 回退测试和独立包验收
+- 候选必须使用 `-CudaValidation BuildOnly`，文件名带 `_candidate`，GPU 状态为 `not-run`
+- 本机 GPU 生成正式 Windows CUDA 包，Required 验收通过后状态才是 `passed`
 
-未来可选：
-
-- 配置自托管 Windows GPU runner
-- 将 CUDA Release 构建和 Web UI/API smoke 纳入独立 `windows-cuda` job
-- 保留 CPU-only job 作为无 GPU fallback 门禁
+本轮不配置自托管 GPU runner，不引入付费缓存或定时保活，也不修改已发布的 v1.14.6。
 
 ## 9. v1.14.0 发布候选验收
 

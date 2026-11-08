@@ -227,7 +227,9 @@ target_link_libraries(mosaicraft PRIVATE
 
 # CUDA 运行时 DLL 自动部署（仅 Windows；Linux 通过 ldconfig/rpath 解析 .so）
 if (MOSAICRAFT_CUDA AND WIN32)
-    file(GLOB CUDA_RUNTIME_DLL "${CUDAToolkit_BIN_DIR}/../bin/x64/cudart64_*.dll")
+    file(GLOB CUDA_RUNTIME_DLL "${CUDAToolkit_BIN_DIR}/cudart64_*.dll"
+        "${CUDAToolkit_BIN_DIR}/x64/cudart64_*.dll"
+        "${CUDAToolkit_BIN_DIR}/../bin/x64/cudart64_*.dll")
     if (CUDA_RUNTIME_DLL)
         list(GET CUDA_RUNTIME_DLL 0 CUDA_RUNTIME_DLL_FIRST)
         add_custom_command(TARGET mosaicraft POST_BUILD

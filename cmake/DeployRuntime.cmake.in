@@ -2,7 +2,8 @@
 # Only native OS libraries are excluded; every third-party dependency is shipped.
 if(WIN32)
     set(CMAKE_GET_RUNTIME_DEPENDENCIES_COMMAND "@_runtime_scanner@")
-    set(_exclude "[Ww][Ii][Nn][Dd][Oo][Ww][Ss]/[Ss][Yy][Ss][Tt][Ee][Mm]32/.*")
+    # CMake < 4.3 may report mixed native/CMake separators on Windows.
+    set(_exclude "[Ww][Ii][Nn][Dd][Oo][Ww][Ss].[Ss][Yy][Ss][Tt][Ee][Mm]32.*")
 elseif(APPLE)
     set(_exclude "^/usr/lib/.*" "^/System/Library/.*")
 else()

@@ -1,0 +1,81 @@
+{
+  "release": "13.3.0",
+  "source": "https://developer.download.nvidia.com/compute/cuda/redist/redistrib_13.3.0.json",
+  "components": {
+    "cuda_nvcc": {
+      "version": "13.3.33",
+      "windows-x86_64": {
+        "relative_path": "cuda_nvcc/windows-x86_64/cuda_nvcc-windows-x86_64-13.3.33-archive.zip",
+        "sha256": "8fed1ab69ed4e637ad76baff572579630674df9ff02570777800782ee5bdfbc5",
+        "md5": "80e4219a2e7cf34ac41921635c2fdc50",
+        "size": "31959263"
+      },
+      "linux-x86_64": {
+        "relative_path": "cuda_nvcc/linux-x86_64/cuda_nvcc-linux-x86_64-13.3.33-archive.tar.xz",
+        "sha256": "93b098bda4a562ebf3541523ce82adc43f106a81dcf28bcbf8f0d8e093d1c66f",
+        "md5": "5180c45363243f1bce6db068e39b7080",
+        "size": "31609400"
+      }
+    },
+    "cuda_crt": {
+      "version": "13.3.33",
+      "windows-x86_64": {
+        "relative_path": "cuda_crt/windows-x86_64/cuda_crt-windows-x86_64-13.3.33-archive.zip",
+        "sha256": "752c528281a06a0ddf89237d760ffd6acde1b9cd59efc35803c2591127ef55f0",
+        "md5": "3afe8200e49c16314b5f5ec0bf55a52c",
+        "size": "163110"
+      },
+      "linux-x86_64": {
+        "relative_path": "cuda_crt/linux-x86_64/cuda_crt-linux-x86_64-13.3.33-archive.tar.xz",
+        "sha256": "4755d36d24c6ef7697a2d3e1dbb23c4562c9c0d97d48390d4cbd8ab32dec5b5f",
+        "md5": "40633d5ea63dc795e273ea70835a863f",
+        "size": "99372"
+      }
+    },
+    "cuda_cudart": {
+      "version": "13.3.29",
+      "windows-x86_64": {
+        "relative_path": "cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-13.3.29-archive.zip",
+        "sha256": "1feb7dd266813ffe8dbc24e115183a5ac35a4795c8d34aca0df85ab616b64d9c",
+        "md5": "38e6477bad56eca8e6bed74b6f5efb6b",
+        "size": "2589792"
+      },
+      "linux-x86_64": {
+        "relative_path": "cuda_cudart/linux-x86_64/cuda_cudart-linux-x86_64-13.3.29-archive.tar.xz",
+        "sha256": "1e59c4888267d27ba1a9bd0f3669a6439db1334a96e754cd9013c7c73e18dc9d",
+        "md5": "a6f87957617815446daa9a4af727c92c",
+        "size": "1573744"
+      }
+    },
+    "libnvvm": {
+      "version": "13.3.33",
+      "windows-x86_64": {
+        "relative_path": "libnvvm/windows-x86_64/libnvvm-windows-x86_64-13.3.33-archive.zip",
+        "sha256": "e8e48fcceb3ffeb3e421f29fc40252580c6dfd2a841bea3490782233048a5f00",
+        "md5": "143904101490b3a7eb86e9bb685f1e0e",
+        "size": "58567644"
+      },
+      "linux-x86_64": {
+        "relative_path": "libnvvm/linux-x86_64/libnvvm-linux-x86_64-13.3.33-archive.tar.xz",
+        "sha256": "fc9c1fd5844e44c0e5eeb051378c1b13cf0e3bb3fe4966d5103c38885424f802",
+        "md5": "422e0db4d9a8b03471e7379618f38210",
+        "size": "49180068"
+      }
+    },
+    "cccl": {
+      "version": "13.3.3.3.1",
+      "windows-x86_64": {
+        "relative_path": "cccl/windows-x86_64/cccl-windows-x86_64-13.3.3.3.1-archive.zip",
+        "sha256": "607dcfca31da168171fbdae5b7096ade646c4c2b1e0ff2899077dde0ccbdd6fb",
+        "md5": "733b7312dfaf8dd67b080190ccbfe343",
+        "size": "3544189"
+      },
+      "linux-x86_64": {
+        "relative_path": "cccl/linux-x86_64/cccl-linux-x86_64-13.3.3.3.1-archive.tar.xz",
+        "sha256": "67746da12f16229ac4ebde78ce7895e42b069d1d3e2ae2d2d25f90bc43679d68",
+        "md5": "d4049f09c07164a3fc0d47b31ca1e947",
+        "size": "1262040"
+      }
+    }
+  }
+}

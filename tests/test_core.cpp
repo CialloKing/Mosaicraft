@@ -9,7 +9,7 @@
 // 运行: ctest --test-dir build -C Release
 // ============================================================
 
-#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#define DOCTEST_CONFIG_IMPLEMENT
 #include "doctest.h"
 
 #include "../core/ApiHandlers.h"
@@ -33,6 +33,24 @@
 #include <cstring>
 #include <string>
 #include <algorithm>
+#include <cstdlib>
+
+int main(int argc, char** argv)
+{
+    const char* required = std::getenv("MOSAICRAFT_REQUIRE_CUDA");
+    const bool probe = argc == 2 && std::string(argv[1]) == "--require-cuda";
+    if ((probe || (required != nullptr && std::string(required) == "1")) && !mosaicraft::cuda::isCudaAvailable())
+    {
+        std::cerr << "GPU validation requires an available CUDA device" << std::endl;
+        return 1;
+    }
+    if (probe)
+    {
+        std::cout << "GPU validation passed" << std::endl;
+        return 0;
+    }
+    return doctest::Context(argc, argv).run();
+}
 
 TEST_CASE("executable directory resolves outside the working directory")
 {

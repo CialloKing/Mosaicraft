@@ -9,6 +9,7 @@ param(
     [string]$OutputDir = "",
     [ValidateSet('auto', 'zip', 'tar.gz')][string]$ArchiveFormat = 'auto',
     [switch]$NoCuda,
+    [ValidateSet('Required', 'BuildOnly')][string]$CudaValidation = 'Required',
     [switch]$SkipConfigure,
     [switch]$SkipBuild,
     [switch]$SkipTests,
@@ -342,6 +343,7 @@ function Write-BuildInfo
         "Platform: $Platform",
         "Arch: $Arch",
         "Runtime: $Runtime",
+        "GpuValidation: $gpuValidation",
         "Configuration: $Configuration",
         "Commit: $CommitHash",
         "GeneratedAtUtc: $((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"))"
@@ -465,6 +467,11 @@ $outputPath = if ($OutputDir) { Resolve-RepoPath $OutputDir } else { $RepoRoot }
 $packagePlatform = Normalize-PackageToken -Value $PackagePlatform -Fallback (Get-DefaultPackagePlatform) -Label "platform"
 $packageArch = Normalize-PackageToken -Value $PackageArch -Fallback (Get-DefaultPackageArch) -Label "arch"
 $packageRuntime = if ($NoCuda) { "cpu-only" } else { "cuda" }
+$gpuValidation = if ($NoCuda) { 'not-applicable' } elseif ($CudaValidation -eq 'BuildOnly') { 'not-run' } else { 'passed' }
+if (-not $NoCuda -and $CudaValidation -eq 'Required' -and ($SkipTests -or $SkipSmoke -or $SkipArchiveValidation))
+{
+    throw 'CUDA Required packaging cannot skip tests, smoke or archive validation'
+}
 $gitCommit = Get-GitCommit
 
 if (-not $ToolchainFile -and $env:VCPKG_ROOT) {
@@ -485,6 +492,7 @@ if ($PackageSuffix) {
     $suffix = "_" + ($PackageSuffix -replace '[^A-Za-z0-9_.-]', '-')
 }
 $packageName = "Mosaicraft_v${versionText}_${packagePlatform}-${packageArch}_${packageRuntime}${suffix}"
+if (-not $NoCuda -and $CudaValidation -eq 'BuildOnly') { $packageName += '_candidate' }
 if ($ArchiveFormat -eq 'auto') { $ArchiveFormat = if (Test-IsWindows) { 'zip' } else { 'tar.gz' } }
 $archiveName = "$packageName.$ArchiveFormat"
 $archivePath = Join-Path $outputPath $archiveName
@@ -523,6 +531,7 @@ try {
             if ($ToolchainFile) {
                 $configureArgs += "-DCMAKE_TOOLCHAIN_FILE=$ToolchainFile"
             }
+            if (-not $NoCuda -and $env:CUDAToolkit_ROOT) { $configureArgs += "-DCUDAToolkit_ROOT=$env:CUDAToolkit_ROOT" }
             if ($env:VCPKG_DEFAULT_TRIPLET)
             {
                 $configureArgs += "-DVCPKG_TARGET_TRIPLET=$env:VCPKG_DEFAULT_TRIPLET"
@@ -547,13 +556,32 @@ try {
         }
     }
 
+    $cache = Get-Content (Join-Path $buildPath 'CMakeCache.txt') -Raw
+    $expectedCuda = if ($NoCuda) { 'OFF' } else { 'ON' }
+    if ($cache -notmatch "(?m)^MOSAICRAFT_CUDA:BOOL=$expectedCuda`r?$")
+    {
+        throw 'Build directory CUDA configuration does not match the requested package'
+    }
+    if (-not $NoCuda -and $CudaValidation -eq 'Required')
+    {
+        $probePath = Join-Path $buildPath "$Configuration/bin/$(Get-ExecutableName 'mosaicraft_tests')"
+        $probe = Invoke-NativeOutput -FilePath $probePath -Arguments @('--require-cuda') | Out-String
+        if ($probe.Trim() -ne 'GPU validation passed') { throw 'GPU validation probe did not confirm a usable CUDA device' }
+    }
+
     if (-not $SkipTests) {
         Invoke-Step "Run CTest" {
-            Invoke-Native -FilePath "ctest" -Arguments @(
-                "--test-dir", $buildPath,
-                "-C", $Configuration,
-                "--output-on-failure"
-            )
+            $previousRequirement = $env:MOSAICRAFT_REQUIRE_CUDA
+            $env:MOSAICRAFT_REQUIRE_CUDA = if (-not $NoCuda -and $CudaValidation -eq 'Required') { '1' } else { '0' }
+            try
+            {
+                Invoke-Native -FilePath "ctest" -Arguments @(
+                    "--test-dir", $buildPath,
+                    "-C", $Configuration,
+                    "--output-on-failure"
+                )
+            }
+            finally { $env:MOSAICRAFT_REQUIRE_CUDA = $previousRequirement }
         }
     }
 
