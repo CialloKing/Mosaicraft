@@ -1,0 +1,55 @@
+# CUDA 多架构支持与验证
+
+## 默认包与配置
+
+默认 CUDA 包包含 sm_75（RTX 20/GTX 16）、sm_80（A100/A30）、sm_86（RTX 30）、sm_89（RTX 40）、sm_90（H100/H200）、sm_120（RTX 50）原生机器码，并保留一份 compute_75 PTX。原生机器码优先；PTX 提供更新架构的前向兼容路径。硬件目标依据 [NVIDIA 列表](https://developer.nvidia.com/cuda/gpus)，代码选择遵循 [NVIDIA 兼容规则](https://docs.nvidia.com/cuda/blackwell-compatibility-guide/index.html)。
+
+当前仅 RTX 4060 Laptop / Ada 完成实机验收；其余架构已编译覆盖，尚未实机验证。强制 PTX JIT 验证不代表模拟了其他 GPU。仍使用 CUDA 13.3.0 / nvcc 13.3.33；旧驱动不因 GPU 架构受支持而自动兼容，PTX JIT 还要求驱动能处理相应 PTX 版本。
+
+```powershell
+# 新构建目录默认通用配置
+cmake -S . -B build/cuda -DMOSAICRAFT_CUDA=ON
+# 开发者可只构建 RTX 30；保留原参数形式
+cmake -S . -B build/rtx30 -DCUDA_ARCH=sm_86
+# 覆盖旧目录中的 sm_89 缓存（PowerShell 需要引号保护分号）
+cmake -S . -B build/cuda "-DCUDA_ARCH=sm_75;sm_80;sm_86;sm_89;sm_90;sm_120"
+```
+
+CUDA_ARCH 去重并按计算能力排序；PTX 使用列表中的最低计算能力。四个手动 nvcc 命令共享生成参数，架构/编译器配置文件是对象依赖；变更目标会重新编译全部四个模块。非法目标在配置时失败。兼容评分仍关闭 FMA 并保留精确除法/平方根、非 FTZ 参数，模板算法与其原编译选项不变。
+
+## 预检及验收信息
+
+建库和生成在 GPU 工作前查询当前默认设备，通过 cudaFuncGetAttributes 加载四个模块的实际内核，包括四种模板实例，并核对线程数和共享内存限制。无设备、驱动不兼容、缺少内核或预备资源不足时，日志说明原因并在计算前使用 CPU。未知错误及上传/执行/同步失败继续传播。任务内复用预检结果；不引入新 CLI/API 参数、多卡选择或特征版本变化。`--cpu`、CPU-only 构建、仅归一化不会执行 GPU 内核预检。
+
+BUILD_INFO 的 CudaArchitectures、CudaPtx 由构建配置和 cuobjdump 产物核对产生；正式通用包拒绝旧目录遗留的单架构配置。GpuValidationDevice、GpuValidationComputeCapability、GpuValidationDriver 来自 Required 预检，候选均为 not-run。这里 Driver 是 cudaDriverGetVersion 返回的 CUDA 驱动 API 版本整数，而非 nvidia-smi 的显卡驱动包版本。passed 仅对应记录的设备。旧包缺少新增字段时，普通附件验证仍可执行。
+
+## 本机验证
+
+2026-11-09，Windows 10 22H2 x64、RTX 4060 Laptop、驱动包 616.92、CUDA 13.3.33、MSVC 19.51、OpenCV 4.12.0。CUDA 和 CPU-only Release 构建均通过。原生与 CUDA_FORCE_PTX_JIT=1 模式完成完整 CTest；CUDA_VISIBLE_DEVICES=-1 下普通 CTest 通过且 --require-cuda 返回非零。CPU/CUDA Web UI/API smoke 覆盖提交任务、图片格式和中文/空格路径。
+
+四个模块逐个检查六种 ELF 机器码及单份 PTX，最终 CLI/Web UI 各包含 24 个 cubin 和 4 个 PTX。配置切换 sm_89 -> 通用列表时检查四个对象的更新时间，确认全部重编。关键回归覆盖配置校验、元数据一致性、预检错误分类；既有运行中故障注入继续验证不能静默回退或提交部分结果。
+
+## 成本与行为对照
+
+依赖已安装、CPU 对象保持有效，只改变架构配置，重新编译四个 CUDA 模块并链接四个发布/测试目标。单架构耗时 26.16 秒，通用配置 56.81 秒；这是一次本机采样，不包含依赖冷构建，也不代表 CI 时间。
+
+| 项目 | v1.14.7 单 sm_89 | 通用构建 |
+|---|---:|---:|
+| CLI 原始字节 | 1,284,608 | 2,739,712 |
+| Web UI 原始字节 | 1,714,176 | 3,169,280 |
+| 程序及运行库 ZIP 字节 | 6,128,996 | 6,786,149 |
+
+ZIP 比较使用相同文件清单和 Python deflate 等级 6，不含文档、许可证和 BUILD_INFO；这是可比的运行文件归档，非正式发布附件。压缩后增加约 642 KiB（10.7%）。同代码的单 sm_89 CLI 为 1,293,824 字节，约 9 KiB 差异来自预检等新增逻辑。
+
+显式基准脚本 `scripts/benchmark_cuda_architectures.cpp` 链接保留的 v1.14.7 核心/CUDA 静态库和当前静态库各一份。使用独立的 24 张合成素材图库，模板 180×320 和通用 36×64 各一次预热、三次交替采样；每轮从相同数据库快照开始，种子 123，400 块选图并叠加基础图。亮度随机扰动沿用默认关闭，避免其独立随机源影响像素比较。全部采样选图 ID 和输出像素一致；Tiny/LBP/Edge 一致，模板浮点误差保持既有 0.001 容差，评分最大差异小于 0.00001。通用后端另由现有 CPU 精确对照回归验收。
+
+| 三次中位数，毫秒 | 单 sm_89 | 通用构建 |
+|---|---:|---:|
+| 模板预检/设备查询 | 34.09 | 122.39 |
+| 模板生成 | 66.87 | 65.83 |
+| 模板总过程 | 206.96 | 197.70 |
+| 通用预检/设备查询 | 29.45 | 128.16 |
+| 通用生成 | 123.90 | 129.54 |
+| 通用总过程 | 250.84 | 268.46 |
+
+旧版查询只数设备，新预检会加载上下文和全部内核，部分初始化从后续计算提前到预检；这两列初始化工作量不同。首次进程和各轮原始耗时、浮点最大差异、文件清单与 SHA256 见 [结构化记录](performance/cuda-architectures.json)。驱动 JIT 缓存未清除；短任务与单次构建的波动不足以宣称加速，主要收益是兼容范围和提前发现错误。

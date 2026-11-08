@@ -124,7 +124,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends patchelf
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Build, test and package unvalidated CUDA candidate
+      - name: Build six-architecture CUDA candidate and inspect native/PTX images
         run: ./scripts/release.ps1 -BuildDir build/package-cuda -CudaValidation BuildOnly -OutputDir build/archives
       - name: Prove Required mode rejects a runner without GPU
         run: |
@@ -146,6 +146,7 @@ jobs:
             build/dependency-state/
             build/package-cuda/Testing/Temporary/
             build/package-cuda/release-timings.json
+            build/package-cuda/cuda-architectures.txt
           if-no-files-found: ignore
   cuda-verify:
     name: Standalone ${{ matrix.platform }} CUDA candidate

@@ -28,7 +28,7 @@ Linux/macOS 分别选择 x64-linux-release、arm64-osx-release。Linux 打包还
 
 ## CUDA 验收状态
 
-云端编译器固定 CUDA 13.3.0/nvcc 13.3.33，使用 NVIDIA 官方重分发组件和锁定 SHA256；不安装显卡驱动。仅构建 sm_89，原算术编译参数保持不变。
+云端编译器固定 CUDA 13.3.0/nvcc 13.3.33，使用 NVIDIA 官方重分发组件和锁定 SHA256；不安装显卡驱动。默认包含 sm_75、sm_80、sm_86、sm_89、sm_90、sm_120 原生内核及 compute_75 PTX，原算术编译参数保持不变。锁文件还固定 cuobjdump 13.3.29；打包前逐模块和最终程序核对架构，缺少任何目标即失败。
 
 ```powershell
 # 云端候选：完整 CPU 回退测试，但不声称 GPU 通过验收
@@ -39,7 +39,7 @@ Linux/macOS 分别选择 x64-linux-release、arm64-osx-release。Linux 打包还
 ./scripts/release.ps1 -BuildDir build/package-cuda-local -CudaValidation Required -OutputDir build/archives
 ```
 
-`BUILD_INFO.txt` 的 `GpuValidation` 为 `passed`、`not-run` 或 `not-applicable`。BuildOnly 自动添加 `_candidate` 文件名后缀；Required 在无 GPU 时失败，且禁止跳过 CTest、smoke 或解压验证。正式 Windows CUDA 包必须来自同一提交并通过本机 GPU 完整回归；Linux CUDA 暂不进入正式 Release。
+`BUILD_INFO.txt` 的 `GpuValidation` 为 `passed`、`not-run` 或 `not-applicable`。`CudaArchitectures`、`CudaPtx` 记录实际编译目标；`GpuValidationDevice`、`GpuValidationComputeCapability`、`GpuValidationDriver` 记录 Required 模式实际通过预检的设备，候选均为 `not-run`。`passed` 仅表示所记录设备通过验收；其他架构不因此获得实机验证结论。旧包缺少新增字段时仍可普通验收。BuildOnly 自动添加 `_candidate` 文件名后缀；Required 在无 GPU 时失败，且禁止跳过 CTest、smoke 或解压验证。正式 Windows CUDA 包必须来自同一提交并通过本机 GPU 完整回归；Linux CUDA 暂不进入正式 Release。
 
 ## 独立包验收
 
@@ -74,3 +74,5 @@ CPU 三个平台和 CUDA 两个平台均在独立的新 job 下载附件，不�
 本机 CUDA Required 验收通过 88 个用例、110540 个断言和包内 Web UI/API smoke；隐藏 GPU 时 Required 明确失败。与已发布 v1.14.6 对照的私有固定输入涵盖 180×320、72×128 两种尺寸及 CPU/CUDA：按像素哈希对齐的特征、主图与预览像素、选图使用计数和评分摘要均一致。生成对照使用同一图库快照，Top-N 固定为 1，关闭亮度调整，叠加强度 0.25。
 
 本轮保持 CLI、特征 v6、API 合约 2.0 和图库格式不变；不发布或修改 v1.14.6。
+
+多架构配置、CPU 回退和实测记录见 [CUDA 多架构支持](CUDA_ARCHITECTURES.md)。

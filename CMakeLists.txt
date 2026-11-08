@@ -323,6 +323,7 @@ add_test(NAME mosaicraft_regression_tests COMMAND mosaicraft_regression_tests)
 
 find_program(POWERSHELL_COMMAND NAMES pwsh powershell)
 if (POWERSHELL_COMMAND)
+    add_test(NAME cuda_build_info COMMAND "${POWERSHELL_COMMAND}" -NoProfile -File "${CMAKE_SOURCE_DIR}/tests/test_cuda_build_info.ps1")
     add_custom_target(mosaicraft_webui_smoke
         COMMAND "${POWERSHELL_COMMAND}" -NoProfile -ExecutionPolicy Bypass
             -File "${CMAKE_SOURCE_DIR}/tests/webui_smoke.ps1"
@@ -351,3 +352,6 @@ target_link_libraries(mosaicraft_compatible_benchmark PRIVATE mosaicraft_core mo
 
 add_executable(mosaicraft_score_benchmark EXCLUDE_FROM_ALL scripts/benchmark_scoring.cpp)
 target_link_libraries(mosaicraft_score_benchmark PRIVATE mosaicraft_core mosaicraft_cuda)
+
+add_executable(mosaicraft_arch_benchmark EXCLUDE_FROM_ALL scripts/benchmark_cuda_architectures.cpp)
+target_link_libraries(mosaicraft_arch_benchmark PRIVATE mosaicraft_core mosaicraft_cuda)

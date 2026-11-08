@@ -127,7 +127,7 @@ GitHub Release 正文必须保持简洁，只包含：
 
 当前策略：
 
-- GitHub hosted runner 生成 Windows/Linux CUDA 13.3、sm_89 候选，运行完整 CPU 回退测试和独立包验收
+- GitHub hosted runner 生成 Windows/Linux CUDA 13.3、六架构通用候选，运行完整 CPU 回退测试和独立包验收
 - 候选必须使用 `-CudaValidation BuildOnly`，文件名带 `_candidate`，GPU 状态为 `not-run`
 - 本机 GPU 生成正式 Windows CUDA 包，Required 验收通过后状态才是 `passed`
 
@@ -144,3 +144,10 @@ GitHub Release 正文必须保持简洁，只包含：
 - 单独构建 `mosaicraft_ann_benchmark` 可排除索引加载时间，对比 708 维串行、196 维串行/并行，并检查完整查询结果。
 - ANN 查询至少降低 30%；代表性总耗时回退不超过 5%；平均/P90 匹配分数恶化不超过 1%。未达到门槛的项目不得作为性能成果发布。
 - 记录首次构建、进程峰值内存和显存采样口径；性能报告见 `docs/PERFORMANCE_v1.14.0.md`。
+
+## CUDA 多架构补充检查
+
+- 通用包必须包含 sm_75/80/86/89/90/120 及 compute_75 PTX；发布脚本逐模块和最终 CLI/Web UI 程序检查，旧缓存中的单 sm_89 配置须先重新配置。
+- Required 的预检必须加载全部实际内核和模板实例，并通过完整 GPU CTest、Web UI/API smoke；没有兼容设备不能用 CPU 回退冒充 GPU 验收。
+- 核对 BUILD_INFO 的目标、PTX、GPU 名称、计算能力和驱动；`passed` 仅对应记录的实机。其余架构写明“已编译覆盖，尚未实机验证”。
+- 云端 BuildOnly 仍仅为候选；正式发布政策、现有版本标签及附件保持不变。PTX JIT 通过不能替代其他型号的实机验证。

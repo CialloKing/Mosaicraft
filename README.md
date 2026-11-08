@@ -103,6 +103,9 @@ cmake --build build --config Release
 |:---|:---|:---|
 | `MOSAICRAFT_CUDA=ON` | ✅ | CUDA GPU 加速（需 NVIDIA GPU + CUDA Toolkit） |
 | `MOSAICRAFT_CUDA=OFF` | — | 纯 CPU 编译（Linux / 无 GPU Windows） |
+| `CUDA_ARCH` | `sm_75;sm_80;sm_86;sm_89;sm_90;sm_120` | CUDA 原生架构列表；保留单值覆盖 |
+
+默认 CUDA 包覆盖 RTX 20/GTX 16、RTX 30、RTX 40、A100/A30、H100/H200、RTX 50，并保留 `compute_75` PTX。任务开始 GPU 工作前检查实际内核兼容性，不可用时记录原因并使用 CPU；运行中 CUDA 错误仍报错。驱动须满足 CUDA 13.3 及所用 PTX 的要求。当前仅 Ada 实机验收，其他架构已编译覆盖、尚未实机验证。单卡构建可使用 `-DCUDA_ARCH=sm_86`；旧构建目录保留缓存，正式通用包拒绝遗漏架构的产物。详见 [CUDA 多架构与验证](docs/CUDA_ARCHITECTURES.md)。
 
 ### 验证
 

@@ -24,6 +24,9 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 . (Join-Path $PSScriptRoot 'Archive.ps1')
+. (Join-Path $PSScriptRoot 'Assert-CudaBuildInfo.ps1')
+$cudaBuildInfo = @{}
+$gpuProbeInfo = @{}
 $script:stageTimings = [ordered]@{}
 
 function Invoke-Native {
@@ -348,7 +351,17 @@ function Write-BuildInfo
         "Commit: $CommitHash",
         "GeneratedAtUtc: $((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"))"
     )
+    if ($Runtime -eq 'cuda')
+    {
+        $lines += "CudaArchitectures: $($cudaBuildInfo.CudaArchitectures)", "CudaPtx: $($cudaBuildInfo.CudaPtx)"
+        foreach ($field in @('GpuValidationDevice', 'GpuValidationComputeCapability', 'GpuValidationDriver'))
+        {
+            $value = if ($gpuValidation -eq 'passed') { $gpuProbeInfo[$field] } else { 'not-run' }
+            $lines += "${field}: $value"
+        }
+    }
     Set-Content -LiteralPath $buildInfoPath -Value $lines -Encoding UTF8
+    Assert-CudaBuildInfo (Read-BuildInfo $buildInfoPath)
 }
 
 function Read-BuildInfo
@@ -562,11 +575,32 @@ try {
     {
         throw 'Build directory CUDA configuration does not match the requested package'
     }
+    if (-not $NoCuda)
+    {
+        $cudaBuildInfo = Read-BuildInfo (Join-Path $buildPath 'cuda-architectures.txt')
+        $inspector = Join-Path (Split-Path $cudaBuildInfo.Nvcc) (Get-ExecutableName 'cuobjdump')
+        Invoke-Step 'Verify universal CUDA images' {
+            foreach ($program in @('mosaicraft', 'MosaicraftWebUI'))
+            {
+                & (Join-Path $PSScriptRoot 'Assert-CudaArchitectures.ps1') -BuildDir $buildPath `
+                    -Executable (Join-Path $buildPath "$Configuration/bin/$(Get-ExecutableName $program)") `
+                    -Cuobjdump $inspector -RequireUniversal
+            }
+        }
+    }
     if (-not $NoCuda -and $CudaValidation -eq 'Required')
     {
         $probePath = Join-Path $buildPath "$Configuration/bin/$(Get-ExecutableName 'mosaicraft_tests')"
         $probe = Invoke-NativeOutput -FilePath $probePath -Arguments @('--require-cuda') | Out-String
-        if ($probe.Trim() -ne 'GPU validation passed') { throw 'GPU validation probe did not confirm a usable CUDA device' }
+        if ($probe -notmatch '(?m)^GPU validation passed\r?$') { throw 'GPU validation probe did not confirm usable CUDA kernels' }
+        foreach ($line in $probe -split "`n")
+        {
+            if ($line -match '^(GpuValidation[^:]+):\s*(.*)$') { $gpuProbeInfo[$Matches[1]] = $Matches[2].Trim() }
+        }
+        foreach ($field in @('GpuValidationDevice', 'GpuValidationComputeCapability', 'GpuValidationDriver'))
+        {
+            if (-not $gpuProbeInfo[$field]) { throw "GPU probe omitted $field" }
+        }
     }
 
     if (-not $SkipTests) {
@@ -614,10 +648,12 @@ try {
             "docs\PREVIEW_VERIFICATION.md",
             "docs\SAME_SIZE_NORMALIZATION.md",
             "docs\CI_PACKAGING.md",
+            "docs\CUDA_ARCHITECTURES.md",
             "docs\RELEASE_CHECKLIST.md",
             "docs\performance\preview.json",
             "docs\performance\same-size-normalization.json",
-            "docs\performance\ci-packaging.json"
+            "docs\performance\ci-packaging.json",
+            "docs\performance\cuda-architectures.json"
         ))
         {
             $destination = Join-Path $packageRoot $document

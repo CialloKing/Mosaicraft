@@ -20,6 +20,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 . (Join-Path $PSScriptRoot 'Archive.ps1')
+. (Join-Path $PSScriptRoot 'Assert-CudaBuildInfo.ps1')
 . (Join-Path $PSScriptRoot 'Assert-PackageRuntime.ps1')
 $originalPath = $env:PATH
 $originalLdPath = $env:LD_LIBRARY_PATH
@@ -390,6 +391,7 @@ function Assert-BuildInfo
     $buildInfoPath = Join-Path $Root "BUILD_INFO.txt"
     Assert-FileExists -Path $buildInfoPath
     $info = Read-BuildInfo -Path $buildInfoPath
+    Assert-CudaBuildInfo $info
     $commit = [string]$info["Commit"]
 
     if ($info["Version"] -ne $VersionText)

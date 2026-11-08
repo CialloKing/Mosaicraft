@@ -1,0 +1,429 @@
+{
+  "reference_commit": "85821693204014ee14e965558a6d4db9cde76e6f",
+  "seed": 123,
+  "warmups": 1,
+  "measured_runs": 3,
+  "samples": [
+    {
+      "kind": "template",
+      "variant": "reference",
+      "run": 0,
+      "warmup": true,
+      "wall_ms": 378.7690999888582,
+      "startup_ms": 35.6727,
+      "generation_ms": 56.2702,
+      "total_ms": 225.2096,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 0.0,
+        "grid": 0.0,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 0.0,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "universal",
+      "run": 0,
+      "warmup": true,
+      "wall_ms": 260.40650000504684,
+      "startup_ms": 120.8046,
+      "generation_ms": 65.2409,
+      "total_ms": 196.5998,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 3.699427304076908e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "universal",
+      "run": 1,
+      "warmup": false,
+      "wall_ms": 252.85870001243893,
+      "startup_ms": 127.0798,
+      "generation_ms": 67.9773,
+      "total_ms": 205.5292,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 3.9319006453486516e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "reference",
+      "run": 1,
+      "warmup": false,
+      "wall_ms": 352.0961000031093,
+      "startup_ms": 34.0947,
+      "generation_ms": 66.224,
+      "total_ms": 206.9648,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 3.0517578125e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 3.729926969370245e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "reference",
+      "run": 2,
+      "warmup": false,
+      "wall_ms": 239.26070000743493,
+      "startup_ms": 31.6575,
+      "generation_ms": 66.8727,
+      "total_ms": 193.5654,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 3.728821691001416e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "universal",
+      "run": 2,
+      "warmup": false,
+      "wall_ms": 267.91989999765065,
+      "startup_ms": 122.392,
+      "generation_ms": 65.8277,
+      "total_ms": 197.7011,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 3.597551614248351e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "universal",
+      "run": 3,
+      "warmup": false,
+      "wall_ms": 318.4640999970725,
+      "startup_ms": 104.6298,
+      "generation_ms": 57.6009,
+      "total_ms": 170.4469,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 3.8775974674221114e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "reference",
+      "run": 3,
+      "warmup": false,
+      "wall_ms": 250.9977000008803,
+      "startup_ms": 47.8599,
+      "generation_ms": 67.7997,
+      "total_ms": 206.9767,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 4.026873412499299e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "reference",
+      "run": 0,
+      "warmup": true,
+      "wall_ms": 311.048400006257,
+      "startup_ms": 33.0883,
+      "generation_ms": 134.1027,
+      "total_ms": 265.4028,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 0.0,
+        "grid": 0.0,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 0.0,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "universal",
+      "run": 0,
+      "warmup": true,
+      "wall_ms": 406.37700000661425,
+      "startup_ms": 127.1483,
+      "generation_ms": 120.9038,
+      "total_ms": 256.7231,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 1.52587890625e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 5.887511200786122e-09,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "universal",
+      "run": 1,
+      "warmup": false,
+      "wall_ms": 417.0126000099117,
+      "startup_ms": 128.1575,
+      "generation_ms": 129.5423,
+      "total_ms": 268.4557,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 2.8806849065865503e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "reference",
+      "run": 1,
+      "warmup": false,
+      "wall_ms": 394.50890000443906,
+      "startup_ms": 31.7253,
+      "generation_ms": 128.0828,
+      "total_ms": 250.8408,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 3.0517578125e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 2.8104049296096e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "reference",
+      "run": 2,
+      "warmup": false,
+      "wall_ms": 295.87919999903534,
+      "startup_ms": 29.4542,
+      "generation_ms": 123.8969,
+      "total_ms": 254.3976,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 3.0517578125e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 2.7411615061145866e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "universal",
+      "run": 2,
+      "warmup": false,
+      "wall_ms": 313.9840999938315,
+      "startup_ms": 124.4823,
+      "generation_ms": 130.2887,
+      "total_ms": 263.4421,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 3.0517578125e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 2.8417126818336413e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "universal",
+      "run": 3,
+      "warmup": false,
+      "wall_ms": 323.4634999971604,
+      "startup_ms": 134.2749,
+      "generation_ms": 128.1009,
+      "total_ms": 271.5053,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 2.668442447562036e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "reference",
+      "run": 3,
+      "warmup": false,
+      "wall_ms": 380.80749999789987,
+      "startup_ms": 29.2438,
+      "generation_ms": 121.7145,
+      "total_ms": 235.8032,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 3.0517578125e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 2.7479608914748876e-08,
+        "tiny": 0
+      }
+    }
+  ],
+  "medians": {
+    "template_reference": {
+      "wall_ms": 250.9977000008803,
+      "startup_ms": 34.0947,
+      "generation_ms": 66.8727,
+      "total_ms": 206.9648
+    },
+    "template_universal": {
+      "wall_ms": 267.91989999765065,
+      "startup_ms": 122.392,
+      "generation_ms": 65.8277,
+      "total_ms": 197.7011
+    },
+    "generic_reference": {
+      "wall_ms": 380.80749999789987,
+      "startup_ms": 29.4542,
+      "generation_ms": 123.8969,
+      "total_ms": 250.8408
+    },
+    "generic_universal": {
+      "wall_ms": 323.4634999971604,
+      "startup_ms": 128.1575,
+      "generation_ms": 129.5423,
+      "total_ms": 268.4557
+    }
+  },
+  "build_times": [
+    {
+      "exeBytes": 1293824,
+      "variant": "single",
+      "seconds": 26.1633056
+    },
+    {
+      "exeBytes": 2739712,
+      "variant": "universal",
+      "seconds": 56.8109882
+    }
+  ],
+  "archive_comparison": {
+    "reference": {
+      "exe_bytes": 1284608,
+      "webui_bytes": 1714176,
+      "runtime_zip_bytes": 6128996,
+      "files": [
+        "cudart64_13.dll",
+        "index.html",
+        "jpeg62.dll",
+        "liblzma.dll",
+        "libpng16.dll",
+        "libsharpyuv.dll",
+        "libwebp.dll",
+        "libwebpdecoder.dll",
+        "libwebpdemux.dll",
+        "libwebpmux.dll",
+        "mosaicraft.exe",
+        "MosaicraftWebUI.exe",
+        "opencv_core4.dll",
+        "opencv_imgcodecs4.dll",
+        "opencv_imgproc4.dll",
+        "sqlite3.dll",
+        "tiff.dll",
+        "z.dll"
+      ],
+      "exe_sha256": "4b2019500c6bcc751b1af6374a2209d1815b2b45e19ac66cf2001ae9e74c945a"
+    },
+    "universal": {
+      "exe_bytes": 2739712,
+      "webui_bytes": 3169280,
+      "runtime_zip_bytes": 6786149,
+      "files": [
+        "cudart64_13.dll",
+        "index.html",
+        "jpeg62.dll",
+        "liblzma.dll",
+        "libpng16.dll",
+        "libsharpyuv.dll",
+        "libwebp.dll",
+        "libwebpdecoder.dll",
+        "libwebpdemux.dll",
+        "libwebpmux.dll",
+        "mosaicraft.exe",
+        "MosaicraftWebUI.exe",
+        "opencv_core4.dll",
+        "opencv_imgcodecs4.dll",
+        "opencv_imgproc4.dll",
+        "sqlite3.dll",
+        "tiff.dll",
+        "z.dll"
+      ],
+      "exe_sha256": "0572fda4b9177e6237dfaef5d43dd97854e315b517f120b811e41548d11cba32"
+    },
+    "description": "Identical program/runtime file list; Python ZIP deflate level 6; excludes docs, licenses and BUILD_INFO."
+  },
+  "environment": {
+    "gpu": "RTX 4060 Laptop",
+    "driver_package": "616.92",
+    "cuda": "13.3.33",
+    "compiler": "MSVC 19.51.36257",
+    "opencv": "4.12.0",
+    "os": "Windows 10 22H2 x64"
+  }
+}

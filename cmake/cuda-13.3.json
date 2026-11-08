@@ -76,6 +76,21 @@
         "md5": "d4049f09c07164a3fc0d47b31ca1e947",
         "size": "1262040"
       }
+    },
+    "cuda_cuobjdump": {
+      "version": "13.3.29",
+      "windows-x86_64": {
+        "relative_path": "cuda_cuobjdump/windows-x86_64/cuda_cuobjdump-windows-x86_64-13.3.29-archive.zip",
+        "sha256": "50c8ab72fdfec7e5958fbd61988719460093d7ac86e2893377e77c8d908a2350",
+        "md5": "6e6420c28effe7497e36dddae5e61b67",
+        "size": "6265163"
+      },
+      "linux-x86_64": {
+        "relative_path": "cuda_cuobjdump/linux-x86_64/cuda_cuobjdump-linux-x86_64-13.3.29-archive.tar.xz",
+        "sha256": "9ac891072c4f9c2079cff8fdc3939ac97c5c5bcdf7cb5cca5a351354c7a8ff21",
+        "md5": "915fabc80764effa7320657141001577",
+        "size": "277912"
+      }
     }
   }
 }
