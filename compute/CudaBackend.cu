@@ -1,4 +1,5 @@
-﻿#include "CudaBackend.h"
+#include "CudaPreflight.cuh"
+#include "CudaBackend.h"
 
 #include <cuda_runtime.h>
 #include "DeviceBuffer.cuh"
@@ -1085,11 +1086,58 @@ bool scoreDeviceBatch(const DeviceFeatureView &features, const double *l, const 
 // ============================================================
 // 运行时检测 CUDA 可用性
 // ============================================================
+CudaAvailability queryCudaAvailability(CudaProbeFault fault)
+{
+    CudaAvailability status;
+    status.compiled = true;
+    status.reason.clear();
+    cudaError_t injected = cudaSuccess;
+    switch (fault)
+    {
+    case CudaProbeFault::NoDevice: injected = cudaErrorNoDevice; break;
+    case CudaProbeFault::Driver: injected = cudaErrorInsufficientDriver; break;
+    case CudaProbeFault::KernelImage: injected = cudaErrorNoKernelImageForDevice; break;
+    case CudaProbeFault::Runtime: injected = cudaErrorLaunchFailure; break;
+    default: break;
+    }
+    if (!checkPreflight(injected, "injected probe", status))
+    {
+        return status;
+    }
+    int count = 0;
+    if (!checkPreflight(cudaDriverGetVersion(&status.driverVersion), "driver", status) ||
+        !checkPreflight(cudaGetDeviceCount(&count), "device enumeration", status))
+    {
+        return status;
+    }
+    if (count == 0)
+    {
+        status.reason = "no CUDA device";
+        return status;
+    }
+    cudaDeviceProp device{};
+    if (!checkPreflight(cudaGetDevice(&status.device), "current device", status) ||
+        !checkPreflight(cudaGetDeviceProperties(&device, status.device), "device properties", status))
+    {
+        return status;
+    }
+    status.deviceName = device.name;
+    status.major = device.major;
+    status.minor = device.minor;
+    // Reference every real entry point: one dummy kernel cannot prove that all
+    // modules/template instantiations can load under lazy loading or PTX JIT.
+    status.available =
+        checkKernel(scoreKernel, 256, device, status, "scoreKernel") &&
+        checkKernel(scoreIndexedKernel, 256, device, status, "scoreIndexedKernel") &&
+        checkKernel(scoreBatchKernel, 256, device, status, "scoreBatchKernel") &&
+        probeTemplateFeatures(device, status) && probeCompatibleFeatures(device, status) &&
+        probeCompatibleScoring(device, status);
+    return status;
+}
+
 bool isCudaAvailable()
 {
-    int count = 0;
-    cudaError_t err = cudaGetDeviceCount(&count);
-    return (err == cudaSuccess && count > 0);
+    return queryCudaAvailability().available;
 }
 
 // ============================================================

@@ -299,10 +299,15 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     std::atomic<int> gpuDone{0};
 
     FeatureExtractor extractor;
+    const auto preflight = request.normalizeOnly ? cuda::CudaAvailability{} : cuda::queryCudaAvailability();
+    if (!request.normalizeOnly && !preflight.available)
+    {
+        std::cout << "CUDA unavailable; using CPU before extraction: " << preflight.reason << std::endl;
+    }
     bool gpuOk = false;
     bool usedCompatibleFeatures = false;
 #ifdef MOSAICRAFT_CUDA
-    gpuOk = cuda::isCudaAvailable() && cuda::hasTemplateFeatures(request.normalizeWidth, request.normalizeHeight);
+    gpuOk = preflight.available && cuda::hasTemplateFeatures(request.normalizeWidth, request.normalizeHeight);
 #endif
     constexpr int GPU_BATCH = 256;
     int inserted = 0;
@@ -615,7 +620,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         WorkerPool workers(request.threads > 0 ? static_cast<unsigned>(request.threads) : 0);
         cuda::CompatibleFeatureWorkspace compatible;
         cuda::CompatibleTimings compatibleTimings;
-        const bool compatibleRequested = cuda::isCudaAvailable() &&
+        const bool compatibleRequested = preflight.available &&
             !cuda::hasTemplateFeatures(request.normalizeWidth, request.normalizeHeight);
         const bool compatibleReady = compatibleRequested &&
             compatible.prepare(request.normalizeWidth, request.normalizeHeight, static_cast<int>(batchLimit),

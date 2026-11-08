@@ -16,7 +16,7 @@ struct CompatibleScoreWorkspace::Impl
 };
 CompatibleScoreWorkspace::CompatibleScoreWorkspace() = default;
 CompatibleScoreWorkspace::~CompatibleScoreWorkspace() = default;
-bool CompatibleScoreWorkspace::prepare(int, int, int, size_t, size_t, CompatibleScoreFault)
+bool CompatibleScoreWorkspace::prepare(int, int, int, size_t, size_t, CompatibleScoreFault, const CudaAvailability *)
 {
     return false;
 }
@@ -136,6 +136,11 @@ bool scoreDeviceBatch(const DeviceFeatureView &, const double *, const double *,
                       const double *, const double *, double, double *, ScoreWorkspace &, GpuTimings *, std::size_t)
 {
     return false;
+}
+
+CudaAvailability queryCudaAvailability(CudaProbeFault)
+{
+    return {};
 }
 
 bool isCudaAvailable()

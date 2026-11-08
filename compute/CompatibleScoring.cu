@@ -1,3 +1,4 @@
+#include "CudaPreflight.cuh"
 #include "CompatibleScoring.h"
 #include "DeviceBuffer.cuh"
 #include <algorithm>
@@ -138,6 +139,12 @@ __global__ void compatibleScoreKernel(ScoreInput tile, int count, int candidates
 }
 } // namespace
 
+bool probeCompatibleScoring(const cudaDeviceProp &device, CudaAvailability &status)
+{
+    return checkKernel(compatibleScoreKernel, 256, device, status, "compatibleScoreKernel");
+}
+
+
 struct CompatibleScoreWorkspace::Impl
 {
     int count = 0, candidates = 0, chunk = 0;
@@ -155,7 +162,7 @@ CompatibleScoreWorkspace::CompatibleScoreWorkspace() = default;
 CompatibleScoreWorkspace::~CompatibleScoreWorkspace() = default;
 
 bool CompatibleScoreWorkspace::prepare(int maxTiles, int candidates, int libraryCount, size_t hostBudget,
-                                       size_t deviceBudget, CompatibleScoreFault fault)
+                                       size_t deviceBudget, CompatibleScoreFault fault, const CudaAvailability *preflight)
 {
     m_impl.reset();
     m_failure = "CUDA resource allocation failed";
@@ -165,7 +172,7 @@ bool CompatibleScoreWorkspace::prepare(int maxTiles, int candidates, int library
     }
     // Candidate packages also run on machines without a driver. Refuse setup
     // before calling allocation APIs, matching the CPU-only implementation.
-    if (!isCudaAvailable())
+    if (!(preflight ? preflight->available : queryCudaAvailability().available))
     {
         m_failure = "CUDA device is not available";
         return false;

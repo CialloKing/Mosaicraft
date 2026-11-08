@@ -1,3 +1,4 @@
+#include "CudaPreflight.cuh"
 #include "CompatibleFeatures.h"
 #include "DeviceBuffer.cuh"
 #include "core/FeatureExtractor.h"
@@ -113,6 +114,13 @@ __global__ void reduceCompatible(const IntegerFeatures *partials, int blocks, In
     out.lbp[index] = histogram;
 }
 } // namespace
+
+bool probeCompatibleFeatures(const cudaDeviceProp &device, CudaAvailability &status)
+{
+    return checkKernel(compatibleKernel, threads, device, status, "compatibleKernel") &&
+        checkKernel(reduceCompatible, threads, device, status, "reduceCompatible");
+}
+
 
 struct CompatibleFeatureWorkspace::Impl
 {

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 
 namespace mosaicraft
 {
@@ -151,6 +152,20 @@ int matchOnGpu(double tL, double tA, double tB, const float *tileGrid, const std
                const float *tileLBP, const CandidateData &candidates, double labW, double gridW, double tinyW,
                double edgeW, double lbpW, double usePenalty);
 
+struct CudaAvailability
+{
+    bool compiled = false, available = false;
+    int device = -1, major = 0, minor = 0, driverVersion = 0;
+    std::string deviceName;
+    std::string reason = "CUDA support is not compiled";
+};
+
+// Internal regression injection; never exposed through CLI/API.
+enum class CudaProbeFault
+{
+    None, NoDevice, Driver, KernelImage, Runtime
+};
+CudaAvailability queryCudaAvailability(CudaProbeFault fault = CudaProbeFault::None);
 bool isCudaAvailable();
 
 int extractTileFeatures(const std::uint8_t *h_tiles, int N, int imgW, int imgH, double *h_avgLAB, float *h_grid,

@@ -1,4 +1,5 @@
-﻿#include "FeatureExtractorCuda.h"
+#include "CudaPreflight.cuh"
+#include "FeatureExtractorCuda.h"
 
 #include "DeviceBuffer.cuh"
 #include "core/FeatureExtractor.h"
@@ -960,6 +961,14 @@ int extractFeaturesRaw(const uint8_t *h_images, int N, double *h_avgLAB, float *
                        float *h_lbp)
 {
     return extractFeaturesRaw(h_images, N, 180, 320, h_avgLAB, h_grid, h_tiny, h_edge, h_lbp);
+}
+
+bool probeTemplateFeatures(const cudaDeviceProp &device, CudaAvailability &status)
+{
+    return checkKernel(featureKernel<180, 320>, 180, device, status, "featureKernel<180,320>") &&
+        checkKernel(featureKernel<320, 180>, 320, device, status, "featureKernel<320,180>") &&
+        checkKernel(featureKernel<360, 640>, 360, device, status, "featureKernel<360,640>") &&
+        checkKernel(featureKernel<640, 360>, 640, device, status, "featureKernel<640,360>");
 }
 
 } // namespace cuda

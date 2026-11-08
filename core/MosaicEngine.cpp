@@ -604,12 +604,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
         return false;
     }
     Config cfg = validated.config;
-    const bool cudaEnabled = cfg.useGpu && cuda::isCudaAvailable();
 
     // Benchmark 计时变量
     using Clock = std::chrono::steady_clock;
     using Ms = std::chrono::duration<double, std::milli>;
     auto tStart = Clock::now();
+    const auto preflight = cfg.useGpu ? cuda::queryCudaAvailability() : cuda::CudaAvailability{};
+    const bool cudaEnabled = cfg.useGpu && preflight.available;
+    const double preflightMs = Ms(Clock::now() - tStart).count();
     double msNeighbor = 0, msSort = 0, msAnalysis = 0, msCPUFeatures = 0;
     OutputStats outputStats;
     double msFeat = 0, msANNBuild = 0, msANNLoad = 0, msANNQuery = 0, msGPUScore = 0, msSelect = 0, msPlace = 0, msEncode = 0, msCPUScore = 0;
@@ -629,6 +631,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::atomic<int64_t> opPlaceCopyNs{0};
 
     std::cout << "GPU: " << (cudaEnabled ? "CUDA enabled" : "disabled (CPU only)") << std::endl;
+    if (cfg.useGpu && !cudaEnabled)
+    {
+        std::cout << "  CUDA unavailable; using CPU before computation: " << preflight.reason << std::endl;
+    }
+    if (cfg.benchmark && cfg.useGpu)
+    {
+        std::cout << "  CUDA preflight: " << preflightMs << " ms" << std::endl;
+    }
     cfg.print();
 
     cv::Mat target = imreadUnicode(targetPath, cv::IMREAD_COLOR);
@@ -821,7 +831,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     {
         std::cout << "Feature backend: template CUDA; scoring: CUDA." << std::endl;
     }
-    if (templateCuda && cuda::isCudaAvailable())
+    if (templateCuda && cudaEnabled)
     {
         std::vector<double>  h_lab(dbCount * 3);
         std::vector<float>   h_grid(dbCount * 192);
@@ -1367,7 +1377,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 if (remainingHost >= scoreMinimum && remainingDevice >= scoreMinimum)
                 {
                     ready = compatibleScore.prepare(static_cast<int>(rows), N, dbCount, remainingHost,
-                                                     remainingDevice, m_limits.scoreFault);
+                                                     remainingDevice, m_limits.scoreFault, &preflight);
                     break;
                 }
                 if (rows == 1)

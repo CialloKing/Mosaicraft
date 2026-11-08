@@ -39,17 +39,49 @@ int main(int argc, char** argv)
 {
     const char* required = std::getenv("MOSAICRAFT_REQUIRE_CUDA");
     const bool probe = argc == 2 && std::string(argv[1]) == "--require-cuda";
-    if ((probe || (required != nullptr && std::string(required) == "1")) && !mosaicraft::cuda::isCudaAvailable())
+    if (probe || (required != nullptr && std::string(required) == "1"))
     {
-        std::cerr << "GPU validation requires an available CUDA device" << std::endl;
-        return 1;
-    }
-    if (probe)
-    {
-        std::cout << "GPU validation passed" << std::endl;
-        return 0;
+        const auto status = mosaicraft::cuda::queryCudaAvailability();
+        if (!status.available)
+        {
+            std::cerr << "GPU validation requires an available CUDA device: " << status.reason << std::endl;
+            return 1;
+        }
+        if (probe)
+        {
+            std::cout << "GPU validation passed\nGpuValidationDevice: " << status.deviceName
+                      << "\nGpuValidationComputeCapability: sm_" << status.major << status.minor
+                      << "\nGpuValidationDriver: " << status.driverVersion << std::endl;
+            return 0;
+        }
     }
     return doctest::Context(argc, argv).run();
+}
+
+TEST_CASE("CUDA preflight distinguishes compatibility failures from execution errors")
+{
+    using namespace mosaicraft::cuda;
+    const auto status = queryCudaAvailability();
+    if (!status.compiled)
+    {
+        CHECK_FALSE(status.available);
+        CHECK(status.reason.find("not compiled") != std::string::npos);
+        return;
+    }
+    for (auto fault : {CudaProbeFault::NoDevice, CudaProbeFault::Driver, CudaProbeFault::KernelImage})
+    {
+        const auto failure = queryCudaAvailability(fault);
+        CHECK_FALSE(failure.available);
+        CHECK_FALSE(failure.reason.empty());
+    }
+    CHECK_THROWS_AS(queryCudaAvailability(CudaProbeFault::Runtime), std::runtime_error);
+    if (status.available)
+    {
+        CHECK_FALSE(status.deviceName.empty());
+        CHECK(status.major >= 7);
+        CHECK(status.driverVersion > 0);
+        CHECK(status.reason.empty());
+    }
 }
 
 TEST_CASE("executable directory resolves outside the working directory")

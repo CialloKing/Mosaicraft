@@ -17,7 +17,8 @@ class CompatibleScoreWorkspace
     // 只分配，不提交上传或计算。设备预算仅为暂存；常驻图库另计并检查实际空闲显存。
     bool prepare(int maxTiles, int candidates, int libraryCount, size_t hostBudget,
                  size_t deviceBudget = 256ULL * 1024 * 1024,
-                 CompatibleScoreFault fault = CompatibleScoreFault::None);
+                 CompatibleScoreFault fault = CompatibleScoreFault::None,
+                 const CudaAvailability *preflight = nullptr);
     int capacity() const;
     size_t hostBytes() const;
     size_t deviceBytes() const;
