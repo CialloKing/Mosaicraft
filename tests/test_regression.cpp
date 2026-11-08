@@ -11,6 +11,7 @@
 #include "../core/MatchingAccess.h"
 #include "../core/MosaicOutput.h"
 #include "../core/PngStreamWriter.h"
+#include "../core/PreviewAccumulator.h"
 #include "../core/TileCompositor.h"
 #include "../core/WorkerPool.h"
 #include <deque>
@@ -980,6 +981,51 @@ TEST_CASE("regression: service errors stay stable for invalid paths")
     const auto mosaic = MosaicService().run(badMosaic);
     CHECK_FALSE(mosaic.ok);
     CHECK(mosaic.message.find("outputPath is a directory") != std::string::npos);
+}
+
+TEST_CASE("preview accumulator bounds dimensions and preserves small images")
+{
+    CHECK(PreviewAccumulator::outputSize({37, 19}) == cv::Size(37, 19));
+    CHECK_THROWS_AS(PreviewAccumulator::outputSize({0, 1}), std::invalid_argument);
+    for (const cv::Size source : {cv::Size(74880, 141760), cv::Size(115380, 160000),
+                                  cv::Size(1400, 30000), cv::Size(1, INT_MAX), cv::Size(INT_MAX, INT_MAX)})
+    {
+        const auto size = PreviewAccumulator::outputSize(source);
+        CHECK(size.width >= 1);
+        CHECK(size.height >= 1);
+        CHECK(size.width <= std::min(source.width, PreviewAccumulator::kMaxWidth));
+        CHECK(size.height <= std::min(source.height, PreviewAccumulator::kJpegLimit));
+        CHECK(static_cast<int64_t>(size.width) * size.height <= PreviewAccumulator::kMaxPixels);
+    }
+    cv::Mat smallImage(19, 37, CV_8UC3);
+    cv::RNG(42).fill(smallImage, cv::RNG::UNIFORM, 0, 256);
+    PreviewAccumulator preview(smallImage.size());
+    CHECK_THROWS_AS(preview.image(), std::logic_error);
+    CHECK_THROWS_AS(preview.append(smallImage, 1), std::invalid_argument);
+    preview.append(smallImage, 0);
+    CHECK(cv::norm(preview.image(), smallImage, cv::NORM_INF) == 0);
+    CHECK_THROWS_AS(preview.append(smallImage.row(0), smallImage.rows), std::invalid_argument);
+}
+
+TEST_CASE("preview accumulator area averages independently of strip boundaries")
+{
+    cv::Mat storage(703, 1709, CV_8UC3);
+    cv::Mat source = storage(cv::Rect(3, 1, 1703, 701)); // 同时覆盖非连续行和非整数缩放。
+    cv::RNG(123).fill(source, cv::RNG::UNIFORM, 0, 256);
+    const cv::Mat original = source.clone();
+    PreviewAccumulator whole(source.size()), strips(source.size());
+    whole.append(source, 0);
+    for (int y = 0; y < source.rows;)
+    {
+        const int count = std::min(1 + y % 71, source.rows - y);
+        strips.append(source.rowRange(y, y + count), y);
+        y += count;
+    }
+    cv::Mat expected;
+    cv::resize(source, expected, PreviewAccumulator::outputSize(source.size()), 0, 0, cv::INTER_AREA);
+    CHECK(cv::norm(whole.image(), expected, cv::NORM_INF) <= 1);
+    CHECK(cv::norm(whole.image(), strips.image(), cv::NORM_INF) == 0);
+    CHECK(cv::norm(source, original, cv::NORM_INF) == 0);
 }
 
 TEST_CASE("bounded cache shares immutable pixels and output modes agree")
