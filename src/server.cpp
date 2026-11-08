@@ -5,6 +5,7 @@
 #include "core/JobManager.h"
 #include "core/json.hpp"
 #include "core/LegacyRun.h"
+#include "core/ExecutablePath.h"
 #include <algorithm>
 #include <chrono>
 #include <cctype>
@@ -216,7 +217,7 @@ static std::wstring utf8ToWide(const std::string& utf8)
 
 static std::string readFile(const std::string& path)
 {
-    std::ifstream ifs(path, std::ios::binary);
+    std::ifstream ifs(std::filesystem::u8path(path), std::ios::binary);
     if (!ifs) return "File not found: " + path;
     return std::string(std::istreambuf_iterator<char>(ifs),
                        std::istreambuf_iterator<char>());
@@ -226,16 +227,10 @@ static std::string findHtml()
 {
     std::vector<std::string> candidates;
 
-#ifdef _WIN32
-    wchar_t exePath[MAX_PATH];
-    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    std::filesystem::path exeDir = std::filesystem::path(exePath).parent_path();
-#else
-    std::filesystem::path exeDir = std::filesystem::canonical("/proc/self/exe").parent_path();
-#endif
+    const auto exeDir = mosaicraft::executableDirectory();
     // Published layout: same directory as the executable.
-    candidates.push_back((exeDir / "index.html").string());
-    candidates.push_back((exeDir / "tools/command-builder/index.html").string());
+    candidates.push_back((exeDir / "index.html").u8string());
+    candidates.push_back((exeDir / "tools/command-builder/index.html").u8string());
     // Development layout: build/Release to tools/command-builder.
     candidates.push_back((exeDir / "../../tools/command-builder/index.html").string());
     // Development layout: build to tools/command-builder.
@@ -248,8 +243,8 @@ static std::string findHtml()
 
     for (const auto& c : candidates) {
         try {
-            if (std::filesystem::exists(c)) {
-                return std::filesystem::canonical(c).string();
+            if (std::filesystem::exists(std::filesystem::u8path(c))) {
+                return std::filesystem::canonical(std::filesystem::u8path(c)).u8string();
             }
         } catch (...) {}
     }
@@ -258,19 +253,16 @@ static std::string findHtml()
 
 static std::string findMosaicraft()
 {
+    const auto exeDir = mosaicraft::executableDirectory();
 #ifdef _WIN32
-    wchar_t exePath[MAX_PATH];
-    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    std::filesystem::path exeDir = std::filesystem::path(exePath).parent_path();
     std::filesystem::path candidate = exeDir / "mosaicraft.exe";
-    if (std::filesystem::exists(candidate)) return wideToUtf8(candidate.wstring());
 #else
-    // Linux: resolve /proc/self/exe to the executable directory.
-    std::filesystem::path exePath = std::filesystem::canonical("/proc/self/exe");
-    std::filesystem::path exeDir = exePath.parent_path();
     std::filesystem::path candidate = exeDir / "mosaicraft";
-    if (std::filesystem::exists(candidate)) return candidate.string();
 #endif
+    if (std::filesystem::exists(candidate))
+    {
+        return candidate.u8string();
+    }
     return "mosaicraft";  // hope it's in PATH
 }
 
@@ -581,8 +573,13 @@ int main(int argc, char* argv[])
 #else
         std::string url = "http://localhost:" + std::to_string(port);
         pid_t opener = fork();
-        if (opener == 0) {
+        if (opener == 0)
+        {
+#ifdef __APPLE__
+            execlp("open", "open", url.c_str(), static_cast<char*>(nullptr));
+#else
             execlp("xdg-open", "xdg-open", url.c_str(), static_cast<char*>(nullptr));
+#endif
             _exit(127);
         }
 #endif

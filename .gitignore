@@ -49,6 +49,7 @@ build_nocuda/
 
 # Release packages
 Mosaicraft_*.zip
+Mosaicraft_*.tar.gz
 
 # Versioned ANN caches
 *.ann196

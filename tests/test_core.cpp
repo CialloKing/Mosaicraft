@@ -22,6 +22,7 @@
 #include "../core/JobManager.h"
 #include "../core/LegacyRun.h"
 #include "../core/Version.h"
+#include "../core/ExecutablePath.h"
 #include "../core/ColorOrder.h"
 #include <opencv2/imgproc.hpp>
 #include <stdexcept>
@@ -33,6 +34,17 @@
 #include <string>
 #include <algorithm>
 
+TEST_CASE("executable directory resolves outside the working directory")
+{
+    const auto directory = mosaicraft::executableDirectory();
+    CHECK(directory.is_absolute());
+    CHECK(std::filesystem::is_directory(directory));
+#ifdef _WIN32
+    CHECK(std::filesystem::exists(directory / "mosaicraft_tests.exe"));
+#else
+    CHECK(std::filesystem::exists(directory / "mosaicraft_tests"));
+#endif
+}
 using namespace mosaicraft;
 
 TEST_CASE("dynamic CUDA features exactly reproduce CPU integers statistics and strided inputs")

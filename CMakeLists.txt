@@ -154,6 +154,7 @@ add_library(mosaicraft_core STATIC
     core/DatabaseService.cpp
     core/FeatureExtractor.cpp
     core/FeaturePack.cpp
+    core/ExecutablePath.cpp
     core/InspectService.cpp
     core/JobManager.cpp
     core/LegacyRun.cpp
@@ -248,6 +249,8 @@ target_link_libraries(MosaicraftWebUI PRIVATE
     mosaicraft_core
     mosaicraft_cuda
 )
+
+include(cmake/Packaging.cmake)
 target_include_directories(MosaicraftWebUI PRIVATE
     ${CMAKE_SOURCE_DIR}
 )

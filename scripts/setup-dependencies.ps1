@@ -109,6 +109,7 @@ file(WRITE "${CMAKE_BINARY_DIR}/compiler.txt" "${CMAKE_CXX_COMPILER_ID}|${CMAKE_
 if (-not (Test-Path $vcpkg)) { throw "Run Prepare first to bootstrap vcpkg." }
 $timer = [Diagnostics.Stopwatch]::StartNew()
 $log = Join-Path $work "install.log"
+Set-Content -LiteralPath $log -Value ''
 $arguments = @("install", "--x-manifest-root=$repo", "--triplet=$Triplet", "--host-triplet=$Triplet",
     "--x-install-root=$installed", "--overlay-triplets=$env:VCPKG_OVERLAY_TRIPLETS",
     "--x-buildtrees-root=$(Join-Path $repo 'build/vcpkg-buildtrees')",

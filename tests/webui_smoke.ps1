@@ -344,7 +344,7 @@ if ($Port -le 0) {
 }
 $script:BaseUrl = "http://localhost:$Port"
 
-$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("mosaicraft_webui_smoke_" + [System.Guid]::NewGuid().ToString("N"))
+$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("mosaicraft 中文 smoke_" + [System.Guid]::NewGuid().ToString("N"))
 $inputDir = Join-Path $tempRoot "input"
 $libraryDir = Join-Path $tempRoot "library"
 $outputDir = Join-Path $tempRoot "output"

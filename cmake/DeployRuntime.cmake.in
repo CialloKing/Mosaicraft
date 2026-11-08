@@ -1,0 +1,72 @@
+# Inspect the built programs while their dependency search paths still exist.
+# Only native OS libraries are excluded; every third-party dependency is shipped.
+if(WIN32)
+    set(CMAKE_GET_RUNTIME_DEPENDENCIES_COMMAND "@_runtime_scanner@")
+    set(_exclude "[Ww][Ii][Nn][Dd][Oo][Ww][Ss]/[Ss][Yy][Ss][Tt][Ee][Mm]32/.*")
+elseif(APPLE)
+    set(_exclude "^/usr/lib/.*" "^/System/Library/.*")
+else()
+    set(_exclude "^/(usr/)?lib(64)?/.*(ld-linux|lib(c|m|dl|pthread|rt|gcc_s|stdc\\+\\+))\\.so.*")
+endif()
+set(_runtime_dirs "@_runtime_dirs@")
+file(GET_RUNTIME_DEPENDENCIES
+    EXECUTABLES "$<TARGET_FILE:mosaicraft>" "$<TARGET_FILE:MosaicraftWebUI>"
+    DIRECTORIES ${_runtime_dirs}
+    PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
+    POST_EXCLUDE_REGEXES ${_exclude}
+    RESOLVED_DEPENDENCIES_VAR _resolved
+    UNRESOLVED_DEPENDENCIES_VAR _unresolved)
+if(_unresolved)
+    message(FATAL_ERROR "Unresolved runtime dependencies: ${_unresolved}")
+endif()
+if(WIN32)
+    set(_lib_dest "${CMAKE_INSTALL_PREFIX}")
+else()
+    set(_lib_dest "${CMAKE_INSTALL_PREFIX}/lib")
+endif()
+foreach(_dependency IN LISTS _resolved)
+    file(INSTALL "${_dependency}" DESTINATION "${_lib_dest}" FOLLOW_SYMLINK_CHAIN)
+endforeach()
+
+if(UNIX AND NOT APPLE)
+    find_program(_patchelf patchelf REQUIRED)
+    file(GLOB _libraries "${_lib_dest}/*.so*")
+    foreach(_library IN LISTS _libraries)
+        if(NOT IS_SYMLINK "${_library}")
+            execute_process(COMMAND "${_patchelf}" --set-rpath "$ORIGIN" "${_library}"
+                COMMAND_ERROR_IS_FATAL ANY)
+        endif()
+    endforeach()
+elseif(APPLE)
+    file(GLOB _libraries "${_lib_dest}/*.dylib")
+    set(_binaries "${CMAKE_INSTALL_PREFIX}/mosaicraft" "${CMAKE_INSTALL_PREFIX}/MosaicraftWebUI" ${_libraries})
+    foreach(_binary IN LISTS _binaries)
+        if(IS_SYMLINK "${_binary}")
+            continue()
+        endif()
+        # Dependency IDs differ between ports. Read each binary's actual load commands.
+        execute_process(COMMAND otool -L "${_binary}" OUTPUT_VARIABLE _loads COMMAND_ERROR_IS_FATAL ANY)
+        string(REPLACE "\n" ";" _loads "${_loads}")
+        foreach(_load IN LISTS _loads)
+            if(_load MATCHES "^[ \t]+([^ \t]+)[ \t]+\\(")
+                set(_old "${CMAKE_MATCH_1}")
+                get_filename_component(_name "${_old}" NAME)
+                if(EXISTS "${_lib_dest}/${_name}")
+                    if(_binary MATCHES "/lib/")
+                        set(_new "@loader_path/${_name}")
+                    else()
+                        set(_new "@loader_path/lib/${_name}")
+                    endif()
+                    execute_process(COMMAND install_name_tool -change "${_old}" "${_new}" "${_binary}"
+                        COMMAND_ERROR_IS_FATAL ANY)
+                endif()
+            endif()
+        endforeach()
+        if(_binary MATCHES "\\.dylib$")
+            get_filename_component(_name "${_binary}" NAME)
+            execute_process(COMMAND install_name_tool -id "@rpath/${_name}" "${_binary}"
+                COMMAND_ERROR_IS_FATAL ANY)
+        endif()
+        execute_process(COMMAND codesign --force --sign - "${_binary}" COMMAND_ERROR_IS_FATAL ANY)
+    endforeach()
+endif()

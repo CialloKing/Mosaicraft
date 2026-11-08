@@ -1,12 +1,13 @@
 param(
     [string]$BuildDir = "build",
-    [string]$Configuration = "Release",
+    [ValidateSet('Release')][string]$Configuration = "Release",
     [string]$Version = "",
     [string]$ToolchainFile = "",
     [string]$PackagePlatform = "",
     [string]$PackageArch = "",
     [string]$PackageSuffix = "",
     [string]$OutputDir = "",
+    [ValidateSet('auto', 'zip', 'tar.gz')][string]$ArchiveFormat = 'auto',
     [switch]$NoCuda,
     [switch]$SkipConfigure,
     [switch]$SkipBuild,
@@ -21,6 +22,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+. (Join-Path $PSScriptRoot 'Archive.ps1')
 
 function Invoke-Native {
     param(
@@ -329,7 +331,7 @@ function Write-BuildInfo
     $lines = @(
         "Name: Mosaicraft",
         "Version: $VersionText",
-        "Package: $PackageName.zip",
+        "Package: $PackageName",
         "Platform: $Platform",
         "Arch: $Arch",
         "Runtime: $Runtime",
@@ -373,7 +375,7 @@ function Assert-BuildInfo
     {
         throw "BUILD_INFO version mismatch: $($info["Version"])"
     }
-    if ($info["Package"] -ne "$PackageName.zip")
+    if ($info["Package"] -ne $PackageName)
     {
         throw "BUILD_INFO package mismatch: $($info["Package"])"
     }
@@ -476,7 +478,9 @@ if ($PackageSuffix) {
     $suffix = "_" + ($PackageSuffix -replace '[^A-Za-z0-9_.-]', '-')
 }
 $packageName = "Mosaicraft_v${versionText}_${packagePlatform}-${packageArch}_${packageRuntime}${suffix}"
-$zipPath = Join-Path $outputPath "$packageName.zip"
+if ($ArchiveFormat -eq 'auto') { $ArchiveFormat = if (Test-IsWindows) { 'zip' } else { 'tar.gz' } }
+$archiveName = "$packageName.$ArchiveFormat"
+$archivePath = Join-Path $outputPath $archiveName
 $performanceReport = Join-Path $RepoRoot "docs\PERFORMANCE_v$versionText.md"
 $tempRoot = [System.IO.Path]::GetTempPath()
 $packageRoot = Join-Path $tempRoot ("${packageName}_pkg_" + [System.Guid]::NewGuid().ToString("N"))
@@ -488,7 +492,7 @@ if ($InspectOnly) {
         -BuildPath $buildPath `
         -Configuration $Configuration `
         -Toolchain $ToolchainFile `
-        -PackagePath $zipPath `
+        -PackagePath $archivePath `
         -NoCuda:$NoCuda `
         -SkipBuild:$SkipBuild
     return
@@ -501,12 +505,26 @@ try {
 
     if (-not $SkipConfigure) {
         Invoke-Step "Configure" {
-            $configureArgs = @("-S", $RepoRoot, "-B", $buildPath)
+            $cuda = if ($NoCuda) { 'OFF' } else { 'ON' }
+            $configureArgs = @("-S", $RepoRoot, "-B", $buildPath,
+                "-DCMAKE_BUILD_TYPE=$Configuration", "-DMOSAICRAFT_CUDA=$cuda")
+            if ($env:MOSAICRAFT_CMAKE_GENERATOR)
+            {
+                $configureArgs += @('-G', $env:MOSAICRAFT_CMAKE_GENERATOR)
+                if (Test-IsWindows) { $configureArgs += @('-A', 'x64') }
+            }
             if ($ToolchainFile) {
                 $configureArgs += "-DCMAKE_TOOLCHAIN_FILE=$ToolchainFile"
             }
-            if ($NoCuda) {
-                $configureArgs += "-DMOSAICRAFT_CUDA=OFF"
+            if ($env:VCPKG_DEFAULT_TRIPLET)
+            {
+                $configureArgs += "-DVCPKG_TARGET_TRIPLET=$env:VCPKG_DEFAULT_TRIPLET"
+                $configureArgs += "-DVCPKG_HOST_TRIPLET=$env:VCPKG_DEFAULT_HOST_TRIPLET"
+            }
+            if ($env:MOSAICRAFT_VCPKG_INSTALLED_DIR)
+            {
+                $configureArgs += "-DVCPKG_INSTALLED_DIR=$env:MOSAICRAFT_VCPKG_INSTALLED_DIR"
+                $configureArgs += '-DVCPKG_MANIFEST_INSTALL=OFF'
             }
             Invoke-Native -FilePath "cmake" -Arguments $configureArgs
         }
@@ -517,7 +535,7 @@ try {
             Invoke-Native -FilePath "cmake" -Arguments @(
                 "--build", $buildPath,
                 "--config", $Configuration,
-                "--target", "mosaicraft", "MosaicraftWebUI", "mosaicraft_tests", "mosaicraft_regression_tests"
+                "--target", "mosaicraft", "MosaicraftWebUI", "mosaicraft_tests", "mosaicraft_regression_tests", "--parallel"
             )
         }
     }
@@ -542,7 +560,7 @@ try {
         }
     }
 
-    Invoke-Step "Package $packageName.zip" {
+    Invoke-Step "Package $archiveName" {
         $binDir = Join-Path $buildPath "$Configuration\bin"
         if (-not (Test-Path -LiteralPath $binDir)) {
             throw "Build output directory not found: $binDir"
@@ -550,26 +568,8 @@ try {
 
         New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
 
-        $cliName = Get-ExecutableName -BaseName "mosaicraft"
-        $webUiName = Get-ExecutableName -BaseName "MosaicraftWebUI"
-        Copy-RequiredFile -Source (Join-Path $binDir $cliName) -Destination $packageRoot
-        Copy-RequiredFile -Source (Join-Path $binDir $webUiName) -Destination $packageRoot
-        Copy-RequiredFile -Source (Join-Path $binDir "index.html") -Destination $packageRoot
-
-        Get-ChildItem -LiteralPath $binDir -File |
-            Where-Object { $_.Name -match '\.(dll|so|dylib)(\..*)?$' } |
-            ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $packageRoot -Force }
-
-        if (Test-IsWindows) {
-            foreach ($runtime in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")) {
-                $runtimePath = Join-Path $env:WINDIR "System32\$runtime"
-                if (Test-Path -LiteralPath $runtimePath) {
-                    Copy-Item -LiteralPath $runtimePath -Destination $packageRoot -Force
-                } else {
-                    Write-Warning "VC runtime not found: $runtimePath"
-                }
-            }
-        }
+        Invoke-Native -FilePath 'cmake' -Arguments @('--install', $buildPath,
+            '--config', $Configuration, '--prefix', $packageRoot)
 
         Copy-RequiredFile -Source (Join-Path $RepoRoot "README.md") -Destination $packageRoot
         Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\API.md") -Destination (Join-Path $packageRoot "API.md")
@@ -603,23 +603,23 @@ try {
         Write-BuildInfo `
             -Destination $packageRoot `
             -VersionText $versionText `
-            -PackageName $packageName `
+            -PackageName $archiveName `
             -Runtime $packageRuntime `
             -Platform $packagePlatform `
             -Arch $packageArch `
             -CommitHash $gitCommit `
             -Configuration $Configuration
 
-        if (Test-Path -LiteralPath $zipPath) {
-            Remove-Item -LiteralPath $zipPath -Force
+        if (Test-Path -LiteralPath $archivePath) {
+            Remove-Item -LiteralPath $archivePath -Force
         }
-        Compress-Archive -Path (Join-Path $packageRoot "*") -DestinationPath $zipPath -CompressionLevel Optimal
+        Compress-ReleaseArchive -Root $packageRoot -Destination $archivePath
     }
 
     if (-not $SkipArchiveValidation) {
         Invoke-Step "Validate archive" {
             New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
-            Expand-Archive -LiteralPath $zipPath -DestinationPath $extractRoot -Force
+            Expand-ReleaseArchive -Path $archivePath -Destination $extractRoot
 
             $cliName = Get-ExecutableName -BaseName "mosaicraft"
             $webUiName = Get-ExecutableName -BaseName "MosaicraftWebUI"
@@ -628,7 +628,7 @@ try {
             Assert-FileExists -Path $cliPath
             Assert-FileExists -Path $webUiPath
             Assert-ArchiveDocumentationPolicy -ExtractRoot $extractRoot
-            Assert-BuildInfo -ExtractRoot $extractRoot -VersionText $versionText -PackageName $packageName -CommitHash $gitCommit
+            Assert-BuildInfo -ExtractRoot $extractRoot -VersionText $versionText -PackageName $archiveName -CommitHash $gitCommit
             if (Test-Path -LiteralPath $performanceReport) {
                 $archivedReport = Join-Path $extractRoot "docs\PERFORMANCE_v$versionText.md"
                 Assert-FileExists -Path $archivedReport
@@ -660,8 +660,9 @@ try {
     }
 
     Invoke-Step "Release package summary" {
-        $item = Get-Item -LiteralPath $zipPath
-        $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $zipPath
+        $item = Get-Item -LiteralPath $archivePath
+        $hash = Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath
+        Set-Content -LiteralPath "$archivePath.sha256" -Value "$($hash.Hash)  $archiveName" -Encoding ascii
         Write-Host "Package: $($item.FullName)"
         Write-Host "Size: $($item.Length)"
         Write-Host "SHA256: $($hash.Hash)"

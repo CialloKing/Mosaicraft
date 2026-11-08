@@ -2,12 +2,13 @@ param(
     [string]$Repository = "CialloKing/Mosaicraft",
     [string]$Tag = "",
     [string]$AssetName = "",
-    [string]$ZipPath = "",
+    [Alias('ZipPath')][string]$ArchivePath = "",
     [string]$ExpectedVersion = "",
     [string]$ExpectedSha256 = "",
     [string]$DownloadDir = "",
     [int]$TimeoutSeconds = 90,
     [switch]$SkipSmoke,
+    [switch]$RequireStandalone,
     [switch]$KeepWorkspace
 )
 
@@ -15,8 +16,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+. (Join-Path $PSScriptRoot 'Archive.ps1')
+. (Join-Path $PSScriptRoot 'Assert-PackageRuntime.ps1')
+$originalPath = $env:PATH
+$originalLdPath = $env:LD_LIBRARY_PATH
+$originalDyldPath = $env:DYLD_LIBRARY_PATH
 $downloadRoot = ""
-$extractRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("mosaicraft_release_verify_extract_" + [System.Guid]::NewGuid().ToString("N"))
+$extractRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("mosaicraft 验收_" + [System.Guid]::NewGuid().ToString("N"))
 $createdDownloadRoot = $false
 
 function Invoke-NativeOutput
@@ -229,7 +235,7 @@ function Select-ReleaseAsset
     foreach ($asset in $assets)
     {
         $name = Get-ObjectPropertyText -Object $asset -Name "name"
-        if ($name -like "*.zip")
+        if ($name -like "*.zip" -or $name -like "*.tar.gz")
         {
             $zipAssets += $asset
         }
@@ -241,9 +247,9 @@ function Select-ReleaseAsset
     }
     if ($zipAssets.Count -eq 0)
     {
-        throw "Release has no zip asset"
+        throw "Release has no ZIP or tar.gz asset"
     }
-    throw "Release has multiple zip assets; pass -AssetName"
+    throw "Release has multiple archives; pass -AssetName"
 }
 
 function Get-ReleaseBodySha256
@@ -484,7 +490,7 @@ try
         }
     }
 
-    if (-not $Tag -and -not $ZipPath)
+    if (-not $Tag -and -not $ArchivePath)
     {
         $Tag = "v$(Get-ProjectVersion)"
     }
@@ -512,9 +518,9 @@ try
     }
 
     $zip = ""
-    if ($ZipPath)
+    if ($ArchivePath)
     {
-        $zip = Resolve-InputPath -Path $ZipPath
+        $zip = Resolve-InputPath -Path $ArchivePath
     }
     else
     {
@@ -559,10 +565,11 @@ try
 
     Invoke-Step "Extract and inspect package" {
         New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
-        Expand-Archive -LiteralPath $zip -DestinationPath $extractRoot -Force
+        Expand-ReleaseArchive -Path $zip -Destination $extractRoot
 
-        $cliPath = Join-Path $extractRoot "mosaicraft.exe"
-        $webUiPath = Join-Path $extractRoot "MosaicraftWebUI.exe"
+        $extension = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { '.exe' } else { '' }
+        $cliPath = Join-Path $extractRoot "mosaicraft$extension"
+        $webUiPath = Join-Path $extractRoot "MosaicraftWebUI$extension"
         Assert-FileExists -Path $cliPath
         Assert-FileExists -Path $webUiPath
         Assert-FileExists -Path (Join-Path $extractRoot "index.html")
@@ -570,6 +577,16 @@ try
         # Single-version release notes should live in ENCYCLOPEDIA.md to keep every zip compact and predictable.
         Assert-ArchiveDocumentationPolicy -Root $extractRoot
         Assert-BuildInfo -Root $extractRoot -VersionText $ExpectedVersion -PackageName (Split-Path -Leaf $zip) -TagCommitHash $tagCommitHash
+        if ($RequireStandalone)
+        {
+            $env:LD_LIBRARY_PATH = ''
+            $env:DYLD_LIBRARY_PATH = ''
+            if ($extension)
+            {
+                $env:PATH = "$PSHOME;$env:WINDIR/System32;$env:WINDIR"
+            }
+            Assert-PackageRuntime -Root $extractRoot
+        }
         Assert-PackageCommands -CliPath $cliPath -WebUiPath $webUiPath -VersionText $ExpectedVersion
 
         if (-not $SkipSmoke)
@@ -579,7 +596,7 @@ try
     }
 
     Invoke-Step "Release asset verification summary" {
-        Write-Host "Verified zip: $zip"
+        Write-Host "Verified archive: $zip"
         Write-Host "Version: $ExpectedVersion"
         if ($releaseUrl)
         {
@@ -597,6 +614,9 @@ try
 }
 finally
 {
+    $env:PATH = $originalPath
+    $env:LD_LIBRARY_PATH = $originalLdPath
+    $env:DYLD_LIBRARY_PATH = $originalDyldPath
     if (-not $KeepWorkspace)
     {
         if (Test-Path -LiteralPath $extractRoot)
