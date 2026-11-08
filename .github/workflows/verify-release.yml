@@ -1,0 +1,57 @@
+name: Verify published release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag (v1.14.7 or later)
+        required: true
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: Verify ${{ matrix.platform }} ${{ matrix.runtime }} release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            runtime: cpu-only
+            gpu-validation: not-applicable
+            runner: windows-2025-vs2026
+            extension: zip
+          - platform: windows-x64
+            runtime: cuda
+            gpu-validation: passed
+            runner: windows-2025-vs2026
+            extension: zip
+          - platform: linux-x64
+            runtime: cpu-only
+            gpu-validation: not-applicable
+            runner: ubuntu-22.04
+            extension: tar.gz
+          - platform: macos-arm64
+            runtime: cpu-only
+            gpu-validation: not-applicable
+            runner: macos-15
+            extension: tar.gz
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Use only the actual Release attachment, with no dependency setup.
+      - name: Download and verify published asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          ASSET_PLATFORM: ${{ matrix.platform }}
+          ASSET_RUNTIME: ${{ matrix.runtime }}
+          ASSET_EXTENSION: ${{ matrix.extension }}
+          GPU_VALIDATION: ${{ matrix.gpu-validation }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Expected a stable version tag' }
+          $asset = "Mosaicraft_$($env:RELEASE_TAG)_$($env:ASSET_PLATFORM)_$($env:ASSET_RUNTIME).$($env:ASSET_EXTENSION)"
+          ./scripts/verify-release-asset.ps1 -Repository $env:GITHUB_REPOSITORY -Tag $env:RELEASE_TAG -AssetName $asset -ExpectedRuntime $env:ASSET_RUNTIME -ExpectedGpuValidation $env:GPU_VALIDATION -RequireStandalone

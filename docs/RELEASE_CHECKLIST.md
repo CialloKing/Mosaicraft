@@ -99,6 +99,8 @@ GitHub Release 正文必须保持简洁，只包含：
 .\scripts\verify-release-asset.ps1 -Tag v<version> -AssetName <archive-name> -RequireStandalone
 ```
 
+也可手动运行 `Verify published release` workflow，指定 `tag`。它在三个原生平台分别下载真实 Release 的四个正式附件，并执行相同的标签、SHA256、依赖路径和 Web UI/API 验收；不安装项目依赖。Windows CUDA 的云端附件检查不替代发布前的本机 GPU Required 验收。
+
 脚本必须完成：
 
 - 读取 GitHub Release 元数据并明确选择 ZIP/tar.gz 资产
