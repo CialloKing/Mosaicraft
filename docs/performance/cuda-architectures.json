@@ -425,5 +425,7 @@
     "compiler": "MSVC 19.51.36257",
     "opencv": "4.12.0",
     "os": "Windows 10 22H2 x64"
-  }
+  },
+  "candidate_commit": "d9049ed6c2d454f67481e080709df618c869b9c1",
+  "followup": "Windows no-driver preflight now enumerates devices before querying driver details; arithmetic and target configuration unchanged."
 }

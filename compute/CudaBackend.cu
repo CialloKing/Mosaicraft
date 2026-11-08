@@ -1105,8 +1105,10 @@ CudaAvailability queryCudaAvailability(CudaProbeFault fault)
         return status;
     }
     int count = 0;
-    if (!checkPreflight(cudaDriverGetVersion(&status.driverVersion), "driver", status) ||
-        !checkPreflight(cudaGetDeviceCount(&count), "device enumeration", status))
+    // Some Windows runtimes cannot query driver details without nvcuda.dll.
+    // Enumerate first, just as the former availability check did, so a machine
+    // with no NVIDIA driver reaches CPU fallback without touching that API.
+    if (!checkPreflight(cudaGetDeviceCount(&count), "device enumeration", status))
     {
         return status;
     }
@@ -1116,7 +1118,8 @@ CudaAvailability queryCudaAvailability(CudaProbeFault fault)
         return status;
     }
     cudaDeviceProp device{};
-    if (!checkPreflight(cudaGetDevice(&status.device), "current device", status) ||
+    if (!checkPreflight(cudaDriverGetVersion(&status.driverVersion), "driver", status) ||
+        !checkPreflight(cudaGetDevice(&status.device), "current device", status) ||
         !checkPreflight(cudaGetDeviceProperties(&device, status.device), "device properties", status))
     {
         return status;
