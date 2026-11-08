@@ -32,6 +32,7 @@
 #include <string>
 #include <system_error>
 #include <thread>
+#include <utility>
 #include <vector>
 #include <set>
 #include <exception>
@@ -471,61 +472,78 @@ ServiceResult BuildService::run(const BuildRequest& request) const
 
     if (!inputIsOutput)
     {
-        if (!gpuOk || request.normalizeOnly) {
+        if (!gpuOk || request.normalizeOnly)
+        {
             std::cout << "Normalizing (" << normThreads << " threads)..." << std::endl;
         }
         std::atomic<size_t> nextFileIdx{0};
         std::vector<std::thread> workers;
-        for (int t = 0; t < normThreads; ++t) {
-            workers.emplace_back([&]() {
-                for (;;) {
+        for (int t = 0; t < normThreads; ++t)
+        {
+            workers.emplace_back([&]()
+            {
+                for (;;)
+                {
                     size_t fi = nextFileIdx.fetch_add(1);
-                    if (fi >= files.size()) break;
+                    if (fi >= files.size())
+                    {
+                        break;
+                    }
                     const std::string& inPath = files[fi];
                     fs::path outPath = u8path(outPaths[fi]);
-                    try {
-                        cv::Mat result = normalizer.processToMat(inPath);
-                        if (result.empty()) continue;
+                    try
+                    {
                         std::string outExt = pathToUtf8(outPath.extension());
                         std::vector<int> writeParams;
-                        if (outExt == ".jpg" || outExt == ".jpeg") {
+                        if (outExt == ".jpg" || outExt == ".jpeg")
+                        {
                             writeParams = {cv::IMWRITE_JPEG_QUALITY, 90};
-                        } else if (outExt == ".png") {
+                        }
+                        else if (outExt == ".png")
+                        {
                             writeParams = {cv::IMWRITE_PNG_COMPRESSION, 9};
                         }
-                        if (!imwriteUnicode(pathToUtf8(outPath), result, writeParams))
+                        cv::Mat result;
+                        const bool needPixels = gpuOk && !request.normalizeOnly;
+                        if (!normalizer.process(inPath, pathToUtf8(outPath), writeParams, needPixels ? &result : nullptr))
                         {
                             continue;
                         }
                         okFlags[fi] = true;
-                        if (gpuOk && !request.normalizeOnly) {
-                            // JPEG 编解码会改变像素，两种后端都以落盘图像计算哈希和特征。
-                            result = imreadUnicode(pathToUtf8(outPath), cv::IMREAD_COLOR);
-                            if (result.empty())
-                            {
-                                okFlags[fi] = 0;
-                                continue;
-                            }
+                        if (needPixels)
+                        {
+                            // 归一化入口提供实际保存的像素；原字节快路径不再重复读盘解码。
                             std::unique_lock<std::mutex> lk(queueMtx);
-                            queueFullCV.wait(lk, [&]{ return normQueue.size() < MAX_QUEUE || normPhaseDone.load(); });
+                            queueFullCV.wait(lk, [&]
+                            {
+                                return normQueue.size() < MAX_QUEUE || normPhaseDone.load();
+                            });
                             if (normPhaseDone.load())
                             {
                                 break;
                             }
-                            normQueue.push({result.clone(), pathToUtf8(outPath)});
+                            normQueue.push({std::move(result), pathToUtf8(outPath)});
                             lk.unlock();
                             queueCV.notify_one();
                         }
-                    } catch (...) {}
+                    }
+                    catch (const std::exception& error)
+                    {
+                        std::cerr << "WARN: normalization skipped " << inPath << ": " << error.what() << std::endl;
+                    }
                     int d = ++normDone;
-                    if (d % 200 == 0 || d == (int)files.size()) {
+                    if (d % 200 == 0 || d == (int)files.size())
+                    {
                         std::cout << "\r  normalize " << d << "/" << files.size()
                                   << "                    " << std::flush;
                     }
                 }
             });
         }
-        for (auto& w : workers) w.join();
+        for (auto& w : workers)
+        {
+            w.join();
+        }
         tNormEnd = std::chrono::steady_clock::now();
         std::cout << std::endl;
     }
@@ -535,10 +553,14 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         normDone = static_cast<int>(files.size());
         for (size_t i = 0; i < files.size(); ++i)
         {
-            okFlags[i] = 1;
             if (gpuOk && !request.normalizeOnly)
             {
                 auto image = imreadUnicode(files[i], cv::IMREAD_COLOR);
+                if (image.empty())
+                {
+                    std::cerr << "WARN: cannot decode library image: " << files[i] << std::endl;
+                    continue;
+                }
                 std::unique_lock<std::mutex> lock(queueMtx);
                 queueFullCV.wait(lock,
                                  [&]
@@ -549,10 +571,11 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 {
                     break;
                 }
-                normQueue.push({image, files[i]});
+                normQueue.push({std::move(image), files[i]});
                 lock.unlock();
                 queueCV.notify_one();
             }
+            okFlags[i] = 1;
         }
     }
 
@@ -619,7 +642,11 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                     try
                     {
                         images[i] = imreadUnicode(outPaths[first + i], cv::IMREAD_COLOR);
-                        if (!inputIsOutput && !images[i].empty() &&
+                        if (images[i].empty())
+                        {
+                            throw std::runtime_error("cannot decode saved image");
+                        }
+                        if (!inputIsOutput &&
                             (images[i].cols != request.normalizeWidth || images[i].rows != request.normalizeHeight))
                         {
                             throw std::runtime_error("normalized image dimensions changed before feature extraction");
@@ -628,6 +655,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                     catch (const std::exception &error)
                     {
                         errors[i] = error.what();
+                        okFlags[first + i] = 0;
                         images[i].release();
                     }
                 });

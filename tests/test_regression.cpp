@@ -840,6 +840,127 @@ TEST_CASE("color reorder handles occupied paths and releases library locks")
     }
 }
 
+TEST_CASE("same-size builds deduplicate saved pixels and preserve existing records")
+{
+    auto pixelHash = [](const cv::Mat& image)
+    {
+        uint64_t hash = 14695981039346656037ULL;
+        for (size_t i = 0; i < image.total() * image.elemSize(); ++i)
+        {
+            hash = (hash ^ image.data[i]) * 1099511628211ULL;
+        }
+        return std::to_string(hash);
+    };
+    for (const cv::Size size : {cv::Size(180, 320), cv::Size(72, 128)})
+    {
+        TempWorkspace workspace;
+        auto request = makeBuildRequest(workspace);
+        request.normalizeWidth = size.width;
+        request.normalizeHeight = size.height;
+        request.threads = 2;
+        cv::Mat exact(size, CV_8UC3), larger(size.height + 3, size.width + 2, CV_8UC3);
+        cv::RNG(12).fill(exact, cv::RNG::UNIFORM, 0, 256);
+        cv::RNG(34).fill(larger, cv::RNG::UNIFORM, 0, 256);
+        const auto jpeg = utf8(workspace.inputDir() / u8path(u8"原图.jpg"));
+        const auto png = utf8(workspace.inputDir() / u8path(u8"原图.png"));
+        const auto resized = utf8(workspace.inputDir() / "resize.jpg");
+        REQUIRE(imwriteUnicode(jpeg, exact, {cv::IMWRITE_JPEG_QUALITY, 97}));
+        REQUIRE(imwriteUnicode(png, exact, {cv::IMWRITE_PNG_COMPRESSION, 1}));
+        REQUIRE(imwriteUnicode(resized, larger, {cv::IMWRITE_JPEG_QUALITY, 97}));
+        REQUIRE(writeBytesUnicode(utf8(workspace.inputDir() / "duplicate.jpeg"), readBytesUnicode(jpeg)));
+        REQUIRE(writeBytesUnicode(utf8(workspace.inputDir() / "broken.jpg"), {1, 2, 3}));
+        ImageNormalizer normalizer(size.width, size.height);
+        const cv::Mat oldPixels = normalizer.centerCrop(normalizer.resizeToCover(imreadUnicode(resized)));
+        std::vector<uint8_t> resizedBytes;
+        REQUIRE(cv::imencode(".jpg", oldPixels, resizedBytes, {cv::IMWRITE_JPEG_QUALITY, 90}));
+        std::unordered_map<std::string, std::vector<uint8_t>> expected;
+        for (const auto& bytes : {readBytesUnicode(jpeg), readBytesUnicode(png), resizedBytes})
+        {
+            expected.emplace(pixelHash(cv::imdecode(bytes, cv::IMREAD_COLOR)), bytes);
+        }
+        REQUIRE(expected.size() == 3);
+        const auto build = BuildService().run(request);
+        REQUIRE_MESSAGE(build.ok, build.message);
+        std::vector<ImageRecord> before;
+        std::unordered_map<std::string, fs::file_time_type> featureTimes;
+        {
+            Database database(request.dbPath);
+            before = database.allRecords();
+            REQUIRE(before.size() == expected.size());
+            for (const auto& record : before)
+            {
+                const auto pixels = imreadUnicode(record.filePath);
+                CHECK(record.fileHash == pixelHash(pixels));
+                CHECK(pixels.size() == size);
+                CHECK(record.featureVersion == 6);
+                REQUIRE(expected.count(record.fileHash) == 1);
+                CHECK(readBytesUnicode(record.filePath) == expected.at(record.fileHash));
+                CHECK(fs::exists(u8path(record.tinyPath)));
+                CHECK(fs::exists(u8path(record.histPath)));
+                for (const auto& path : {record.tinyPath, record.histPath})
+                {
+                    // 固定旧时间，能识别追加时即使内容相同的无谓重写。
+                    const auto stamp = fs::file_time_type::clock::now() - std::chrono::hours(1);
+                    fs::last_write_time(u8path(path), stamp);
+                    featureTimes.emplace(path, fs::last_write_time(u8path(path)));
+                }
+            }
+            REQUIRE(database.recordRunUsage({{before[0].id, 3}}, "target", "target.png"));
+        }
+        request.appendMode = true;
+        REQUIRE(BuildService().run(request).ok);
+        auto inPlace = request;
+        inPlace.inputDir = inPlace.outputDir;
+        REQUIRE(writeBytesUnicode(utf8(u8path(inPlace.inputDir) / "broken.jpg"), {1, 2, 3}));
+        REQUIRE(BuildService().run(inPlace).ok);
+        {
+            Database database(request.dbPath);
+            const auto records = database.allRecords();
+            REQUIRE(records.size() == before.size());
+            const auto usage = database.topUsedImages();
+            REQUIRE(usage.size() == 1);
+            CHECK(std::get<0>(usage[0]) == before[0].id);
+            CHECK(std::get<2>(usage[0]) == 3);
+            for (const auto& record : records)
+            {
+                const auto old = std::find_if(before.begin(), before.end(),
+                                             [&](const auto& previous)
+                                             {
+                                                 return previous.id == record.id;
+                                             });
+                REQUIRE(old != before.end());
+                CHECK(record.fileHash == old->fileHash);
+                CHECK(record.grid4x4 == old->grid4x4);
+                CHECK(record.tinyPath == old->tinyPath);
+                CHECK(record.histPath == old->histPath);
+                CHECK(fs::last_write_time(u8path(record.tinyPath)) == featureTimes.at(record.tinyPath));
+                CHECK(fs::last_write_time(u8path(record.histPath)) == featureTimes.at(record.histPath));
+                CHECK(readBytesUnicode(record.filePath) == expected.at(record.fileHash));
+            }
+        }
+        auto normalizeOnly = request;
+        normalizeOnly.outputDir = utf8(workspace.root / "normalize-only");
+        normalizeOnly.dbPath = utf8(u8path(normalizeOnly.outputDir) / "mosaicraft.db");
+        normalizeOnly.normalizeOnly = true;
+        REQUIRE(BuildService().run(normalizeOnly).ok);
+        int outputs = 0;
+        for (const auto& entry : fs::directory_iterator(u8path(normalizeOnly.outputDir)))
+        {
+            if (entry.path().extension() == ".jpg" || entry.path().extension() == ".jpeg" ||
+                entry.path().extension() == ".png")
+            {
+                const auto pixels = imreadUnicode(utf8(entry.path()));
+                REQUIRE_FALSE(pixels.empty());
+                CHECK(readBytesUnicode(utf8(entry.path())) == expected.at(pixelHash(pixels)));
+                ++outputs;
+            }
+        }
+        CHECK(outputs == 4);
+        Database emptyDatabase(normalizeOnly.dbPath);
+        CHECK(emptyDatabase.totalCount() == 0);
+    }
+}
+
 TEST_CASE("default color build and append keep bytes IDs usage and feature references")
 {
     TempWorkspace workspace;

@@ -5,7 +5,10 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <iostream>
+#include <stdexcept>
 #include <utility>
 
 namespace mosaicraft
