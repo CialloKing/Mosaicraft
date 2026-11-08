@@ -863,7 +863,7 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
         cv::RNG(34).fill(larger, cv::RNG::UNIFORM, 0, 256);
         const auto jpeg = utf8(workspace.inputDir() / u8path(u8"原图.jpg"));
         const auto png = utf8(workspace.inputDir() / u8path(u8"原图.png"));
-        const auto resized = utf8(workspace.inputDir() / "resize.jpg");
+        const auto resized = utf8(workspace.inputDir() / (size.width == 180 ? "resize.jpg" : "resize.JPEG"));
         REQUIRE(imwriteUnicode(jpeg, exact, {cv::IMWRITE_JPEG_QUALITY, 97}));
         REQUIRE(imwriteUnicode(png, exact, {cv::IMWRITE_PNG_COMPRESSION, 1}));
         REQUIRE(imwriteUnicode(resized, larger, {cv::IMWRITE_JPEG_QUALITY, 97}));
@@ -872,7 +872,7 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
         ImageNormalizer normalizer(size.width, size.height);
         const cv::Mat oldPixels = normalizer.centerCrop(normalizer.resizeToCover(imreadUnicode(resized)));
         std::vector<uint8_t> resizedBytes;
-        REQUIRE(cv::imencode(".jpg", oldPixels, resizedBytes, {cv::IMWRITE_JPEG_QUALITY, 90}));
+        REQUIRE(cv::imencode(".jpg", oldPixels, resizedBytes, {cv::IMWRITE_JPEG_QUALITY, 100}));
         std::unordered_map<std::string, std::vector<uint8_t>> expected;
         for (const auto& bytes : {readBytesUnicode(jpeg), readBytesUnicode(png), resizedBytes})
         {
@@ -947,7 +947,7 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
         for (const auto& entry : fs::directory_iterator(u8path(normalizeOnly.outputDir)))
         {
             if (entry.path().extension() == ".jpg" || entry.path().extension() == ".jpeg" ||
-                entry.path().extension() == ".png")
+                entry.path().extension() == ".JPEG" || entry.path().extension() == ".png")
             {
                 const auto pixels = imreadUnicode(utf8(entry.path()));
                 REQUIRE_FALSE(pixels.empty());

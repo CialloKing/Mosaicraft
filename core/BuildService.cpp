@@ -494,10 +494,16 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                     try
                     {
                         std::string outExt = pathToUtf8(outPath.extension());
+                        // 扫描支持大小写后缀，编码参数也应按同一种格式统一选择。
+                        std::transform(outExt.begin(), outExt.end(), outExt.begin(),
+                                       [](unsigned char c)
+                                       {
+                                           return static_cast<char>(std::tolower(c));
+                                       });
                         std::vector<int> writeParams;
                         if (outExt == ".jpg" || outExt == ".jpeg")
                         {
-                            writeParams = {cv::IMWRITE_JPEG_QUALITY, 90};
+                            writeParams = {cv::IMWRITE_JPEG_QUALITY, 100};
                         }
                         else if (outExt == ".png")
                         {

@@ -9,7 +9,7 @@
 - 使用现有 Unicode 读取入口取得原始编码字节，从这份字节解码；宽、高都精确等于目标尺寸且不转换格式时，将同一份原字节写入独立文件。跳过缩放、中心裁剪和编码，保留文件内嵌元数据、原有压缩数据、透明通道和位深。
 - 尺寸按现有 `IMREAD_COLOR` 解码规则判断，特征仍使用原来的 8 位 BGR 像素。仅宽高比相同不走快速路径。
 - 独立副本不使用硬链接，之后修改源文件不会改变图库文件；输入输出为同一文件时跳过自复制。输入与输出为同目录的建库仍沿用原有处理方式，随后按颜色排序和编号。
-- 不同尺寸继续等比覆盖、中心裁剪，再按原参数编码：建库 JPEG 质量 90、PNG 压缩等级 9。调用归一化接口显式转换格式时，即使尺寸相同也按目标格式编码；`.jpg` / `.jpeg`、`.tif` / `.tiff` 视为同格式。
+- 不同尺寸继续等比覆盖、中心裁剪，再编码：建库 JPEG 质量为 100（最高质量）、PNG 压缩等级为 9，后缀不区分大小写。调用归一化接口显式转换格式时，即使尺寸相同也按目标格式编码；`.jpg` / `.jpeg`、`.tif` / `.tiff` 视为同格式。
 - 解码、写入或按需重读失败时报告输入和输出路径，返回失败；调用方不将该图片标记成功、不送入特征队列、不新增数据库记录。
 
 `UnicodeIO.h` 统一提供 `readBytesUnicode` / `writeBytesUnicode`，原 `imreadUnicode` / `imwriteUnicode` 复用它们。写入会检查关闭文件后的状态。`ImageNormalizer::process` 接收可选编码参数及 `cv::Mat* storedPixels`，原双参数调用仍可编译。`processToMat` 对同尺寸输入直接返回本次解码结果，不另复制全图。
@@ -30,7 +30,7 @@ CUDA 与 CPU-only Release 均构建 CLI、核心测试和回归测试，完整 C
 
 - JPEG / JPEG 别名、PNG、BMP、TIFF、WebP 同尺寸字节一致、独立副本、源文件修改隔离、实际保存像素和同文件不重写；PNG 包含 16 位透明通道。
 - 不同尺寸 JPEG / PNG 与原缩放裁剪加编码流程逐字节一致；覆盖显式格式转换、中文路径、坏图、缺失输入及目标为目录的写入失败。
-- 180×320 模板路径及 72×128 通用路径建库：验证实际落盘像素哈希、原字节保存、重复追加去重、同目录建库、仅归一化、坏图跳过、旧 ID / 使用统计 / 特征引用保留。固定旧特征文件时间，确认追加没有无谓重写有效特征。
+- 180×320 模板路径及 72×128 通用路径建库：验证实际落盘像素哈希、原字节保存、重复追加去重、同目录建库、仅归一化、坏图跳过、旧 ID / 使用统计 / 特征引用保留。固定旧特征文件时间，确认追加没有无谓重写有效特征。不同尺寸 JPEG 覆盖小写 `.jpg` 和大写 `.JPEG`，均逐字节对照质量 100 的编码结果。
 
 ```powershell
 cmake --build build --config Release --target mosaicraft mosaicraft_tests mosaicraft_regression_tests -j 8
@@ -42,6 +42,8 @@ ctest --test-dir build_nocuda -C Release --output-on-failure
 `build_nocuda` 配置为 `MOSAICRAFT_CUDA=OFF`，`build` 为 `ON`。
 
 ## 旧版与新版性能对照
+
+以下为 JPEG 重编码质量仍为 90 时的历史采样。后续已将建库 JPEG 质量提高到 100；这些耗时和大小数据不作为质量 100 配置的性能结论。
 
 环境：Windows x64、Ryzen 9 7940H（8 核 16 线程）、约 32 GB 内存、RTX 4060 Laptop GPU、驱动 616.92、OpenCV 4.12.0，Release。完整建库使用默认模板 CUDA 路径，归一化指定 4 线程。基线为优化前保留的 `83c6d6c` Release 可执行文件；候选包含原字节保存及流水线复用，二进制 SHA-256 和全部原始采样见 [结构化性能记录](performance/same-size-normalization.json)。
 
