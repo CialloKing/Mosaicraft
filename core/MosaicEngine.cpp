@@ -579,6 +579,14 @@ static void writeAnalysisReport(const AnalysisReportContext& ctx)
 // ============================================================
 // 主马赛克生成流程
 // ============================================================
+// Construct nested defaults after the enclosing class is complete (GCC/Clang).
+bool MosaicEngine::generate(const std::string& targetPath,
+                            const std::string& dbPath,
+                            const std::string& outputPath)
+{
+    return generate(targetPath, dbPath, outputPath, Config{});
+}
+
 bool MosaicEngine::generate(const std::string& targetPath,
                              const std::string& dbPath,
                              const std::string& outputPath,

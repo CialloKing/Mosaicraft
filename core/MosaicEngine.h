@@ -102,7 +102,10 @@ public:
     bool generate(const std::string& targetPath,
                   const std::string& dbPath,
                   const std::string& outputPath,
-                  const Config& config = Config());
+                  const Config& config);
+    bool generate(const std::string& targetPath,
+                  const std::string& dbPath,
+                  const std::string& outputPath);
 
   private:
     friend struct MatchingAccess;
