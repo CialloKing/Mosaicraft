@@ -134,6 +134,22 @@ for ($attempt = 1; $attempt -le 3; $attempt++)
     # Retry transient source-download failures, never conceal a compiler failure.
     if ($attempt -eq 3 -or $failure -notmatch 'response code (429|50[0234])|timed out|Could not resolve host')
     {
+        if ($isMac)
+        {
+            # Keep actual header provenance in the job log when a native codec
+            # ABI fails to link; CMake's reported include directory is insufficient.
+            $includeDir = Join-Path $installed "$Triplet/include"
+            $jpegLibrary = Join-Path $installed "$Triplet/lib/libjpeg.dylib"
+            Write-Host 'JPEG ABI diagnostics: installed configuration'
+            if (Test-Path "$includeDir/jconfig.h") { Get-Content "$includeDir/jconfig.h" | Select-String 'JPEG_LIB_VERSION|LIBJPEG_TURBO_VERSION' }
+            if (Test-Path $jpegLibrary) { & nm -gU $jpegLibrary | Select-String 'jpeg_default_qtables|jpeg_CreateCompress' }
+            $opencvBuild = Join-Path $repo "build/vcpkg-buildtrees/opencv4/$Triplet-rel"
+            if (Test-Path "$opencvBuild/build.ninja")
+            {
+                & ninja -C $opencvBuild -t deps 'modules/imgcodecs/CMakeFiles/opencv_imgcodecs.dir/src/grfmt_jpeg.cpp.o' |
+                    Select-String 'jpeglib.h|jconfig.h'
+            }
+        }
         throw "vcpkg install failed: $LASTEXITCODE"
     }
     Start-Sleep -Seconds 5
