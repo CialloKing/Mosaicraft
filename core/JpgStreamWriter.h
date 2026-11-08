@@ -9,6 +9,7 @@
 //   jpg.close();
 
 #include <cstdio>
+#include <csetjmp>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
