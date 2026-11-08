@@ -613,8 +613,11 @@ try {
         foreach ($document in @(
             "docs\PREVIEW_VERIFICATION.md",
             "docs\SAME_SIZE_NORMALIZATION.md",
+            "docs\CI_PACKAGING.md",
+            "docs\RELEASE_CHECKLIST.md",
             "docs\performance\preview.json",
-            "docs\performance\same-size-normalization.json"
+            "docs\performance\same-size-normalization.json",
+            "docs\performance\ci-packaging.json"
         ))
         {
             $destination = Join-Path $packageRoot $document
@@ -625,7 +628,6 @@ try {
             $performanceDir = Join-Path $packageRoot "docs"
             New-Item -ItemType Directory -Force -Path $performanceDir | Out-Null
             Copy-RequiredFile -Source $performanceReport -Destination $performanceDir
-            Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\RELEASE_CHECKLIST.md") -Destination $performanceDir
             $performanceData = Join-Path $RepoRoot "docs\performance\v$versionText.json"
             if (Test-Path -LiteralPath $performanceData) {
                 $dataDir = Join-Path $performanceDir "performance"

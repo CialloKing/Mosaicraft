@@ -1,0 +1,211 @@
+{
+  "measuredDate": "2026-11-08",
+  "dailyCommit": "874503e7d68bcad6182ed395db471705a2e42514",
+  "dailyRun": 42479756921,
+  "cacheNamespace": "ci-speed-20261108-874503e",
+  "timingUnit": "seconds",
+  "queueExcluded": true,
+  "samples": {
+    "linux-x64": {
+      "cold": {
+        "job": 128728924943,
+        "conclusion": "success",
+        "total": 388.0,
+        "dependencyPreparationAndInstall": 324.0,
+        "configure": 0.0,
+        "build": 45.0,
+        "ctest": 4.0,
+        "webuiApiSmoke": 9.0,
+        "restoredPackages": 0,
+        "opencvRebuilt": true
+      },
+      "warm": {
+        "job": 128732276501,
+        "conclusion": "success",
+        "total": 75.0,
+        "dependencyPreparationAndInstall": 17.0,
+        "configure": 1.0,
+        "build": 38.0,
+        "ctest": 4.0,
+        "webuiApiSmoke": 8.0,
+        "restoredPackages": 11,
+        "opencvRebuilt": false,
+        "vcpkgInstall": 3.2697754
+      },
+      "toolchain": "GNU|11.4.0|/usr/bin/c++||cmake version 3.31.6vcpkg package management program version 2026-05-27-d5b6777d666efc1a7f491babfcdab37794c1ae3e\n\nSee LICENSE.txt for license information.\n",
+      "cacheKey": "ci-speed-20261108-874503e-linux-x64-09838df6458be33db1e9a32c26aa72a7045fa7072eb0e10210b0d94a92569de2-a0400024711b283056538ac19ced80b91a83c24c-a2ad66c52b14fe65338f380e6099d5d88b0b3c803e5d500de8b9ba46d3da7a99"
+    },
+    "windows-x64": {
+      "cold": {
+        "job": 128728925136,
+        "conclusion": "success",
+        "total": 731.0,
+        "dependencyPreparationAndInstall": 596.0,
+        "configure": 5.0,
+        "build": 89.0,
+        "ctest": 16.0,
+        "webuiApiSmoke": 11.0,
+        "restoredPackages": 0,
+        "opencvRebuilt": true
+      },
+      "warm": {
+        "job": 128732276200,
+        "conclusion": "success",
+        "total": 172.0,
+        "dependencyPreparationAndInstall": 39.0,
+        "configure": 6.0,
+        "build": 91.0,
+        "ctest": 14.0,
+        "webuiApiSmoke": 8.0,
+        "restoredPackages": 11,
+        "opencvRebuilt": false,
+        "vcpkgInstall": 8.4231634
+      },
+      "toolchain": "MSVC|19.51.36260.0|C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe|10.0.26100.0|cmake version 4.4.5vcpkg package management program version 2026-05-27-d5b6777d666efc1a7f491babfcdab37794c1ae3e\r\n\r\nSee LICENSE.txt for license information.\r\n",
+      "cacheKey": "ci-speed-20261108-874503e-windows-x64-8e9d1bfa5e717e02ea4facdc8f7e2fb5ffe4a47b957f0dae6ac10c9b99844400-a0400024711b283056538ac19ced80b91a83c24c-4d8d5313ee1fecff96cc31615d54faf7590176c3d5d237d4f570d565a17c60fd"
+    }
+  },
+  "coldLogChecks": [
+    {
+      "platform": "linux-x64",
+      "job": 128728924943,
+      "restoredPackages": 0,
+      "heavyPackagesBuilt": false,
+      "debugBuilt": false,
+      "opencvRebuilt": true
+    },
+    {
+      "platform": "windows-x64",
+      "job": 128728925136,
+      "restoredPackages": 0,
+      "heavyPackagesBuilt": false,
+      "debugBuilt": false,
+      "opencvRebuilt": true
+    }
+  ],
+  "warmLogChecks": [
+    {
+      "platform": "windows-x64",
+      "job": 128732276200,
+      "restoredPackages": 11,
+      "opencvRebuilt": false,
+      "debugBuilt": false
+    },
+    {
+      "platform": "linux-x64",
+      "job": 128732276501,
+      "restoredPackages": 11,
+      "opencvRebuilt": false,
+      "debugBuilt": false
+    }
+  ],
+  "packagingMeasurement": {
+    "sourceCommit": "babaae38e128e850efe7bcd27cab3b18f07eee62",
+    "run": 42499664769,
+    "cache": "warm",
+    "stages": {
+      "windows-x64": {
+        "Configure": 5.2539575,
+        "Build release targets": 92.8739789,
+        "Run CTest": 12.4402392,
+        "Run Web UI/API smoke": 7.6088368,
+        "Package Mosaicraft_v1.14.6_windows-x64_cpu-only.zip": 1.2603547,
+        "Validate archive": 7.2795892,
+        "Release package summary": 0.0220226
+      },
+      "linux-x64": {
+        "Configure": 0.383147,
+        "Build release targets": 37.8045304,
+        "Run CTest": 3.002807,
+        "Run Web UI/API smoke": 7.3051384,
+        "Package Mosaicraft_v1.14.6_linux-x64_cpu-only.tar.gz": 3.5006471,
+        "Validate archive": 7.5812174,
+        "Release package summary": 0.0206785
+      }
+    }
+  },
+  "runtimeComparison": {
+    "commit": "babaae38e128e850efe7bcd27cab3b18f07eee62",
+    "reference": "published v1.14.6 CUDA ZIP",
+    "seed": 20261108,
+    "selection": "topn-random=1; brightness adjustment disabled, so random generator does not affect selection",
+    "executables": {
+      "published": "7397e0c33fe536562eecf4e0807b7139eb9a5859db0a5612d2870a76db7ee5cf",
+      "current": "2cd02c9d9e251fc78e4fb9a60cebb2459efa6ec21f9c40a7ff47cb16d369ad6b"
+    },
+    "method": "Private 36-image libraries; align features by decoded-pixel hash, then generate against the same database snapshot and usage counters; overlay strength 0.25; brightness disabled.",
+    "cases": [
+      {
+        "size": "180x320",
+        "cpu": false,
+        "images": 36,
+        "tiles": 100,
+        "equal": true,
+        "mainPixels": "4f85503ac796ec5a290e98fd8c4baf668e7f174befa481fad5c0a4f425bedd31",
+        "previewPixels": "26637f8d23d8ce93e505d2dae66dd383b3cf68fccd1cc92e1a804fb4c90de0b6",
+        "score": "Score: mean=0.4297 median=0.4139 p90=0.5624 p99=0.6418 max=0.6418\r",
+        "selectionUsageSha256": "a61cf5a783cb854a6d777034f1fe65c675588755b49738717740492f27fae048"
+      },
+      {
+        "size": "180x320",
+        "cpu": true,
+        "images": 36,
+        "tiles": 100,
+        "equal": true,
+        "mainPixels": "2e3961bcd5c2e6f0bceb0c807ab2f707da689f68043dcb279e4fb306ec739e78",
+        "previewPixels": "6c0c5d639a51b33492c2cdb8a993c2f48d647355582d12ec185c27c5969b21c3",
+        "score": "Score: mean=0.4348 median=0.4186 p90=0.5687 p99=0.6407 max=0.6407\r",
+        "selectionUsageSha256": "a61cf5a783cb854a6d777034f1fe65c675588755b49738717740492f27fae048"
+      },
+      {
+        "size": "72x128",
+        "cpu": false,
+        "images": 36,
+        "tiles": 100,
+        "equal": true,
+        "mainPixels": "a24c9f1fd19eb31aabadc5d4474536af7aec3ca2080f7ab96ff3370932dfcfc1",
+        "previewPixels": "9282c526142a934eb04c2239e4a524d1ef67a4f089447acb02d40c9cb63493c8",
+        "score": "Score: mean=0.4392 median=0.4290 p90=0.5651 p99=0.6488 max=0.6488\r",
+        "selectionUsageSha256": "a61cf5a783cb854a6d777034f1fe65c675588755b49738717740492f27fae048"
+      },
+      {
+        "size": "72x128",
+        "cpu": true,
+        "images": 36,
+        "tiles": 100,
+        "equal": true,
+        "mainPixels": "a24c9f1fd19eb31aabadc5d4474536af7aec3ca2080f7ab96ff3370932dfcfc1",
+        "previewPixels": "9282c526142a934eb04c2239e4a524d1ef67a4f089447acb02d40c9cb63493c8",
+        "score": "Score: mean=0.4392 median=0.4290 p90=0.5651 p99=0.6488 max=0.6488\r",
+        "selectionUsageSha256": "a61cf5a783cb854a6d777034f1fe65c675588755b49738717740492f27fae048"
+      }
+    ]
+  },
+  "gpuRequiredNegative": {
+    "reason": "D:\\C++project\\Mosaicraft\\build\\validation-cuda\\Release\\bin\\mosaicraft_tests.exe failed with exit code 1. GPU validation requires an available CUDA device",
+    "gpuHidden": true,
+    "rejected": true,
+    "mode": "Required"
+  },
+  "localCudaTests": {
+    "cases": 88,
+    "assertions": 110540,
+    "gpuValidation": "passed",
+    "smoke": true,
+    "standaloneArchive": true
+  },
+  "existingReleaseAsset": {
+    "digest": "sha256:3fb9797d2012acace97a3ce3bb895e39d45b4da66199e70941823ece21b14495",
+    "name": "Mosaicraft_v1.14.6_windows-x64_cuda.zip",
+    "size": 6553225
+  },
+  "supportedCpuPlatforms": [
+    "windows-x64",
+    "linux-x64",
+    "macos-arm64"
+  ],
+  "cudaCandidatePlatforms": [
+    "windows-x64",
+    "linux-x64"
+  ]
+}
