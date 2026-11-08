@@ -1025,6 +1025,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
                   << "  Overlay worker budget bytes: " << outputStats.overlayWorkingBytes << "\n";
         std::cout << "  Color conversion: " << outputStats.colorMs << " ms\n";
         std::cout << "  Row encoding: " << outputStats.codecMs << " ms\n";
+        if (cfg.generatePreview)
+        {
+            std::cout << "  Preview (included in encoding): " << outputStats.previewMs << " ms\n";
+        }
         std::cout << "  Producer wait: " << outputStats.producerWaitMs << " ms\n";
         std::cout << "  Consumer wait: " << outputStats.consumerWaitMs << " ms\n";
         std::cout << "  Image cache hits: " << outputStats.cacheHits << "\n"
@@ -2266,6 +2270,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
     msEncode = outputStats.encodingMs;
     std::cout << "Mosaic saved: " << outputStats.path << " (" << matched << " / " << totalTiles
               << " tiles, loadFail=" << loadFail << ")" << std::endl;
+    if (!outputStats.previewPath.empty())
+    {
+        std::cout << "Preview saved: " << outputStats.previewPath << std::endl;
+    }
     // 修正特征计数器：各路径可能在 return 前未完整设置
     if (cntEdge + cntMissEdge == 0)
     {

@@ -235,6 +235,23 @@ TEST_CASE("brightness API defaults and strength limits retain explicit opt in")
     }
 }
 
+TEST_CASE("preview remains opt in and rejects tiled output before generation")
+{
+    MosaicRequest request;
+    std::string error;
+    REQUIRE(parseMosaicRequestJson("{}", request, error));
+    CHECK_FALSE(request.config.generatePreview);
+    request.config.generatePreview = true;
+    CHECK(validateMosaicRequest(request, error));
+    for (bool deepZoom : {false, true})
+    {
+        request.config.tiledOutput = !deepZoom;
+        request.config.deepZoom = deepZoom;
+        CHECK_FALSE(validateMosaicRequest(request, error));
+        CHECK(error.find("--preview requires single-image output") != std::string::npos);
+    }
+}
+
 TEST_CASE("overlay API defaults bounds and nonfinite service options")
 {
     MosaicRequest request;

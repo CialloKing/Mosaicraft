@@ -43,6 +43,7 @@ public:
         bool useGpu = true;
         bool tiledOutput = false;   // 分块输出：每 tile 独立文件，消除输出尺寸限制
         bool deepZoom    = false;   // 生成 Deep Zoom 金字塔（含多级缩放 + .dzi 清单）
+        bool generatePreview = false; // 单图输出时同步生成面积平均 JPEG 预览，默认关闭。
         int  jpegQuality = 100;      // JPEG 质量（1-100）
         std::string outputFormat = "jpg";  // 输出格式：jpg / png / webp / tiff
         bool   formatExplicit = false;    // 是否显式指定 --format（否则允许自动切换）
@@ -82,6 +83,7 @@ public:
             if (outputFormat == "png")
                 std::cout << ")";
             std::cout << (tiledOutput ? (deepZoom ? "  output: deepzoom" : "  output: tiled") : "")
+                      << (generatePreview ? "  preview: on" : "")
                       << std::endl;
             std::cout << "  weights: LAB=" << labWeight
                       << " Grid=" << gridWeight

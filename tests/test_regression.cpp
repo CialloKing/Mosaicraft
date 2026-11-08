@@ -40,6 +40,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -1026,6 +1027,112 @@ TEST_CASE("preview accumulator area averages independently of strip boundaries")
     CHECK(cv::norm(whole.image(), expected, cv::NORM_INF) <= 1);
     CHECK(cv::norm(whole.image(), strips.image(), cv::NORM_INF) == 0);
     CHECK(cv::norm(source, original, cv::NORM_INF) == 0);
+}
+
+TEST_CASE("optional preview uses final pixels and agrees across formats and output modes")
+{
+    TempWorkspace workspace;
+    cv::Mat source(11, 17, CV_8UC3), target(6, 4, CV_8UC3);
+    cv::RNG(42).fill(source, cv::RNG::UNIFORM, 0, 256);
+    cv::RNG(123).fill(target, cv::RNG::UNIFORM, 0, 256);
+    const auto sourcePath = workspace.inputDir() / "source.png";
+    requireWriteImage(sourcePath, source);
+    ImageRecord record;
+    record.id = 1;
+    record.filePath = utf8(sourcePath);
+    const std::vector<int> selected{0, 0, 0, -1, 0, 0};
+    MosaicEngine::Config config;
+    config.formatExplicit = true;
+    config.benchmark = true;
+    config.colorAdjust = true;
+    config.overlayStrength = 0.25;
+    auto adjust = [](cv::Mat &image, double)
+    {
+        cv::add(image, cv::Scalar(5, 7, 9), image);
+    };
+    cv::Mat referencePreview;
+    for (const std::string format : {"png", "jpg", "tiff", "webp"})
+    {
+        for (const std::string mode : {"batch", "stream"})
+        {
+            config.outputFormat = format;
+            config.writeMode = mode;
+            config.generatePreview = false;
+            OutputStats stats;
+            const auto stem = std::string(u8"中文预览-") + format + "-" + mode;
+            const auto path = utf8(workspace.outputDir() / u8path(stem + ".jpg"));
+            const auto previewPath = workspace.outputDir() / u8path(stem + "_preview.jpg");
+            REQUIRE(writeIndexedMosaicOutput(config, path, 2, 3, 851, 53, {record}, selected, adjust, stats, target));
+            const cv::Mat baseline = imreadUnicode(stats.path);
+            REQUIRE_FALSE(baseline.empty());
+            CHECK(stats.previewPath.empty());
+            CHECK(stats.previewMs == 0);
+            CHECK_FALSE(fs::exists(previewPath));
+            config.generatePreview = true;
+            REQUIRE(writeIndexedMosaicOutput(config, path, 2, 3, 851, 53, {record}, selected, adjust, stats, target));
+            CHECK(stats.previewPath == utf8(previewPath));
+            CHECK(stats.previewMs > 0);
+            CHECK(stats.previewMs <= stats.encodingMs);
+            CHECK(u8path(stats.path).extension() == "." + format);
+            CHECK(cv::norm(imreadUnicode(stats.path), baseline, cv::NORM_INF) == 0);
+            const cv::Mat preview = imreadUnicode(stats.previewPath);
+            REQUIRE_FALSE(preview.empty());
+            CHECK(preview.size() == PreviewAccumulator::outputSize(baseline.size()));
+            if (referencePreview.empty())
+            {
+                // 无损主图独立提供参考像素，检查合成效果进入预览且质量固定为 92。
+                PreviewAccumulator expected(baseline.size());
+                expected.append(baseline, 0);
+                std::vector<uint8_t> encoded;
+                REQUIRE(cv::imencode(".jpg", expected.image(), encoded, {cv::IMWRITE_JPEG_QUALITY, 92}));
+                referencePreview = cv::imdecode(encoded, cv::IMREAD_COLOR);
+            }
+            CHECK(cv::norm(preview, referencePreview, cv::NORM_INF) == 0);
+            config.generatePreview = false;
+            const auto previewTime = fs::last_write_time(previewPath);
+            REQUIRE(writeIndexedMosaicOutput(config, path, 2, 3, 851, 53, {record}, selected, adjust, stats, target));
+            CHECK(fs::last_write_time(previewPath) == previewTime);
+        }
+    }
+    CHECK(cv::norm(imreadUnicode(record.filePath), source, cv::NORM_INF) == 0);
+}
+
+TEST_CASE("preview write failures preserve the closed main image")
+{
+    TempWorkspace workspace;
+    const cv::Mat source(4, 6, CV_8UC3, cv::Scalar(20, 80, 160));
+    const auto sourcePath = workspace.inputDir() / "source.png";
+    requireWriteImage(sourcePath, source);
+    ImageRecord record;
+    record.id = 1;
+    record.filePath = utf8(sourcePath);
+    MosaicEngine::Config config;
+    config.outputFormat = "png";
+    config.formatExplicit = true;
+    config.generatePreview = true;
+    const auto path = utf8(workspace.outputDir() / u8path(u8"保存失败.png"));
+    const auto previewPath = workspace.outputDir() / u8path(u8"保存失败_preview.jpg");
+    fs::create_directory(previewPath); // 用目录模拟预览文件无法写入。
+    OutputStats stats;
+    std::ostringstream errors;
+    auto *previous = std::cerr.rdbuf(errors.rdbuf());
+    const bool ok = writeIndexedMosaicOutput(config, path, 1, 1, 6, 4, {record}, {0}, {}, stats);
+    std::cerr.rdbuf(previous);
+    CHECK_FALSE(ok);
+    CHECK(errors.str().find("preview write failed") != std::string::npos);
+    CHECK(errors.str().find("main image saved: " + path) != std::string::npos);
+    CHECK(stats.previewPath.empty());
+    CHECK(cv::norm(imreadUnicode(path), source, cv::NORM_INF) == 0);
+    config.generatePreview = false;
+    REQUIRE(writeIndexedMosaicOutput(config, path, 1, 1, 6, 4, {record}, {0}, {}, stats));
+    CHECK(fs::is_directory(previewPath));
+    for (bool deepZoom : {false, true})
+    {
+        config.generatePreview = true;
+        config.tiledOutput = !deepZoom;
+        config.deepZoom = deepZoom;
+        CHECK_FALSE(writeIndexedMosaicOutput(config, path, 1, 1, 6, 4, {record}, {0}, {}, stats));
+    }
 }
 
 TEST_CASE("bounded cache shares immutable pixels and output modes agree")

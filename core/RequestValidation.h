@@ -29,6 +29,11 @@ inline bool validateBuildRequest(const BuildRequest& request, std::string& error
 inline bool validateMosaicRequest(MosaicRequest& request, std::string& error)
 {
     auto& cfg = request.config;
+    if (cfg.generatePreview && (cfg.tiledOutput || cfg.deepZoom))
+    {
+        error = "--preview requires single-image output; incompatible with --tiled/--deepzoom";
+        return false;
+    }
     if (!std::isfinite(cfg.overlayStrength) || cfg.overlayStrength < 0 || cfg.overlayStrength > 1)
     {
         error = "overlayStrength must be finite and between 0 and 1";

@@ -193,6 +193,9 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db --png-level 9 --write-m
 
 # 质量分析 + 性能诊断
 mosaicraft mosaic -i target.jpg -d library/mosaicraft.db --analyze --benchmark
+
+# 同步生成小尺寸 JPEG 预览
+mosaicraft mosaic -i target.jpg -d library/180x320/mosaicraft.db -o output/result.png --preview
 ```
 
 ### 主要参数
@@ -223,7 +226,14 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db --analyze --benchmark
 | `--cpu` | — | 强制 CPU 模式 |
 | `--benchmark` | — | 分阶段耗时统计 |
 | `--analyze` | — | 质量报告 + 热力图 |
+| `--preview` | 关闭 | 同步生成 `<主图名（不含扩展名）>_preview.jpg`，仅支持单图输出 |
 | `--deepzoom` | — | Deep Zoom 金字塔 + HTML viewer |
+
+`--preview` 是命令行可选功能。开启后，在实际主图路径旁保存去掉扩展名并加 `_preview.jpg` 的预览，例如 `result.png` 对应 `result_preview.jpg`；显式 `--format` 调整主图后缀时，预览沿用最终文件名。预览保持比例、不放大，宽度不超过 1400、总像素不超过 400 万，极端长图同时遵守 JPEG 单轴 65500 上限，JPEG 质量固定为 92，与主图 `--quality` 独立。
+
+预览从已完成亮度调整和基础图叠加的合成像素做面积平均缩小，普通与流式输出使用相同算法，生成时同步处理，无需重新读取主图。主图关闭成功后才保存预览；预览写入失败返回非零退出码并报告已保存的主图路径，保留主图。关闭时不创建、删除或更新已有预览；开启时同名普通预览文件按现有输出方式覆盖。`--preview` 不能与 `--tiled` 或 `--deepzoom` 同用，组合会在生成前报错。当前 REST API 和 Web UI 不提供预览控制项。`--benchmark` 中的预览耗时已包含在 Encoding 中。
+
+功能与性能验收见 [可选预览图验证](docs/PREVIEW_VERIFICATION.md)。
 
 亮度调整需要显式启用 `--color-adjust`，单独设置 `--color-strength` 不会启用。每个输出小块分别抽取一个等概率随机档位（共 1001 档），以 `1±strength` 的乘数统一缩放 LAB L 通道，A、B 通道保持不变。默认强度 `0.04` 的乘数范围为 `0.96～1.04`，平均值为 1；强度为 0 时跳过颜色转换，保持原像素。调整在选图后执行，不改变匹配特征；像素取整、高亮截断和颜色转换仍可能影响最终图像的平均亮度。
 

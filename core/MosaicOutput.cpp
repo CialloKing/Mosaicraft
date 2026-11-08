@@ -4,6 +4,7 @@
 #include "ImageCache.h"
 #include "JpgStreamWriter.h"
 #include "PngStreamWriter.h"
+#include "PreviewAccumulator.h"
 #include "TileCompositor.h"
 #include "WorkerPool.h"
 #include <array>
@@ -45,6 +46,10 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
         auto now = [&]() { return config.benchmark ? Clock::now() : Clock::time_point{}; };
         auto elapsed = [&](Clock::time_point start) { return config.benchmark ? milliseconds(start) : 0.0; };
         stats = {};
+        if (config.generatePreview && (config.tiledOutput || config.deepZoom))
+        {
+            throw std::invalid_argument("--preview requires single-image output; incompatible with --tiled/--deepzoom");
+        }
         const int width = tilesX * tileW, height = tilesY * tileH;
         const size_t count = static_cast<size_t>(tilesX) * tilesY;
         if (selected.size() != count)
@@ -218,15 +223,36 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
             std::max<uint64_t>(1, std::min<uint64_t>(64, (1024 * 1024) / (static_cast<uint64_t>(width) * 3))));
         const uint64_t conversionBytes = static_cast<uint64_t>(width) * 3 * (format == "png" ? rgbRows : 1);
         const uint64_t memory = availableMemory();
+        const cv::Size previewSize = config.generatePreview ? PreviewAccumulator::outputSize({width, height}) : cv::Size();
+        // 预览画布、JPEG 编码余量和浮点行缓冲也参与 auto 模式的内存估算。
+        const uint64_t previewBudget = config.generatePreview
+                                           ? static_cast<uint64_t>(previewSize.area()) * 6 +
+                                                 static_cast<uint64_t>(width) * 12 + previewSize.width * 36ULL
+                                           : 0;
         // 编码可能暂存整图，且缓存与两行预取会同时存活，不能只估算画布。
         const uint64_t estimated =
             rawBytes * 2 + ImageCache::kDefaultBudget + rowBytes * 2 + conversionBytes + 16 * 1024 * 1024 +
-            stats.overlayReferenceBytes + stats.overlayWorkingBytes;
+            stats.overlayReferenceBytes + stats.overlayWorkingBytes + previewBudget;
         const bool stream =
             format != "webp" &&
             (config.writeMode == "stream" ||
              (config.writeMode == "auto" && (memory ? estimated > memory : rawBytes > 500ULL * 1024 * 1024)));
         std::cout << "  output: " << (stream ? "stream (two tile rows)" : "batch") << std::endl;
+
+        std::unique_ptr<PreviewAccumulator> preview;
+        auto previewRows = [&](const cv::Mat &rows, int offset)
+        {
+            if (config.generatePreview)
+            {
+                const auto start = now();
+                if (!preview)
+                {
+                    preview = std::make_unique<PreviewAccumulator>(cv::Size(width, height));
+                }
+                preview->append(rows, offset);
+                stats.previewMs += elapsed(start);
+            }
+        };
 
         auto fill = [&](cv::Mat &destination, int tileRow)
         {
@@ -359,6 +385,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
                     lock.unlock();
                     const auto start = now();
                     writeRows(rows[slot], y * tileH);
+                    previewRows(rows[slot], y * tileH);
                     stats.encodingMs += elapsed(start);
                     lock.lock();
                     ready[slot] = false;
@@ -396,6 +423,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
             // 画布已持有全部像素，编码前释放缓存，避免和编码缓冲叠加。
             cache.clear();
             const auto encodeStart = now();
+            previewRows(canvas, 0);
             if (format == "png")
             {
                 openWriter();
@@ -424,6 +452,32 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
         }
         tiff.reset();
         stats.encodingMs += elapsed(closeStart);
+        if (preview)
+        {
+            auto previewFile = u8path(stats.path);
+            previewFile.replace_extension();
+            previewFile += "_preview.jpg";
+            const auto previewPath = pathToUtf8(previewFile);
+            const auto start = now();
+            try
+            {
+                // 主图已关闭成功，预览失败只报告错误，不删除已经成功的主图。
+                if (!imwriteUnicode(previewPath, preview->image(),
+                                    {cv::IMWRITE_JPEG_QUALITY, PreviewAccumulator::kJpegQuality}))
+                {
+                    throw std::runtime_error("JPEG could not be written");
+                }
+            }
+            catch (const std::exception &error)
+            {
+                throw std::runtime_error("preview write failed: " + previewPath + "; main image saved: " +
+                                         stats.path + "; " + error.what());
+            }
+            const double previewWriteMs = elapsed(start);
+            stats.previewMs += previewWriteMs;
+            stats.encodingMs += previewWriteMs;
+            stats.previewPath = previewPath;
+        }
         stats.cacheHits = cache.stats().hits;
         stats.cacheDecodes = cache.stats().decodes;
         stats.cachePeakBytes = cache.stats().peakBytes;

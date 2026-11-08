@@ -171,6 +171,7 @@ Mosaic options:
       --lbp-weight   <w> LBP histogram weight (default: 0.05)
       --penalty      <w> Reuse penalty per use (default: 0.01)
       --analyze          Generate quality analysis report
+      --preview          Save an area-averaged JPEG preview (single image only; off by default)
       --benchmark        Show phase timing
       --cpu              Force CPU, no GPU acceleration
 
@@ -533,6 +534,10 @@ static int cmdMosaic(int argc, char* argv[])
         {
             cfg.analyze = true;
         }
+        else if (arg == "--preview")
+        {
+            cfg.generatePreview = true;
+        }
         else if (arg == "--color-strength")
         {
             double _v = 0.0;
@@ -584,6 +589,7 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "  --color-strength <f>  Max relative L jitter, 0..0.5 (default: 0.04 = +/-4%; requires --color-adjust)" << std::endl;
             std::cout << "  --overlay-strength <f>  Blend processed target over tiles, 0..1 (default: 0 = off)" << std::endl;
             std::cout << "  --analyze             Generate quality report + heatmap + worst tiles" << std::endl;
+            std::cout << "  --preview             Save <output-stem>_preview.jpg (width <=1400, JPEG quality 92)" << std::endl;
             std::cout << "  --benchmark           Print per-phase timing breakdown" << std::endl;
             std::cout << "  --cpu                 Force CPU (no GPU)" << std::endl;
             std::cout << "  --tiled               Output tiles as separate files" << std::endl;

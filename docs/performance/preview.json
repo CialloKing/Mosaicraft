@@ -1,0 +1,67 @@
+{
+  "date": "2026-11-08",
+  "source_db_sha256": "3571d04f2d9b51411fce39a41a132dee093eb75586745a24a2ca4fe180ed7e5a",
+  "source_db_unchanged": true,
+  "library_images": 45625,
+  "input_size": [
+    720,
+    998
+  ],
+  "executable_sha256": "51b9b5ed7279aff708106cc780cc8489d24a81e25b815bcfe5166f372c8cadb4",
+  "preview_size": [
+    1400,
+    1960
+  ],
+  "memory_metric": "Windows PeakWorkingSetSize, sampled every 25 ms; excludes VRAM",
+  "caveat": "One warmed off/on pair; wall time and RSS differences are not a statistical performance gate.",
+  "output_size": [
+    14400,
+    20160
+  ],
+  "matching": {
+    "gpu": true,
+    "topn_random": 1,
+    "write_mode": "stream",
+    "png_level": 1,
+    "color_adjust": false,
+    "overlay_strength": 0
+  },
+  "results": [
+    {
+      "label": "off",
+      "exit_code": 0,
+      "wall_seconds": 44.97311810000974,
+      "peak_rss_bytes": 326389760,
+      "output_bytes": 452236644,
+      "output_sha256": "6ef067685def75a1d5175be27cc6fcf2dbf113ceb3c5bee21b94077660bee57a",
+      "phases_ms": {
+        "Prep (DB+GPU)": 14128.7,
+        "ANN load": 378.1,
+        "Placement": 3583.6,
+        "Encoding": 27067.4,
+        "Preview (included in encoding)": 0
+      }
+    },
+    {
+      "label": "on",
+      "exit_code": 0,
+      "wall_seconds": 30.412838599993847,
+      "peak_rss_bytes": 326905856,
+      "output_bytes": 452236644,
+      "output_sha256": "6ef067685def75a1d5175be27cc6fcf2dbf113ceb3c5bee21b94077660bee57a",
+      "phases_ms": {
+        "Prep (DB+GPU)": 5360.9,
+        "ANN load": 245.7,
+        "Placement": 523.5,
+        "Encoding": 23561.0,
+        "Preview (included in encoding)": 1298.8
+      }
+    }
+  ],
+  "cli_failure": {
+    "exit_code": 1,
+    "main_image_readable": true,
+    "error_reports_main_path": true
+  },
+  "preview_pixel_and_row_buffer_bytes": 8455200
+}
