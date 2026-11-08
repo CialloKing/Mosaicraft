@@ -4,6 +4,10 @@ project(Mosaicraft VERSION 1.14.6 LANGUAGES CXX)
 # C++17
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(APPLE)
+    # Match the pinned codec headers rather than the runner's Homebrew headers.
+    set(CMAKE_NO_SYSTEM_FROM_IMPORTED ON)
+endif()
 
 # 输出目录：Release/bin/ (exe+dll)  Release/lib/ (.lib)
 # $<CONFIG> 让 Debug/Release 各自独立，CMake 不会重复追加

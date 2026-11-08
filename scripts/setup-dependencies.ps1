@@ -51,8 +51,8 @@ Export-Variable "CMAKE_BUILD_PARALLEL_LEVEL" $env:VCPKG_MAX_CONCURRENCY
 if ($isMac)
 {
     Export-Variable "MACOSX_DEPLOYMENT_TARGET" "13.0"
-    # Hosted Intel images can inherit Homebrew's JPEG headers through CPATH,
-    # producing objects for a different JPEG ABI than the pinned library.
+    # Remove inherited Homebrew search flags; the Intel triplet also pins
+    # OpenCV's quoted codec includes ahead of Clang's system directories.
     foreach ($name in @('CPATH', 'C_INCLUDE_PATH', 'CPLUS_INCLUDE_PATH', 'OBJC_INCLUDE_PATH',
         'LIBRARY_PATH', 'CPPFLAGS', 'CFLAGS', 'CXXFLAGS', 'LDFLAGS'))
     {
@@ -128,8 +128,9 @@ for ($attempt = 1; $attempt -le 3; $attempt++)
 {
     $attemptLog = Join-Path $work "install-attempt-$attempt.log"
     & $vcpkg @arguments 2>&1 | Tee-Object -FilePath $attemptLog
+    $installExitCode = $LASTEXITCODE
     Get-Content $attemptLog | Add-Content $log
-    if ($LASTEXITCODE -eq 0) { break }
+    if ($installExitCode -eq 0) { break }
     $failure = Get-Content $attemptLog -Raw
     # Retry transient source-download failures, never conceal a compiler failure.
     if ($attempt -eq 3 -or $failure -notmatch 'response code (429|50[0234])|timed out|Could not resolve host')
@@ -150,7 +151,7 @@ for ($attempt = 1; $attempt -le 3; $attempt++)
                     Select-String 'jpeglib.h|jconfig.h'
             }
         }
-        throw "vcpkg install failed: $LASTEXITCODE"
+        throw "vcpkg install failed: $installExitCode"
     }
     Start-Sleep -Seconds 5
 }

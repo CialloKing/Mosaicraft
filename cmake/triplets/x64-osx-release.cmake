@@ -7,3 +7,9 @@ set(VCPKG_OSX_DEPLOYMENT_TARGET 13.0)
 set(VCPKG_BUILD_TYPE release)
 # Do not discover an unrelated Homebrew JPEG ABI while building pinned ports.
 set(VCPKG_CMAKE_CONFIGURE_OPTIONS "-DCMAKE_IGNORE_PREFIX_PATH=/usr/local")
+if(PORT STREQUAL "opencv4")
+    # OpenCV uses quoted JPEG includes but marks dependency directories SYSTEM.
+    # Clang can otherwise pick /usr/local/include ahead of those directories.
+    set(VCPKG_C_FLAGS "-iquote \"${CURRENT_INSTALLED_DIR}/include\"")
+    set(VCPKG_CXX_FLAGS "${VCPKG_C_FLAGS}")
+endif()
