@@ -43,8 +43,25 @@ else()
     message(STATUS "CUDA: disabled (MOSAICRAFT_CUDA=OFF)")
 endif()
 
-# CUDA 架构（可通过 -DCUDA_ARCH=sm_xx 覆盖，默认 RTX 4060 / sm_89）
-set(CUDA_ARCH "sm_89" CACHE STRING "Target CUDA compute capability")
+# 单目标调用保持兼容；默认通用包同时携带六代原生内核。
+set(CUDA_ARCH "sm_75;sm_80;sm_86;sm_89;sm_90;sm_120" CACHE STRING "Semicolon-separated native CUDA targets")
+if(MOSAICRAFT_CUDA)
+    include(cmake/CudaArchitectures.cmake)
+    foreach(kind IN ITEMS code arch)
+        execute_process(COMMAND "${CUDAToolkit_NVCC_EXECUTABLE}" --list-gpu-${kind}
+            RESULT_VARIABLE result OUTPUT_VARIABLE supported_${kind} ERROR_VARIABLE error)
+        if(NOT result EQUAL 0)
+            message(FATAL_ERROR "Cannot query nvcc targets: ${error}")
+        endif()
+        string(REGEX MATCHALL "(sm|compute)_[0-9]+" supported_${kind} "${supported_${kind}}")
+    endforeach()
+    mosaicraft_cuda_architectures("${CUDA_ARCH}" "${supported_code}" "${supported_arch}"
+        CUDA_NATIVE_TARGETS CUDA_PTX_TARGET CUDA_CODE_FLAGS)
+    message(STATUS "CUDA native: ${CUDA_NATIVE_TARGETS}; PTX: ${CUDA_PTX_TARGET}")
+    # configure_file semantics preserve the timestamp until targets/compiler change.
+    file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/cuda-architectures.txt"
+        CONTENT "CudaArchitectures: ${CUDA_NATIVE_TARGETS}\nCudaPtx: ${CUDA_PTX_TARGET}\nNvcc: ${CUDAToolkit_NVCC_EXECUTABLE}\nCudaToolkit: ${CUDAToolkit_VERSION}\n")
+endif()
 
 # nvcc 平台适配：MSVC 需要额外的编译选项，对象文件扩展名也不同
 if(MSVC)
@@ -77,14 +94,15 @@ add_custom_command(
     COMMAND "${CUDAToolkit_BIN_DIR}/nvcc${CMAKE_EXECUTABLE_SUFFIX}"
         -c "${CMAKE_SOURCE_DIR}/compute/CudaBackend.cu"
         -o "${CUDA_OBJ1}"
-        -arch=${CUDA_ARCH} -std=c++17
+        ${CUDA_CODE_FLAGS} -std=c++17
         -ccbin "${CMAKE_CXX_COMPILER}"
         -I"${CMAKE_SOURCE_DIR}"
         -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
         -I"${VCPKG_TRIPLET_INCLUDE}"
         -I"${TIFF_INCLUDE_DIR}"
         ${NVCC_EXTRA_FLAGS}
-    DEPENDS "${CMAKE_SOURCE_DIR}/compute/CudaBackend.cu" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh"
+    VERBATIM
+    DEPENDS "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.cu" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh"
     COMMENT "Compiling CudaBackend.cu (${CUDA_ARCH})..."
 )
 
@@ -93,14 +111,15 @@ add_custom_command(
     COMMAND "${CUDAToolkit_BIN_DIR}/nvcc${CMAKE_EXECUTABLE_SUFFIX}"
         -c "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu"
         -o "${CUDA_OBJ2}"
-        -arch=${CUDA_ARCH} -std=c++17
+        ${CUDA_CODE_FLAGS} -std=c++17
         -ccbin "${CMAKE_CXX_COMPILER}"
         -I"${CMAKE_SOURCE_DIR}"
         -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
         -I"${VCPKG_TRIPLET_INCLUDE}"
         -I"${TIFF_INCLUDE_DIR}"
         ${NVCC_EXTRA_FLAGS}
-    DEPENDS "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu" "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.h" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh"
+    VERBATIM
+    DEPENDS "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu" "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.h" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh"
         "${CMAKE_SOURCE_DIR}/core/FeatureUtils.h" "${CMAKE_SOURCE_DIR}/core/GridWeights.inc" "${CMAKE_SOURCE_DIR}/core/FeatureExtractor.h" "${CMAKE_SOURCE_DIR}/core/UnicodeIO.h"
         "${CMAKE_SOURCE_DIR}/core/WorkerPool.h"
     COMMENT "Compiling FeatureExtractorCuda.cu..."
@@ -111,14 +130,15 @@ add_custom_command(
     COMMAND "${CUDAToolkit_BIN_DIR}/nvcc${CMAKE_EXECUTABLE_SUFFIX}"
         -c "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.cu"
         -o "${CUDA_OBJ3}"
-        -arch=${CUDA_ARCH} -std=c++17
+        ${CUDA_CODE_FLAGS} -std=c++17
         -ccbin "${CMAKE_CXX_COMPILER}"
         -I"${CMAKE_SOURCE_DIR}"
         -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
         -I"${VCPKG_TRIPLET_INCLUDE}"
         -I"${TIFF_INCLUDE_DIR}"
         ${NVCC_EXTRA_FLAGS}
-    DEPENDS "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.cu" "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.h"
+    VERBATIM
+    DEPENDS "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.cu" "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.h"
         "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh"
         "${CMAKE_SOURCE_DIR}/core/FeatureUtils.h" "${CMAKE_SOURCE_DIR}/core/GridWeights.inc" "${CMAKE_SOURCE_DIR}/core/FeatureExtractor.h"
         "${CMAKE_SOURCE_DIR}/core/WorkerPool.h"
@@ -130,13 +150,14 @@ add_custom_command(
     COMMAND "${CUDAToolkit_BIN_DIR}/nvcc${CMAKE_EXECUTABLE_SUFFIX}"
         -c "${CMAKE_SOURCE_DIR}/compute/CompatibleScoring.cu"
         -o "${CUDA_OBJ4}"
-        -arch=${CUDA_ARCH} -std=c++17 --fmad=false --prec-div=true --prec-sqrt=true --ftz=false
+        ${CUDA_CODE_FLAGS} -std=c++17 --fmad=false --prec-div=true --prec-sqrt=true --ftz=false
         -ccbin "${CMAKE_CXX_COMPILER}"
         -I"${CMAKE_SOURCE_DIR}"
         -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
         -I"${VCPKG_TRIPLET_INCLUDE}"
         ${NVCC_EXTRA_FLAGS}
-    DEPENDS "${CMAKE_SOURCE_DIR}/compute/CompatibleScoring.cu" "${CMAKE_SOURCE_DIR}/compute/CompatibleScoring.h"
+    VERBATIM
+    DEPENDS "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/CompatibleScoring.cu" "${CMAKE_SOURCE_DIR}/compute/CompatibleScoring.h"
         "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh"
         "${CMAKE_SOURCE_DIR}/core/MatchingBatch.h" "${CMAKE_SOURCE_DIR}/core/GridWeights.inc"
     COMMENT "Compiling CPU-compatible CUDA scoring..."
@@ -284,6 +305,7 @@ target_include_directories(mosaicraft_tests PRIVATE
 
 # CTest 集成
 enable_testing()
+add_test(NAME cuda_architecture_config COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_architectures.cmake")
 add_test(NAME mosaicraft_tests COMMAND mosaicraft_tests)
 
 add_executable(mosaicraft_regression_tests EXCLUDE_FROM_ALL
