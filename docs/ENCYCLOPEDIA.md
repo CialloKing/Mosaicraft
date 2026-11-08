@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-11-08 | 版本 / Version：v1.14.6
+> 最后更新 / Last updated：2026-11-09 | 版本 / Version：v1.14.7
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -43,7 +43,7 @@ Mosaicraft 是一个 GPU 加速的照片马赛克拼贴生成器。将数千张�
 - 图库规模：25,034 张（已验证），理论支持 10 万+
 - 输出分辨率：最高 50040×75200（3.76 亿像素）
 - 典型耗时：8,446 tiles / 33 秒（RTX 4060）
-- 发布包：~5 MB zip，解压即用（含 EXE + DLL + index.html）
+- 发布包：Windows ZIP、Linux/macOS ARM64 tar.gz，附带运行库及 Web UI，解压即用
 
 ---
 
@@ -362,6 +362,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.14.4 | 基础图透明叠加、全图坐标逐块采样、CLI/API/Web UI 参数同步 | 见叠加验证记录 |
 | 1.14.5 | CUDA 传输复用、动态尺寸特征提取、独立 CPU 兼容 CUDA 评分 | 见性能与兼容说明 |
 | 1.14.6 | 可选预览、同尺寸素材原字节保存、不同尺寸 JPEG 建库质量 100 | 见本版更新记录 |
+| 1.14.7 | 三平台 CPU 发布、云端 CUDA 候选、精简 Release 依赖与独立包验收 | 见 CI 与打包说明 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -785,3 +786,14 @@ CUDA/CPU-only CTest、两套 Web UI/API smoke、真实 GPU 精确回归及 Compu
 CUDA 和 CPU-only 的完整 CTest 各覆盖 57 个核心/API 用例及 30 个服务/输出回归用例，包括预览开关、像素一致性、跨条带缩放、中文路径、失败处理、同尺寸文件字节一致、独立副本、去重及已有特征不重写。预览的历史配对测量不能解释为端到端提速；同尺寸归一化三次中位数采样显示收益依格式和工作负载变化，完整建库未显示稳定提速。归一化性能记录采样时 JPEG 重编码质量仍为 90，不作为本版质量 100 配置的性能结论。详细方法与数据见 [可选预览图验证](PREVIEW_VERIFICATION.md)和 [同尺寸免重编码验证](SAME_SIZE_NORMALIZATION.md)。
 
 > **EN**: Version 1.14.6 adds opt-in CLI JPEG previews and automatically preserves original encoded bytes for exactly sized library images. Preview generation shares bounded area averaging across regular and streaming single-image outputs, runs after composition, and preserves the completed main image on preview failure. Library imports keep independent copies and compute hashes/features from stored pixels. Resized JPEG imports now use quality 100, including uppercase extensions. Features remain v6 and API contract 2.0; old records and valid features remain compatible. Reimported original JPEGs may differ from previously recompressed copies. Historical timing results retain their original sampling and quality settings and do not promise universal speedups.
+
+
+### v1.14.7: 三平台 CPU 发布与 CI 依赖优化 (2026-11-09)
+
+正式发布增加 Windows x64、Linux x64、macOS ARM64 CPU 包，Windows CUDA 包继续由本机 GPU Required 模式验收；云端 Windows/Linux CUDA 构建只提供候选，不进入正式附件。macOS 不提供 Intel 包。三平台 CPU 包及本机正式 CUDA 包使用同一源码提交，保留已发布 v1.14.6 的标签和附件。
+
+依赖工具与 ports 基线固定到 a0400024711b283056538ac19ced80b91a83c24c（OpenCV 4.12.0），仅启用 JPEG/PNG/TIFF/WebP、intrinsics 和 thread；依赖只构建 Release 动态库。日常 Windows/Linux CPU CI 共享按实际工具链和依赖配置生成的缓存，依赖成功后立即保存；CPU/CUDA 复用兼容缓存。冷、热缓存的单次对照分别为 Windows 12 分 11 秒/2 分 52 秒、Linux 6 分 28 秒/1 分 15 秒，完整分项与采样边界见 [CI 与打包](CI_PACKAGING.md)。
+
+统一程序目录发现及 Unicode 路径，使用系统浏览器入口，随包收集运行依赖并修复 Unix 相对库路径；tar.gz 保留执行权限和符号链接，macOS 使用 ad-hoc 签名。发布脚本支持 ZIP/tar.gz，BUILD_INFO 记录 GPU 验收状态；无可用 GPU 的 Required 模式失败。无设备时评分工作区直接拒绝准备，避免无驱动环境的 CUDA 分配错误。产品 CLI、特征 v6、API 合约 2.0 和图库格式保持兼容。
+
+> **EN**: Version 1.14.7 adds CPU release packages for Windows x64, Linux x64 and macOS ARM64, pinned minimal Release dependencies, shared binary caches and standalone archive verification. Formal Windows CUDA packages require local GPU validation; hosted Windows/Linux CUDA builds remain candidates. Native executable paths, Unicode handling, runtime deployment, relative loader paths and macOS ad-hoc signing support relocatable packages. Features remain v6, the API contract remains 2.0, and v1.14.6 stays unchanged.
