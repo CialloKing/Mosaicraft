@@ -43,6 +43,7 @@ Export-Variable "VCPKG_DEFAULT_TRIPLET" $Triplet
 Export-Variable "VCPKG_DEFAULT_HOST_TRIPLET" $Triplet
 Export-Variable "VCPKG_BINARY_SOURCES" "clear;files,$cache,$access"
 Export-Variable "VCPKG_DOWNLOADS" (Join-Path $repo "build/vcpkg-downloads")
+New-Item -ItemType Directory -Force -Path $env:VCPKG_DOWNLOADS | Out-Null
 Export-Variable "VCPKG_MAX_CONCURRENCY" $(if ($isMac -and $architecture -eq "arm64") { "2" } else { "4" })
 Export-Variable "MOSAICRAFT_VCPKG_INSTALLED_DIR" $installed
 Export-Variable "MOSAICRAFT_CMAKE_GENERATOR" $generator
@@ -55,7 +56,13 @@ if ($Mode -eq "Prepare")
     if (-not (Test-Path $vcpkg))
     {
         $bootstrap = Join-Path $VcpkgRoot $(if ($isWindowsHost) { "bootstrap-vcpkg.bat" } else { "bootstrap-vcpkg.sh" })
-        Invoke-Checked $bootstrap @("-disableMetrics")
+        for ($attempt = 1; $attempt -le 3; $attempt++)
+        {
+            & $bootstrap -disableMetrics
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -eq 3) { throw 'vcpkg bootstrap failed after three attempts' }
+            Start-Sleep -Seconds 5
+        }
     }
     if (-not $isWindowsHost -and -not (Get-Command ninja -ErrorAction SilentlyContinue))
     {
@@ -106,8 +113,20 @@ $arguments = @("install", "--x-manifest-root=$repo", "--triplet=$Triplet", "--ho
     "--x-install-root=$installed", "--overlay-triplets=$env:VCPKG_OVERLAY_TRIPLETS",
     "--x-buildtrees-root=$(Join-Path $repo 'build/vcpkg-buildtrees')",
     "--x-packages-root=$(Join-Path $repo 'build/vcpkg-packages')", "--disable-metrics")
-& $vcpkg @arguments 2>&1 | Tee-Object -FilePath $log
-if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed: $LASTEXITCODE" }
+for ($attempt = 1; $attempt -le 3; $attempt++)
+{
+    $attemptLog = Join-Path $work "install-attempt-$attempt.log"
+    & $vcpkg @arguments 2>&1 | Tee-Object -FilePath $attemptLog
+    Get-Content $attemptLog | Add-Content $log
+    if ($LASTEXITCODE -eq 0) { break }
+    $failure = Get-Content $attemptLog -Raw
+    # Retry transient source-download failures, never conceal a compiler failure.
+    if ($attempt -eq 3 -or $failure -notmatch 'response code (429|50[0234])|timed out|Could not resolve host')
+    {
+        throw "vcpkg install failed: $LASTEXITCODE"
+    }
+    Start-Sleep -Seconds 5
+}
 $timer.Stop()
 $text = Get-Content $log -Raw
 if ($text -match 'Installing [0-9]+/[0-9]+ (protobuf|abseil|flatbuffers)' -or $text -match 'Building [^ ]+-dbg')
