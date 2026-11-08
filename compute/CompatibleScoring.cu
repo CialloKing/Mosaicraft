@@ -163,6 +163,13 @@ bool CompatibleScoreWorkspace::prepare(int maxTiles, int candidates, int library
     {
         throw std::invalid_argument("invalid compatible CUDA scoring dimensions");
     }
+    // Candidate packages also run on machines without a driver. Refuse setup
+    // before calling allocation APIs, matching the CPU-only implementation.
+    if (!isCudaAvailable())
+    {
+        m_failure = "CUDA device is not available";
+        return false;
+    }
     const size_t residentBytes = checkedMatchProduct(libraryCount, libraryRowBytes);
     size_t free = 0, total = 0;
     if (!optionalCudaAllocation(cudaMemGetInfo(&free, &total)))
