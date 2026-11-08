@@ -25,7 +25,8 @@ $originalPath = $env:PATH
 $originalLdPath = $env:LD_LIBRARY_PATH
 $originalDyldPath = $env:DYLD_LIBRARY_PATH
 $downloadRoot = ""
-$extractRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("mosaicraft 验收_" + [System.Guid]::NewGuid().ToString("N"))
+$extractPrefix = if ($RequireStandalone) { 'mosaicraft 验收_' } else { 'mosaicraft_release_verify_extract_' }
+$extractRoot = Join-Path ([System.IO.Path]::GetTempPath()) ($extractPrefix + [System.Guid]::NewGuid().ToString("N"))
 $createdDownloadRoot = $false
 
 function Invoke-NativeOutput
@@ -618,12 +619,17 @@ try
             }
             Assert-PackageRuntime -Root $extractRoot
         }
-        Assert-PackageCommands -CliPath $cliPath -WebUiPath $webUiPath -VersionText $ExpectedVersion
-
-        if (-not $SkipSmoke)
+        # A package must find its own HTML, without a source-checkout fallback.
+        Push-Location $extractRoot
+        try
         {
-            Invoke-PackageSmoke -WebUiPath $webUiPath -Timeout $TimeoutSeconds
+            Assert-PackageCommands -CliPath $cliPath -WebUiPath $webUiPath -VersionText $ExpectedVersion
+            if (-not $SkipSmoke)
+            {
+                Invoke-PackageSmoke -WebUiPath $webUiPath -Timeout $TimeoutSeconds
+            }
         }
+        finally { Pop-Location }
     }
 
     Invoke-Step "Release asset verification summary" {

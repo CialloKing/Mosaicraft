@@ -373,6 +373,8 @@ try {
     }
     $serverProcess = Start-Process @startArgs
     Wait-Server -Process $serverProcess
+    $page = Invoke-WebRequest -Uri "$script:BaseUrl/" -TimeoutSec $TimeoutSeconds
+    Assert-True ($page.Content -match '(?i)<!doctype html>') 'Web UI should serve its HTML document'
 
     $info = Invoke-Api -Method "GET" -Path "/api/info"
     Assert-True ($info.ok -eq $true) "/api/info did not return ok=true"
