@@ -1,73 +1,64 @@
 name: CI
-
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-
+  workflow_dispatch:
+    inputs:
+      cache-namespace:
+        description: Cache namespace for a cold/warm validation pair
+        default: deps-v1
+permissions:
+  contents: read
 jobs:
-  windows-cpu:
-    name: Windows CPU-only
-    runs-on: windows-latest
-    env:
-      VCPKG_DEFAULT_TRIPLET: x64-windows
-
+  cpu:
+    name: ${{ matrix.platform }} CPU-only
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            runner: windows-2025-vs2026
+            triplet: x64-windows-release
+          - platform: linux-x64
+            runner: ubuntu-22.04
+            triplet: x64-linux-release
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: pwsh
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Locate vcpkg
-        shell: pwsh
-        run: |
-          if (-not $env:VCPKG_ROOT) {
-            $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
-          }
-          if (-not $env:VCPKG_ROOT) {
-            throw "VCPKG_ROOT is not available on this runner"
-          }
-          "VCPKG_ROOT=$env:VCPKG_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Prepare vcpkg binary cache
-        shell: pwsh
-        run: |
-          $cacheDir = Join-Path $env:RUNNER_TEMP "vcpkg-binary-cache"
-          New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
-          "VCPKG_BINARY_CACHE=$cacheDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "VCPKG_BINARY_SOURCES=clear;files,$cacheDir,readwrite" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Restore vcpkg binary cache
-        uses: actions/cache@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: ${{ runner.temp }}\vcpkg-binary-cache
-          key: ${{ runner.os }}-vcpkg-x64-windows-${{ hashFiles('.github/workflows/ci.yml', 'CMakeLists.txt', 'CMakePresets.json') }}
-          restore-keys: |
-            ${{ runner.os }}-vcpkg-x64-windows-
-
-      - name: Install dependencies
-        shell: pwsh
-        run: |
-          & "$env:VCPKG_ROOT\vcpkg.exe" install `
-            opencv4 `
-            sqlite3 `
-            tiff `
-            libpng `
-            libjpeg-turbo `
-            --triplet $env:VCPKG_DEFAULT_TRIPLET
-
-      - name: Release gate
-        shell: pwsh
-        run: |
-          .\scripts\release.ps1 `
-            -BuildDir build-ci `
-            -Configuration Release `
-            -ToolchainFile "$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
-            -NoCuda `
-            -PackageSuffix ci-cpu
-
-      - name: Upload release candidate package
-        uses: actions/upload-artifact@v4
+          persist-credentials: false
+      - uses: ./.github/actions/dependencies
         with:
-          name: Mosaicraft-v${{ github.sha }}-windows-x64-cpu-only
-          path: Mosaicraft_v*_ci-cpu.zip
-          if-no-files-found: error
+          triplet: ${{ matrix.triplet }}
+          cache-namespace: ${{ inputs.cache-namespace || 'deps-v1' }}
+      - name: Configure CPU Release
+        run: |
+          $configureArgs = @('-S', '.', '-B', 'build/ci', '-G', $env:MOSAICRAFT_CMAKE_GENERATOR,
+            '-DCMAKE_BUILD_TYPE=Release', '-DMOSAICRAFT_CUDA=OFF',
+            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake",
+            "-DVCPKG_TARGET_TRIPLET=$env:VCPKG_DEFAULT_TRIPLET",
+            "-DVCPKG_HOST_TRIPLET=$env:VCPKG_DEFAULT_HOST_TRIPLET",
+            "-DVCPKG_INSTALLED_DIR=$env:MOSAICRAFT_VCPKG_INSTALLED_DIR",
+            '-DVCPKG_MANIFEST_INSTALL=OFF')
+          if ($IsWindows) { $configureArgs += @('-A', 'x64') }
+          cmake @configureArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build
+        run: cmake --build build/ci --config Release --target mosaicraft MosaicraftWebUI mosaicraft_tests mosaicraft_regression_tests --parallel
+      - name: CTest
+        run: ctest --test-dir build/ci -C Release --output-on-failure
+      - name: Web UI/API smoke
+        run: cmake --build build/ci --config Release --target mosaicraft_webui_smoke
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-${{ matrix.platform }}-${{ github.sha }}
+          path: |
+            build/dependency-state/
+            build/ci/Testing/Temporary/
+          if-no-files-found: ignore

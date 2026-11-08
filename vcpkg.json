@@ -1,0 +1,13 @@
+{
+  "name": "mosaicraft-build-dependencies",
+  "version-string": "1",
+  "builtin-baseline": "a0400024711b283056538ac19ced80b91a83c24c",
+  "dependencies": [
+    {
+      "name": "opencv4",
+      "default-features": false,
+      "features": ["jpeg", "png", "tiff", "webp", "intrinsics", "thread"]
+    },
+    "sqlite3", "tiff", "libpng", "libjpeg-turbo"
+  ]
+}

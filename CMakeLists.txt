@@ -18,7 +18,7 @@ endif()
 # --- 跨平台依赖 ---
 # Windows (vcpkg): unofficial-sqlite3 + nvcc.exe + MSVC 编译选项
 # Linux (apt):    系统 SQLite3 + nvcc + GCC/Clang 编译选项
-find_package(OpenCV REQUIRED)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
 # sqlite3：优先 vcpkg (unofficial-sqlite3)，回退到系统包 (SQLite3)
 find_package(unofficial-sqlite3 CONFIG QUIET)
 if(NOT unofficial-sqlite3_FOUND)

@@ -1,0 +1,37 @@
+name: Pinned minimal dependencies
+description: Prepare, restore, install and immediately save compatible vcpkg binaries.
+inputs:
+  triplet:
+    required: true
+    description: Native Release-only triplet
+  cache-namespace:
+    default: deps-v1
+    description: Override only to isolate a cold/warm validation pair
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: microsoft/vcpkg
+        ref: a0400024711b283056538ac19ced80b91a83c24c
+        path: build/tools/vcpkg
+        persist-credentials: false
+    - name: Fingerprint toolchain
+      id: prepare
+      shell: pwsh
+      run: ./scripts/setup-dependencies.ps1 -Mode Prepare -VcpkgRoot ./build/tools/vcpkg -Triplet '${{ inputs.triplet }}' -CacheNamespace '${{ inputs.cache-namespace }}'
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: restore
+      with:
+        path: ${{ steps.prepare.outputs.cache-path }}
+        key: ${{ steps.prepare.outputs.cache-key }}
+        restore-keys: ${{ steps.prepare.outputs.cache-prefix }}
+    - name: Install minimal Release dependencies
+      shell: pwsh
+      run: ./scripts/setup-dependencies.ps1 -Mode Install -VcpkgRoot ./build/tools/vcpkg -Triplet '${{ inputs.triplet }}'
+    - name: Save dependencies before project tests
+      if: steps.prepare.outputs.cache-write == 'true' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.prepare.outputs.cache-path }}
+        key: ${{ steps.prepare.outputs.cache-key }}
