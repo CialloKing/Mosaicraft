@@ -15,27 +15,40 @@ inline bool checkPreflight(cudaError_t error, const char *stage, CudaAvailabilit
     {
         return true;
     }
-    status.reason = std::string(stage) + ": " + cudaGetErrorName(error) + " (" + cudaGetErrorString(error) + ")";
+    // Error-name/last-error APIs can themselves initialize the Windows runtime.
+    // In particular, do not call them after enumeration reports no driver.
+    // Preserve the numeric code without clearing any earlier execution failure.
+    const char *detail = nullptr;
     switch (error)
     {
     case cudaErrorNoDevice:
+        detail = "no CUDA device";
+        break;
     case cudaErrorInsufficientDriver:
     case cudaErrorInitializationError:
     case cudaErrorSystemDriverMismatch:
     case cudaErrorSystemNotReady:
     case cudaErrorCompatNotSupportedOnDevice:
+    case cudaErrorCallRequiresNewerDriver:
+        detail = "CUDA driver unavailable or incompatible";
+        break;
     case cudaErrorInvalidDeviceFunction:
     case cudaErrorNoKernelImageForDevice:
     case cudaErrorUnsupportedPtxVersion:
     case cudaErrorInvalidPtx:
     case cudaErrorJitCompilerNotFound:
-    case cudaErrorCallRequiresNewerDriver:
+        detail = "no compatible CUDA kernel or PTX image";
+        break;
     case cudaErrorMemoryAllocation:
-        cudaGetLastError();
-        return false;
+        detail = "CUDA preflight allocation failed";
+        break;
     default:
-        throw std::runtime_error("CUDA preflight: " + status.reason);
+        throw std::runtime_error(std::string("CUDA preflight: ") + stage + ": execution/unexpected error " +
+                                 std::to_string(static_cast<int>(error)));
     }
+    status.reason = std::string(stage) + ": " + detail + " (CUDA error " +
+                    std::to_string(static_cast<int>(error)) + ")";
+    return false;
 }
 
 template <class Kernel>

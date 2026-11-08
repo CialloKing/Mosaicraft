@@ -427,5 +427,5 @@
     "os": "Windows 10 22H2 x64"
   },
   "candidate_commit": "d9049ed6c2d454f67481e080709df618c869b9c1",
-  "followup": "Windows no-driver preflight now enumerates devices before querying driver details; arithmetic and target configuration unchanged."
+  "followup": "Windows no-driver preflight enumerates first; unavailable/error formatting uses only host code without CUDA error-query or cleanup APIs. Arithmetic and target configuration unchanged."
 }
