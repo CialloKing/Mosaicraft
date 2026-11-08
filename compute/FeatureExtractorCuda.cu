@@ -714,11 +714,11 @@ int launchKernel(const uint8_t *h_images, int N, double *h_avgLAB, float *h_grid
     auto &d_contrast = buffers.contrast;
     auto &d_edge = buffers.edge;
 
-    auto cudaCheck = [](cudaError_t e, const char *name, int W, int H)
+    auto cudaCheck = [](cudaError_t e, const char *name, int width, int height)
     {
         if (e != cudaSuccess)
         {
-            fprintf(stderr, "GPU OOM (%dx%d): %s for %s\n", W, H, cudaGetErrorString(e), name);
+            fprintf(stderr, "GPU OOM (%dx%d): %s for %s\n", width, height, cudaGetErrorString(e), name);
             return false;
         }
         return true;
