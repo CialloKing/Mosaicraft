@@ -1,4 +1,4 @@
-# Mosaicraft v1.14.5
+# Mosaicraft v1.14.6
 
 > GPU 加速的照片马赛克拼贴生成器 — 本地创建图库图片精准匹配，输出超大分辨率马赛克拼图
 
@@ -45,7 +45,7 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
 - **多分辨率** — 180×320 / 320×180 / 360×640 / 640×360 沿用模板内核；其他合法尺寸使用与 CPU 精确兼容的通用 CUDA 特征统计，宽高各支持 1～8192，资源不足时回退 CPU
 - **纯 CPU 模式** — `-D MOSAICRAFT_CUDA=OFF` 即可无 NVIDIA 平台编译
 
-v1.14.5 保持特征 v6 和现有图库兼容，无需重建。实测收益随尺寸和任务规模变化，部分短任务可能变慢，详见 [性能与兼容说明](docs/PERFORMANCE_v1.14.5.md)。
+v1.14.6 保持特征 v6 和现有图库兼容，无需重建。新增命令行可选预览，同尺寸素材默认保存原文件字节，不同尺寸 JPEG 建库质量提高到 100。完整更新见 [百科版本记录](https://github.com/CialloKing/Mosaicraft/blob/v1.14.6/docs/ENCYCLOPEDIA.md#v1146-可选预览与同尺寸素材免重编码-2026-11-08)。CUDA 历史性能及适用边界见 [v1.14.5 性能与兼容说明](https://github.com/CialloKing/Mosaicraft/blob/v1.14.5/docs/PERFORMANCE_v1.14.5.md)。
 
 ### 🖼️ 输出格式
 

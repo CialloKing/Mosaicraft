@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-10-23 | 版本 / Version：v1.14.5
+> 最后更新 / Last updated：2026-11-08 | 版本 / Version：v1.14.6
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -361,6 +361,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.14.3 | 特征缓存一致性、有界建库与匹配、任务内缓存及工作区复用、无偏对称亮度调整 | 见性能记录 |
 | 1.14.4 | 基础图透明叠加、全图坐标逐块采样、CLI/API/Web UI 参数同步 | 见叠加验证记录 |
 | 1.14.5 | CUDA 传输复用、动态尺寸特征提取、独立 CPU 兼容 CUDA 评分 | 见性能与兼容说明 |
+| 1.14.6 | 可选预览、同尺寸素材原字节保存、不同尺寸 JPEG 建库质量 100 | 见本版更新记录 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -772,3 +773,15 @@ CUDA 和 CPU-only 构建、完整 CTest、Web UI/API smoke、实际 CUDA 匹配�
 CUDA/CPU-only CTest、两套 Web UI/API smoke、真实 GPU 精确回归及 Compute Sanitizer 已完成，动态特征和兼容评分内存检查均为 0 错误。两项新增能力合并后的直接对比使用私有 96 张图库、25,600 块：256×256 普通/分析总耗时减少 21.5% / 18.2%，512×512 普通减少 8.0%、分析基本持平；1600 块的 256×256 短任务反而慢 10.3%～13.6%。这些是固定本机样本的完整生成结果，不能用评分内核倍数推算整个生成过程，也不承诺所有场景提速。详见 [v1.14.5 性能与兼容说明](PERFORMANCE_v1.14.5.md)、[传输流水线验证](CUDA_TRANSFER_PIPELINE.md)、[动态特征验证](DYNAMIC_CUDA_FEATURES.md)和 [独立评分验证](INDEPENDENT_CUDA_SCORING.md)。
 
 > **EN**: Version 1.14.5 ships reusable asynchronous CUDA transfers, generic feature statistics for valid custom dimensions, and independently selected CPU-compatible CUDA scoring. Existing v6 libraries, CLI/API parameters and API contract 2.0 remain compatible. Custom-size preprocessing, scoring arithmetic, missing-feature penalties and CPU selection semantics are preserved under the same build and inputs. Resource shortages before submission fall back independently; runtime failures abort. A direct 96-image, 25,600-tile comparison reduced total generation time by 18.2–21.5% at 256×256 and 8.0% for normal generation at 512×512, while 512×512 analysis was essentially unchanged. Short 256×256 tasks became 10.3–13.6% slower. See the report for exact baselines, full samples and scope.
+
+### v1.14.6: 可选预览与同尺寸素材免重编码 (2026-11-08)
+
+新增命令行 `--preview`，默认关闭。JPG、PNG、TIFF、WebP 单图输出可同步生成 `<主图名（不含扩展名）>_preview.jpg`，沿用最终主图路径，支持中文路径和 `--format` 改后缀。预览保持比例、不放大，最大宽度 1400、总像素不超过 400 万、单轴不超过 65500，JPEG 质量固定 92。使用已完成亮度调整和基础图叠加的合成像素做全图坐标面积平均，普通与流式输出共用有界累加器，不同条带大小不会改变结果。主图成功关闭后才保存预览；预览保存失败保留主图并返回非零退出码。关闭时不改动已有预览文件；与 `--tiled`、`--deepzoom` 组合会在生成前报参数错误。Web UI 和 REST API 暂不提供预览控制项，`--benchmark` 将其耗时列为 Encoding 的细分项。
+
+建库默认保留解码宽高与目标完全一致素材的原始编码字节，保存独立副本，跳过缩放、裁剪和重编码，保留压缩数据及内嵌元数据。一次读取的原字节同时用于解码和保存，避免源文件变化导致特征错配；同一文件跳过自复制，显式格式转换仍编码。CLI、API、Web UI 的普通建库及 `--normalize-only` 共用此逻辑；同目录建库沿用已有处理方式。模板 CUDA 流水线复用解码像素并移动到有界队列；需要重编码的素材仍重读落盘结果，CPU/通用 CUDA 沿用有界分批读取。解码或保存失败会报告路径，不新增相应数据库记录。
+
+尺寸不同的素材继续等比覆盖和中心裁剪，JPEG 建库编码质量由 90 提高到 **100**，PNG 压缩等级仍为 9；编码参数匹配支持大小写后缀。质量 100 仍采用 JPEG 编码，文件可能比旧版更大。同尺寸快速路径保留源压缩质量。特征版本仍为 **v6**，HTTP API 合约仍为 **2.0**，已有有效特征、记录 ID 和使用统计保留，无需迁移图库。去重依据实际保存图片的解码像素；旧版重压缩 JPEG 与新导入原图可能具有不同像素，再次导入可能新增记录。
+
+CUDA 和 CPU-only 的完整 CTest 各覆盖 57 个核心/API 用例及 30 个服务/输出回归用例，包括预览开关、像素一致性、跨条带缩放、中文路径、失败处理、同尺寸文件字节一致、独立副本、去重及已有特征不重写。预览的历史配对测量不能解释为端到端提速；同尺寸归一化三次中位数采样显示收益依格式和工作负载变化，完整建库未显示稳定提速。归一化性能记录采样时 JPEG 重编码质量仍为 90，不作为本版质量 100 配置的性能结论。详细方法与数据见 [可选预览图验证](PREVIEW_VERIFICATION.md)和 [同尺寸免重编码验证](SAME_SIZE_NORMALIZATION.md)。
+
+> **EN**: Version 1.14.6 adds opt-in CLI JPEG previews and automatically preserves original encoded bytes for exactly sized library images. Preview generation shares bounded area averaging across regular and streaming single-image outputs, runs after composition, and preserves the completed main image on preview failure. Library imports keep independent copies and compute hashes/features from stored pixels. Resized JPEG imports now use quality 100, including uppercase extensions. Features remain v6 and API contract 2.0; old records and valid features remain compatible. Reimported original JPEGs may differ from previously recompressed copies. Historical timing results retain their original sampling and quality settings and do not promise universal speedups.

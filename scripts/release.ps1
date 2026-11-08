@@ -574,6 +574,18 @@ try {
         Copy-RequiredFile -Source (Join-Path $RepoRoot "README.md") -Destination $packageRoot
         Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\API.md") -Destination (Join-Path $packageRoot "API.md")
         Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\ENCYCLOPEDIA.md") -Destination (Join-Path $packageRoot "ENCYCLOPEDIA.md")
+        # README 的本版验证链接在解压后也应可读，保留文档与原始采样的相对路径。
+        foreach ($document in @(
+            "docs\PREVIEW_VERIFICATION.md",
+            "docs\SAME_SIZE_NORMALIZATION.md",
+            "docs\performance\preview.json",
+            "docs\performance\same-size-normalization.json"
+        ))
+        {
+            $destination = Join-Path $packageRoot $document
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+            Copy-RequiredFile -Source (Join-Path $RepoRoot $document) -Destination $destination
+        }
         if (Test-Path -LiteralPath $performanceReport) {
             $performanceDir = Join-Path $packageRoot "docs"
             New-Item -ItemType Directory -Force -Path $performanceDir | Out-Null
