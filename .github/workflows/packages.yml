@@ -124,7 +124,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends patchelf
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Build six-architecture CUDA candidate and inspect native/PTX images
+      - name: Build seven-architecture CUDA candidate and inspect native/PTX images
         run: ./scripts/release.ps1 -BuildDir build/package-cuda -CudaValidation BuildOnly -OutputDir build/archives
       - name: Prove Required mode rejects a runner without GPU
         run: |

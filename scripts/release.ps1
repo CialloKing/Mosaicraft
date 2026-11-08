@@ -653,7 +653,8 @@ try {
             "docs\performance\preview.json",
             "docs\performance\same-size-normalization.json",
             "docs\performance\ci-packaging.json",
-            "docs\performance\cuda-architectures.json"
+            "docs\performance\cuda-architectures.json",
+            "docs\performance\cuda-seven-architectures.json"
         ))
         {
             $destination = Join-Path $packageRoot $document

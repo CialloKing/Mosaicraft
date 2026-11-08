@@ -28,7 +28,7 @@ Linux/macOS 分别选择 x64-linux-release、arm64-osx-release。Linux 打包还
 
 ## CUDA 验收状态
 
-云端编译器固定 CUDA 13.3.0/nvcc 13.3.33，使用 NVIDIA 官方重分发组件和锁定 SHA256；不安装显卡驱动。默认包含 sm_75、sm_80、sm_86、sm_89、sm_90、sm_120 原生内核及 compute_75 PTX，原算术编译参数保持不变。锁文件还固定 cuobjdump 13.3.29；打包前逐模块和最终程序核对架构，缺少任何目标即失败。
+云端编译器固定 CUDA 13.3.0/nvcc 13.3.33，使用 NVIDIA 官方重分发组件和锁定 SHA256；不安装显卡驱动。默认包含 sm_75、sm_80、sm_86、sm_89、sm_90、sm_100、sm_120 原生内核及对应七种 PTX，原算术编译参数保持不变。锁文件还固定 cuobjdump 13.3.29；打包前逐模块和最终程序核对架构，缺少任何目标即失败。
 
 ```powershell
 # 云端候选：完整 CPU 回退测试，但不声称 GPU 通过验收

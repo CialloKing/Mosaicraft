@@ -43,8 +43,8 @@ else()
     message(STATUS "CUDA: disabled (MOSAICRAFT_CUDA=OFF)")
 endif()
 
-# 单目标调用保持兼容；默认通用包同时携带六代原生内核。
-set(CUDA_ARCH "sm_75;sm_80;sm_86;sm_89;sm_90;sm_120" CACHE STRING "Semicolon-separated native CUDA targets")
+# 单目标调用保持兼容；默认通用包同时携带七种原生内核及对应 PTX。
+set(CUDA_ARCH "sm_75;sm_80;sm_86;sm_89;sm_90;sm_100;sm_120" CACHE STRING "Semicolon-separated native CUDA targets")
 if(MOSAICRAFT_CUDA)
     include(cmake/CudaArchitectures.cmake)
     foreach(kind IN ITEMS code arch)

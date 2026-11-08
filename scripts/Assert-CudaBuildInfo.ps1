@@ -4,7 +4,12 @@ function Assert-CudaBuildInfo([hashtable]$Info)
     $present = @($fields | Where-Object { $Info.ContainsKey($_) })
     if ($present.Count -eq 0) { return } # Historical archives remain verifiable.
     if ($present.Count -ne $fields.Count -or $Info.Runtime -ne 'cuda') { throw 'Incomplete or misplaced CUDA build metadata' }
-    if ($Info.CudaArchitectures -ne 'sm_75;sm_80;sm_86;sm_89;sm_90;sm_120' -or $Info.CudaPtx -ne 'compute_75')
+    $universal = 'sm_75;sm_80;sm_86;sm_89;sm_90;sm_100;sm_120'
+    $current = $Info.CudaArchitectures -eq $universal -and $Info.CudaPtx -eq ($universal -replace 'sm_', 'compute_')
+    # Ordinary verification still accepts the earlier six-target/one-PTX format.
+    # New package creation independently requires the current universal images.
+    $legacy = $Info.CudaArchitectures -eq 'sm_75;sm_80;sm_86;sm_89;sm_90;sm_120' -and $Info.CudaPtx -eq 'compute_75'
+    if (-not $current -and -not $legacy)
     {
         throw 'CUDA archive does not describe the universal native/PTX targets'
     }

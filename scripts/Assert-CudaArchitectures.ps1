@@ -12,10 +12,11 @@ foreach ($line in Get-Content -LiteralPath (Join-Path $BuildDir 'cuda-architectu
     if ($line -match '^([^:]+):\s*(.*)$') { $info[$Matches[1]] = $Matches[2] }
 }
 $targets = @($info.CudaArchitectures -split ';')
-$ptx = $info.CudaPtx -replace '^compute_', 'sm_'
-if ($RequireUniversal -and (($targets -join ';') -ne 'sm_75;sm_80;sm_86;sm_89;sm_90;sm_120' -or $ptx -ne 'sm_75'))
+$ptx = @($info.CudaPtx -split ';' | ForEach-Object { $_ -replace '^compute_', 'sm_' })
+$universal = 'sm_75;sm_80;sm_86;sm_89;sm_90;sm_100;sm_120'
+if ($RequireUniversal -and (($targets -join ';') -ne $universal -or ($ptx -join ';') -ne $universal))
 {
-    throw 'Universal CUDA package requires all six native targets and compute_75 PTX; reconfigure CUDA_ARCH or use a fresh build directory.'
+    throw 'Universal CUDA package requires all seven native targets and matching PTX; reconfigure CUDA_ARCH or use a fresh build directory.'
 }
 function Assert-Images([string]$Path, [int]$Modules)
 {
