@@ -48,7 +48,17 @@ Export-Variable "VCPKG_MAX_CONCURRENCY" $(if ($isMac -and $architecture -eq "arm
 Export-Variable "MOSAICRAFT_VCPKG_INSTALLED_DIR" $installed
 Export-Variable "MOSAICRAFT_CMAKE_GENERATOR" $generator
 Export-Variable "CMAKE_BUILD_PARALLEL_LEVEL" $env:VCPKG_MAX_CONCURRENCY
-if ($isMac) { Export-Variable "MACOSX_DEPLOYMENT_TARGET" "13.0" }
+if ($isMac)
+{
+    Export-Variable "MACOSX_DEPLOYMENT_TARGET" "13.0"
+    # Hosted Intel images can inherit Homebrew's JPEG headers through CPATH,
+    # producing objects for a different JPEG ABI than the pinned library.
+    foreach ($name in @('CPATH', 'C_INCLUDE_PATH', 'CPLUS_INCLUDE_PATH', 'OBJC_INCLUDE_PATH',
+        'LIBRARY_PATH', 'CPPFLAGS', 'CFLAGS', 'CXXFLAGS', 'LDFLAGS'))
+    {
+        Export-Variable $name ''
+    }
+}
 $vcpkg = Join-Path $VcpkgRoot $(if ($isWindowsHost) { "vcpkg.exe" } else { "vcpkg" })
 
 if ($Mode -eq "Prepare")

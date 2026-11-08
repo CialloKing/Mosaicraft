@@ -5,3 +5,5 @@ set(VCPKG_CMAKE_SYSTEM_NAME Darwin)
 set(VCPKG_OSX_ARCHITECTURES x86_64)
 set(VCPKG_OSX_DEPLOYMENT_TARGET 13.0)
 set(VCPKG_BUILD_TYPE release)
+# Do not discover an unrelated Homebrew JPEG ABI while building pinned ports.
+set(VCPKG_CMAKE_CONFIGURE_OPTIONS "-DCMAKE_IGNORE_PREFIX_PATH=/usr/local")

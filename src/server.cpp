@@ -225,28 +225,31 @@ static std::string readFile(const std::string& path)
 
 static std::string findHtml()
 {
-    std::vector<std::string> candidates;
-
     const auto exeDir = mosaicraft::executableDirectory();
-    // Published layout: same directory as the executable.
-    candidates.push_back((exeDir / "index.html").u8string());
-    candidates.push_back((exeDir / "tools/command-builder/index.html").u8string());
-    // Development layout: build/Release to tools/command-builder.
-    candidates.push_back((exeDir / "../../tools/command-builder/index.html").string());
-    // Development layout: build to tools/command-builder.
-    candidates.push_back((exeDir / "../tools/command-builder/index.html").string());
-    // Common paths relative to the current working directory.
-    candidates.push_back("index.html");
-    candidates.push_back("tools/command-builder/index.html");
-    candidates.push_back("../tools/command-builder/index.html");
-    candidates.push_back("../../tools/command-builder/index.html");
-
-    for (const auto& c : candidates) {
-        try {
-            if (std::filesystem::exists(std::filesystem::u8path(c))) {
-                return std::filesystem::canonical(std::filesystem::u8path(c)).u8string();
+    // Keep native paths until returning UTF-8; ANSI conversion can throw on
+    // Chinese archive directories even when the published index.html exists.
+    const std::vector<std::filesystem::path> candidates
+    {
+        exeDir / "index.html",
+        exeDir / "tools/command-builder/index.html",
+        exeDir / "../../tools/command-builder/index.html",
+        exeDir / "../tools/command-builder/index.html",
+        "index.html", "tools/command-builder/index.html",
+        "../tools/command-builder/index.html", "../../tools/command-builder/index.html"
+    };
+    for (const auto& candidate : candidates)
+    {
+        try
+        {
+            if (std::filesystem::exists(candidate))
+            {
+                return std::filesystem::canonical(candidate).u8string();
             }
-        } catch (...) {}
+        }
+        catch (const std::filesystem::filesystem_error&)
+        {
+            // A missing development layout must not hide another valid layout.
+        }
     }
     return "";  // not found
 }

@@ -252,7 +252,7 @@ function Wait-Server {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
         if ($Process.HasExited) {
-            throw "MosaicraftWebUI exited before smoke test could connect."
+            throw "MosaicraftWebUI exited ($($Process.ExitCode)) before smoke test could connect. stdout: $(Read-LogTail $script:StdoutPath) stderr: $(Read-LogTail $script:StderrPath)"
         }
         try {
             $pong = Invoke-Api -Method "GET" -Path "/api/ping"

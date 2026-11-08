@@ -7,6 +7,16 @@ function Compress-ReleaseArchive
         & tar -czf $Destination -C $Root .
         if ($LASTEXITCODE -ne 0) { throw 'tar compression failed' }
     }
+    elseif ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT)
+    {
+        Push-Location $Root
+        try
+        {
+            & zip -q -y -r $Destination .
+            if ($LASTEXITCODE -ne 0) { throw 'zip compression failed' }
+        }
+        finally { Pop-Location }
+    }
     else
     {
         Compress-Archive -Path (Join-Path $Root '*') -DestinationPath $Destination -CompressionLevel Optimal
@@ -23,7 +33,15 @@ function Expand-ReleaseArchive
     }
     elseif ($Path.EndsWith('.zip'))
     {
-        Expand-Archive -LiteralPath $Path -DestinationPath $Destination -Force
+        if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT)
+        {
+            Expand-Archive -LiteralPath $Path -DestinationPath $Destination -Force
+        }
+        else
+        {
+            & unzip -q $Path -d $Destination
+            if ($LASTEXITCODE -ne 0) { throw 'zip extraction failed' }
+        }
     }
     else
     {
