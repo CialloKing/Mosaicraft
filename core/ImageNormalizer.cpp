@@ -6,9 +6,32 @@
 #include <opencv2/imgproc.hpp>
 
 #include <iostream>
+#include <utility>
 
 namespace mosaicraft
 {
+
+namespace
+{
+std::string imageFormat(const std::string& path)
+{
+    auto extension = pathToUtf8(u8path(path).extension());
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char c)
+                   {
+                       return static_cast<char>(std::tolower(c));
+                   });
+    if (extension == ".jpeg")
+    {
+        return ".jpg";
+    }
+    if (extension == ".tif")
+    {
+        return ".tiff";
+    }
+    return extension;
+}
+} // namespace
 
 ImageNormalizer::ImageNormalizer(int targetWidth, int targetHeight)
     : m_targetWidth(targetWidth)
@@ -16,36 +39,78 @@ ImageNormalizer::ImageNormalizer(int targetWidth, int targetHeight)
 {
 }
 
-bool ImageNormalizer::process(const std::string& inputPath, const std::string& outputPath)
+bool ImageNormalizer::process(const std::string& inputPath, const std::string& outputPath,
+                              const std::vector<int>& writeParams, cv::Mat* storedPixels)
 {
-    // 1. 读取图片
-    cv::Mat src = imreadUnicode(inputPath, cv::IMREAD_COLOR);
-    if (src.empty())
+    if (storedPixels)
     {
-        std::cerr << "ERROR: Cannot read image: " << inputPath << std::endl;
+        storedPixels->release();
+    }
+    try
+    {
+        // 保存与解码共用同一份字节，源文件随后变化也不会使特征与图库副本错配。
+        auto encoded = readBytesUnicode(inputPath);
+        cv::Mat src = encoded.empty() ? cv::Mat() : cv::imdecode(encoded, cv::IMREAD_COLOR);
+        if (src.empty())
+        {
+            throw std::runtime_error("cannot decode input");
+        }
+        if (src.cols == m_targetWidth && src.rows == m_targetHeight && imageFormat(inputPath) == imageFormat(outputPath))
+        {
+            std::error_code ec;
+            const bool sameFile = std::filesystem::equivalent(u8path(inputPath), u8path(outputPath), ec);
+            if (!sameFile && !writeBytesUnicode(outputPath, encoded))
+            {
+                throw std::runtime_error("cannot save original bytes");
+            }
+            if (storedPixels)
+            {
+                *storedPixels = std::move(src);
+            }
+            return true;
+        }
+        // 不再需要原编码数据，避免它与缩放、编码的临时缓冲同时存活。
+        std::vector<uint8_t>().swap(encoded);
+        const cv::Mat normalized = normalize(src);
+        if (!imwriteUnicode(outputPath, normalized, writeParams))
+        {
+            throw std::runtime_error("cannot save normalized image");
+        }
+        if (storedPixels)
+        {
+            // 有损重编码会改变像素；这里仍以实际落盘图片为特征来源。
+            cv::Mat saved = imreadUnicode(outputPath, cv::IMREAD_COLOR);
+            if (saved.empty())
+            {
+                throw std::runtime_error("cannot decode saved image");
+            }
+            *storedPixels = std::move(saved);
+        }
+        return true;
+    }
+    catch (const std::exception& error)
+    {
+        std::cerr << "ERROR: Cannot normalize " << inputPath << " -> " << outputPath << ": " << error.what() << std::endl;
         return false;
     }
-
-    // 2. 等比缩放至覆盖目标尺寸
-    cv::Mat covered = resizeToCover(src);
-
-    // 3. 中心裁剪到精确尺寸
-    cv::Mat cropped = centerCrop(covered);
-
-    // 4. 写入输出文件
-    if (!imwriteUnicode(outputPath, cropped))
-    {
-        std::cerr << "ERROR: Cannot write image: " << outputPath << std::endl;
-        return false;
-    }
-
-    return true;
 }
 
 cv::Mat ImageNormalizer::processToMat(const std::string& inputPath)
 {
     cv::Mat src = imreadUnicode(inputPath, cv::IMREAD_COLOR);
-    if (src.empty()) return cv::Mat();
+    if (src.empty())
+    {
+        return {};
+    }
+    return normalize(src);
+}
+
+cv::Mat ImageNormalizer::normalize(const cv::Mat& src)
+{
+    if (src.cols == m_targetWidth && src.rows == m_targetHeight)
+    {
+        return src;
+    }
     cv::Mat covered = resizeToCover(src);
     return centerCrop(covered);
 }

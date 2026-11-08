@@ -2,6 +2,7 @@
 
 #include <opencv2/core.hpp>
 #include <string>
+#include <vector>
 
 namespace mosaicraft
 {
@@ -14,9 +15,11 @@ public:
     // 默认目标尺寸与 Mosaicraft 图库规格一致
     explicit ImageNormalizer(int targetWidth = 180, int targetHeight = 320);
 
-    // 处理单张图片：读取 → 缩放 → 裁剪 → 写入
+    // 同尺寸、同格式时原字节保存；否则缩放、裁剪后编码。
+    // storedPixels 按需返回实际保存内容的解码像素，供特征流水线使用。
     // 成功返回 true，失败返回 false（并输出错误信息到 stderr）
-    bool process(const std::string& inputPath, const std::string& outputPath);
+    bool process(const std::string& inputPath, const std::string& outputPath,
+                 const std::vector<int>& writeParams = {}, cv::Mat* storedPixels = nullptr);
 
     // 返回归一化后的 cv::Mat（不写磁盘），供流水线使用
     cv::Mat processToMat(const std::string& inputPath);
@@ -27,6 +30,7 @@ public:
     cv::Mat centerCrop(const cv::Mat& src);
 
 private:
+    cv::Mat normalize(const cv::Mat& src);
     int m_targetWidth;
     int m_targetHeight;
 };

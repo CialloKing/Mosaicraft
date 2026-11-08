@@ -8,6 +8,7 @@
 #include "../core/FeatureUtils.h"
 #include "../core/GridDuplicateCache.h"
 #include "../core/ImageCache.h"
+#include "../core/ImageNormalizer.h"
 #include "../core/MatchingAccess.h"
 #include "../core/MosaicOutput.h"
 #include "../core/PngStreamWriter.h"
@@ -982,6 +983,84 @@ TEST_CASE("regression: service errors stay stable for invalid paths")
     const auto mosaic = MosaicService().run(badMosaic);
     CHECK_FALSE(mosaic.ok);
     CHECK(mosaic.message.find("outputPath is a directory") != std::string::npos);
+}
+
+TEST_CASE("same-size normalization preserves source bytes and independent saved pixels")
+{
+    TempWorkspace workspace;
+    ImageNormalizer normalizer;
+    cv::Mat source(320, 180, CV_8UC3);
+    cv::RNG(42).fill(source, cv::RNG::UNIFORM, 0, 256);
+    for (const std::string extension : {"jpg", "jpeg", "png", "bmp", "tif", "webp"})
+    {
+        const auto input = utf8(workspace.inputDir() / u8path(std::string(u8"原图.") + extension));
+        const auto output = utf8(workspace.outputDir() / u8path(std::string(u8"副本.") + extension));
+        cv::Mat pixels = source;
+        if (extension == "png")
+        {
+            // 高位深和透明通道属于原文件内容，匹配仍使用现有的 8 位 BGR 解码规则。
+            pixels.create(320, 180, CV_16UC4);
+            cv::RNG(123).fill(pixels, cv::RNG::UNIFORM, 0, 65536);
+        }
+        REQUIRE(imwriteUnicode(input, pixels, {cv::IMWRITE_JPEG_QUALITY, 97, cv::IMWRITE_PNG_COMPRESSION, 1,
+                                               cv::IMWRITE_WEBP_QUALITY, 83}));
+        const auto original = readBytesUnicode(input);
+        const cv::Mat decoded = imreadUnicode(input);
+        cv::Mat saved;
+        REQUIRE(normalizer.process(input, output, {cv::IMWRITE_JPEG_QUALITY, 90}, &saved));
+        CHECK(readBytesUnicode(output) == original);
+        CHECK_FALSE(fs::equivalent(u8path(input), u8path(output)));
+        CHECK(cv::norm(saved, decoded, cv::NORM_INF) == 0);
+        CHECK(cv::norm(imreadUnicode(output), decoded, cv::NORM_INF) == 0);
+        CHECK(cv::norm(normalizer.processToMat(input), decoded, cv::NORM_INF) == 0);
+        const auto stamp = fs::file_time_type::clock::now() - std::chrono::hours(1);
+        fs::last_write_time(u8path(input), stamp);
+        REQUIRE(normalizer.process(input, input));
+        CHECK(fs::last_write_time(u8path(input)) == stamp);
+        REQUIRE(writeBytesUnicode(input, {1, 2, 3}));
+        CHECK(readBytesUnicode(output) == original);
+    }
+}
+
+TEST_CASE("normalization retains resized encoding conversion and failure behavior")
+{
+    TempWorkspace workspace;
+    ImageNormalizer normalizer;
+    cv::Mat source(200, 384, CV_8UC3);
+    cv::RNG(17).fill(source, cv::RNG::UNIFORM, 0, 256);
+    const auto input = utf8(workspace.inputDir() / "input.png");
+    requireWriteImage(u8path(input), source);
+    for (const std::string extension : {"jpg", "png"})
+    {
+        const std::vector<int> params = extension == "jpg" ? std::vector<int>{cv::IMWRITE_JPEG_QUALITY, 90}
+                                                           : std::vector<int>{cv::IMWRITE_PNG_COMPRESSION, 9};
+        const auto baseline = utf8(workspace.outputDir() / ("baseline." + extension));
+        const auto output = utf8(workspace.outputDir() / ("output." + extension));
+        const cv::Mat normalized = normalizer.centerCrop(normalizer.resizeToCover(source));
+        REQUIRE(imwriteUnicode(baseline, normalized, params));
+        cv::Mat saved;
+        REQUIRE(normalizer.process(input, output, params, &saved));
+        CHECK(readBytesUnicode(output) == readBytesUnicode(baseline));
+        CHECK(cv::norm(saved, imreadUnicode(output), cv::NORM_INF) == 0);
+        CHECK(cv::norm(normalizer.processToMat(input), normalized, cv::NORM_INF) == 0);
+    }
+    const cv::Mat exact(320, 180, CV_8UC3, cv::Scalar(20, 80, 160));
+    requireWriteImage(u8path(input), exact);
+    const auto converted = utf8(workspace.outputDir() / "converted.jpg");
+    REQUIRE(normalizer.process(input, converted)); // 用户要求转换格式时，即使同尺寸也仍然编码。
+    CHECK(readBytesUnicode(converted)[0] == 0xff);
+    CHECK(readBytesUnicode(converted)[1] == 0xd8);
+    const auto blocked = workspace.outputDir() / "blocked.png";
+    fs::create_directory(blocked);
+    cv::Mat saved = source.clone();
+    CHECK_FALSE(normalizer.process(input, utf8(blocked), {}, &saved));
+    CHECK(saved.empty());
+    CHECK(cv::norm(imreadUnicode(input), exact, cv::NORM_INF) == 0);
+    const auto invalid = utf8(workspace.inputDir() / "invalid.png");
+    REQUIRE(writeBytesUnicode(invalid, {1, 2, 3}));
+    CHECK_FALSE(normalizer.process(invalid, converted));
+    CHECK(normalizer.processToMat(invalid).empty());
+    CHECK_FALSE(normalizer.process(utf8(workspace.root / "missing.png"), converted));
 }
 
 TEST_CASE("preview accumulator bounds dimensions and preserves small images")

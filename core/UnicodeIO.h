@@ -105,20 +105,28 @@ inline std::filesystem::path u8path(const std::string& utf8)
 // Unicode-safe imread / imwrite
 // Paths are UTF-8 encoded std::string.
 // ============================================================
-inline cv::Mat imreadUnicode(const std::string& utf8Path,
-                              int flags = cv::IMREAD_COLOR)
+inline std::vector<uint8_t> readBytesUnicode(const std::string& utf8Path)
 {
     std::ifstream ifs(u8path(utf8Path), std::ios::binary);
     if (!ifs.is_open())
     {
-        return cv::Mat();
+        return {};
     }
 
     std::vector<uint8_t> data(
         (std::istreambuf_iterator<char>(ifs)),
         std::istreambuf_iterator<char>());
-    ifs.close();
+    if (ifs.bad())
+    {
+        return {};
+    }
+    return data;
+}
 
+inline cv::Mat imreadUnicode(const std::string& utf8Path,
+                              int flags = cv::IMREAD_COLOR)
+{
+    const auto data = readBytesUnicode(utf8Path);
     if (data.empty())
     {
         return {};
@@ -134,27 +142,27 @@ inline cv::Mat imreadUnicode(const std::string& utf8Path,
     }
 }
 
-inline bool imwriteUnicode(const std::string& utf8Path,
-                            const cv::Mat& img,
-                            const std::vector<int>& params = {})
+inline bool writeBytesUnicode(const std::string& utf8Path, const std::vector<uint8_t>& data)
 {
-    std::string ext = u8path(utf8Path).extension().string();
-    std::vector<uint8_t> buf;
-    if (!cv::imencode(ext, img, buf, params))
-    {
-        return false;
-    }
-
     std::ofstream ofs(u8path(utf8Path), std::ios::binary);
     if (!ofs.is_open())
     {
         return false;
     }
 
-    ofs.write(reinterpret_cast<const char*>(buf.data()),
-              static_cast<std::streamsize>(buf.size()));
+    ofs.write(reinterpret_cast<const char*>(data.data()),
+              static_cast<std::streamsize>(data.size()));
     ofs.close();
     return ofs.good();
+}
+
+inline bool imwriteUnicode(const std::string& utf8Path,
+                            const cv::Mat& img,
+                            const std::vector<int>& params = {})
+{
+    std::string ext = u8path(utf8Path).extension().string();
+    std::vector<uint8_t> buf;
+    return cv::imencode(ext, img, buf, params) && writeBytesUnicode(utf8Path, buf);
 }
 
 } // namespace mosaicraft
