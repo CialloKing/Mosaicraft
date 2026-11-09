@@ -649,6 +649,9 @@ try {
         Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\ENCYCLOPEDIA.md") -Destination (Join-Path $packageRoot "ENCYCLOPEDIA.md")
         # README 的本版验证链接在解压后也应可读，保留文档与原始采样的相对路径。
         foreach ($document in @(
+            "docs\API.md",
+            "docs\ENGINE_REFACTOR_VERIFICATION.md",
+            "docs\RUNTIME_DIAGNOSTICS_VERIFICATION.md",
             "docs\PREVIEW_VERIFICATION.md",
             "docs\SAME_SIZE_NORMALIZATION.md",
             "docs\CI_PACKAGING.md",

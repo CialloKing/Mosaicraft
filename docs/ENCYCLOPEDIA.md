@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-11-09 | 版本 / Version：v1.14.8
+> 最后更新 / Last updated：2026-11-09 | 版本 / Version：v1.15.0
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -365,6 +365,8 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.14.5 | CUDA 传输复用、动态尺寸特征提取、独立 CPU 兼容 CUDA 评分 | 见性能与兼容说明 |
 | 1.14.6 | 可选预览、同尺寸素材原字节保存、不同尺寸 JPEG 建库质量 100 | 见本版更新记录 |
 | 1.14.7 | 三平台 CPU 发布、云端 CUDA 候选、精简 Release 依赖与独立包验收 | 见 CI 与打包说明 |
+| 1.14.8 | 七架构 CUDA、Linux CUDA 正式附件与实际内核预检 | 见 CUDA 验证报告 |
+| **1.15.0** | 统一运行诊断、阶段进度、API 2.1 与 Web UI 任务和结果体验 | 见运行诊断验收 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -757,3 +759,16 @@ CUDA 和 CPU-only 的完整 CTest 各覆盖 57 个核心/API 用例及 30 个服
 本机 Ada 已通过禁用 PTX JIT、强制 PTX JIT 两种模式的完整 GPU 回归及 CPU-only 回归；私有 24 张素材、两种图库尺寸、三种执行模式共 24 轮采样的选图 ID 与输出像素一致，模板浮点差异符合既有容差。其他架构只完成编译覆盖，尚未实机验证；PTX JIT 仍要求驱动支持对应 PTX ISA。包内 BUILD_INFO 记录实际架构、PTX 与验收设备。性能和体积是特定本机样本，不承诺所有架构或场景提速，详见 [CUDA 验证报告](CUDA_ARCHITECTURES.md)及 [七架构采样](performance/cuda-seven-architectures.json)。既有 v1.14.6/v1.14.7 标签和附件不变。
 
 > **EN**: Version 1.14.8 ships native CUDA images and matching PTX for seven targets (75/80/86/89/90/100/120), checks real kernel compatibility before GPU work, and retains CPU fallback before execution. Runtime failures still propagate. Linux x64 CUDA joins the five formal platform/runtime archives with an explicit GPU-not-tested status; Windows CUDA still requires local hardware validation. Every archive uses the same source commit and receives standalone verification. Ada has native/JIT hardware coverage; other architectures have build coverage only. Features remain v6 and API contract 2.0.
+
+
+### v1.15.0: 统一运行诊断与 Web UI 任务体验 (2026-11-09)
+
+引擎、CLI、服务与任务管理共用运行诊断，失败点提供稳定原因码、字段和路径；阶段进度使用真实计数，未知总量不拼接整体百分比。归一化与特征处理分别展示，实际 CPU/CUDA 后端与回退原因可见。保留原退出码、任务状态与报告提交语义，主图成功关闭后才登记，后续预览或统计提交失败不隐藏已经保存的主图。
+
+API 合约升级为 2.1，主兼容版本仍为 2，保留旧字段和端点。新增服务会话与工作目录、任务增量事件和按登记 ID 访问的产物。事件最多 256 条/256 KiB，UTF-8 安全截断；独立保留终止错误和警告汇总。最近 50 个完成任务只保留在服务内存，清理记录不删除文件。下载验证大小、修改时间与路径，固定缓冲流式发送，HTML 报告作为附件。
+
+Web UI 沿用原参数页与命令生成器，新增任务列表、详情、恢复参数、断线退避重连、刷新恢复、会话变化提示及诊断复制/导出。仅取消排队任务；提交响应丢失不自动重发。结果区使用实际文件路径、格式、尺寸和匹配统计，可选有界 JPEG 预览默认关闭，分块与 DeepZoom 禁用预览。表单草稿和按用途分类的最近路径保存在浏览器本地，PowerShell 路径统一单引号引用并双写内部单引号。
+
+源码构建流程统一以 README 为完整入口，CI 使用对应 Preset 显式构建产品和测试。核心引擎渐进拆出报告、性能统计打印及任务级邻域策略，保留浮点累加顺序、排序与随机数调用。未调整 CUDA 内核、评分权重、预算、特征 v6 或图库格式。功能验收中 Windows CPU/CUDA 完整 CTest、HTTP smoke 与八组严格对照通过；真实浏览器验证任务恢复、阶段计数、取消、回退、路径复用、预览和部分成功结果。诊断 JSON 的系统下载落盘未自动确认，其余具体边界见 [运行诊断验收](RUNTIME_DIAGNOSTICS_VERIFICATION.md)和 [引擎整理验收](ENGINE_REFACTOR_VERIFICATION.md)。发布包另按 [发布清单](RELEASE_CHECKLIST.md)执行原生构建、独立包与真实附件验收。
+
+> **EN**: Version 1.15.0 adds shared runtime diagnostics, real stage counters, backend/fallback reporting and artifact registration. API 2.1 preserves major version 2 while adding session identity, bounded incremental events, task restoration and streamed artifact downloads. The existing Web UI gains task history/reconnection, queued cancellation, reusable paths, correct PowerShell quoting and opt-in bounded previews. Closed main images remain discoverable after later-stage failures. Engine report/metrics/neighborhood refactoring preserves algorithms, feature v6, library format and resource budgets.
