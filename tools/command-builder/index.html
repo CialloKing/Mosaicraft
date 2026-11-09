@@ -119,6 +119,22 @@ main { max-width: 920px; margin: 28px auto; padding: 0 20px; }
   overflow: auto;
 }
 footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72rem; }
+
+.task-section { margin-top: 20px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+.task-section h2 { font-size: 1rem; margin-bottom: 10px; }
+.task-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 14px; margin-top: 12px; }
+.task-item { width: 100%; text-align: left; padding: 10px; margin-bottom: 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; font-size: .76rem; line-height: 1.7; }
+.task-item.selected { border-color: var(--accent); }
+.task-progress { margin: 12px 0; font-size: .8rem; line-height: 1.8; }
+.task-progress progress { display: block; width: 100%; height: 12px; margin: 5px 0 9px; }
+.task-section pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; font-size: .75rem; background: var(--bg); padding: 10px; border-radius: 5px; }
+.task-section details { margin: 9px 0; font-size: .8rem; }
+.task-section summary { cursor: pointer; }
+.diagnostic-error, .diagnostic-warning { padding: 10px; margin: 10px 0; border-left: 3px solid #f78166; background: var(--bg); font-size: .8rem; }
+.diagnostic-warning { border-color: #d29922; }
+#task-note { color: #d29922; font-size: .8rem; margin-top: 8px; }
+#task-connection { font-size: .8rem; }
+@media (max-width: 760px) { .task-layout { grid-template-columns: 1fr; } #task-list { max-height: 220px; overflow: auto; } }
 </style>
 </head>
 <body>
@@ -276,10 +292,24 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <button class="btn btn-secondary" onclick="copyCommand()">📋 复制到剪贴板</button>
     <button class="btn btn-primary" id="btn-run" onclick="runCommand()" style="display:none">▶ 运行</button>
     <button class="btn btn-secondary" id="btn-cancel-job" onclick="cancelCurrentJob()" style="display:none" disabled>取消任务</button>
-    <button class="btn btn-secondary" id="btn-clear-jobs" onclick="clearFinishedJobs()" style="display:none">清理完成任务</button>
+    <button class="btn btn-secondary" id="btn-clear-jobs" onclick="clearFinishedJobs()" style="display:none">清理完成任务记录</button>
   </div>
   <div id="run-status" style="margin-top:10px;font-size:0.82rem;color:var(--fg2);display:none"></div>
 </div>
+
+
+<section class="task-section" id="task-section" aria-label="任务与结果" hidden>
+  <h2>任务与结果</h2>
+  <div id="task-connection" role="status" aria-live="polite">正在连接…</div>
+  <p class="hint" id="working-directory"></p>
+  <div id="task-note" role="status" aria-live="polite"></div>
+  <div class="btns">
+    <button class="btn btn-secondary" id="btn-restore-task" onclick="restoreTaskParameters()" disabled>恢复参数</button>
+    <button class="btn btn-secondary" id="btn-copy-diagnostics" onclick="copyDiagnostics()" disabled>复制诊断</button>
+    <button class="btn btn-secondary" id="btn-export-diagnostics" onclick="exportDiagnostics()" disabled>导出诊断 JSON</button>
+  </div>
+  <div class="task-layout"><div id="task-list"></div><div id="task-detail"></div></div>
+</section>
 
 </main>
 <footer>💡 提示：在文件管理器中 Ctrl+C 复制文件/文件夹，回到此页面 Ctrl+V 粘贴到输入框</footer>
@@ -431,15 +461,15 @@ function copyTextToClipboard(text)
 function fallbackCopyText(text)
 {
   // Web UI can be opened from local files, where navigator.clipboard may be unavailable.
-  return new Promise(resolve =>
+  return new Promise((resolve, reject) =>
   {
     const ta = document.createElement('textarea');
     ta.value = text;
     document.body.appendChild(ta);
     ta.select();
-    document.execCommand('copy');
+    const copied = document.execCommand('copy');
     document.body.removeChild(ta);
-    resolve();
+    if (copied) resolve(); else reject(new Error('clipboard unavailable'));
   });
 }
 
@@ -453,7 +483,7 @@ function copyTextFromButton(text, btn)
     {
       btn.textContent = original;
     }, 1400);
-  });
+  }).catch(() => { btn.textContent = '复制失败'; });
 }
 
 // Server detection: check if mosaicraftwebui is running
@@ -525,9 +555,9 @@ async function checkServer() {
       document.getElementById('btn-cancel-job').style.display = '';
       document.getElementById('btn-clear-jobs').style.display = '';
       document.getElementById('run-status').style.display = '';
-      document.getElementById('run-status').innerHTML = '<span style="color:#7ee787">🟢 已连接结构化 API</span> — contract ' +
-        escapeHtml(api.contractVersion || 'unknown') + ' / ' + escapeHtml(api.compatibility || 'unknown') +
-        '，端点 ' + escapeHtml(api.enabledEndpointCount || 0) + '/' + escapeHtml(api.endpointCount || 0);
+      document.getElementById('run-status').textContent = '本地服务已连接，可以提交任务。';
+      startTaskMonitor();
+      updateRunButton();
       return;
     } else if (data.message) {
       throw new Error(data.message);
@@ -555,7 +585,9 @@ async function runCommand() {
   const status = document.getElementById('run-status');
   status.style.display = '';
   status.textContent = '正在提交任务...';
-  setCurrentJob('');
+  if (submitting) return;
+  submitting = true;
+  updateRunButton();
   try {
     if (!serverAvailable) {
       throw new Error('请通过 MosaicraftWebUI.exe 打开页面后再运行');
@@ -563,6 +595,7 @@ async function runCommand() {
     if (tab === 'mosaic') {
       const data = await postJson('/api/jobs/mosaic', buildMosaicPayload());
       if (!data.ok || !data.job) {
+        if (data.status === 0) data.message = '提交结果未知，请先查看任务列表，避免重复提交。' + data.message;
         renderFailure(status, data);
         return;
       }
@@ -573,6 +606,7 @@ async function runCommand() {
     if (tab === 'build') {
       const data = await postJson('/api/jobs/build', buildBuildPayload());
       if (!data.ok || !data.job) {
+        if (data.status === 0) data.message = '提交结果未知，请先查看任务列表，避免重复提交。' + data.message;
         renderFailure(status, data);
         return;
       }
@@ -658,22 +692,25 @@ async function runCommand() {
     throw new Error('未知功能页：' + tab);
   } catch(e) {
     renderFailure(status, { message: e && e.message ? e.message : '请确认 Web UI 服务器已启动' }, '⚠ 请求失败');
+  } finally {
+    submitting = false;
+    updateRunButton();
   }
 }
 
 function renderFailure(status, data, title) {
-  status.innerHTML = '<span style="color:#f78166">' + escapeHtml(title || '❌ Failed') + '</span>';
-  const details = renderApiErrorDetails(data);
-  if (details) {
-    status.innerHTML += details;
+  const diagnostic = data && data.diagnostic;
+  status.innerHTML = '<span style="color:#f78166">' + escapeHtml(title || '操作失败') + '</span>';
+  if (diagnostic) {
+    status.innerHTML += '<p>' + escapeHtml(diagnosticHint(diagnostic)) + '</p><details><summary>技术详情</summary>' +
+      renderMessageBlock([diagnostic.code, diagnostic.message, diagnostic.field, diagnostic.path].filter(Boolean).join('\n')) + '</details>';
+    if (typeof highlightDiagnostic === 'function') highlightDiagnostic(diagnostic);
+    return;
   }
-  if (data && data.message) {
-    status.innerHTML += '<br>' + renderMessageBlock(data.message);
-  }
+  status.innerHTML += renderApiErrorDetails(data);
+  if (data && data.message) status.innerHTML += renderMessageBlock(data.message);
   const suggestion = renderApiErrorSuggestion(data);
-  if (suggestion) {
-    status.innerHTML += '<br><span style="font-size:0.76rem;color:#79c0ff">' + escapeHtml(suggestion) + '</span>';
-  }
+  if (suggestion) status.innerHTML += '<p>' + escapeHtml(suggestion) + '</p>';
 }
 
 function renderMessageBlock(message) {
@@ -739,21 +776,19 @@ async function readJsonResponse(res) {
 }
 
 async function requestJson(path, options) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options && options.method === 'POST' ? 30000 : 10000);
   try {
-    const res = await fetch(SERVER_URL + path, options || {});
+    const res = await fetch(SERVER_URL + path, { ...(options || {}), signal: controller.signal });
     const data = await readJsonResponse(res);
     data.status = res.status;
     data.path = path;
     if (!res.ok && !data.message) data.message = 'HTTP ' + res.status;
     return data;
   } catch(e) {
-    return {
-      ok: false,
-      status: 0,
-      path: path,
-      message: '无法连接 Web UI/API: ' + (e && e.message ? e.message : 'network error')
-    };
-  }
+    return { ok: false, status: 0, path,
+      message: e.name === 'AbortError' ? '请求超时' : '无法连接 Web UI/API: ' + (e.message || 'network error') };
+  } finally { clearTimeout(timer); }
 }
 
 async function getJson(path) {
@@ -770,78 +805,6 @@ async function postJson(path, payload) {
 
 async function deleteJson(path) {
   return await requestJson(path, { method: 'DELETE' });
-}
-
-function setCurrentJob(jobId) {
-  currentJobId = jobId || '';
-  const btn = document.getElementById('btn-cancel-job');
-  if (btn) btn.disabled = !currentJobId;
-}
-
-async function cancelCurrentJob() {
-  const status = document.getElementById('run-status');
-  if (!currentJobId) return;
-  try {
-    const data = await deleteJson('/api/jobs/' + encodeURIComponent(currentJobId));
-    if (!data.ok) {
-      renderFailure(status, data, '❌ 无法取消任务');
-      return;
-    }
-    setCurrentJob('');
-    status.innerHTML = data.job ? renderJobStatus(data.job, '任务已取消') : '<span style="color:#f78166">已取消任务</span>';
-  } catch(e) {
-    status.innerHTML = '<span style="color:#f78166">⚠ 取消请求失败</span>';
-  }
-}
-
-async function clearFinishedJobs() {
-  const status = document.getElementById('run-status');
-  try {
-    const data = await deleteJson('/api/jobs');
-    if (!data.ok) {
-      renderFailure(status, data, '❌ 清理失败');
-      return;
-    }
-    status.innerHTML = '<span style="color:#7ee787">已清理 ' + escapeHtml(data.removed || 0) + ' 个完成任务</span>';
-  } catch(e) {
-    status.innerHTML = '<span style="color:#f78166">⚠ 清理请求失败</span>';
-  }
-}
-
-async function pollJob(jobId, status) {
-  status.innerHTML = renderJobStatus(
-  {
-    id: jobId,
-    state: 'queued'
-  }, '任务已提交');
-  while (true) {
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    if (currentJobId !== jobId) return;
-    const data = await getJson('/api/jobs/' + encodeURIComponent(jobId));
-    if (!data.ok || !data.job) {
-      renderFailure(status, data, '❌ Job 查询失败');
-      return;
-    }
-
-    const job = data.job;
-    if (job.state === 'queued') {
-      status.innerHTML = renderJobStatus(job);
-    } else if (job.state === 'running') {
-      status.innerHTML = renderJobStatus(job);
-    } else if (job.state === 'succeeded') {
-      status.innerHTML = renderJobStatus(job, '任务完成');
-      setCurrentJob('');
-      return;
-    } else if (job.state === 'failed') {
-      status.innerHTML = renderJobStatus(job, '任务失败');
-      setCurrentJob('');
-      return;
-    } else if (job.state === 'canceled') {
-      status.innerHTML = renderJobStatus(job, '任务已取消');
-      setCurrentJob('');
-      return;
-    }
-  }
 }
 
 function renderJobStatus(job, title)
@@ -880,9 +843,9 @@ function renderJobStatus(job, title)
   }
   if (job && job.outputPath)
   {
-    html += renderJobPath('输出', job.outputPath, '复制输出路径');
+    html += renderJobPath('请求输出', job.outputPath, '复制请求路径');
   }
-  if (job && job.message)
+  if (job && job.message && state === 'failed' && !job.diagnostic)
   {
     html += '<pre class="job-message">' + escapeHtml(job.message) + '</pre>';
   }
@@ -1174,6 +1137,299 @@ function escapeHtml(text) {
 function escapeAttr(text)
 {
   return escapeHtml(text);
+}
+
+// Task state is independent of the selected parameter tab.
+const taskStore = {
+  sessionId: '', selectedId: '', jobs: [], detail: null, events: [], cursor: 0,
+  truncated: false, dropped: 0, timer: null, busy: false, generation: 0,
+  failures: 0, note: '', rendered: ''
+};
+let submitting = false;
+
+function storedJson(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch (_) { return fallback; }
+}
+function saveJson(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
+}
+function hasFeature(name) {
+  return !!(serviceInfo && Array.isArray(serviceInfo.features) && serviceInfo.features.includes(name));
+}
+function updateRunButton() {
+  const button = document.getElementById('btn-run');
+  button.disabled = submitting || !serverAvailable || (typeof formModel !== 'undefined' && !formModel.valid);
+  button.textContent = submitting ? '提交中…' : '▶ 运行';
+}
+function setCurrentJob(id) {
+  id = id || '';
+  if (id !== taskStore.selectedId) {
+    taskStore.generation++;
+    taskStore.selectedId = id;
+    taskStore.detail = null;
+    taskStore.events = [];
+    taskStore.cursor = 0;
+    taskStore.truncated = false;
+    taskStore.dropped = 0;
+    taskStore.rendered = '';
+  }
+  currentJobId = id;
+  if (taskStore.sessionId) saveJson('mosaicraft-task-selection-v1', { sessionId: taskStore.sessionId, id });
+  renderTaskArea();
+  scheduleTaskRefresh(0);
+}
+function applySession(id) {
+  if (!id || id === taskStore.sessionId) return;
+  const saved = storedJson('mosaicraft-task-selection-v1', {});
+  const changed = !!taskStore.sessionId || (saved.sessionId && saved.sessionId !== id);
+  taskStore.sessionId = id;
+  taskStore.generation++;
+  taskStore.jobs = [];
+  taskStore.detail = null;
+  taskStore.events = [];
+  taskStore.cursor = 0;
+  taskStore.truncated = false;
+  taskStore.rendered = '';
+  taskStore.selectedId = saved.sessionId === id ? saved.id || '' : '';
+  currentJobId = taskStore.selectedId;
+  if (changed) taskStore.note = '服务已重新启动，旧会话任务无法恢复；表单草稿仍保留。';
+}
+function startTaskMonitor() {
+  document.getElementById('task-section').hidden = false;
+  applySession(serviceInfo && serviceInfo.runtime && serviceInfo.runtime.sessionId);
+  const cwd = serviceInfo && serviceInfo.runtime && serviceInfo.runtime.workingDirectory;
+  document.getElementById('working-directory').textContent = cwd
+    ? '相对路径以服务工作目录为准：' + cwd : '此服务未提供工作目录；相对路径以服务启动目录为准。';
+  scheduleTaskRefresh(0);
+}
+function scheduleTaskRefresh(delay) {
+  clearTimeout(taskStore.timer);
+  taskStore.timer = setTimeout(refreshTasks, delay);
+}
+async function refreshTasks() {
+  if (taskStore.busy) return;
+  taskStore.busy = true;
+  let delay = 1000;
+  try {
+    const list = await getJson('/api/jobs');
+    if (!list.ok || !Array.isArray(list.jobs)) throw new Error(list.message || '任务列表不可用');
+    if (list.sessionId && taskStore.sessionId !== list.sessionId) {
+      const discovery = await getJson('/api/info');
+      if (!discovery.ok) throw new Error(discovery.message || '服务信息不可用');
+      serviceInfo = discovery.info;
+      applySession(list.sessionId);
+      const cwd = serviceInfo.runtime && serviceInfo.runtime.workingDirectory;
+      document.getElementById('working-directory').textContent = '相对路径以服务工作目录为准：' + (cwd || '未知');
+    }
+    serverAvailable = true;
+    taskStore.failures = 0;
+    taskStore.jobs = list.jobs;
+    if (taskStore.selectedId && !list.jobs.some(job => job.id === taskStore.selectedId)) {
+      taskStore.note = '所选任务记录已清理或超过保留范围；输出文件未被删除。';
+      setCurrentJob('');
+    }
+    if (!taskStore.selectedId && list.jobs.length) {
+      const active = list.jobs.find(job => job.state === 'running' || job.state === 'queued');
+      setCurrentJob((active || list.jobs[0]).id);
+    }
+    const selected = taskStore.selectedId;
+    const generation = taskStore.generation;
+    if (selected) {
+      const data = await getJson('/api/jobs/' + encodeURIComponent(selected));
+      if (generation !== taskStore.generation || selected !== taskStore.selectedId) return;
+      if (data.sessionId && data.sessionId !== taskStore.sessionId) return;
+      if (!data.ok || !data.job) throw new Error(data.message || '任务详情不可用');
+      taskStore.detail = data.job;
+      if (hasFeature('job-diagnostics')) {
+        const page = await getJson('/api/jobs/' + encodeURIComponent(selected) + '/events?after=' + taskStore.cursor + '&limit=100');
+        if (generation !== taskStore.generation || selected !== taskStore.selectedId) return;
+        if (page.sessionId && page.sessionId !== taskStore.sessionId) return;
+        if (!page.ok) throw new Error(page.message || '诊断读取失败');
+        taskStore.events.push(...(page.events || []).filter(event => event.sequence > taskStore.cursor));
+        taskStore.cursor = page.nextCursor;
+        taskStore.truncated = taskStore.truncated || !!page.truncated;
+        taskStore.dropped = Math.max(taskStore.dropped, Number(page.dropped || 0));
+        let bytes = new TextEncoder().encode(JSON.stringify(taskStore.events)).length;
+        while (taskStore.events.length > 256 || bytes > 256 * 1024) {
+          taskStore.events.shift();
+          taskStore.truncated = true;
+          bytes = new TextEncoder().encode(JSON.stringify(taskStore.events)).length;
+        }
+      }
+    }
+    renderTaskArea();
+    document.getElementById('task-connection').textContent = '已连接 · 任务和诊断限当前服务会话，保留最近 50 个完成任务。';
+    updateRunButton();
+  } catch (error) {
+    serverAvailable = false;
+    taskStore.failures++;
+    delay = [2000, 5000, 10000][Math.min(taskStore.failures - 1, 2)];
+    document.getElementById('task-connection').textContent = '服务连接异常，保留上次状态；' + (delay / 1000) + ' 秒后重试。' + (error.message || '');
+    updateRunButton();
+  } finally {
+    taskStore.busy = false;
+    scheduleTaskRefresh(delay);
+  }
+}
+async function pollJob(id) { setCurrentJob(id); }
+async function cancelCurrentJob() {
+  const job = taskStore.detail;
+  if (!job || job.state !== 'queued') return;
+  const id = job.id;
+  const generation = taskStore.generation;
+  const data = await deleteJson('/api/jobs/' + encodeURIComponent(id));
+  if (generation !== taskStore.generation) return;
+  if (data.job) taskStore.detail = data.job;
+  taskStore.note = data.ok ? '排队任务已取消。' : data.status === 409
+    ? '任务已经开始运行，当前版本仅支持取消排队任务。' : data.message || '取消请求失败。';
+  renderTaskArea();
+  scheduleTaskRefresh(0);
+}
+async function clearFinishedJobs() {
+  const data = await deleteJson('/api/jobs');
+  taskStore.note = data.ok ? '已清理 ' + Number(data.removed || 0) + ' 个完成任务记录，输出文件保留。' : data.message || '清理请求失败。';
+  scheduleTaskRefresh(0);
+  renderTaskArea();
+}
+const STAGE_LABELS = {
+  queued: '等待执行', validating: '校验参数', scanning: '扫描素材', reading_library: '读取图库',
+  preparing_images: '归一化与特征提取', building_index: '准备索引', matching: '匹配选图',
+  writing_output: '输出图片', writing_preview: '生成预览', analyzing: '生成分析报告',
+  reordering_library: '颜色重排', building_cache: '构建特征缓存', building_pyramid: '构建金字塔',
+  finalizing: '收尾', canceled: '已取消'
+};
+const DIAGNOSTIC_HINTS = {
+  invalid_argument: '检查标记的参数后重新提交。', input_unreadable: '检查输入路径、文件是否存在，以及是否可以读取。',
+  library_unavailable: '检查图库路径、访问权限及是否正被其他操作占用。', library_incompatible: '图库的尺寸或特征不兼容，请按提示检查或重建图库。',
+  no_candidates: '当前亮度范围没有可用候选，可调整亮度范围或检查图库覆盖。',
+  cuda_unavailable: 'CUDA 不可用，本次已在计算开始前使用 CPU。', cuda_resource_fallback: 'CUDA 资源不足，相关阶段已使用 CPU。',
+  cuda_execution_failed: 'CUDA 执行失败。保留诊断信息，检查显卡状态后重试。', out_of_memory: '内存不足，可降低输出尺寸或使用流式写入。',
+  output_write_failed: '检查输出位置、磁盘空间和访问权限。', preview_write_failed: '预览写入失败；若主图已保存，可从下方结果中下载。',
+  analysis_write_failed: '分析报告未完整写出，请检查报告目录和访问权限。', usage_commit_failed: '使用统计未提交；已保存的主图仍可使用。',
+  source_skipped: '部分素材无法处理，已按原规则跳过。', output_tile_missing: '部分素材无法贴入，相关位置保留背景。',
+  artifact_changed: '文件已被其他操作改写，不能再作为此任务的原始结果下载。',
+  feature_cache_failed: '特征缓存未能写入，请检查图库目录和访问权限。'
+};
+function diagnosticHint(diagnostic) {
+  return diagnostic && DIAGNOSTIC_HINTS[diagnostic.code] || '查看技术详情中的具体原因、相关字段和路径。';
+}
+function renderTaskProgress(job) {
+  const progress = job.progress;
+  if (!progress) return '<p class="hint">旧版服务仅提供基本任务状态。</p>';
+  let html = '<div class="task-progress"><strong>当前阶段：' + escapeHtml(STAGE_LABELS[progress.stage] || progress.stage || '等待执行') + '</strong>';
+  const terminal = !['running', 'queued'].includes(job.state);
+  if (!progress.activities.length && !terminal && job.state === 'running') html += '<progress aria-label="阶段处理中"></progress>';
+  for (const item of progress.activities) {
+    const label = { normalization: '归一化（含跳过）', features: '特征处理（含跳过）', matching: '匹配', output_rows: '输出行', tiles: '输出小块' }[item.id] || item.id;
+    const known = Number.isFinite(item.total) && item.total > 0;
+    html += '<div>' + escapeHtml(label) + '：' + Number(item.completed || 0) + (known ? ' / ' + item.total : '') +
+      (known ? '<progress max="' + item.total + '" value="' + Math.min(item.completed, item.total) + '"></progress>' : '<progress></progress>') + '</div>';
+  }
+  return html + '<p class="hint">计数代表当前阶段，不是整体完成百分比。</p></div>';
+}
+function renderTaskDiagnostic(job) {
+  let html = '';
+  if (job.diagnostic) {
+    const d = job.diagnostic;
+    html += '<div class="diagnostic-error"><strong>失败原因 · ' + escapeHtml(d.code) + '</strong><p>' + escapeHtml(diagnosticHint(d)) + '</p>' +
+      '<details data-section="error"><summary>技术详情</summary><pre>' + escapeHtml([d.message, d.field ? '字段：' + d.field : '', d.path ? '路径：' + d.path : ''].filter(Boolean).join('\n')) + '</pre></details></div>';
+  }
+  if (job.warningCount) {
+    html += '<div class="diagnostic-warning"><strong>警告 ' + Number(job.warningCount) + ' 项</strong>';
+    for (const warning of job.warnings || []) {
+      html += '<p>' + escapeHtml(diagnosticHint(warning)) + '（' + Number(warning.count) + '）</p><details data-section="warning-' + escapeAttr(warning.code) + '"><summary>' + escapeHtml(warning.code) + '</summary><pre>' +
+        escapeHtml([warning.message, ...(warning.paths || [])].join('\n')) + '</pre></details>';
+    }
+    html += '</div>';
+  }
+  if (job.runtime) {
+    const runtime = job.runtime;
+    const backendName = value => ({ cpu: 'CPU', template_cuda: '模板 CUDA', compatible_cuda: '兼容 CUDA', none: '不适用' }[value] || '待检测');
+    html += '<p>特征提取：' + escapeHtml(backendName(runtime.featureBackend)) + ' · 评分：' + escapeHtml(backendName(runtime.scoreBackend)) + '</p>';
+    if (Object.keys(runtime.metrics || {}).length) html += '<details data-section="metrics"><summary>性能详情（并行阶段不可相加）</summary><pre>' + escapeHtml(JSON.stringify(runtime.metrics, null, 2)) + '</pre></details>';
+  }
+  if (hasFeature('job-diagnostics')) {
+    const text = taskStore.events.map(item => '#' + item.sequence + ' [' + item.severity + '] ' + (STAGE_LABELS[item.stage] || item.stage || '') + ' · ' + item.code + '\n' + item.message).join('\n\n');
+    html += '<details data-section="events"><summary>运行诊断记录' + (taskStore.truncated ? '（早期记录已截断）' : '') + '</summary><pre class="task-events">' + escapeHtml(text || '暂无诊断记录') + '</pre></details>';
+  }
+  return html;
+}
+function renderTaskArea() {
+  const list = document.getElementById('task-list');
+  if (!list) return;
+  list.innerHTML = taskStore.jobs.length ? taskStore.jobs.map(job => '<button class="task-item' + (job.id === taskStore.selectedId ? ' selected' : '') + '" data-job-id="' + escapeAttr(job.id) + '"><strong>' +
+    escapeHtml(jobTypeLabel(job.type)) + ' · ' + escapeHtml(job.id) + '</strong><br>' + escapeHtml(({queued:'等待中',running:'运行中',succeeded:'已完成',failed:'失败',canceled:'已取消'})[job.state] || job.state) +
+    ' · ' + escapeHtml(renderJobTiming(job)) + (job.warningCount ? ' · 警告 ' + Number(job.warningCount) : '') + '</button>').join('') : '<p class="hint">暂无任务。提交后可在这里持续跟踪。</p>';
+  document.getElementById('task-note').textContent = taskStore.note;
+  const job = taskStore.detail;
+  const cancel = document.getElementById('btn-cancel-job');
+  cancel.disabled = !job || job.state !== 'queued';
+  cancel.title = job && job.state === 'running' ? '运行中任务暂不支持取消' : '仅可取消排队任务';
+  for (const id of ['btn-restore-task', 'btn-copy-diagnostics', 'btn-export-diagnostics']) document.getElementById(id).disabled = !job;
+  const detail = document.getElementById('task-detail');
+  let html = job ? renderJobStatus(job) + renderTaskProgress(job) + renderTaskDiagnostic(job) : '<p class="hint">选择任务查看进度和诊断。</p>';
+  if (job && typeof renderTaskArtifacts === 'function') html += renderTaskArtifacts(job);
+  if (html !== taskStore.rendered) {
+    const opened = Array.from(detail.querySelectorAll('details[open]')).map(item => item.dataset.section);
+    const log = detail.querySelector('.task-events');
+    const top = log && log.scrollTop;
+    detail.innerHTML = html;
+    for (const item of detail.querySelectorAll('details')) if (opened.includes(item.dataset.section)) item.open = true;
+    const nextLog = detail.querySelector('.task-events');
+    if (nextLog && top !== null) nextLog.scrollTop = top;
+    taskStore.rendered = html;
+  }
+}
+function diagnosticDocument() {
+  return { exportedAt: new Date().toISOString(), sessionId: taskStore.sessionId, service: serviceInfo,
+    job: taskStore.detail, events: taskStore.events, truncated: taskStore.truncated, dropped: taskStore.dropped };
+}
+async function copyDiagnostics() {
+  try { await copyTextToClipboard(JSON.stringify(diagnosticDocument(), null, 2)); taskStore.note = '诊断已复制。'; }
+  catch (_) { taskStore.note = '复制失败，请使用导出诊断。'; }
+  renderTaskArea();
+}
+function exportDiagnostics() {
+  const blob = new Blob([JSON.stringify(diagnosticDocument(), null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url; link.download = (taskStore.selectedId || 'mosaicraft') + '-diagnostics.json'; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function restoreTaskParameters() {
+  if (typeof restoreRequestParameters === 'function') restoreRequestParameters(taskStore.detail);
+  else { taskStore.note = '此服务未提供可恢复的参数。'; renderTaskArea(); }
+}
+document.addEventListener('click', event => {
+  const item = event.target.closest && event.target.closest('[data-job-id]');
+  if (item) setCurrentJob(item.dataset.jobId);
+});
+
+
+const FORM_FIELDS = {"mosaic": {"inputPath": "m-input", "dbPath": "m-db", "outputPath": "m-output", "format": "m-format", "writeMode": "m-writemode", "tileW": "m-tilew", "tileH": "m-tileh", "candidates": "m-candidates", "topNrandom": "m-topn", "lRange": "m-lrange", "neighborWindow": "m-nwin", "neighborPenalty": "m-npen", "upscale": "m-upscale", "outW": "m-outw", "outH": "m-outh", "labWeight": "m-labw", "gridWeight": "m-gridw", "tinyWeight": "m-tinyw", "edgeWeight": "m-edgew", "lbpWeight": "m-lbpw", "usePenalty": "m-penalty", "quality": "m-quality", "pngLevel": "m-pnglevel", "colorStrength": "m-colorstr", "overlayStrength": "m-overlaystr", "tiled": "m-tiled", "deepZoom": "m-deepzoom", "analyze": "m-analyze", "adaptiveWeights": "m-adaptive", "benchmark": "m-benchmark", "colorAdjust": "m-coloradj", "generatePreview": "m-preview"}, "build": {"inputDir": "b-input", "outputDir": "b-output", "dbPath": "b-db", "threads": "b-threads", "appendMode": "b-append", "recursive": "b-recursive", "normalizeOnly": "b-normonly", "forceMode": "b-force"}};
+
+function restoreRequestParameters(job) {
+  if (!job || !job.request || !FORM_FIELDS[job.type]) {
+    taskStore.note = '此任务没有可恢复的参数。'; renderTaskArea(); return;
+  }
+  const request = job.request;
+  for (const [key, id] of Object.entries(FORM_FIELDS[job.type])) {
+    const element = document.getElementById(id);
+    if (!element) continue;
+    if (element.type === 'checkbox') element.checked = !!request[key];
+    else element.value = request[key] === undefined ? '' : request[key];
+  }
+  if (job.type === 'mosaic') {
+    document.getElementById('m-otile').value = (request.nativeTileW || 180) + 'x' + (request.nativeTileH || 320);
+    document.getElementById('m-cpu').checked = request.useGpu === false;
+  } else {
+    document.getElementById('b-normsize').value = (request.normalizeWidth || 180) + 'x' + (request.normalizeHeight || 320);
+  }
+  document.querySelector('.tab[data-cmd="' + job.type + '"]').click();
+  if (typeof syncPreviewOption === 'function') syncPreviewOption();
+  generateCommand();
+  taskStore.note = '参数已恢复，请检查后点击运行。';
+  renderTaskArea();
 }
 
 // Try to detect server on load
