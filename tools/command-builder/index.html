@@ -22,8 +22,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 header { background: var(--panel); padding: 20px 36px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px; }
 header h1 { font-size: 1.3rem; color: var(--accent); font-weight: 700; }
 header span { color: var(--fg2); font-size: 0.8rem; background: var(--border); padding: 3px 10px; border-radius: 20px; }
-.tabs { display: flex; background: var(--panel); border-bottom: 1px solid var(--border); padding: 0 28px; gap: 2px; }
-.tab { padding: 11px 18px; cursor: pointer; color: var(--fg2); border: none; background: none; font-size: 0.88rem; transition: .15s; border-radius: 6px 6px 0 0; position: relative; top: 1px; }
+.tabs { display: flex; background: var(--panel); border-bottom: 1px solid var(--border); padding: 0 28px; gap: 2px; overflow-x: auto; overflow-y: hidden; }
+.tab { padding: 11px 18px; cursor: pointer; color: var(--fg2); border: none; background: none; font-size: 0.88rem; transition: .15s; border-radius: 6px 6px 0 0; position: relative; top: 1px; flex-shrink: 0; }
 .tab:hover { color: var(--fg); }
 .tab.active { color: var(--accent); background: var(--bg); border: 1px solid var(--border); border-bottom-color: var(--bg); }
 main { max-width: 920px; margin: 28px auto; padding: 0 20px; }
@@ -53,12 +53,13 @@ main { max-width: 920px; margin: 28px auto; padding: 0 20px; }
 .output-area .cmd { font-family: 'Cascadia Code', 'Consolas', 'JetBrains Mono', monospace; font-size: 0.82rem; color: #79c0ff; white-space: pre-wrap; word-break: break-all; line-height: 1.7; background: #0d1117; padding: 14px; border-radius: 6px; min-height: 3em; }
 .cmd-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .cmd-bar span { color: var(--fg2); font-size: 0.8rem; }
-.btns { display: flex; gap: 10px; margin-top: 12px; }
+.btns { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .btn { padding: 10px 22px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.88rem; font-weight: 600; transition: .15s; }
 .btn-primary { background: var(--accent); color: #000; }
 .btn-primary:hover { filter: brightness(1.1); }
 .btn-secondary { background: var(--border); color: var(--fg); }
 .btn-secondary:hover { background: #484f58; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn-inline
 {
   padding: 5px 10px;
@@ -143,6 +144,39 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 .result-preview { display: block; max-width: 100%; max-height: 480px; object-fit: contain; margin-top: 12px; background: var(--bg); border-radius: 6px; }
 [hidden] { display: none !important; }
 .saved-main { color: #7ee787; margin-bottom: 10px; }
+.help-page { font-size: .88rem; line-height: 1.8; }
+.help-page h2 { font-size: 1.3rem; margin-bottom: 8px; }
+.help-page .help-intro { color: var(--fg2); }
+.help-page p + p { margin-top: 10px; }
+.help-page a, .help-link { color: #79c0ff; text-underline-offset: 3px; }
+.help-link { display: inline-block; margin-top: 5px; font-size: .78rem; }
+.help-contents { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 16px; }
+.help-steps { padding-left: 22px; }
+.help-steps li { padding: 7px 0; }
+.help-page code { font-size: .83em; color: #a5d6ff; overflow-wrap: anywhere; }
+.help-page details { border-top: 1px solid var(--border); padding: 12px 0; }
+.help-page details:last-child { padding-bottom: 0; }
+.help-page summary { cursor: pointer; color: var(--accent2); font-weight: 600; }
+.help-page details > p { margin-top: 10px; }
+.help-table-wrap { overflow-x: auto; margin-top: 10px; }
+.help-table { width: 100%; border-collapse: collapse; min-width: 460px; text-align: left; font-size: .82rem; }
+.help-table th, .help-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.help-table th { color: var(--fg2); font-weight: 500; }
+.help-table td:first-child { width: 29%; }
+.help-example { padding: 12px 14px; margin-top: 12px; border-left: 3px solid var(--accent2); background: var(--bg); }
+.help-page [id] { scroll-margin-top: 18px; }
+.help-page :target { outline: 1px solid var(--accent); outline-offset: 6px; border-radius: 4px; }
+@media (max-width: 600px) {
+  header { padding: 16px; flex-wrap: wrap; }
+  .tabs { padding: 0 12px; }
+  .tab { padding: 10px 12px; }
+  .help-page .card { padding: 16px; }
+  .help-table { min-width: 0; }
+  .help-table thead { display: none; }
+  .help-table tr { display: block; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .help-table td { display: block; padding: 4px 0; border: 0; }
+  .help-table td:first-child { width: auto; color: #a5d6ff; font-weight: 600; }
+}
 </style>
 </head>
 <body>
@@ -150,14 +184,15 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <h1>🧩 Mosaicraft</h1>
   <span id="version-badge">命令生成器 v1.14.9</span>
 </header>
-<nav class="tabs" id="tabs">
-  <button class="tab active" data-cmd="mosaic">🎨 生成马赛克</button>
+<nav class="tabs" id="tabs" aria-label="功能导航">
+  <button class="tab active" data-cmd="mosaic" aria-current="page">🎨 生成马赛克</button>
   <button class="tab" data-cmd="build">📦 建库</button>
   <button class="tab" data-cmd="inspect">🔍 查询</button>
   <button class="tab" data-cmd="dbstats">📊 统计</button>
   <button class="tab" data-cmd="dbpurge">🧹 清理</button>
   <button class="tab" data-cmd="dbhealth">🩺 健康</button>
   <button class="tab" data-cmd="dbusage">📋 使用记录</button>
+  <button class="tab" data-cmd="help">📖 使用帮助</button>
 </nav>
 <main>
 <p class="hint" id="working-directory">相对路径以服务启动目录为准。</p>
@@ -227,6 +262,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <label><input type="checkbox" id="m-preview" aria-describedby="preview-hint"> 生成结果预览 --preview</label>
     </div>
     <p class="hint" id="preview-hint">生成结果预览默认关闭，勾选后额外保存一张用于快速查看的 JPEG 预览图。</p>
+    <a class="help-link" href="#help-switches" data-open-help="help-switches">了解预览及其他开关的作用</a>
     <div class="row" style="margin-top:8px">
       <div class="field"><label>亮度扰动幅度 --color-strength</label><input type="number" id="m-colorstr" value="0.04" min="0" max="0.5" step="0.01" style="max-width:150px"><div class="hint">0.04 表示 L 通道最多 ±4%；单独设置幅度不会启用。幅度为 0 时保持原像素。</div></div>
       <div class="field"><label>基础图叠加强度 --overlay-strength</label><input type="number" id="m-overlaystr" value="0" min="0" max="1" step="0.05" style="max-width:150px"><div class="hint">0 关闭；0.2 表示 80% 素材 + 20% 基础图。使用缩放、放大和补边后的基础图，强度越高，小图细节越弱。</div></div>
@@ -291,8 +327,160 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d（默认情况下不需要填，默认 ./library/mosaicraft.db）</label><input type="text" id="u-db" placeholder="粘贴目录或.db文件路径"></div><div class="field"><label>Top N -n</label><input type="number" id="u-n" value="50" min="1"></div><div class="field field-full"><label>导出目录 --export</label><input type="text" id="u-export" placeholder="不导出"></div></div></div>
 </div>
 
+<!-- ============ HELP ============ -->
+<article class="panel help-page" id="panel-help" aria-labelledby="help-title">
+  <div class="card">
+    <h2 id="help-title">使用帮助</h2>
+    <p class="help-intro">从第一次建库到找到生成结果，在这里了解每一步怎么做、每个选项会影响什么。帮助内容随页面提供，离线也能阅读。</p>
+    <nav class="help-contents" aria-label="帮助目录">
+      <a href="#help-start" data-open-help="help-start">快速开始</a>
+      <a href="#help-paths" data-open-help="help-paths">路径与图库</a>
+      <a href="#help-size" data-open-help="help-size">尺寸与格式</a>
+      <a href="#help-matching" data-open-help="help-matching">匹配与权重</a>
+      <a href="#help-switches" data-open-help="help-switches">开关与预览</a>
+      <a href="#help-build" data-open-help="help-build">建库选项</a>
+      <a href="#help-tools" data-open-help="help-tools">查询与管理</a>
+      <a href="#help-results" data-open-help="help-results">任务与结果</a>
+      <a href="#help-faq" data-open-help="help-faq">常见问题</a>
+    </nav>
+  </div>
+
+  <section class="card" id="help-start" aria-labelledby="help-start-title">
+    <h3 id="help-start-title">第一次使用：建库 → 生成 → 查看结果</h3>
+    <ol class="help-steps">
+      <li><strong>准备素材图库。</strong>在“建库”页填写素材所在的图片目录和图库输出目录，点击“运行”。生成会从这些素材中挑选图片，拼成你的目标图片。</li>
+      <li><strong>复用建好的图库。</strong>等建库任务完成，在下方结果区点击“使用此图库”，数据库路径会自动填入生成和查询页面。</li>
+      <li><strong>提交生成任务。</strong>在“生成马赛克”页填写目标图片和主图输出路径。首次使用可先减小“输出 Tile 尺寸”，例如 <code>18x32</code>，并勾选“生成结果预览”方便查看。</li>
+      <li><strong>到“任务与结果”查看。</strong>点击任务可查看阶段、警告和结果。完成后复制实际路径或下载主图；已生成的预览图会直接显示在页面中。</li>
+    </ol>
+    <div class="btns">
+      <button class="btn btn-primary" type="button" data-open-tab="build">去建库</button>
+      <button class="btn btn-secondary" type="button" data-open-tab="mosaic">去生成马赛克</button>
+    </div>
+    <p class="help-intro">通过 <code>MosaicraftWebUI.exe</code>（Linux/macOS 为 <code>./MosaicraftWebUI</code>）启动后可直接运行。单独打开 HTML 时，可以阅读帮助和复制命令，再到程序所在目录的终端执行。</p>
+  </section>
+
+  <section class="card" id="help-paths" aria-labelledby="help-paths-title">
+    <h3 id="help-paths-title">路径怎么填，图库是什么</h3>
+    <p><strong>目标图片</strong>是你希望拼出来的整体画面；<strong>素材图库</strong>是组成这幅画面的许多小图片。建库会准备统一尺寸的素材、数据库和特征文件。</p>
+    <p>输入或粘贴服务器所在电脑上的路径，例如 <code>D:\photos\target.jpg</code> 或 <code>/home/me/photos/target.jpg</code>。页面上方显示服务工作目录，相对路径从那里开始解析。“复制为路径”附带的外层双引号会自动去掉，中文和空格可以保留。</p>
+    <p>数据库可填写 <code>mosaicraft.db</code> 文件，或包含它的图库目录。首次建库时将素材输入目录与图库输出目录分开填写，后续移动图库时一起保留图片、数据库和特征文件。</p>
+    <p>生成的输出路径填写到文件名，例如 <code>D:\results\mosaic.png</code>。选择明确的输出格式后，程序会调整扩展名；结果区会显示最终保存的位置。</p>
+    <p class="help-intro">浏览器会保存表单草稿和按用途分类的最近 10 个路径，刷新会恢复上次的选择。“清空最近路径”只清空候选记录。</p>
+  </section>
+
+  <section class="card" aria-labelledby="help-options-title">
+    <h3 id="help-options-title">生成选项速查</h3>
+    <p class="help-intro">选项后面的 <code>-i</code>、<code>--preview</code> 等名称对应命令行参数。网页会根据同一份表单生成命令和提交请求，初次使用可以保留默认匹配参数。</p>
+    <details id="help-size">
+      <summary>尺寸与格式：小块有多少，最终图片有多大</summary>
+      <div class="help-table-wrap"><table class="help-table">
+        <thead><tr><th scope="col">选项</th><th scope="col">作用与使用方式</th></tr></thead>
+        <tbody>
+          <tr><td>Tile 宽度 / 高度<br><code>--tile-w / --tile-h</code></td><td>把目标图片按多大的区域划成一个匹配小块，默认 <code>9 × 16</code>。数值越小，小块通常越多，处理量和输出尺寸也会增加。</td></tr>
+          <tr><td>输出 Tile 尺寸<br><code>--output-tile</code></td><td>每张入选素材在最终主图中占用的像素尺寸，格式为 <code>宽x高</code>。调小可减少主图体积；默认 <code>180x320</code>，横向图库会自动调整默认方向。</td></tr>
+          <tr><td>输出宽度 / 高度<br><code>--out-w / --out-h</code></td><td>设置切块前目标图的缩放尺寸。留空或 0 为自动；只填写一轴时另一轴按原比例推导，同时填写两轴时按指定尺寸缩放。最终主图还取决于小块数量与输出 Tile 尺寸。</td></tr>
+          <tr><td>上采样<br><code>--upscale</code></td><td>将目标图先放大再切块。2 倍上采样通常带来约 4 倍的小块数量，也会增加耗时。留空使用默认值，先从 1 倍开始。</td></tr>
+          <tr><td>输出格式<br><code>--format</code></td><td>“由扩展名决定”使用输出路径的后缀。JPG 适合日常分享；PNG 保留像素且支持流式写入；WebP 适合压缩存储；PNG/TIFF 适合超大单图。明确选择格式会覆盖文件后缀。</td></tr>
+          <tr><td>JPEG/WebP 质量<br><code>--quality</code></td><td>范围 1～100，数值越高通常越清晰、文件越大；不控制 PNG、TIFF 或结果预览的质量。</td></tr>
+          <tr><td>PNG 压缩级别<br><code>--png-level</code></td><td>范围 1～9。较高通常更省空间、编码更慢，不改变 PNG 的像素内容。默认 1 优先保存速度。</td></tr>
+          <tr><td>写入模式<br><code>--write-mode</code></td><td><code>auto</code> 自动选择；<code>stream</code> 按行分段写入以降低整图内存占用；<code>batch</code> 在内存中完成整图再保存。WebP 使用整图编码。</td></tr>
+        </tbody>
+      </table></div>
+      <p class="help-example">例如目标图为 <code>90 × 160</code>，匹配 Tile 为 <code>9 × 16</code>，会得到 <code>10 × 10</code> 个小块。输出 Tile 为 <code>180 × 320</code> 时，主图是 <code>1800 × 3200</code>；改为 <code>18 × 32</code> 时，主图为 <code>180 × 320</code>。</p>
+    </details>
+    <details id="help-matching">
+      <summary>匹配与权重：选哪些图片，怎样减少重复</summary>
+      <div class="help-table-wrap"><table class="help-table">
+        <thead><tr><th scope="col">选项</th><th scope="col">作用与使用方式</th></tr></thead>
+        <tbody>
+          <tr><td>候选数<br><code>--candidates</code></td><td>每个小块先检索多少张素材供精细比较，默认 150。增大可扩大选择范围，也会增加计算量；效果还受图库内容影响。</td></tr>
+          <tr><td>TopN 随机<br><code>--topn-random</code></td><td>从评分靠前的 N 个候选中随机选一张，默认 10。设为 1 时选最优候选，较大的值增加变化和多样性，也可能降低局部贴合程度。</td></tr>
+          <tr><td>L 亮度范围<br><code>--l-range</code></td><td>允许的目标小块与候选素材亮度差，默认 20，范围 0～255。调大可接纳更多明暗不同的素材；调得过小可能使某些小块没有候选。</td></tr>
+          <tr><td>邻域窗口<br><code>--neighbor-window</code></td><td>检查本次选图中最近一段选择，减少附近反复使用同一素材。0 使用自动窗口；具体抑制效果还受图库和评分影响。</td></tr>
+          <tr><td>邻域惩罚<br><code>--neighbor-penalty</code></td><td>提高窗口内重复素材的评分成本，默认 100；数值越大越倾向换用其他候选。它与其他去重规则共同生效。</td></tr>
+          <tr><td>复用惩罚<br><code>--penalty</code></td><td>按图库记录的素材使用计数增加评分成本，默认 0.01，与本次任务的邻域惩罚分开计算。</td></tr>
+          <tr><td>LAB 权重<br><code>--lab-weight</code></td><td>整张素材与目标小块的平均颜色、亮度相似程度。</td></tr>
+          <tr><td>Grid 权重<br><code>--grid-weight</code></td><td>不同位置的颜色布局，例如上方偏亮、下方偏暗的分布。</td></tr>
+          <tr><td>Tiny 权重<br><code>--tiny-weight</code></td><td>缩略图中的整体明暗结构。</td></tr>
+          <tr><td>Edge 权重<br><code>--edge-weight</code></td><td>边缘密度，例如平滑区域和轮廓较多的区域。</td></tr>
+          <tr><td>LBP 权重<br><code>--lbp-weight</code></td><td>局部纹理，例如细碎纹理与较平坦的表面。</td></tr>
+        </tbody>
+      </table></div>
+      <p>特征权重决定各项相似度的相对重要程度，必须非负且总和大于 0。初次使用先保留默认值，随后一次调整一项，结合主图与分析报告观察效果。</p>
+    </details>
+    <details id="help-switches">
+      <summary>开关与预览：勾选后会发生什么</summary>
+      <div class="help-table-wrap"><table class="help-table">
+        <thead><tr><th scope="col">选项</th><th scope="col">勾选后的行为</th></tr></thead>
+        <tbody>
+          <tr><td>生成结果预览<br><code>--preview</code></td><td><strong>生成结果预览默认关闭。</strong>勾选后在主图旁额外保存 <code>主图名_preview.jpg</code>，供页面快速查看。预览保持比例、不放大，宽度最多 1400 像素、总像素最多 400 万；主图仍按原设置保存。分块和 DeepZoom 模式不能同时生成单图预览。</td></tr>
+          <tr><td>质量分析<br><code>--analyze</code></td><td>生成匹配评分、素材频次、热力图和 HTML 等分析文件，方便检查效果；增加分析与写文件的耗时。使用统计在分析流程到达提交点时写入。</td></tr>
+          <tr><td>性能分析<br><code>--benchmark</code></td><td>采集和显示处理阶段耗时及缓冲统计，便于判断时间花在哪里。并行阶段的时间可能重叠，不能直接相加。</td></tr>
+          <tr><td>自适应权重<br><code>--adaptive-weights</code></td><td>根据目标小块的平滑、边缘、纹理等特征调整匹配权重，可能改变选图结果。</td></tr>
+          <tr><td>随机亮度调整<br><code>--color-adjust</code></td><td>选图后随机改变每个小块的亮度，默认关闭。“亮度扰动幅度”控制变化范围，例如 0.04 对应最多约 ±4%；只填幅度不会启用该功能。</td></tr>
+          <tr><td>基础图叠加强度<br><code>--overlay-strength</code></td><td>将处理后的目标图叠加到素材上，0 关闭，范围 0～1。0.2 表示 80% 素材与 20% 目标图；增大可增强整体目标画面，也会弱化素材本身的细节。</td></tr>
+          <tr><td>仅 CPU<br><code>--cpu</code></td><td>强制使用 CPU。未勾选时会尝试可用的 CUDA 后端；CUDA 不可用或准备资源不足时，允许回退的阶段会显示警告与实际使用后端。</td></tr>
+          <tr><td>分块输出<br><code>--tiled</code></td><td>将结果分别保存为许多 JPEG 小块，输出前缀后会生成 <code>_files</code> 目录。结果区提供实际目录路径，可在服务器电脑上打开该目录。</td></tr>
+          <tr><td>DeepZoom<br><code>--deepzoom</code></td><td>生成分层小块、<code>.dzi</code> 清单和 HTML 查看页，供缩放浏览。需要一起保留相关文件与目录；查看页依赖的浏览组件需要联网加载。</td></tr>
+        </tbody>
+      </table></div>
+    </details>
+  </section>
+
+  <section class="card" id="help-build" aria-labelledby="help-build-title">
+    <h3 id="help-build-title">建库选项</h3>
+    <div class="help-table-wrap"><table class="help-table">
+      <thead><tr><th scope="col">选项</th><th scope="col">作用与使用方式</th></tr></thead>
+      <tbody>
+        <tr><td>图片目录 / 输出目录 / 数据库</td><td>分别填写素材来源、准备后的图库目录和数据库位置。数据库留空时自动在输出目录内生成，输出目录留空使用 <code>library</code>。</td></tr>
+        <tr><td>归一化尺寸<br><code>--normalize-size</code></td><td>建库素材统一处理到的尺寸，默认 <code>180x320</code>，宽高各支持 1～8192。同一已有图库须保持尺寸一致，改变尺寸请使用新的输出目录和数据库。</td></tr>
+        <tr><td>线程数<br><code>-t</code></td><td>CPU 图片处理使用的线程数量，留空或 0 自动选择。线程更多不保证一定更快，也会增加同时处理图片的资源占用。</td></tr>
+        <tr><td>增量模式<br><code>--append</code></td><td>向现有图库加入新素材并刷新需要更新的特征；结束后仍会按颜色排列整个图库，旧数字文件名可能改变。</td></tr>
+        <tr><td>递归扫描子目录<br><code>-r</code></td><td>同时查找图片目录的下级文件夹，默认只扫描指定目录这一层。</td></tr>
+        <tr><td>仅归一化<br><code>--normalize-only</code></td><td>只准备统一尺寸的素材，不完成用于匹配的特征提取，也不进行全库颜色重编号。要用于生成马赛克，还需正常建库。</td></tr>
+        <tr><td>跳过已有图库确认<br><code>-y</code></td><td>允许在已有记录的图库继续普通建库；选择增量模式时也可继续建库。普通和增量建库都会按颜色重新编号；输入与输出目录相同时，已索引原图的文件名也可能改变。</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="card" id="help-tools" aria-labelledby="help-tools-title">
+    <h3 id="help-tools-title">查询、统计、健康、清理和使用记录</h3>
+    <div class="help-table-wrap"><table class="help-table">
+      <thead><tr><th scope="col">功能</th><th scope="col">什么时候用</th></tr></thead>
+      <tbody>
+        <tr><td>查询</td><td>填写图片路径，查看图像信息，以及指定图库中亮度接近的候选数量和亮度分布。</td></tr>
+        <tr><td>统计</td><td>查看图库图片数量、尺寸和特征等汇总，确认当前使用的是哪个图库。</td></tr>
+        <tr><td>健康</td><td>检查素材文件是否缺失、特征状态等，排查图库读取或生成问题。</td></tr>
+        <tr><td>清理</td><td>清理素材文件已丢失的悬空记录及关联特征文件。未勾选“跳过确认”时只预览；勾选后运行还会要求确认实际操作。</td></tr>
+        <tr><td>使用记录 / Top N</td><td>查看已记录的素材使用情况，Top N 控制显示多少条。该统计由质量分析流程写入，普通生成不会补写。</td></tr>
+        <tr><td>使用记录 / 导出目录</td><td>填写后运行会将记录为使用过的素材复制到指定目录，并要求确认；留空时只查询使用记录。</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="card" id="help-results" aria-labelledby="help-results-title">
+    <h3 id="help-results-title">任务进度、诊断与结果怎么读</h3>
+    <p><strong>排队</strong>表示等待执行，只有排队任务可取消；<strong>运行中</strong>显示当前阶段和已完成数量，计数是阶段进度。读取索引、单次编码等阶段可能只有阶段名称与运行时间。</p>
+    <p><strong>警告</strong>可能表示 CUDA 回退、跳过素材或缺失小块，结合实际后端和最终状态判断结果。<strong>失败</strong>区会给出原因、相关路径及处理建议，技术详情可展开查看，也可复制或导出诊断 JSON。</p>
+    <p>主图保存后仍可能进行预览、分析和统计提交。后续阶段失败时，已经有效保存的主图仍显示在结果区。下载以登记的实际产物为准；文件已被改写或删除时会提示不可用。</p>
+    <p>切换功能页或阅读帮助时任务继续跟踪。“恢复参数”将选中任务的参数填回表单，检查后需要自行点击运行。HTML 报告以附件下载；分块结果显示实际目录或清单路径。</p>
+    <p class="help-intro">任务和诊断只保留在当前服务会话，保留最近 50 个完成任务。刷新页面可恢复同会话中的跟踪；重启服务会清空旧会话记录。清理任务记录只移除记录，输出文件仍然保留。</p>
+  </section>
+
+  <section class="card" id="help-faq" aria-labelledby="help-faq-title">
+    <h3 id="help-faq-title">常见问题</h3>
+    <details><summary>为什么预览选项变灰了？</summary><p>检查是否勾选了分块输出或 DeepZoom；这两种模式不支持单图预览，页面会清除并禁用“生成结果预览”。旧服务未提供预览能力时也会禁用，并显示原因。</p></details>
+    <details><summary>为什么没有候选，或者部分小块是空的？</summary><p>先检查图库是否可读、素材是否足够，以及 L 亮度范围是否过窄。适当放宽范围或补充对应明暗、色调的素材；缺失素材和特征可通过健康检查与重新建库排查。</p></details>
+    <details><summary>为什么文件名后缀或最终尺寸和预想的不一样？</summary><p>明确选择输出格式时，最终后缀会按格式调整。最终尺寸由目标图处理后的网格数量与输出 Tile 尺寸共同决定，参见“尺寸与格式”的例子；实际结果区提供最终路径和尺寸。</p></details>
+    <details><summary>为什么使用记录没有数据？</summary><p>使用统计在勾选“质量分析”的生成任务到达分析提交点后写入。普通生成不会提交这份统计，分析提前退出或统计提交失败时也不会产生本轮完整记录。</p></details>
+    <details><summary>服务断线或提交超时后怎么办？</summary><p>页面会保留最后状态并自动重连。若提示“提交结果未知”，先检查任务列表确认是否已经创建任务，再决定是否重新提交，以免重复执行。</p></details>
+    <details><summary>为什么刷新后某些开关仍然勾选？</summary><p>页面会恢复你上次的表单草稿，包括勾选状态。“默认关闭”表示新表单的初始设置；开始新任务前可以调整已恢复的选项。</p></details>
+  </section>
+</article>
+
 <!-- ============ OUTPUT ============ -->
-<div class="output-area">
+<div class="output-area" id="command-area">
   <div class="cmd-bar">
     <span>生成的命令 (PowerShell)</span>
     <span id="copy-feedback" style="color:var(--accent2);display:none">✅ 已复制!</span>
@@ -303,9 +491,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <button class="btn btn-primary" onclick="generateCommand()">🔄 生成命令</button>
     <button class="btn btn-secondary" id="btn-copy-command" onclick="copyCommand()" disabled>📋 复制到剪贴板</button>
     <button class="btn btn-primary" id="btn-run" onclick="runCommand()" style="display:none">▶ 运行</button>
-    <button class="btn btn-secondary" id="btn-cancel-job" onclick="cancelCurrentJob()" style="display:none" disabled>取消任务</button>
     <button class="btn btn-secondary" onclick="clearRecentPaths()">清空最近路径</button>
-    <button class="btn btn-secondary" id="btn-clear-jobs" onclick="clearFinishedJobs()" style="display:none">清理完成任务记录</button>
   </div>
   <div id="run-status" style="margin-top:10px;font-size:0.82rem;color:var(--fg2);display:none"></div>
 </div>
@@ -316,9 +502,11 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div id="task-connection" role="status" aria-live="polite">正在连接…</div>
   <div id="task-note" role="status" aria-live="polite"></div>
   <div class="btns">
+    <button class="btn btn-secondary" id="btn-cancel-job" onclick="cancelCurrentJob()" style="display:none" disabled>取消任务</button>
     <button class="btn btn-secondary" id="btn-restore-task" onclick="restoreTaskParameters()" disabled>恢复参数</button>
     <button class="btn btn-secondary" id="btn-copy-diagnostics" onclick="copyDiagnostics()" disabled>复制诊断</button>
     <button class="btn btn-secondary" id="btn-export-diagnostics" onclick="exportDiagnostics()" disabled>导出诊断 JSON</button>
+    <button class="btn btn-secondary" id="btn-clear-jobs" onclick="clearFinishedJobs()" style="display:none">清理完成任务记录</button>
   </div>
   <div class="task-layout"><div id="task-list"></div><div id="task-detail"></div></div>
 </section>
@@ -330,12 +518,29 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 // Tab switching
 document.querySelectorAll('.tab').forEach(t => {
   t.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(x => {
+      x.classList.remove('active');
+      x.removeAttribute('aria-current');
+    });
     document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
     t.classList.add('active');
+    t.setAttribute('aria-current', 'page');
     document.getElementById('panel-' + t.dataset.cmd).classList.add('active');
     generateCommand();
   });
+});
+
+document.addEventListener('click', event => {
+  const shortcut = event.target.closest && event.target.closest('[data-open-tab], [data-open-help]');
+  if (!shortcut) return;
+  const command = shortcut.dataset.openTab || 'help';
+  const tab = Array.from(document.querySelectorAll('.tab')).find(item => item.dataset.cmd === command);
+  if (tab) tab.click();
+  if (tab && shortcut.dataset.openTab) document.getElementById('panel-' + command).scrollIntoView({block:'start'});
+  if (shortcut.dataset.openHelp) {
+    const section = document.getElementById(shortcut.dataset.openHelp);
+    if (section && section.tagName === 'DETAILS') section.open = true;
+  }
 });
 
 document.addEventListener('click', event =>
@@ -360,6 +565,14 @@ function generateCommand() {
   clearFieldErrors();
   syncPreviewOption();
   const tab = document.querySelector('.tab.active').dataset.cmd;
+  document.getElementById('command-area').hidden = tab === 'help';
+  if (tab === 'help') {
+    // Help is a local document view and must never generate or submit a command.
+    formModel = {valid:false, tab, payload:null};
+    updateRunButton();
+    persistDraft();
+    return;
+  }
   try {
     const payload = readFormPayload(tab);
     formModel = {valid:true, tab, payload};
@@ -533,6 +746,7 @@ function missingRequiredOperations(endpoints) {
 
 async function runCommand() {
   const tab = document.querySelector('.tab.active').dataset.cmd;
+  if (tab === 'help') return;
   const status = document.getElementById('run-status');
   status.style.display = '';
   status.textContent = '正在提交任务...';
