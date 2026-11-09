@@ -383,68 +383,13 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 
 ## 8. 构建与发布 / Build & Release
 
-> **EN**: Windows build with CMake + vcpkg (OpenCV, SQLite3, libtiff). CUDA optional via `MOSAICRAFT_CUDA=OFF`. Release package: ~4.8 MB zip.
+当前源码构建的工具要求、固定依赖安装、平台 Preset、测试与发布命令统一维护在 [README：安装与构建](../README.md#安装与构建)。首次构建请从该入口开始；测试程序不参与默认构建，须按说明显式构建测试目标后再运行 CTest。
 
-### 依赖安装
+- [CI 与原生发布包](CI_PACKAGING.md)：依赖缓存、运行库部署、平台包和独立附件验收。
+- [正式发布准入清单](RELEASE_CHECKLIST.md)：发布所需的平台检查与 GPU 验收条件。
+- [CUDA 多架构验证](CUDA_ARCHITECTURES.md)与 [CUDA 13.5 迁移记录](CUDA_13_5_MIGRATION.md)：当前工具链边界和历史实测。
 
-```powershell
-vcpkg install opencv4 sqlite3 tiff --triplet x64-windows
-```
-
-### 编译
-
-```powershell
-# GPU 加速 (默认，需 CUDA Toolkit)
-cmake -B build -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
-cmake --build build --config Release
-
-# 纯 CPU 编译
-cmake -B build -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake -DMOSAICRAFT_CUDA=OFF
-cmake --build build --config Release
-```
-
-编译后自动复制 `index.html` + CUDA DLL (`cudart64_*.dll`) 到 `build/Release/bin/`。
-
-### 发布前验证
-
-```powershell
-# 单元/API 合约测试 + 服务层回归测试
-cmake --build build --config Release --target mosaicraft_tests mosaicraft_regression_tests
-ctest --test-dir build -C Release --output-on-failure
-
-# Web UI/API 真实 smoke：启动本地 HTTP 服务，提交 build/mosaic job，检查输出
-cmake --build build --config Release --target mosaicraft_webui_smoke
-```
-
-### 发布打包
-
-```powershell
-# 发布前环境检查，不构建、不打包
-.\scripts\release.ps1 -InspectOnly -BuildDir build -Configuration Release
-
-# 默认 CUDA Release 发布：配置、构建、CTest、WebUI smoke、打包、解压验证、SHA256
-.\scripts\release.ps1 -BuildDir build -Configuration Release
-
-# CI/无 CUDA 环境：生成 CPU-only 发布候选包
-.\scripts\release.ps1 -BuildDir build-ci -Configuration Release -NoCuda -PackageSuffix ci-cpu
-
-# 发布后验收 GitHub Release 上真实可下载的 zip
-.\scripts\verify-release-asset.ps1 -Tag v<version>
-```
-
-发布脚本会生成 `Mosaicraft_v<version>_<platform>-<arch>_<runtime>.zip`。当前正式 Windows CUDA 包名为 `Mosaicraft_v<version>_windows-x64_cuda.zip`；CI CPU-only 候选包名为 `Mosaicraft_v<version>_windows-x64_cpu-only_ci-cpu.zip`。正式打包要求 git 工作区干净。历史更新说明统一维护在本文件中，打包时会复制为包内的 `ENCYCLOPEDIA.md`。脚本会复制 EXE、DLL、`index.html`、`README.md`、`API.md`、`LICENSE`、`ENCYCLOPEDIA.md`、`BUILD_INFO.txt` 和第三方版本清单，并验证：
-
-- 包内 CLI `--version` 与项目版本一致；
-- 包内 `BUILD_INFO.txt` 的版本、包名和 git commit 与当前源码一致；
-- 包内 `MosaicraftWebUI.exe` 可启动；
-- Web UI/API smoke 可提交 build/mosaic job；
-- SHA256 可直接用于发布校验。
-
-`verify-release-asset.ps1` 是发布后的真实附件验收入口。它从 GitHub Release 下载 zip，校验 asset digest、Release 页面 SHA256 和文件 SHA256，解压检查包结构和文档策略，确认包内 `BUILD_INFO.txt` 的 commit 匹配 GitHub tag，并使用解压后的 `MosaicraftWebUI.exe` 跑 Web UI/API smoke。这个步骤用于发现“本地包通过，但 Release 页面附件不是同一个产物”的问题。
-
-发布包 ~5 MB，解压即用。需 NVIDIA 驱动支持 GPU 加速（CPU fallback 可用 `MOSAICRAFT_CUDA=OFF` 编译）。Windows CPU-only CI 门禁位于 `.github/workflows/ci.yml`，复用同一个发布脚本生成 `windows-x64_cpu-only_ci-cpu` 候选包。
-
-正式发布以 `docs/RELEASE_CHECKLIST.md` 为准：本机 CUDA 发布包用于正式附件，远端 CPU-only CI 用于基础质量门禁。GitHub hosted CI 当前不验证 CUDA；如需自动化 CUDA 发布，应配置自托管 Windows GPU runner。
+下方版本记录描述对应版本的历史行为；当前构建、打包和验收要求以上述入口为准。
 
 ---
 

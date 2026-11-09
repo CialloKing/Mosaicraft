@@ -111,16 +111,19 @@ $env:VCPKG_ROOT = (Resolve-Path build/tools/vcpkg).Path
 ```powershell
 # 将 windows-cpu 替换为当前平台所需的 Preset
 cmake --preset windows-cpu
-cmake --build --preset windows-cpu
+cmake --build --preset windows-cpu --target mosaicraft MosaicraftWebUI mosaicraft_tests mosaicraft_regression_tests --parallel
 ctest --preset windows-cpu
 
 # CUDA：显式选择已安装的 SDK，再使用对应 CUDA Preset
 $env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5'
 cmake --preset windows-cuda
-cmake --build --preset windows-cuda
+cmake --build --preset windows-cuda --target mosaicraft MosaicraftWebUI mosaicraft_tests mosaicraft_regression_tests --parallel
+ctest --preset windows-cuda
 ```
 
 每个 Preset 使用独立的 `build/<preset>`，程序位于其 `Release/bin`。Windows 旧入口 `cmake --preset default`、`cmake --build --preset release` 继续映射到 `windows-cuda`；`relwithdebinfo` 配置与构建入口使用独立目录。项目内核仍允许直接 CMake 配置，维护和 CI 使用上述入口；个人覆盖配置可写入不提交的 `CMakeUserPresets.json`。
+
+测试程序不参与默认构建，因此上面的命令显式列出两个测试目标；仅执行不带 `--target` 的默认构建后，不能直接运行完整 CTest。
 
 ### 编译选项
 
