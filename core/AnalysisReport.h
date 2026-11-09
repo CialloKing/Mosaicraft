@@ -38,5 +38,6 @@ struct AnalysisReportContext
 };
 
 // 返回需要提交的使用计数；禁用分析或目录创建失败时返回空计数。
-std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &context);
+std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &context,
+                                                 RuntimeContext *runtime = nullptr);
 } // namespace mosaicraft::detail

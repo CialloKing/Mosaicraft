@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <iomanip>
+#include <sstream>
 #include <iostream>
 #include <mutex>
 #include <queue>
@@ -83,17 +84,18 @@ static bool stdinIsTty()
 
 } // namespace
 
-ServiceResult BuildService::run(const BuildRequest& request) const
+static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runtime)
 {
+    runtime.stage("validating");
     const auto commandStart = std::chrono::steady_clock::now();
     std::string validationError;
     if (!validateBuildRequest(request, validationError))
     {
-        return ServiceResult::failure(1, validationError);
+        return runtimeFailure(runtime, 1, validationError, "invalid_argument", "config");
     }
     if (request.inputDir.empty())
     {
-        return ServiceResult::failure(1, "inputDir is required");
+        return runtimeFailure(runtime, 1, "inputDir is required", "invalid_argument", "inputDir");
     }
     std::lock_guard<std::mutex> pipelineLock(pipelineMutex());
 
@@ -108,28 +110,32 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     fs::create_directories(u8path(outputDir), ec);
     if (ec)
     {
-        return ServiceResult::failure(1, "cannot create output directory: " + outputDir);
+        return runtimeFailure(runtime, 1, "cannot create output directory: " + outputDir, "output_write_failed",
+                              "outputDir", outputDir);
     }
 
     Database db(resolveDbPathForService(dbPath), Database::OpenMode::Build);
     if (!db.isOpen())
     {
-        return ServiceResult::failure(EXIT_ERR_DB, "cannot open database: " + dbPath + "; " + db.error());
+        return runtimeFailure(runtime, EXIT_ERR_DB, "cannot open database: " + dbPath + "; " + db.error(),
+                              "library_unavailable", "dbPath", dbPath);
     }
 
     if (!db.createTables())
     {
-        return ServiceResult::failure(EXIT_ERR_DB, "cannot create database tables");
+        return runtimeFailure(runtime, EXIT_ERR_DB, "cannot create database tables", "library_unavailable", "dbPath",
+                              dbPath);
     }
 
     std::string recoveryError;
     if (!recoverLibraryColorOrder(db, recoveryError))
     {
-        return ServiceResult::failure(EXIT_ERR_DB, recoveryError);
+        return runtimeFailure(runtime, EXIT_ERR_DB, recoveryError, "operation_failed", "");
     }
     if (!fs::is_directory(u8path(request.inputDir), ec))
     {
-        return ServiceResult::failure(1, "cannot read input directory: " + request.inputDir);
+        return runtimeFailure(runtime, 1, "cannot read input directory: " + request.inputDir, "input_unreadable",
+                              "inputDir", request.inputDir);
     }
 
     if (!request.appendMode && !request.normalizeOnly)
@@ -139,8 +145,10 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         {
             if (!request.allowPrompt || !stdinIsTty())
             {
-                return ServiceResult::failure(1, "DB has " + std::to_string(existingCount) +
-                                                     " records. Use appendMode or forceMode to continue building.");
+                return runtimeFailure(runtime, 1,
+                                      "DB has " + std::to_string(existingCount) +
+                                          " records. Use appendMode or forceMode to continue building.",
+                                      "operation_failed", "");
             }
             std::cout << "Database has " << existingCount
                       << " records. Continue building and renumber the entire library by color? [y/N] " << std::flush;
@@ -160,7 +168,8 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         if (db.getMeta("feature_w") != std::to_string(request.normalizeWidth) ||
             db.getMeta("feature_h") != std::to_string(request.normalizeHeight))
         {
-            return ServiceResult::failure(1, "feature dimensions differ; use a new library directory/database");
+            return runtimeFailure(runtime, 1, "feature dimensions differ; use a new library directory/database",
+                                  "library_incompatible", "dbPath", dbPath);
         }
         FeatureExtractor refresh;
         for (auto record : existingRecords)
@@ -172,14 +181,15 @@ ServiceResult BuildService::run(const BuildRequest& request) const
             auto image = imreadUnicode(record.filePath, cv::IMREAD_COLOR);
             if (image.empty())
             {
-                return ServiceResult::failure(1, "restore missing library files or run db-purge before rebuilding");
+                return runtimeFailure(runtime, 1, "restore missing library files or run db-purge before rebuilding",
+                                      "operation_failed", "");
             }
             // 保留记录 ID、使用次数与原文件；刷新旧特征，同时修正旧 CUDA 的编码前哈希。
             record.fileHash = hashMatForBuild(image);
             refresh.compute(image, record, featDir, "id_" + std::to_string(record.id));
             if (!db.insertImage(record))
             {
-                return ServiceResult::failure(2, "cannot refresh legacy features");
+                return runtimeFailure(runtime, 2, "cannot refresh legacy features", "operation_failed", "");
             }
         }
     }
@@ -189,13 +199,14 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         (!db.setMeta("feature_w", std::to_string(request.normalizeWidth)) ||
          !db.setMeta("feature_h", std::to_string(request.normalizeHeight))))
     {
-        return ServiceResult::failure(EXIT_ERR_DB, "cannot save library dimensions");
+        return runtimeFailure(runtime, EXIT_ERR_DB, "cannot save library dimensions", "operation_failed", "");
     }
 
     const std::vector<std::string> exts = {
         ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif"
     };
 
+    runtime.stage("scanning");
     std::vector<std::string> files;
     auto addEntry = [&](const auto& entry) {
         if (!entry.is_regular_file()) return;
@@ -228,14 +239,16 @@ ServiceResult BuildService::run(const BuildRequest& request) const
 
     if (ec)
     {
-        return ServiceResult::failure(1, "cannot scan input directory: " + ec.message());
+        return runtimeFailure(runtime, 1, "cannot scan input directory: " + ec.message(), "input_unreadable",
+                              "inputDir", request.inputDir);
     }
     std::sort(files.begin(), files.end());
     std::cout << "Found " << files.size() << " image(s) in " << request.inputDir << std::endl;
 
     if (files.empty() && (existingRecords.empty() || request.normalizeOnly))
     {
-        return ServiceResult::failure(1, "no supported images found");
+        return runtimeFailure(runtime, 1, "no supported images found", "input_unreadable", "inputDir",
+                              request.inputDir);
     }
 
     auto tBuildStart = std::chrono::steady_clock::now();
@@ -275,6 +288,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         outPaths[i] = pathToUtf8(candidate);
     }
     std::atomic<int> normDone{0};
+    std::atomic<int> normalizationProcessed{0};
     int normThreads = request.threads > 0
         ? std::max(1, request.threads)
         : static_cast<int>(std::thread::hardware_concurrency());
@@ -298,10 +312,12 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     std::atomic<bool> normPhaseDone{false};
     std::atomic<int> gpuDone{0};
 
+    runtime.stage("preparing_images");
     FeatureExtractor extractor;
     const auto preflight = request.normalizeOnly ? cuda::CudaAvailability{} : cuda::queryCudaAvailability();
     if (!request.normalizeOnly && !preflight.available)
     {
+        runtime.emit("warning", "cuda_unavailable", preflight.reason);
         std::cout << "CUDA unavailable; using CPU before extraction: " << preflight.reason << std::endl;
     }
     bool gpuOk = false;
@@ -309,6 +325,10 @@ ServiceResult BuildService::run(const BuildRequest& request) const
 #ifdef MOSAICRAFT_CUDA
     gpuOk = preflight.available && cuda::hasTemplateFeatures(request.normalizeWidth, request.normalizeHeight);
 #endif
+    runtime.backends(request.normalizeOnly ? "none"
+                     : gpuOk               ? "template_cuda"
+                                           : "cpu",
+                     "none", preflight.available ? "" : preflight.reason);
     constexpr int GPU_BATCH = 256;
     int inserted = 0;
     int skipped = 0;
@@ -387,6 +407,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                         }
                         gpuDone += static_cast<int>(imgs.size());
                         int gd = gpuDone.load();
+                        runtime.advance("features", gd, files.size(), "images", true);
                         if (gd % 2000 == 0 || gd == static_cast<int>(files.size()))
                         {
                             std::cout << "\r  gpu feature " << gd << "/" << files.size() << std::flush;
@@ -444,8 +465,12 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                         rec.fileSize = static_cast<int64_t>(fs::file_size(u8path(item.outPath), sizeEc));
                         if (sizeEc)
                         {
-                            std::cerr << "WARN: cannot stat output file: " << item.outPath << " (" << sizeEc.message()
-                                      << ")" << std::endl;
+                            {
+                                std::ostringstream detail;
+                                detail << "cannot stat output file: " << item.outPath << " (" << sizeEc.message()
+                                       << ")";
+                                runtime.emit("warning", "source_skipped", detail.str());
+                            }
                             skipped++;
                             continue;
                         }
@@ -518,6 +543,10 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                         const bool needPixels = gpuOk && !request.normalizeOnly;
                         if (!normalizer.process(inPath, pathToUtf8(outPath), writeParams, needPixels ? &result : nullptr))
                         {
+                            runtime.emit("warning", "source_skipped", "normalization failed", "inputDir", inPath);
+                            const int processed = ++normalizationProcessed;
+                            runtime.advance("normalization", processed, files.size(), "images",
+                                            processed == files.size());
                             continue;
                         }
                         okFlags[fi] = true;
@@ -540,9 +569,15 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                     }
                     catch (const std::exception& error)
                     {
-                        std::cerr << "WARN: normalization skipped " << inPath << ": " << error.what() << std::endl;
+                        {
+                            std::ostringstream detail;
+                            detail << "normalization skipped " << inPath << ": " << error.what();
+                            runtime.emit("warning", "source_skipped", detail.str());
+                        }
                     }
                     int d = ++normDone;
+                    const int processed = ++normalizationProcessed;
+                    runtime.advance("normalization", processed, files.size(), "images", processed == files.size());
                     if (d % 200 == 0 || d == (int)files.size())
                     {
                         std::cout << "\r  normalize " << d << "/" << files.size()
@@ -562,6 +597,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     {
         outPaths = files;
         normDone = static_cast<int>(files.size());
+        runtime.advance("normalization", files.size(), files.size(), "images", true);
         for (size_t i = 0; i < files.size(); ++i)
         {
             if (gpuOk && !request.normalizeOnly)
@@ -569,7 +605,11 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 auto image = imreadUnicode(files[i], cv::IMREAD_COLOR);
                 if (image.empty())
                 {
-                    std::cerr << "WARN: cannot decode library image: " << files[i] << std::endl;
+                    {
+                        std::ostringstream detail;
+                        detail << "cannot decode library image: " << files[i];
+                        runtime.emit("warning", "source_skipped", detail.str());
+                    }
                     continue;
                 }
                 std::unique_lock<std::mutex> lock(queueMtx);
@@ -603,7 +643,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
             }
             catch (const std::exception& error)
             {
-                return ServiceResult::failure(1, error.what());
+                return runtimeFailure(runtime, 1, error.what(), "cuda_execution_failed", "");
             }
         }
         std::cout << "  GPU done: " << gpuDone.load() << std::endl;
@@ -633,6 +673,8 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                   << " (ordered batches, max " << batchLimit << " images, 64 MiB buffer budget)" << std::endl;
         if (compatibleRequested && !compatibleReady)
         {
+            runtime.emit("warning", "cuda_resource_fallback",
+                         "Generic CUDA resources unavailable; using CPU before extraction.");
             std::cout << "  Generic CUDA resources unavailable; using CPU before extraction." << std::endl;
         }
         for (size_t first = 0; first < files.size(); first += batchLimit)
@@ -688,7 +730,11 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                         fs::remove(u8path(outPath), removeError);
                         if (removeError)
                         {
-                            std::cerr << "WARN: cannot remove duplicate output file: " << outPath << std::endl;
+                            {
+                                std::ostringstream detail;
+                                detail << "cannot remove duplicate output file: " << outPath;
+                                runtime.emit("warning", "source_skipped", detail.str());
+                            }
                         }
                     }
                     images[i].release();
@@ -745,7 +791,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 catch (const std::exception &error)
                 {
                     // CUDA 运行期失败中止本批；此时尚未写特征文件或开始数据库事务。
-                    return ServiceResult::failure(1, error.what());
+                    return runtimeFailure(runtime, 1, error.what(), "cuda_execution_failed", "");
                 }
             }
             workers.run(count,
@@ -787,8 +833,11 @@ ServiceResult BuildService::run(const BuildRequest& request) const
             {
                 if (!errors[i].empty())
                 {
-                    std::cerr << "WARN: feature extraction skipped " << outPaths[first + i] << ": " << errors[i]
-                              << std::endl;
+                    {
+                        std::ostringstream detail;
+                        detail << "feature extraction skipped " << outPaths[first + i] << ": " << errors[i];
+                        runtime.emit("warning", "source_skipped", detail.str());
+                    }
                 }
                 if (!records[i].filePath.empty() && !ready[i])
                 {
@@ -800,7 +849,8 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 // SQL 只在调用线程执行；失败回滚整批，提交后才增加已入库数量。
                 if (!db.beginTransaction())
                 {
-                    return ServiceResult::failure(2, "cannot begin CPU build transaction");
+                    return runtimeFailure(runtime, 2, "cannot begin CPU build transaction", "usage_commit_failed",
+                                          "dbPath", dbPath);
                 }
                 bool written = true;
                 for (size_t i = 0; i < count; ++i)
@@ -814,14 +864,17 @@ ServiceResult BuildService::run(const BuildRequest& request) const
                 if (!written || !db.commitTransaction())
                 {
                     db.rollbackTransaction();
-                    return ServiceResult::failure(2, "cannot commit CPU build batch; transaction rolled back");
+                    return runtimeFailure(runtime, 2, "cannot commit CPU build batch; transaction rolled back",
+                                          "usage_commit_failed", "dbPath", dbPath);
                 }
                 inserted += batchCount;
             }
+            runtime.advance("features", first + count, files.size(), "images", first + count == files.size());
             std::cout << "\r  features " << first + count << "/" << files.size() << " (ok:" << inserted
                       << " skip:" << skipped << ")   " << std::flush;
         }
         std::cout << std::endl;
+        runtime.backends(compatibleReady ? "compatible_cuda" : "cpu", "none");
         if (compatibleReady)
         {
             std::cout << "  Generic CUDA: " << compatibleTimings.images << " images, "
@@ -838,19 +891,24 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     {
         std::cout << "Normalize only: " << normDone.load()
                   << " images written to " << outputDir << std::endl;
+        runtime.stage("finalizing");
+        runtime.artifact("normalized", "directory", outputDir);
         return ServiceResult::success("normalize completed");
     }
     if (inserted == 0 && db.totalCount() == 0)
     {
-        return ServiceResult::failure(1, "no readable images could be indexed");
+        return runtimeFailure(runtime, 1, "no readable images could be indexed", "input_unreadable", "inputDir",
+                              request.inputDir);
     }
 
+    runtime.stage("reordering_library");
     const auto tColorStart = std::chrono::steady_clock::now();
     ColorOrderResult colorResult;
     std::string colorError;
     if (!reorderLibraryByColor(db, outputDir, colorResult, colorError))
     {
-        return ServiceResult::failure(1, "cannot reorder library by color: " + colorError);
+        return runtimeFailure(runtime, 1, "cannot reorder library by color: " + colorError, "library_unavailable",
+                              "dbPath", dbPath);
     }
     const double colorSeconds = std::chrono::duration<double>(
         std::chrono::steady_clock::now() - tColorStart).count();
@@ -876,6 +934,7 @@ ServiceResult BuildService::run(const BuildRequest& request) const
               << "s | color ordering " << colorSeconds << "s";
     std::cout << std::endl;
 
+    runtime.stage("building_cache");
     tCacheStart = std::chrono::steady_clock::now();
     std::cout << "Building feature cache..." << std::flush;
     FeaturePack::Stats cacheStats;
@@ -890,7 +949,8 @@ ServiceResult BuildService::run(const BuildRequest& request) const
     else
     {
         std::cout << " failed" << std::endl;
-        return ServiceResult::failure(1, "cannot build feature cache after color ordering");
+        return runtimeFailure(runtime, 1, "cannot build feature cache after color ordering", "library_unavailable",
+                              "dbPath", dbPath);
     }
     auto cacheSec = std::chrono::duration_cast<Ms>(
         std::chrono::steady_clock::now() - tCacheStart).count() / 1000.0;
@@ -908,7 +968,29 @@ ServiceResult BuildService::run(const BuildRequest& request) const
         std::cout << "  GPU normalization/features overlap; child timings are not additive.\n";
     }
 
+    runtime.stage("finalizing");
+    runtime.artifact("library", "database", resolveDbPathForService(dbPath), "application/vnd.sqlite3");
+    runtime.artifact("library-directory", "directory", outputDir);
     return ServiceResult::success("build completed");
 }
 
+ServiceResult BuildService::run(const BuildRequest &request) const
+{
+    RuntimeContext runtime;
+    return run(request, runtime);
+}
+
+ServiceResult BuildService::run(const BuildRequest &request, RuntimeContext &runtime) const
+{
+    auto result = runBuild(request, runtime);
+    // SQLite 最终关闭后再刷新图库文件指纹。
+    for (const auto &item : runtime.snapshot().artifacts)
+    {
+        if (item.kind == "database")
+        {
+            runtime.artifact(item.id, item.kind, item.path, item.mime);
+        }
+    }
+    return runtimeResult(std::move(result), runtime);
+}
 } // namespace mosaicraft

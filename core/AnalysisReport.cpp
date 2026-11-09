@@ -1,4 +1,5 @@
 #include "AnalysisReport.h"
+#include "RuntimeContext.h"
 #include "FeatureUtils.h"
 #include "UnicodeIO.h"
 #include <opencv2/imgcodecs.hpp>
@@ -14,7 +15,7 @@
 
 namespace mosaicraft::detail
 {
-std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ctx)
+std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ctx, RuntimeContext *runtime)
 {
     const auto &cfg = ctx.cfg;
     const auto &outputPath = ctx.outputPath;
@@ -319,7 +320,14 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
     std::filesystem::create_directories(u8path(anaDir), ec);
     if (ec)
     {
-        std::cerr << "WARNING: analysis dir creation failed: " << ec.message() << std::endl;
+        if (runtime)
+        {
+            runtime->emit("warning", "analysis_write_failed", ec.message(), {}, anaDir);
+        }
+        else
+        {
+            std::cerr << "WARNING: analysis dir creation failed: " << ec.message() << std::endl;
+        }
         return {};
     }
 
@@ -327,7 +335,14 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
     std::filesystem::create_directories(u8path(freqDir), ec);
     if (ec)
     {
-        std::cerr << "WARNING: freq_rank dir creation failed: " << ec.message() << std::endl;
+        if (runtime)
+        {
+            runtime->emit("warning", "analysis_write_failed", ec.message(), {}, freqDir);
+        }
+        else
+        {
+            std::cerr << "WARNING: freq_rank dir creation failed: " << ec.message() << std::endl;
+        }
         return {};
     }
     int exported = 0;
@@ -430,6 +445,11 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
                 cause = "combined mismatch";
             }
             rpt << "  Cause: " << cause << "\n";
+        }
+        rpt.close();
+        if (runtime && rpt)
+        {
+            runtime->artifact("analysis-text", "report", rptPath, "text/plain; charset=utf-8");
         }
         std::cout << "  Diagnosis report: " << rptPath << "\n";
     }
@@ -637,6 +657,10 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
         html << "<p>Heatmap: <a href=\"heatmap.png\">heatmap.png</a></p>\n";
         html << "</body></html>";
         html.close();
+        if (runtime && html)
+        {
+            runtime->artifact("analysis-html", "report", htmlPath, "text/html; charset=utf-8");
+        }
         std::cout << "  HTML report: " << htmlPath << "\n";
     }
 

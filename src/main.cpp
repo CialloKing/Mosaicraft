@@ -317,10 +317,6 @@ static int cmdBuild(int argc, char* argv[])
 
     BuildService service;
     ServiceResult result = service.run(request);
-    if (!result.ok && !result.message.empty())
-    {
-        std::cerr << "ERROR: " << result.message << std::endl;
-    }
     return result.exitCode;
 }
 
@@ -638,10 +634,6 @@ static int cmdMosaic(int argc, char* argv[])
 
     MosaicService service;
     ServiceResult result = service.run(request);
-    if (!result.ok && !result.message.empty())
-    {
-        std::cerr << "ERROR: " << result.message << std::endl;
-    }
     return result.exitCode;
 }
 

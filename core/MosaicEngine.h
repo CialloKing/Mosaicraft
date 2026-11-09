@@ -6,6 +6,7 @@
 
 namespace mosaicraft
 {
+class RuntimeContext;
 
 class MosaicEngine
 {
@@ -98,6 +99,9 @@ public:
     };
 
     MosaicEngine() = default;
+
+    bool generate(const std::string &targetPath, const std::string &dbPath, const std::string &outputPath,
+                  const Config &config, RuntimeContext &runtime);
 
     bool generate(const std::string& targetPath,
                   const std::string& dbPath,

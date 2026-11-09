@@ -1,4 +1,5 @@
 ﻿#include "MosaicOutput.h"
+#include "RuntimeContext.h"
 #include "BigTiffWriter.h"
 #include "DeepZoomWriter.h"
 #include "ImageCache.h"
@@ -52,13 +53,17 @@ uint64_t availableMemory()
 static bool writeOutput(const MosaicEngine::Config &config, const std::string &path, int tilesX, int tilesY, int tileW,
                         int tileH, const std::function<const ImageRecord &(size_t)> &recordAt,
                         const std::vector<int> &selected, const std::function<void(cv::Mat &, double)> &adjustColor,
-                        OutputStats &stats, const cv::Mat &target)
+                        OutputStats &stats, const cv::Mat &target, RuntimeContext *runtime)
 {
     try
     {
         auto now = [&]() { return config.benchmark ? Clock::now() : Clock::time_point{}; };
         auto elapsed = [&](Clock::time_point start) { return config.benchmark ? milliseconds(start) : 0.0; };
         stats = {};
+        if (runtime)
+        {
+            runtime->stage("writing_output");
+        }
         if (config.generatePreview && (config.tiledOutput || config.deepZoom))
         {
             throw std::invalid_argument("--preview requires single-image output; incompatible with --tiled/--deepzoom");
@@ -173,8 +178,16 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
                          }
                          finish(i);
                      });
+            if (runtime)
+            {
+                runtime->advance("tiles", count, count, "tiles", true);
+            }
             if (config.deepZoom)
             {
+                if (runtime)
+                {
+                    runtime->stage("building_pyramid");
+                }
                 if (!DeepZoomWriter::buildPyramid(folder, tileW, tileH, tilesX, tilesY, config.jpegQuality))
                 {
                     throw std::runtime_error("DeepZoom pyramid or manifest could not be written");
@@ -189,6 +202,11 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
             stats.failed = failures;
             stats.matched = static_cast<int>(count) - stats.failed;
             finishOverlayStats();
+            if (runtime)
+            {
+                runtime->output(width, height, config.deepZoom ? "deepzoom" : "tiled", stats.matched, stats.failed);
+                runtime->artifact("tiles", "directory", path + "_files");
+            }
             return true;
         }
 
@@ -255,6 +273,10 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
         std::unique_ptr<PreviewAccumulator> preview;
         auto previewRows = [&](const cv::Mat &rows, int offset)
         {
+            if (runtime)
+            {
+                runtime->advance("output_rows", offset + rows.rows, height, "rows", offset + rows.rows == height);
+            }
             if (config.generatePreview)
             {
                 const auto start = now();
@@ -465,8 +487,17 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
         }
         tiff.reset();
         stats.encodingMs += elapsed(closeStart);
+        if (runtime)
+        {
+            runtime->output(width, height, format, static_cast<int>(count) - failures.load(), failures.load());
+            runtime->artifact("main", "image", stats.path, "image/" + (format == "jpg" ? std::string("jpeg") : format));
+        }
         if (preview)
         {
+            if (runtime)
+            {
+                runtime->stage("writing_preview");
+            }
             auto previewFile = u8path(stats.path);
             previewFile.replace_extension();
             previewFile += "_preview.jpg";
@@ -490,6 +521,10 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
             stats.previewMs += previewWriteMs;
             stats.encodingMs += previewWriteMs;
             stats.previewPath = previewPath;
+            if (runtime)
+            {
+                runtime->artifact("preview", "preview", previewPath, "image/jpeg");
+            }
         }
         stats.cacheHits = cache.stats().hits;
         stats.cacheDecodes = cache.stats().decodes;
@@ -503,7 +538,16 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
     }
     catch (const std::exception &error)
     {
-        std::cerr << "ERROR: output failed: " << error.what() << std::endl;
+        if (runtime)
+        {
+            runtime->fail(runtime->snapshot().progress.stage == "writing_preview" ? "preview_write_failed"
+                                                                                  : "output_write_failed",
+                          error.what(), "outputPath", stats.path.empty() ? path : stats.path);
+        }
+        else
+        {
+            std::cerr << "ERROR: output failed: " << error.what() << std::endl;
+        }
         return false;
     }
 }
@@ -511,7 +555,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
 bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &path, int tilesX, int tilesY, int tileW,
                        int tileH, const std::vector<ImageRecord> &records, const std::vector<int> &selected,
                        const std::function<void(cv::Mat &, double)> &adjustColor, OutputStats &stats,
-                       const cv::Mat &target)
+                       const cv::Mat &target, RuntimeContext *runtime)
 {
     return writeOutput(
         config, path, tilesX, tilesY, tileW, tileH,
@@ -519,14 +563,14 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
         {
             return records.at(i);
         },
-        selected, adjustColor, stats, target);
+        selected, adjustColor, stats, target, runtime);
 }
 
 bool writeIndexedMosaicOutput(const MosaicEngine::Config &config, const std::string &path, int tilesX, int tilesY,
                               int tileW, int tileH, const std::vector<ImageRecord> &library,
                               const std::vector<int> &selected,
                               const std::function<void(cv::Mat &, double)> &adjustColor, OutputStats &stats,
-                              const cv::Mat &target)
+                              const cv::Mat &target, RuntimeContext *runtime)
 {
     const ImageRecord missing;
     return writeOutput(
@@ -535,7 +579,7 @@ bool writeIndexedMosaicOutput(const MosaicEngine::Config &config, const std::str
         {
             return selected.at(i) < 0 ? missing : library.at(selected[i]);
         },
-        selected, adjustColor, stats, target);
+        selected, adjustColor, stats, target, runtime);
 }
 
 } // namespace mosaicraft

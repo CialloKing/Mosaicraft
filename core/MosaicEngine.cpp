@@ -1,6 +1,7 @@
 #include "compute/CompatibleScoring.h"
 #include "MatchingScore.h"
 #include "MosaicEngine.h"
+#include "RuntimeContext.h"
 #include "AnalysisReport.h"
 #include "BenchmarkTimer.h"
 #include "BrightnessAdjustment.h"
@@ -73,6 +74,14 @@ bool MosaicEngine::generate(const std::string& targetPath,
                              const std::string& outputPath,
                              const Config& config)
 {
+    RuntimeContext runtime;
+    return generate(targetPath, dbPath, outputPath, config, runtime);
+}
+
+bool MosaicEngine::generate(const std::string &targetPath, const std::string &dbPath, const std::string &outputPath,
+                            const Config &config, RuntimeContext &runtime)
+{
+    runtime.stage("validating");
     m_compatibleFeatureImages = 0;
     m_compatibleScoreTiles = 0;
     m_compatibleTemporaryBytes = 0;
@@ -81,7 +90,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::string validationError;
     if (!validateMosaicRequest(validated, validationError))
     {
-        std::cerr << "ERROR: " << validationError << std::endl;
+        {
+            std::ostringstream detail;
+            detail << "" << validationError;
+            runtime.fail("invalid_argument", detail.str(), "config");
+        }
         return false;
     }
     Config cfg = validated.config;
@@ -99,6 +112,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::cout << "GPU: " << (cudaEnabled ? "CUDA enabled" : "disabled (CPU only)") << std::endl;
     if (cfg.useGpu && !cudaEnabled)
     {
+        runtime.emit("warning", "cuda_unavailable", preflight.reason);
+        runtime.backends("cpu", "cpu", preflight.reason);
         std::cout << "  CUDA unavailable; using CPU before computation: " << preflight.reason << std::endl;
     }
     if (cfg.benchmark && cfg.useGpu)
@@ -110,12 +125,20 @@ bool MosaicEngine::generate(const std::string& targetPath,
     cv::Mat target = imreadUnicode(targetPath, cv::IMREAD_COLOR);
     if (target.empty())
     {
-        std::cerr << "ERROR: Cannot read target image: " << targetPath << std::endl;
+        {
+            std::ostringstream detail;
+            detail << "Cannot read target image: " << targetPath;
+            runtime.fail("input_unreadable", detail.str(), "inputPath", targetPath);
+        }
         return false;
     }
     if (!validImageSize(target.cols, target.rows))
     {
-        std::cerr << "ERROR: Target exceeds 100 million pixels." << std::endl;
+        {
+            std::ostringstream detail;
+            detail << "Target exceeds 100 million pixels.";
+            runtime.fail("invalid_argument", detail.str(), "config");
+        }
         return false;
     }
 
@@ -151,7 +174,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 : std::max<int64_t>(1, std::llround(static_cast<double>(target.rows) * cfg.outW / target.cols));
         if (!validImageSize(width, height))
         {
-            std::cerr << "ERROR: Target resize exceeds 100 million pixels." << std::endl;
+            {
+                std::ostringstream detail;
+                detail << "Target resize exceeds 100 million pixels.";
+                runtime.fail("invalid_argument", detail.str(), "config");
+            }
             return false;
         }
         cfg.outW = static_cast<int>(width);
@@ -169,7 +196,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
         int64_t height = static_cast<int64_t>(target.rows) * cfg.upscale;
         if (!validImageSize(width, height))
         {
-            std::cerr << "ERROR: Upscaled target exceeds 100 million pixels." << std::endl;
+            {
+                std::ostringstream detail;
+                detail << "Upscaled target exceeds 100 million pixels.";
+                runtime.fail("invalid_argument", detail.str(), "config");
+            }
             return false;
         }
         cv::Mat up;
@@ -179,17 +210,26 @@ bool MosaicEngine::generate(const std::string& targetPath,
                   << target.cols << "x" << target.rows << std::endl;
     }
 
+    runtime.stage("reading_library");
     Database db(dbPath, Database::OpenMode::Existing);
     if (!db.isOpen())
     {
-        std::cerr << "ERROR: Cannot open database: " << dbPath << std::endl;
+        {
+            std::ostringstream detail;
+            detail << "Cannot open database: " << dbPath;
+            runtime.fail("library_unavailable", detail.str(), "dbPath", dbPath);
+        }
         return false;
     }
 
     int dbCount = db.totalCount();
     if (dbCount == 0)
     {
-        std::cerr << "ERROR: Database is empty." << std::endl;
+        {
+            std::ostringstream detail;
+            detail << "Database is empty.";
+            runtime.fail("library_unavailable", detail.str(), "dbPath", dbPath);
+        }
         return false;
     }
     std::cout << "Database: " << dbCount << " images" << std::endl;
@@ -199,7 +239,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::string fh = db.getMeta("feature_h");
     if (fw.empty() || fh.empty())
     {
-        std::cerr << "ERROR: Database missing feature resolution metadata." << std::endl;
+        {
+            std::ostringstream detail;
+            detail << "Database missing feature resolution metadata.";
+            runtime.fail("library_incompatible", detail.str(), "dbPath", dbPath);
+        }
         std::cerr << "  This database was built with an older version of Mosaicraft." << std::endl;
         std::cerr << "  Please rebuild with: mosaicraft build -i <photos> -d <db>" << std::endl;
         return false;
@@ -211,7 +255,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
     if (widthResult.ec != std::errc{} || widthResult.ptr != fw.data() + fw.size() || heightResult.ec != std::errc{} ||
         heightResult.ptr != fh.data() + fh.size() || featW > 8192 || featH > 8192 || !validImageSize(featW, featH))
     {
-        std::cerr << "ERROR: Invalid DB feature dimensions. Rebuild the library." << std::endl;
+        {
+            std::ostringstream detail;
+            detail << "Invalid DB feature dimensions. Rebuild the library.";
+            runtime.fail("library_incompatible", detail.str(), "dbPath", dbPath);
+        }
         return false;
     }
 
@@ -245,8 +293,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
                              return std::isfinite(value);
                          }))
         {
-            std::cerr << "ERROR: Invalid grid features for image " << record.id
-                      << ". Rebuild this library before generating a mosaic." << std::endl;
+            {
+                std::ostringstream detail;
+                detail << "Invalid grid features for image " << record.id
+                       << ". Rebuild this library before generating a mosaic.";
+                runtime.fail("library_incompatible", detail.str(), "dbPath", dbPath);
+            }
             return false;
         }
     }
@@ -333,7 +385,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         else
         {
-            std::cerr << "ERROR: GPU library upload failed." << std::endl;
+            {
+                std::ostringstream detail;
+                detail << "GPU library upload failed.";
+                runtime.fail("cuda_execution_failed", detail.str(), "");
+            }
             releaseGpuLib();
             return false;
         }
@@ -353,14 +409,22 @@ bool MosaicEngine::generate(const std::string& targetPath,
     if (!cfg.tiledOutput && (cfg.outputFormat == "jpg" || cfg.outputFormat == "webp") &&
         (proposedW > limit || proposedH > limit))
     {
-        std::cerr << "ERROR: Output exceeds " << cfg.outputFormat << " dimension limit " << limit
-                  << ". Choose --format png/tiff or --tiled." << std::endl;
+        {
+            std::ostringstream detail;
+            detail << "Output exceeds " << cfg.outputFormat << " dimension limit " << limit
+                   << ". Choose --format png/tiff or --tiled.";
+            runtime.fail("invalid_argument", detail.str(), "config");
+        }
         return false;
     }
     // 超大输出默认允许，但必须在转换为 int 前防止尺寸溢出。
     if (proposedW > INT_MAX || proposedH > INT_MAX)
     {
-        std::cerr << "ERROR: Output dimensions exceed INT_MAX." << std::endl;
+        {
+            std::ostringstream detail;
+            detail << "Output dimensions exceed INT_MAX.";
+            runtime.fail("invalid_argument", detail.str(), "config");
+        }
         return false;
     }
     int outW = static_cast<int>(proposedW);
@@ -368,7 +432,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     // 宽高比校验：DB 特征空间 vs 输出 tile，featW/featH 从meta解析而来
     if (featH <= 0 || featW <= 0) {
-        std::cerr << "ERROR: Invalid DB feature dimensions (" << featW << "x" << featH << ")" << std::endl;
+        {
+            std::ostringstream detail;
+            detail << "Invalid DB feature dimensions (" << featW << "x" << featH << ")";
+            runtime.fail("library_incompatible", detail.str(), "dbPath", dbPath);
+        }
         releaseGpuLib();
         return false;
     }
@@ -392,7 +460,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     if (tilesX == 0 || tilesY == 0)
     {
-        std::cerr << "ERROR: Image too small for tile size." << std::endl;
+        {
+            std::ostringstream detail;
+            detail << "Image too small for tile size.";
+            runtime.fail("invalid_argument", detail.str(), "config");
+        }
         releaseGpuLib();
         return false;
     }
@@ -416,7 +488,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // 计算总 tile 数量，溢出检查
     int64_t totalTiles64 = static_cast<int64_t>(tilesX) * tilesY;
     if (totalTiles64 > INT_MAX) {
-        std::cerr << "ERROR: Too many tiles (" << totalTiles64 << ")" << std::endl;
+        {
+            std::ostringstream detail;
+            detail << "Too many tiles (" << totalTiles64 << ")";
+            runtime.fail("invalid_argument", detail.str(), "config");
+        }
         releaseGpuLib();
         return false;
     }
@@ -499,14 +575,22 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     auto runAnalysis = [&](const std::string &analysisOutputPath)
     {
-        const auto usage = detail::writeAnalysisReport(detail::AnalysisReportContext{
-            cfg,          analysisOutputPath, target,        totalTiles,      tilesX,
-            tilesY,       outTileW,           outTileH,      featW,           featH,
-            dbCount,      matched.load(),     analyzeScores, analyzeImageIds, analyzeLabD,
-            analyzeGridD, analyzeEdgeD,       analyzeGaps,   analyzeRanks,    analyzeAnnRanks,
-            analyzeCat,   analyzeGridCellSum, worstTiles,    allRecords,      bestLibIdx});
+        if (cfg.analyze)
+        {
+            runtime.stage("analyzing");
+        }
+        const auto usage = detail::writeAnalysisReport(
+            detail::AnalysisReportContext{
+                cfg,          analysisOutputPath, target,        totalTiles,      tilesX,
+                tilesY,       outTileW,           outTileH,      featW,           featH,
+                dbCount,      matched.load(),     analyzeScores, analyzeImageIds, analyzeLabD,
+                analyzeGridD, analyzeEdgeD,       analyzeGaps,   analyzeRanks,    analyzeAnnRanks,
+                analyzeCat,   analyzeGridCellSum, worstTiles,    allRecords,      bestLibIdx},
+            &runtime);
         if (db.isOpen() && !usage.empty() && !db.recordRunUsage(usage, targetHash, targetPath))
         {
+            runtime.fail("usage_commit_failed", "mosaic output saved, but usage statistics could not be committed",
+                         "dbPath", dbPath);
             throw std::runtime_error("mosaic output saved, but usage statistics could not be committed");
         }
     };
@@ -546,6 +630,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     {
         const auto preparationEnd = Clock::now();
         metrics.msPrep = Ms(preparationEnd - tStart).count();
+        runtime.stage("building_index");
         auto annIndex = std::make_unique<FeatureIndex>();
         const std::string annPath = featDirCache.empty() ? "lib.ann196" : featDirCache + "/lib.ann196";
         const auto indexStart = Clock::now();
@@ -558,15 +643,20 @@ bool MosaicEngine::generate(const std::string& targetPath,
             if (!annIndex->build(allRecords))
             {
                 releaseGpuLib();
-                return false;
+                return runtime.fail("library_unavailable", "ANN index could not be built", "dbPath", dbPath);
             }
             if (!annIndex->save(annPath))
             {
-                std::cerr << "WARNING: ANN cache could not be saved." << std::endl;
+                {
+                    std::ostringstream detail;
+                    detail << "ANN cache could not be saved.";
+                    runtime.emit("warning", "feature_cache_failed", detail.str(), "dbPath", annPath);
+                }
             }
             metrics.msANNBuild = Ms(Clock::now() - buildStart).count();
         }
 
+        runtime.stage("matching");
         WorkerPool queryWorkers;
         unsigned featureThreads = templateCuda ? std::min(8u, std::max(1u, std::thread::hardware_concurrency()))
                                              : std::max(2u, std::thread::hardware_concurrency());
@@ -596,6 +686,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
             }
             if (!compatibleFeatures)
             {
+                runtime.emit("warning", "cuda_resource_fallback",
+                             "Generic CUDA resources unavailable; using CPU before extraction.");
                 std::cout << "  Generic CUDA resources unavailable; using CPU before extraction." << std::endl;
             }
         }
@@ -617,7 +709,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
             metrics.maximumBatchTiles = batchRows;
             if (gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze) + scratch > m_limits.hostBytes)
             {
-                std::cerr << "ERROR: Matching host budget cannot hold one CUDA tile." << std::endl;
+                {
+                    std::ostringstream detail;
+                    detail << "Matching host budget cannot hold one CUDA tile.";
+                    runtime.fail("cuda_execution_failed", detail.str(), "");
+                }
                 return false;
             }
             const size_t hostRows = gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, true);
@@ -715,6 +811,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             else
             {
                 backends.scoring = ScoreBackend::Cpu;
+                runtime.emit("warning", "cuda_resource_fallback", compatibleScore.preparationFailure());
                 // 评分准备失败不牺牲已经可用的提取能力。
                 batchRows = compatibleFeatures ? size_t(compatible.capacity()) : batchRows;
                 std::cout << "  Compatible CUDA scoring unavailable: "
@@ -731,6 +828,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                       << "; scoring: " << (backends.scoring == ScoreBackend::CompatibleCuda
                           ? "compatible CUDA" : "CPU") << "." << std::endl;
         }
+        const auto backendName = [](auto value)
+        {
+            return static_cast<int>(value) == 0   ? "cpu"
+                   : static_cast<int>(value) == 1 ? "template_cuda"
+                                                  : "compatible_cuda";
+        };
+        runtime.backends(backendName(backends.features), backendName(backends.scoring));
         std::vector<std::vector<float>> libGrid4x4;
         if (templateCuda && cfg.analyze)
         {
@@ -803,7 +907,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
                                                  allTiny[piece].data(), allEdge.data() + piece, allLBP[piece].data(),
                                                  workspace.get(), cfg.benchmark ? &metrics.featureTimings : nullptr) < 0)
                     {
-                        std::cerr << "ERROR: GPU feature extraction failed." << std::endl;
+                        {
+                            std::ostringstream detail;
+                            detail << "GPU feature extraction failed.";
+                            runtime.fail("library_incompatible", detail.str(), "dbPath", dbPath);
+                        }
                         return false;
                     }
                 }
@@ -1058,7 +1166,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
                                       256ULL * 1024 * 1024, scoreWorkspace.get());
                 if (!scoredOnGpu)
                 {
-                    std::cerr << "ERROR: GPU scoring failed; mosaic was not generated." << std::endl;
+                    {
+                        std::ostringstream detail;
+                        detail << "GPU scoring failed; mosaic was not generated.";
+                        runtime.fail("cuda_execution_failed", detail.str(), "");
+                    }
                     return false;
                 }
                 metrics.scoreTimings.allocationMs += batchTimings.allocationMs;
@@ -1406,6 +1518,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                                                                 scored.capacity() * sizeof(std::pair<double, int>) +
                                                                 tileVector.capacity() * sizeof(float));
             first += count;
+            runtime.advance("matching", first, totalTiles, "tiles", first == totalTiles);
             std::cout << "\r  matching " << first << "/" << totalTiles << std::flush;
             if (nextCount > 0)
             {
@@ -1445,7 +1558,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         if (!hasCandidates)
         {
-            std::cerr << "ERROR: No candidates within --l-range; increase the brightness range." << std::endl;
+            {
+                std::ostringstream detail;
+                detail << "No candidates within --l-range; increase the brightness range.";
+                runtime.fail("no_candidates", detail.str(), "lRange");
+            }
             return false;
         }
     } // 索引、缓存、线程池及大批次缓冲在贴图/编码之前释放。
@@ -1491,7 +1608,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     releaseGpuLib();
     if (!writeIndexedMosaicOutput(cfg, outputPath, tilesX, tilesY, outTileW, outTileH, allRecords, bestLibIdx,
-                                  adjustColor, metrics.outputStats, target))
+                                  adjustColor, metrics.outputStats, target, &runtime))
     {
         return false;
     }
@@ -1504,6 +1621,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
     if (!metrics.outputStats.previewPath.empty())
     {
         std::cout << "Preview saved: " << metrics.outputStats.previewPath << std::endl;
+    }
+    if (metrics.outputStats.failed > 0)
+    {
+        runtime.emit("warning", "output_tile_missing",
+                     "Some output tiles could not be loaded; background was retained.", {}, {},
+                     metrics.outputStats.failed);
     }
     // 修正特征计数器：各路径可能在 return 前未完整设置
     if (cntEdge + cntMissEdge == 0)
@@ -1545,9 +1668,22 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // 运行分析报告（如有 --analyze）
     if (cfg.benchmark)
     {
-        detail::printMosaicBenchmark(metrics,
-            {cfg, backends, totalTiles, N, m_compatibleTemporaryBytes, Ms(Clock::now() - tStart).count()}, "single");
+        const double totalMs = Ms(Clock::now() - tStart).count();
+        detail::printMosaicBenchmark(metrics, {cfg, backends, totalTiles, N, m_compatibleTemporaryBytes, totalMs},
+                                     "single");
+        runtime.metric("totalMs", totalMs);
+        runtime.metric("matchingMs", metrics.matchingWallMs);
+        runtime.metric("featureMs", metrics.msFeat);
+        runtime.metric("annQueryMs", metrics.msANNQuery);
+        runtime.metric("selectionMs", metrics.msSelect);
+        runtime.metric("placementMs", metrics.msPlace);
+        runtime.metric("encodingMs", metrics.msEncode);
+        runtime.metric("analysisMs", metrics.msAnalysis);
+        runtime.metric("matchingBufferPeakBytes", metrics.matchingPeakBytes);
+        runtime.metric("featureCachePeakBytes", metrics.featureReadStats.peakBytes);
+        runtime.metric("deviceTemporaryBytes", m_compatibleTemporaryBytes);
     }
+    runtime.stage("finalizing");
     return true;
 }
 

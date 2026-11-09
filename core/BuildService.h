@@ -26,6 +26,7 @@ class BuildService
 {
 public:
     ServiceResult run(const BuildRequest& request) const;
+    ServiceResult run(const BuildRequest &request, RuntimeContext &runtime) const;
 };
 
 } // namespace mosaicraft
