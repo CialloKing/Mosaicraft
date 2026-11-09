@@ -1,4 +1,4 @@
-# Mosaicraft v1.14.7
+# Mosaicraft v1.14.8
 
 > GPU 加速的照片马赛克拼贴生成器 — 本地创建图库图片精准匹配，输出超大分辨率马赛克拼图
 
@@ -47,7 +47,7 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
 - **多分辨率** — 180×320 / 320×180 / 360×640 / 640×360 沿用模板内核；其他合法尺寸使用与 CPU 精确兼容的通用 CUDA 特征统计，宽高各支持 1～8192，资源不足时回退 CPU
 - **纯 CPU 模式** — `-D MOSAICRAFT_CUDA=OFF` 即可无 NVIDIA 平台编译
 
-v1.14.7 增加 Windows/Linux/macOS ARM64 的 CPU 发布包、精简依赖缓存和独立包验收；Windows CUDA 正式包经过本机 GPU 必需验收。特征仍为 v6、API 合约仍为 2.0，已有图库无需重建。可选预览、同尺寸原字节保存和 JPEG 建库质量 100 延续 v1.14.6。完整更新见 [百科版本记录](https://github.com/CialloKing/Mosaicraft/blob/v1.14.7/docs/ENCYCLOPEDIA.md#v1147-三平台-cpu-发布与-ci-依赖优化-2026-11-09)。CUDA 历史性能及适用边界见 [v1.14.5 性能与兼容说明](https://github.com/CialloKing/Mosaicraft/blob/v1.14.5/docs/PERFORMANCE_v1.14.5.md)。
+v1.14.8 提供 sm_75/80/86/89/90/100/120 七架构原生 CUDA 内核及对应 PTX JIT，任务开始 GPU 工作前预检，不兼容时使用 CPU。正式发布包含 Windows/Linux CPU、macOS ARM64 CPU 以及 Windows/Linux CUDA 五种包；Windows CUDA 经过本机 GPU 必需验收，Linux CUDA 保留 GPU 未实机验收标记。特征仍为 v6、API 合约仍为 2.0，已有图库无需重建。完整更新见 [百科版本记录](https://github.com/CialloKing/Mosaicraft/blob/v1.14.8/docs/ENCYCLOPEDIA.md#v1148-七架构-cuda-与-linux-cuda-发布-2026-11-09)，验证方法与边界见 [CUDA 多架构验证](docs/CUDA_ARCHITECTURES.md)。
 
 ### 🖼️ 输出格式
 

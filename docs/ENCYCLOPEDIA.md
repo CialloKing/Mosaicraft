@@ -797,3 +797,16 @@ CUDA 和 CPU-only 的完整 CTest 各覆盖 57 个核心/API 用例及 30 个服
 统一程序目录发现及 Unicode 路径，使用系统浏览器入口，随包收集运行依赖并修复 Unix 相对库路径；tar.gz 保留执行权限和符号链接，macOS 使用 ad-hoc 签名。发布脚本支持 ZIP/tar.gz，BUILD_INFO 记录 GPU 验收状态；无可用 GPU 的 Required 模式失败。无设备时评分工作区直接拒绝准备，避免无驱动环境的 CUDA 分配错误。产品 CLI、特征 v6、API 合约 2.0 和图库格式保持兼容。
 
 > **EN**: Version 1.14.7 adds CPU release packages for Windows x64, Linux x64 and macOS ARM64, pinned minimal Release dependencies, shared binary caches and standalone archive verification. Formal Windows CUDA packages require local GPU validation; hosted Windows/Linux CUDA builds remain candidates. Native executable paths, Unicode handling, runtime deployment, relative loader paths and macOS ad-hoc signing support relocatable packages. Features remain v6, the API contract remains 2.0, and v1.14.6 stays unchanged.
+
+
+### v1.14.8: 七架构 CUDA 与 Linux CUDA 发布 (2026-11-09)
+
+默认通用 CUDA 包覆盖 sm_75（RTX 20/GTX 16）、sm_80（A100/A30）、sm_86（RTX 30）、sm_89（RTX 40）、sm_90（H100/H200）、sm_100（B200/GB200）、sm_120（RTX 50），每种目标同时包含对应 PTX。驱动优先选择兼容机器码，也可通过 PTX JIT 生成设备代码；保留 CUDA_ARCH 单目标覆盖，PTX 不使用 a/f 专用目标。四个 CUDA 模块共享参数，架构或编译器配置变化会重新编译；打包逐模块及最终程序检查七份 cubin 和七份 PTX，CLI/Web UI 各为 28 个 cubin、28 个 PTX。
+
+任务在 GPU 工作前加载实际内核及四种模板实例，检查驱动、计算能力和启动资源限制。不可用时报告原因并使用 CPU；--cpu、CPU-only 和仅归一化不执行 GPU 内核预检。上传、计算和同步错误继续传播。Windows 无驱动入口先枚举设备，失败后只由主机代码格式化返回码，避免额外 CUDA 错误查询引起崩溃。模板算法、兼容评分算术、图库、特征 v6 与 API 合约 2.0 保持兼容。
+
+正式附件增加 Linux x64 CUDA tar.gz；三平台 CPU 和 Linux CUDA 由同一提交在原生 CI 构建并独立验收。Windows CUDA 仍由本机 Required 模式完成实机 GPU 测试。Linux CUDA 保留 GpuValidation: not-run，在 Release 页面明确标注未做 Linux 实机 GPU 验收；新开关 AllowUnvalidatedCudaRelease 仅允许原生 Linux x64 的 BuildOnly tar.gz，不允许跳过测试、smoke 或归档验收，也不能用于 Windows。Windows 云端 CUDA 仍为 candidate。发布后在三个原生平台重新下载五个正式附件，验证标签、SHA256、版本、运行库和 Web UI/API。
+
+本机 Ada 已通过禁用 PTX JIT、强制 PTX JIT 两种模式的完整 GPU 回归及 CPU-only 回归；私有 24 张素材、两种图库尺寸、三种执行模式共 24 轮采样的选图 ID 与输出像素一致，模板浮点差异符合既有容差。其他架构只完成编译覆盖，尚未实机验证；PTX JIT 仍要求驱动支持对应 PTX ISA。包内 BUILD_INFO 记录实际架构、PTX 与验收设备。性能和体积是特定本机样本，不承诺所有架构或场景提速，详见 [CUDA 验证报告](CUDA_ARCHITECTURES.md)及 [七架构采样](performance/cuda-seven-architectures.json)。既有 v1.14.6/v1.14.7 标签和附件不变。
+
+> **EN**: Version 1.14.8 ships native CUDA images and matching PTX for seven targets (75/80/86/89/90/100/120), checks real kernel compatibility before GPU work, and retains CPU fallback before execution. Runtime failures still propagate. Linux x64 CUDA joins the five formal platform/runtime archives with an explicit GPU-not-tested status; Windows CUDA still requires local hardware validation. Every archive uses the same source commit and receives standalone verification. Ada has native/JIT hardware coverage; other architectures have build coverage only. Features remain v6 and API contract 2.0.
