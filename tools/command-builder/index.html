@@ -224,9 +224,9 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <label><input type="checkbox" id="m-benchmark"> 性能分析 --benchmark</label>
       <label><input type="checkbox" id="m-coloradj"> 随机亮度调整 --color-adjust（默认关闭）</label>
       <label><input type="checkbox" id="m-cpu"> 仅 CPU --cpu</label>
-      <label><input type="checkbox" id="m-preview"> 生成结果预览 --preview</label>
+      <label><input type="checkbox" id="m-preview" aria-describedby="preview-hint"> 生成结果预览 --preview</label>
     </div>
-    <p class="hint" id="preview-hint">默认关闭，勾选后额外保存有界 JPEG 预览。</p>
+    <p class="hint" id="preview-hint">生成结果预览默认关闭，勾选后额外保存一张用于快速查看的 JPEG 预览图。</p>
     <div class="row" style="margin-top:8px">
       <div class="field"><label>亮度扰动幅度 --color-strength</label><input type="number" id="m-colorstr" value="0.04" min="0" max="0.5" step="0.01" style="max-width:150px"><div class="hint">0.04 表示 L 通道最多 ±4%；单独设置幅度不会启用。幅度为 0 时保持原像素。</div></div>
       <div class="field"><label>基础图叠加强度 --overlay-strength</label><input type="number" id="m-overlaystr" value="0" min="0" max="1" step="0.05" style="max-width:150px"><div class="hint">0 关闭；0.2 表示 80% 素材 + 20% 基础图。使用缩放、放大和补边后的基础图，强度越高，小图细节越弱。</div></div>
@@ -1426,7 +1426,7 @@ function syncPreviewOption() {
   if (preview.disabled) preview.checked = false;
   document.getElementById('preview-hint').textContent = incompatible
     ? '分块与 DeepZoom 模式不生成单图预览。' : unsupported
-    ? '此服务未提供预览能力，可升级服务或复制命令执行。' : '默认关闭，勾选后额外保存有界 JPEG 预览。';
+    ? '此服务未提供预览能力，可升级服务或复制命令执行。' : '生成结果预览默认关闭，勾选后额外保存一张用于快速查看的 JPEG 预览图。';
 }
 function readFormPayload(tab) {
   if (tab === 'mosaic') return buildMosaicPayload();
