@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BuildService.h"
+#include "OutputPlan.h"
 #include "UnicodeIO.h"
 #include <algorithm>
 #include <cmath>
@@ -102,39 +103,14 @@ inline bool validateMosaicRequest(MosaicRequest &request, std::string &error, st
         error = "writeMode must be auto, batch or stream";
         return false;
     }
-    auto lower = [](std::string value)
+    detail::OutputFormat format;
+    if (!detail::resolveOutputFormat(request.inputPath, request.outputPath, cfg.outputFormat, cfg.formatExplicit,
+                                     !cfg.tiledOutput && !cfg.deepZoom, format, error, field))
     {
-        std::transform(value.begin(), value.end(), value.begin(),
-                       [](unsigned char c)
-                       {
-                           return static_cast<char>(std::tolower(c));
-                       });
-        return value;
-    };
-    cfg.outputFormat = lower(cfg.outputFormat);
-    auto extension = lower(pathToUtf8(u8path(request.outputPath).extension()));
-    if (!cfg.formatExplicit && !cfg.tiledOutput && !cfg.deepZoom && !extension.empty())
-    {
-        cfg.outputFormat = extension.substr(1);
-    }
-    if (cfg.outputFormat == "jpeg")
-    {
-        cfg.outputFormat = "jpg";
-    }
-    if (cfg.outputFormat == "tif")
-    {
-        cfg.outputFormat = "tiff";
-    }
-    if (cfg.outputFormat != "jpg" && cfg.outputFormat != "png" && cfg.outputFormat != "webp" &&
-        cfg.outputFormat != "tiff")
-    {
-        if (field)
-        {
-            *field = "format";
-        }
-        error = "output format must be jpg, png, webp or tiff";
         return false;
     }
+    // 只规范化工作配置，保留显式来源；任务恢复不能把推导格式变成 --format。
+    cfg.outputFormat = format.format;
     return true;
 }
 } // namespace mosaicraft

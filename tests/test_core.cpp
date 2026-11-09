@@ -12,6 +12,7 @@
 #include "doctest.h"
 
 #include "../core/ApiHandlers.h"
+#include "../core/OutputPlan.h"
 #include "../core/ApiJson.h"
 #include "../core/ApiMetadata.h"
 #include "../core/ApiRequestParser.h"
@@ -86,6 +87,72 @@ TEST_CASE("job session history is bounded without removing queued jobs")
     const auto response = handleApiRequest(request, jobs);
     CHECK(response.status == 400);
     CHECK(response.body["diagnostic"]["field"] == "limit");
+}
+
+TEST_CASE("output format priority retains request intent and filenames")
+{
+    using namespace mosaicraft;
+    struct Case
+    {
+        const char *input, *output, *explicitFormat, *format, *source, *path;
+    };
+    const Case cases[] = {
+        {"target.jpg", "result.png", "", "png", "output_extension", "result.png"},
+        {"target.png", "result.webp", "JPEG", "jpg", "explicit", "result.jpg"},
+        {"target.JPG", "output/output", "", "jpg", "input_extension", "output/output.jpg"},
+        {"target.TIF", "result", "", "tiff", "input_extension", "result.tiff"},
+        {"target.bmp", "result", "", "png", "fallback", "result.png"},
+        {"target", "result", "", "png", "fallback", "result.png"},
+        {"target.png", "result.JPEG", "", "jpg", "output_extension", "result.JPEG"},
+        {"target.jpg", "result.TiF", "tiff", "tiff", "explicit", "result.TiF"},
+        {"target.jpg", "result.bmp", "PNG", "png", "explicit", "result.png"},
+    };
+    for (const auto &item : cases)
+    {
+        INFO(item.input, " -> ", item.output);
+        MosaicRequest request;
+        request.inputPath = item.input;
+        request.outputPath = item.output;
+        request.config.formatExplicit = item.explicitFormat[0] != '\0';
+        if (request.config.formatExplicit)
+        {
+            request.config.outputFormat = item.explicitFormat;
+        }
+        detail::OutputFormat format;
+        std::string error, field;
+        REQUIRE(detail::resolveOutputFormat(item.input, item.output, request.config.outputFormat,
+                                           request.config.formatExplicit, true, format, error, &field));
+        CHECK(format.format == item.format);
+        CHECK(format.source == item.source);
+        CHECK(detail::outputPathForFormat(item.output, format.format) == item.path);
+        REQUIRE(validateMosaicRequest(request, error, &field));
+        REQUIRE(validateMosaicRequest(request, error, &field));
+        CHECK(request.outputPath == item.output);
+        CHECK(request.config.outputFormat == item.format);
+        const auto serialized = mosaicRequestToJson(request);
+        CHECK(serialized.contains("format") == request.config.formatExplicit);
+        MosaicRequest restored;
+        REQUIRE(parseMosaicRequestJson(serialized.dump(), restored, error));
+        CHECK(restored.outputPath == request.outputPath);
+        CHECK(restored.config.outputFormat == request.config.outputFormat);
+        CHECK(restored.config.formatExplicit == request.config.formatExplicit);
+    }
+    MosaicRequest invalid;
+    invalid.inputPath = "target.png";
+    invalid.outputPath = "result.bmp";
+    std::string error, field;
+    CHECK_FALSE(validateMosaicRequest(invalid, error, &field));
+    CHECK(field == "outputPath");
+    invalid.config.formatExplicit = true;
+    invalid.config.outputFormat = "bmp";
+    CHECK_FALSE(validateMosaicRequest(invalid, error, &field));
+    CHECK(field == "format");
+    invalid.config.outputFormat = "jpg";
+    invalid.config.formatExplicit = false;
+    invalid.config.tiledOutput = true;
+    REQUIRE(validateMosaicRequest(invalid, error, &field));
+    CHECK(invalid.config.outputFormat == "jpg");
+    CHECK(MosaicRequest{}.outputPath == "output/output");
 }
 
 TEST_CASE("runtime diagnostics bound UTF-8 history and retain terminal errors")

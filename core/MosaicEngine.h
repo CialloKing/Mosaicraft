@@ -47,7 +47,7 @@ public:
         bool generatePreview = false; // 单图输出时同步生成面积平均 JPEG 预览，默认关闭。
         int  jpegQuality = 100;      // JPEG 质量（1-100）
         std::string outputFormat = "jpg";  // 输出格式：jpg / png / webp / tiff
-        bool   formatExplicit = false;    // 是否显式指定 --format（否则允许自动切换）
+        bool   formatExplicit = false;    // 用户是否显式选格式；推导格式不能改变此标志。
 
         // 选图后对每个输出小块的 LAB L 通道施加对称随机扰动，减少视觉重复感。
         bool   colorAdjust = false;        // 默认关闭（远看有摩尔纹，待进一步优化）

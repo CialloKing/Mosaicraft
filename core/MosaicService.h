@@ -13,7 +13,7 @@ struct MosaicRequest
 {
     std::string inputPath;
     std::string dbPath = "library/mosaicraft.db";
-    std::string outputPath = "output/output.jpg";
+    std::string outputPath = "output/output";
     MosaicEngine::Config config;
 };
 

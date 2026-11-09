@@ -1,5 +1,6 @@
 ﻿#include "MosaicOutput.h"
 #include "RuntimeContext.h"
+#include "OutputPlan.h"
 #include "BigTiffWriter.h"
 #include "DeepZoomWriter.h"
 #include "ImageCache.h"
@@ -215,44 +216,8 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
             return true;
         }
 
-        std::string format = config.outputFormat;
-        auto extension = std::filesystem::u8path(path).extension().string();
-        std::transform(extension.begin(), extension.end(), extension.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (!config.formatExplicit && (format == "jpg" || format.empty()))
-        {
-            if (extension == ".png")
-            {
-                format = "png";
-            }
-            else if (extension == ".webp")
-            {
-                format = "webp";
-            }
-            else if (extension == ".tif" || extension == ".tiff")
-            {
-                format = "tiff";
-            }
-        }
-        if (format != "png" && format != "jpg" && format != "tiff" && format != "webp")
-        {
-            format = "jpg";
-        }
-        if (extension == ".jpeg")
-        {
-            extension = ".jpg";
-        }
-        if (extension == ".tif")
-        {
-            extension = ".tiff";
-        }
-        if ((config.formatExplicit && extension != "." + format) ||
-            (format == "tiff" && (extension == ".jpg" || extension == ".png" || extension == ".webp")))
-        {
-            auto outputPath = u8path(path);
-            outputPath.replace_extension("." + format);
-            stats.path = pathToUtf8(outputPath);
-        }
+        const std::string format = config.outputFormat;
+        stats.path = detail::outputPathForFormat(path, format);
         const uint64_t rawBytes = static_cast<uint64_t>(width) * height * 3;
         const uint64_t rowBytes = static_cast<uint64_t>(width) * tileH * 3;
         const int rgbRows = static_cast<int>(

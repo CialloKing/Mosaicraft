@@ -142,11 +142,11 @@ Build options:
 Mosaic options:
   -i, --input  <path>    Target image to mosaicify (required)
   -d, --db     <path>    Database path (default: library/mosaicraft.db)
-  -o, --output <path>    Output path or directory (default: output/output.jpg)
+  -o, --output <path>    Output file or tile prefix (default: output/output.<format>)
       --tile-w     <n>   Tile width in pixels (default: 9)
       --tile-h     <n>   Tile height in pixels (default: 16)
       --candidates <n>   ANN query candidates (default: 150)
-      --format     <ext> jpg, png, webp, tiff (default: from extension)
+      --format     <ext> jpg, png, webp, tiff (auto: output suffix, input suffix, then PNG)
       --quality    <n>   JPEG/WebP quality 1-100 (default: 100)
       --png-level  <n>   PNG compression 1-9 (default: 1=fastest)
       --write-mode <m>   Write mode: auto/stream/batch (default: auto)
@@ -327,7 +327,7 @@ static int cmdMosaic(int argc, char* argv[])
 {
     std::string inputPath;
     std::string dbPath = "library/mosaicraft.db";
-    std::string outputPath = "output/output.jpg";
+    std::string outputPath = "output/output";
     MosaicEngine::Config cfg;
 
     for (int i = 2; i < argc; ++i)
@@ -558,11 +558,11 @@ static int cmdMosaic(int argc, char* argv[])
             std::cout << "Usage: mosaicraft mosaic -i <image> -d <db> [options]" << std::endl;
             std::cout << "  -i, --input <path>    Target image (required)" << std::endl;
             std::cout << "  -d, --db <path>       Database (default: <output>/mosaicraft.db)" << std::endl;
-            std::cout << "  -o, --output <path>   Output path (default: output/output.jpg)" << std::endl;
+            std::cout << "  -o, --output <path>   Output path (default: output/output.<format>)" << std::endl;
             std::cout << "  --tile-w <n>          Tile width (default: 9, min: 4)" << std::endl;
             std::cout << "  --tile-h <n>          Tile height (default: 16, min: 4)" << std::endl;
             std::cout << "  --candidates <n>      ANN query candidates (default: 150)" << std::endl;
-            std::cout << "  --format <ext>        jpg / png / webp / tiff (default: from extension)" << std::endl;
+            std::cout << "  --format <ext>        jpg / png / webp / tiff (auto: output suffix, input suffix, then PNG)" << std::endl;
             std::cout << "  --quality <n>         JPEG/WebP quality 1-100 (default: 100)" << std::endl;
             std::cout << "  --png-level <n>       PNG compression 1-9 (default: 1=fastest)" << std::endl;
             std::cout << "  --write-mode <m>      auto / stream / batch (default: auto)" << std::endl;
