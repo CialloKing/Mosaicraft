@@ -15,8 +15,8 @@ Both entries call the same core services for mosaic generation, library building
 `/api/info` 在 `entryPoints` 中暴露相同的入口边界，调用方可据此区分当前入口和支持的可执行入口集合。
 `/api/info` exposes the same entry point boundary in `entryPoints`, so callers can distinguish the current entry from the supported executable entry set.
 
-当前 API 合约为 **2.0**：维护清理接口仅允许 POST，HTTP Host/Origin/Content-Type 校验已收紧。随程序提供的 Web UI 已同步升级；旧客户端需按下文更新请求。
-The current API contract is **2.0**: purge accepts POST only, and HTTP Host/Origin/Content-Type validation is stricter. The bundled Web UI is updated; older clients must update requests as described below.
+当前 API 合约为 **2.1**，主兼容版本仍为 **2**。保留 2.0 字段和端点，增加运行诊断、阶段进度、会话标识、结果产物和可选预览。维护清理接口仍只允许 POST，Host/Origin/Content-Type 检查保持不变。
+Contract **2.1** retains major version **2** and the 2.0 fields/endpoints, adding diagnostics, stage progress, session identity, artifacts and optional previews. Purge remains POST-only with the same HTTP boundary checks.
 
 ---
 
@@ -36,6 +36,9 @@ Returns service version, entry name, structured API status, legacy `/api/run` st
 | `compatibility` | 稳定性标签，供生成客户端和 UI 适配器使用 / stability label for generated clients and UI adapters |
 | `stable` | 当前合约是否面向常规调用方 / whether the current contract is intended for regular callers |
 
+`info.runtime` 包含 `sessionId`、`workingDirectory`（相对路径解析目录）和 `finishedJobLimit: 50`。服务重启后会话 ID 改变，任务 ID 可能重新从 `job-000001` 开始；客户端必须将会话和任务 ID 一起识别。`info.features` 新增 `job-diagnostics`、`job-progress`、`job-artifacts`、`result-preview`。
+`info.runtime` identifies the current process session and working directory. Match jobs by session plus ID; IDs can repeat after a restart. Discover optional capabilities through `info.features`.
+
 ### `GET /api/endpoints`
 
 返回结构化 API 列表。每个条目包含 / Returns the structured API list. Each entry contains:
@@ -47,7 +50,7 @@ Returns service version, entry name, structured API status, legacy `/api/run` st
 | `path` | 端点路径 / endpoint path |
 | `httpPattern` | 本地 HTTP 适配器使用的服务端路由模式 / server route pattern used by the local HTTP adapter |
 | `operation` | 稳定的核心 API 操作名 / stable core API operation name |
-| `requestShape` | 端点如何将 HTTP 数据映射为核心请求：`none`、`body`、`query`、`jobId` 或 `legacyCommand` |
+| `requestShape` | HTTP 映射：`none`、`body`、`query`、`jobId`、`jobQuery`、`jobArtifact` 或 `legacyCommand` |
 | `description` | 简短描述 / short endpoint description |
 | `category` | 功能分组，如 `jobs`、`database`、`inspect` |
 | `requestFields` | 端点接受的常用请求字段 / common request fields accepted by the endpoint |
@@ -57,6 +60,7 @@ Returns service version, entry name, structured API status, legacy `/api/run` st
 | `acceptedQueryKeys` | HTTP 适配器接受的完整查询键，包括规范字段名和别名 |
 | `successStatus` | 成功响应的正常 HTTP 状态码 / normal HTTP status code for a successful response |
 | `responseKey` | 成功时返回的主要 JSON 载荷键 / primary JSON payload key returned on success |
+| `responseFormat` | `json` 或 `file`；文件成功响应为二进制，失败仍为 JSON / binary on file success, JSON on error |
 | `errorStatuses` | 结构化 handler 对预期失败可能返回的 HTTP 状态码 |
 | `errorShapes` | 端点使用的 JSON 错误信封变体：`serviceResult`、`apiError`、`jobError`、`payloadResult` |
 | `errorResponseKeys` | 错误响应中也可能出现的主要载荷键，如 `job`、`export`、`purge` |
@@ -99,6 +103,17 @@ Returns service version, entry name, structured API status, legacy `/api/run` st
 
 字段类型或范围不合法也返回 HTTP 400，且 `message` 指向具体字段。
 Invalid field types or ranges also return HTTP 400, and `message` names the field.
+
+2.1 增加 `diagnostic`，无终止错误时为 `null`。客户端应使用 `code` 和 `field`，避免解析英文 `message`。CLI、同步生成与异步任务共用执行失败的原因码；CLI 控制台格式为 `ERROR: [code] message`。异步执行失败保持 HTTP 200 查询成功、`job.state: "failed"` 的含义。
+Use structured `diagnostic.code` and `field`; do not infer them from English messages. Async execution failure is represented by job state, not by changing the successful job-query HTTP status.
+
+| 诊断字段 | 含义 |
+| --- | --- |
+| `code`, `severity`, `stage` | 稳定原因码；`info`/`warning`/`error`；发生阶段 |
+| `message`, `field`, `path` | 技术原因；相关规范请求字段和路径（可为空） |
+| `sequence`, `timestamp` | 任务内递增序号；Unix 毫秒时间 |
+
+主要原因码：`invalid_argument`、`input_unreadable`、`library_unavailable`、`library_incompatible`、`library_write_failed`、`no_candidates`、`cuda_unavailable`、`cuda_resource_fallback`、`cuda_execution_failed`、`out_of_memory`、`source_skipped`、`feature_missing`、`output_tile_missing`、`output_write_failed`、`preview_write_failed`、`analysis_write_failed`、`usage_commit_failed`。警告保持原有继续执行规则，不代表任务失败。
 
 API 只接受本机服务的 Host（`localhost`、`127.0.0.1` 或 `[::1]` 加当前端口）。浏览器请求的 Origin 必须与该 Host 同源，跨站请求返回 HTTP 403；命令行客户端可以不发送 Origin。结构化请求体必须使用 `Content-Type: application/json`，否则返回 HTTP 415。非法 UTF-8 或包含 NUL 的 query 参数返回 HTTP 400 JSON。
 The API requires a local Host with the current port. Browser Origin must match that Host; cross-site requests return HTTP 403. Non-browser clients may omit Origin. Structured request bodies require `Content-Type: application/json` or return HTTP 415. Invalid UTF-8 or NUL bytes in query parameters return HTTP 400 JSON.
@@ -167,7 +182,11 @@ An operation lock coordinates builds with library readers and maintenance. Busy 
 
 ### `GET /api/jobs`
 
-列出已知任务 / Lists known jobs.
+按创建时间倒序返回任务摘要，包含原状态/路径/时间、`progress`、`warningCount`、`diagnostic` 和 `canCancel`。不包含完整请求、警告样例、产物和性能数据。响应根对象提供 `sessionId`。
+Lists summaries newest first, without full requests, warning samples, artifacts or metrics. The response includes the session ID.
+
+任务及诊断仅保留在服务内存中。自动保留最近 50 个完成任务，运行和排队任务不淘汰；清理或淘汰记录不删除输出文件。服务关闭后不能恢复旧会话任务。
+History is process-local: retain the latest 50 finished jobs, plus all active/queued jobs. Removing records never deletes files.
 
 ### `DELETE /api/jobs`
 
@@ -176,7 +195,34 @@ Removes finished jobs from the in-memory job list. Running and queued jobs are k
 
 ### `GET /api/jobs/{id}`
 
-返回单个任务快照 / Returns a single job snapshot.
+返回 `sessionId` 和完整 `job`，保留原字段，增加以下字段。`outputPath` 始终是请求路径，不能用它猜测实际文件名。
+Returns the complete snapshot. `outputPath` retains its requested-path meaning; actual files are listed in `artifacts`.
+
+| 字段 | 内容 |
+| --- | --- |
+| `progress` | `stage`、`startedAt`、`updatedAt`（Unix 毫秒）、`activities: [{id, completed, total, unit}]`；未知总量为 `null` |
+| `warningCount`, `warnings` | 总警告数量；按原因码汇总的 `code/count/message/paths`，每码最多 3 个路径样例 |
+| `diagnostic` | 首个终止错误，独立于事件缓冲保留 |
+| `runtime` | `featureBackend/scoreBackend/fallbackReason`、实际 `format/width/height/matched/failed`、`metrics` |
+| `artifacts` | 已成功关闭的文件/目录：`id/kind/path/mime/bytes/directory`；路径为规范化绝对路径 |
+| `request` | 规范请求参数，供页面恢复编辑；恢复不会自动执行 |
+| `canCancel` | 仅排队任务为 `true` |
+
+后端值为 `cpu`、`template_cuda`、`compatible_cuda` 或 `none`；未检测时为空。`metrics` 仅在采集后含数据，不能将空对象解释为耗时为零。阶段计数最多每 200ms 更新一次，阶段切换及诊断立即可见；归一化与特征处理可能并行，应分别显示，不拼接整体百分比。阶段结束、计数达到总量或主图落盘不代表任务已经成功。
+
+主图成功、预览或使用统计随后失败时，任务按原规则失败，已经保存的 `main` 产物仍然可用。报告失败沿用原有软失败/异常与提交边界。
+
+### `GET /api/jobs/{id}/events?after=0&limit=100`
+
+返回 `sessionId`、`events`、`firstSequence`、`nextCursor`、`dropped`、`truncated`。`after` 为排他游标，`limit` 为正整数，默认及最大值均为 100。持续使用返回的 `nextCursor` 获取增量；游标超过当前尾部会收敛到尾部。
+
+每任务最多保留 256 条、约 256 KiB 的事件（按内部记录占用计量）；消息和路径分别最多 4096 UTF-8 字节，原因码和字段最多 128 字节，在字符边界截断。旧游标已落后于缓冲时 `truncated: true`；`dropped` 是累计淘汰条数。警告总数和终止错误不随事件淘汰丢失。
+
+### `GET /api/jobs/{id}/artifacts/{artifactId}`
+
+只接受任务已登记的产物 ID，不接受文件路径。成功按登记 MIME 流式返回文件，支持 HEAD 与字节 Range；主图及 HTML 以附件下载，JPEG 预览可内联显示。使用固定 64 KiB 缓冲，不将整图读入内存。
+
+文件不存在或记录已清理返回 404；文件路径、大小或修改时间与登记指纹不一致返回 409（`artifact_changed`）。目录不能下载，仅在详情中提供真实路径。分块为 `tiles` 目录，DeepZoom 另有 `manifest` 和 `viewer`；本接口不打包目录，也不托管完整 DeepZoom 查看器的关联文件。
 
 ### `DELETE /api/jobs/{id}`
 
@@ -197,6 +243,9 @@ Returns HTTP 200 with a service result after successful generation, without a jo
 
 两个生成端点默认允许超大输出，无需额外字段或开关。目标缩放/上采样后的工作图像最多 1 亿像素。单图 JPEG/WebP 超过各自尺寸限制时返回失败，请选择 PNG、TIFF 或 `tiled: true`。PNG/TIFF 可指定 `writeMode: "stream"` 降低内存占用。旧版图库特征需先通过建库端点原地刷新。
 Both mosaic endpoints allow large output by default, without an extra field or switch. Resized/upscaled working targets are limited to 100 million pixels. JPEG/WebP output exceeding format dimensions fails; select PNG, TIFF or `tiled: true`. PNG/TIFF can use `writeMode: "stream"` to reduce memory use. Refresh legacy features through the build endpoint before generation.
+
+两个生成端点均接受 `generatePreview: true`，默认 `false`，等价于 CLI `--preview`。只支持单图；与 `tiled` 或 `deepZoom` 组合返回 400，诊断字段为 `generatePreview`。沿用宽度最多 1400、总像素最多 400 万、不放大的 JPEG 预览，质量固定为 92。同步响应只返回产物元数据，使用任务端点生成才能通过任务产物接口下载。
+`generatePreview` is optional and off by default. It uses the existing bounded JPEG preview generator and is incompatible with tiled/DeepZoom output.
 
 ---
 

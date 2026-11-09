@@ -17,7 +17,13 @@
 MosaicraftWebUI.exe
 ```
 
-可视化操作：建库 → 选图 → 一键生成，无需记忆命令。
+可视化操作：建库 → 输入或粘贴目标图片路径 → 生成。页面显示服务工作目录，相对路径在该目录下解析；粘贴“复制为路径”的外层双引号会自动去掉。
+
+任务区持续显示列表、当前阶段、计数、后端回退和具体错误；切换功能页或刷新后可恢复同一服务会话的任务，并可恢复参数后自行提交。断线保留最后状态并重试；提交响应丢失时不会自动重复提交。仅排队任务可以取消，运行中任务需等待结束。任务和诊断仅保留在当前服务内存，最多保留最近 50 个完成任务，清理记录不删除文件。
+
+结果区显示实际输出路径、格式、尺寸和下载入口；可选“生成结果预览”默认关闭，开启后只自动加载有界 JPEG 预览。主图不会自动加载；后续阶段失败时，已保存的主图仍会显示。HTML 报告以附件下载，分块与 DeepZoom 提供实际目录或清单路径。
+
+表单草稿与按用途分类的最近 10 个路径保存在浏览器本地，可清空最近路径。命令和 API 提交共用参数，PowerShell 路径使用单引号引用；缺少必填参数时禁止复制无效命令。完整接口与诊断字段见 [API 文档](docs/API.md)，本轮检查见 [运行诊断验收](docs/RUNTIME_DIAGNOSTICS_VERIFICATION.md)。
 
 Linux/macOS 解压 tar.gz 后运行 `./MosaicraftWebUI`；命令行入口为 `./mosaicraft --help`。macOS 发布包仅支持 ARM64。
 
@@ -47,7 +53,7 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
 - **多分辨率** — 180×320 / 320×180 / 360×640 / 640×360 沿用模板内核；其他合法尺寸使用与 CPU 精确兼容的通用 CUDA 特征统计，宽高各支持 1～8192，资源不足时回退 CPU
 - **纯 CPU 模式** — `-D MOSAICRAFT_CUDA=OFF` 即可无 NVIDIA 平台编译
 
-v1.14.8 提供 sm_75/80/86/89/90/100/120 七架构原生 CUDA 内核及对应 PTX JIT，任务开始 GPU 工作前预检，不兼容时使用 CPU。正式发布包含 Windows/Linux CPU、macOS ARM64 CPU 以及 Windows/Linux CUDA 五种包；Windows CUDA 经过本机 GPU 必需验收，Linux CUDA 保留 GPU 未实机验收标记。特征仍为 v6、API 合约仍为 2.0，已有图库无需重建。完整更新见 [百科版本记录](https://github.com/CialloKing/Mosaicraft/blob/v1.14.8/docs/ENCYCLOPEDIA.md#v1148-七架构-cuda-与-linux-cuda-发布-2026-11-09)，验证方法与边界见 [CUDA 多架构验证](docs/CUDA_ARCHITECTURES.md)。
+v1.14.8 提供 sm_75/80/86/89/90/100/120 七架构原生 CUDA 内核及对应 PTX JIT，任务开始 GPU 工作前预检，不兼容时使用 CPU。正式发布包含 Windows/Linux CPU、macOS ARM64 CPU 以及 Windows/Linux CUDA 五种包；Windows CUDA 经过本机 GPU 必需验收，Linux CUDA 保留 GPU 未实机验收标记。该发布的特征为 v6、API 合约为 2.0；当前源码增量提供 API 2.1，主兼容版本仍为 2，已有图库无需重建。完整更新见 [百科版本记录](https://github.com/CialloKing/Mosaicraft/blob/v1.14.8/docs/ENCYCLOPEDIA.md#v1148-七架构-cuda-与-linux-cuda-发布-2026-11-09)，验证方法与边界见 [CUDA 多架构验证](docs/CUDA_ARCHITECTURES.md)。
 
 ### 🖼️ 输出格式
 
@@ -63,7 +69,7 @@ v1.14.8 提供 sm_75/80/86/89/90/100/120 七架构原生 CUDA 内核及对应 PT
 
 ### 🛠️ 工具链
 - **Web UI** — `MosaicraftWebUI.exe` 本地 HTTP 服务，浏览器一键运行
-- **REST API** — 17 个端点（`/api/jobs/*`, `/api/db/*`, `/api/mosaic`），JSON 交互，异步任务管理
+- **REST API** — 19 个端点（默认启用 18 个）（`/api/jobs/*`, `/api/db/*`, `/api/mosaic`），JSON 交互，异步任务管理
 - **Web 命令生成器** — `tools/command-builder/index.html` 可视化拼装 CLI 命令
 - **图库诊断** — `db-stats` 亮度直方图 + 覆盖缺口；`db-usage` 全局热点图；`db-health` 健康检查
 - **数据库管理** — `db-purge` 减量清理；`build --append` 增量建库；`build --recursive` 递归扫描
@@ -274,9 +280,9 @@ mosaicraft mosaic -i target.jpg -d library/180x320/mosaicraft.db -o output/resul
 | `--preview` | 关闭 | 同步生成 `<主图名（不含扩展名）>_preview.jpg`，仅支持单图输出 |
 | `--deepzoom` | — | Deep Zoom 金字塔 + HTML viewer |
 
-`--preview` 是命令行可选功能。开启后，在实际主图路径旁保存去掉扩展名并加 `_preview.jpg` 的预览，例如 `result.png` 对应 `result_preview.jpg`；显式 `--format` 调整主图后缀时，预览沿用最终文件名。预览保持比例、不放大，宽度不超过 1400、总像素不超过 400 万，极端长图同时遵守 JPEG 单轴 65500 上限，JPEG 质量固定为 92，与主图 `--quality` 独立。
+`--preview`、API 的 `generatePreview` 和 Web UI 的“生成结果预览”均为默认关闭的可选功能。开启后，在实际主图路径旁保存去掉扩展名并加 `_preview.jpg` 的预览，例如 `result.png` 对应 `result_preview.jpg`；显式 `--format` 调整主图后缀时，预览沿用最终文件名。预览保持比例、不放大，宽度不超过 1400、总像素不超过 400 万，极端长图同时遵守 JPEG 单轴 65500 上限，JPEG 质量固定为 92，与主图 `--quality` 独立。
 
-预览从已完成亮度调整和基础图叠加的合成像素做面积平均缩小，普通与流式输出使用相同算法，生成时同步处理，无需重新读取主图。主图关闭成功后才保存预览；预览写入失败返回非零退出码并报告已保存的主图路径，保留主图。关闭时不创建、删除或更新已有预览；开启时同名普通预览文件按现有输出方式覆盖。`--preview` 不能与 `--tiled` 或 `--deepzoom` 同用，组合会在生成前报错。当前 REST API 和 Web UI 不提供预览控制项。`--benchmark` 中的预览耗时已包含在 Encoding 中。
+预览从已完成亮度调整和基础图叠加的合成像素做面积平均缩小，普通与流式输出使用相同算法，生成时同步处理，无需重新读取主图。主图关闭成功后才保存预览；预览写入失败返回非零退出码并报告已保存的主图路径，保留主图。关闭时不创建、删除或更新已有预览；开启时同名普通预览文件按现有输出方式覆盖。`--preview` 不能与 `--tiled` 或 `--deepzoom` 同用，组合会在生成前报错。REST API 与 Web UI 使用相同预览语义。`--benchmark` 中的预览耗时已包含在 Encoding 中。
 
 功能与性能验收见 [可选预览图验证](docs/PREVIEW_VERIFICATION.md)。
 

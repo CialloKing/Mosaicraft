@@ -1,8 +1,10 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-11-09 | 版本 / Version：v1.14.7
+> 最后更新 / Last updated：2026-11-09 | 版本 / Version：v1.14.8
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
+
+当前源码提供 API 2.1 的运行诊断、阶段进度、会话任务与产物访问，并补齐 Web UI 的恢复跟踪、路径复用和可选预览；产品版本及特征 v6 保持不变。使用说明以 [README](../README.md#快速开始) 和 [API 文档](API.md) 为准，检查结果见 [运行诊断验收](RUNTIME_DIAGNOSTICS_VERIFICATION.md)。下文历史版本记录保留发布时的 API 合约说明。
 
 ## 目录 / Table of Contents
 
