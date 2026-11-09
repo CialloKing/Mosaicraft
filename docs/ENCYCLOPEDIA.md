@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-11-09 | 版本 / Version：v1.14.9
+> 最后更新 / Last updated：2026-11-09 | 版本 / Version：v1.14.10
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -366,7 +366,8 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.14.6 | 可选预览、同尺寸素材原字节保存、不同尺寸 JPEG 建库质量 100 | 见本版更新记录 |
 | 1.14.7 | 三平台 CPU 发布、云端 CUDA 候选、精简 Release 依赖与独立包验收 | 见 CI 与打包说明 |
 | 1.14.8 | 七架构 CUDA、Linux CUDA 正式附件与实际内核预检 | 见 CUDA 验证报告 |
-| **1.14.9** | 统一运行诊断、阶段进度、API 2.1 与 Web UI 任务和结果体验 | 见运行诊断验收 |
+| 1.14.9 | 统一运行诊断、阶段进度、API 2.1 与 Web UI 任务和结果体验 | 见运行诊断验收 |
+| **1.14.10** | Web UI 离线使用帮助、参数说明、明确预览默认状态与窄屏排版 | 见本版更新记录 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -772,3 +773,16 @@ Web UI 沿用原参数页与命令生成器，新增任务列表、详情、恢�
 源码构建流程统一以 README 为完整入口，CI 使用对应 Preset 显式构建产品和测试。核心引擎渐进拆出报告、性能统计打印及任务级邻域策略，保留浮点累加顺序、排序与随机数调用。未调整 CUDA 内核、评分权重、预算、特征 v6 或图库格式。功能验收中 Windows CPU/CUDA 完整 CTest、HTTP smoke 与八组严格对照通过；真实浏览器验证任务恢复、阶段计数、取消、回退、路径复用、预览和部分成功结果。诊断 JSON 的系统下载落盘未自动确认，其余具体边界见 [运行诊断验收](RUNTIME_DIAGNOSTICS_VERIFICATION.md)和 [引擎整理验收](ENGINE_REFACTOR_VERIFICATION.md)。发布包另按 [发布清单](RELEASE_CHECKLIST.md)执行原生构建、独立包与真实附件验收。
 
 > **EN**: Version 1.14.9 adds shared runtime diagnostics, real stage counters, backend/fallback reporting and artifact registration. API 2.1 preserves major version 2 while adding session identity, bounded incremental events, task restoration and streamed artifact downloads. The existing Web UI gains task history/reconnection, queued cancellation, reusable paths, correct PowerShell quoting and opt-in bounded previews. Closed main images remain discoverable after later-stage failures. Engine report/metrics/neighborhood refactoring preserves algorithms, feature v6, library format and resource budgets.
+
+
+### v1.14.10: Web UI 使用帮助与预览说明 (2026-11-09)
+
+Web UI 的预览提示改为“生成结果预览默认关闭，勾选后额外保存一张用于快速查看的 JPEG 预览图”，并为复选框关联说明，方便识别默认状态与用途。预览生成条件、像素限制、编码质量和后端行为保持不变。
+
+导航新增“使用帮助”，内容随单文件 HTML 一起提供，离线也能阅读。帮助涵盖首次建库、图库复用、路径填写、尺寸与格式、匹配参数、特征权重、各开关、建库选项、查询与管理、任务结果及常见问题。明确区分目标图匹配 Tile 与主图输出 Tile，并用尺寸例子说明最终主图的计算方式。预览选项旁可直接定位到开关说明；帮助目录可展开对应参数分组，快速开始按钮可返回建库或生成表单。
+
+帮助页隐藏命令区，不生成或提交命令。切换页面保留表单参数、继续跟踪任务，刷新能恢复帮助页与同会话任务。取消和清理记录入口集中到任务区，按钮换行与导航横向滚动适应窄屏；窄屏参数表按条目上下排列，避免左右拖动阅读。README 同步增加帮助入口。
+
+功能修改已通过真实浏览器检查：预览说明、帮助直达、参数保留、刷新恢复、帮助页任务跟踪、键盘展开、窄屏排版与服务断开后的阅读均正常；JavaScript 语法与帮助锚点检查通过。发布继续按清单执行同提交的原生打包、本机 GPU Required 和真实附件验收。CLI、REST API 2.1、特征 v6、图库格式及评分算法保持兼容。
+
+> **EN**: Version 1.14.10 adds a self-contained Web UI help page covering setup, paths, options, task diagnostics and results. Preview wording explicitly names the option and explains its purpose. Context links open the relevant help section; form state and task tracking survive navigation, while help never generates or submits a command. Narrow screens use stacked option descriptions. API 2.1, feature v6, library formats and engine behavior remain unchanged.
