@@ -135,6 +135,13 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 #task-note { color: #d29922; font-size: .8rem; margin-top: 8px; }
 #task-connection { font-size: .8rem; }
 @media (max-width: 760px) { .task-layout { grid-template-columns: 1fr; } #task-list { max-height: 220px; overflow: auto; } }
+
+.field-error { color: #f78166; font-size: .76rem; margin-top: 5px; }
+[aria-invalid="true"] { border-color: #f78166 !important; }
+.task-results { border-top: 1px solid var(--border); margin-top: 15px; padding-top: 12px; font-size: .8rem; }
+.task-results h3 { font-size: .9rem; margin-bottom: 8px; }
+.result-preview { display: block; max-width: 100%; max-height: 480px; object-fit: contain; margin-top: 12px; background: var(--bg); border-radius: 6px; }
+.saved-main { color: #7ee787; margin-bottom: 10px; }
 </style>
 </head>
 <body>
@@ -152,11 +159,12 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <button class="tab" data-cmd="dbusage">📋 使用记录</button>
 </nav>
 <main>
+<p class="hint" id="working-directory">相对路径以服务启动目录为准。</p>
 
 <!-- ============ MOSAIC ============ -->
 <div class="panel active" id="panel-mosaic">
   <div class="card">
-    <h3>📂 必需参数（绝对路径从盘符开始，相对路径相对于运行目录）</h3>
+    <h3>📂 必需路径（支持绝对路径与相对路径）</h3>
     <div class="row">
       <div class="field field-full"><label>目标图片 -i（必填）</label><input type="text" id="m-input" placeholder="粘贴绝对路径，如 D:\photos\target.jpg"></div>
       <div class="field field-full"><label>数据库 -d（默认情况下不需要填，默认 ./library/mosaicraft.db）</label><input type="text" id="m-db" placeholder="留空使用默认值，或粘贴目录路径如 D:\my_library"></div>
@@ -215,7 +223,9 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <label><input type="checkbox" id="m-benchmark"> 性能分析 --benchmark</label>
       <label><input type="checkbox" id="m-coloradj"> 随机亮度调整 --color-adjust（默认关闭）</label>
       <label><input type="checkbox" id="m-cpu"> 仅 CPU --cpu</label>
+      <label><input type="checkbox" id="m-preview"> 生成结果预览 --preview</label>
     </div>
+    <p class="hint" id="preview-hint">默认关闭，勾选后额外保存有界 JPEG 预览。</p>
     <div class="row" style="margin-top:8px">
       <div class="field"><label>亮度扰动幅度 --color-strength</label><input type="number" id="m-colorstr" value="0.04" min="0" max="0.5" step="0.01" style="max-width:150px"><div class="hint">0.04 表示 L 通道最多 ±4%；单独设置幅度不会启用。幅度为 0 时保持原像素。</div></div>
       <div class="field"><label>基础图叠加强度 --overlay-strength</label><input type="number" id="m-overlaystr" value="0" min="0" max="1" step="0.05" style="max-width:150px"><div class="hint">0 关闭；0.2 表示 80% 素材 + 20% 基础图。使用缩放、放大和补边后的基础图，强度越高，小图细节越弱。</div></div>
@@ -226,7 +236,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 <!-- ============ BUILD ============ -->
 <div class="panel" id="panel-build">
   <div class="card">
-    <h3>📂 必需参数（支持拖入文件夹）</h3>
+    <h3>📂 必需路径</h3>
     <div class="row">
       <div class="field field-full"><label>图片目录 -i（必填）</label><input type="text" id="b-input" placeholder="粘贴文件夹路径，如 D:\photos"></div>
       <div class="field field-full"><label>输出目录 -o（默认 ./library）</label><input type="text" id="b-output" placeholder="粘贴目录路径，如 D:\mylib"></div>
@@ -286,12 +296,14 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <span>生成的命令 (PowerShell)</span>
     <span id="copy-feedback" style="color:var(--accent2);display:none">✅ 已复制!</span>
   </div>
-  <div class="cmd" id="cmd-output">mosaicraft mosaic -i target.jpg -d library -o ./output/output.jpg</div>
+  <div class="cmd" id="cmd-output" aria-label="生成的PowerShell命令"></div>
+  <p class="hint" id="command-validation" role="status"></p>
   <div class="btns">
     <button class="btn btn-primary" onclick="generateCommand()">🔄 生成命令</button>
-    <button class="btn btn-secondary" onclick="copyCommand()">📋 复制到剪贴板</button>
+    <button class="btn btn-secondary" id="btn-copy-command" onclick="copyCommand()" disabled>📋 复制到剪贴板</button>
     <button class="btn btn-primary" id="btn-run" onclick="runCommand()" style="display:none">▶ 运行</button>
     <button class="btn btn-secondary" id="btn-cancel-job" onclick="cancelCurrentJob()" style="display:none" disabled>取消任务</button>
+    <button class="btn btn-secondary" onclick="clearRecentPaths()">清空最近路径</button>
     <button class="btn btn-secondary" id="btn-clear-jobs" onclick="clearFinishedJobs()" style="display:none">清理完成任务记录</button>
   </div>
   <div id="run-status" style="margin-top:10px;font-size:0.82rem;color:var(--fg2);display:none"></div>
@@ -301,7 +313,6 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 <section class="task-section" id="task-section" aria-label="任务与结果" hidden>
   <h2>任务与结果</h2>
   <div id="task-connection" role="status" aria-live="polite">正在连接…</div>
-  <p class="hint" id="working-directory"></p>
   <div id="task-note" role="status" aria-live="polite"></div>
   <div class="btns">
     <button class="btn btn-secondary" id="btn-restore-task" onclick="restoreTaskParameters()" disabled>恢复参数</button>
@@ -312,7 +323,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 </section>
 
 </main>
-<footer>💡 提示：在文件管理器中 Ctrl+C 复制文件/文件夹，回到此页面 Ctrl+V 粘贴到输入框</footer>
+<footer>💡 在文件管理器使用“复制文件地址 / 复制为路径”，再粘贴到输入框；外层双引号会自动去除。</footer>
 
 <script>
 // Tab switching
@@ -324,12 +335,6 @@ document.querySelectorAll('.tab').forEach(t => {
     document.getElementById('panel-' + t.dataset.cmd).classList.add('active');
     generateCommand();
   });
-});
-
-// Auto-generate on any input change
-document.querySelectorAll('input, select').forEach(el => {
-  el.addEventListener('input', generateCommand);
-  el.addEventListener('change', generateCommand);
 });
 
 document.addEventListener('click', event =>
@@ -347,96 +352,32 @@ function val(id) {
   const el = document.getElementById(id);
   if (!el) return '';
   if (el.type === 'checkbox') return el.checked;
-  return el.value.trim();
+  return PATH_FIELDS[id] ? normalizePath(el.value) : el.value.trim();
 }
 
 function generateCommand() {
+  clearFieldErrors();
+  syncPreviewOption();
   const tab = document.querySelector('.tab.active').dataset.cmd;
-  const cliCommand = {
-    mosaic: 'mosaic',
-    build: 'build',
-    inspect: 'inspect',
-    dbstats: 'db-stats',
-    dbpurge: 'db-purge',
-    dbhealth: 'db-health',
-    dbusage: 'db-usage'
-  }[tab] || tab;
-  let lines = [];
-
-  if (tab === 'mosaic') {
-    const inp = val('m-input'); if (inp) lines.push('-i ' + inp);
-    const db = val('m-db'); if (db) lines.push('-d ' + db);
-    const out = val('m-output'); if (out && out !== 'output.jpg' && out !== './output/output.jpg') lines.push('-o ' + out);
-    const fmt = val('m-format'); if (fmt) lines.push('--format ' + fmt);
-    const q = val('m-quality'); if (q && q !== '100') lines.push('--quality ' + q);
-    const pl = val('m-pnglevel'); if (pl) lines.push('--png-level ' + pl);
-    const wm = val('m-writemode'); if (wm) lines.push('--write-mode ' + wm);
-    const tw = val('m-tilew'); if (tw && tw !== '9') lines.push('--tile-w ' + tw);
-    const th = val('m-tileh'); if (th && th !== '16') lines.push('--tile-h ' + th);
-    const cand = val('m-candidates'); if (cand && cand !== '150') lines.push('--candidates ' + cand);
-    const topn = val('m-topn'); if (topn && topn !== '10') lines.push('--topn-random ' + topn);
-    const lr = val('m-lrange'); if (lr && lr !== '20') lines.push('--l-range ' + lr);
-    const nw = val('m-nwin'); if (nw && nw !== '0') lines.push('--neighbor-window ' + nw);
-    const np = val('m-npen'); if (np && np !== '100') lines.push('--neighbor-penalty ' + np);
-    const up = val('m-upscale'); if (up) lines.push('--upscale ' + up);
-    const ow = val('m-outw'); if (ow) lines.push('--out-w ' + ow);
-    const oh = val('m-outh'); if (oh) lines.push('--out-h ' + oh);
-    const ot = val('m-otile'); if (ot && ot !== '180x320') lines.push('--output-tile ' + ot);
-    const lw = val('m-labw'); if (lw && lw !== '0.20') lines.push('--lab-weight ' + lw);
-    const gw = val('m-gridw'); if (gw && gw !== '0.45') lines.push('--grid-weight ' + gw);
-    const tw2 = val('m-tinyw'); if (tw2 && tw2 !== '0.25') lines.push('--tiny-weight ' + tw2);
-    const ew = val('m-edgew'); if (ew && ew !== '0.05') lines.push('--edge-weight ' + ew);
-    const lbw = val('m-lbpw'); if (lbw && lbw !== '0.05') lines.push('--lbp-weight ' + lbw);
-    const pen = val('m-penalty'); if (pen && pen !== '0.01') lines.push('--penalty ' + pen);
-    if (val('m-tiled')) lines.push('--tiled');
-    if (val('m-deepzoom')) lines.push('--deepzoom');
-    if (val('m-analyze')) lines.push('--analyze');
-    if (val('m-adaptive')) lines.push('--adaptive-weights');
-    if (val('m-benchmark')) lines.push('--benchmark');
-    if (val('m-coloradj')) lines.push('--color-adjust');
-    const cs = val('m-colorstr'); if (cs && cs !== '0.04') lines.push('--color-strength ' + cs);
-    const os = val('m-overlaystr'); if (os && os !== '0') lines.push('--overlay-strength ' + os);
-    if (val('m-cpu')) lines.push('--cpu');
+  try {
+    const payload = readFormPayload(tab);
+    formModel = {valid:true, tab, payload};
+    document.getElementById('cmd-output').textContent = commandFromPayload(tab, payload);
+    document.getElementById('command-validation').textContent = '';
+  } catch (error) {
+    formModel = {valid:false, tab, payload:null};
+    document.getElementById('cmd-output').textContent = '';
+    document.getElementById('command-validation').textContent = error.message;
+    highlightDiagnostic({code:'invalid_argument', field:error.field, message:error.message});
   }
-  else if (tab === 'build') {
-    const inp = val('b-input'); if (inp) lines.push('-i ' + inp);
-    const out = val('b-output'); if (out && out !== 'library') lines.push('-o ' + out);
-    const db = val('b-db'); if (db) lines.push('-d ' + db);
-    const thr = val('b-threads'); if (thr) lines.push('-t ' + thr);
-    const ns = val('b-normsize'); if (ns && ns !== '180x320') lines.push('--normalize-size ' + ns);
-    if (val('b-append')) lines.push('--append');
-    if (val('b-recursive')) lines.push('-r');
-    if (val('b-normonly')) lines.push('--normalize-only');
-    if (val('b-force')) lines.push('-y');
-  }
-  else if (tab === 'inspect') {
-    const inp = val('i-input'); if (inp) lines.push('-i ' + inp);
-    const db = val('i-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
-  }
-  else if (tab === 'dbstats') {
-    const db = val('s-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
-  }
-  else if (tab === 'dbpurge') {
-    const db = val('p-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
-    if (val('p-force')) lines.push('-y');
-  }
-  else if (tab === 'dbhealth') {
-    const db = val('h-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
-  }
-  else if (tab === 'dbusage') {
-    const db = val('u-db'); if (db && db !== 'mosaicraft.db') lines.push('-d ' + db);
-    const n = val('u-n'); if (n && n !== '50') lines.push('-n ' + n);
-    const exp = val('u-export'); if (exp) lines.push('--export ' + exp);
-  }
-
-  const cmd = lines.length > 0
-    ? 'mosaicraft ' + cliCommand + ' ' + lines.join(' ')
-    : 'mosaicraft ' + cliCommand + '  (请填写参数)';
-  document.getElementById('cmd-output').textContent = cmd;
+  document.getElementById('btn-copy-command').disabled = !formModel.valid;
+  updateRunButton();
+  persistDraft();
 }
 
 function copyCommand()
 {
+  if (!formModel.valid) return;
   const cmd = document.getElementById('cmd-output').textContent;
   copyTextToClipboard(cmd).then(() =>
   {
@@ -446,7 +387,7 @@ function copyCommand()
     {
       fb.style.display = 'none';
     }, 2000);
-  });
+  }).catch(() => { document.getElementById('command-validation').textContent = '复制失败，请手动选择命令复制。'; });
 }
 
 function copyTextToClipboard(text)
@@ -557,7 +498,7 @@ async function checkServer() {
       document.getElementById('run-status').style.display = '';
       document.getElementById('run-status').textContent = '本地服务已连接，可以提交任务。';
       startTaskMonitor();
-      updateRunButton();
+      generateCommand();
       return;
     } else if (data.message) {
       throw new Error(data.message);
@@ -592,30 +533,34 @@ async function runCommand() {
     if (!serverAvailable) {
       throw new Error('请通过 MosaicraftWebUI.exe 打开页面后再运行');
     }
+    const payload = readFormPayload(tab);
+    for (const id of Object.keys(PATH_FIELDS)) rememberPath(id);
     if (tab === 'mosaic') {
-      const data = await postJson('/api/jobs/mosaic', buildMosaicPayload());
+      const data = await postJson('/api/jobs/mosaic', payload);
       if (!data.ok || !data.job) {
         if (data.status === 0) data.message = '提交结果未知，请先查看任务列表，避免重复提交。' + data.message;
         renderFailure(status, data);
         return;
       }
+      taskStore.note = '';
       setCurrentJob(data.job.id);
       await pollJob(data.job.id, status);
       return;
     }
     if (tab === 'build') {
-      const data = await postJson('/api/jobs/build', buildBuildPayload());
+      const data = await postJson('/api/jobs/build', payload);
       if (!data.ok || !data.job) {
         if (data.status === 0) data.message = '提交结果未知，请先查看任务列表，避免重复提交。' + data.message;
         renderFailure(status, data);
         return;
       }
+      taskStore.note = '';
       setCurrentJob(data.job.id);
       await pollJob(data.job.id, status);
       return;
     }
     if (tab === 'dbstats') {
-      const data = await postJson('/api/db/stats', { dbPath: val('s-db') });
+      const data = await postJson('/api/db/stats', payload);
       if (!data.ok) {
         renderFailure(status, data);
         return;
@@ -624,7 +569,7 @@ async function runCommand() {
       return;
     }
     if (tab === 'dbhealth') {
-      const data = await postJson('/api/db/health', { dbPath: val('h-db') });
+      const data = await postJson('/api/db/health', payload);
       if (!data.ok) {
         renderFailure(status, data);
         return;
@@ -633,10 +578,7 @@ async function runCommand() {
       return;
     }
     if (tab === 'inspect') {
-      const data = await postJson('/api/inspect', {
-        imagePath: requireValue('i-input', '图片路径'),
-        dbPath: val('i-db')
-      });
+      const data = await postJson('/api/inspect', payload);
       if (!data.ok) {
         renderFailure(status, data);
         return;
@@ -650,17 +592,7 @@ async function runCommand() {
         status.innerHTML = '<span style="color:#79c0ff">已取消导出</span>';
         return;
       }
-      const data = exportDir
-        ? await postJson('/api/db/usage/export', {
-            dbPath: val('u-db'),
-            outputDir: exportDir,
-            confirm: true
-          })
-        : await postJson('/api/db/usage', {
-            dbPath: val('u-db'),
-            limit: parseUiNumber('u-n', 'Top N', { integer: true, min: 1 }) || 50,
-            showUnused: false
-          });
+      const data = await postJson(exportDir ? '/api/db/usage/export' : '/api/db/usage', payload);
       if (!data.ok) {
         renderFailure(status, data);
         if (data.export) status.innerHTML += renderDbUsageExport(data.export);
@@ -675,11 +607,7 @@ async function runCommand() {
         status.innerHTML = '<span style="color:#79c0ff">已取消清理</span>';
         return;
       }
-      const data = await postJson('/api/db/purge', {
-        dbPath: val('p-db'),
-        dryRun: !execute,
-        confirm: execute
-      });
+      const data = await postJson('/api/db/purge', payload);
       if (!data.ok) {
         renderFailure(status, data);
         if (data.purge) status.innerHTML += renderDbPurge(data.purge);
@@ -691,7 +619,7 @@ async function runCommand() {
 
     throw new Error('未知功能页：' + tab);
   } catch(e) {
-    renderFailure(status, { message: e && e.message ? e.message : '请确认 Web UI 服务器已启动' }, '⚠ 请求失败');
+    renderFailure(status, { message: e.message || '请求失败', diagnostic: {code:'invalid_argument',field:e.field || '',message:e.message || '请求失败'} }, '⚠ 请求失败');
   } finally {
     submitting = false;
     updateRunButton();
@@ -1023,7 +951,7 @@ function setIfValue(payload, key, id, mapper) {
 
 function requireValue(id, label) {
   const raw = val(id);
-  if (raw === '') throw new Error(label + ' 不能为空');
+  if (raw === '') throw uiFieldError(id, label + ' 不能为空');
   return raw;
 }
 
@@ -1032,10 +960,10 @@ function parseUiNumber(id, label, options) {
   if (raw === '') return null;
   const opts = options || {};
   const num = Number(raw);
-  if (!Number.isFinite(num)) throw new Error(label + ' 必须是数字');
-  if (opts.integer && !Number.isInteger(num)) throw new Error(label + ' 必须是整数');
-  if (opts.min !== undefined && num < opts.min) throw new Error(label + ' 不能小于 ' + opts.min);
-  if (opts.max !== undefined && num > opts.max) throw new Error(label + ' 不能大于 ' + opts.max);
+  if (!Number.isFinite(num)) throw uiFieldError(id, label + ' 必须是数字');
+  if (opts.integer && !Number.isInteger(num)) throw uiFieldError(id, label + ' 必须是整数');
+  if (opts.min !== undefined && num < opts.min) throw uiFieldError(id, label + ' 不能小于 ' + opts.min);
+  if (opts.max !== undefined && num > opts.max) throw uiFieldError(id, label + ' 不能大于 ' + opts.max);
   return num;
 }
 
@@ -1048,12 +976,14 @@ function setIfSize(payload, key, id, label) {
   const raw = val(id);
   if (raw === '') return null;
   const match = raw.match(/^(\d+)x(\d+)$/i);
-  if (!match) throw new Error(label + ' 必须使用 WxH 格式');
+  if (!match) throw uiFieldError(id, label + ' 必须使用 WxH 格式');
   const w = Number(match[1]);
   const h = Number(match[2]);
   if (!Number.isSafeInteger(w) || !Number.isSafeInteger(h) || w <= 0 || h <= 0) {
-    throw new Error(label + ' 必须使用正整数 WxH 格式');
+    throw uiFieldError(id, label + ' 必须使用正整数 WxH 格式');
   }
+  const maximum = id === 'b-normsize' ? 8192 : 1000000;
+  if (w > maximum || h > maximum || w * h > 100000000) throw uiFieldError(id, label + ' 超过支持的尺寸范围');
   payload[key] = raw;
   return { w, h };
 }
@@ -1071,21 +1001,21 @@ function buildMosaicPayload() {
   setIfValue(payload, 'writeMode', 'm-writemode');
   setIfNumber(payload, 'tileW', 'm-tilew', 'Tile 宽度', { integer: true, min: 4 });
   setIfNumber(payload, 'tileH', 'm-tileh', 'Tile 高度', { integer: true, min: 4 });
-  setIfNumber(payload, 'candidates', 'm-candidates', '候选数', { integer: true, min: 10 });
-  setIfNumber(payload, 'topNrandom', 'm-topn', 'TopN 随机', { integer: true, min: 1 });
-  setIfNumber(payload, 'lRange', 'm-lrange', 'L 亮度范围');
-  setIfNumber(payload, 'neighborWindow', 'm-nwin', '邻域窗口', { integer: true, min: 0 });
-  setIfNumber(payload, 'neighborPenalty', 'm-npen', '邻域惩罚');
-  setIfNumber(payload, 'upscale', 'm-upscale', '上采样', { integer: true, min: 1 });
+  setIfNumber(payload, 'candidates', 'm-candidates', '候选数', { integer: true, min: 10, max:10000 });
+  setIfNumber(payload, 'topNrandom', 'm-topn', 'TopN 随机', { integer: true, min: 1, max:10000 });
+  setIfNumber(payload, 'lRange', 'm-lrange', 'L 亮度范围', {min:0,max:255});
+  setIfNumber(payload, 'neighborWindow', 'm-nwin', '邻域窗口', { integer: true, min: 0, max:1000000 });
+  setIfNumber(payload, 'neighborPenalty', 'm-npen', '邻域惩罚', {min:0});
+  setIfNumber(payload, 'upscale', 'm-upscale', '上采样', { integer: true, min: 1, max:64 });
   setIfNumber(payload, 'outW', 'm-outw', '输出宽度', { integer: true, min: 0, max: 1000000 });
   setIfNumber(payload, 'outH', 'm-outh', '输出高度', { integer: true, min: 0, max: 1000000 });
   const outTile = setIfSize(payload, 'outputTile', 'm-otile', '输出 Tile 尺寸');
-  setIfNumber(payload, 'labWeight', 'm-labw', 'LAB 权重');
-  setIfNumber(payload, 'gridWeight', 'm-gridw', 'Grid 权重');
-  setIfNumber(payload, 'tinyWeight', 'm-tinyw', 'Tiny 权重');
-  setIfNumber(payload, 'edgeWeight', 'm-edgew', 'Edge 权重');
-  setIfNumber(payload, 'lbpWeight', 'm-lbpw', 'LBP 权重');
-  setIfNumber(payload, 'usePenalty', 'm-penalty', '复用惩罚');
+  setIfNumber(payload, 'labWeight', 'm-labw', 'LAB 权重', {min:0});
+  setIfNumber(payload, 'gridWeight', 'm-gridw', 'Grid 权重', {min:0});
+  setIfNumber(payload, 'tinyWeight', 'm-tinyw', 'Tiny 权重', {min:0});
+  setIfNumber(payload, 'edgeWeight', 'm-edgew', 'Edge 权重', {min:0});
+  setIfNumber(payload, 'lbpWeight', 'm-lbpw', 'LBP 权重', {min:0});
+  setIfNumber(payload, 'usePenalty', 'm-penalty', '复用惩罚', {min:0});
   setIfNumber(payload, 'quality', 'm-quality', 'JPEG/WebP 质量', { integer: true, min: 1, max: 100 });
   setIfNumber(payload, 'pngLevel', 'm-pnglevel', 'PNG 压缩级别', { integer: true, min: 1, max: 9 });
   setIfNumber(payload, 'colorStrength', 'm-colorstr', '亮度扰动幅度', { min: 0, max: 0.5 });
@@ -1096,8 +1026,12 @@ function buildMosaicPayload() {
   setIfChecked(payload, 'adaptiveWeights', 'm-adaptive');
   setIfChecked(payload, 'benchmark', 'm-benchmark');
   setIfChecked(payload, 'colorAdjust', 'm-coloradj');
+  setIfChecked(payload, 'generatePreview', 'm-preview');
   if (val('m-cpu')) payload.useGpu = false;
 
+  const weights = ['labWeight','gridWeight','tinyWeight','edgeWeight','lbpWeight'];
+  if (weights.reduce((sum,key) => sum + (payload[key] === undefined ? CLI_DEFAULTS.mosaic[key] : payload[key]), 0) <= 0)
+    throw uiFieldError('m-labw', '特征权重之和必须大于 0');
   if (outTile) {
     payload.nativeTileW = outTile.w;
     payload.nativeTileH = outTile.h;
@@ -1110,7 +1044,7 @@ function buildBuildPayload() {
   payload.inputDir = requireValue('b-input', '图片目录');
   setIfValue(payload, 'outputDir', 'b-output');
   setIfValue(payload, 'dbPath', 'b-db');
-  setIfNumber(payload, 'threads', 'b-threads', '线程数', { integer: true, min: 0 });
+  setIfNumber(payload, 'threads', 'b-threads', '线程数', { integer: true, min: 0, max:256 });
   const normSize = setIfSize(payload, 'normalizeSize', 'b-normsize', '归一化尺寸');
   setIfChecked(payload, 'appendMode', 'b-append');
   setIfChecked(payload, 'recursive', 'b-recursive');
@@ -1373,7 +1307,10 @@ function renderTaskArea() {
     const opened = Array.from(detail.querySelectorAll('details[open]')).map(item => item.dataset.section);
     const log = detail.querySelector('.task-events');
     const top = log && log.scrollTop;
+    const oldPreview = detail.querySelector('img[data-preview]');
     detail.innerHTML = html;
+    const newPreview = detail.querySelector('img[data-preview]');
+    if (oldPreview && newPreview && oldPreview.src === newPreview.src) newPreview.replaceWith(oldPreview);
     for (const item of detail.querySelectorAll('details')) if (opened.includes(item.dataset.section)) item.open = true;
     const nextLog = detail.querySelector('.task-events');
     if (nextLog && top !== null) nextLog.scrollTop = top;
@@ -1432,12 +1369,204 @@ function restoreRequestParameters(job) {
   renderTaskArea();
 }
 
-// Try to detect server on load
-checkServer();
+let formModel = { valid: false, payload: null };
+let restoringDraft = false;
+const PATH_FIELDS = {
+  'm-input': 'images', 'i-input': 'images', 'm-db': 'databases', 'b-db': 'databases',
+  'i-db': 'databases', 's-db': 'databases', 'h-db': 'databases', 'p-db': 'databases', 'u-db': 'databases',
+  'm-output': 'outputs', 'b-input': 'inputs', 'b-output': 'directories', 'u-export': 'directories'
+};
+function normalizePath(value) {
+  const text = String(value || '').trim();
+  return text.length >= 2 && text.startsWith('"') && text.endsWith('"') ? text.slice(1, -1) : text;
+}
+function quotePowerShell(value) { return "'" + String(value).replace(/'/g, "''") + "'"; }
+function uiFieldError(field, message) { return Object.assign(new Error(message), { field }); }
+function highlightDiagnostic(diagnostic) {
+  const tab = document.querySelector('.tab.active').dataset.cmd;
+  const maps = { ...FORM_FIELDS[tab], imagePath: 'i-input', normalizeSize: 'b-normsize', outputTile: 'm-otile',
+    nativeTileW: 'm-otile', nativeTileH: 'm-otile', normalizeWidth: 'b-normsize', normalizeHeight: 'b-normsize' };
+  const field = diagnostic.field || '';
+  const element = document.getElementById(maps[field] || field);
+  if (!element || !element.closest('.panel.active')) return;
+  element.setAttribute('aria-invalid', 'true');
+  const parent = element.closest('.field') || element.parentElement;
+  let message = parent.querySelector('.field-error');
+  if (!message) { message = document.createElement('div'); message.className = 'field-error'; parent.appendChild(message); }
+  message.textContent = diagnostic.message || diagnosticHint(diagnostic);
+}
+function clearFieldErrors() {
+  document.querySelectorAll('[aria-invalid]').forEach(element => element.removeAttribute('aria-invalid'));
+  document.querySelectorAll('.field-error').forEach(element => element.remove());
+}
+function syncPreviewOption() {
+  const preview = document.getElementById('m-preview');
+  const incompatible = val('m-tiled') || val('m-deepzoom');
+  const unsupported = serverAvailable && !hasFeature('result-preview');
+  preview.disabled = incompatible || unsupported;
+  if (preview.disabled) preview.checked = false;
+  document.getElementById('preview-hint').textContent = incompatible
+    ? '分块与 DeepZoom 模式不生成单图预览。' : unsupported
+    ? '此服务未提供预览能力，可升级服务或复制命令执行。' : '默认关闭，勾选后额外保存有界 JPEG 预览。';
+}
+function readFormPayload(tab) {
+  if (tab === 'mosaic') return buildMosaicPayload();
+  if (tab === 'build') return buildBuildPayload();
+  const prefixes = { inspect: 'i', dbstats: 's', dbhealth: 'h', dbpurge: 'p', dbusage: 'u' };
+  const payload = {};
+  setIfValue(payload, 'dbPath', prefixes[tab] + '-db');
+  if (tab === 'inspect') payload.imagePath = requireValue('i-input', '图片路径');
+  if (tab === 'dbpurge') { payload.dryRun = !val('p-force'); payload.confirm = !!val('p-force'); }
+  if (tab === 'dbusage') {
+    const output = val('u-export');
+    if (output) { payload.outputDir = output; payload.confirm = true; }
+    else { payload.limit = parseUiNumber('u-n', 'Top N', {integer:true,min:1}) || 50; payload.showUnused = false; }
+  }
+  return payload;
+}
+const CLI_FIELDS = {
+  mosaic: [['inputPath','-i','path'],['dbPath','-d','path'],['outputPath','-o','path'],['format','--format'],
+    ['quality','--quality'],['pngLevel','--png-level'],['writeMode','--write-mode'],['tileW','--tile-w'],['tileH','--tile-h'],
+    ['candidates','--candidates'],['topNrandom','--topn-random'],['lRange','--l-range'],['neighborWindow','--neighbor-window'],
+    ['neighborPenalty','--neighbor-penalty'],['upscale','--upscale'],['outW','--out-w'],['outH','--out-h'],['outputTile','--output-tile'],
+    ['labWeight','--lab-weight'],['gridWeight','--grid-weight'],['tinyWeight','--tiny-weight'],['edgeWeight','--edge-weight'],['lbpWeight','--lbp-weight'],
+    ['usePenalty','--penalty'],['colorStrength','--color-strength'],['overlayStrength','--overlay-strength'],['tiled','--tiled','flag'],
+    ['deepZoom','--deepzoom','flag'],['analyze','--analyze','flag'],['adaptiveWeights','--adaptive-weights','flag'],
+    ['benchmark','--benchmark','flag'],['colorAdjust','--color-adjust','flag'],['generatePreview','--preview','flag']],
+  build: [['inputDir','-i','path'],['outputDir','-o','path'],['dbPath','-d','path'],['threads','--threads'],['normalizeSize','--normalize-size'],
+    ['appendMode','--append','flag'],['recursive','-r','flag'],['normalizeOnly','--normalize-only','flag'],['forceMode','-y','flag']],
+  inspect: [['imagePath','-i','path'],['dbPath','-d','path']],
+  dbstats: [['dbPath','-d','path']], dbhealth: [['dbPath','-d','path']],
+  dbpurge: [['dbPath','-d','path'],['confirm','-y','flag']],
+  dbusage: [['dbPath','-d','path'],['limit','-n'],['outputDir','--export','path']]
+};
+const CLI_DEFAULTS = { mosaic: { quality:100, pngLevel:1, writeMode:'auto', tileW:9, tileH:16, candidates:150,
+  topNrandom:10, lRange:20, neighborWindow:0, neighborPenalty:100, upscale:1, outW:0, outH:0, outputTile:'180x320',
+  labWeight:.2, gridWeight:.45, tinyWeight:.25, edgeWeight:.05, lbpWeight:.05, usePenalty:.01, colorStrength:.04, overlayStrength:0 },
+  build: {threads:0,normalizeSize:'180x320'}, dbusage:{limit:50} };
+function commandFromPayload(tab, payload) {
+  const command = {dbstats:'db-stats',dbpurge:'db-purge',dbhealth:'db-health',dbusage:'db-usage'}[tab] || tab;
+  const parts = ['mosaicraft', command];
+  for (const [key, flag, type] of CLI_FIELDS[tab]) {
+    const value = payload[key];
+    if (value === undefined || value === '' || value === false || value === (CLI_DEFAULTS[tab] || {})[key]) continue;
+    if (type === 'flag') { if (value) parts.push(flag); }
+    else parts.push(flag, type === 'path' ? quotePowerShell(value) : String(value));
+  }
+  if (tab === 'mosaic' && payload.useGpu === false) parts.push('--cpu');
+  return parts.join(' ');
+}
+function persistDraft() {
+  if (restoringDraft) return;
+  const fields = {};
+  document.querySelectorAll('.panel input[id], .panel select[id]').forEach(element => {
+    fields[element.id] = element.type === 'checkbox' ? element.checked : element.value;
+  });
+  saveJson('mosaicraft-form-v1', {version:1, fields, tab:document.querySelector('.tab.active').dataset.cmd});
+}
+function updateRecentLists() {
+  const recent = storedJson('mosaicraft-recent-paths-v1', {});
+  for (const category of new Set(Object.values(PATH_FIELDS))) {
+    const list = document.getElementById('recent-' + category);
+    list.replaceChildren();
+    for (const value of (Array.isArray(recent[category]) ? recent[category] : []).slice(0, 10)) {
+      const option = document.createElement('option'); option.value = value; list.appendChild(option);
+    }
+  }
+}
+function rememberPath(id) {
+  const category = PATH_FIELDS[id];
+  const value = val(id);
+  if (!category || !value) return;
+  const recent = storedJson('mosaicraft-recent-paths-v1', {});
+  recent[category] = [value, ...(Array.isArray(recent[category]) ? recent[category] : []).filter(item => item !== value)].slice(0, 10);
+  saveJson('mosaicraft-recent-paths-v1', recent);
+  updateRecentLists();
+}
+function clearRecentPaths() { saveJson('mosaicraft-recent-paths-v1', {}); updateRecentLists(); }
+function initializeFormUi() {
+  for (const category of new Set(Object.values(PATH_FIELDS))) {
+    const list = document.createElement('datalist'); list.id = 'recent-' + category; document.body.appendChild(list);
+  }
+  for (const [id, category] of Object.entries(PATH_FIELDS)) document.getElementById(id).setAttribute('list', 'recent-' + category);
+  document.querySelectorAll('.field').forEach(parent => {
+    const label = parent.querySelector('label'); const input = parent.querySelector('input[id], select[id]');
+    if (label && input) label.htmlFor = input.id;
+  });
+  restoringDraft = true;
+  const draft = storedJson('mosaicraft-form-v1', {});
+  if (draft.version === 1 && draft.fields && typeof draft.fields === 'object') {
+    for (const [id, value] of Object.entries(draft.fields)) {
+      const element = document.getElementById(id);
+      if (!element || !element.closest('.panel')) continue;
+      if (element.type === 'checkbox') element.checked = value === true;
+      else if (typeof value === 'string') element.value = value;
+    }
+  }
+  const tab = Array.from(document.querySelectorAll('.tab')).find(item => item.dataset.cmd === draft.tab);
+  if (tab) tab.click();
+  restoringDraft = false;
+  updateRecentLists(); syncPreviewOption();
+  document.querySelectorAll('.panel input, .panel select').forEach(element => {
+    element.addEventListener('input', generateCommand);
+    element.addEventListener('change', () => {
+      if (PATH_FIELDS[element.id]) { element.value = normalizePath(element.value); rememberPath(element.id); }
+      generateCommand();
+    });
+  });
+}
+function useTaskLibrary() {
+  const job = taskStore.detail;
+  const artifact = job && (job.artifacts || []).find(item => item.id === 'library');
+  if (!artifact) return;
+  for (const id of ['m-db','i-db','s-db','h-db','p-db','u-db']) document.getElementById(id).value = artifact.path;
+  rememberPath('m-db'); generateCommand();
+  taskStore.note = '已将此图库填入生成、查询和图库管理表单。'; renderTaskArea();
+}
+function artifactUrl(jobId, id) { return '/api/jobs/' + encodeURIComponent(jobId) + '/artifacts/' + encodeURIComponent(id); }
+function renderTaskArtifacts(job) {
+  if (!Array.isArray(job.artifacts)) return '';
+  const main = job.artifacts.find(item => item.id === 'main');
+  const preview = job.artifacts.find(item => item.id === 'preview');
+  const library = job.artifacts.find(item => item.id === 'library');
+  let html = '<section class="task-results"><h3>实际结果</h3>';
+  if (main && job.state === 'failed') html += '<p class="saved-main">主图已保存；任务后续阶段失败，详情见上方诊断。</p>';
+  if (job.runtime && job.runtime.width > 0) html += '<p>' + escapeHtml(job.runtime.format.toUpperCase()) + ' · ' + job.runtime.width + ' × ' + job.runtime.height + ' · 成功小块 ' + job.runtime.matched + ' · 缺失 ' + job.runtime.failed + '</p>';
+  for (const item of job.artifacts) {
+    const name = {main:'主图',preview:'预览',library:'图库',tiles:'输出目录','library-directory':'图库目录',normalized:'归一化目录','analysis-text':'分析文本','analysis-html':'HTML 报告'}[item.id] || item.id;
+    html += renderJobPath(name, item.path, '复制路径');
+    if (!item.directory) html += '<button class="btn btn-secondary btn-inline" data-artifact-id="' + escapeAttr(item.id) + '">下载' + escapeHtml(name) + '</button>';
+  }
+  if (library) html += '<p><button class="btn btn-secondary" onclick="useTaskLibrary()">使用此图库</button></p>';
+  if (preview) html += '<img data-preview="true" class="result-preview" src="' + artifactUrl(job.id, preview.id) + '" alt="马赛克结果预览" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><p class="hint" hidden>预览文件不可用，可能已删除或改写。</p>';
+  else if (job.type === 'mosaic' && !['tiled','deepzoom'].includes(job.runtime && job.runtime.format)) html += '<p class="hint">' + (job.request && job.request.generatePreview && job.state === 'running' ? '预览生成后将在这里显示。' : '未生成预览。需要时请在提交前勾选“生成结果预览”；主图不会自动加载。') + '</p>';
+  if (!job.artifacts.length) html += '<p class="hint">暂无已成功保存的产物。</p>';
+  return html + '</section>';
+}
+async function downloadArtifact(id) {
+  const job = taskStore.detail;
+  if (!job) return;
+  const generation = taskStore.generation;
+  const path = artifactUrl(job.id, id);
+  const response = await requestJson(path, {method:'HEAD'});
+  if (generation !== taskStore.generation) return;
+  if (!response.ok) {
+    taskStore.note = response.status === 409 ? DIAGNOSTIC_HINTS.artifact_changed : response.status === 404
+      ? '文件已被删除或任务记录已清理。' : '暂时无法下载文件，请检查服务连接。';
+    renderTaskArea(); return;
+  }
+  const link = document.createElement('a'); link.href = SERVER_URL + path; link.download = ''; link.click();
+}
+document.addEventListener('click', event => {
+  const button = event.target.closest && event.target.closest('[data-artifact-id]');
+  if (button) downloadArtifact(button.dataset.artifactId);
+});
 
 
-
+// Restore form state before generating or submitting any request.
+initializeFormUi();
 generateCommand();
+checkServer();
 </script>
 </body>
 </html>
