@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "MosaicEngine.h"
+#include "RuntimeContext.h"
 
 #include <string>
 #include <mutex>
@@ -21,6 +22,7 @@ struct ServiceResult
     bool ok = false;
     int exitCode = 1;
     std::string message;
+    RuntimeSnapshot runtime;
 
     static ServiceResult success(const std::string& msg = {})
     {

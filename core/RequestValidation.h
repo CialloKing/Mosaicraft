@@ -15,27 +15,42 @@ inline bool validImageSize(int64_t width, int64_t height)
     return width > 0 && height > 0 && width <= 1000000 && height <= 1000000 && width * height <= 100000000;
 }
 
-inline bool validateBuildRequest(const BuildRequest& request, std::string& error)
+inline bool validateBuildRequest(const BuildRequest &request, std::string &error, std::string *field = nullptr)
 {
     if (request.threads < 0 || request.threads > 256 || request.normalizeWidth > 8192 ||
         request.normalizeHeight > 8192 || !validImageSize(request.normalizeWidth, request.normalizeHeight))
     {
+        if (field)
+        {
+            *field = request.threads < 0 || request.threads > 256
+                         ? "threads"
+                         : (request.normalizeWidth <= 0 || request.normalizeWidth > 8192 ? "normalizeWidth"
+                                                                                         : "normalizeHeight");
+        }
         error = "invalid build dimensions or thread count (dimensions <=8192, threads 0..256)";
         return false;
     }
     return true;
 }
 
-inline bool validateMosaicRequest(MosaicRequest& request, std::string& error)
+inline bool validateMosaicRequest(MosaicRequest &request, std::string &error, std::string *field = nullptr)
 {
-    auto& cfg = request.config;
+    auto &cfg = request.config;
     if (cfg.generatePreview && (cfg.tiledOutput || cfg.deepZoom))
     {
+        if (field)
+        {
+            *field = "generatePreview";
+        }
         error = "--preview requires single-image output; incompatible with --tiled/--deepzoom";
         return false;
     }
     if (!std::isfinite(cfg.overlayStrength) || cfg.overlayStrength < 0 || cfg.overlayStrength > 1)
     {
+        if (field)
+        {
+            *field = "overlayStrength";
+        }
         error = "overlayStrength must be finite and between 0 and 1";
         return false;
     }
@@ -45,6 +60,10 @@ inline bool validateMosaicRequest(MosaicRequest& request, std::string& error)
         cfg.topNrandom < 1 || cfg.topNrandom > 10000 || cfg.neighborWindow < 0 || cfg.neighborWindow > 1000000 ||
         cfg.jpegQuality < 1 || cfg.jpegQuality > 100 || cfg.pngCompressionLevel < 1 || cfg.pngCompressionLevel > 9)
     {
+        if (field)
+        {
+            *field = "config";
+        }
         error = "invalid mosaic dimensions or integer options (upscale 0..64, candidates 1..10000)";
         return false;
     }
@@ -53,6 +72,10 @@ inline bool validateMosaicRequest(MosaicRequest& request, std::string& error)
     {
         if (!std::isfinite(weight) || weight < 0)
         {
+            if (field)
+            {
+                *field = "weights";
+            }
             error = "feature weights must be finite and nonnegative";
             return false;
         }
@@ -63,11 +86,19 @@ inline bool validateMosaicRequest(MosaicRequest& request, std::string& error)
         cfg.lRange < 0 || cfg.lRange > 255 || !std::isfinite(cfg.colorStrength) || cfg.colorStrength < 0 ||
         cfg.colorStrength > 0.5)
     {
+        if (field)
+        {
+            *field = "weights";
+        }
         error = "weights, penalties and ranges must be finite and within their valid ranges";
         return false;
     }
     if (cfg.writeMode != "auto" && cfg.writeMode != "batch" && cfg.writeMode != "stream")
     {
+        if (field)
+        {
+            *field = "writeMode";
+        }
         error = "writeMode must be auto, batch or stream";
         return false;
     }
@@ -97,6 +128,10 @@ inline bool validateMosaicRequest(MosaicRequest& request, std::string& error)
     if (cfg.outputFormat != "jpg" && cfg.outputFormat != "png" && cfg.outputFormat != "webp" &&
         cfg.outputFormat != "tiff")
     {
+        if (field)
+        {
+            *field = "format";
+        }
         error = "output format must be jpg, png, webp or tiff";
         return false;
     }

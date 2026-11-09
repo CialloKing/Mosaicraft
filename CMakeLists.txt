@@ -166,6 +166,7 @@ endif()  # MOSAICRAFT_CUDA
 # 核心静态库（CPU）
 # ============================================================
 add_library(mosaicraft_core STATIC
+    core/RuntimeContext.cpp
     core/AnalysisReport.cpp
     core/ApiHandlers.cpp
     core/ApiJson.cpp

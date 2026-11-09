@@ -59,6 +59,33 @@ int main(int argc, char** argv)
     return doctest::Context(argc, argv).run();
 }
 
+TEST_CASE("runtime diagnostics bound UTF-8 history and retain terminal errors")
+{
+    using namespace mosaicraft;
+    RuntimeContext context(false);
+    context.stage("matching");
+    context.advance("tiles", 3, 10, "tiles", true);
+    context.fail("input_unreadable", "cannot read target", "inputPath", "target.png");
+    for (int i = 0; i < 500; ++i)
+    {
+        context.emit("warning", "source_skipped", std::string(5000, 'x') + "中文", {}, "test.png");
+    }
+    const auto snapshot = context.snapshot();
+    CHECK(snapshot.diagnostic.code == "input_unreadable");
+    CHECK(snapshot.warningCount == 500);
+    CHECK(snapshot.warnings.at("source_skipped").paths.size() == 1);
+    const auto events = context.events(0);
+    CHECK(events.truncated);
+    CHECK(events.dropped > 0);
+    CHECK(events.events.size() <= 100);
+    CHECK(context.events(events.nextCursor).events.empty());
+    CHECK(nlohmann::json(truncateUtf8("中文路径", 8)).dump().size() > 0);
+    RequestError error;
+    MosaicRequest request;
+    CHECK_FALSE(parseMosaicRequestJson(R"({"tileW":"bad"})", request, error));
+    CHECK(error.field == "tileW");
+}
+
 TEST_CASE("CUDA preflight distinguishes compatibility failures from execution errors")
 {
     using namespace mosaicraft::cuda;
