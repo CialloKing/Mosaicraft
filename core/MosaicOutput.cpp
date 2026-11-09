@@ -51,10 +51,11 @@ uint64_t availableMemory()
 }
 } // namespace
 
-static bool writeOutput(const MosaicEngine::Config &config, const std::string &path, int tilesX, int tilesY, int tileW,
-                        int tileH, const std::function<const ImageRecord &(size_t)> &recordAt,
+static bool writeOutput(const MosaicEngine::Config &config, const std::string &requestedPath, int tilesX, int tilesY,
+                        int requestedTileW, int requestedTileH, const std::function<const ImageRecord &(size_t)> &recordAt,
                         const std::vector<int> &selected, const std::function<void(cv::Mat &, double)> &adjustColor,
-                        OutputStats &stats, const cv::Mat &target, RuntimeContext *runtime)
+                        OutputStats &stats, const cv::Mat &target, RuntimeContext *runtime,
+                        const detail::OutputPlan *prepared = nullptr)
 {
     try
     {
@@ -69,7 +70,22 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
         {
             throw std::invalid_argument("--preview requires single-image output; incompatible with --tiled/--deepzoom");
         }
-        const int width = tilesX * tileW, height = tilesY * tileH;
+        detail::OutputPlan local;
+        if (!prepared)
+        {
+            std::string error;
+            const detail::OutputFormat format{detail::normalizeOutputFormat(config.outputFormat),
+                                               config.formatExplicit ? "explicit" : "fallback"};
+            if (!detail::makeOutputPlan(format, requestedPath, tilesX, tilesY, requestedTileW, requestedTileH,
+                                        !config.tiledOutput && !config.deepZoom, local, error))
+            {
+                throw std::invalid_argument(error);
+            }
+        }
+        const auto &plan = prepared ? *prepared : local;
+        const int tileW = plan.tileWidth, tileH = plan.tileHeight;
+        const int width = plan.width, height = plan.height;
+        const auto &path = plan.path;
         const size_t count = static_cast<size_t>(tilesX) * tilesY;
         if (selected.size() != count)
         {
@@ -216,8 +232,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
             return true;
         }
 
-        const std::string format = config.outputFormat;
-        stats.path = detail::outputPathForFormat(path, format);
+        const auto &format = plan.format;
         const uint64_t rawBytes = static_cast<uint64_t>(width) * height * 3;
         const uint64_t rowBytes = static_cast<uint64_t>(width) * tileH * 3;
         const int rgbRows = static_cast<int>(
@@ -512,7 +527,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
         {
             runtime->fail(runtime->snapshot().progress.stage == "writing_preview" ? "preview_write_failed"
                                                                                   : "output_write_failed",
-                          error.what(), "outputPath", stats.path.empty() ? path : stats.path);
+                          error.what(), "outputPath", stats.path.empty() ? requestedPath : stats.path);
         }
         else if (!runtime)
         {
@@ -550,6 +565,21 @@ bool writeIndexedMosaicOutput(const MosaicEngine::Config &config, const std::str
             return selected.at(i) < 0 ? missing : library.at(selected[i]);
         },
         selected, adjustColor, stats, target, runtime);
+}
+
+bool writeIndexedMosaicOutput(const MosaicEngine::Config &config, const detail::OutputPlan &plan,
+                              const std::vector<ImageRecord> &library, const std::vector<int> &selected,
+                              const std::function<void(cv::Mat &, double)> &adjustColor, OutputStats &stats,
+                              const cv::Mat &target, RuntimeContext *runtime)
+{
+    const ImageRecord missing;
+    return writeOutput(
+        config, plan.path, plan.tilesX, plan.tilesY, plan.tileWidth, plan.tileHeight,
+        [&](size_t i) -> const ImageRecord &
+        {
+            return selected.at(i) < 0 ? missing : library.at(selected[i]);
+        },
+        selected, adjustColor, stats, target, runtime, &plan);
 }
 
 } // namespace mosaicraft

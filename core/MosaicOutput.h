@@ -2,6 +2,7 @@
 
 #include "Database.h"
 #include "MosaicEngine.h"
+#include "OutputPlan.h"
 #include <functional>
 #include <cstdint>
 #include <opencv2/core.hpp>
@@ -35,6 +36,11 @@ bool writeMosaicOutput(const MosaicEngine::Config &config, const std::string &pa
 bool writeIndexedMosaicOutput(const MosaicEngine::Config &config, const std::string &path, int tilesX, int tilesY,
                               int tileW, int tileH, const std::vector<ImageRecord> &library,
                               const std::vector<int> &selected,
+                              const std::function<void(cv::Mat &, double)> &adjustColor, OutputStats &stats,
+                              const cv::Mat &target = cv::Mat(), RuntimeContext *runtime = nullptr);
+
+bool writeIndexedMosaicOutput(const MosaicEngine::Config &config, const detail::OutputPlan &plan,
+                              const std::vector<ImageRecord> &library, const std::vector<int> &selected,
                               const std::function<void(cv::Mat &, double)> &adjustColor, OutputStats &stats,
                               const cv::Mat &target = cv::Mat(), RuntimeContext *runtime = nullptr);
 

@@ -186,6 +186,55 @@ MosaicRequest makeMosaicRequest(const TempWorkspace& workspace)
 
 } // namespace
 
+TEST_CASE("oversized single images use the planned format tile and actual path")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    requireWriteImage(workspace.targetPath(), cv::Mat(4, 8, CV_8UC3, cv::Scalar(70, 110, 150)));
+    REQUIRE(BuildService().run(makeBuildRequest(workspace)).ok);
+    for (const auto &format : {std::string("jpg"), std::string("webp")})
+    {
+        for (bool explicitFormat : {false, true})
+        {
+            auto request = makeMosaicRequest(workspace);
+            request.config.outW = request.config.outH = 0;
+            request.config.tileW = request.config.tileH = 4;
+            request.config.nativeTileW = format == "jpg" ? 33000 : 8200;
+            request.config.nativeTileH = 1;
+            request.config.outputFormat = format;
+            request.config.formatExplicit = explicitFormat;
+            request.config.generatePreview = true;
+            request.config.overlayStrength = 0.25;
+            request.config.analyze = true;
+            const auto stem = workspace.outputDir() / (format + (explicitFormat ? "-explicit" : "-auto"));
+            request.outputPath = utf8(stem) + "." + format;
+            RuntimeContext runtime(false);
+            REQUIRE(MosaicService().run(request, runtime).ok);
+            const auto snapshot = runtime.snapshot();
+            const std::string actualFormat = explicitFormat ? format : "png";
+            const auto actual = utf8(stem) + "." + actualFormat;
+            CHECK(snapshot.format == actualFormat);
+            CHECK(snapshot.width == (explicitFormat ? (format == "jpg" ? 65500 : 16382)
+                                                   : 2 * request.config.nativeTileW));
+            CHECK(snapshot.height == 1);
+            const auto image = imreadUnicode(actual);
+            REQUIRE_FALSE(image.empty());
+            CHECK(image.cols == snapshot.width);
+            CHECK(image.rows == snapshot.height);
+            CHECK(fs::exists(u8path(utf8(stem) + "_preview.jpg")));
+            CHECK(fs::exists(u8path(utf8(stem) + "_analysis/report.html")));
+            if (!explicitFormat)
+            {
+                CHECK_FALSE(fs::exists(u8path(request.outputPath)));
+            }
+            const auto main = std::find_if(snapshot.artifacts.begin(), snapshot.artifacts.end(),
+                                          [](const Artifact &item) { return item.id == "main"; });
+            REQUIRE(main != snapshot.artifacts.end());
+            CHECK(u8path(main->path).extension() == "." + actualFormat);
+        }
+    }
+}
+
 TEST_CASE("compatible CUDA scores are exact and failures never publish partial results")
 {
     using namespace mosaicraft::cuda;

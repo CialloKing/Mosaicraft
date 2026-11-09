@@ -31,6 +31,7 @@
 #include <cmath>
 #include <chrono>
 #include <cstdint>
+#include <climits>
 #include <cstring>
 #include <string>
 #include <algorithm>
@@ -153,6 +154,61 @@ TEST_CASE("output format priority retains request intent and filenames")
     REQUIRE(validateMosaicRequest(invalid, error, &field));
     CHECK(invalid.config.outputFormat == "jpg");
     CHECK(MosaicRequest{}.outputPath == "output/output");
+}
+
+TEST_CASE("output plans preserve inferred dimensions and fit explicit encoders")
+{
+    using namespace mosaicraft::detail;
+    for (const auto &format : {std::string("jpg"), std::string("webp")})
+    {
+        const int limit = format == "jpg" ? 65500 : 16383;
+        for (bool explicitFormat : {false, true})
+        {
+            for (int delta : {-1, 0, 1})
+            {
+                for (bool vertical : {false, true})
+                {
+                    const int width = vertical ? 1 : limit + delta;
+                    const int height = vertical ? limit + delta : 1;
+                    OutputPlan plan;
+                    std::string error;
+                    REQUIRE(makeOutputPlan({format, explicitFormat ? "explicit" : "input_extension"},
+                                           "result." + format, 1, 1, width, height, true, plan, error));
+                    CHECK(plan.originalWidth == width);
+                    CHECK(plan.originalHeight == height);
+                    CHECK(plan.scaled == (explicitFormat && delta > 0));
+                    CHECK(plan.formatChanged == (!explicitFormat && delta > 0));
+                    CHECK(plan.format == (plan.formatChanged ? "png" : format));
+                    CHECK(plan.width == (plan.scaled ? std::min(width, limit) : width));
+                    CHECK(plan.height == (plan.scaled ? std::min(height, limit) : height));
+                    CHECK(plan.path == "result." + plan.format);
+                }
+            }
+        }
+        OutputPlan plan;
+        std::string error;
+        REQUIRE(makeOutputPlan({format, "explicit"}, "result.png", 500, 500, 180, 320, true, plan, error));
+        CHECK(plan.width <= limit);
+        CHECK(plan.height <= limit);
+        CHECK(plan.tileWidth == std::max<int64_t>(1, 180LL * limit / 160000));
+        CHECK(plan.tileHeight == std::max<int64_t>(1, 320LL * limit / 160000));
+        CHECK_FALSE(makeOutputPlan({format, "explicit"}, "result", limit + 1, 1, 1, 1, true, plan, error));
+        CHECK(error.find("one pixel") != std::string::npos);
+        REQUIRE(makeOutputPlan({format, "output_extension"}, "result", limit + 1, 1, 1, 1, true, plan, error));
+        CHECK(plan.width == limit + 1);
+        CHECK(plan.format == "png");
+        REQUIRE(makeOutputPlan({format, "explicit"}, "prefix.bmp", limit + 1, 1, 1, 1, false, plan, error));
+        CHECK(plan.path == "prefix.bmp");
+        CHECK_FALSE(plan.scaled);
+        CHECK_FALSE(plan.formatChanged);
+    }
+    OutputPlan plan;
+    std::string error;
+    REQUIRE(makeOutputPlan({"jpg", "explicit"}, "result", 2, 1, INT_MAX, 1, true, plan, error));
+    CHECK(plan.originalWidth == 2LL * INT_MAX);
+    CHECK(plan.width <= 65500);
+    CHECK_FALSE(makeOutputPlan({"png", "explicit"}, "result", 2, 1, INT_MAX, 1, true, plan, error));
+    CHECK_FALSE(makeOutputPlan({"jpg", "explicit"}, "result", 0, 1, 1, 1, true, plan, error));
 }
 
 TEST_CASE("runtime diagnostics bound UTF-8 history and retain terminal errors")

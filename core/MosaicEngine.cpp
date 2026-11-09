@@ -87,13 +87,13 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     m_compatibleTemporaryBytes = 0;
     // 检查 CUDA 可用性，GPU 不可用时默认回退 CPU
     MosaicRequest validated{targetPath, dbPath, outputPath, config};
-    std::string validationError;
-    if (!validateMosaicRequest(validated, validationError))
+    std::string validationError, validationField;
+    if (!validateMosaicRequest(validated, validationError, &validationField))
     {
         {
             std::ostringstream detail;
             detail << "" << validationError;
-            runtime.fail("invalid_argument", detail.str(), "config");
+            runtime.fail("invalid_argument", detail.str(), validationField);
         }
         return false;
     }
@@ -407,36 +407,22 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     int tilesX = (target.cols + cfg.tileW - 1) / cfg.tileW;
     int tilesY = (target.rows + cfg.tileH - 1) / cfg.tileH;
 
-    // Read feature resolution from DB meta (required; old DBs must be rebuilt),
-    // 单图模式检查 65500px 上限（JPEG 编码器限制）
-    int outTileW = cfg.nativeTileW;
-    int outTileH = cfg.nativeTileH;
-    const int64_t proposedW = static_cast<int64_t>(tilesX) * outTileW;
-    const int64_t proposedH = static_cast<int64_t>(tilesY) * outTileH;
-    const int64_t limit = cfg.outputFormat == "webp" ? 16383 : 65500;
-    if (!cfg.tiledOutput && (cfg.outputFormat == "jpg" || cfg.outputFormat == "webp") &&
-        (proposedW > limit || proposedH > limit))
+    detail::OutputFormat outputFormat;
+    detail::OutputPlan outputPlan;
+    std::string outputError;
+    const bool singleImage = !cfg.tiledOutput && !cfg.deepZoom;
+    if (!detail::resolveOutputFormat(targetPath, outputPath, cfg.outputFormat, cfg.formatExplicit,
+                                     singleImage, outputFormat, outputError) ||
+        !detail::makeOutputPlan(outputFormat, outputPath, tilesX, tilesY, cfg.nativeTileW, cfg.nativeTileH,
+                                singleImage, outputPlan, outputError))
     {
-        {
-            std::ostringstream detail;
-            detail << "Output exceeds " << cfg.outputFormat << " dimension limit " << limit
-                   << ". Choose --format png/tiff or --tiled.";
-            runtime.fail("invalid_argument", detail.str(), "config");
-        }
-        return false;
+        return runtime.fail("invalid_argument", outputError, "format");
     }
-    // 超大输出默认允许，但必须在转换为 int 前防止尺寸溢出。
-    if (proposedW > INT_MAX || proposedH > INT_MAX)
-    {
-        {
-            std::ostringstream detail;
-            detail << "Output dimensions exceed INT_MAX.";
-            runtime.fail("invalid_argument", detail.str(), "config");
-        }
-        return false;
-    }
-    int outW = static_cast<int>(proposedW);
-    int outH = static_cast<int>(proposedH);
+    const int outTileW = outputPlan.tileWidth, outTileH = outputPlan.tileHeight;
+    const int outW = outputPlan.width, outH = outputPlan.height;
+    // 实际编码格式不回写请求和匹配配置；报告、编码及产物使用同一份结果。
+    Config outputConfig = cfg;
+    outputConfig.outputFormat = outputPlan.format;
 
     // 宽高比校验：DB 特征空间 vs 输出 tile，featW/featH 从meta解析而来
     if (featH <= 0 || featW <= 0) {
@@ -589,7 +575,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
         const auto usage = detail::writeAnalysisReport(
             detail::AnalysisReportContext{
-                cfg,          analysisOutputPath, target,        totalTiles,      tilesX,
+                outputConfig, analysisOutputPath, target,        totalTiles,      tilesX,
                 tilesY,       outTileW,           outTileH,      featW,           featH,
                 dbCount,      matched.load(),     analyzeScores, analyzeImageIds, analyzeLabD,
                 analyzeGridD, analyzeEdgeD,       analyzeGaps,   analyzeRanks,    analyzeAnnRanks,
@@ -1617,7 +1603,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     }
 
     releaseGpuLib();
-    if (!writeIndexedMosaicOutput(cfg, outputPath, tilesX, tilesY, outTileW, outTileH, allRecords, bestLibIdx,
+    if (!writeIndexedMosaicOutput(outputConfig, outputPlan, allRecords, bestLibIdx,
                                   adjustColor, metrics.outputStats, target, &runtime))
     {
         return false;
@@ -1679,7 +1665,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     if (cfg.benchmark)
     {
         const double totalMs = Ms(Clock::now() - tStart).count();
-        detail::printMosaicBenchmark(metrics, {cfg, backends, totalTiles, N, m_compatibleTemporaryBytes, totalMs},
+        detail::printMosaicBenchmark(metrics, {outputConfig, backends, totalTiles, N, m_compatibleTemporaryBytes, totalMs},
                                      "single");
         runtime.metric("totalMs", totalMs);
         runtime.metric("matchingMs", metrics.matchingWallMs);
