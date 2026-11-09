@@ -436,8 +436,10 @@ function Invoke-ReleaseInspection {
         }
         Assert-EncyclopediaVersionEntry -VersionText $VersionText
 
-        if (-not $NoCuda -and -not $env:CUDA_PATH) {
-            Write-InspectLine -Status "WARN" -Message "CUDA_PATH is not set; CUDA configure may still work if CMake can locate the toolkit"
+        if (-not $NoCuda -and -not $env:CUDAToolkit_ROOT) {
+            Write-InspectLine -Status "WARN" -Message "Set CUDAToolkit_ROOT explicitly to CUDA 13.5 before configuring"
+        } elseif (-not $NoCuda) {
+            Assert-InspectPath -Label 'explicit CUDA SDK' -Path $env:CUDAToolkit_ROOT
         }
 
         $binDir = Join-Path $BuildPath "$Configuration\bin"
@@ -651,12 +653,14 @@ try {
             "docs\SAME_SIZE_NORMALIZATION.md",
             "docs\CI_PACKAGING.md",
             "docs\CUDA_ARCHITECTURES.md",
+            "docs\CUDA_13_5_MIGRATION.md",
             "docs\RELEASE_CHECKLIST.md",
             "docs\performance\preview.json",
             "docs\performance\same-size-normalization.json",
             "docs\performance\ci-packaging.json",
             "docs\performance\cuda-architectures.json",
-            "docs\performance\cuda-seven-architectures.json"
+            "docs\performance\cuda-seven-architectures.json",
+            "docs\performance\cuda-13.5-migration.json"
         ))
         {
             $destination = Join-Path $packageRoot $document

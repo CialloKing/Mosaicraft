@@ -1,0 +1,988 @@
+{
+  "reference_commit": "b00719041e9a11c2c5834bb26069294ddf97acc0",
+  "current_build_commit": "d295e398ba78f49a468c0f5447343b79078fed8c",
+  "driver_package": "621.14",
+  "gpu": "RTX 4060 Laptop",
+  "seed": 123,
+  "warmups": 1,
+  "measured_runs": 3,
+  "executables": {
+    "13.3": {
+      "sha256": "afb0988a18d5975f349dd9bc15b6bbabb7e2bcafb9982329d81b1b6ed1f3a341",
+      "bytes": 3054592
+    },
+    "13.5": {
+      "sha256": "9760d98d7058ef4f7332272bf86fcd2957dbbe728f4d2e3baa675c1c7e7374e7",
+      "bytes": 2954240
+    }
+  },
+  "samples": [
+    {
+      "kind": "template",
+      "variant": "13.3-native",
+      "run": 0,
+      "warmup": true,
+      "wall_ms": 335.0974000059068,
+      "peak_working_set_bytes": 195137536,
+      "startup_ms": 140.6717,
+      "generation_ms": 88.8944,
+      "total_ms": 247.9102,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 0.0,
+        "grid": 0.0,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 0.0,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "13.3-jit",
+      "run": 0,
+      "warmup": true,
+      "wall_ms": 1325.2862000081223,
+      "peak_working_set_bytes": 203698176,
+      "startup_ms": 1172.8826,
+      "generation_ms": 63.8729,
+      "total_ms": 1245.113,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 2.9441610080449543e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "13.5-native",
+      "run": 0,
+      "warmup": true,
+      "wall_ms": 288.3678000071086,
+      "peak_working_set_bytes": 195203072,
+      "startup_ms": 137.7214,
+      "generation_ms": 63.6785,
+      "total_ms": 210.3814,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 5.536169254971579e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "13.5-jit",
+      "run": 0,
+      "warmup": true,
+      "wall_ms": 1122.029999998631,
+      "peak_working_set_bytes": 203497472,
+      "startup_ms": 888.259,
+      "generation_ms": 62.4555,
+      "total_ms": 960.7297,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 5.626717194257003e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "13.5-jit",
+      "run": 1,
+      "warmup": false,
+      "wall_ms": 303.95589998806827,
+      "peak_working_set_bytes": 194998272,
+      "startup_ms": 122.8993,
+      "generation_ms": 58.9191,
+      "total_ms": 193.0785,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 5.427377145275636e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "13.5-native",
+      "run": 1,
+      "warmup": false,
+      "wall_ms": 532.8941000043415,
+      "peak_working_set_bytes": 194805760,
+      "startup_ms": 291.5782,
+      "generation_ms": 63.4572,
+      "total_ms": 365.8865,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 2.4558879346825435e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "13.3-jit",
+      "run": 1,
+      "warmup": false,
+      "wall_ms": 283.1083000055514,
+      "peak_working_set_bytes": 194768896,
+      "startup_ms": 139.7238,
+      "generation_ms": 69.4762,
+      "total_ms": 221.3767,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 5.8169959470805166e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "13.3-native",
+      "run": 1,
+      "warmup": false,
+      "wall_ms": 277.68959998502396,
+      "peak_working_set_bytes": 194588672,
+      "startup_ms": 139.2876,
+      "generation_ms": 63.8632,
+      "total_ms": 215.06,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 2.8972549775962975e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "13.3-native",
+      "run": 2,
+      "warmup": false,
+      "wall_ms": 291.2015999900177,
+      "peak_working_set_bytes": 195170304,
+      "startup_ms": 145.362,
+      "generation_ms": 74.6843,
+      "total_ms": 231.3,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 5.7367009000802716e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "13.3-jit",
+      "run": 2,
+      "warmup": false,
+      "wall_ms": 374.6562000014819,
+      "peak_working_set_bytes": 194396160,
+      "startup_ms": 134.3459,
+      "generation_ms": 62.5555,
+      "total_ms": 208.5467,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 5.5608643440008265e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "13.5-native",
+      "run": 2,
+      "warmup": false,
+      "wall_ms": 373.27430001460016,
+      "peak_working_set_bytes": 194711552,
+      "startup_ms": 127.6244,
+      "generation_ms": 65.6374,
+      "total_ms": 202.8986,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 5.748364497598635e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "13.5-jit",
+      "run": 2,
+      "warmup": false,
+      "wall_ms": 287.7227999852039,
+      "peak_working_set_bytes": 195096576,
+      "startup_ms": 143.6,
+      "generation_ms": 63.5177,
+      "total_ms": 220.2373,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 5.825334166431606e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "13.5-jit",
+      "run": 3,
+      "warmup": false,
+      "wall_ms": 272.49380000284873,
+      "peak_working_set_bytes": 194711552,
+      "startup_ms": 133.8093,
+      "generation_ms": 64.0929,
+      "total_ms": 208.9753,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 3.014303771864402e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "13.5-native",
+      "run": 3,
+      "warmup": false,
+      "wall_ms": 363.7406000052579,
+      "peak_working_set_bytes": 195710976,
+      "startup_ms": 127.3288,
+      "generation_ms": 64.3716,
+      "total_ms": 202.779,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 5.818820324188234e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "13.3-jit",
+      "run": 3,
+      "warmup": false,
+      "wall_ms": 384.65110000106506,
+      "peak_working_set_bytes": 195702784,
+      "startup_ms": 142.8943,
+      "generation_ms": 65.3114,
+      "total_ms": 217.3944,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 3.229290740022761e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "template",
+      "variant": "13.3-native",
+      "run": 3,
+      "warmup": false,
+      "wall_ms": 393.70210000197403,
+      "peak_working_set_bytes": 195051520,
+      "startup_ms": 154.0292,
+      "generation_ms": 67.2997,
+      "total_ms": 230.7531,
+      "selected_count": 400,
+      "png_sha256": "4ced81c83f37b4cf76b5301dc5cac3cab1cf655793d76e3f67ec94ae832a11b7",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 5.915600597566906e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.3-native",
+      "run": 0,
+      "warmup": true,
+      "wall_ms": 479.3564999999944,
+      "peak_working_set_bytes": 155496448,
+      "startup_ms": 149.375,
+      "generation_ms": 148.4717,
+      "total_ms": 313.3033,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 0.0,
+        "grid": 0.0,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 0.0,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.3-jit",
+      "run": 0,
+      "warmup": true,
+      "wall_ms": 448.517200013157,
+      "peak_working_set_bytes": 155553792,
+      "startup_ms": 137.3524,
+      "generation_ms": 133.8187,
+      "total_ms": 280.4747,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 4.285532476805409e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.5-native",
+      "run": 0,
+      "warmup": true,
+      "wall_ms": 333.55219999793917,
+      "peak_working_set_bytes": 156176384,
+      "startup_ms": 124.2368,
+      "generation_ms": 134.7279,
+      "total_ms": 268.8937,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 1.52587890625e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 1.6051473303302366e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.5-jit",
+      "run": 0,
+      "warmup": true,
+      "wall_ms": 371.5247999934945,
+      "peak_working_set_bytes": 155992064,
+      "startup_ms": 159.6621,
+      "generation_ms": 132.2263,
+      "total_ms": 302.5411,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 3.0517578125e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 4.0153367394935024e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.5-jit",
+      "run": 1,
+      "warmup": false,
+      "wall_ms": 474.0446000068914,
+      "peak_working_set_bytes": 155033600,
+      "startup_ms": 152.3125,
+      "generation_ms": 138.9153,
+      "total_ms": 303.404,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 3.0517578125e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 6.22215375542523e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.5-native",
+      "run": 1,
+      "warmup": false,
+      "wall_ms": 358.9268999930937,
+      "peak_working_set_bytes": 154726400,
+      "startup_ms": 145.1016,
+      "generation_ms": 133.8069,
+      "total_ms": 289.9272,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 3.1224941812735274e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.3-jit",
+      "run": 1,
+      "warmup": false,
+      "wall_ms": 445.9439000056591,
+      "peak_working_set_bytes": 155365376,
+      "startup_ms": 136.1921,
+      "generation_ms": 128.9118,
+      "total_ms": 277.8964,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 3.517713648842902e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.3-native",
+      "run": 1,
+      "warmup": false,
+      "wall_ms": 351.9751999992877,
+      "peak_working_set_bytes": 155553792,
+      "startup_ms": 128.7802,
+      "generation_ms": 134.4063,
+      "total_ms": 273.3182,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 0.0,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 6.251115874933433e-09,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.3-native",
+      "run": 2,
+      "warmup": false,
+      "wall_ms": 431.651699997019,
+      "peak_working_set_bytes": 155590656,
+      "startup_ms": 120.9924,
+      "generation_ms": 132.9161,
+      "total_ms": 264.2009,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 3.0517578125e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 3.96310497891017e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.3-jit",
+      "run": 2,
+      "warmup": false,
+      "wall_ms": 383.75489998725243,
+      "peak_working_set_bytes": 155164672,
+      "startup_ms": 154.6842,
+      "generation_ms": 137.3565,
+      "total_ms": 303.6698,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 1.52587890625e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 1.5486031755551632e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.5-native",
+      "run": 2,
+      "warmup": false,
+      "wall_ms": 342.80630000284873,
+      "peak_working_set_bytes": 155176960,
+      "startup_ms": 130.3645,
+      "generation_ms": 135.3037,
+      "total_ms": 275.6879,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 3.0517578125e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 4.0200198010709176e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.5-jit",
+      "run": 2,
+      "warmup": false,
+      "wall_ms": 430.0370999844745,
+      "peak_working_set_bytes": 155877376,
+      "startup_ms": 123.4321,
+      "generation_ms": 132.3278,
+      "total_ms": 265.3552,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 4.081907090114356e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.5-jit",
+      "run": 3,
+      "warmup": false,
+      "wall_ms": 382.1270999906119,
+      "peak_working_set_bytes": 155783168,
+      "startup_ms": 155.2564,
+      "generation_ms": 134.743,
+      "total_ms": 299.1962,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 4.28961590068222e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.5-native",
+      "run": 3,
+      "warmup": false,
+      "wall_ms": 376.34089999482967,
+      "peak_working_set_bytes": 155840512,
+      "startup_ms": 148.1775,
+      "generation_ms": 139.9297,
+      "total_ms": 303.3979,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 0.0,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 5.184223716980796e-09,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.3-jit",
+      "run": 3,
+      "warmup": false,
+      "wall_ms": 354.79499999200925,
+      "peak_working_set_bytes": 155955200,
+      "startup_ms": 144.4625,
+      "generation_ms": 134.0289,
+      "total_ms": 290.2095,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 5.687369818846433e-08,
+        "tiny": 0
+      }
+    },
+    {
+      "kind": "generic",
+      "variant": "13.3-native",
+      "run": 3,
+      "warmup": false,
+      "wall_ms": 465.9815000195522,
+      "peak_working_set_bytes": 156123136,
+      "startup_ms": 141.652,
+      "generation_ms": 144.7946,
+      "total_ms": 297.1711,
+      "selected_count": 400,
+      "png_sha256": "dbf3141fa4183d702461a99341a3ef22eea00d3cb8d7200cf31471e0f8556a9e",
+      "max_abs_delta": {
+        "lab": 3.0517578125e-05,
+        "grid": 4.57763671875e-05,
+        "lbp": 0.0,
+        "edge": 0.0,
+        "scores": 3.9141191614244786e-08,
+        "tiny": 0
+      }
+    }
+  ],
+  "medians": {
+    "template_13.3-native": {
+      "wall_ms": 291.2015999900177,
+      "startup_ms": 145.362,
+      "generation_ms": 67.2997,
+      "total_ms": 230.7531,
+      "peak_working_set_bytes": 195051520
+    },
+    "template_13.3-jit": {
+      "wall_ms": 374.6562000014819,
+      "startup_ms": 139.7238,
+      "generation_ms": 65.3114,
+      "total_ms": 217.3944,
+      "peak_working_set_bytes": 194768896
+    },
+    "template_13.5-native": {
+      "wall_ms": 373.27430001460016,
+      "startup_ms": 127.6244,
+      "generation_ms": 64.3716,
+      "total_ms": 202.8986,
+      "peak_working_set_bytes": 194805760
+    },
+    "template_13.5-jit": {
+      "wall_ms": 287.7227999852039,
+      "startup_ms": 133.8093,
+      "generation_ms": 63.5177,
+      "total_ms": 208.9753,
+      "peak_working_set_bytes": 194998272
+    },
+    "generic_13.3-native": {
+      "wall_ms": 431.651699997019,
+      "startup_ms": 128.7802,
+      "generation_ms": 134.4063,
+      "total_ms": 273.3182,
+      "peak_working_set_bytes": 155590656
+    },
+    "generic_13.3-jit": {
+      "wall_ms": 383.75489998725243,
+      "startup_ms": 144.4625,
+      "generation_ms": 134.0289,
+      "total_ms": 290.2095,
+      "peak_working_set_bytes": 155365376
+    },
+    "generic_13.5-native": {
+      "wall_ms": 358.9268999930937,
+      "startup_ms": 145.1016,
+      "generation_ms": 135.3037,
+      "total_ms": 289.9272,
+      "peak_working_set_bytes": 155176960
+    },
+    "generic_13.5-jit": {
+      "wall_ms": 430.0370999844745,
+      "startup_ms": 152.3125,
+      "generation_ms": 134.743,
+      "total_ms": 299.1962,
+      "peak_working_set_bytes": 155783168
+    }
+  },
+  "environment": {
+    "os": "Windows 10 22H2 x64",
+    "compiler": "MSVC 19.51.36257",
+    "opencv": "4.12.0",
+    "runtime_api": 13050,
+    "driver_api": 13050,
+    "memory_metric": "Windows GetProcessMemoryInfo PeakWorkingSetSize",
+    "jit_cache": "new per-version/mode directory; first template JIT run compiles into an initially empty cache"
+  },
+  "inputs": {
+    "target.png": "27284361122e7196df47bb04f3ed24cfa60e584d780f459935021b955d72bf65",
+    "library-template/mosaicraft.db": "3bfc6451013ce3b02ced9a9552b3b00b51620daf84bd94f9417138de85dc5089",
+    "library-generic/mosaicraft.db": "9f7299e908c6fbca1e68d2a558a688cc591e564f3f5b7f60ed6e5460aba1e7df"
+  },
+  "gpu_rebuild": {
+    "exitCode": 0,
+    "seconds": 94.6825554,
+    "description": "Four CUDA objects rebuilt, existing CPU objects, link release/test/architecture benchmark targets"
+  },
+  "sizes": {
+    "13.3": {
+      "archive_bytes": 7911216,
+      "files": {
+        "MosaicraftWebUI.exe": {
+          "bytes": 3802112,
+          "sha256": "453d814e384f8ada3fdd9f6fcc39d6f7daa3e5eaf683641a090b2d9d5168ca86"
+        },
+        "concrt140.dll": {
+          "bytes": 374200,
+          "sha256": "54716f0738af891f283d213b5c8d11b25896bb8ee3097d301eae718560cf974e"
+        },
+        "jpeg62.dll": {
+          "bytes": 718848,
+          "sha256": "beceab6ff6b757b611f2bbca94ccdb3133854fbec3e18a504f7d590e91bee3e6"
+        },
+        "liblzma.dll": {
+          "bytes": 189952,
+          "sha256": "cae0116a5e4e7961bef99d3ffbb0389e65ea456ed02bc818fdc4c2c745b59846"
+        },
+        "libpng16.dll": {
+          "bytes": 197632,
+          "sha256": "c2244c3ed9d2aa4ef75e04460c3c96eb827ac06c8ed2d979ce9c394bbd85381a"
+        },
+        "libsharpyuv.dll": {
+          "bytes": 24576,
+          "sha256": "be91d5ee4b7a3fed026a11bb9403fee9888ec5c42641dd240176fc8b8f448dc4"
+        },
+        "libwebp.dll": {
+          "bytes": 381440,
+          "sha256": "9cb1c9c6ee55f09678ef61c9da016bed1bb1acc9cd6973919d14a8efc2d08c6a"
+        },
+        "libwebpdecoder.dll": {
+          "bytes": 162816,
+          "sha256": "e7c80fdc21c36a7d023bbdeed06b47284fef9bddc920e4638e9cb3c24ddbb1dc"
+        },
+        "libwebpdemux.dll": {
+          "bytes": 19968,
+          "sha256": "0a5729bde22d061ff52d09667170fbaf11a161391ed66411786dead6e6f74bbe"
+        },
+        "libwebpmux.dll": {
+          "bytes": 41472,
+          "sha256": "699b797e0bc4c6eca1fe2197dd79265dfd6c83542bc14be29773f043f691940c"
+        },
+        "mosaicraft.exe": {
+          "bytes": 3372032,
+          "sha256": "4d470231e54b835e058ee95e4b54ff66fbb67db3ea0e29366c8541a3c424a347"
+        },
+        "msvcp140.dll": {
+          "bytes": 643512,
+          "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca"
+        },
+        "msvcp140_1.dll": {
+          "bytes": 35768,
+          "sha256": "206c931bf90fdad8816de3b5e2ef80b2bcaa9406c89ecc05fe6fddffe251e982"
+        },
+        "msvcp140_2.dll": {
+          "bytes": 274872,
+          "sha256": "d50d7883f20d1dc6191768d3746f52dd9cac89c346ffaed5be1f110c2f34a838"
+        },
+        "msvcp140_atomic_wait.dll": {
+          "bytes": 57792,
+          "sha256": "3d0cbfaa1bf3eecf5a3f4491d2960ee803cb994f30292c6adc4a07c498f60e2b"
+        },
+        "msvcp140_codecvt_ids.dll": {
+          "bytes": 31160,
+          "sha256": "8a65c7596ef2e6938731f5a1058e7e40145b6d97967cc649231a076b9a608d78"
+        },
+        "opencv_core4.dll": {
+          "bytes": 2972160,
+          "sha256": "3c6c6d4bf11b57de1ef163ad19bdd61c816c01d1a51a38f1f8a06395868bb68e"
+        },
+        "opencv_imgcodecs4.dll": {
+          "bytes": 487424,
+          "sha256": "2368d4f4178378e6e525c1b4b4da5e54e971a5d0a00860255f39e41dcf7e3cb9"
+        },
+        "opencv_imgproc4.dll": {
+          "bytes": 4510720,
+          "sha256": "b980df6b8db1834537aa308b53e7d5baf45d17fde2292b137cb0af99a96f5bb5"
+        },
+        "sqlite3.dll": {
+          "bytes": 1110016,
+          "sha256": "24f56fb4c878b45fc51d38015860bc68f2d352615e21cc99aa8377b94f437a44"
+        },
+        "tiff.dll": {
+          "bytes": 474624,
+          "sha256": "d5f0792bb984287a909534313aff8d51dca08d0b8190b7fec51a06c958fc8472"
+        },
+        "vcruntime140.dll": {
+          "bytes": 178616,
+          "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"
+        },
+        "vcruntime140_1.dll": {
+          "bytes": 50112,
+          "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e"
+        },
+        "z.dll": {
+          "bytes": 91648,
+          "sha256": "be787e2bf953cf2cb24254931bb08ab3c9e8d4281cee436e1fbf5ce78d8c1651"
+        }
+      }
+    },
+    "13.5": {
+      "archive_bytes": 7912629,
+      "files": {
+        "MosaicraftWebUI.exe": {
+          "bytes": 3701248,
+          "sha256": "2bb448c9c2a1fe26f5500869cf348ab80f0e7eb569aaecb6f0ea59991800f994"
+        },
+        "concrt140.dll": {
+          "bytes": 374200,
+          "sha256": "54716f0738af891f283d213b5c8d11b25896bb8ee3097d301eae718560cf974e"
+        },
+        "jpeg62.dll": {
+          "bytes": 718848,
+          "sha256": "beceab6ff6b757b611f2bbca94ccdb3133854fbec3e18a504f7d590e91bee3e6"
+        },
+        "liblzma.dll": {
+          "bytes": 189952,
+          "sha256": "cae0116a5e4e7961bef99d3ffbb0389e65ea456ed02bc818fdc4c2c745b59846"
+        },
+        "libpng16.dll": {
+          "bytes": 197632,
+          "sha256": "c2244c3ed9d2aa4ef75e04460c3c96eb827ac06c8ed2d979ce9c394bbd85381a"
+        },
+        "libsharpyuv.dll": {
+          "bytes": 24576,
+          "sha256": "be91d5ee4b7a3fed026a11bb9403fee9888ec5c42641dd240176fc8b8f448dc4"
+        },
+        "libwebp.dll": {
+          "bytes": 381440,
+          "sha256": "9cb1c9c6ee55f09678ef61c9da016bed1bb1acc9cd6973919d14a8efc2d08c6a"
+        },
+        "libwebpdecoder.dll": {
+          "bytes": 162816,
+          "sha256": "e7c80fdc21c36a7d023bbdeed06b47284fef9bddc920e4638e9cb3c24ddbb1dc"
+        },
+        "libwebpdemux.dll": {
+          "bytes": 19968,
+          "sha256": "0a5729bde22d061ff52d09667170fbaf11a161391ed66411786dead6e6f74bbe"
+        },
+        "libwebpmux.dll": {
+          "bytes": 41472,
+          "sha256": "699b797e0bc4c6eca1fe2197dd79265dfd6c83542bc14be29773f043f691940c"
+        },
+        "mosaicraft.exe": {
+          "bytes": 3271680,
+          "sha256": "218dfedd3c2adbd67f51c89258169b9c76d854997d4c2e05c9ae2a920fafb58f"
+        },
+        "msvcp140.dll": {
+          "bytes": 643512,
+          "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca"
+        },
+        "msvcp140_1.dll": {
+          "bytes": 35768,
+          "sha256": "206c931bf90fdad8816de3b5e2ef80b2bcaa9406c89ecc05fe6fddffe251e982"
+        },
+        "msvcp140_2.dll": {
+          "bytes": 274872,
+          "sha256": "d50d7883f20d1dc6191768d3746f52dd9cac89c346ffaed5be1f110c2f34a838"
+        },
+        "msvcp140_atomic_wait.dll": {
+          "bytes": 57792,
+          "sha256": "3d0cbfaa1bf3eecf5a3f4491d2960ee803cb994f30292c6adc4a07c498f60e2b"
+        },
+        "msvcp140_codecvt_ids.dll": {
+          "bytes": 31160,
+          "sha256": "8a65c7596ef2e6938731f5a1058e7e40145b6d97967cc649231a076b9a608d78"
+        },
+        "opencv_core4.dll": {
+          "bytes": 2972160,
+          "sha256": "3c6c6d4bf11b57de1ef163ad19bdd61c816c01d1a51a38f1f8a06395868bb68e"
+        },
+        "opencv_imgcodecs4.dll": {
+          "bytes": 487424,
+          "sha256": "2368d4f4178378e6e525c1b4b4da5e54e971a5d0a00860255f39e41dcf7e3cb9"
+        },
+        "opencv_imgproc4.dll": {
+          "bytes": 4510720,
+          "sha256": "b980df6b8db1834537aa308b53e7d5baf45d17fde2292b137cb0af99a96f5bb5"
+        },
+        "sqlite3.dll": {
+          "bytes": 1110016,
+          "sha256": "24f56fb4c878b45fc51d38015860bc68f2d352615e21cc99aa8377b94f437a44"
+        },
+        "tiff.dll": {
+          "bytes": 474624,
+          "sha256": "d5f0792bb984287a909534313aff8d51dca08d0b8190b7fec51a06c958fc8472"
+        },
+        "vcruntime140.dll": {
+          "bytes": 178616,
+          "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"
+        },
+        "vcruntime140_1.dll": {
+          "bytes": 50112,
+          "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e"
+        },
+        "z.dll": {
+          "bytes": 91648,
+          "sha256": "be787e2bf953cf2cb24254931bb08ab3c9e8d4281cee436e1fbf5ce78d8c1651"
+        }
+      }
+    }
+  },
+  "correctness": {
+    "selection_and_pixels_equal": true,
+    "iterations": 32,
+    "tiles_per_iteration": 400,
+    "generic_features_and_scores": "CPU exactness covered by both 13.3 and 13.5 full GPU-required test suites; reported lab/grid arrays in this harness use template features even with generic library generation",
+    "compatibility_limits": {
+      "lab": 0.001,
+      "grid": 0.001,
+      "scores": 1e-05,
+      "tiny": 0,
+      "lbp": 0,
+      "edge": 0
+    }
+  }
+}

@@ -35,3 +35,6 @@ runs:
       with:
         path: ${{ steps.prepare.outputs.cache-path }}
         key: ${{ steps.prepare.outputs.cache-key }}
+    - name: Select CMake for project presets
+      shell: pwsh
+      run: ./scripts/setup-cmake.ps1

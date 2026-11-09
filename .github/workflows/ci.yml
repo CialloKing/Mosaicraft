@@ -37,15 +37,8 @@ jobs:
           cache-namespace: ${{ inputs.cache-namespace || 'deps-v1' }}
       - name: Configure CPU Release
         run: |
-          $configureArgs = @('-S', '.', '-B', 'build/ci', '-G', $env:MOSAICRAFT_CMAKE_GENERATOR,
-            '-DCMAKE_BUILD_TYPE=Release', '-DMOSAICRAFT_CUDA=OFF',
-            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake",
-            "-DVCPKG_TARGET_TRIPLET=$env:VCPKG_DEFAULT_TRIPLET",
-            "-DVCPKG_HOST_TRIPLET=$env:VCPKG_DEFAULT_HOST_TRIPLET",
-            "-DVCPKG_INSTALLED_DIR=$env:MOSAICRAFT_VCPKG_INSTALLED_DIR",
-            '-DVCPKG_MANIFEST_INSTALL=OFF')
-          if ($IsWindows) { $configureArgs += @('-A', 'x64') }
-          cmake @configureArgs
+          $preset = if ($IsWindows) { 'windows-cpu' } else { 'linux-cpu' }
+          cmake --preset $preset -B build/ci
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build
         run: cmake --build build/ci --config Release --target mosaicraft MosaicraftWebUI mosaicraft_tests mosaicraft_regression_tests --parallel

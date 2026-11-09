@@ -26,9 +26,11 @@
 
 Linux/macOS 分别选择 x64-linux-release、arm64-osx-release。Linux 打包还需要 patchelf。每种运行时使用独立构建目录。CMake 递归收集第三方运行库，Linux 使用相对 RPATH，macOS 修正加载路径后签名；Unix tar.gz 保留执行权限和符号链接。包内附有第三方许可证。
 
+源码和发布脚本共用五组平台 Preset，见 [README 构建入口](../README.md#编译)。主入口使用 CMake 4.2+ 和 PowerShell 7；Linux runner 的系统 CMake 仍为 3.31 时，在依赖安装完成后由 `setup-cmake.ps1` 复用 vcpkg 固定且校验过的 CMake。依赖指纹、安装和缓存步骤保持原工具链口径，CUDA SDK 升级不会改变第三方缓存键。
+
 ## CUDA 验收状态
 
-云端编译器固定 CUDA 13.3.0/nvcc 13.3.33，使用 NVIDIA 官方重分发组件和锁定 SHA256；不安装显卡驱动。默认包含 sm_75、sm_80、sm_86、sm_89、sm_90、sm_100、sm_120 原生内核及对应七种 PTX，原算术编译参数保持不变。锁文件还固定 cuobjdump 13.3.29；打包前逐模块和最终程序核对架构，缺少任何目标即失败。
+云端与本机编译器固定 CUDA Toolkit 13.5.0/nvcc 13.5.37，使用 NVIDIA 官方重分发组件和锁定 SHA256；云端不安装显卡驱动。默认包含 sm_75、sm_80、sm_86、sm_89、sm_90、sm_100、sm_120 原生内核及对应七种 PTX，原算术编译参数保持不变。`cmake/cuda-13.5.json` 同时锁定 cudart、cuobjdump 13.5.37；打包前逐模块和最终程序核对架构，缺少任何目标即失败。
 
 ```powershell
 # Windows 云端候选：完整 CPU 回退测试，但不声称 GPU 通过验收
@@ -39,10 +41,13 @@ Linux/macOS 分别选择 x64-linux-release、arm64-osx-release。Linux 打包还
 ./scripts/release.ps1 -BuildDir build/package-linux-cuda -CudaValidation BuildOnly -AllowUnvalidatedCudaRelease -OutputDir build/archives
 
 # 本机 Windows 正式 CUDA 包：默认 Required，必须有可用 GPU
+$env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5'
 ./scripts/release.ps1 -BuildDir build/package-cuda-local -CudaValidation Required -OutputDir build/archives
 ```
 
 `BUILD_INFO.txt` 的 `GpuValidation` 为 `passed`、`not-run` 或 `not-applicable`。`CudaArchitectures`、`CudaPtx` 记录实际编译目标；`GpuValidationDevice`、`GpuValidationComputeCapability`、`GpuValidationDriver` 记录 Required 模式实际通过预检的设备，未经 GPU 实机验收的包均为 `not-run`。`passed` 仅表示所记录设备通过验收；其他架构不因此获得实机验证结论。旧包缺少新增字段时仍可普通验收。BuildOnly 自动添加 `_candidate` 文件名后缀；Required 在无 GPU 时失败，且禁止跳过 CTest、smoke 或解压验证。正式 Windows CUDA 包必须来自同一提交并通过本机 GPU 完整回归；Linux CUDA 从 v1.14.8 起进入正式 Release，保持 `not-run`，并在页面明确说明尚未做 Linux 实机 GPU 验收。显式 `-AllowUnvalidatedCudaRelease` 仅允许原生 Linux x64 tar.gz，不允许跳过 CTest、smoke 或解压验证，也不放宽 Windows CUDA 的 Required 门禁。
+
+新包另记录 `CudaToolkit`（编译器组件版本 13.5.37）、`CudaRuntimeMode`（Windows `hybrid` / Linux `shared`）和 `GpuValidationRuntime`（实机运行时 API 版本，未验收为 `not-run`）。Driver 字段同样是 CUDA API 版本整数，均不是 nvidia-smi 的驱动包版本。Windows hybrid 从显示驱动加载运行时，包内不分发显示驱动或盲目复制 SDK DLL；Linux 仍收集实际共享运行库并设置相对 RPATH。历史包缺少这组字段仍可普通验收。迁移验证与成本见 [CUDA 13.5 迁移报告](CUDA_13_5_MIGRATION.md)。
 
 ## 独立包验收
 

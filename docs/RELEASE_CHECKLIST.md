@@ -14,7 +14,7 @@
 ## 2. 环境检查
 
 ```powershell
-.\scripts\release.ps1 -InspectOnly -BuildDir build -Configuration Release
+.\scripts\release.ps1 -InspectOnly
 ```
 
 检查项：
@@ -33,7 +33,7 @@
 
 脚本必须完成：
 
-- CUDA Release 配置和构建
+- 显式设置 `CUDAToolkit_ROOT` 为 13.5 SDK，在独立目录使用固定 nvcc 13.5.37 配置和构建；旧 13.3 产物保留对照
 - 必需 GPU 探测通过；无可用 GPU 时失败，禁止跳过测试、smoke 和解压验证
 - `mosaicraft_tests`
 - `mosaicraft_regression_tests`
@@ -128,7 +128,7 @@ GitHub Release 正文必须保持简洁，只包含：
 
 当前策略：
 
-- GitHub hosted runner 生成 Windows CUDA 候选和 Linux CUDA 正式 tar.gz，均含 CUDA 13.3 七架构及对应 PTX，运行完整 CPU 回退测试和独立包验收
+- GitHub hosted runner 生成 Windows CUDA 候选和 Linux CUDA 正式 tar.gz，均含 CUDA 13.5 七架构及对应 PTX，运行完整 CPU 回退测试和独立包验收
 - Windows 候选使用 `-CudaValidation BuildOnly`，文件名带 `_candidate`，GPU 状态为 `not-run`
 - Linux 正式包另加 `-AllowUnvalidatedCudaRelease`，保留 not-run，禁止跳过完整测试和验收；Linux 实机 GPU 验收尚未完成
 - 本机 GPU 生成正式 Windows CUDA 包，Required 验收通过后状态才是 `passed`
@@ -152,6 +152,7 @@ GitHub Release 正文必须保持简洁，只包含：
 - 通用包必须包含 sm_75/80/86/89/90/100/120 及对应七种 PTX；发布脚本逐模块和最终 CLI/Web UI 程序检查，旧缓存中的单 sm_89 配置须先重新配置。
 - Required 的预检必须加载全部实际内核和模板实例，并通过完整 GPU CTest、Web UI/API smoke；没有兼容设备不能用 CPU 回退冒充 GPU 验收。
 - 核对 BUILD_INFO 的目标、PTX、GPU 名称、计算能力和驱动；`passed` 仅对应记录的实机。其余架构写明“已编译覆盖，尚未实机验证”。
+- 核对 `CudaToolkit`、`CudaRuntimeMode` 和 `GpuValidationRuntime`；SDK、实际运行时与 Driver API 版本不能混为驱动包版本。Windows hybrid 不随包分发显示驱动，Linux shared 依赖须来自包内。
 - Windows BuildOnly 保持候选；Linux BuildOnly 可按本节明确规则作为正式附件。既有版本标签及附件保持不变。PTX JIT 通过不能替代其他型号的实机验证。
 
 - 本机分别设置 CUDA_DISABLE_PTX_JIT=1 和 CUDA_FORCE_PTX_JIT=1 运行 GPU 必需回归，独立验证原生机器码与 PTX JIT；每次测试后恢复环境变量。
