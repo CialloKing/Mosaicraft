@@ -523,6 +523,66 @@ TEST_CASE("regression: build, inspect, and render a small mosaic")
     CHECK(usage.usage.total == 10);
 }
 
+TEST_CASE("analysis preserves usage commit boundaries after saving the mosaic")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    writeTargetImage(workspace.targetPath());
+    REQUIRE(BuildService().run(makeBuildRequest(workspace)).ok);
+    auto request = makeMosaicRequest(workspace);
+    request.config.lRange = 255;
+    request.config.analyze = true;
+    const auto reportDir = workspace.outputDir() / "mosaic_analysis";
+    bool commits = true;
+    bool succeeds = true;
+
+    SUBCASE("analysis disabled")
+    {
+        request.config.analyze = false;
+        commits = false;
+    }
+    SUBCASE("report directory blocked")
+    {
+        std::ofstream(reportDir).put('x');
+        commits = false;
+    }
+    SUBCASE("frequency directory blocked")
+    {
+        fs::create_directories(reportDir);
+        std::ofstream(reportDir / "freq_rank").put('x');
+        commits = false;
+    }
+    SUBCASE("HTML cannot open but usage still commits") { fs::create_directories(reportDir / "report.html"); }
+    SUBCASE("usage transaction fails after output is saved")
+    {
+        REQUIRE(Database(request.dbPath).initUsageStats());
+        sqlite3 *connection = nullptr;
+        REQUIRE(sqlite3_open(request.dbPath.c_str(), &connection) == SQLITE_OK);
+        const auto result = sqlite3_exec(connection,
+                                         "CREATE TRIGGER reject_usage BEFORE INSERT ON usage_stats "
+                                         "BEGIN SELECT RAISE(ABORT, 'blocked usage'); END",
+                                         nullptr, nullptr, nullptr);
+        sqlite3_close(connection);
+        REQUIRE(result == SQLITE_OK);
+        commits = false;
+        succeeds = false;
+    }
+
+    const auto result = MosaicService().run(request);
+    CHECK(result.ok == succeeds);
+    CHECK(fs::exists(workspace.mosaicPath()));
+    int used = 0;
+    for (const auto &[id, runs, tiles] : Database(request.dbPath).topUsedImages(100))
+    {
+        used += tiles;
+    }
+    CHECK(used == (commits ? 4 : 0));
+    if (!succeeds)
+    {
+        CHECK(result.message == "mosaic output saved, but usage statistics could not be committed");
+    }
+}
+
 TEST_CASE("rebuilding preserves indexed files and source files")
 {
     TempWorkspace workspace;
