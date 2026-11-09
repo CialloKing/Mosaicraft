@@ -2,7 +2,7 @@
 
 发布日期 / Applies to：v1.14.0 及后续版本
 
-本清单定义正式发布的准入标准。Windows x64、Linux x64、macOS ARM64 三个平台的 CPU 包全部验收通过后，使用同一提交在本机完成 Windows CUDA GPU 验收。云端 CUDA 仅是候选包；工作流不自动发布 Release。详细环境和缓存规则见 [CI 与打包](CI_PACKAGING.md)。
+本清单定义正式发布的准入标准。Windows x64、Linux x64、macOS ARM64 三个平台的 CPU 包全部验收通过后，使用同一提交在本机完成 Windows CUDA GPU 验收。Windows 云端 CUDA 仍是候选；Linux CUDA 可作为正式附件，保留 GPU 未验收标记并通过完整回归、打包和独立验收。工作流不自动发布 Release。详细环境和缓存规则见 [CI 与打包](CI_PACKAGING.md)。
 
 ## 1. 发布前状态
 
@@ -46,7 +46,7 @@
 - 使用包内 `MosaicraftWebUI.exe` 再跑 Web UI/API smoke
 - 输出 SHA256
 
-记录发布包路径、大小和 SHA256。正式 release 附件必须使用脚本生成的 zip。
+记录发布包路径、大小和 SHA256。正式 release 附件必须使用脚本生成的 ZIP/tar.gz。
 
 ## 4. 远端 CPU-only CI 门禁
 
@@ -62,7 +62,8 @@ gh run view <run-id> --json status,conclusion,url,jobs
 - 最新 `CI` workflow 必须通过
 - Windows/Linux CPU 日常构建、CTest 和 Web UI/API smoke 必须通过
 - 手动触发同一提交的 `Native packages`，三平台 CPU 构建、打包和独立附件验收必须全部通过
-- 保存 CPU 包、SHA256 及工作流链接；Windows ZIP、Linux/macOS tar.gz
+- 保存 CPU 包、Linux CUDA 包、SHA256 及工作流链接；Windows ZIP、Linux/macOS tar.gz
+- Linux CUDA 使用 BuildOnly + AllowUnvalidatedCudaRelease，文件名不带 candidate，GpuValidation 仍为 not-run；通过编译、完整回归和独立包验收后才纳入 Release
 
 说明：
 
@@ -72,7 +73,7 @@ gh run view <run-id> --json status,conclusion,url,jobs
 
 ## 5. 创建 GitHub Release
 
-仅当三平台 CPU 包和本机 Windows CUDA 包的同提交验收全部通过后创建 release。Linux CUDA 和所有 `_candidate` 包不进入正式附件。创建 Release 仍由维护者显式执行，当前 CI 没有发布权限。
+仅当三平台 CPU 包和本机 Windows CUDA 包的同提交验收全部通过后创建 release。Linux CUDA tar.gz 通过完整回归和独立验收后进入正式附件，并注明 GPU 未实机验收；所有 `_candidate` 包不进入正式附件。创建 Release 仍由维护者显式执行，当前 CI 没有发布权限。
 
 ```powershell
 gh release create v<version> `
@@ -99,7 +100,7 @@ GitHub Release 正文必须保持简洁，只包含：
 .\scripts\verify-release-asset.ps1 -Tag v<version> -AssetName <archive-name> -RequireStandalone
 ```
 
-也可手动运行 `Verify published release` workflow，指定 `tag`。它在三个原生平台分别下载真实 Release 的四个正式附件，并执行相同的标签、SHA256、依赖路径和 Web UI/API 验收；不安装项目依赖。Windows CUDA 的云端附件检查不替代发布前的本机 GPU Required 验收。
+也可手动运行 `Verify published release` workflow，指定 `tag`。它在三个原生平台分别下载真实 Release 的五个正式附件（v1.14.8 起；较旧版本跳过 Linux CUDA），并执行相同的标签、SHA256、依赖路径和 Web UI/API 验收；不安装项目依赖。Windows CUDA 的云端附件检查不替代发布前的本机 GPU Required 验收。
 
 脚本必须完成：
 
@@ -119,16 +120,17 @@ GitHub Release 正文必须保持简洁，只包含：
 - 发布包文档规则验证失败
 - 远端 CPU-only CI 未完成或失败
 - `docs/ENCYCLOPEDIA.md` 当前版本记录缺失
-- 附件不是由 `scripts/release.ps1` 生成，或 CUDA 包的 GPU 验收状态不是 `passed`
+- 附件不是由 `scripts/release.ps1` 生成；Windows CUDA 不是 passed；Linux CUDA 未通过完整回归和独立验收，或隐瞒 not-run 状态
 - 未记录 SHA256
 - GitHub Release 真实附件未通过 `scripts/verify-release-asset.ps1`
 
-## 8. 云端 CUDA 候选
+## 8. 云端 CUDA 包
 
 当前策略：
 
-- GitHub hosted runner 生成 Windows/Linux CUDA 13.3、七架构通用候选，运行完整 CPU 回退测试和独立包验收
-- 候选必须使用 `-CudaValidation BuildOnly`，文件名带 `_candidate`，GPU 状态为 `not-run`
+- GitHub hosted runner 生成 Windows CUDA 候选和 Linux CUDA 正式 tar.gz，均含 CUDA 13.3 七架构及对应 PTX，运行完整 CPU 回退测试和独立包验收
+- Windows 候选使用 `-CudaValidation BuildOnly`，文件名带 `_candidate`，GPU 状态为 `not-run`
+- Linux 正式包另加 `-AllowUnvalidatedCudaRelease`，保留 not-run，禁止跳过完整测试和验收；Linux 实机 GPU 验收尚未完成
 - 本机 GPU 生成正式 Windows CUDA 包，Required 验收通过后状态才是 `passed`
 
 本轮不配置自托管 GPU runner，不引入付费缓存或定时保活，也不修改已发布的 v1.14.6。
@@ -150,6 +152,6 @@ GitHub Release 正文必须保持简洁，只包含：
 - 通用包必须包含 sm_75/80/86/89/90/100/120 及对应七种 PTX；发布脚本逐模块和最终 CLI/Web UI 程序检查，旧缓存中的单 sm_89 配置须先重新配置。
 - Required 的预检必须加载全部实际内核和模板实例，并通过完整 GPU CTest、Web UI/API smoke；没有兼容设备不能用 CPU 回退冒充 GPU 验收。
 - 核对 BUILD_INFO 的目标、PTX、GPU 名称、计算能力和驱动；`passed` 仅对应记录的实机。其余架构写明“已编译覆盖，尚未实机验证”。
-- 云端 BuildOnly 仍仅为候选；正式发布政策、现有版本标签及附件保持不变。PTX JIT 通过不能替代其他型号的实机验证。
+- Windows BuildOnly 保持候选；Linux BuildOnly 可按本节明确规则作为正式附件。既有版本标签及附件保持不变。PTX JIT 通过不能替代其他型号的实机验证。
 
 - 本机分别设置 CUDA_DISABLE_PTX_JIT=1 和 CUDA_FORCE_PTX_JIT=1 运行 GPU 必需回归，独立验证原生机器码与 PTX JIT；每次测试后恢复环境变量。

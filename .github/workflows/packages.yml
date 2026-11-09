@@ -92,8 +92,8 @@ jobs:
           if ($archive.Count -ne 1) { throw 'Expected exactly one native archive' }
           $hash = ((Get-Content "$($archive[0].FullName).sha256" -Raw) -split '\s+')[0]
           ./scripts/verify-release-asset.ps1 -ArchivePath $archive[0].FullName -ExpectedSha256 $hash -ExpectedCommit '${{ github.sha }}' -ExpectedRuntime cpu-only -ExpectedGpuValidation not-applicable -RequireStandalone
-  cuda-candidate:
-    name: Candidate ${{ matrix.platform }} CUDA
+  cuda-package:
+    name: Package ${{ matrix.platform }} CUDA
     strategy:
       fail-fast: false
       matrix:
@@ -124,8 +124,11 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends patchelf
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Build seven-architecture CUDA candidate and inspect native/PTX images
-        run: ./scripts/release.ps1 -BuildDir build/package-cuda -CudaValidation BuildOnly -OutputDir build/archives
+      - name: Build seven-architecture CUDA package and inspect native/PTX images
+        run: |
+          $releaseOptions = @{}
+          if ($IsLinux) { $releaseOptions.AllowUnvalidatedCudaRelease = $true }
+          ./scripts/release.ps1 -BuildDir build/package-cuda -CudaValidation BuildOnly -OutputDir build/archives @releaseOptions
       - name: Prove Required mode rejects a runner without GPU
         run: |
           $extension = if ($IsWindows) { '.exe' } else { '' }
@@ -134,7 +137,7 @@ jobs:
           $global:LASTEXITCODE = 0
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: cuda-candidate-${{ matrix.platform }}
+          name: cuda-${{ matrix.platform }}
           path: build/archives/*
           if-no-files-found: error
       - name: Upload CUDA diagnostics
@@ -149,8 +152,8 @@ jobs:
             build/package-cuda/cuda-architectures.txt
           if-no-files-found: ignore
   cuda-verify:
-    name: Standalone ${{ matrix.platform }} CUDA candidate
-    needs: cuda-candidate
+    name: Standalone ${{ matrix.platform }} CUDA
+    needs: cuda-package
     strategy:
       fail-fast: false
       matrix:
@@ -169,11 +172,12 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: cuda-candidate-${{ matrix.platform }}
+          name: cuda-${{ matrix.platform }}
           path: build/download
-      - name: Verify candidate without CUDA toolkit or GPU
+      - name: Verify CUDA package without CUDA toolkit or GPU
         run: |
-          $archive = @(Get-ChildItem build/download -File | Where-Object { $_.Name -match '_candidate\.(zip|tar\.gz)$' })
-          if ($archive.Count -ne 1) { throw 'Expected exactly one CUDA candidate' }
+          $pattern = if ($IsLinux) { '_linux-x64_cuda\.tar\.gz$' } else { '_windows-x64_cuda_candidate\.zip$' }
+          $archive = @(Get-ChildItem build/download -File | Where-Object { $_.Name -match $pattern })
+          if ($archive.Count -ne 1) { throw 'Expected exactly one CUDA package with the platform release policy' }
           $hash = ((Get-Content "$($archive[0].FullName).sha256" -Raw) -split '\s+')[0]
           ./scripts/verify-release-asset.ps1 -ArchivePath $archive[0].FullName -ExpectedSha256 $hash -ExpectedCommit '${{ github.sha }}' -ExpectedRuntime cuda -ExpectedGpuValidation not-run -RequireStandalone

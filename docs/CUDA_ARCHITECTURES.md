@@ -21,7 +21,7 @@ CUDA_ARCH 去重并按计算能力排序；每个原生目标同时生成对应 
 
 建库和生成在 GPU 工作前查询当前默认设备，通过 cudaFuncGetAttributes 加载四个模块的实际内核，包括四种模板实例，并核对线程数和共享内存限制。无设备、驱动不兼容、缺少内核或预备资源不足时，日志说明原因并在计算前使用 CPU。未知错误及上传/执行/同步失败继续传播。任务内复用预检结果；不引入新 CLI/API 参数、多卡选择或特征版本变化。`--cpu`、CPU-only 构建、仅归一化不会执行 GPU 内核预检。
 
-BUILD_INFO 的 CudaArchitectures、CudaPtx 由构建配置和 cuobjdump 产物核对产生；正式通用包拒绝旧目录遗留的单架构配置。GpuValidationDevice、GpuValidationComputeCapability、GpuValidationDriver 来自 Required 预检，候选均为 not-run。这里 Driver 是 cudaDriverGetVersion 返回的 CUDA 驱动 API 版本整数，而非 nvidia-smi 的显卡驱动包版本。passed 仅对应记录的设备。旧包缺少新增字段或使用六架构/单 PTX 元数据时，普通附件验证仍可执行；新包必须通过七架构与对应七种 PTX 的产物检查。
+BUILD_INFO 的 CudaArchitectures、CudaPtx 由构建配置和 cuobjdump 产物核对产生；正式通用包拒绝旧目录遗留的单架构配置。GpuValidationDevice、GpuValidationComputeCapability、GpuValidationDriver 来自 Required 预检，未经 GPU 实机验收的包均为 not-run；Linux 正式附件也保留此状态。这里 Driver 是 cudaDriverGetVersion 返回的 CUDA 驱动 API 版本整数，而非 nvidia-smi 的显卡驱动包版本。passed 仅对应记录的设备。旧包缺少新增字段或使用六架构/单 PTX 元数据时，普通附件验证仍可执行；新包必须通过七架构与对应七种 PTX 的产物检查。
 
 ## 六架构初版验证
 

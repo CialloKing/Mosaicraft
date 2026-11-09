@@ -8,6 +8,21 @@ $info = @{
     GpuValidationDevice = 'not-run'; GpuValidationComputeCapability = 'not-run'; GpuValidationDriver = 'not-run'
 }
 Assert-CudaBuildInfo $info
+$linux = $info.Clone(); $linux.Platform = 'linux'; $linux.Arch = 'x64'
+Assert-CudaPackageName $linux 'Mosaicraft_v1.14.8_linux-x64_cuda.tar.gz'
+Assert-CudaPackageName $linux 'Mosaicraft_v1.14.8_linux-x64_cuda_candidate.tar.gz'
+$windows = $linux.Clone(); $windows.Platform = 'windows'
+Assert-CudaPackageName $windows 'Mosaicraft_v1.14.8_windows-x64_cuda_candidate.zip'
+foreach ($case in @(
+    @($windows, 'Mosaicraft_v1.14.8_windows-x64_cuda.zip'),
+    @($linux, 'Mosaicraft_v1.14.8_linux-x64_cuda.zip'),
+    @($linux, 'Mosaicraft_v1.14.8_windows-x64_cuda.zip')
+))
+{
+    $rejected = $false
+    try { Assert-CudaPackageName $case[0] $case[1] } catch { $rejected = $true }
+    if (-not $rejected) { throw 'Invalid unvalidated release name accepted' }
+}
 $legacy = $info.Clone()
 $legacy.CudaArchitectures = 'sm_75;sm_80;sm_86;sm_89;sm_90;sm_120'; $legacy.CudaPtx = 'compute_75'
 Assert-CudaBuildInfo $legacy

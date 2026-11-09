@@ -2,7 +2,7 @@
 
 > GPU 加速的照片马赛克拼贴生成器 — 本地创建图库图片精准匹配，输出超大分辨率马赛克拼图
 
-**Windows x64** · **Linux x64** · **macOS ARM64** · **Windows CUDA 加速**
+**Windows x64** · **Linux x64** · **macOS ARM64** · **Windows/Linux CUDA 加速**
 
 （本项目纯AI生成，绝无手写代码）
 
@@ -133,15 +133,18 @@ cmake --build build --config Release --target mosaicraft_webui_smoke
 # 无 GPU 的 CUDA 候选包
 .\scripts\release.ps1 -BuildDir build/package-cuda -CudaValidation BuildOnly -OutputDir build/archives
 
+# Linux x64 正式附件，保留 GPU 未验收状态，仍完整测试和独立验收
+./scripts/release.ps1 -BuildDir build/package-linux-cuda -CudaValidation BuildOnly -AllowUnvalidatedCudaRelease -OutputDir build/archives
+
 # 发布后验收实际附件；多个附件必须明确指定名称
 .\scripts\verify-release-asset.ps1 -Tag v<version> -AssetName <archive-name>
 ```
 
-`release.ps1` 默认生成 Windows ZIP 或 Linux/macOS tar.gz，可用 `-ArchiveFormat` 选择格式。要求工作区干净；包内 `BUILD_INFO.txt` 记录版本、平台、架构、运行时、提交及 GPU 验收状态，包旁生成 SHA256 文件。CUDA 默认要求可用 GPU；`BuildOnly` 包自动带 `_candidate` 后缀，状态为 `not-run`。
+`release.ps1` 默认生成 Windows ZIP 或 Linux/macOS tar.gz，可用 `-ArchiveFormat` 选择格式。要求工作区干净；包内 `BUILD_INFO.txt` 记录版本、平台、架构、运行时、提交及 GPU 验收状态，包旁生成 SHA256 文件。CUDA 默认要求可用 GPU；`BuildOnly` 包默认带 `_candidate` 后缀。Linux x64 可显式使用 `-AllowUnvalidatedCudaRelease` 生成正式 tar.gz，GPU 状态仍为 `not-run`；该模式不能跳过测试和验收，不能用于 Windows。
 
 `verify-release-asset.ps1 -ArchivePath <path> -RequireStandalone` 可独立验收 ZIP/tar.gz，`-ZipPath` 仍可使用。脚本检查哈希、元数据、文档、CLI 和包内 Web UI/API；远端附件还校验 tag 对应提交。
 
-日常 CI 运行 Windows/Linux CPU 检查；手动或标签触发 Windows x64、Linux x64、macOS ARM64 三平台 CPU 打包及 Windows/Linux CUDA 候选，并在独立 job 验收。工作流不自动发布 Release。正式发布需三平台 CPU 包通过，以及同一提交的本机 Windows CUDA GPU 验收。详见 [CI 与打包](docs/CI_PACKAGING.md) 和 [Release Checklist](docs/RELEASE_CHECKLIST.md)。
+日常 CI 运行 Windows/Linux CPU 检查；手动或标签触发 Windows x64、Linux x64、macOS ARM64 三平台 CPU 打包、Windows CUDA 候选及 Linux CUDA 正式包，并在独立 job 验收。工作流不自动发布 Release。正式发布需三平台 CPU 包和 Linux CUDA 包通过独立验收，以及同一提交的本机 Windows CUDA GPU 验收。Linux CUDA 已通过编译和无 GPU 运行验收，尚未做 Linux 实机 GPU 验收。详见 [CI 与打包](docs/CI_PACKAGING.md) 和 [Release Checklist](docs/RELEASE_CHECKLIST.md)。
 
 ---
 

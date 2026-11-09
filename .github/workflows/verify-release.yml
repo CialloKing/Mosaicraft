@@ -29,6 +29,11 @@ jobs:
             gpu-validation: not-applicable
             runner: ubuntu-22.04
             extension: tar.gz
+          - platform: linux-x64
+            runtime: cuda
+            gpu-validation: not-run
+            runner: ubuntu-22.04
+            extension: tar.gz
           - platform: macos-arm64
             runtime: cpu-only
             gpu-validation: not-applicable
@@ -53,5 +58,8 @@ jobs:
           GPU_VALIDATION: ${{ matrix.gpu-validation }}
         run: |
           if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Expected a stable version tag' }
+          # v1.14.7 and older did not publish a Linux CUDA asset.
+          $numbers = [version]($env:RELEASE_TAG -replace '^v', '')
+          if ($env:ASSET_PLATFORM -eq 'linux-x64' -and $env:ASSET_RUNTIME -eq 'cuda' -and $numbers -lt [version]'1.14.8') { Write-Host 'Linux CUDA starts with v1.14.8'; exit 0 }
           $asset = "Mosaicraft_$($env:RELEASE_TAG)_$($env:ASSET_PLATFORM)_$($env:ASSET_RUNTIME).$($env:ASSET_EXTENSION)"
           ./scripts/verify-release-asset.ps1 -Repository $env:GITHUB_REPOSITORY -Tag $env:RELEASE_TAG -AssetName $asset -ExpectedRuntime $env:ASSET_RUNTIME -ExpectedGpuValidation $env:GPU_VALIDATION -RequireStandalone

@@ -5,7 +5,7 @@
 | 平台 | runner | CPU 包 | 云端 CUDA 包 |
 | --- | --- | --- | --- |
 | Windows x64 | windows-2025-vs2026 | ZIP | ZIP candidate |
-| Linux x64 | ubuntu-22.04 | tar.gz | tar.gz candidate |
+| Linux x64 | ubuntu-22.04 | tar.gz | tar.gz，正式附件（GPU 未验收） |
 | macOS ARM64 | macos-15 | tar.gz | 无 |
 
 支持基线为 Windows 10 22H2 x64、Ubuntu 22.04/glibc 2.35、macOS 13 ARM64。没有安装器、DMG、Universal 2 或 Developer ID 公证。macOS 包使用 ad-hoc 签名；这不等于 Apple 公证。
@@ -31,15 +31,18 @@ Linux/macOS 分别选择 x64-linux-release、arm64-osx-release。Linux 打包还
 云端编译器固定 CUDA 13.3.0/nvcc 13.3.33，使用 NVIDIA 官方重分发组件和锁定 SHA256；不安装显卡驱动。默认包含 sm_75、sm_80、sm_86、sm_89、sm_90、sm_100、sm_120 原生内核及对应七种 PTX，原算术编译参数保持不变。锁文件还固定 cuobjdump 13.3.29；打包前逐模块和最终程序核对架构，缺少任何目标即失败。
 
 ```powershell
-# 云端候选：完整 CPU 回退测试，但不声称 GPU 通过验收
+# Windows 云端候选：完整 CPU 回退测试，但不声称 GPU 通过验收
 ./scripts/setup-cuda.ps1
 ./scripts/release.ps1 -BuildDir build/package-cuda -CudaValidation BuildOnly -OutputDir build/archives
+
+# Linux CUDA 正式附件：完整测试，GPU 状态仍为 not-run
+./scripts/release.ps1 -BuildDir build/package-linux-cuda -CudaValidation BuildOnly -AllowUnvalidatedCudaRelease -OutputDir build/archives
 
 # 本机 Windows 正式 CUDA 包：默认 Required，必须有可用 GPU
 ./scripts/release.ps1 -BuildDir build/package-cuda-local -CudaValidation Required -OutputDir build/archives
 ```
 
-`BUILD_INFO.txt` 的 `GpuValidation` 为 `passed`、`not-run` 或 `not-applicable`。`CudaArchitectures`、`CudaPtx` 记录实际编译目标；`GpuValidationDevice`、`GpuValidationComputeCapability`、`GpuValidationDriver` 记录 Required 模式实际通过预检的设备，候选均为 `not-run`。`passed` 仅表示所记录设备通过验收；其他架构不因此获得实机验证结论。旧包缺少新增字段时仍可普通验收。BuildOnly 自动添加 `_candidate` 文件名后缀；Required 在无 GPU 时失败，且禁止跳过 CTest、smoke 或解压验证。正式 Windows CUDA 包必须来自同一提交并通过本机 GPU 完整回归；Linux CUDA 暂不进入正式 Release。
+`BUILD_INFO.txt` 的 `GpuValidation` 为 `passed`、`not-run` 或 `not-applicable`。`CudaArchitectures`、`CudaPtx` 记录实际编译目标；`GpuValidationDevice`、`GpuValidationComputeCapability`、`GpuValidationDriver` 记录 Required 模式实际通过预检的设备，未经 GPU 实机验收的包均为 `not-run`。`passed` 仅表示所记录设备通过验收；其他架构不因此获得实机验证结论。旧包缺少新增字段时仍可普通验收。BuildOnly 自动添加 `_candidate` 文件名后缀；Required 在无 GPU 时失败，且禁止跳过 CTest、smoke 或解压验证。正式 Windows CUDA 包必须来自同一提交并通过本机 GPU 完整回归；Linux CUDA 从 v1.14.8 起进入正式 Release，保持 `not-run`，并在页面明确说明尚未做 Linux 实机 GPU 验收。显式 `-AllowUnvalidatedCudaRelease` 仅允许原生 Linux x64 tar.gz，不允许跳过 CTest、smoke 或解压验证，也不放宽 Windows CUDA 的 Required 门禁。
 
 ## 独立包验收
 
@@ -52,7 +55,7 @@ CPU 三个平台和 CUDA 两个平台均在独立的新 job 下载附件，不�
 
 `-ZipPath` 保留为 `-ArchivePath` 别名；旧包缺少 GPU 状态时仍可普通验收。多个附件必须指定 `-AssetName`。`release.ps1 -ArchiveFormat auto|zip|tar.gz` 默认 Windows ZIP、Unix tar.gz；包旁生成 `.sha256`，包内记录版本、提交、平台、架构和运行时。
 
-正式发布后，手动运行 `Verify published release` 并传入版本标签，可在三个原生平台下载、验收真实 Release 上的四个正式附件。该流程只读取 Release，不上传或修改附件。
+正式发布后，手动运行 `Verify published release` 并传入版本标签，可在三个原生平台下载、验收真实 Release 上的五个正式附件（v1.14.7 的 Linux CUDA 项跳过）。该流程只读取 Release，不上传或修改附件。
 
 ## 性能采样
 

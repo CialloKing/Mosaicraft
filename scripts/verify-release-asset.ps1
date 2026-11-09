@@ -427,7 +427,7 @@ function Assert-BuildInfo
     {
         if ($info['GpuValidation'] -notin @('passed', 'not-run', 'not-applicable')) { throw 'Invalid GPU validation state' }
         if ($info['Runtime'] -eq 'cpu-only' -and $info['GpuValidation'] -ne 'not-applicable') { throw 'CPU package has CUDA validation metadata' }
-        if ($info['Runtime'] -eq 'cuda' -and $info['GpuValidation'] -eq 'not-run' -and $PackageName -notmatch '_candidate\.') { throw 'Unvalidated CUDA package must be named candidate' }
+        Assert-CudaPackageName $info $PackageName
     }
 }
 
