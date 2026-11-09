@@ -26,6 +26,25 @@ foreach ($case in @(
 $legacy = $info.Clone()
 $legacy.CudaArchitectures = 'sm_75;sm_80;sm_86;sm_89;sm_90;sm_120'; $legacy.CudaPtx = 'compute_75'
 Assert-CudaBuildInfo $legacy
+$toolkit = $linux.Clone()
+$toolkit.CudaToolkit = '13.5.37'; $toolkit.CudaRuntimeMode = 'shared'; $toolkit.GpuValidationRuntime = 'not-run'
+Assert-CudaBuildInfo $toolkit
+foreach ($mutation in @(@{CudaRuntimeMode='hybrid'}, @{CudaToolkit='13.5'}, @{GpuValidationRuntime='13050'}, @{Runtime='cpu-only'}))
+{
+    $invalid = $toolkit.Clone()
+    foreach ($key in $mutation.Keys) { $invalid[$key] = $mutation[$key] }
+    $rejected = $false
+    try { Assert-CudaBuildInfo $invalid } catch { $rejected = $true }
+    if (-not $rejected) { throw 'Invalid toolkit metadata accepted' }
+}
+$toolkit.Platform = 'windows'; $toolkit.CudaRuntimeMode = 'hybrid'
+$toolkit.GpuValidation = 'passed'; $toolkit.GpuValidationDevice = 'RTX 4060 Laptop'
+$toolkit.GpuValidationComputeCapability = 'sm_89'; $toolkit.GpuValidationDriver = '13050'; $toolkit.GpuValidationRuntime = '13050'
+Assert-CudaBuildInfo $toolkit
+$toolkit.Remove('CudaRuntimeMode')
+$rejected = $false
+try { Assert-CudaBuildInfo $toolkit } catch { $rejected = $true }
+if (-not $rejected) { throw 'Partial toolkit metadata accepted' }
 foreach ($mutation in @(@{CudaArchitectures='sm_89'}, @{CudaPtx='compute_120'}, @{CudaPtx='compute_75'}, @{GpuValidationDevice='RTX 4060'}, @{Runtime='cpu-only'}))
 {
     $invalid = $info.Clone()

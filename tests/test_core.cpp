@@ -51,7 +51,8 @@ int main(int argc, char** argv)
         {
             std::cout << "GPU validation passed\nGpuValidationDevice: " << status.deviceName
                       << "\nGpuValidationComputeCapability: sm_" << status.major << status.minor
-                      << "\nGpuValidationDriver: " << status.driverVersion << std::endl;
+                      << "\nGpuValidationDriver: " << status.driverVersion
+                      << "\nGpuValidationRuntime: " << status.runtimeVersion << std::endl;
             return 0;
         }
     }
@@ -80,6 +81,7 @@ TEST_CASE("CUDA preflight distinguishes compatibility failures from execution er
         CHECK_FALSE(status.deviceName.empty());
         CHECK(status.major >= 7);
         CHECK(status.driverVersion > 0);
+        CHECK(status.runtimeVersion > 0);
         CHECK(status.reason.empty());
     }
 }

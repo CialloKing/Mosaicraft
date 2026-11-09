@@ -130,7 +130,9 @@ cmake --build --preset windows-cuda
 | `MOSAICRAFT_CUDA=OFF` | — | 纯 CPU 编译（Linux / 无 GPU Windows） |
 | `CUDA_ARCH` | `sm_75;sm_80;sm_86;sm_89;sm_90;sm_100;sm_120` | CUDA 原生架构列表；保留单值覆盖 |
 
-默认 CUDA 包覆盖 RTX 20/GTX 16、RTX 30、RTX 40、A100/A30、H100/H200、B200/GB200、RTX 50，同时携带与七种原生目标对应的 `compute_75/80/86/89/90/100/120` PTX，由驱动选择原生代码或 PTX JIT。任务开始 GPU 工作前检查实际内核兼容性，不可用时记录原因并使用 CPU；运行中 CUDA 错误仍报错。驱动须满足 CUDA 13.3 及所用 PTX 的要求。当前仅 Ada 实机验收，其他架构已编译覆盖、尚未实机验证。单卡构建可使用 `-DCUDA_ARCH=sm_86`；旧构建目录保留缓存，正式通用包拒绝遗漏架构的产物。详见 [CUDA 多架构与验证](docs/CUDA_ARCHITECTURES.md)。
+CUDA 构建固定 Toolkit 13.5.0 / nvcc 13.5.37，必须显式设置 `CUDAToolkit_ROOT`；编译器、头文件和运行库须来自同一 SDK，13.3 旧构建目录应保留并另建新目录。云端最小 SDK 可通过 `./scripts/setup-cuda.ps1` 安装，组件地址和 SHA256 由锁文件固定。Windows 使用 SDK 的 hybrid 加载方式，不分发显示驱动；Linux 随包部署共享运行库和相对 RPATH。
+
+默认 CUDA 包覆盖 RTX 20/GTX 16、RTX 30、RTX 40、A100/A30、H100/H200、B200/GB200、RTX 50，同时携带与七种原生目标对应的 `compute_75/80/86/89/90/100/120` PTX，由驱动选择原生代码或 PTX JIT。任务开始 GPU 工作前检查实际内核兼容性，不可用时记录原因并使用 CPU；运行中 CUDA 错误仍报错。驱动须满足 CUDA 13.5 及所用 PTX 的要求。当前仅 Ada 实机验收，其他架构已编译覆盖、尚未实机验证。单卡构建可使用 `-DCUDA_ARCH=sm_86`；同版本构建目录保留架构缓存，正式通用包拒绝遗漏架构的产物。详见 [CUDA 多架构与验证](docs/CUDA_ARCHITECTURES.md)。
 
 ### 验证
 

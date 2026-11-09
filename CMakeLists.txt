@@ -37,8 +37,7 @@ find_package(JPEG REQUIRED)
 option(MOSAICRAFT_CUDA "Enable CUDA GPU acceleration (requires NVIDIA GPU + CUDA Toolkit)" ON)
 
 if (MOSAICRAFT_CUDA)
-    find_package(CUDAToolkit REQUIRED)
-    message(STATUS "CUDA: enabled (${CUDAToolkit_VERSION})")
+    include(cmake/CudaToolkit.cmake)
 else()
     message(STATUS "CUDA: disabled (MOSAICRAFT_CUDA=OFF)")
 endif()
@@ -60,7 +59,7 @@ if(MOSAICRAFT_CUDA)
     message(STATUS "CUDA native: ${CUDA_NATIVE_TARGETS}; PTX: ${CUDA_PTX_TARGET}")
     # configure_file semantics preserve the timestamp until targets/compiler change.
     file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/cuda-architectures.txt"
-        CONTENT "CudaArchitectures: ${CUDA_NATIVE_TARGETS}\nCudaPtx: ${CUDA_PTX_TARGET}\nNvcc: ${CUDAToolkit_NVCC_EXECUTABLE}\nCudaToolkit: ${CUDAToolkit_VERSION}\n")
+        CONTENT "CudaArchitectures: ${CUDA_NATIVE_TARGETS}\nCudaPtx: ${CUDA_PTX_TARGET}\nNvcc: ${CUDAToolkit_NVCC_EXECUTABLE}\nCudaToolkit: ${CUDAToolkit_VERSION}\nCudaRuntimeMode: ${CUDA_RUNTIME_MODE}\n")
 endif()
 
 # nvcc 平台适配：MSVC 需要额外的编译选项，对象文件扩展名也不同
@@ -250,21 +249,8 @@ target_link_libraries(mosaicraft PRIVATE
     mosaicraft_cuda
 )
 
-# CUDA 运行时 DLL 自动部署（仅 Windows；Linux 通过 ldconfig/rpath 解析 .so）
-if (MOSAICRAFT_CUDA AND WIN32)
-    file(GLOB CUDA_RUNTIME_DLL "${CUDAToolkit_BIN_DIR}/cudart64_*.dll"
-        "${CUDAToolkit_BIN_DIR}/x64/cudart64_*.dll"
-        "${CUDAToolkit_BIN_DIR}/../bin/x64/cudart64_*.dll")
-    if (CUDA_RUNTIME_DLL)
-        list(GET CUDA_RUNTIME_DLL 0 CUDA_RUNTIME_DLL_FIRST)
-        add_custom_command(TARGET mosaicraft POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${CUDA_RUNTIME_DLL_FIRST}"
-                "$<TARGET_FILE_DIR:mosaicraft>"
-            COMMENT "Deploying CUDA runtime DLL..."
-        )
-    endif()
-endif()
+# Windows 13.5 uses the hybrid loader from CUDA::cudart. Its driver runtime
+# is not an SDK DLL dependency; Packaging.cmake deploys actual non-driver imports.
 
 # ============================================================
 # Web UI / HTTP API 入口（独立进程，复用 core 服务，保留旧命令兼容）
@@ -306,6 +292,7 @@ target_include_directories(mosaicraft_tests PRIVATE
 # CTest 集成
 enable_testing()
 add_test(NAME cuda_architecture_config COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_architectures.cmake")
+add_test(NAME cuda_toolkit_config COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_toolkit.cmake")
 add_test(NAME mosaicraft_tests COMMAND mosaicraft_tests)
 
 add_executable(mosaicraft_regression_tests EXCLUDE_FROM_ALL

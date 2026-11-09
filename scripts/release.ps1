@@ -331,8 +331,11 @@ function Write-BuildInfo
     )
     if ($Runtime -eq 'cuda')
     {
-        $lines += "CudaArchitectures: $($cudaBuildInfo.CudaArchitectures)", "CudaPtx: $($cudaBuildInfo.CudaPtx)"
-        foreach ($field in @('GpuValidationDevice', 'GpuValidationComputeCapability', 'GpuValidationDriver'))
+        foreach ($field in @('CudaArchitectures', 'CudaPtx', 'CudaToolkit', 'CudaRuntimeMode'))
+        {
+            $lines += "${field}: $($cudaBuildInfo[$field])"
+        }
+        foreach ($field in @('GpuValidationDevice', 'GpuValidationComputeCapability', 'GpuValidationDriver', 'GpuValidationRuntime'))
         {
             $value = if ($gpuValidation -eq 'passed') { $gpuProbeInfo[$field] } else { 'not-run' }
             $lines += "${field}: $value"
@@ -570,6 +573,13 @@ try {
     if (-not $NoCuda)
     {
         $cudaBuildInfo = Read-BuildInfo (Join-Path $buildPath 'cuda-architectures.txt')
+        $cudaLock = Get-Content (Join-Path $RepoRoot 'cmake/cuda-13.5.json') -Raw | ConvertFrom-Json
+        $expectedRuntimeMode = if (Test-IsWindows) { 'hybrid' } else { 'shared' }
+        if ($cudaBuildInfo.CudaToolkit -ne $cudaLock.components.cuda_nvcc.version -or
+            $cudaBuildInfo.CudaRuntimeMode -ne $expectedRuntimeMode)
+        {
+            throw 'Build directory must use the locked CUDA 13.5 toolkit/runtime; configure a fresh directory'
+        }
         $inspector = Join-Path (Split-Path $cudaBuildInfo.Nvcc) (Get-ExecutableName 'cuobjdump')
         Invoke-Step 'Verify universal CUDA images' {
             foreach ($program in @('mosaicraft', 'MosaicraftWebUI'))
@@ -589,7 +599,7 @@ try {
         {
             if ($line -match '^(GpuValidation[^:]+):\s*(.*)$') { $gpuProbeInfo[$Matches[1]] = $Matches[2].Trim() }
         }
-        foreach ($field in @('GpuValidationDevice', 'GpuValidationComputeCapability', 'GpuValidationDriver'))
+        foreach ($field in @('GpuValidationDevice', 'GpuValidationComputeCapability', 'GpuValidationDriver', 'GpuValidationRuntime'))
         {
             if (-not $gpuProbeInfo[$field]) { throw "GPU probe omitted $field" }
         }

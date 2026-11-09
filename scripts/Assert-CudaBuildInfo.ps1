@@ -1,8 +1,26 @@
 function Assert-CudaBuildInfo([hashtable]$Info)
 {
+    $toolkitFields = @('CudaToolkit', 'CudaRuntimeMode', 'GpuValidationRuntime')
+    $toolkitPresent = @($toolkitFields | Where-Object { $Info.ContainsKey($_) })
+    if ($toolkitPresent.Count -gt 0)
+    {
+        if ($toolkitPresent.Count -ne $toolkitFields.Count -or $Info.Runtime -ne 'cuda' -or
+            $Info.CudaToolkit -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$' -or
+            ($Info.Platform -eq 'windows' -and $Info.CudaRuntimeMode -ne 'hybrid') -or
+            ($Info.Platform -eq 'linux' -and $Info.CudaRuntimeMode -ne 'shared') -or
+            $Info.Platform -notin @('windows', 'linux'))
+        {
+            throw 'Incomplete or invalid CUDA toolchain/runtime metadata'
+        }
+        if (($Info.GpuValidation -eq 'passed' -and $Info.GpuValidationRuntime -notmatch '^[1-9][0-9]+$') -or
+            ($Info.GpuValidation -eq 'not-run' -and $Info.GpuValidationRuntime -ne 'not-run'))
+        {
+            throw 'CUDA runtime validation must describe the actual GPU acceptance state'
+        }
+    }
     $fields = @('CudaArchitectures', 'CudaPtx', 'GpuValidationDevice', 'GpuValidationComputeCapability', 'GpuValidationDriver')
     $present = @($fields | Where-Object { $Info.ContainsKey($_) })
-    if ($present.Count -eq 0) { return } # Historical archives remain verifiable.
+    if ($present.Count -eq 0 -and $toolkitPresent.Count -eq 0) { return } # Historical archives remain verifiable.
     if ($present.Count -ne $fields.Count -or $Info.Runtime -ne 'cuda') { throw 'Incomplete or misplaced CUDA build metadata' }
     $universal = 'sm_75;sm_80;sm_86;sm_89;sm_90;sm_100;sm_120'
     $current = $Info.CudaArchitectures -eq $universal -and $Info.CudaPtx -eq ($universal -replace 'sm_', 'compute_')

@@ -1,0 +1,96 @@
+{
+  "release": "13.5.0",
+  "source": "https://developer.download.nvidia.com/compute/cuda/redist/redistrib_13.5.0.json",
+  "components": {
+    "cuda_nvcc": {
+      "version": "13.5.37",
+      "windows-x86_64": {
+        "relative_path": "cuda_nvcc/windows-x86_64/cuda_nvcc-windows-x86_64-13.5.37-archive.zip",
+        "sha256": "daf9ea2304917ea6426be5fbe0e86c34cccc07c4f593cbc9070da54a8f7f4b27",
+        "md5": "c5a43221cb2c9c7a0062ddcb79f79dce",
+        "size": "34186683"
+      },
+      "linux-x86_64": {
+        "relative_path": "cuda_nvcc/linux-x86_64/cuda_nvcc-linux-x86_64-13.5.37-archive.tar.xz",
+        "sha256": "ac41262734f3c62cd75a502081cfae093b03b846d7f9274d8b1eb41f83209b96",
+        "md5": "9ad70f1450ad78687884c3ed1db082b3",
+        "size": "32870052"
+      }
+    },
+    "cuda_crt": {
+      "version": "13.5.37",
+      "windows-x86_64": {
+        "relative_path": "cuda_crt/windows-x86_64/cuda_crt-windows-x86_64-13.5.37-archive.zip",
+        "sha256": "acf9730a9731f08fab5719684ed3e64f16cb592571c700bfa342fe32d3ca2047",
+        "md5": "721136200e89d3a3a4cdc83f85e0c6e2",
+        "size": "176318"
+      },
+      "linux-x86_64": {
+        "relative_path": "cuda_crt/linux-x86_64/cuda_crt-linux-x86_64-13.5.37-archive.tar.xz",
+        "sha256": "0df5c0ca27392152f370751c82b27ff1ab67661e4810cfc7248e2e03479c9ae0",
+        "md5": "23015180b188ca65b68301de148b4b1a",
+        "size": "109348"
+      }
+    },
+    "cuda_cudart": {
+      "version": "13.5.37",
+      "windows-x86_64": {
+        "relative_path": "cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-13.5.37-archive.zip",
+        "sha256": "ef9747b13bd2c2c199a5f2756b56c94d0b5acf04556ce95ef4649122ee9b752a",
+        "md5": "f7bb0f41dbf78b124e1d45f3088e70ad",
+        "size": "2742330"
+      },
+      "linux-x86_64": {
+        "relative_path": "cuda_cudart/linux-x86_64/cuda_cudart-linux-x86_64-13.5.37-archive.tar.xz",
+        "sha256": "26ca1b8963ce1b73e0e77113c711730545cacaaee7233c0526477d96d4c621fe",
+        "md5": "c7c180a3f76666fc3511a0cbb0929a43",
+        "size": "1694180"
+      }
+    },
+    "libnvvm": {
+      "version": "13.5.37",
+      "windows-x86_64": {
+        "relative_path": "libnvvm/windows-x86_64/libnvvm-windows-x86_64-13.5.37-archive.zip",
+        "sha256": "0cb16fa041acd156b3654b66f182f65373a4ebfd4c2353ce7303f4d1b1eb88b2",
+        "md5": "31764d2212485c6a2b917fa0b0fd393c",
+        "size": "62714896"
+      },
+      "linux-x86_64": {
+        "relative_path": "libnvvm/linux-x86_64/libnvvm-linux-x86_64-13.5.37-archive.tar.xz",
+        "sha256": "8dd4866e387f0ce2259e8dcc91bebdbb59f84c6d4505b3bba46ae91b9a11dd16",
+        "md5": "28bd580aa326d27b3210e1231c59ae14",
+        "size": "52563848"
+      }
+    },
+    "cccl": {
+      "version": "13.3.5.0.6",
+      "windows-x86_64": {
+        "relative_path": "cccl/windows-x86_64/cccl-windows-x86_64-13.3.5.0.6-archive.zip",
+        "sha256": "33b31a28db58aff9bd0a60a53e8424086b65da0684dade8f3c81ff2ff6f6a563",
+        "md5": "5a138f284961222609ab7d6cc57c8a64",
+        "size": "4220625"
+      },
+      "linux-x86_64": {
+        "relative_path": "cccl/linux-x86_64/cccl-linux-x86_64-13.3.5.0.6-archive.tar.xz",
+        "sha256": "5139f641e72df6b0c64ee9e68cabaeafa9a5e36a4b1f7d370a1dc0dac62dd72f",
+        "md5": "c3466aa1710deb7ee0ef8f2abf15123e",
+        "size": "1486800"
+      }
+    },
+    "cuda_cuobjdump": {
+      "version": "13.5.37",
+      "windows-x86_64": {
+        "relative_path": "cuda_cuobjdump/windows-x86_64/cuda_cuobjdump-windows-x86_64-13.5.37-archive.zip",
+        "sha256": "a1e4fed1a7499778ae2f856e63cc6252baac4d4f7f875cb358bcb776f3274240",
+        "md5": "e44dd4e23bf41613a32d02c0d25ccbb3",
+        "size": "6668274"
+      },
+      "linux-x86_64": {
+        "relative_path": "cuda_cuobjdump/linux-x86_64/cuda_cuobjdump-linux-x86_64-13.5.37-archive.tar.xz",
+        "sha256": "cef2d02c05b3f6300ac8972ddb960feb899e614575476bf45dbbdf70c330d2ae",
+        "md5": "f0da8c469dcb3d44d9fa580fd0b927f2",
+        "size": "245392"
+      }
+    }
+  }
+}

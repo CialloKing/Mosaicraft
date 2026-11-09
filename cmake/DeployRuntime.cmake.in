@@ -13,7 +13,8 @@ set(_runtime_dirs "@_runtime_dirs@")
 file(GET_RUNTIME_DEPENDENCIES
     EXECUTABLES "$<TARGET_FILE:mosaicraft>" "$<TARGET_FILE:MosaicraftWebUI>"
     DIRECTORIES ${_runtime_dirs}
-    PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
+    # Display-driver components belong to the host, including hybrid CUDA loading.
+    PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*" "[Nn][Vv][Cc][Uu][Dd][Aa]\\.dll" "libcuda\\.so.*" "libnvidia-.*"
     POST_EXCLUDE_REGEXES ${_exclude}
     RESOLVED_DEPENDENCIES_VAR _resolved
     UNRESOLVED_DEPENDENCIES_VAR _unresolved)

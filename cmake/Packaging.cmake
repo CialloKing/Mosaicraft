@@ -16,6 +16,14 @@ foreach(_license IN LISTS _dependency_licenses)
 endforeach()
 if(MOSAICRAFT_CUDA AND EXISTS "${CUDAToolkit_ROOT}/licenses")
     install(DIRECTORY "${CUDAToolkit_ROOT}/licenses/" DESTINATION licenses/cuda)
+elseif(MOSAICRAFT_CUDA)
+    # A full local SDK has aggregate licenses; the minimal redist installer
+    # preserves per-component texts in licenses/ instead.
+    foreach(_license IN ITEMS EULA.txt LICENSE)
+        if(EXISTS "${CUDAToolkit_ROOT}/${_license}")
+            install(FILES "${CUDAToolkit_ROOT}/${_license}" DESTINATION licenses/cuda)
+        endif()
+    endforeach()
 endif()
 
 if(WIN32)

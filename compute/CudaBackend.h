@@ -155,7 +155,7 @@ int matchOnGpu(double tL, double tA, double tB, const float *tileGrid, const std
 struct CudaAvailability
 {
     bool compiled = false, available = false;
-    int device = -1, major = 0, minor = 0, driverVersion = 0;
+    int device = -1, major = 0, minor = 0, driverVersion = 0, runtimeVersion = 0;
     std::string deviceName;
     std::string reason = "CUDA support is not compiled";
 };

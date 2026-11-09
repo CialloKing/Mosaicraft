@@ -1119,6 +1119,7 @@ CudaAvailability queryCudaAvailability(CudaProbeFault fault)
     }
     cudaDeviceProp device{};
     if (!checkPreflight(cudaDriverGetVersion(&status.driverVersion), "driver", status) ||
+        !checkPreflight(cudaRuntimeGetVersion(&status.runtimeVersion), "runtime", status) ||
         !checkPreflight(cudaGetDevice(&status.device), "current device", status) ||
         !checkPreflight(cudaGetDeviceProperties(&device, status.device), "device properties", status))
     {

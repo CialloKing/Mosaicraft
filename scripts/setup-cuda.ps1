@@ -1,10 +1,11 @@
 # Install only the official, hash-locked compiler/runtime redistribution components.
 # No display driver or GPU is needed to build a candidate.
-param([string]$Destination = 'build/tools/cuda-13.3')
+#Requires -Version 7.0
+param([string]$Destination = 'build/tools/cuda-13.5')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$lock = Get-Content (Join-Path $repo 'cmake/cuda-13.3.json') -Raw | ConvertFrom-Json
+$lock = Get-Content (Join-Path $repo 'cmake/cuda-13.5.json') -Raw | ConvertFrom-Json
 $windows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $platform = if ($windows) { 'windows-x86_64' } else { 'linux-x86_64' }
 $root = [IO.Path]::GetFullPath((Join-Path $repo $Destination))
@@ -33,7 +34,8 @@ foreach ($component in $lock.components.PSObject.Properties)
 }
 $nvcc = Join-Path $root $(if ($windows) { 'bin/nvcc.exe' } else { 'bin/nvcc' })
 $version = & $nvcc --version | Out-String
-if ($LASTEXITCODE -ne 0 -or $version -notmatch 'V13\.3\.33') { throw "Unexpected CUDA compiler: $version" }
+$expectedVersion = [regex]::Escape($lock.components.cuda_nvcc.version)
+if ($LASTEXITCODE -ne 0 -or $version -notmatch "V$expectedVersion(?![0-9])") { throw "Unexpected CUDA compiler: $version" }
 Write-Host $version
 $env:CUDA_PATH = $root
 $env:CUDAToolkit_ROOT = $root
