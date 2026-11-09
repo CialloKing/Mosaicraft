@@ -30,6 +30,7 @@ output/
 # IDE
 .vs/
 *.user
+CMakeUserPresets.json
 
 # Compiled
 *.obj

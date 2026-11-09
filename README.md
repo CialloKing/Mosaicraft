@@ -82,20 +82,45 @@ v1.14.8 提供 sm_75/80/86/89/90/100/120 七架构原生 CUDA 内核及对应 PT
 
 ## 安装与构建
 
-### 依赖
+### 工具与依赖
 
-```powershell
-vcpkg install opencv4 sqlite3 tiff --triplet x64-windows
-```
+主构建入口要求 CMake 4.2+、PowerShell 7 和 Git。Windows x64 使用 Visual Studio 2026 的 C++ 工具；Linux x64、macOS ARM64 使用 Ninja 和系统 C++ 编译器。CPU-only 构建无需 CUDA。
 
-### 编译
+在 PowerShell 7 中执行以下命令。依赖由仓库的 `vcpkg.json` 安装，工具仓库也须位于同一固定提交；已有符合版本的 vcpkg 可直接设置 `VCPKG_ROOT`。
 
 ```powershell
 git clone https://github.com/CialloKing/Mosaicraft.git
 cd Mosaicraft
-cmake -B build -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake
-cmake --build build --config Release
+git clone https://github.com/microsoft/vcpkg.git build/tools/vcpkg
+git -C build/tools/vcpkg checkout a0400024711b283056538ac19ced80b91a83c24c
+$env:VCPKG_ROOT = (Resolve-Path build/tools/vcpkg).Path
+./scripts/setup-dependencies.ps1 -Mode Prepare
+./scripts/setup-dependencies.ps1 -Mode Install
 ```
+
+脚本按当前平台选择 Release-only triplet，依赖共用 `build/dependencies`。不要在 manifest 模式下给 `vcpkg install` 传独立包名。Linux 构建依赖需要系统的编译器、pkg-config、zip/unzip 等基础工具；打包另需 `patchelf`。从 Bash 使用时，先进入 `pwsh` 再执行整组命令，使脚本设置的环境变量保留在当前会话。
+
+### 编译
+
+| 平台 | CPU-only Preset | CUDA Preset |
+| --- | --- | --- |
+| Windows x64 | `windows-cpu` | `windows-cuda` |
+| Linux x64 | `linux-cpu` | `linux-cuda` |
+| macOS ARM64 | `macos-arm64-cpu` | 不支持 |
+
+```powershell
+# 将 windows-cpu 替换为当前平台所需的 Preset
+cmake --preset windows-cpu
+cmake --build --preset windows-cpu
+ctest --preset windows-cpu
+
+# CUDA：显式选择已安装的 SDK，再使用对应 CUDA Preset
+$env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5'
+cmake --preset windows-cuda
+cmake --build --preset windows-cuda
+```
+
+每个 Preset 使用独立的 `build/<preset>`，程序位于其 `Release/bin`。Windows 旧入口 `cmake --preset default`、`cmake --build --preset release` 继续映射到 `windows-cuda`；`relwithdebinfo` 配置与构建入口使用独立目录。项目内核仍允许直接 CMake 配置，维护和 CI 使用上述入口；个人覆盖配置可写入不提交的 `CMakeUserPresets.json`。
 
 ### 编译选项
 
@@ -111,21 +136,21 @@ cmake --build build --config Release
 
 ```powershell
 # 核心单元/API 合约测试 + 服务层回归测试
-cmake --build build --config Release --target mosaicraft_tests mosaicraft_regression_tests
-ctest --test-dir build -C Release --output-on-failure
+cmake --build --preset windows-cuda --target mosaicraft_tests mosaicraft_regression_tests
+ctest --preset windows-cuda
 
 # Web UI/API 真实 smoke：启动 MosaicraftWebUI，提交 build/mosaic job 并验证输出
-cmake --build build --config Release --target mosaicraft_webui_smoke
+cmake --build --preset windows-cuda --target mosaicraft_webui_smoke
 ```
 
 ### 发布自动化
 
 ```powershell
 # 发布前环境检查，不构建、不打包
-.\scripts\release.ps1 -InspectOnly -BuildDir build -Configuration Release
+.\scripts\release.ps1 -InspectOnly
 
 # 默认 CUDA Release 发布：配置/构建/CTest/WebUI smoke/打包/解压验证/SHA256
-.\scripts\release.ps1 -BuildDir build -Configuration Release
+.\scripts\release.ps1
 
 # CPU-only 原生包，无需 GPU
 .\scripts\release.ps1 -BuildDir build/package-cpu -NoCuda -OutputDir build/archives

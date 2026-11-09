@@ -1,8 +1,9 @@
+#Requires -Version 7.0
 param(
     [ValidateSet("Prepare", "Install")][string]$Mode = "Install",
     [string]$VcpkgRoot = $env:VCPKG_ROOT,
-    [ValidateSet("x64-windows-release", "x64-linux-release", "arm64-osx-release")]
-    [string]$Triplet = "x64-windows-release",
+    [ValidateSet("", "x64-windows-release", "x64-linux-release", "arm64-osx-release")]
+    [string]$Triplet = "",
     [string]$CacheNamespace = "deps-v1"
 )
 Set-StrictMode -Version Latest
@@ -17,6 +18,10 @@ if ($CacheNamespace -notmatch '^[a-zA-Z0-9_.-]+$') { throw "Invalid cache namesp
 $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $isMac = [Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.InteropServices.OSPlatform]::OSX)
 $platform = if ($isWindowsHost) { "windows" } elseif ($isMac) { "macos" } else { "linux" }
+if (-not $Triplet)
+{
+    $Triplet = if ($isWindowsHost) { 'x64-windows-release' } elseif ($isMac) { 'arm64-osx-release' } else { 'x64-linux-release' }
+}
 $generator = if ($isWindowsHost) { "Visual Studio 18 2026" } else { "Ninja" }
 $architecture = $Triplet.Split("-")[0]
 $work = Join-Path $repo "build/dependency-state/$Triplet"

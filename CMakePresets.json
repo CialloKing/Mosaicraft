@@ -1,27 +1,128 @@
 {
-  "version": 3,
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 4,
+    "minor": 2,
+    "patch": 0
+  },
   "configurePresets": [
     {
-      "name": "default",
-      "displayName": "Release",
-      "description": "Release build with vcpkg",
-      "generator": "Visual Studio 18 2026",
-      "binaryDir": "${sourceDir}/build",
+      "name": "dependencies",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "D:/C++project/SDK/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/build/dependencies",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets",
+        "VCPKG_MANIFEST_INSTALL": "OFF"
       }
     },
     {
+      "name": "windows-cpu",
+      "inherits": "dependencies",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "generator": "Visual Studio 18 2026",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows-release",
+        "VCPKG_HOST_TRIPLET": "x64-windows-release",
+        "MOSAICRAFT_CUDA": "OFF"
+      },
+      "architecture": "x64"
+    },
+    {
+      "name": "windows-cuda",
+      "inherits": "windows-cpu",
+      "cacheVariables": {
+        "MOSAICRAFT_CUDA": "ON",
+        "CUDAToolkit_ROOT": "$env{CUDAToolkit_ROOT}"
+      }
+    },
+    {
+      "name": "linux-cpu",
+      "inherits": "dependencies",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "generator": "Ninja",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-linux-release",
+        "VCPKG_HOST_TRIPLET": "x64-linux-release",
+        "MOSAICRAFT_CUDA": "OFF"
+      }
+    },
+    {
+      "name": "linux-cuda",
+      "inherits": "linux-cpu",
+      "cacheVariables": {
+        "MOSAICRAFT_CUDA": "ON",
+        "CUDAToolkit_ROOT": "$env{CUDAToolkit_ROOT}"
+      }
+    },
+    {
+      "name": "macos-arm64-cpu",
+      "inherits": "dependencies",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "generator": "Ninja",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "arm64-osx-release",
+        "VCPKG_HOST_TRIPLET": "arm64-osx-release",
+        "MOSAICRAFT_CUDA": "OFF",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "13.0"
+      }
+    },
+    {
+      "name": "default",
+      "displayName": "Windows CUDA (legacy alias)",
+      "inherits": "windows-cuda",
+      "binaryDir": "${sourceDir}/build/windows-cuda"
+    },
+    {
       "name": "relwithdebinfo",
-      "displayName": "RelWithDebInfo (可调试)",
-      "description": "Release优化 + 调试符号，可断点",
-      "inherits": "default",
+      "inherits": "windows-cuda",
+      "binaryDir": "${sourceDir}/build/windows-relwithdebinfo",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
     }
   ],
   "buildPresets": [
+    {
+      "name": "windows-cpu",
+      "configurePreset": "windows-cpu",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-cuda",
+      "configurePreset": "windows-cuda",
+      "configuration": "Release"
+    },
+    {
+      "name": "linux-cpu",
+      "configurePreset": "linux-cpu",
+      "configuration": "Release"
+    },
+    {
+      "name": "linux-cuda",
+      "configurePreset": "linux-cuda",
+      "configuration": "Release"
+    },
+    {
+      "name": "macos-arm64-cpu",
+      "configurePreset": "macos-arm64-cpu",
+      "configuration": "Release"
+    },
     {
       "name": "release",
       "configurePreset": "default",
@@ -31,6 +132,48 @@
       "name": "relwithdebinfo",
       "configurePreset": "relwithdebinfo",
       "configuration": "RelWithDebInfo"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-cpu",
+      "configurePreset": "windows-cpu",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-cuda",
+      "configurePreset": "windows-cuda",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-cpu",
+      "configurePreset": "linux-cpu",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-cuda",
+      "configurePreset": "linux-cuda",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-arm64-cpu",
+      "configurePreset": "macos-arm64-cpu",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }

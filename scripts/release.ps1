@@ -1,5 +1,6 @@
+#Requires -Version 7.0
 param(
-    [string]$BuildDir = "build",
+    [string]$BuildDir = "",
     [ValidateSet('Release')][string]$Configuration = "Release",
     [string]$Version = "",
     [string]$ToolchainFile = "",
@@ -131,30 +132,6 @@ function Assert-CleanGitWorktree
     {
         Pop-Location
     }
-}
-
-function Find-PresetToolchainFile {
-    $presetPath = Join-Path $RepoRoot "CMakePresets.json"
-    if (-not (Test-Path -LiteralPath $presetPath)) {
-        return ""
-    }
-
-    try {
-        $presets = Get-Content -LiteralPath $presetPath -Raw | ConvertFrom-Json
-        foreach ($preset in @($presets.configurePresets)) {
-            if ($preset.name -ne "default") {
-                continue
-            }
-            $toolchain = $preset.cacheVariables.CMAKE_TOOLCHAIN_FILE
-            if ($toolchain) {
-                return [string]$toolchain
-            }
-        }
-    }
-    catch {
-        Write-Warning "Unable to read CMakePresets.json: $($_.Exception.Message)"
-    }
-    return ""
 }
 
 function Copy-RequiredFile {
@@ -477,11 +454,23 @@ function Invoke-ReleaseInspection {
 }
 
 $versionText = Get-ProjectVersion
-$buildPath = Resolve-RepoPath $BuildDir
 $outputPath = if ($OutputDir) { Resolve-RepoPath $OutputDir } else { $RepoRoot }
 $packagePlatform = Normalize-PackageToken -Value $PackagePlatform -Fallback (Get-DefaultPackagePlatform) -Label "platform"
 $packageArch = Normalize-PackageToken -Value $PackageArch -Fallback (Get-DefaultPackageArch) -Label "arch"
 $packageRuntime = if ($NoCuda) { "cpu-only" } else { "cuda" }
+$hostPlatform = Get-DefaultPackagePlatform
+$hostArch = Get-DefaultPackageArch
+if ($hostPlatform -eq 'macos' -and ($hostArch -ne 'arm64' -or -not $NoCuda))
+{
+    throw 'macOS packaging supports ARM64 CPU-only builds'
+}
+if ($hostPlatform -notin @('windows', 'linux', 'macos') -or ($hostPlatform -ne 'macos' -and $hostArch -ne 'x64'))
+{
+    throw 'Packaging requires a supported native x64 Windows/Linux or ARM64 macOS host'
+}
+$configurePreset = if ($hostPlatform -eq 'macos') { 'macos-arm64-cpu' } else { "$hostPlatform-$(if ($NoCuda) { 'cpu' } else { 'cuda' })" }
+if (-not $BuildDir) { $BuildDir = "build/$configurePreset" }
+$buildPath = Resolve-RepoPath $BuildDir
 $gpuValidation = if ($NoCuda) { 'not-applicable' } elseif ($CudaValidation -eq 'BuildOnly') { 'not-run' } else { 'passed' }
 if (-not $NoCuda -and $CudaValidation -eq 'Required' -and ($SkipTests -or $SkipSmoke -or $SkipArchiveValidation))
 {
@@ -506,12 +495,6 @@ if (-not $ToolchainFile -and $env:VCPKG_ROOT) {
     $candidateToolchain = Join-Path $env:VCPKG_ROOT "scripts\buildsystems\vcpkg.cmake"
     if (Test-Path -LiteralPath $candidateToolchain) {
         $ToolchainFile = $candidateToolchain
-    }
-}
-if (-not $ToolchainFile) {
-    $presetToolchain = Find-PresetToolchainFile
-    if ($presetToolchain -and (Test-Path -LiteralPath $presetToolchain)) {
-        $ToolchainFile = $presetToolchain
     }
 }
 
@@ -548,14 +531,8 @@ try {
 
     if (-not $SkipConfigure) {
         Invoke-Step "Configure" {
-            $cuda = if ($NoCuda) { 'OFF' } else { 'ON' }
-            $configureArgs = @("-S", $RepoRoot, "-B", $buildPath,
-                "-DCMAKE_BUILD_TYPE=$Configuration", "-DMOSAICRAFT_CUDA=$cuda")
-            if ($env:MOSAICRAFT_CMAKE_GENERATOR)
-            {
-                $configureArgs += @('-G', $env:MOSAICRAFT_CMAKE_GENERATOR)
-                if (Test-IsWindows) { $configureArgs += @('-A', 'x64') }
-            }
+            # Source and release builds share presets; explicit overrides take precedence.
+            $configureArgs = @('--preset', $configurePreset, '-S', $RepoRoot, '-B', $buildPath)
             if ($ToolchainFile) {
                 $configureArgs += "-DCMAKE_TOOLCHAIN_FILE=$ToolchainFile"
             }
