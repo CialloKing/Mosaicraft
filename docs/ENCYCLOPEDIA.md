@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-11-09 | 版本 / Version：v1.15.0
+> 最后更新 / Last updated：2026-11-09 | 版本 / Version：v1.14.9
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -366,7 +366,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.14.6 | 可选预览、同尺寸素材原字节保存、不同尺寸 JPEG 建库质量 100 | 见本版更新记录 |
 | 1.14.7 | 三平台 CPU 发布、云端 CUDA 候选、精简 Release 依赖与独立包验收 | 见 CI 与打包说明 |
 | 1.14.8 | 七架构 CUDA、Linux CUDA 正式附件与实际内核预检 | 见 CUDA 验证报告 |
-| **1.15.0** | 统一运行诊断、阶段进度、API 2.1 与 Web UI 任务和结果体验 | 见运行诊断验收 |
+| **1.14.9** | 统一运行诊断、阶段进度、API 2.1 与 Web UI 任务和结果体验 | 见运行诊断验收 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -761,7 +761,7 @@ CUDA 和 CPU-only 的完整 CTest 各覆盖 57 个核心/API 用例及 30 个服
 > **EN**: Version 1.14.8 ships native CUDA images and matching PTX for seven targets (75/80/86/89/90/100/120), checks real kernel compatibility before GPU work, and retains CPU fallback before execution. Runtime failures still propagate. Linux x64 CUDA joins the five formal platform/runtime archives with an explicit GPU-not-tested status; Windows CUDA still requires local hardware validation. Every archive uses the same source commit and receives standalone verification. Ada has native/JIT hardware coverage; other architectures have build coverage only. Features remain v6 and API contract 2.0.
 
 
-### v1.15.0: 统一运行诊断与 Web UI 任务体验 (2026-11-09)
+### v1.14.9: 统一运行诊断与 Web UI 任务体验 (2026-11-09)
 
 引擎、CLI、服务与任务管理共用运行诊断，失败点提供稳定原因码、字段和路径；阶段进度使用真实计数，未知总量不拼接整体百分比。归一化与特征处理分别展示，实际 CPU/CUDA 后端与回退原因可见。保留原退出码、任务状态与报告提交语义，主图成功关闭后才登记，后续预览或统计提交失败不隐藏已经保存的主图。
 
@@ -771,4 +771,4 @@ Web UI 沿用原参数页与命令生成器，新增任务列表、详情、恢�
 
 源码构建流程统一以 README 为完整入口，CI 使用对应 Preset 显式构建产品和测试。核心引擎渐进拆出报告、性能统计打印及任务级邻域策略，保留浮点累加顺序、排序与随机数调用。未调整 CUDA 内核、评分权重、预算、特征 v6 或图库格式。功能验收中 Windows CPU/CUDA 完整 CTest、HTTP smoke 与八组严格对照通过；真实浏览器验证任务恢复、阶段计数、取消、回退、路径复用、预览和部分成功结果。诊断 JSON 的系统下载落盘未自动确认，其余具体边界见 [运行诊断验收](RUNTIME_DIAGNOSTICS_VERIFICATION.md)和 [引擎整理验收](ENGINE_REFACTOR_VERIFICATION.md)。发布包另按 [发布清单](RELEASE_CHECKLIST.md)执行原生构建、独立包与真实附件验收。
 
-> **EN**: Version 1.15.0 adds shared runtime diagnostics, real stage counters, backend/fallback reporting and artifact registration. API 2.1 preserves major version 2 while adding session identity, bounded incremental events, task restoration and streamed artifact downloads. The existing Web UI gains task history/reconnection, queued cancellation, reusable paths, correct PowerShell quoting and opt-in bounded previews. Closed main images remain discoverable after later-stage failures. Engine report/metrics/neighborhood refactoring preserves algorithms, feature v6, library format and resource budgets.
+> **EN**: Version 1.14.9 adds shared runtime diagnostics, real stage counters, backend/fallback reporting and artifact registration. API 2.1 preserves major version 2 while adding session identity, bounded incremental events, task restoration and streamed artifact downloads. The existing Web UI gains task history/reconnection, queued cancellation, reusable paths, correct PowerShell quoting and opt-in bounded previews. Closed main images remain discoverable after later-stage failures. Engine report/metrics/neighborhood refactoring preserves algorithms, feature v6, library format and resource budgets.
