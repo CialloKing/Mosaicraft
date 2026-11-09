@@ -4,22 +4,16 @@
 #include "AnalysisReport.h"
 #include "BenchmarkTimer.h"
 #include "BrightnessAdjustment.h"
-#include "BigTiffWriter.h"
 #include "CandidateFeatures.h"
 #include "Database.h"
-#include "DeepZoomWriter.h"
 #include "FeatureExtractor.h"
 #include "FeatureIndex.h"
 #include "FeatureMatrix.h"
 #include "FeaturePack.h"
 #include "FeatureUtils.h"
-#include "GridDuplicateCache.h"
-#include "ImageCache.h"
-#include "JpgStreamWriter.h"
+#include "NeighborhoodState.h"
 #include "MosaicOutput.h"
 #include "MosaicMetrics.h"
-#include "PngBatchWriter.h"
-#include "PngStreamWriter.h"
 #include "RequestValidation.h"
 #include "UnicodeIO.h"
 #include "compute/CudaBackend.h"
@@ -38,9 +32,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <deque>
-#include <filesystem>
-#include <fstream>
 #include <iomanip>
 #include <mutex>
 #include <random>
@@ -50,7 +41,6 @@
 #include <windows.h>
 #endif
 #include <string>
-#include <unordered_map>
 #include <vector>
 #include <sstream>
 
@@ -489,17 +479,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         cfg.neighborWindow = autoNeighborWindow();
     }
 
-    // 邻居去重：滑动窗口 + 频次计数，限制同图重复出现
-    std::deque<int> recentIds;
-    std::unordered_map<int, int> freqInWindow;
-    // 强制间距：同一图片在 minGap 个 tile 内禁止复用
-    const int MIN_GAP = std::max(50, tilesX);  // 至少间隔一行
-    std::unordered_map<int, int> lastUsedAt;   // imageId → 最近一次使用的 tile 索引
-    std::deque<int> recentGrids;
-    GridDuplicateCache duplicateCache(allRecords);  // 最近 Grid 特征滑动窗口，上限 50
-    constexpr double GRID_DUP_THRESHOLD = 0.010;  // Grid 相似阈值：低于此值视为重复
-    constexpr double GRID_DUP_PENALTY = 200.0;     // Grid 重复惩罚分，加 200
-    constexpr int GRID_DUP_WINDOW = 50;            // 滑动窗口大小，约等于一行 tile 数量
+    detail::NeighborhoodState neighborhood(allRecords, tilesX, cfg.neighborWindow, cfg.neighborPenalty);
 
     // 权重归一化：将各特征权重转为 tile 评分系数
     double wSum = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight;
@@ -541,7 +521,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::vector<double> edgeDistribution, entropyDistribution;
     std::mt19937 seededRng(m_seed);
     const auto matchingStart = Clock::now();
-    auto &freq = freqInWindow;
     auto downsampleGrid = [](const auto &g8, std::vector<float> &g4)
     {
         g4.resize(48);
@@ -1143,36 +1122,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         {
                             continue;
                         }
-                        int imgId = allRecords[libIdx].id;
-                        auto it = freqInWindow.find(imgId);
-                        int cnt = (it != freqInWindow.end()) ? it->second : 0;
-                        if (cnt >= 3)
-                        {
-                            scores[j] += cfg.neighborPenalty;
-                        }
-                        else if (cnt == 2)
-                        {
-                            scores[j] += cfg.neighborPenalty * 0.4;
-                        }
-                        else if (cnt == 1)
-                        {
-                            scores[j] += cfg.neighborPenalty * 0.1;
-                        }
-                        // 强制间距：同一图片在 MIN_GAP 内复用加 500 分惩罚
-                        auto gapIt = lastUsedAt.find(imgId);
-                        if (gapIt != lastUsedAt.end() && (ti - gapIt->second) < MIN_GAP)
-                        {
-                            scores[j] += 500.0;
-                        }
-                        // Grid 去重：当前 tile 与最近窗口内 Grid 相似则加惩罚
-                        for (const auto &rg : recentGrids)
-                        {
-                            if (duplicateCache.similar(indices[j], rg, GRID_DUP_THRESHOLD))
-                            {
-                                scores[j] += GRID_DUP_PENALTY;
-                                break;
-                            }
-                        }
+                        neighborhood.applyPenalty(scores[j], libIdx, ti);
                     }
                     // Top-N 随机选取：从前 topN 个最佳候选中随机选择
                     // 8, 8 vs 4, 4 Grid 对比实验（--analyze 模式）
@@ -1345,25 +1295,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                             analyzeGridCellSum[ci] += std::sqrt(dl * dl + da * da + db * db);
                         }
                     }
-                    // 更新滑动窗口和频次统计
-                    int chosenId = allRecords[bestLibIdx[ti]].id;
-                    recentIds.push_back(chosenId);
-                    freqInWindow[chosenId]++;
-                    lastUsedAt[chosenId] = ti; // 记录最近使用位置
-                    recentGrids.push_back(chosenLibIdx);
-                    while (static_cast<int>(recentGrids.size()) > GRID_DUP_WINDOW)
-                    {
-                        recentGrids.pop_front();
-                    }
-                    if (static_cast<int>(recentIds.size()) > cfg.neighborWindow)
-                    {
-                        int oldId = recentIds.front();
-                        recentIds.pop_front();
-                        if (--freqInWindow[oldId] <= 0)
-                        {
-                            freqInWindow.erase(oldId);
-                        }
-                    }
+                    neighborhood.recordSelection(chosenLibIdx, ti);
                 }
 
                 metrics.msSelect += Ms(Clock::now() - selectionStart).count();
@@ -1404,33 +1336,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         double s = gpuScoring ? allScores[size_t(local) * N + j]
                             : cpuBaseScore(buffers, local, r, featureReader->get(li), cfg.usePenalty);
                         BenchmarkTimer neighborTimer(cfg.benchmark, metrics.msNeighbor);
-                        auto it = freq.find(r.id);
-                        int cnt = (it != freq.end()) ? it->second : 0;
-                        if (cnt >= 3)
-                        {
-                            s += cfg.neighborPenalty;
-                        }
-                        else if (cnt == 2)
-                        {
-                            s += cfg.neighborPenalty * 0.4;
-                        }
-                        else if (cnt == 1)
-                        {
-                            s += cfg.neighborPenalty * 0.1;
-                        }
-                        auto gapIt = lastUsedAt.find(r.id); // 强制间距检查
-                        if (gapIt != lastUsedAt.end() && (ti - gapIt->second) < MIN_GAP)
-                        {
-                            s += 500.0;
-                        }
-                        for (const auto &rg : recentGrids)
-                        {
-                            if (duplicateCache.similar(li, rg, GRID_DUP_THRESHOLD))
-                            {
-                                s += GRID_DUP_PENALTY;
-                                break;
-                            }
-                        }
+                        neighborhood.applyPenalty(s, li, ti);
                         scored.push_back({s, li});
                     }
                     if (cfg.benchmark)
@@ -1480,25 +1386,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         analyzeGridD.push_back(wGridD);
                         analyzeEdgeD.push_back(wEdgeD);
                     }
-                    // 更新滑动窗口统计
-                    int chosenId = allRecords[bestLibIdx[ti]].id;
-                    recentIds.push_back(chosenId);
-                    freq[chosenId]++;
-                    lastUsedAt[chosenId] = ti;
-                    recentGrids.push_back(pickIdx);
-                    while (static_cast<int>(recentGrids.size()) > GRID_DUP_WINDOW)
-                    {
-                        recentGrids.pop_front();
-                    }
-                    if ((int)recentIds.size() > cfg.neighborWindow)
-                    {
-                        int old = recentIds.front();
-                        recentIds.pop_front();
-                        if (--freq[old] <= 0)
-                        {
-                            freq.erase(old);
-                        }
-                    }
+                    neighborhood.recordSelection(pickIdx, ti);
                 }
 
                 metrics.msSelect += Ms(Clock::now() - selectionStart).count();

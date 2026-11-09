@@ -334,7 +334,10 @@ Mosaicraft/
 │   ├── main.cpp                # CLI 入口（7 条子命令）
 │   └── server.cpp              # MosaicraftWebUI HTTP 服务
 ├── core/                       # CPU 核心引擎
-│   ├── MosaicEngine.cpp/h      # 马赛克生成 + 分析 + HTML 报告
+│   ├── MosaicEngine.cpp/h      # 马赛克生成流程编排
+│   ├── AnalysisReport.cpp/h    # 分析、素材导出、热力图与 HTML 报告
+│   ├── MosaicMetrics.cpp/h     # 阶段统计与 benchmark 输出
+│   ├── NeighborhoodState.cpp/h # 共用邻域惩罚与选图窗口
 │   ├── Database.cpp/h          # SQLite 读写 + 使用统计
 │   ├── FeatureIndex.h          # hnswlib ANN 索引
 │   ├── FeatureUtils.h          # Grid/Tiny/Edge/LBP 特征计算

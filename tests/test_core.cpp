@@ -5,8 +5,7 @@
 // ============================================================
 // Mosaicraft 核心单元测试 (doctest)
 // 跨平台：Windows / Linux / macOS
-// 构建: cmake --build build --target mosaicraft_tests
-// 运行: ctest --test-dir build -C Release
+// 构建与运行步骤见 README 的安装与构建章节。
 // ============================================================
 
 #define DOCTEST_CONFIG_IMPLEMENT
@@ -19,6 +18,7 @@
 #include "../core/RequestValidation.h"
 #include "../core/BrightnessAdjustment.h"
 #include "../core/FeatureUtils.h"
+#include "../core/NeighborhoodState.h"
 #include "../core/JobManager.h"
 #include "../core/LegacyRun.h"
 #include "../core/Version.h"
@@ -413,6 +413,62 @@ TEST_CASE("mean LAB ordering preserves gray threshold hue wrap and brightness tr
 // ============================================================
 // labDistance
 // ============================================================
+
+TEST_CASE("neighborhood penalties retain frequency gap and independent window boundaries")
+{
+    using namespace mosaicraft;
+    std::vector<ImageRecord> records(3);
+    for (int i = 0; i < 3; ++i)
+    {
+        records[i].id = 100 + i;
+        records[i].grid4x4.assign(192, i == 1 ? 100.0f : 0.0f);
+    }
+    SUBCASE("frequency levels saturate without changing state during scoring")
+    {
+        detail::NeighborhoodState state(records, 1, 10, 100);
+        const double expected[] = {210, 240, 300, 300};
+        for (int i = 0; i < 4; ++i)
+        {
+            state.recordSelection(0, i);
+            double score = 0;
+            state.applyPenalty(score, 0, 100);
+            CHECK(score == expected[i]);
+        }
+        double similar = 0;
+        state.applyPenalty(similar, 2, 100);
+        CHECK(similar == 200);
+    }
+    SUBCASE("minimum gap is strict and spans at least one row")
+    {
+        for (const int width : {1, 80})
+        {
+            detail::NeighborhoodState state(records, width, 10, 100);
+            state.recordSelection(0, 0);
+            double before = 0, boundary = 0;
+            state.applyPenalty(before, 0, std::max(50, width) - 1);
+            state.applyPenalty(boundary, 0, std::max(50, width));
+            CHECK(before == 710);
+            CHECK(boundary == 210);
+        }
+    }
+    SUBCASE("frequency and Grid windows expire independently")
+    {
+        detail::NeighborhoodState state(records, 1, 2, 100);
+        state.recordSelection(0, 0);
+        state.recordSelection(1, 1);
+        state.recordSelection(1, 2);
+        double recentGrid = 0;
+        state.applyPenalty(recentGrid, 0, 100);
+        CHECK(recentGrid == 200);
+        for (int tile = 3; tile <= 50; ++tile)
+        {
+            state.recordSelection(1, tile);
+        }
+        double expiredGrid = 0;
+        state.applyPenalty(expiredGrid, 0, 100);
+        CHECK(expiredGrid == 0);
+    }
+}
 
 TEST_CASE("labDistance — identical colors")
 {
