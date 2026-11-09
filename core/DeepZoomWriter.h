@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "UnicodeIO.h"
+#include "RuntimeContext.h"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -21,9 +22,18 @@ public:
     static bool buildPyramid(const std::string& level0Dir,
                              int tileW, int tileH,
                              int cols, int rows,
-                             int quality)
+                             int quality, RuntimeContext *runtime = nullptr)
     {
         namespace fs = std::filesystem;
+        auto fail = [&](const std::string &message, const std::string &path)
+        {
+            if (runtime)
+            {
+                return runtime->fail("output_write_failed", message, "outputPath", path);
+            }
+            std::cerr << "ERROR: " << message << std::endl;
+            return false;
+        };
 
         fs::path sourceLevelPath = u8path(level0Dir);
         fs::path pyramidDir = sourceLevelPath.parent_path();
@@ -62,9 +72,7 @@ public:
         fs::rename(sourceLevelPath, sourceTilesDir, ec);
         if (ec)
         {
-            std::cerr << "ERROR: DeepZoom cannot prepare source tiles: "
-                      << ec.message() << std::endl;
-            return false;
+            return fail("DeepZoom cannot prepare source tiles: " + ec.message(), level0Dir);
         }
 
         for (int level = 0; level <= maxLevel; ++level)
@@ -74,9 +82,7 @@ public:
             fs::create_directories(levelDir, ec);
             if (ec)
             {
-                std::cerr << "ERROR: DeepZoom cannot create directory "
-                          << pathToUtf8(levelDir) << ": " << ec.message() << std::endl;
-                return false;
+                return fail("DeepZoom cannot create directory: " + ec.message(), pathToUtf8(levelDir));
             }
         }
 
@@ -179,8 +185,7 @@ public:
                     ++written;
                 else
                 {
-                    std::cerr << "ERROR: DeepZoom failed to write " << pathToUtf8(dst) << std::endl;
-                    return false;
+                    return fail("DeepZoom failed to write tile", pathToUtf8(dst));
                 }
             }
         }
@@ -223,8 +228,7 @@ public:
                         ++written;
                     else
                     {
-                        std::cerr << "ERROR: DeepZoom failed to write " << pathToUtf8(dst) << std::endl;
-                        return false;
+                        return fail("DeepZoom failed to write tile", pathToUtf8(dst));
                     }
                 }
             }
@@ -238,8 +242,7 @@ public:
         std::ofstream dzi(u8path(dziPath));
         if (!dzi)
         {
-            std::cerr << "ERROR: cannot open " << dziPath << std::endl;
-            return false;
+            return fail("DeepZoom cannot open file", dziPath);
         }
         dzi << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
         dzi << "<Image xmlns=\"http://schemas.microsoft.com/deepzoom/2008\"\n";
@@ -249,8 +252,11 @@ public:
         dzi.close();
         if (!dzi)
         {
-            std::cerr << "ERROR: failed to write " << dziPath << std::endl;
-            return false;
+            return fail("DeepZoom failed to write file", dziPath);
+        }
+        if (runtime)
+        {
+            runtime->artifact("manifest", "manifest", dziPath, "application/xml");
         }
         std::cout << "  DZI manifest: " << dziPath
                   << " (" << (maxLevel + 1) << " levels)" << std::endl;
@@ -259,8 +265,7 @@ public:
         std::ofstream html(u8path(htmlPath));
         if (!html)
         {
-            std::cerr << "ERROR: cannot open " << htmlPath << std::endl;
-            return false;
+            return fail("DeepZoom cannot open file", htmlPath);
         }
         html << R"(<!DOCTYPE html>
 <html lang="en">
@@ -332,8 +337,11 @@ public:
         html.close();
         if (!html)
         {
-            std::cerr << "ERROR: failed to write " << htmlPath << std::endl;
-            return false;
+            return fail("DeepZoom failed to write file", htmlPath);
+        }
+        if (runtime)
+        {
+            runtime->artifact("viewer", "report", htmlPath, "text/html; charset=utf-8");
         }
         std::cout << "  HTML viewer: " << htmlPath << std::endl;
         fs::remove_all(sourceTilesDir, ec);

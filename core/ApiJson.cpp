@@ -66,7 +66,8 @@ nlohmann::json runtimeSnapshotToJson(const RuntimeSnapshot &value)
             {"warnings", warnings},
             {"artifacts", artifacts},
             {"progress",
-             {{"stage", value.progress.stage}, {"updatedAt", value.progress.updatedAt}, {"activities", activities}}},
+             {{"stage", value.progress.stage}, {"startedAt", value.progress.startedAt},
+              {"updatedAt", value.progress.updatedAt}, {"activities", activities}}},
             {"runtime",
              {{"featureBackend", value.featureBackend},
               {"scoreBackend", value.scoreBackend},
@@ -114,6 +115,11 @@ nlohmann::json serviceResultToJson(const ServiceResult &result)
 nlohmann::json jobSnapshotToJson(const JobSnapshot &job, bool detail)
 {
     auto body = serviceResultToJson(job.result);
+    if (job.state != JobState::Failed)
+    {
+        // 排队、运行和取消不是业务失败；默认 ServiceResult 不能制造终止诊断。
+        body["diagnostic"] = diagnosticToJson(job.result.runtime.diagnostic);
+    }
     body.update({{"id", job.id},
                  {"type", job.type},
                  {"state", jobStateName(job.state)},

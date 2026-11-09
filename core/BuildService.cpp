@@ -88,10 +88,10 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
 {
     runtime.stage("validating");
     const auto commandStart = std::chrono::steady_clock::now();
-    std::string validationError;
-    if (!validateBuildRequest(request, validationError))
+    std::string validationError, validationField;
+    if (!validateBuildRequest(request, validationError, &validationField))
     {
-        return runtimeFailure(runtime, 1, validationError, "invalid_argument", "config");
+        return runtimeFailure(runtime, 1, validationError, "invalid_argument", validationField);
     }
     if (request.inputDir.empty())
     {
@@ -384,6 +384,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
                         }
                         if (!db.beginTransaction())
                         {
+                            runtime.fail("library_write_failed", "cannot begin build transaction", "dbPath", dbPath);
                             throw std::runtime_error("cannot begin build transaction");
                         }
                         for (size_t bi = 0; bi < recs.size(); ++bi)
@@ -398,16 +399,18 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
                             }
                             else
                             {
+                                runtime.fail("library_write_failed", "cannot insert image into library", "dbPath", dbPath);
                                 throw std::runtime_error("cannot insert image into library");
                             }
                         }
                         if (!db.commitTransaction())
                         {
+                            runtime.fail("library_write_failed", "cannot commit build transaction", "dbPath", dbPath);
                             throw std::runtime_error("cannot commit build transaction");
                         }
                         gpuDone += static_cast<int>(imgs.size());
                         int gd = gpuDone.load();
-                        runtime.advance("features", gd, files.size(), "images", true);
+                        runtime.advance("features", gd, -1, "images");
                         if (gd % 2000 == 0 || gd == static_cast<int>(files.size()))
                         {
                             std::cout << "\r  gpu feature " << gd << "/" << files.size() << std::flush;
@@ -647,6 +650,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
             }
         }
         std::cout << "  GPU done: " << gpuDone.load() << std::endl;
+        runtime.advance("features", gpuDone.load(), gpuDone.load(), "images", true);
     }
 
     if (!gpuOk && !request.normalizeOnly)
@@ -677,6 +681,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
                          "Generic CUDA resources unavailable; using CPU before extraction.");
             std::cout << "  Generic CUDA resources unavailable; using CPU before extraction." << std::endl;
         }
+        runtime.backends(compatibleReady ? "compatible_cuda" : "cpu", "none");
         for (size_t first = 0; first < files.size(); first += batchLimit)
         {
             const size_t count = std::min(batchLimit, files.size() - first);
@@ -849,7 +854,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
                 // SQL 只在调用线程执行；失败回滚整批，提交后才增加已入库数量。
                 if (!db.beginTransaction())
                 {
-                    return runtimeFailure(runtime, 2, "cannot begin CPU build transaction", "usage_commit_failed",
+                    return runtimeFailure(runtime, 2, "cannot begin CPU build transaction", "library_write_failed",
                                           "dbPath", dbPath);
                 }
                 bool written = true;
@@ -865,7 +870,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
                 {
                     db.rollbackTransaction();
                     return runtimeFailure(runtime, 2, "cannot commit CPU build batch; transaction rolled back",
-                                          "usage_commit_failed", "dbPath", dbPath);
+                                          "library_write_failed", "dbPath", dbPath);
                 }
                 inserted += batchCount;
             }

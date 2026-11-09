@@ -1,4 +1,5 @@
 #include "FeaturePack.h"
+#include "RuntimeContext.h"
 #include "UnicodeIO.h"
 #include "WorkerPool.h"
 
@@ -423,6 +424,8 @@ struct FeaturePack::Reader::Impl
     const std::vector<ImageRecord> &records;
     size_t budget;
     ReadStats statistics;
+    RuntimeContext *runtime = nullptr;
+    std::vector<bool> reportedMissing;
     Manifest manifest;
     std::vector<Metadata> metadata;
     std::vector<int> positions;
@@ -705,9 +708,15 @@ struct FeaturePack::Reader::Impl
     }
 };
 
-FeaturePack::Reader::Reader(const std::string &directory, const std::vector<ImageRecord> &records, size_t budget)
+FeaturePack::Reader::Reader(const std::string &directory, const std::vector<ImageRecord> &records, size_t budget,
+                            RuntimeContext *runtime)
     : m_impl(std::make_unique<Impl>(directory, records, budget))
 {
+    m_impl->runtime = runtime;
+    if (runtime)
+    {
+        m_impl->reportedMissing.resize(records.size());
+    }
 }
 FeaturePack::Reader::~Reader() = default;
 void FeaturePack::Reader::prepare(const std::vector<int> &candidates)
@@ -716,7 +725,16 @@ void FeaturePack::Reader::prepare(const std::vector<int> &candidates)
 }
 const FeaturePack::Reader::Row &FeaturePack::Reader::get(int index)
 {
-    return m_impl->get(index);
+    const auto &row = m_impl->get(index);
+    if (m_impl->runtime && (!row.tinyValid || !row.lbpValid) && !m_impl->reportedMissing[index])
+    {
+        // 每条素材只诊断一次；复用读取结果，不额外读取特征或逐候选分配去重节点。
+        m_impl->reportedMissing[index] = true;
+        const auto &record = m_impl->records[index];
+        m_impl->runtime->emit("warning", "feature_missing", "missing features retain the existing matching penalty",
+                              "dbPath", !row.tinyValid ? record.tinyPath : record.histPath);
+    }
+    return row;
 }
 const FeaturePack::Reader::ReadStats &FeaturePack::Reader::stats() const
 {

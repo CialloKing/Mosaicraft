@@ -568,6 +568,7 @@ TEST_CASE("analysis preserves usage commit boundaries after saving the mosaic")
     const auto reportDir = workspace.outputDir() / "mosaic_analysis";
     bool commits = true;
     bool succeeds = true;
+    std::string failureCode;
 
     SUBCASE("analysis disabled")
     {
@@ -585,7 +586,17 @@ TEST_CASE("analysis preserves usage commit boundaries after saving the mosaic")
         std::ofstream(reportDir / "freq_rank").put('x');
         commits = false;
     }
-    SUBCASE("HTML cannot open but usage still commits") { fs::create_directories(reportDir / "report.html"); }
+    SUBCASE("HTML cannot open but usage still commits")
+    {
+        fs::create_directories(reportDir / "report.html");
+    }
+    SUBCASE("preview fails after the main file closes")
+    {
+        request.config.generatePreview = true;
+        fs::create_directory(workspace.outputDir() / "mosaic_preview.jpg");
+        commits = succeeds = false;
+        failureCode = "preview_write_failed";
+    }
     SUBCASE("usage transaction fails after output is saved")
     {
         REQUIRE(Database(request.dbPath).initUsageStats());
@@ -599,11 +610,18 @@ TEST_CASE("analysis preserves usage commit boundaries after saving the mosaic")
         REQUIRE(result == SQLITE_OK);
         commits = false;
         succeeds = false;
+        failureCode = "usage_commit_failed";
     }
 
     const auto result = MosaicService().run(request);
     CHECK(result.ok == succeeds);
     CHECK(fs::exists(workspace.mosaicPath()));
+    REQUIRE_FALSE(result.runtime.artifacts.empty());
+    CHECK(result.runtime.artifacts.front().id == "main");
+    if (fs::is_directory(reportDir / "report.html"))
+    {
+        CHECK(result.runtime.warnings.count("analysis_write_failed") == 1);
+    }
     int used = 0;
     for (const auto &[id, runs, tiles] : Database(request.dbPath).topUsedImages(100))
     {
@@ -612,7 +630,7 @@ TEST_CASE("analysis preserves usage commit boundaries after saving the mosaic")
     CHECK(used == (commits ? 4 : 0));
     if (!succeeds)
     {
-        CHECK(result.message == "mosaic output saved, but usage statistics could not be committed");
+        CHECK(result.runtime.diagnostic.code == failureCode);
     }
 }
 
@@ -2121,7 +2139,9 @@ TEST_CASE("matching batches preserve seeded choices, padding and empty batches")
                                        true, 123);
             std::vector<int> selected;
             MatchingAccess::captureSelections(engine, selected);
-            REQUIRE(engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config));
+            RuntimeContext runtime(batch == 1);
+            REQUIRE(engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config, runtime));
+            CHECK(runtime.snapshot().warnings.count("feature_missing") == 1);
             const auto pixels = imreadUnicode(request.outputPath);
             std::ifstream encoded(u8path(request.outputPath), std::ios::binary);
             const std::string bytes(std::istreambuf_iterator<char>(encoded), {});

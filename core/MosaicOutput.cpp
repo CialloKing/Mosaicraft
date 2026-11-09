@@ -161,6 +161,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
         if (config.tiledOutput)
         {
             const auto start = now();
+            std::atomic<size_t> completed{0};
             const auto folder = path + "_files/0";
             std::filesystem::create_directories(u8path(folder));
             pool.run(count,
@@ -177,6 +178,10 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
                              }
                          }
                          finish(i);
+                         if (runtime)
+                         {
+                             runtime->advance("tiles", ++completed, count, "tiles");
+                         }
                      });
             if (runtime)
             {
@@ -188,7 +193,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
                 {
                     runtime->stage("building_pyramid");
                 }
-                if (!DeepZoomWriter::buildPyramid(folder, tileW, tileH, tilesX, tilesY, config.jpegQuality))
+                if (!DeepZoomWriter::buildPyramid(folder, tileW, tileH, tilesX, tilesY, config.jpegQuality, runtime))
                 {
                     throw std::runtime_error("DeepZoom pyramid or manifest could not be written");
                 }
@@ -538,13 +543,13 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &p
     }
     catch (const std::exception &error)
     {
-        if (runtime)
+        if (runtime && runtime->snapshot().diagnostic.code.empty())
         {
             runtime->fail(runtime->snapshot().progress.stage == "writing_preview" ? "preview_write_failed"
                                                                                   : "output_write_failed",
                           error.what(), "outputPath", stats.path.empty() ? path : stats.path);
         }
-        else
+        else if (!runtime)
         {
             std::cerr << "ERROR: output failed: " << error.what() << std::endl;
         }

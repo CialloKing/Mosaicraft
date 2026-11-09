@@ -44,6 +44,7 @@ void RuntimeContext::stage(const std::string &name) noexcept
                 return;
             }
             m_snapshot.progress = {name, {}, nowMs()};
+            m_snapshot.progress.startedAt = m_snapshot.progress.updatedAt;
             m_lastProgress.clear();
         }
         emit("info", "stage_started", name);
@@ -110,6 +111,10 @@ void RuntimeContext::emit(const std::string &severity, const std::string &code, 
             }
             if (severity == "warning")
             {
+                if (code == "cuda_resource_fallback" || code == "cuda_unavailable")
+                {
+                    m_snapshot.fallbackReason = event.message;
+                }
                 m_snapshot.warningCount += count;
                 // 原因码由生产端的有限集合提供；路径样例独立限量。
                 auto &summary = m_snapshot.warnings[event.code];
@@ -132,7 +137,8 @@ void RuntimeContext::emit(const std::string &severity, const std::string &code, 
         }
         if (m_console && severity != "info")
         {
-            std::cerr << (severity == "error" ? "ERROR: " : "WARN: ") << event.message << std::endl;
+            std::cerr << (severity == "error" ? "ERROR: [" : "WARN: [") << event.code << "] " << event.message
+                      << std::endl;
         }
     }
     catch (...)

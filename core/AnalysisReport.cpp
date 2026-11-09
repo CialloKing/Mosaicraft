@@ -345,6 +345,13 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
         }
         return {};
     }
+    auto writeImage = [&](const std::string &path, const cv::Mat &image)
+    {
+        if (!imwriteUnicode(path, image) && runtime)
+        {
+            runtime->emit("warning", "analysis_write_failed", "cannot write report image", {}, path);
+        }
+    };
     int exported = 0;
     for (const auto &[cnt, id] : topUsed)
     {
@@ -362,7 +369,7 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
                     std::string normFile = std::filesystem::path(allRecords[i].filePath).filename().string();
                     std::string fn = freqDir + "/rank" + (exported + 1 < 10 ? "0" : "") + std::to_string(exported + 1) +
                                      "_" + std::to_string(cnt) + "x_id" + std::to_string(id) + "_" + normFile;
-                    imwriteUnicode(fn, img);
+                    writeImage(fn, img);
                     exported++;
                 }
                 break;
@@ -389,14 +396,14 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
                          : (sample < static_cast<int>(analyzeCat.size()) && analyzeCat[sample] == 2) ? "T"
                                                                                                      : "N";
         snprintf(fname, sizeof(fname), "%s/worst_%02d_s%.4f_%s_tile.png", anaDir.c_str(), k, worstIdx[k].first, cn);
-        imwriteUnicode(fname, tileBig);
+        writeImage(fname, tileBig);
         if (selected[ti] >= 0 && !allRecords[selected[ti]].filePath.empty())
         {
             cv::Mat match = imreadUnicode(allRecords[selected[ti]].filePath, cv::IMREAD_COLOR);
             if (!match.empty())
             {
                 snprintf(fname, sizeof(fname), "%s/worst_%02d_match.png", anaDir.c_str(), k);
-                imwriteUnicode(fname, match);
+                writeImage(fname, match);
             }
         }
     }
@@ -447,9 +454,16 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
             rpt << "  Cause: " << cause << "\n";
         }
         rpt.close();
-        if (runtime && rpt)
+        if (runtime)
         {
-            runtime->artifact("analysis-text", "report", rptPath, "text/plain; charset=utf-8");
+            if (rpt)
+            {
+                runtime->artifact("analysis-text", "report", rptPath, "text/plain; charset=utf-8");
+            }
+            else
+            {
+                runtime->emit("warning", "analysis_write_failed", "cannot write text report", {}, rptPath);
+            }
         }
         std::cout << "  Diagnosis report: " << rptPath << "\n";
     }
@@ -504,7 +518,7 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
             cv::resize(heat, heat, cv::Size(newW, newH), 0, 0, cv::INTER_NEAREST);
         }
     }
-    imwriteUnicode(heatPath, heat);
+    writeImage(heatPath, heat);
     std::cout << "  Heatmap: " << heatPath << "\n";
 
     std::string htmlPath = anaDir + "/report.html";
@@ -662,6 +676,12 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
             runtime->artifact("analysis-html", "report", htmlPath, "text/html; charset=utf-8");
         }
         std::cout << "  HTML report: " << htmlPath << "\n";
+    }
+
+    if (runtime && !html)
+    {
+        // 报告写入失败仍沿用原先的尽力生成和使用统计提交规则。
+        runtime->emit("warning", "analysis_write_failed", "cannot write HTML report", {}, htmlPath);
     }
 
     // 仅原实现到达提交点时返回计数；提前退出仍不更新图库使用统计。

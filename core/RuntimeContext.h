@@ -29,6 +29,7 @@ struct ProgressSnapshot
     std::string stage;
     std::vector<ProgressActivity> activities;
     int64_t updatedAt = 0;
+    int64_t startedAt = 0;
 };
 
 struct Artifact

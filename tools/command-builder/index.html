@@ -1241,6 +1241,8 @@ const DIAGNOSTIC_HINTS = {
   output_write_failed: '检查输出位置、磁盘空间和访问权限。', preview_write_failed: '预览写入失败；若主图已保存，可从下方结果中下载。',
   analysis_write_failed: '分析报告未完整写出，请检查报告目录和访问权限。', usage_commit_failed: '使用统计未提交；已保存的主图仍可使用。',
   source_skipped: '部分素材无法处理，已按原规则跳过。', output_tile_missing: '部分素材无法贴入，相关位置保留背景。',
+  feature_missing: '部分素材特征缺失，匹配继续沿用缺失特征惩罚。请通过建库刷新图库。',
+  library_write_failed: '图库写入或事务提交失败，请检查磁盘空间和数据库访问权限。',
   artifact_changed: '文件已被其他操作改写，不能再作为此任务的原始结果下载。',
   feature_cache_failed: '特征缓存未能写入，请检查图库目录和访问权限。'
 };
@@ -1252,6 +1254,7 @@ function renderTaskProgress(job) {
   if (!progress) return '<p class="hint">旧版服务仅提供基本任务状态。</p>';
   let html = '<div class="task-progress"><strong>当前阶段：' + escapeHtml(STAGE_LABELS[progress.stage] || progress.stage || '等待执行') + '</strong>';
   const terminal = !['running', 'queued'].includes(job.state);
+  if (job.state === 'running' && progress.startedAt) html += ' · 阶段运行 ' + Math.max(0, Math.floor((Date.now() - progress.startedAt) / 1000)) + 's';
   if (!progress.activities.length && !terminal && job.state === 'running') html += '<progress aria-label="阶段处理中"></progress>';
   for (const item of progress.activities) {
     const label = { normalization: '归一化（含跳过）', features: '特征处理（含跳过）', matching: '匹配', output_rows: '输出行', tiles: '输出小块' }[item.id] || item.id;
@@ -1293,7 +1296,7 @@ function renderTaskArea() {
   if (!list) return;
   list.innerHTML = taskStore.jobs.length ? taskStore.jobs.map(job => '<button class="task-item' + (job.id === taskStore.selectedId ? ' selected' : '') + '" data-job-id="' + escapeAttr(job.id) + '"><strong>' +
     escapeHtml(jobTypeLabel(job.type)) + ' · ' + escapeHtml(job.id) + '</strong><br>' + escapeHtml(({queued:'等待中',running:'运行中',succeeded:'已完成',failed:'失败',canceled:'已取消'})[job.state] || job.state) +
-    ' · ' + escapeHtml(renderJobTiming(job)) + (job.warningCount ? ' · 警告 ' + Number(job.warningCount) : '') + '</button>').join('') : '<p class="hint">暂无任务。提交后可在这里持续跟踪。</p>';
+    ' · ' + escapeHtml(renderJobTiming(job)) + (job.progress && job.progress.stage ? ' · ' + escapeHtml(STAGE_LABELS[job.progress.stage] || job.progress.stage) : '') + (job.warningCount ? ' · 警告 ' + Number(job.warningCount) : '') + '</button>').join('') : '<p class="hint">暂无任务。提交后可在这里持续跟踪。</p>';
   document.getElementById('task-note').textContent = taskStore.note;
   const job = taskStore.detail;
   const cancel = document.getElementById('btn-cancel-job');
@@ -1533,7 +1536,7 @@ function renderTaskArtifacts(job) {
   if (main && job.state === 'failed') html += '<p class="saved-main">主图已保存；任务后续阶段失败，详情见上方诊断。</p>';
   if (job.runtime && job.runtime.width > 0) html += '<p>' + escapeHtml(job.runtime.format.toUpperCase()) + ' · ' + job.runtime.width + ' × ' + job.runtime.height + ' · 成功小块 ' + job.runtime.matched + ' · 缺失 ' + job.runtime.failed + '</p>';
   for (const item of job.artifacts) {
-    const name = {main:'主图',preview:'预览',library:'图库',tiles:'输出目录','library-directory':'图库目录',normalized:'归一化目录','analysis-text':'分析文本','analysis-html':'HTML 报告'}[item.id] || item.id;
+    const name = {main:'主图',preview:'预览',library:'图库',tiles:'输出目录',manifest:'DeepZoom 清单',viewer:'DeepZoom 查看页','library-directory':'图库目录',normalized:'归一化目录','analysis-text':'分析文本','analysis-html':'HTML 报告'}[item.id] || item.id;
     html += renderJobPath(name, item.path, '复制路径');
     if (!item.directory) html += '<button class="btn btn-secondary btn-inline" data-artifact-id="' + escapeAttr(item.id) + '">下载' + escapeHtml(name) + '</button>';
   }

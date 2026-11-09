@@ -49,7 +49,10 @@ inline ServiceResult runtimeFailure(RuntimeContext &runtime, int exitCode, const
                                     const std::string &code = "operation_failed", const std::string &field = {},
                                     const std::string &path = {})
 {
-    runtime.fail(code, message, field, path);
+    if (runtime.snapshot().diagnostic.code.empty())
+    {
+        runtime.fail(code, message, field, path);
+    }
     return ServiceResult::failure(exitCode, message);
 }
 

@@ -376,6 +376,14 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         {
             std::cout << "  (validated feature cache miss, using source files)" << std::endl;
         }
+        for (int i = 0; i < dbCount; ++i)
+        {
+            if (!tinyValid[i] || !lbpValid[i])
+            {
+                runtime.emit("warning", "feature_missing", "missing features retain the existing matching penalty",
+                             "dbPath", !tinyValid[i] ? allRecords[i].tinyPath : allRecords[i].histPath);
+            }
+        }
         if (cuda::uploadLibrary(gpuLib, h_lab.data(), h_grid.data(), h_tiny.data(), h_edge.data(), h_lbp.data(),
                                 h_use.data(), dbCount, cfg.benchmark ? &metrics.libraryTimings : nullptr, tinyValid.data(),
                                 lbpValid.data()))
@@ -752,7 +760,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         {
             const auto readStart = Clock::now();
             featureReader = std::make_unique<FeaturePack::Reader>(templateCuda ? std::string() : featDirCache, allRecords,
-                                                                  m_limits.featureBytes);
+                                                                  m_limits.featureBytes, templateCuda ? nullptr : &runtime);
             if (!templateCuda)
             {
                 metrics.msCPUFeatures += Ms(Clock::now() - readStart).count();
@@ -910,7 +918,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         {
                             std::ostringstream detail;
                             detail << "GPU feature extraction failed.";
-                            runtime.fail("library_incompatible", detail.str(), "dbPath", dbPath);
+                            runtime.fail("cuda_execution_failed", detail.str());
                         }
                         return false;
                     }
@@ -1600,6 +1608,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     if (noCandidateCount)
     {
         std::cout << "  " << noCandidateCount << " tiles had no candidates\n";
+        runtime.emit("warning", "no_candidates", "some tiles had no candidates and retained the existing background",
+                     "lRange", {}, noCandidateCount);
     }
     if (!cfg.analyze && cfg.overlayStrength == 0)
     {

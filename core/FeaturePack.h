@@ -9,6 +9,7 @@
 
 namespace mosaicraft
 {
+class RuntimeContext;
 // Cache is an acceleration layer; missing source features retain their validity flags.
 class FeaturePack
 {
@@ -36,7 +37,7 @@ class FeaturePack
             bool preloaded = false;
         };
         Reader(const std::string &directory, const std::vector<ImageRecord> &records,
-               size_t budget = 256ULL * 1024 * 1024);
+               size_t budget = 256ULL * 1024 * 1024, RuntimeContext *runtime = nullptr);
         ~Reader();
         Reader(const Reader &) = delete;
         Reader &operator=(const Reader &) = delete;

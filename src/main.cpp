@@ -67,7 +67,7 @@ static bool readOptionValue(int argc, char* argv[], int& i, const std::string& o
 {
     if (i + 1 >= argc || isKnownOptionToken(argv[i + 1]))
     {
-        std::cerr << "ERROR: " << option << " requires a value." << std::endl;
+        std::cerr << "ERROR: [invalid_argument] " << option << " requires a value." << std::endl;
         return false;
     }
     value = argv[++i];
@@ -83,7 +83,7 @@ static bool readOptionInt(int argc, char* argv[], int& i, const std::string& opt
     char* end = nullptr;
     long v = std::strtol(raw, &end, 10);
     if (errno == ERANGE || end == raw || *end != '\0' || v < INT_MIN || v > INT_MAX) {
-        std::cerr << "ERROR: " << option << " expects an integer, got: " << raw << std::endl;
+        std::cerr << "ERROR: [invalid_argument] " << option << " expects an integer, got: " << raw << std::endl;
         return false;
     }
     out = static_cast<int>(v);
@@ -99,7 +99,7 @@ static bool readOptionDouble(int argc, char* argv[], int& i, const std::string& 
     double v = std::strtod(raw, &end);
     if (errno == ERANGE || end == raw || *end != '\0' || !std::isfinite(v))
     {
-        std::cerr << "ERROR: " << option << " expects a number, got: " << raw << std::endl;
+        std::cerr << "ERROR: [invalid_argument] " << option << " expects a number, got: " << raw << std::endl;
         return false;
     }
     out = v;
@@ -266,13 +266,13 @@ static int cmdBuild(int argc, char* argv[])
                 if (errno == ERANGE || endW == val || *endW != 'x' ||
                     endH == sep + 1 || *endH != '\0' ||
                     w <= 0 || h <= 0 || w > INT_MAX || h > INT_MAX) {
-                    std::cerr << "ERROR: --normalize-size expected WxH format (e.g. 180x320), got: " << val << std::endl;
+                    std::cerr << "ERROR: [invalid_argument] --normalize-size expected WxH format (e.g. 180x320), got: " << val << std::endl;
                     return 1;
                 }
                 normW = static_cast<int>(std::max<long>(1, w));
                 normH = static_cast<int>(std::max<long>(1, h));
             } else {
-                std::cerr << "ERROR: --normalize-size expected WxH format (e.g. 180x320), got: " << val << std::endl;
+                std::cerr << "ERROR: [invalid_argument] --normalize-size expected WxH format (e.g. 180x320), got: " << val << std::endl;
                 return 1;
             }
         }
@@ -298,7 +298,7 @@ static int cmdBuild(int argc, char* argv[])
 
     if (inputDir.empty())
     {
-        std::cerr << "ERROR: --input is required for build." << std::endl;
+        std::cerr << "ERROR: [invalid_argument] --input is required for build." << std::endl;
         return 1;
     }
 
@@ -463,7 +463,7 @@ static int cmdMosaic(int argc, char* argv[])
             if (mode == "auto" || mode == "stream" || mode == "batch")
                 cfg.writeMode = mode;
             else {
-                std::cerr << "ERROR: --write-mode must be auto|stream|batch, got: " << mode << std::endl;
+                std::cerr << "ERROR: [invalid_argument] --write-mode must be auto|stream|batch, got: " << mode << std::endl;
                 return 1;
             }
         }
@@ -508,13 +508,13 @@ static int cmdMosaic(int argc, char* argv[])
                 long h = std::strtol(sep + 1, &endH, 10);
                 if (errno == ERANGE || endW != sep || endH == sep + 1 || *endH != '\0' ||
                     w < 1 || w > INT_MAX || h < 1 || h > INT_MAX) {
-                    std::cerr << "ERROR: --output-tile expected WxH format (e.g. 180x320), got: " << val << std::endl;
+                    std::cerr << "ERROR: [invalid_argument] --output-tile expected WxH format (e.g. 180x320), got: " << val << std::endl;
                     return 1;
                 }
                 cfg.nativeTileW = static_cast<int>(w);
                 cfg.nativeTileH = static_cast<int>(h);
             } else {
-                std::cerr << "ERROR: --output-tile expected WxH format (e.g. 180x320), got: " << val << std::endl;
+                std::cerr << "ERROR: [invalid_argument] --output-tile expected WxH format (e.g. 180x320), got: " << val << std::endl;
                 return 1;
             }
         }
@@ -604,7 +604,7 @@ static int cmdMosaic(int argc, char* argv[])
 
     if (inputPath.empty())
     {
-        std::cerr << "ERROR: --input is required for mosaic." << std::endl;
+        std::cerr << "ERROR: [invalid_argument] --input is required for mosaic." << std::endl;
         return 1;
     }
 
@@ -620,7 +620,7 @@ static int cmdMosaic(int argc, char* argv[])
     // 输出路径校验：拒绝已存在的目录，提示应为文件路径
     std::error_code ec;
     if (!outputPath.empty() && fs::is_directory(u8path(outputPath), ec)) {
-        std::cerr << "ERROR: -o is a directory, not a file path: " << outputPath << std::endl;
+        std::cerr << "ERROR: [invalid_argument] -o is a directory, not a file path: " << outputPath << std::endl;
         std::cerr << "  Hint: append a filename, e.g. " << outputPath << "/output.jpg" << std::endl;
         std::cerr << "  Note: --format overrides the file extension from -o" << std::endl;
         return 1;

@@ -74,7 +74,12 @@ static ServiceResult runMosaic(const MosaicRequest &request, RuntimeContext &run
     {
         if (runtime.snapshot().diagnostic.code.empty())
         {
-            runtime.fail(runtime.snapshot().progress.stage == "matching" ? "cuda_execution_failed" : "internal_error",
+            const auto snapshot = runtime.snapshot();
+            const bool cudaMatching = snapshot.progress.stage == "matching" &&
+                (snapshot.featureBackend.find("cuda") != std::string::npos ||
+                 snapshot.scoreBackend.find("cuda") != std::string::npos);
+            runtime.fail(cudaMatching ? "cuda_execution_failed"
+                         : snapshot.progress.stage == "analyzing" ? "analysis_write_failed" : "internal_error",
                          exception.what());
         }
         return ServiceResult::failure(1, exception.what());

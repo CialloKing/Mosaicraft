@@ -65,6 +65,7 @@ TEST_CASE("job session history is bounded without removing queued jobs")
     JobManager jobs(false), another(false);
     CHECK(jobs.sessionId() != another.sessionId());
     const auto queued = jobs.submitMosaic(MosaicRequest{});
+    CHECK(apiGetJob(queued, jobs).body["job"]["diagnostic"].is_null());
     std::string first;
     for (int i = 0; i < 53; ++i)
     {
