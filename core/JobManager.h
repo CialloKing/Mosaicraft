@@ -34,6 +34,7 @@ struct JobSnapshot
     ServiceResult result;
     std::string inputPath;
     std::string outputPath;
+    std::string requestJson;
     std::chrono::system_clock::time_point createdAt;
     std::chrono::system_clock::time_point startedAt;
     std::chrono::system_clock::time_point finishedAt;
@@ -55,16 +56,23 @@ public:
     std::vector<JobSnapshot> listJobs() const;
     bool cancelQueuedJob(const std::string& id, JobSnapshot& out);
     int clearFinishedJobs();
+    bool getEvents(const std::string &id, uint64_t after, size_t limit, EventPage &out) const;
+    const std::string &sessionId() const
+    {
+        return m_sessionId;
+    }
 
 private:
     struct JobRecord
     {
         JobSnapshot snapshot;
+        std::shared_ptr<RuntimeContext> runtime = std::make_shared<RuntimeContext>();
         MosaicRequest request;
         BuildRequest buildRequest;
     };
 
     std::string nextId();
+    void trimFinishedJobs();
     void workerLoop();
     void runMosaicJob(const std::string& id);
     void runBuildJob(const std::string& id);
@@ -77,6 +85,7 @@ private:
     bool m_stopping = false;
     std::thread m_worker;
     uint64_t m_nextId = 1;
+    std::string m_sessionId;
 };
 
 const char* jobStateName(JobState state);

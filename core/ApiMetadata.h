@@ -4,6 +4,11 @@
 #include <unordered_map>
 #include <vector>
 
+// Windows spooler headers also define GetJob; API operation names are platform independent.
+#ifdef GetJob
+#undef GetJob
+#endif
+
 namespace mosaicraft
 {
 
@@ -19,6 +24,8 @@ enum class ApiOperation
     ListJobs,
     ClearFinishedJobs,
     GetJob,
+    GetJobEvents,
+    GetJobArtifact,
     CancelJob,
     DatabaseStats,
     DatabaseHealth,
@@ -34,6 +41,8 @@ enum class ApiRequestShape
     Body,
     Query,
     JobId,
+    JobQuery,
+    JobArtifact,
     LegacyCommand
 };
 

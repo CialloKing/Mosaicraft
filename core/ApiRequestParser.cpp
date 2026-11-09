@@ -576,6 +576,10 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         }
     }
 
+    if (getBoolField(values, keysFor(aliases, "generatePreview"), boolValue, error))
+    {
+        cfg.generatePreview = boolValue;
+    }
     if (getBoolField(values, keysFor(aliases, "useGpu"), boolValue, error))
     {
         cfg.useGpu = boolValue;

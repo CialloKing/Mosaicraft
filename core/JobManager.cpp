@@ -1,4 +1,7 @@
 ﻿#include "JobManager.h"
+#include "ApiJson.h"
+#include <algorithm>
+#include <random>
 
 #include <exception>
 #include <iomanip>
@@ -36,6 +39,14 @@ JobManager::~JobManager()
 
 JobManager::JobManager(bool autoStartWorker)
 {
+    std::random_device random;
+    std::ostringstream session;
+    session << std::hex;
+    for (int i = 0; i < 4; ++i)
+    {
+        session << std::setw(8) << std::setfill('0') << random();
+    }
+    m_sessionId = session.str();
     if (autoStartWorker)
     {
         m_worker = std::thread([this]() { workerLoop(); });
@@ -48,6 +59,8 @@ std::string JobManager::submitMosaic(MosaicRequest request)
     record->request = std::move(request);
     record->snapshot.id = nextId();
     record->snapshot.type = "mosaic";
+    record->snapshot.requestJson = mosaicRequestToJson(record->request).dump();
+    record->runtime->stage("queued");
     record->snapshot.state = JobState::Queued;
     record->snapshot.inputPath = record->request.inputPath;
     record->snapshot.outputPath = record->request.outputPath;
@@ -69,6 +82,8 @@ std::string JobManager::submitBuild(BuildRequest request)
     record->buildRequest = std::move(request);
     record->snapshot.id = nextId();
     record->snapshot.type = "build";
+    record->snapshot.requestJson = buildRequestToJson(record->buildRequest).dump();
+    record->runtime->stage("queued");
     record->snapshot.state = JobState::Queued;
     record->snapshot.inputPath = record->buildRequest.inputDir;
     record->snapshot.outputPath = record->buildRequest.outputDir;
@@ -84,12 +99,36 @@ std::string JobManager::submitBuild(BuildRequest request)
     return record->snapshot.id;
 }
 
-bool JobManager::getJob(const std::string& id, JobSnapshot& out) const
+bool JobManager::getJob(const std::string &id, JobSnapshot &out) const
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    auto it = m_jobs.find(id);
-    if (it == m_jobs.end()) return false;
-    out = it->second->snapshot;
+    std::shared_ptr<RuntimeContext> runtime;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const auto found = m_jobs.find(id);
+        if (found == m_jobs.end())
+        {
+            return false;
+        }
+        out = found->second->snapshot;
+        runtime = found->second->runtime;
+    }
+    out.result.runtime = runtime->snapshot();
+    return true;
+}
+
+bool JobManager::getEvents(const std::string &id, uint64_t after, size_t limit, EventPage &out) const
+{
+    std::shared_ptr<RuntimeContext> runtime;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const auto found = m_jobs.find(id);
+        if (found == m_jobs.end())
+        {
+            return false;
+        }
+        runtime = found->second->runtime;
+    }
+    out = runtime->events(after, limit);
     return true;
 }
 
@@ -111,14 +150,53 @@ bool JobManager::waitJob(const std::string& id, JobSnapshot& out)
 
 std::vector<JobSnapshot> JobManager::listJobs() const
 {
-    std::vector<JobSnapshot> jobs;
-    std::lock_guard<std::mutex> lock(m_mutex);
-    jobs.reserve(m_jobs.size());
-    for (const auto& item : m_jobs)
+    std::vector<std::string> ids;
     {
-        jobs.push_back(item.second->snapshot);
+        std::lock_guard<std::mutex> lock(m_mutex);
+        for (const auto &entry : m_jobs)
+        {
+            ids.push_back(entry.first);
+        }
     }
+    std::vector<JobSnapshot> jobs;
+    for (const auto &id : ids)
+    {
+        JobSnapshot snapshot;
+        if (getJob(id, snapshot))
+        {
+            snapshot.requestJson.clear();
+            jobs.push_back(std::move(snapshot));
+        }
+    }
+    std::sort(jobs.begin(), jobs.end(),
+              [](const auto &left, const auto &right)
+              {
+                  return left.createdAt != right.createdAt ? left.createdAt > right.createdAt : left.id > right.id;
+              });
     return jobs;
+}
+
+void JobManager::trimFinishedJobs()
+{
+    // 调用方持有任务锁；只移除内存记录，不访问或删除产物。
+    std::vector<std::shared_ptr<JobRecord>> finished;
+    for (const auto &entry : m_jobs)
+    {
+        const auto state = entry.second->snapshot.state;
+        if (state != JobState::Queued && state != JobState::Running)
+        {
+            finished.push_back(entry.second);
+        }
+    }
+    std::sort(finished.begin(), finished.end(),
+              [](const auto &left, const auto &right)
+              {
+                  return left->snapshot.finishedAt > right->snapshot.finishedAt;
+              });
+    for (size_t i = 50; i < finished.size(); ++i)
+    {
+        m_jobs.erase(finished[i]->snapshot.id);
+    }
 }
 
 bool JobManager::cancelQueuedJob(const std::string& id, JobSnapshot& out)
@@ -146,7 +224,10 @@ bool JobManager::cancelQueuedJob(const std::string& id, JobSnapshot& out)
     record->snapshot.state = JobState::Canceled;
     record->snapshot.result = ServiceResult::failure(1, "job canceled");
     record->snapshot.finishedAt = std::chrono::system_clock::now();
+    record->runtime->stage("canceled");
+    record->snapshot.result.runtime = record->runtime->snapshot();
     out = record->snapshot;
+    trimFinishedJobs();
     m_cv.notify_all();
     return true;
 }
@@ -223,6 +304,7 @@ void JobManager::workerLoop()
 void JobManager::runMosaicJob(const std::string& id)
 {
     MosaicRequest request;
+    std::shared_ptr<RuntimeContext> runtime;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_jobs.find(id);
@@ -233,13 +315,14 @@ void JobManager::runMosaicJob(const std::string& id)
             return;
         }
         request = record->request;
+        runtime = record->runtime;
     }
 
     ServiceResult result;
     try
     {
         MosaicService service;
-        result = service.run(request);
+        result = service.run(request, *runtime);
     }
     catch (const std::exception& e)
     {
@@ -250,12 +333,13 @@ void JobManager::runMosaicJob(const std::string& id)
         result = ServiceResult::failure(1, "internal error");
     }
 
-    finishJob(id, result);
+    finishJob(id, runtimeResult(std::move(result), *runtime));
 }
 
 void JobManager::runBuildJob(const std::string& id)
 {
     BuildRequest request;
+    std::shared_ptr<RuntimeContext> runtime;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_jobs.find(id);
@@ -266,13 +350,14 @@ void JobManager::runBuildJob(const std::string& id)
             return;
         }
         request = record->buildRequest;
+        runtime = record->runtime;
     }
 
     ServiceResult result;
     try
     {
         BuildService service;
-        result = service.run(request);
+        result = service.run(request, *runtime);
     }
     catch (const std::exception& e)
     {
@@ -283,7 +368,7 @@ void JobManager::runBuildJob(const std::string& id)
         result = ServiceResult::failure(1, "internal error");
     }
 
-    finishJob(id, result);
+    finishJob(id, runtimeResult(std::move(result), *runtime));
 }
 
 void JobManager::finishJob(const std::string& id, const ServiceResult& result)
@@ -296,6 +381,7 @@ void JobManager::finishJob(const std::string& id, const ServiceResult& result)
         record->snapshot.result = result;
         record->snapshot.state = result.ok ? JobState::Succeeded : JobState::Failed;
         record->snapshot.finishedAt = std::chrono::system_clock::now();
+        trimFinishedJobs();
     }
     m_cv.notify_all();
 }

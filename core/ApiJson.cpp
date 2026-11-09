@@ -21,30 +21,179 @@ int64_t toUnixSeconds(const std::chrono::system_clock::time_point& time)
 
 } // namespace
 
-nlohmann::json serviceResultToJson(const ServiceResult& result)
+nlohmann::json diagnosticToJson(const Diagnostic &item)
 {
+    if (item.code.empty())
+    {
+        return nullptr;
+    }
     return {
-        {"ok", result.ok},
-        {"exitCode", result.exitCode},
-        {"message", result.message}
-    };
+        {"sequence", item.sequence}, {"timestamp", item.timestamp}, {"code", item.code},   {"severity", item.severity},
+        {"stage", item.stage},       {"message", item.message},     {"field", item.field}, {"path", item.path}};
 }
 
-nlohmann::json jobSnapshotToJson(const JobSnapshot& job)
+nlohmann::json artifactToJson(const Artifact &item)
 {
-    return {
-        {"id", job.id},
-        {"type", job.type},
-        {"state", jobStateName(job.state)},
-        {"ok", job.result.ok},
-        {"exitCode", job.result.exitCode},
-        {"message", job.result.message},
-        {"inputPath", job.inputPath},
-        {"outputPath", job.outputPath},
-        {"createdAt", toUnixSeconds(job.createdAt)},
-        {"startedAt", toUnixSeconds(job.startedAt)},
-        {"finishedAt", toUnixSeconds(job.finishedAt)}
-    };
+    return {{"id", item.id},     {"kind", item.kind},   {"path", item.path},
+            {"mime", item.mime}, {"bytes", item.bytes}, {"directory", item.directory}};
+}
+
+nlohmann::json runtimeSnapshotToJson(const RuntimeSnapshot &value)
+{
+    auto activities = nlohmann::json::array();
+    for (const auto &item : value.progress.activities)
+    {
+        activities.push_back({{"id", item.id},
+                              {"completed", item.completed},
+                              {"total", item.total < 0 ? nlohmann::json(nullptr) : nlohmann::json(item.total)},
+                              {"unit", item.unit}});
+    }
+    auto warnings = nlohmann::json::array();
+    for (const auto &entry : value.warnings)
+    {
+        warnings.push_back({{"code", entry.first},
+                            {"count", entry.second.count},
+                            {"message", entry.second.message},
+                            {"paths", entry.second.paths}});
+    }
+    auto artifacts = nlohmann::json::array();
+    for (const auto &item : value.artifacts)
+    {
+        artifacts.push_back(artifactToJson(item));
+    }
+    return {{"diagnostic", diagnosticToJson(value.diagnostic)},
+            {"warningCount", value.warningCount},
+            {"warnings", warnings},
+            {"artifacts", artifacts},
+            {"progress",
+             {{"stage", value.progress.stage}, {"updatedAt", value.progress.updatedAt}, {"activities", activities}}},
+            {"runtime",
+             {{"featureBackend", value.featureBackend},
+              {"scoreBackend", value.scoreBackend},
+              {"fallbackReason", value.fallbackReason},
+              {"format", value.format},
+              {"width", value.width},
+              {"height", value.height},
+              {"matched", value.matched},
+              {"failed", value.failed},
+              {"metrics", value.metrics}}}};
+}
+
+nlohmann::json eventPageToJson(const EventPage &page)
+{
+    auto items = nlohmann::json::array();
+    for (const auto &item : page.events)
+    {
+        items.push_back(diagnosticToJson(item));
+    }
+    return {{"ok", true},
+            {"events", items},
+            {"firstSequence", page.firstSequence},
+            {"nextCursor", page.nextCursor},
+            {"dropped", page.dropped},
+            {"truncated", page.truncated}};
+}
+
+nlohmann::json serviceResultToJson(const ServiceResult &result)
+{
+    auto body = runtimeSnapshotToJson(result.runtime);
+    body["ok"] = result.ok;
+    body["exitCode"] = result.exitCode;
+    body["message"] = result.message;
+    if (!result.ok && result.runtime.diagnostic.code.empty())
+    {
+        Diagnostic diagnostic;
+        diagnostic.code = "operation_failed";
+        diagnostic.severity = "error";
+        diagnostic.message = result.message;
+        body["diagnostic"] = diagnosticToJson(diagnostic);
+    }
+    return body;
+}
+
+nlohmann::json jobSnapshotToJson(const JobSnapshot &job, bool detail)
+{
+    auto body = serviceResultToJson(job.result);
+    body.update({{"id", job.id},
+                 {"type", job.type},
+                 {"state", jobStateName(job.state)},
+                 {"inputPath", job.inputPath},
+                 {"outputPath", job.outputPath},
+                 {"createdAt", toUnixSeconds(job.createdAt)},
+                 {"startedAt", toUnixSeconds(job.startedAt)},
+                 {"finishedAt", toUnixSeconds(job.finishedAt)},
+                 {"canCancel", job.state == JobState::Queued}});
+    if (detail && !job.requestJson.empty())
+    {
+        body["request"] = nlohmann::json::parse(job.requestJson);
+    }
+    if (!detail)
+    {
+        body.erase("runtime");
+        body.erase("artifacts");
+        body.erase("warnings");
+    }
+    return body;
+}
+
+nlohmann::json mosaicRequestToJson(const MosaicRequest &request)
+{
+    const auto &cfg = request.config;
+    nlohmann::json value = {
+        {"inputPath", request.inputPath}, {"dbPath", request.dbPath}, {"outputPath", request.outputPath}};
+    value["tileW"] = cfg.tileW;
+    value["tileH"] = cfg.tileH;
+    value["candidates"] = cfg.candidates;
+    value["lRange"] = cfg.lRange;
+    value["usePenalty"] = cfg.usePenalty;
+    value["outW"] = cfg.outW;
+    value["outH"] = cfg.outH;
+    value["nativeTileW"] = cfg.nativeTileW;
+    value["nativeTileH"] = cfg.nativeTileH;
+    value["labWeight"] = cfg.labWeight;
+    value["gridWeight"] = cfg.gridWeight;
+    value["tinyWeight"] = cfg.tinyWeight;
+    value["edgeWeight"] = cfg.edgeWeight;
+    value["lbpWeight"] = cfg.lbpWeight;
+    value["neighborWindow"] = cfg.neighborWindow;
+    value["neighborPenalty"] = cfg.neighborPenalty;
+    value["topNrandom"] = cfg.topNrandom;
+    value["useGpu"] = cfg.useGpu;
+    value["deepZoom"] = cfg.deepZoom;
+    value["generatePreview"] = cfg.generatePreview;
+    value["colorAdjust"] = cfg.colorAdjust;
+    value["colorStrength"] = cfg.colorStrength;
+    value["overlayStrength"] = cfg.overlayStrength;
+    value["benchmark"] = cfg.benchmark;
+    value["adaptiveWeights"] = cfg.adaptiveWeights;
+    value["analyze"] = cfg.analyze;
+    value["pngLevel"] = cfg.pngCompressionLevel;
+    value["writeMode"] = cfg.writeMode;
+    value["quality"] = cfg.jpegQuality;
+    value["tiled"] = cfg.tiledOutput;
+    if (cfg.formatExplicit)
+    {
+        value["format"] = cfg.outputFormat;
+    }
+    if (cfg.upscale > 0)
+    {
+        value["upscale"] = cfg.upscale;
+    }
+    return value;
+}
+
+nlohmann::json buildRequestToJson(const BuildRequest &request)
+{
+    return {{"inputDir", request.inputDir},
+            {"outputDir", request.outputDir},
+            {"dbPath", request.dbPath},
+            {"threads", request.threads},
+            {"appendMode", request.appendMode},
+            {"normalizeOnly", request.normalizeOnly},
+            {"forceMode", request.forceMode},
+            {"recursive", request.recursive},
+            {"normalizeWidth", request.normalizeWidth},
+            {"normalizeHeight", request.normalizeHeight}};
 }
 
 nlohmann::json databaseStatsToJson(const DatabaseStats& stats)
@@ -203,31 +352,30 @@ nlohmann::json apiEndpointToJson(const ApiEndpointMetadata& endpoint)
             {"responseKey", item.responseKey}
         });
     }
-    return {
-        {"operation", apiOperationName(endpoint.operation)},
-        {"requestShape", apiRequestShapeName(endpoint.requestShape)},
-        {"method", endpoint.method},
-        {"methods", endpoint.methods},
-        {"path", endpoint.path},
-        {"httpPattern", endpoint.httpPattern},
-        {"description", endpoint.description},
-        {"category", endpoint.category},
-        {"requestFields", fields},
-        {"requiredFields", requiredFields},
-        {"fieldAliases", fieldAliases},
-        {"queryKeys", endpoint.queryKeys},
-        {"acceptedQueryKeys", endpoint.acceptedQueryKeys},
-        {"successStatus", endpoint.successStatus},
-        {"responseKey", endpoint.responseKey},
-        {"errorStatuses", endpoint.errorStatuses},
-        {"errorShapes", endpoint.errorShapes},
-        {"errorResponseKeys", endpoint.errorResponseKeys},
-        {"errorResponses", errorResponses},
-        {"sideEffects", endpoint.sideEffects},
-        {"longRunning", endpoint.longRunning},
-        {"legacy", endpoint.legacy},
-        {"enabled", endpoint.enabled}
-    };
+    return {{"operation", apiOperationName(endpoint.operation)},
+            {"requestShape", apiRequestShapeName(endpoint.requestShape)},
+            {"method", endpoint.method},
+            {"methods", endpoint.methods},
+            {"path", endpoint.path},
+            {"httpPattern", endpoint.httpPattern},
+            {"description", endpoint.description},
+            {"category", endpoint.category},
+            {"requestFields", fields},
+            {"requiredFields", requiredFields},
+            {"fieldAliases", fieldAliases},
+            {"queryKeys", endpoint.queryKeys},
+            {"acceptedQueryKeys", endpoint.acceptedQueryKeys},
+            {"successStatus", endpoint.successStatus},
+            {"responseKey", endpoint.responseKey},
+            {"errorStatuses", endpoint.errorStatuses},
+            {"errorShapes", endpoint.errorShapes},
+            {"errorResponseKeys", endpoint.errorResponseKeys},
+            {"responseFormat", endpoint.operation == ApiOperation::GetJobArtifact ? "file" : "json"},
+            {"errorResponses", errorResponses},
+            {"sideEffects", endpoint.sideEffects},
+            {"longRunning", endpoint.longRunning},
+            {"legacy", endpoint.legacy},
+            {"enabled", endpoint.enabled}};
 }
 
 nlohmann::json apiEndpointsToJson(bool legacyRunEnabled)
@@ -294,17 +442,21 @@ nlohmann::json apiOkJson(const std::string& key, nlohmann::json value)
 
 nlohmann::json apiErrorJson(const std::string& message)
 {
-    return {{"ok", false}, {"message", message}};
+    Diagnostic diagnostic;
+    diagnostic.code = "request_failed";
+    diagnostic.severity = "error";
+    diagnostic.message = message;
+    return {{"ok", false}, {"message", message}, {"diagnostic", diagnosticToJson(diagnostic)}};
 }
 
 nlohmann::json apiPayloadJson(const ServiceResult& status, const std::string& key, nlohmann::json value)
 {
-    nlohmann::json body = {
-        {"ok", status.ok},
-        {"message", status.message},
-        {key, std::move(value)}
-    };
-    if (!status.ok) body["exitCode"] = status.exitCode;
+    nlohmann::json body = serviceResultToJson(status);
+    body[key] = std::move(value);
+    if (status.ok)
+    {
+        body.erase("exitCode");
+    }
     return body;
 }
 
@@ -324,7 +476,7 @@ nlohmann::json apiJobsJson(const std::vector<JobSnapshot>& jobs)
 {
     nlohmann::json items = nlohmann::json::array();
     for (const auto& job : jobs) {
-        items.push_back(jobSnapshotToJson(job));
+        items.push_back(jobSnapshotToJson(job, false));
     }
     return apiOkJson("jobs", items);
 }

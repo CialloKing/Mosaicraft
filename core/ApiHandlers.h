@@ -6,6 +6,7 @@
 #include "json.hpp"
 
 #include <string>
+#include <optional>
 #include <vector>
 
 namespace mosaicraft
@@ -17,6 +18,7 @@ struct ApiRequest
     ApiQueryParams query;
     std::string body;
     std::string id;
+    std::string artifactId;
     bool legacyRunEnabled = false;
     const char* entryName = "Mosaicraft";
 };
@@ -26,6 +28,7 @@ struct ApiRequestContext
     ApiQueryParams query;
     std::string body;
     std::string id;
+    std::string artifactId;
     bool legacyRunEnabled = false;
     const char* entryName = "Mosaicraft";
 };
@@ -34,6 +37,7 @@ struct ApiResponse
 {
     int status = 200;
     nlohmann::json body;
+    std::optional<Artifact> file;
 };
 
 ApiRequest apiOperationRequest(ApiOperation operation, ApiRequestContext context = {});
@@ -62,6 +66,8 @@ ApiResponse apiSubmitMosaicJob(const std::string& body, JobManager& jobs);
 ApiResponse apiSubmitBuildJob(const std::string& body, JobManager& jobs);
 ApiResponse apiListJobs(const JobManager& jobs);
 ApiResponse apiClearFinishedJobs(JobManager& jobs);
+ApiResponse apiGetJobEvents(const ApiRequest &request, const JobManager &jobs);
+ApiResponse apiGetJobArtifact(const ApiRequest &request, const JobManager &jobs);
 ApiResponse apiGetJob(const std::string& id, const JobManager& jobs);
 ApiResponse apiCancelJob(const std::string& id, JobManager& jobs);
 

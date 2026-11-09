@@ -12,8 +12,14 @@
 namespace mosaicraft
 {
 
+nlohmann::json diagnosticToJson(const Diagnostic &diagnostic);
+nlohmann::json artifactToJson(const Artifact &artifact);
+nlohmann::json runtimeSnapshotToJson(const RuntimeSnapshot &runtime);
+nlohmann::json eventPageToJson(const EventPage &page);
+nlohmann::json mosaicRequestToJson(const MosaicRequest &request);
+nlohmann::json buildRequestToJson(const BuildRequest &request);
 nlohmann::json serviceResultToJson(const ServiceResult& result);
-nlohmann::json jobSnapshotToJson(const JobSnapshot& job);
+nlohmann::json jobSnapshotToJson(const JobSnapshot &job, bool detail = true);
 nlohmann::json databaseStatsToJson(const DatabaseStats& stats);
 nlohmann::json databaseHealthToJson(const DatabaseHealth& health);
 nlohmann::json databaseUsageToJson(const DatabaseUsage& usage);

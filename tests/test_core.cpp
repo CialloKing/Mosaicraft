@@ -59,6 +59,34 @@ int main(int argc, char** argv)
     return doctest::Context(argc, argv).run();
 }
 
+TEST_CASE("job session history is bounded without removing queued jobs")
+{
+    using namespace mosaicraft;
+    JobManager jobs(false), another(false);
+    CHECK(jobs.sessionId() != another.sessionId());
+    const auto queued = jobs.submitMosaic(MosaicRequest{});
+    std::string first;
+    for (int i = 0; i < 53; ++i)
+    {
+        const auto id = jobs.submitMosaic(MosaicRequest{});
+        if (i == 0)
+        {
+            first = id;
+        }
+        JobSnapshot canceled;
+        REQUIRE(jobs.cancelQueuedJob(id, canceled));
+    }
+    JobSnapshot snapshot;
+    CHECK(jobs.getJob(queued, snapshot));
+    CHECK_FALSE(jobs.getJob(first, snapshot));
+    CHECK(jobs.listJobs().size() == 51);
+    auto request = apiJobRequest(ApiOperation::GetJobEvents, queued);
+    request.query["limit"] = "-1";
+    const auto response = handleApiRequest(request, jobs);
+    CHECK(response.status == 400);
+    CHECK(response.body["diagnostic"]["field"] == "limit");
+}
+
 TEST_CASE("runtime diagnostics bound UTF-8 history and retain terminal errors")
 {
     using namespace mosaicraft;
@@ -810,7 +838,7 @@ TEST_CASE("API feature metadata is shared")
     const auto features = apiFeatureList();
     CHECK(std::find(features.begin(), features.end(), "mosaic-jobs") != features.end());
     CHECK(std::find(features.begin(), features.end(), "database-maintenance") != features.end());
-    CHECK(std::string(apiContractVersion()) == "2.0");
+    CHECK(std::string(apiContractVersion()) == "2.1");
     CHECK(apiContractMajorVersion() == 2);
     CHECK(std::string(apiCompatibilityLevel()) == "stable");
     CHECK(apiContractStable());
@@ -860,21 +888,21 @@ TEST_CASE("API JSON serialization is shared")
     CHECK(infoJson["entryPoints"].size() == 2);
     CHECK(infoJson["entryPoints"][0]["executable"].get<std::string>() == "mosaicraft.exe");
     CHECK(infoJson["entryPoints"][1]["executable"].get<std::string>() == "MosaicraftWebUI.exe");
-    CHECK(infoJson["api"]["contractVersion"].get<std::string>() == "2.0");
+    CHECK(infoJson["api"]["contractVersion"].get<std::string>() == "2.1");
     CHECK(infoJson["api"]["contractMajorVersion"].get<int>() == 2);
     CHECK(infoJson["api"]["compatibility"].get<std::string>() == "stable");
     CHECK(infoJson["api"]["stable"].get<bool>());
     CHECK_FALSE(infoJson["api"]["legacyRunEnabled"].get<bool>());
-    CHECK(infoJson["api"]["endpointCount"].get<int>() == 17);
-    CHECK(infoJson["api"]["enabledEndpointCount"].get<int>() == 16);
+    CHECK(infoJson["api"]["endpointCount"].get<int>() == 19);
+    CHECK(infoJson["api"]["enabledEndpointCount"].get<int>() == 18);
     CHECK(infoJson["api"]["legacyEndpointCount"].get<int>() == 1);
     CHECK(infoJson["api"]["metadataValid"].get<bool>());
     CHECK(infoJson["api"]["metadataErrors"].empty());
 
     auto enabledInfoJson = apiInfoToJson(true, "MosaicraftWebUI");
     CHECK(enabledInfoJson["api"]["legacyRunEnabled"].get<bool>());
-    CHECK(enabledInfoJson["api"]["endpointCount"].get<int>() == 17);
-    CHECK(enabledInfoJson["api"]["enabledEndpointCount"].get<int>() == 17);
+    CHECK(enabledInfoJson["api"]["endpointCount"].get<int>() == 19);
+    CHECK(enabledInfoJson["api"]["enabledEndpointCount"].get<int>() == 19);
     CHECK(enabledInfoJson["api"]["metadataValid"].get<bool>());
 }
 
@@ -1375,9 +1403,12 @@ TEST_CASE("API endpoint metadata carries dispatch operations")
         CHECK(std::string(apiRequestShapeName(endpoint.requestShape)) != "unknown");
         CHECK_FALSE(endpoint.methods.empty());
         CHECK_FALSE(endpoint.httpPattern.empty());
-        if (endpoint.requestShape == ApiRequestShape::Query) {
+        if (endpoint.requestShape == ApiRequestShape::Query || endpoint.requestShape == ApiRequestShape::JobQuery)
+        {
             CHECK_FALSE(endpoint.queryKeys.empty());
-        } else {
+        }
+        else
+        {
             CHECK(endpoint.queryKeys.empty());
         }
         auto keys = apiQueryKeys(endpoint.operation);

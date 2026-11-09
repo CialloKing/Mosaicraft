@@ -23,6 +23,9 @@
 #endif
 #include <filesystem>
 #include <fstream>
+#include <memory>
+#include <iomanip>
+#include "core/UnicodeIO.h"
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -75,6 +78,58 @@ static bool validUtf8(const std::string& value)
 static void sendApiResponse(httplib::Response& res, const mosaicraft::ApiResponse& response)
 {
     res.status = response.status;
+    if (response.file)
+    {
+        const auto &file = *response.file;
+        auto stream = std::make_shared<std::ifstream>(mosaicraft::u8path(file.path), std::ios::binary);
+        if (!*stream)
+        {
+            res.status = 404;
+            setJsonBody(res, {{"ok", false}, {"message", "artifact cannot be opened"}});
+            return;
+        }
+        std::ostringstream encoded;
+        for (unsigned char ch : mosaicraft::pathToUtf8(mosaicraft::u8path(file.path).filename()))
+        {
+            if (std::isalnum(ch) && ch < 128)
+            {
+                encoded << ch;
+            }
+            else
+            {
+                encoded << '%' << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << int(ch);
+            }
+        }
+        res.set_header("Content-Disposition", (file.kind == "preview" ? "inline" : "attachment") +
+                                                  std::string("; filename=\"download\"; filename*=UTF-8''") +
+                                                  encoded.str());
+        res.set_header("Cache-Control", "no-store");
+        res.set_header("X-Content-Type-Options", "nosniff");
+        // httplib 为 Range 请求选择 206，并据此计算 Content-Length。
+        res.status = -1;
+        res.set_header("Accept-Ranges", "bytes");
+        res.set_content_provider(static_cast<size_t>(file.bytes), file.mime,
+                                 [stream](size_t offset, size_t length, httplib::DataSink &sink)
+                                 {
+                                     // 下载及 Range 响应只使用固定缓冲，不复制整个大文件。
+                                     char buffer[64 * 1024];
+                                     stream->clear();
+                                     stream->seekg(static_cast<std::streamoff>(offset));
+                                     while (length > 0)
+                                     {
+                                         const size_t size = std::min(length, sizeof(buffer));
+                                         stream->read(buffer, static_cast<std::streamsize>(size));
+                                         if (stream->gcount() != static_cast<std::streamsize>(size) ||
+                                             !sink.write(buffer, size))
+                                         {
+                                             return false;
+                                         }
+                                         length -= size;
+                                     }
+                                     return true;
+                                 });
+        return;
+    }
     setJsonBody(res, response.body);
 }
 
@@ -110,6 +165,15 @@ static mosaicraft::ApiRequest apiRequestFromHttp(const httplib::Request& req,
         context.body = req.body;
         context.query = queryParams(req, mosaicraft::apiAcceptedQueryKeyList(endpoint.operation));
         break;
+    case mosaicraft::ApiRequestShape::JobQuery:
+        context.query = queryParams(req, mosaicraft::apiAcceptedQueryKeyList(endpoint.operation));
+        [[fallthrough]];
+    case mosaicraft::ApiRequestShape::JobArtifact:
+        if (endpoint.requestShape == mosaicraft::ApiRequestShape::JobArtifact && req.matches.size() > 2)
+        {
+            context.artifactId = req.matches[2].str();
+        }
+        [[fallthrough]];
     case mosaicraft::ApiRequestShape::JobId:
         if (context.id.empty() && req.matches.size() > 1) {
             context.id = req.matches[1].str();

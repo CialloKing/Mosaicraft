@@ -19,6 +19,14 @@ std::vector<std::string> endpointMethods(const std::string& method)
 
 std::string endpointHttpPattern(const std::string& path)
 {
+    if (path == "/api/jobs/{id}/events")
+    {
+        return R"(/api/jobs/([A-Za-z0-9_-]+)/events)";
+    }
+    if (path == "/api/jobs/{id}/artifacts/{artifactId}")
+    {
+        return R"(/api/jobs/([A-Za-z0-9_-]+)/artifacts/([A-Za-z0-9_-]+))";
+    }
     if (path == "/api/jobs/{id}") {
         return R"(/api/jobs/([A-Za-z0-9_-]+))";
     }
@@ -29,6 +37,8 @@ std::vector<std::string> endpointQueryKeys(ApiOperation operation)
 {
     switch (operation)
     {
+    case ApiOperation::GetJobEvents:
+        return {"after", "limit"};
     case ApiOperation::DatabaseStats:
     case ApiOperation::DatabaseHealth:
         return {"db"};
@@ -49,6 +59,7 @@ std::vector<std::string> endpointQueryKeys(ApiOperation operation)
     case ApiOperation::SubmitBuildJob:
     case ApiOperation::ListJobs:
     case ApiOperation::ClearFinishedJobs:
+    case ApiOperation::GetJobArtifact:
     case ApiOperation::GetJob:
     case ApiOperation::CancelJob:
         return {};
@@ -108,6 +119,8 @@ std::unordered_map<std::string, std::vector<std::string>> endpointFieldAliases(A
     case ApiOperation::LegacyRunDisabled:
     case ApiOperation::ListJobs:
     case ApiOperation::ClearFinishedJobs:
+    case ApiOperation::GetJobEvents:
+    case ApiOperation::GetJobArtifact:
     case ApiOperation::GetJob:
     case ApiOperation::CancelJob:
         return {};
@@ -129,7 +142,8 @@ std::vector<std::string> endpointAcceptedQueryKeys(const std::vector<std::string
 {
     std::vector<std::string> keys;
     for (const auto& key : queryKeys) addUnique(keys, key);
-    if (requestShape == ApiRequestShape::Query) {
+    if ((requestShape == ApiRequestShape::Query || requestShape == ApiRequestShape::JobQuery))
+    {
         for (const auto& field : requestFields) addUnique(keys, field);
         for (const auto& item : fieldAliases) {
             for (const auto& alias : item.second) addUnique(keys, alias);
@@ -152,6 +166,8 @@ int endpointSuccessStatus(ApiOperation operation)
     case ApiOperation::Mosaic:
     case ApiOperation::ListJobs:
     case ApiOperation::ClearFinishedJobs:
+    case ApiOperation::GetJobEvents:
+    case ApiOperation::GetJobArtifact:
     case ApiOperation::GetJob:
     case ApiOperation::CancelJob:
     case ApiOperation::DatabaseStats:
@@ -169,6 +185,10 @@ std::string endpointResponseKey(ApiOperation operation)
 {
     switch (operation)
     {
+    case ApiOperation::GetJobEvents:
+        return "events";
+    case ApiOperation::GetJobArtifact:
+        return "artifact";
     case ApiOperation::Endpoints: return "endpoints";
     case ApiOperation::Info: return "info";
     case ApiOperation::Ping: return "message";
@@ -218,6 +238,15 @@ void populateEndpointErrors(ApiEndpointMetadata& info)
 {
     switch (info.operation)
     {
+    case ApiOperation::GetJobEvents:
+        addErrorContract(info, 400, "serviceResult");
+        addErrorContract(info, 404, "apiError");
+        break;
+    case ApiOperation::GetJobArtifact:
+        addErrorContract(info, 404, "apiError");
+        addErrorContract(info, 409, "apiError");
+        addErrorContract(info, 500, "apiError");
+        break;
     case ApiOperation::LegacyRunDisabled:
         addErrorContract(info, 404, "apiError");
         break;
@@ -319,6 +348,10 @@ const char* apiOperationName(ApiOperation operation)
     case ApiOperation::SubmitBuildJob: return "submitBuildJob";
     case ApiOperation::ListJobs: return "listJobs";
     case ApiOperation::ClearFinishedJobs: return "clearFinishedJobs";
+    case ApiOperation::GetJobEvents:
+        return "getJobEvents";
+    case ApiOperation::GetJobArtifact:
+        return "getJobArtifact";
     case ApiOperation::GetJob: return "getJob";
     case ApiOperation::CancelJob: return "cancelJob";
     case ApiOperation::DatabaseStats: return "databaseStats";
@@ -339,6 +372,10 @@ const char* apiRequestShapeName(ApiRequestShape shape)
     case ApiRequestShape::Body: return "body";
     case ApiRequestShape::Query: return "query";
     case ApiRequestShape::JobId: return "jobId";
+    case ApiRequestShape::JobQuery:
+        return "jobQuery";
+    case ApiRequestShape::JobArtifact:
+        return "jobArtifact";
     case ApiRequestShape::LegacyCommand: return "legacyCommand";
     }
     return "unknown";
@@ -346,7 +383,7 @@ const char* apiRequestShapeName(ApiRequestShape shape)
 
 const char* apiContractVersion()
 {
-    return "2.0";
+    return "2.1";
 }
 
 int apiContractMajorVersion()
@@ -368,65 +405,64 @@ bool apiContractStable()
 std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled)
 {
     return {
-        endpoint("GET", "/api/endpoints", "structured API endpoint discovery", "discovery",
-            ApiOperation::Endpoints, ApiRequestShape::None),
-        endpoint("GET", "/api/info", "service version and capability summary", "discovery",
-            ApiOperation::Info, ApiRequestShape::None),
-        endpoint("GET", "/api/ping", "health check", "health",
-            ApiOperation::Ping, ApiRequestShape::None),
-        endpoint("POST", "/api/mosaic", "run mosaic synchronously", "mosaic",
-            ApiOperation::Mosaic, ApiRequestShape::Body,
-            {"inputPath", "dbPath", "outputPath", "tileW", "tileH", "outW", "outH",
-             "nativeTileW", "nativeTileH", "candidates", "topNrandom", "neighborWindow",
-             "upscale", "quality", "pngLevel", "lRange", "usePenalty", "labWeight",
-             "gridWeight", "tinyWeight", "edgeWeight", "lbpWeight", "neighborPenalty",
-             "colorStrength", "overlayStrength", "format", "writeMode", "outputTile", "useGpu", "tiled",
-             "deepZoom", "colorAdjust", "adaptiveWeights", "analyze", "benchmark", "cpu"},
-            {"inputPath"}, true, true),
-        endpoint("POST", "/api/jobs/mosaic", "start mosaic job", "jobs",
-            ApiOperation::SubmitMosaicJob, ApiRequestShape::Body,
-            {"inputPath", "dbPath", "outputPath", "tileW", "tileH", "outW", "outH",
-             "nativeTileW", "nativeTileH", "candidates", "topNrandom", "neighborWindow",
-             "upscale", "quality", "pngLevel", "lRange", "usePenalty", "labWeight",
-             "gridWeight", "tinyWeight", "edgeWeight", "lbpWeight", "neighborPenalty",
-             "colorStrength", "overlayStrength", "format", "writeMode", "outputTile", "useGpu", "tiled",
-             "deepZoom", "colorAdjust", "adaptiveWeights", "analyze", "benchmark", "cpu"},
-            {"inputPath"}, true, true),
-        endpoint("POST", "/api/jobs/build", "start library build job", "jobs",
-            ApiOperation::SubmitBuildJob, ApiRequestShape::Body,
-            {"inputDir", "outputDir", "dbPath", "threads", "normalizeSize",
-             "normalizeWidth", "normalizeHeight", "appendMode", "recursive",
-             "normalizeOnly", "forceMode"},
-            {"inputDir"}, true, true),
-        endpoint("GET", "/api/jobs", "list jobs", "jobs",
-            ApiOperation::ListJobs, ApiRequestShape::None),
-        endpoint("DELETE", "/api/jobs", "clear finished jobs", "jobs",
-            ApiOperation::ClearFinishedJobs, ApiRequestShape::None,
-            {}, {}, true),
-        endpoint("GET", "/api/jobs/{id}", "get job status", "jobs",
-            ApiOperation::GetJob, ApiRequestShape::JobId, {"id"}, {"id"}),
-        endpoint("DELETE", "/api/jobs/{id}", "cancel queued job", "jobs",
-            ApiOperation::CancelJob, ApiRequestShape::JobId, {"id"}, {"id"}, true),
-        endpoint("GET|POST", "/api/db/stats", "database statistics", "database",
-            ApiOperation::DatabaseStats, ApiRequestShape::Query, {"dbPath"}),
-        endpoint("GET|POST", "/api/db/health", "database health report", "database",
-            ApiOperation::DatabaseHealth, ApiRequestShape::Query, {"dbPath"}),
-        endpoint("GET|POST", "/api/db/usage", "database usage report", "database",
-            ApiOperation::DatabaseUsage, ApiRequestShape::Query,
-            {"dbPath", "limit", "showUnused"}),
-        endpoint("POST", "/api/db/usage/export", "export used images", "database",
-            ApiOperation::DatabaseUsageExport, ApiRequestShape::Query,
-            {"dbPath", "outputDir", "confirm"}, {"outputDir", "confirm"}, true),
-        endpoint("POST", "/api/db/purge", "preview or purge orphan records", "database",
-            ApiOperation::DatabasePurge, ApiRequestShape::Query,
-            {"dbPath", "dryRun", "confirm"}, {}, true),
-        endpoint("GET|POST", "/api/inspect", "inspect a source image", "inspect",
-            ApiOperation::Inspect, ApiRequestShape::Query,
-            {"imagePath", "dbPath"}, {"imagePath"}),
-        endpoint("POST", "/api/run", "legacy command compatibility endpoint", "legacy",
-            ApiOperation::LegacyRunDisabled, ApiRequestShape::LegacyCommand,
-            {"command"}, {"command"}, true, true, true, legacyRunEnabled)
-    };
+        endpoint("GET", "/api/endpoints", "structured API endpoint discovery", "discovery", ApiOperation::Endpoints,
+                 ApiRequestShape::None),
+        endpoint("GET", "/api/info", "service version and capability summary", "discovery", ApiOperation::Info,
+                 ApiRequestShape::None),
+        endpoint("GET", "/api/ping", "health check", "health", ApiOperation::Ping, ApiRequestShape::None),
+        endpoint("POST", "/api/mosaic", "run mosaic synchronously", "mosaic", ApiOperation::Mosaic,
+                 ApiRequestShape::Body,
+                 {"inputPath",  "dbPath",         "outputPath",      "tileW",         "tileH",
+                  "outW",       "outH",           "nativeTileW",     "nativeTileH",   "candidates",
+                  "topNrandom", "neighborWindow", "upscale",         "quality",       "pngLevel",
+                  "lRange",     "usePenalty",     "labWeight",       "gridWeight",    "tinyWeight",
+                  "edgeWeight", "lbpWeight",      "neighborPenalty", "colorStrength", "overlayStrength",
+                  "format",     "writeMode",      "outputTile",      "useGpu",        "tiled",
+                  "deepZoom",   "colorAdjust",    "adaptiveWeights", "analyze",       "benchmark",
+                  "cpu",        "generatePreview"},
+                 {"inputPath"}, true, true),
+        endpoint("POST", "/api/jobs/mosaic", "start mosaic job", "jobs", ApiOperation::SubmitMosaicJob,
+                 ApiRequestShape::Body,
+                 {"inputPath",  "dbPath",         "outputPath",      "tileW",         "tileH",
+                  "outW",       "outH",           "nativeTileW",     "nativeTileH",   "candidates",
+                  "topNrandom", "neighborWindow", "upscale",         "quality",       "pngLevel",
+                  "lRange",     "usePenalty",     "labWeight",       "gridWeight",    "tinyWeight",
+                  "edgeWeight", "lbpWeight",      "neighborPenalty", "colorStrength", "overlayStrength",
+                  "format",     "writeMode",      "outputTile",      "useGpu",        "tiled",
+                  "deepZoom",   "colorAdjust",    "adaptiveWeights", "analyze",       "benchmark",
+                  "cpu",        "generatePreview"},
+                 {"inputPath"}, true, true),
+        endpoint("POST", "/api/jobs/build", "start library build job", "jobs", ApiOperation::SubmitBuildJob,
+                 ApiRequestShape::Body,
+                 {"inputDir", "outputDir", "dbPath", "threads", "normalizeSize", "normalizeWidth", "normalizeHeight",
+                  "appendMode", "recursive", "normalizeOnly", "forceMode"},
+                 {"inputDir"}, true, true),
+        endpoint("GET", "/api/jobs", "list jobs", "jobs", ApiOperation::ListJobs, ApiRequestShape::None),
+        endpoint("DELETE", "/api/jobs", "clear finished jobs", "jobs", ApiOperation::ClearFinishedJobs,
+                 ApiRequestShape::None, {}, {}, true),
+        endpoint("GET", "/api/jobs/{id}/events", "read bounded incremental diagnostics", "jobs",
+                 ApiOperation::GetJobEvents, ApiRequestShape::JobQuery, {"id", "after", "limit"}, {"id"}),
+        endpoint("GET", "/api/jobs/{id}/artifacts/{artifactId}", "read a registered closed artifact", "jobs",
+                 ApiOperation::GetJobArtifact, ApiRequestShape::JobArtifact, {"id", "artifactId"},
+                 {"id", "artifactId"}),
+        endpoint("GET", "/api/jobs/{id}", "get job status", "jobs", ApiOperation::GetJob, ApiRequestShape::JobId,
+                 {"id"}, {"id"}),
+        endpoint("DELETE", "/api/jobs/{id}", "cancel queued job", "jobs", ApiOperation::CancelJob,
+                 ApiRequestShape::JobId, {"id"}, {"id"}, true),
+        endpoint("GET|POST", "/api/db/stats", "database statistics", "database", ApiOperation::DatabaseStats,
+                 ApiRequestShape::Query, {"dbPath"}),
+        endpoint("GET|POST", "/api/db/health", "database health report", "database", ApiOperation::DatabaseHealth,
+                 ApiRequestShape::Query, {"dbPath"}),
+        endpoint("GET|POST", "/api/db/usage", "database usage report", "database", ApiOperation::DatabaseUsage,
+                 ApiRequestShape::Query, {"dbPath", "limit", "showUnused"}),
+        endpoint("POST", "/api/db/usage/export", "export used images", "database", ApiOperation::DatabaseUsageExport,
+                 ApiRequestShape::Query, {"dbPath", "outputDir", "confirm"}, {"outputDir", "confirm"}, true),
+        endpoint("POST", "/api/db/purge", "preview or purge orphan records", "database", ApiOperation::DatabasePurge,
+                 ApiRequestShape::Query, {"dbPath", "dryRun", "confirm"}, {}, true),
+        endpoint("GET|POST", "/api/inspect", "inspect a source image", "inspect", ApiOperation::Inspect,
+                 ApiRequestShape::Query, {"imagePath", "dbPath"}, {"imagePath"}),
+        endpoint("POST", "/api/run", "legacy command compatibility endpoint", "legacy", ApiOperation::LegacyRunDisabled,
+                 ApiRequestShape::LegacyCommand, {"command"}, {"command"}, true, true, true, legacyRunEnabled)};
 }
 
 std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpointMetadata>& endpoints)
@@ -498,16 +534,24 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
                 errors.push_back("endpoint has unsupported errorShape: " + operationName + " " + shape);
             }
         }
-        if (endpoint.requestShape == ApiRequestShape::Query && endpoint.queryKeys.empty()) {
+        if ((endpoint.requestShape == ApiRequestShape::Query || endpoint.requestShape == ApiRequestShape::JobQuery) &&
+            endpoint.queryKeys.empty())
+        {
             errors.push_back("query endpoint has no queryKeys: " + operationName);
         }
-        if (endpoint.requestShape == ApiRequestShape::Query && endpoint.acceptedQueryKeys.empty()) {
+        if ((endpoint.requestShape == ApiRequestShape::Query || endpoint.requestShape == ApiRequestShape::JobQuery) &&
+            endpoint.acceptedQueryKeys.empty())
+        {
             errors.push_back("query endpoint has no acceptedQueryKeys: " + operationName);
         }
-        if (endpoint.requestShape != ApiRequestShape::Query && !endpoint.queryKeys.empty()) {
+        if ((endpoint.requestShape != ApiRequestShape::Query && endpoint.requestShape != ApiRequestShape::JobQuery) &&
+            !endpoint.queryKeys.empty())
+        {
             errors.push_back("non-query endpoint has queryKeys: " + operationName);
         }
-        if (endpoint.requestShape != ApiRequestShape::Query && !endpoint.acceptedQueryKeys.empty()) {
+        if ((endpoint.requestShape != ApiRequestShape::Query && endpoint.requestShape != ApiRequestShape::JobQuery) &&
+            !endpoint.acceptedQueryKeys.empty())
+        {
             errors.push_back("non-query endpoint has acceptedQueryKeys: " + operationName);
         }
         for (const auto& key : endpoint.queryKeys) {
@@ -546,16 +590,9 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
 
 std::vector<std::string> apiFeatureList()
 {
-    return {
-        "mosaic-jobs",
-        "build-jobs",
-        "job-management",
-        "inspect",
-        "database-stats",
-        "database-health",
-        "database-usage",
-        "database-maintenance"
-    };
+    return {"mosaic-jobs",    "build-jobs",      "job-management", "job-diagnostics",
+            "job-progress",   "job-artifacts",   "result-preview", "inspect",
+            "database-stats", "database-health", "database-usage", "database-maintenance"};
 }
 
 std::vector<ApiEntryPointMetadata> apiEntryPointMetadata()

@@ -536,6 +536,38 @@ try {
     }
     Assert-True ($usage.ok -eq $true) "database usage failed"
 
+    # Real file responses and cursored diagnostics, independent of HTML text assertions.
+    Assert-True (-not [string]::IsNullOrWhiteSpace($info.info.runtime.sessionId)) "session id missing"
+    Assert-True (-not [string]::IsNullOrWhiteSpace($info.info.runtime.workingDirectory)) "working directory missing"
+    $previewBody = $mosaicBody.Clone()
+    $previewBody.outputPath = Join-Path $outputDir "preview result.jpg"
+    $previewBody.generatePreview = $true
+    $previewJob = Invoke-Api -Method "POST" -Path "/api/jobs/mosaic" -Body $previewBody
+    $completed = Wait-JobSucceeded -JobId $previewJob.job.id -Label "preview" -ExpectedType "mosaic" -ExpectedInputPath $targetPath -ExpectedOutputPath $previewBody.outputPath
+    Assert-True ($completed.progress.stage -eq "finalizing") "final progress stage missing"
+    Assert-True ($completed.canCancel -eq $false) "finished job must not be cancelable"
+    Assert-True ($completed.request.generatePreview -eq $true) "request restoration data missing"
+    $main = @($completed.artifacts | Where-Object { $_.id -eq 'main' })[0]
+    $preview = @($completed.artifacts | Where-Object { $_.id -eq 'preview' })[0]
+    Assert-True ($main.path.EndsWith('.png')) "artifact must use actual output extension"
+    $events = Invoke-Api -Method "GET" -Path ("/api/jobs/{0}/events?after=0&limit=100" -f $completed.id)
+    Assert-True ($events.events.Count -gt 0) "runtime events missing"
+    $emptyEvents = Invoke-Api -Method "GET" -Path ("/api/jobs/{0}/events?after={1}" -f $completed.id, $events.nextCursor)
+    Assert-True ($emptyEvents.events.Count -eq 0) "event cursor repeated old events"
+    $download = Join-Path $outputDir 'download.bin'
+    $assetUrl = "$script:BaseUrl/api/jobs/$($completed.id)/artifacts/main"
+    Invoke-WebRequest -Uri $assetUrl -OutFile $download | Out-Null
+    Assert-True ((Get-FileHash -LiteralPath $download).Hash -eq (Get-FileHash -LiteralPath $main.path).Hash) "download differs from saved output"
+    $rangeFile = Join-Path $outputDir 'range.bin'
+    Invoke-WebRequest -Uri $assetUrl -Headers @{ Range='bytes=0-31' } -OutFile $rangeFile | Out-Null
+    Assert-True ((Get-Item -LiteralPath $rangeFile).Length -eq 32) "range response should use requested length"
+    [IO.File]::AppendAllText($main.path, 'changed')
+    $changed = Invoke-ApiResponse -Method "GET" -Path ("/api/jobs/{0}/artifacts/main" -f $completed.id)
+    Assert-True ($changed.StatusCode -eq 409) "overwritten artifact should return 409"
+    Remove-Item -LiteralPath $preview.path
+    $missingArtifact = Invoke-ApiResponse -Method "GET" -Path ("/api/jobs/{0}/artifacts/preview" -f $completed.id)
+    Assert-True ($missingArtifact.StatusCode -eq 404) "deleted artifact should return 404"
+
     Invoke-Api -Method "DELETE" -Path "/api/jobs" | Out-Null
     Write-Host "Web UI/API smoke passed: $script:BaseUrl"
 }

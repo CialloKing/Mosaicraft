@@ -3,6 +3,8 @@
 #include "ApiJson.h"
 
 #include <exception>
+#include <charconv>
+#include <filesystem>
 #include <sstream>
 #include <utility>
 
@@ -20,6 +22,13 @@ ApiResponse resultResponse(int status, const ServiceResult& result)
 ApiResponse badRequest(const std::string& error)
 {
     return resultResponse(400, ServiceResult::failure(1, error));
+}
+
+ApiResponse badRequest(const RequestError &error)
+{
+    RuntimeContext runtime(false);
+    return resultResponse(
+        400, runtimeResult(runtimeFailure(runtime, 1, error.message, "invalid_argument", error.field), runtime));
 }
 
 ApiResponse internalError(const std::string& error)
@@ -87,6 +96,7 @@ ApiRequest apiOperationRequest(ApiOperation operation, ApiRequestContext context
     request.query = std::move(context.query);
     request.body = std::move(context.body);
     request.id = std::move(context.id);
+    request.artifactId = std::move(context.artifactId);
     request.legacyRunEnabled = context.legacyRunEnabled;
     request.entryName = context.entryName;
     return request;
@@ -176,8 +186,15 @@ ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
     {
     case ApiOperation::Endpoints:
         return apiEndpoints(request.legacyRunEnabled);
-    case ApiOperation::Info:
-        return apiInfo(request.legacyRunEnabled, request.entryName);
+    case ApiOperation::Info: {
+        auto response = apiInfo(request.legacyRunEnabled, request.entryName);
+        std::error_code error;
+        const auto directory = std::filesystem::current_path(error);
+        response.body["info"]["runtime"] = {{"sessionId", jobs.sessionId()},
+                                            {"workingDirectory", error ? "" : directory.u8string()},
+                                            {"finishedJobLimit", 50}};
+        return response;
+    }
     case ApiOperation::Ping:
         return apiPing();
     case ApiOperation::LegacyRunDisabled:
@@ -192,6 +209,10 @@ ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
         return apiListJobs(jobs);
     case ApiOperation::ClearFinishedJobs:
         return apiClearFinishedJobs(jobs);
+    case ApiOperation::GetJobEvents:
+        return apiGetJobEvents(request, jobs);
+    case ApiOperation::GetJobArtifact:
+        return apiGetJobArtifact(request, jobs);
     case ApiOperation::GetJob:
         return apiGetJob(request.id, jobs);
     case ApiOperation::CancelJob:
@@ -299,7 +320,7 @@ ApiResponse apiLegacyRunDisabled()
 ApiResponse apiMosaic(const std::string& body, JobManager& jobs)
 {
     MosaicRequest request;
-    std::string error;
+    RequestError error;
     if (!parseMosaicRequestJson(body, request, error))
     {
         return badRequest(error);
@@ -323,7 +344,7 @@ ApiResponse apiMosaic(const std::string& body, JobManager& jobs)
 ApiResponse apiSubmitMosaicJob(const std::string& body, JobManager& jobs)
 {
     MosaicRequest request;
-    std::string error;
+    RequestError error;
     if (!parseMosaicRequestJson(body, request, error)) return badRequest(error);
 
     try {
@@ -341,7 +362,7 @@ ApiResponse apiSubmitMosaicJob(const std::string& body, JobManager& jobs)
 ApiResponse apiSubmitBuildJob(const std::string& body, JobManager& jobs)
 {
     BuildRequest request;
-    std::string error;
+    RequestError error;
     if (!parseBuildRequestJson(body, request, error)) return badRequest(error);
 
     try {
@@ -358,7 +379,9 @@ ApiResponse apiSubmitBuildJob(const std::string& body, JobManager& jobs)
 
 ApiResponse apiListJobs(const JobManager& jobs)
 {
-    return {200, apiJobsJson(jobs.listJobs())};
+    auto body = apiJobsJson(jobs.listJobs());
+    body["sessionId"] = jobs.sessionId();
+    return {200, body};
 }
 
 ApiResponse apiClearFinishedJobs(JobManager& jobs)
@@ -372,7 +395,78 @@ ApiResponse apiGetJob(const std::string& id, const JobManager& jobs)
     if (!jobs.getJob(id, snapshot)) {
         return {404, apiErrorJson("job not found")};
     }
-    return {200, apiJobJson(snapshot)};
+    auto body = apiJobJson(snapshot);
+    body["sessionId"] = jobs.sessionId();
+    return {200, body};
+}
+
+ApiResponse apiGetJobEvents(const ApiRequest &request, const JobManager &jobs)
+{
+    uint64_t after = 0, limit = 100;
+    for (auto item : {std::pair<const char *, uint64_t *>("after", &after), {"limit", &limit}})
+    {
+        const auto found = request.query.find(item.first);
+        if (found == request.query.end())
+        {
+            continue;
+        }
+        const auto &text = found->second;
+        const auto parsed = std::from_chars(text.data(), text.data() + text.size(), *item.second);
+        if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() ||
+            (item.first == std::string("limit") && limit == 0))
+        {
+            RequestError error;
+            error.field = item.first;
+            error.message = error.field + " must be a valid nonnegative integer (limit >=1)";
+            return badRequest(error);
+        }
+    }
+    EventPage page;
+    if (!jobs.getEvents(request.id, after, static_cast<size_t>(std::min<uint64_t>(limit, 100)), page))
+    {
+        return {404, apiErrorJson("job not found")};
+    }
+    auto body = eventPageToJson(page);
+    body["sessionId"] = jobs.sessionId();
+    return {200, body};
+}
+
+ApiResponse apiGetJobArtifact(const ApiRequest &request, const JobManager &jobs)
+{
+    JobSnapshot job;
+    if (!jobs.getJob(request.id, job))
+    {
+        return {404, apiErrorJson("job not found")};
+    }
+    for (const auto &item : job.result.runtime.artifacts)
+    {
+        if (item.id != request.artifactId || item.directory)
+        {
+            continue;
+        }
+        try
+        {
+            const auto path = std::filesystem::u8path(item.path);
+            if (!std::filesystem::exists(path))
+            {
+                return {404, apiErrorJson("artifact no longer exists")};
+            }
+            if (std::filesystem::canonical(path).u8string() != item.path || !std::filesystem::is_regular_file(path) ||
+                std::filesystem::file_size(path) != item.bytes ||
+                std::filesystem::last_write_time(path) != item.modified)
+            {
+                auto response = apiErrorJson("artifact was changed after this job completed");
+                response["diagnostic"] = {{"code", "artifact_changed"}, {"message", response["message"]}};
+                return {409, response};
+            }
+            return {200, apiOkJson("artifact", artifactToJson(item)), item};
+        }
+        catch (const std::filesystem::filesystem_error &error)
+        {
+            return {500, apiErrorJson(error.what())};
+        }
+    }
+    return {404, apiErrorJson("artifact is not registered or is a directory")};
 }
 
 ApiResponse apiCancelJob(const std::string& id, JobManager& jobs)
@@ -390,7 +484,7 @@ ApiResponse apiCancelJob(const std::string& id, JobManager& jobs)
 ApiResponse apiDatabaseStats(const ApiQueryParams& query, const std::string& body)
 {
     DatabaseRequest request;
-    std::string error;
+    RequestError error;
     if (!parseDatabaseRequestApi(query, body, request, error)) return badRequest(error);
 
     DatabaseService service;
@@ -402,7 +496,7 @@ ApiResponse apiDatabaseStats(const ApiQueryParams& query, const std::string& bod
 ApiResponse apiDatabaseHealth(const ApiQueryParams& query, const std::string& body)
 {
     DatabaseRequest request;
-    std::string error;
+    RequestError error;
     if (!parseDatabaseRequestApi(query, body, request, error)) return badRequest(error);
 
     DatabaseService service;
@@ -414,7 +508,7 @@ ApiResponse apiDatabaseHealth(const ApiQueryParams& query, const std::string& bo
 ApiResponse apiDatabaseUsage(const ApiQueryParams& query, const std::string& body)
 {
     DatabaseUsageRequest request;
-    std::string error;
+    RequestError error;
     if (!parseDatabaseUsageRequestApi(query, body, request, error)) return badRequest(error);
 
     DatabaseService service;
@@ -426,7 +520,7 @@ ApiResponse apiDatabaseUsage(const ApiQueryParams& query, const std::string& bod
 ApiResponse apiDatabaseUsageExport(const ApiQueryParams& query, const std::string& body)
 {
     DatabaseUsageExportRequest request;
-    std::string error;
+    RequestError error;
     if (!parseDatabaseUsageExportRequestApi(query, body, request, error)) return badRequest(error);
 
     DatabaseService service;
@@ -440,7 +534,7 @@ ApiResponse apiDatabaseUsageExport(const ApiQueryParams& query, const std::strin
 ApiResponse apiDatabasePurge(const ApiQueryParams& query, const std::string& body)
 {
     DatabasePurgeRequest request;
-    std::string error;
+    RequestError error;
     if (!parseDatabasePurgeRequestApi(query, body, request, error)) return badRequest(error);
 
     DatabaseService service;
@@ -454,7 +548,7 @@ ApiResponse apiDatabasePurge(const ApiQueryParams& query, const std::string& bod
 ApiResponse apiInspect(const ApiQueryParams& query, const std::string& body)
 {
     InspectRequest request;
-    std::string error;
+    RequestError error;
     if (!parseInspectRequestApi(query, body, request, error)) return badRequest(error);
 
     InspectService service;

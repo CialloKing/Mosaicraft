@@ -21,6 +21,7 @@
 #include "doctest.h"
 
 #include "../core/BuildService.h"
+#include "../core/ApiHandlers.h"
 #include "../core/DatabaseService.h"
 #include "../core/InspectService.h"
 #include "../core/MosaicService.h"
@@ -521,6 +522,38 @@ TEST_CASE("regression: build, inspect, and render a small mosaic")
     const auto usage = DatabaseService().usage({utf8(workspace.dbPath()), 10, true});
     REQUIRE(usage.status.ok);
     CHECK(usage.usage.total == 10);
+}
+
+TEST_CASE("job artifacts preserve requested paths and reject changed files")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    writeTargetImage(workspace.targetPath());
+    REQUIRE(BuildService().run(makeBuildRequest(workspace)).ok);
+    auto request = makeMosaicRequest(workspace);
+    request.outputPath = utf8(workspace.outputDir() / "changed-extension.jpg");
+    request.config.generatePreview = true;
+    JobManager jobs;
+    const auto id = jobs.submitMosaic(request);
+    JobSnapshot job;
+    REQUIRE(jobs.waitJob(id, job));
+    REQUIRE(job.state == JobState::Succeeded);
+    CHECK(job.outputPath == request.outputPath);
+    CHECK(job.result.runtime.progress.stage == "finalizing");
+    REQUIRE(job.result.runtime.artifacts.size() == 2);
+    auto artifactRequest = apiJobRequest(ApiOperation::GetJobArtifact, id);
+    artifactRequest.artifactId = "main";
+    const auto response = handleApiRequest(artifactRequest, jobs);
+    REQUIRE(response.status == 200);
+    REQUIRE(response.file.has_value());
+    CHECK(u8path(response.file->path).extension() == ".png");
+    EventPage events;
+    REQUIRE(jobs.getEvents(id, 0, 100, events));
+    CHECK_FALSE(events.events.empty());
+    std::ofstream(u8path(response.file->path), std::ios::app).put('x');
+    CHECK(handleApiRequest(artifactRequest, jobs).status == 409);
+    fs::remove(u8path(response.file->path));
+    CHECK(handleApiRequest(artifactRequest, jobs).status == 404);
 }
 
 TEST_CASE("analysis preserves usage commit boundaries after saving the mosaic")
