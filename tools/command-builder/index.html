@@ -141,6 +141,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 .task-results { border-top: 1px solid var(--border); margin-top: 15px; padding-top: 12px; font-size: .8rem; }
 .task-results h3 { font-size: .9rem; margin-bottom: 8px; }
 .result-preview { display: block; max-width: 100%; max-height: 480px; object-fit: contain; margin-top: 12px; background: var(--bg); border-radius: 6px; }
+[hidden] { display: none !important; }
 .saved-main { color: #7ee787; margin-bottom: 10px; }
 </style>
 </head>
@@ -513,6 +514,15 @@ async function checkServer() {
   document.getElementById('btn-clear-jobs').style.display = 'none';
   document.getElementById('run-status').style.display = '';
   document.getElementById('run-status').innerHTML = '<span style="color:#f78166">⚠ 独立模式</span> — 请通过 Web UI (<code>MosaicraftWebUI.exe</code>) 访问以使用运行功能，或复制命令手动执行';
+  if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+    document.getElementById('task-section').hidden = false;
+    taskStore.failures++;
+    const delay = [2000,5000,10000][Math.min(taskStore.failures - 1, 2)];
+    document.getElementById('run-status').textContent = '服务暂时不可用，正在重新发现服务；表单草稿保留。';
+    document.getElementById('task-connection').textContent = '连接异常，' + delay / 1000 + ' 秒后重试。';
+    clearTimeout(taskStore.timer);
+    taskStore.timer = setTimeout(checkServer, delay);
+  }
 }
 
 function missingRequiredOperations(endpoints) {
@@ -543,6 +553,7 @@ async function runCommand() {
         return;
       }
       taskStore.note = '';
+      status.textContent = '已提交 ' + data.job.id + '，请在任务与结果中查看进度。';
       setCurrentJob(data.job.id);
       await pollJob(data.job.id, status);
       return;
@@ -555,6 +566,7 @@ async function runCommand() {
         return;
       }
       taskStore.note = '';
+      status.textContent = '已提交 ' + data.job.id + '，请在任务与结果中查看进度。';
       setCurrentJob(data.job.id);
       await pollJob(data.job.id, status);
       return;
@@ -815,6 +827,10 @@ function renderJobTiming(job)
   const created = Number(job.createdAt || 0);
   const started = Number(job.startedAt || 0);
   const finished = Number(job.finishedAt || 0);
+  if (!started && finished >= created && created > 0)
+  {
+    return '等待 ' + formatDuration(finished - created);
+  }
   if (started > 0 && finished > 0 && finished >= started)
   {
     return '耗时 ' + formatDuration(finished - started);
@@ -1342,7 +1358,7 @@ function restoreTaskParameters() {
 }
 document.addEventListener('click', event => {
   const item = event.target.closest && event.target.closest('[data-job-id]');
-  if (item) setCurrentJob(item.dataset.jobId);
+  if (item) { taskStore.note = ''; setCurrentJob(item.dataset.jobId); }
 });
 
 
@@ -1542,7 +1558,13 @@ function renderTaskArtifacts(job) {
   }
   if (library) html += '<p><button class="btn btn-secondary" onclick="useTaskLibrary()">使用此图库</button></p>';
   if (preview) html += '<img data-preview="true" class="result-preview" src="' + artifactUrl(job.id, preview.id) + '" alt="马赛克结果预览" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><p class="hint" hidden>预览文件不可用，可能已删除或改写。</p>';
-  else if (job.type === 'mosaic' && !['tiled','deepzoom'].includes(job.runtime && job.runtime.format)) html += '<p class="hint">' + (job.request && job.request.generatePreview && job.state === 'running' ? '预览生成后将在这里显示。' : '未生成预览。需要时请在提交前勾选“生成结果预览”；主图不会自动加载。') + '</p>';
+  else if (job.type === 'mosaic' && !['tiled','deepzoom'].includes(job.runtime && job.runtime.format)) {
+    const requested = job.request && job.request.generatePreview;
+    const message = requested && job.state === 'failed' ? '预览未成功保存，请查看失败诊断；主图不会自动加载。'
+      : requested && ['running','queued'].includes(job.state) ? '预览生成后将在这里显示。'
+      : '未生成预览。需要时请在提交前勾选“生成结果预览”；主图不会自动加载。';
+    html += '<p class="hint">' + message + '</p>';
+  }
   if (!job.artifacts.length) html += '<p class="hint">暂无已成功保存的产物。</p>';
   return html + '</section>';
 }

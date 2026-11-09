@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$WebUiExe = "",
     [int]$Port = 0,
     [int]$TimeoutSeconds = 60,
@@ -219,8 +219,10 @@ function Invoke-ApiResponse {
         $request.SkipHttpErrorCheck = $true
     }
     if ($null -ne $Body) {
-        $request.ContentType = "application/json"
-        $request.Body = if ($RawBody) { [string]$Body } else { $Body | ConvertTo-Json -Depth 20 }
+        $request.ContentType = "application/json; charset=utf-8"
+        $json = if ($RawBody) { [string]$Body } else { $Body | ConvertTo-Json -Depth 20 }
+        # Windows PowerShell 5.1 otherwise encodes non-ASCII request strings as ASCII.
+        $request.Body = [System.Text.Encoding]::UTF8.GetBytes($json)
     }
 
     try {
@@ -559,7 +561,18 @@ try {
     Invoke-WebRequest -Uri $assetUrl -OutFile $download | Out-Null
     Assert-True ((Get-FileHash -LiteralPath $download).Hash -eq (Get-FileHash -LiteralPath $main.path).Hash) "download differs from saved output"
     $rangeFile = Join-Path $outputDir 'range.bin'
-    Invoke-WebRequest -Uri $assetUrl -Headers @{ Range='bytes=0-31' } -OutFile $rangeFile | Out-Null
+    $rangeRequest = [System.Net.HttpWebRequest]::Create($assetUrl)
+    $rangeRequest.AddRange(0, 31)
+    $rangeResponse = $rangeRequest.GetResponse()
+    $rangeOutput = [IO.File]::Create($rangeFile)
+    try {
+        Assert-True ([int]$rangeResponse.StatusCode -eq 206) "range response should use HTTP 206"
+        $rangeResponse.GetResponseStream().CopyTo($rangeOutput)
+    }
+    finally {
+        $rangeOutput.Dispose()
+        $rangeResponse.Close()
+    }
     Assert-True ((Get-Item -LiteralPath $rangeFile).Length -eq 32) "range response should use requested length"
     [IO.File]::AppendAllText($main.path, 'changed')
     $changed = Invoke-ApiResponse -Method "GET" -Path ("/api/jobs/{0}/artifacts/main" -f $completed.id)
