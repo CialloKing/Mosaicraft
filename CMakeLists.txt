@@ -186,6 +186,7 @@ add_library(mosaicraft_core STATIC
     core/LibraryAccess.cpp
     core/LibraryColorOrder.cpp
     core/MosaicOutput.cpp
+    core/MosaicMetrics.cpp
     core/MosaicEngine.cpp
     core/MosaicService.cpp
 )

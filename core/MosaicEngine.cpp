@@ -17,6 +17,7 @@
 #include "ImageCache.h"
 #include "JpgStreamWriter.h"
 #include "MosaicOutput.h"
+#include "MosaicMetrics.h"
 #include "PngBatchWriter.h"
 #include "PngStreamWriter.h"
 #include "RequestValidation.h"
@@ -102,23 +103,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
     const auto preflight = cfg.useGpu ? cuda::queryCudaAvailability() : cuda::CudaAvailability{};
     const bool cudaEnabled = cfg.useGpu && preflight.available;
     const double preflightMs = Ms(Clock::now() - tStart).count();
-    double msNeighbor = 0, msSort = 0, msAnalysis = 0, msCPUFeatures = 0;
-    OutputStats outputStats;
-    double msFeat = 0, msANNBuild = 0, msANNLoad = 0, msANNQuery = 0, msGPUScore = 0, msSelect = 0, msPlace = 0, msEncode = 0, msCPUScore = 0;
-    double msPrep = 0;  // DB 加载 + GPU library 上传累计耗时，GPU 路径专用
-
-    // 细粒度 profile：记录各算子累计纳秒，精确定位瓶颈
-    std::atomic<int64_t> opResizeNs{0};
-    std::atomic<int64_t> opLabNs{0};
-    std::atomic<int64_t> opGridNs{0};
-    std::atomic<int64_t> opTinyNs{0};
-    std::atomic<int64_t> opEdgeNs{0};
-    std::atomic<int64_t> opLbpNs{0};
-
-    // Placement 阶段 profile
-    std::atomic<int64_t> opPlaceDecodeNs{0};
-    std::atomic<int64_t> opPlaceResizeNs{0};
-    std::atomic<int64_t> opPlaceCopyNs{0};
+    // 跨阶段统计集中持有，算子线程继续使用原子计数。
+    detail::MosaicMetrics metrics;
 
     std::cout << "GPU: " << (cudaEnabled ? "CUDA enabled" : "disabled (CPU only)") << std::endl;
     if (cfg.useGpu && !cudaEnabled)
@@ -289,8 +275,6 @@ bool MosaicEngine::generate(const std::string& targetPath,
     }
 
     // 为 GPU 路径准备连续内存缓冲区，存放 tiny/LBP 特征数据
-    cuda::GpuTimings featureTimings, scoreTimings, libraryTimings;
-    FeaturePack::Reader::ReadStats libraryReadStats;
     cuda::GpuLibrary gpuLib;
     struct LibraryGuard
     {
@@ -345,13 +329,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
         std::iota(needed.begin(), needed.end(), 0);
         std::vector<uint8_t> tinyValid, lbpValid;
         const bool cacheLoaded = FeaturePack::load(featDirCache, allRecords, needed, h_tiny, h_lbp, tinyValid, lbpValid,
-                                                   cfg.benchmark ? &libraryReadStats : nullptr);
+                                                   cfg.benchmark ? &metrics.libraryReadStats : nullptr);
         if (!cacheLoaded)
         {
             std::cout << "  (validated feature cache miss, using source files)" << std::endl;
         }
         if (cuda::uploadLibrary(gpuLib, h_lab.data(), h_grid.data(), h_tiny.data(), h_edge.data(), h_lbp.data(),
-                                h_use.data(), dbCount, cfg.benchmark ? &libraryTimings : nullptr, tinyValid.data(),
+                                h_use.data(), dbCount, cfg.benchmark ? &metrics.libraryTimings : nullptr, tinyValid.data(),
                                 lbpValid.data()))
         {
             std::cout << "GPU library: " << dbCount << " images ("
@@ -481,139 +465,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
     std::vector<int>    analyzeCat;       // 0=Smooth, 1=Edge, 2=Texture, 3=Normal
     double analyzeGridCellSum[64] = {0};   // 每个 cell 的累计 L2 误差，用于分析网格匹配质量
     WorstTiles worstTiles;
-    size_t matchingBatches = 0, matchingPeakBytes = 0, maximumBatchTiles = 0;
-    double matchingWallMs = 0;
-    bool matchingPrefetch = false;
-    FeaturePack::Reader::ReadStats featureReadStats;
 
     int N = cfg.candidates;  // 候选数量，GPU 路径需提前确定，用于 benchmark
-
-    // Benchmark 报告 lambda：汇总各阶段耗时，输出 totalTiles/N 等关键指标
-    auto printBenchmark = [&](const char* label) {
-        if (!cfg.benchmark) return;
-        double msTotal = Ms(Clock::now() - tStart).count();
-        std::cout << "\n=== Benchmark " << label << " ===\n";
-        std::cout << "  Total tiles:     " << totalTiles << "\n";
-        std::cout << "  Candidates/tile: " << N << "\n";
-        if (msPrep > 0)
-            std::cout << "  Prep (DB+GPU): " << std::fixed << std::setprecision(1) << msPrep    << " ms\n";
-        std::cout << "  Features:    " << std::fixed << std::setprecision(1) << msFeat       << " ms\n";
-        if (opResizeNs > 0)
-        {
-            auto toMs = [](int64_t ns) { return ns / 1000000.0; };
-            std::cout << "    Resize:   " << std::setprecision(1) << toMs(opResizeNs) << " ms\n";
-            std::cout << "    LAB:      " << std::setprecision(1) << toMs(opLabNs)    << " ms\n";
-            std::cout << "    Grid:     " << std::setprecision(1) << toMs(opGridNs)   << " ms\n";
-            std::cout << "    Tiny:     " << std::setprecision(1) << toMs(opTinyNs)   << " ms\n";
-            std::cout << "    Edge:     " << std::setprecision(1) << toMs(opEdgeNs)   << " ms\n";
-            std::cout << "    LBP:      " << std::setprecision(1) << toMs(opLbpNs)    << " ms\n";
-        }
-        if (msANNBuild > 0)
-            std::cout << "  ANN build:   " << msANNBuild << " ms\n";
-        std::cout << "  ANN load:    " << msANNLoad << " ms\n";
-        std::cout << "  ANN query:   " << msANNQuery << " ms\n";
-        if (msGPUScore > 0)
-        {
-            std::cout << "  GPU scoring: " << msGPUScore  << " ms\n";
-            std::cout << "  GPU speed:   " << std::fixed << std::setprecision(0)
-                      << (totalTiles * static_cast<double>(N) / msGPUScore * 1000.0)
-                      << " scores/s\n";
-        }
-        std::cout << std::fixed << std::setprecision(1);
-        std::cout << "  CPU scoring: " << msCPUScore << " ms\n";
-        std::cout << "  Selection:   " << (msSelect - msCPUScore)    << " ms\n";
-        std::cout << "  CPU feature loading: " << msCPUFeatures << " ms\n";
-        std::cout << "  Neighbor penalties: " << msNeighbor << " ms\n";
-        std::cout << "  Candidate sorting: " << msSort << " ms\n";
-        std::cout << "  Analysis: " << msAnalysis << " ms\n";
-        std::cout << "  Output loading (worker sum): " << outputStats.loadingMs << " ms\n";
-        std::cout << "  Overlay sampling (worker sum): " << outputStats.overlaySamplingMs << " ms\n"
-                  << "  Overlay blending (worker sum): " << outputStats.overlayBlendMs << " ms\n"
-                  << "  Overlay reference bytes: " << outputStats.overlayReferenceBytes << "\n"
-                  << "  Overlay worker budget bytes: " << outputStats.overlayWorkingBytes << "\n";
-        std::cout << "  Color conversion: " << outputStats.colorMs << " ms\n";
-        std::cout << "  Row encoding: " << outputStats.codecMs << " ms\n";
-        if (cfg.generatePreview)
-        {
-            std::cout << "  Preview (included in encoding): " << outputStats.previewMs << " ms\n";
-        }
-        std::cout << "  Producer wait: " << outputStats.producerWaitMs << " ms\n";
-        std::cout << "  Consumer wait: " << outputStats.consumerWaitMs << " ms\n";
-        std::cout << "  Image cache hits: " << outputStats.cacheHits << "\n"
-                  << "  Image decodes: " << outputStats.cacheDecodes << "\n"
-                  << "  Image cache peak bytes: " << outputStats.cachePeakBytes << "\n"
-                  << "  Image shared loads: " << outputStats.cacheSharedLoads << "\n";
-        std::cout << "  Placement:   " << msPlace     << " ms\n";
-        std::cout << "  Encoding:    " << msEncode << " ms\n";
-        if (opPlaceDecodeNs > 0)
-        {
-            auto toMs = [](int64_t ns) { return ns / 1000000.0; };
-            std::cout << "    Decode:   " << std::setprecision(1) << toMs(opPlaceDecodeNs) << " ms\n";
-            std::cout << "    Resize:   " << std::setprecision(1) << toMs(opPlaceResizeNs) << " ms\n";
-            std::cout << "    Copy:     " << std::setprecision(1) << toMs(opPlaceCopyNs) << " ms\n";
-        }
-        if (templateCuda)
-        {
-            std::cout << "  Library GPU allocation: " << libraryTimings.allocationMs << " ms\n"
-                      << "  Library GPU upload: " << libraryTimings.uploadMs << " ms\n"
-                      << "  Library device bytes: " << libraryTimings.residentBytes << "\n"
-                      << "  Feature GPU allocation: " << featureTimings.allocationMs << " ms\n"
-                      << "  Feature GPU upload: " << featureTimings.uploadMs << " ms\n"
-                      << "  Feature GPU compute: " << featureTimings.computeMs << " ms\n"
-                      << "  Feature GPU download: " << featureTimings.downloadMs << " ms\n"
-                      << "  Feature CPU Canny: " << featureTimings.cannyMs << " ms\n"
-                      << "  Feature GPU wait: " << featureTimings.waitMs << " ms\n"
-                      << "  Feature CUDA event upload: " << featureTimings.eventUploadMs << " ms\n"
-                      << "  Feature CUDA event compute: " << featureTimings.eventComputeMs << " ms\n"
-                      << "  Feature CUDA event download: " << featureTimings.eventDownloadMs << " ms\n"
-                      << "  Feature upload bytes: " << featureTimings.uploadBytes << "\n"
-                      << "  Feature download bytes: " << featureTimings.downloadBytes << "\n"
-                      << "  Feature pinned bytes: " << featureTimings.pinnedBytes << "\n"
-                      << "  Feature resident bytes: " << featureTimings.residentBytes << "\n"
-                      << "  Feature device pixel bytes: " << featureTimings.pixelBytes << "\n"
-                      << "  Score GPU allocation: " << scoreTimings.allocationMs << " ms\n"
-                      << "  Score GPU upload: " << scoreTimings.uploadMs << " ms\n"
-                      << "  Score GPU compute: " << scoreTimings.computeMs << " ms\n"
-                      << "  Score GPU download: " << scoreTimings.downloadMs << " ms\n"
-                      << "  Score GPU wait: " << scoreTimings.waitMs << " ms\n"
-                      << "  Score CUDA event upload: " << scoreTimings.eventUploadMs << " ms\n"
-                      << "  Score CUDA event compute: " << scoreTimings.eventComputeMs << " ms\n"
-                      << "  Score CUDA event download: " << scoreTimings.eventDownloadMs << " ms\n"
-                      << "  Score upload bytes: " << scoreTimings.uploadBytes << "\n"
-                      << "  Score download bytes: " << scoreTimings.downloadBytes << "\n"
-                      << "  Score pinned bytes: " << scoreTimings.pinnedBytes << "\n"
-                      << "  Score temporary bytes: " << scoreTimings.peakTemporaryBytes << "\n";
-        }
-        if (backends.scoring == ScoreBackend::CompatibleCuda)
-        {
-            std::cout << "  Library GPU upload: " << libraryTimings.uploadMs << " ms\n"
-                      << "  Library device bytes: " << libraryTimings.residentBytes << "\n"
-                      << "  Score GPU allocation: " << scoreTimings.allocationMs << " ms\n"
-                      << "  Score packing and copy: " << scoreTimings.uploadMs + scoreTimings.downloadMs << " ms\n"
-                      << "  Score CUDA event upload: " << scoreTimings.eventUploadMs << " ms\n"
-                      << "  Score CUDA event compute: " << scoreTimings.eventComputeMs << " ms\n"
-                      << "  Score CUDA event download: " << scoreTimings.eventDownloadMs << " ms\n"
-                      << "  Score pinned bytes: " << scoreTimings.pinnedBytes << "\n"
-                      << "  Score temporary bytes: " << scoreTimings.peakTemporaryBytes << "\n"
-                      << "  Matching combined device temporary bytes: " << m_compatibleTemporaryBytes << "\n";
-        }
-        std::cout << "  Matching batches: " << matchingBatches << "\n"
-                  << "  Matching prefetch: " << matchingPrefetch << "\n"
-                  << "  Matching wall: " << matchingWallMs << " ms\n"
-                  << "  Matching max tiles: " << maximumBatchTiles << "\n"
-                  << "  Matching buffer peak bytes: " << matchingPeakBytes << "\n"
-                  << "  Feature cache peak bytes: " << featureReadStats.peakBytes << "\n"
-                  << "  Feature cache hits: " << featureReadStats.hits << "\n"
-                  << "  Feature source reads: " << featureReadStats.sourceReads << "\n"
-                  << "  Feature cache evictions: " << featureReadStats.evictions << "\n"
-                  << "  Feature cache preloaded: " << featureReadStats.preloaded << "\n";
-        std::cout << "  Library feature source reads: " << libraryReadStats.sourceReads << "\n"
-                  << "  Library feature pack hits: " << libraryReadStats.packedRows << "\n";
-        std::cout << "  === Total: " << msTotal     << " ms ===\n";
-        if (totalTiles > 0)
-            std::cout << "  Avg/tile:    " << (msTotal / totalTiles) << " ms\n";
-        std::cout << std::flush;
-    };
 
     std::atomic<int> matched{0};
     int loadFail = 0;
@@ -681,7 +534,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
     // 可控匹配缓冲按预算分批；图库记录和精简选择结果仍独立持有。
     size_t batchRows =
         std::min<size_t>(totalTiles, matchingBatchRows(m_limits, featW, featH, N, dbCount, templateCuda));
-    maximumBatchTiles = batchRows;
+    metrics.maximumBatchTiles = batchRows;
     int noCandidateCount = 0;
     int grid4Top1 = 0, grid8Top1 = 0, top1Differ = 0;
     int adaptiveSmoothCount = 0, adaptiveEdgeCount = 0, adaptiveTextureCount = 0, adaptiveNormalCount = 0;
@@ -713,12 +566,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
     };
     {
         const auto preparationEnd = Clock::now();
-        msPrep = Ms(preparationEnd - tStart).count();
+        metrics.msPrep = Ms(preparationEnd - tStart).count();
         auto annIndex = std::make_unique<FeatureIndex>();
         const std::string annPath = featDirCache.empty() ? "lib.ann196" : featDirCache + "/lib.ann196";
         const auto indexStart = Clock::now();
         bool loaded = annIndex->load(annPath, FeatureIndex::kDimension, allRecords);
-        msANNLoad = Ms(Clock::now() - indexStart).count();
+        metrics.msANNLoad = Ms(Clock::now() - indexStart).count();
         if (!loaded)
         {
             const auto buildStart = Clock::now();
@@ -732,7 +585,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             {
                 std::cerr << "WARNING: ANN cache could not be saved." << std::endl;
             }
-            msANNBuild = Ms(Clock::now() - buildStart).count();
+            metrics.msANNBuild = Ms(Clock::now() - buildStart).count();
         }
 
         WorkerPool queryWorkers;
@@ -760,7 +613,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             if (compatibleFeatures)
             {
                 batchRows = static_cast<size_t>(compatible.capacity());
-                maximumBatchTiles = batchRows;
+                metrics.maximumBatchTiles = batchRows;
             }
             if (!compatibleFeatures)
             {
@@ -782,7 +635,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             {
                 batchRows /= 2;
             }
-            maximumBatchTiles = batchRows;
+            metrics.maximumBatchTiles = batchRows;
             if (gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze) + scratch > m_limits.hostBytes)
             {
                 std::cerr << "ERROR: Matching host budget cannot hold one CUDA tile." << std::endl;
@@ -801,20 +654,20 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 options.downloadLbp = cfg.analyze || cfg.adaptiveWeights;
                 options.hostBudget = m_limits.hostBytes - hostRows - scratch - scoreHost;
                 options.deviceBudget -= scoreRowBytes;
-                pipeline = workspace->preparePipeline(options, cfg.benchmark ? &featureTimings : nullptr);
+                pipeline = workspace->preparePipeline(options, cfg.benchmark ? &metrics.featureTimings : nullptr);
                 if (pipeline)
                 {
                     const auto allocationStart = Clock::now();
                     pipeline = scoreWorkspace->preparePipeline(static_cast<int>(batchRows), N, scoreHost,
                                                                  workspace->residentBytes());
-                    scoreTimings.allocationMs += Ms(Clock::now() - allocationStart).count();
+                    metrics.scoreTimings.allocationMs += Ms(Clock::now() - allocationStart).count();
                 }
                 if (!pipeline)
                 {
                     // 释放已部分准备的可选资源后，才允许使用完整的原同步 CUDA 路径。
                     workspace->resetPipeline();
                     scoreWorkspace->resetPipeline();
-                    featureTimings.pinnedBytes = featureTimings.residentBytes = featureTimings.pixelBytes = 0;
+                    metrics.featureTimings.pinnedBytes = metrics.featureTimings.residentBytes = metrics.featureTimings.pixelBytes = 0;
                 }
                 pinnedBytes = workspace->pinnedBytes() + scoreWorkspace->pinnedBytes();
             }
@@ -827,7 +680,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                                                                   m_limits.featureBytes);
             if (!templateCuda)
             {
-                msCPUFeatures += Ms(Clock::now() - readStart).count();
+                metrics.msCPUFeatures += Ms(Clock::now() - readStart).count();
             }
         }
         if (backends.scoring == ScoreBackend::CompatibleCuda)
@@ -870,15 +723,15 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     }
                 }
             }
-            scoreTimings.allocationMs += Ms(Clock::now() - allocationStart).count();
+            metrics.scoreTimings.allocationMs += Ms(Clock::now() - allocationStart).count();
             if (ready)
             {
                 batchRows = static_cast<size_t>(compatibleScore.capacity());
                 pinnedBytes += compatibleScore.hostBytes();
                 m_compatibleTemporaryBytes = compatible.deviceBytes() + compatibleScore.deviceBytes();
                 // Reader 保留原来源校验及缺失标志，上传暂存按块复用，不复制整库到另一份主机数组。
-                compatibleScore.uploadLibrary(allRecords, *featureReader, &libraryTimings);
-                libraryReadStats = featureReader->stats();
+                compatibleScore.uploadLibrary(allRecords, *featureReader, &metrics.libraryTimings);
+                metrics.libraryReadStats = featureReader->stats();
             }
             else
             {
@@ -891,7 +744,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                               ? "combined host/device budget cannot hold one row"
                               : compatibleScore.preparationFailure()) << "; using CPU scoring." << std::endl;
             }
-            maximumBatchTiles = batchRows;
+            metrics.maximumBatchTiles = batchRows;
         }
         if (!templateCuda)
         {
@@ -964,12 +817,12 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     {
                         workspace->extract(piece, pieceCount, buffers.lab.data() + piece * 3, allGrid[piece].data(),
                                            allTiny[piece].data(), allEdge.data() + piece, allLBP[piece].data(),
-                                           cfg.benchmark ? &featureTimings : nullptr);
+                                           cfg.benchmark ? &metrics.featureTimings : nullptr);
                     }
                     else if (cuda::extractFeaturesRaw(input, pieceCount, featW, featH,
                                                  buffers.lab.data() + piece * 3, allGrid[piece].data(),
                                                  allTiny[piece].data(), allEdge.data() + piece, allLBP[piece].data(),
-                                                 workspace.get(), cfg.benchmark ? &featureTimings : nullptr) < 0)
+                                                 workspace.get(), cfg.benchmark ? &metrics.featureTimings : nullptr) < 0)
                     {
                         std::cerr << "ERROR: GPU feature extraction failed." << std::endl;
                         return false;
@@ -1022,7 +875,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                                        auto t1 = cfg.benchmark ? Clock::now() : Clock::time_point{};
                                        if (cfg.benchmark)
                                        {
-                                           opResizeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
+                                           metrics.opResizeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
                                        }
                                        cv::Mat lab;
                                        cv::cvtColor(roiNative, lab, cv::COLOR_BGR2Lab);
@@ -1033,13 +886,13 @@ bool MosaicEngine::generate(const std::string& targetPath,
                                        auto t2 = cfg.benchmark ? Clock::now() : Clock::time_point{};
                                        if (cfg.benchmark)
                                        {
-                                           opLabNs += std::chrono::duration_cast<Ns>(t2 - t1).count();
+                                           metrics.opLabNs += std::chrono::duration_cast<Ns>(t2 - t1).count();
                                        }
                                        allGrid[local] = computeGrid8x8FromLab(lab);
                                        auto t3 = cfg.benchmark ? Clock::now() : Clock::time_point{};
                                        if (cfg.benchmark)
                                        {
-                                           opGridNs += std::chrono::duration_cast<Ns>(t3 - t2).count();
+                                           metrics.opGridNs += std::chrono::duration_cast<Ns>(t3 - t2).count();
                                        }
                                        cv::Mat gray;
                                        cv::cvtColor(roiNative, gray, cv::COLOR_BGR2GRAY);
@@ -1047,23 +900,23 @@ bool MosaicEngine::generate(const std::string& targetPath,
                                        auto t4 = cfg.benchmark ? Clock::now() : Clock::time_point{};
                                        if (cfg.benchmark)
                                        {
-                                           opTinyNs += std::chrono::duration_cast<Ns>(t4 - t3).count();
+                                           metrics.opTinyNs += std::chrono::duration_cast<Ns>(t4 - t3).count();
                                        }
                                        allEdge[local] = computeEdgeDensityFromGray(gray);
                                        auto t5 = cfg.benchmark ? Clock::now() : Clock::time_point{};
                                        if (cfg.benchmark)
                                        {
-                                           opEdgeNs += std::chrono::duration_cast<Ns>(t5 - t4).count();
+                                           metrics.opEdgeNs += std::chrono::duration_cast<Ns>(t5 - t4).count();
                                        }
                                        allLBP[local] = computeLBPHistogramFromGray(gray);
                                        auto t6 = cfg.benchmark ? Clock::now() : Clock::time_point{};
                                        if (cfg.benchmark)
                                        {
-                                           opLbpNs += std::chrono::duration_cast<Ns>(t6 - t5).count();
+                                           metrics.opLbpNs += std::chrono::duration_cast<Ns>(t6 - t5).count();
                                        }
                                    });
             }
-            msFeat += Ms(Clock::now() - featureStart).count();
+            metrics.msFeat += Ms(Clock::now() - featureStart).count();
             const auto queryStart = Clock::now();
             for (int local = 0; local < count; ++local)
             {
@@ -1085,7 +938,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     hasCandidates = hasCandidates || index >= 0;
                 }
             }
-            msANNQuery += Ms(Clock::now() - queryStart).count();
+            metrics.msANNQuery += Ms(Clock::now() - queryStart).count();
             std::fill(tileLabW.begin(), tileLabW.end(), nLabW);
             std::fill(tileGridW.begin(), tileGridW.end(), nGridW);
             std::fill(tileTinyW.begin(), tileTinyW.end(), nTinyW);
@@ -1174,7 +1027,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             templateCuda && totalTiles > batchRows && m_limits.hostBytes >= scratch + pinnedBytes &&
             gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, pipeline) <=
                 (m_limits.hostBytes - scratch - pinnedBytes) / 2;
-        matchingPrefetch = prefetch;
+        metrics.matchingPrefetch = prefetch;
         bool preparedNext = false;
         // 池必须在缓冲/prepare 之后创建，错误退出也会先等待预取线程，再销毁它引用的数据。
         std::unique_ptr<WorkerPool> prefetchWorkers;
@@ -1193,7 +1046,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             const int count = static_cast<int>(std::min<size_t>(batchRows, totalTiles - first));
             const int next = first + count;
             const int nextCount = static_cast<int>(std::min<size_t>(batchRows, totalTiles - next));
-            ++matchingBatches;
+            ++metrics.matchingBatches;
             auto &allTL = buffers.l;
             auto &allTA = buffers.a;
             auto &allTB = buffers.b;
@@ -1229,20 +1082,20 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     std::cerr << "ERROR: GPU scoring failed; mosaic was not generated." << std::endl;
                     return false;
                 }
-                scoreTimings.allocationMs += batchTimings.allocationMs;
-                scoreTimings.uploadMs += batchTimings.uploadMs;
-                scoreTimings.computeMs += batchTimings.computeMs;
-                scoreTimings.downloadMs += batchTimings.downloadMs;
-                scoreTimings.waitMs += batchTimings.waitMs;
-                scoreTimings.eventUploadMs += batchTimings.eventUploadMs;
-                scoreTimings.eventComputeMs += batchTimings.eventComputeMs;
-                scoreTimings.eventDownloadMs += batchTimings.eventDownloadMs;
-                scoreTimings.uploadBytes += batchTimings.uploadBytes;
-                scoreTimings.downloadBytes += batchTimings.downloadBytes;
-                scoreTimings.pinnedBytes = std::max(scoreTimings.pinnedBytes, batchTimings.pinnedBytes);
-                scoreTimings.peakTemporaryBytes =
-                    std::max(scoreTimings.peakTemporaryBytes, batchTimings.peakTemporaryBytes);
-                msGPUScore += Ms(Clock::now() - scoreStart).count();
+                metrics.scoreTimings.allocationMs += batchTimings.allocationMs;
+                metrics.scoreTimings.uploadMs += batchTimings.uploadMs;
+                metrics.scoreTimings.computeMs += batchTimings.computeMs;
+                metrics.scoreTimings.downloadMs += batchTimings.downloadMs;
+                metrics.scoreTimings.waitMs += batchTimings.waitMs;
+                metrics.scoreTimings.eventUploadMs += batchTimings.eventUploadMs;
+                metrics.scoreTimings.eventComputeMs += batchTimings.eventComputeMs;
+                metrics.scoreTimings.eventDownloadMs += batchTimings.eventDownloadMs;
+                metrics.scoreTimings.uploadBytes += batchTimings.uploadBytes;
+                metrics.scoreTimings.downloadBytes += batchTimings.downloadBytes;
+                metrics.scoreTimings.pinnedBytes = std::max(metrics.scoreTimings.pinnedBytes, batchTimings.pinnedBytes);
+                metrics.scoreTimings.peakTemporaryBytes =
+                    std::max(metrics.scoreTimings.peakTemporaryBytes, batchTimings.peakTemporaryBytes);
+                metrics.msGPUScore += Ms(Clock::now() - scoreStart).count();
                 if (prefetch && nextCount > 0)
                 {
                     // 下一批只准备与邻域状态无关的数据；评分和选择仍由当前线程顺序执行。
@@ -1325,11 +1178,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     // 8, 8 vs 4, 4 Grid 对比实验（--analyze 模式）
                     if (cfg.benchmark)
                     {
-                        msNeighbor += Ms(Clock::now() - neighborStart).count();
+                        metrics.msNeighbor += Ms(Clock::now() - neighborStart).count();
                     }
                     if (cfg.analyze && validCount > 0)
                     {
-                        BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
+                        BenchmarkTimer analysisTimer(cfg.benchmark, metrics.msAnalysis);
                         double best4 = 1e30, best8 = 1e30;
                         int best4idx = -1, best8idx = -1;
                         for (int j = 0; j < N; ++j)
@@ -1378,7 +1231,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                                       });
                     if (cfg.benchmark)
                     {
-                        msSort += Ms(Clock::now() - sortStart).count();
+                        metrics.msSort += Ms(Clock::now() - sortStart).count();
                     }
                     thread_local std::mt19937 rng(std::random_device{}());
                     int rankPos = std::uniform_int_distribution<int>(0, topN - 1)(
@@ -1389,7 +1242,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     // --analyze: 记录每个 tile 的详细匹配数据，用于后续分析报告
                     if (cfg.analyze)
                     {
-                        BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
+                        BenchmarkTimer analysisTimer(cfg.benchmark, metrics.msAnalysis);
                         const auto &rec = allRecords[chosenLibIdx];
                         double labD =
                             labDistance(allTL[local], allTA[local], allTB[local], rec.avgL, rec.avgA, rec.avgB);
@@ -1513,7 +1366,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     }
                 }
 
-                msSelect += Ms(Clock::now() - selectionStart).count();
+                metrics.msSelect += Ms(Clock::now() - selectionStart).count();
             }
             else
             {
@@ -1521,8 +1374,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 if (gpuScoring)
                 {
                     const auto scoreStart = Clock::now();
-                    compatibleScore.score(buffers, count, cfg.usePenalty, allScores.data(), &scoreTimings);
-                    msGPUScore += Ms(Clock::now() - scoreStart).count();
+                    compatibleScore.score(buffers, count, cfg.usePenalty, allScores.data(), &metrics.scoreTimings);
+                    metrics.msGPUScore += Ms(Clock::now() - scoreStart).count();
                     m_compatibleScoreTiles += count;
                 }
                 // 分析仍读取原 CPU 特征；普通 GPU 评分无需重复读取所有候选。
@@ -1531,8 +1384,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     const auto readStart = Clock::now();
                     featureReader->prepare(allIndices);
                     const double readMs = Ms(Clock::now() - readStart).count();
-                    msCPUFeatures += readMs;
-                    msSelect += readMs;
+                    metrics.msCPUFeatures += readMs;
+                    metrics.msSelect += readMs;
                 }
                 const auto selectionStart = Clock::now();
                 for (int local = 0; local < count; ++local)
@@ -1550,7 +1403,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                         const auto &r = allRecords[li];
                         double s = gpuScoring ? allScores[size_t(local) * N + j]
                             : cpuBaseScore(buffers, local, r, featureReader->get(li), cfg.usePenalty);
-                        BenchmarkTimer neighborTimer(cfg.benchmark, msNeighbor);
+                        BenchmarkTimer neighborTimer(cfg.benchmark, metrics.msNeighbor);
                         auto it = freq.find(r.id);
                         int cnt = (it != freq.end()) ? it->second : 0;
                         if (cnt >= 3)
@@ -1583,7 +1436,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     if (cfg.benchmark)
                     {
                         // 候选评分包含原有邻域惩罚；排序和最终选图另计。
-                        msCPUScore += Ms(Clock::now() - scoreStart).count();
+                        metrics.msCPUScore += Ms(Clock::now() - scoreStart).count();
                     }
                     if (scored.empty())
                     {
@@ -1595,7 +1448,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     std::partial_sort(scored.begin(), scored.begin() + topN, scored.end());
                     if (cfg.benchmark)
                     {
-                        msSort += Ms(Clock::now() - sortStart).count();
+                        metrics.msSort += Ms(Clock::now() - sortStart).count();
                     }
                     thread_local std::mt19937 rng2(std::random_device{}());
                     int pickIdx =
@@ -1603,7 +1456,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     bestLibIdx[ti] = pickIdx;
                     if (cfg.analyze)
                     {
-                        BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
+                        BenchmarkTimer analysisTimer(cfg.benchmark, metrics.msAnalysis);
                         const auto &w = allRecords[pickIdx];
                         const auto &winnerFeatures = featureReader->get(pickIdx);
 
@@ -1648,7 +1501,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                     }
                 }
 
-                msSelect += Ms(Clock::now() - selectionStart).count();
+                metrics.msSelect += Ms(Clock::now() - selectionStart).count();
             }
             if (prefetch && nextCount > 0)
             {
@@ -1659,7 +1512,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
                 }
             }
             const size_t temporary = featureReader ? featureReader->stats().temporaryPeakBytes : 0;
-            matchingPeakBytes = std::max(matchingPeakBytes, buffers.capacityBytes() + ahead.capacityBytes() +
+            metrics.matchingPeakBytes = std::max(metrics.matchingPeakBytes, buffers.capacityBytes() + ahead.capacityBytes() +
                                                                 temporary + pinnedBytes + compatible.hostBytes() +
                                                                 idxs.capacity() * sizeof(int) +
                                                                 scored.capacity() * sizeof(std::pair<double, int>) +
@@ -1680,7 +1533,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
         }
         if (featureReader)
         {
-            featureReadStats = featureReader->stats();
+            metrics.featureReadStats = featureReader->stats();
         }
         if (compatibleFeatures)
         {
@@ -1696,10 +1549,10 @@ bool MosaicEngine::generate(const std::string& targetPath,
         {
             std::cout << "\n  Compatible CUDA scoring: " << m_compatibleScoreTiles << " tiles; library "
                       << compatibleScore.libraryBytes() << " bytes, combined device temporary "
-                      << m_compatibleTemporaryBytes << " bytes; library upload " << libraryTimings.uploadMs
-                      << " ms, score packing/copy " << scoreTimings.uploadMs + scoreTimings.downloadMs
-                      << " ms, device upload/kernel/download " << scoreTimings.eventUploadMs << "/"
-                      << scoreTimings.eventComputeMs << "/" << scoreTimings.eventDownloadMs << " ms"
+                      << m_compatibleTemporaryBytes << " bytes; library upload " << metrics.libraryTimings.uploadMs
+                      << " ms, score packing/copy " << metrics.scoreTimings.uploadMs + metrics.scoreTimings.downloadMs
+                      << " ms, device upload/kernel/download " << metrics.scoreTimings.eventUploadMs << "/"
+                      << metrics.scoreTimings.eventComputeMs << "/" << metrics.scoreTimings.eventDownloadMs << " ms"
                       << std::endl;
         }
         if (!hasCandidates)
@@ -1708,7 +1561,7 @@ bool MosaicEngine::generate(const std::string& targetPath,
             return false;
         }
     } // 索引、缓存、线程池及大批次缓冲在贴图/编码之前释放。
-    matchingWallMs = Ms(Clock::now() - matchingStart).count();
+    metrics.matchingWallMs = Ms(Clock::now() - matchingStart).count();
     if (m_selectedObserver)
     {
         *m_selectedObserver = bestLibIdx;
@@ -1750,19 +1603,19 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     releaseGpuLib();
     if (!writeIndexedMosaicOutput(cfg, outputPath, tilesX, tilesY, outTileW, outTileH, allRecords, bestLibIdx,
-                                  adjustColor, outputStats, target))
+                                  adjustColor, metrics.outputStats, target))
     {
         return false;
     }
-    matched = outputStats.matched;
-    loadFail = outputStats.failed;
-    msPlace = outputStats.placementMs;
-    msEncode = outputStats.encodingMs;
-    std::cout << "Mosaic saved: " << outputStats.path << " (" << matched << " / " << totalTiles
+    matched = metrics.outputStats.matched;
+    loadFail = metrics.outputStats.failed;
+    metrics.msPlace = metrics.outputStats.placementMs;
+    metrics.msEncode = metrics.outputStats.encodingMs;
+    std::cout << "Mosaic saved: " << metrics.outputStats.path << " (" << matched << " / " << totalTiles
               << " tiles, loadFail=" << loadFail << ")" << std::endl;
-    if (!outputStats.previewPath.empty())
+    if (!metrics.outputStats.previewPath.empty())
     {
-        std::cout << "Preview saved: " << outputStats.previewPath << std::endl;
+        std::cout << "Preview saved: " << metrics.outputStats.previewPath << std::endl;
     }
     // 修正特征计数器：各路径可能在 return 前未完整设置
     if (cntEdge + cntMissEdge == 0)
@@ -1792,8 +1645,8 @@ bool MosaicEngine::generate(const std::string& targetPath,
 
     // 根据扩展名与 --format 自动切换或保持原路径格式一致
     {
-        BenchmarkTimer analysisTimer(cfg.benchmark, msAnalysis);
-        runAnalysis(outputStats.path);
+        BenchmarkTimer analysisTimer(cfg.benchmark, metrics.msAnalysis);
+        runAnalysis(metrics.outputStats.path);
     }
 
     releaseGpuLib();
@@ -1802,7 +1655,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
 #endif
 
     // 运行分析报告（如有 --analyze）
-    printBenchmark("single");
+    if (cfg.benchmark)
+    {
+        detail::printMosaicBenchmark(metrics,
+            {cfg, backends, totalTiles, N, m_compatibleTemporaryBytes, Ms(Clock::now() - tStart).count()}, "single");
+    }
     return true;
 }
 
