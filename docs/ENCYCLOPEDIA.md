@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-11-09 | 版本 / Version：v1.14.10
+> 最后更新 / Last updated：2026-11-10 | 版本 / Version：v1.14.11
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -367,7 +367,8 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.14.7 | 三平台 CPU 发布、云端 CUDA 候选、精简 Release 依赖与独立包验收 | 见 CI 与打包说明 |
 | 1.14.8 | 七架构 CUDA、Linux CUDA 正式附件与实际内核预检 | 见 CUDA 验证报告 |
 | 1.14.9 | 统一运行诊断、阶段进度、API 2.1 与 Web UI 任务和结果体验 | 见运行诊断验收 |
-| **1.14.10** | Web UI 离线使用帮助、参数说明、明确预览默认状态与窄屏排版 | 见本版更新记录 |
+| 1.14.10 | Web UI 离线使用帮助、参数说明、明确预览默认状态与窄屏排版 | 见对应更新记录 |
+| **1.14.11** | 按来源选择输出格式、超限转 PNG 或缩小 Tile、API 2.2 输出计划与实际产物 | 见本版更新记录 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -786,3 +787,15 @@ Web UI 的预览提示改为“生成结果预览默认关闭，勾选后额外�
 功能修改已通过真实浏览器检查：预览说明、帮助直达、参数保留、刷新恢复、帮助页任务跟踪、键盘展开、窄屏排版与服务断开后的阅读均正常；JavaScript 语法与帮助锚点检查通过。发布继续按清单执行同提交的原生打包、本机 GPU Required 和真实附件验收。CLI、REST API 2.1、特征 v6、图库格式及评分算法保持兼容。
 
 > **EN**: Version 1.14.10 adds a self-contained Web UI help page covering setup, paths, options, task diagnostics and results. Preview wording explicitly names the option and explains its purpose. Context links open the relevant help section; form state and task tracking survive navigation, while help never generates or submits a command. Narrow screens use stacked option descriptions. API 2.1, feature v6, library formats and engine behavior remain unchanged.
+
+### v1.14.11: 输出格式来源与超限适配 (2026-11-10)
+
+单图输出按显式 `--format` / API `format`、输出文件后缀、输入文件后缀、PNG 的优先级确定格式。默认文件名改为无后缀的 `output/output`，最终追加实际后缀；有效显式格式覆盖冲突后缀，合法的 `.jpeg/.tif` 别名和大小写保持原拼写。输入后缀无法推导时回退 PNG，未知输出后缀在没有显式格式时明确报错。
+
+自动推导的 JPG 或 WebP 超出各自单轴 65,500 / 16,383 上限时，改存 PNG 并保留完整尺寸；显式选择 JPG/WebP 时，通过统一比例缩小输出 Tile 并保留格式。尺寸计算使用 64 位整数；取整可能改变比例，网格本身超出编码上限时明确失败。PNG/TIFF 继续保留完整尺寸并执行原有整数及资源检查，分块和 DeepZoom 沿用原分片规则。匹配特征、网格、评分、随机调用和使用统计提交语义保持不变。
+
+API 合约升至 2.2，主兼容版本保持 2，增加 `output-format-policy` 能力和可选 `runtime.outputPlan`，区分计划尺寸与已保存结果。格式回退和尺寸缩小通过稳定原因码发布警告；主图成功关闭后才登记实际产物。Web UI 展示格式来源、适配前后尺寸和真实文件名，自动模式不补充显式格式；恢复参数、命令生成、预览和报告共用同一份格式语义。生成结果预览继续默认关闭。
+
+实现验收覆盖 Windows CPU/CUDA CTest、扩展 HTTP smoke、13 个 CLI 场景、八组模板/自定义尺寸严格基线，以及真实浏览器的提交、刷新、参数恢复、帮助和下载。固定种子回归比较完整 PNG 与缩小后的 JPG/WebP，确认选图及使用统计一致。详情见 [输出格式与超限适配验收](OUTPUT_FORMAT_VERIFICATION.md)；正式附件继续按发布清单执行同提交原生打包、本机 GPU Required 和真实下载验收。
+
+> **EN**: Version 1.14.11 resolves output format from an explicit selection, output suffix, input suffix, then PNG. Inferred oversized JPG/WebP becomes full-size PNG; explicit JPG/WebP reduces output tile dimensions. API 2.2 and the Web UI expose the output plan separately from saved artifacts. Actual filenames, previews and reports remain consistent. Feature v6, matching algorithms, library format and usage-commit semantics are preserved.

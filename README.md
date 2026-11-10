@@ -1,4 +1,4 @@
-# Mosaicraft v1.14.10
+# Mosaicraft v1.14.11
 
 > GPU 加速的照片马赛克拼贴生成器 — 本地创建图库图片精准匹配，输出超大分辨率马赛克拼图
 
@@ -55,7 +55,7 @@ mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o output.jpg
 - **多分辨率** — 180×320 / 320×180 / 360×640 / 640×360 沿用模板内核；其他合法尺寸使用与 CPU 精确兼容的通用 CUDA 特征统计，宽高各支持 1～8192，资源不足时回退 CPU
 - **纯 CPU 模式** — `-D MOSAICRAFT_CUDA=OFF` 即可无 NVIDIA 平台编译
 
-v1.14.10 新增 Web UI 离线使用帮助，解释基本流程、路径、各项参数和任务结果；明确“生成结果预览默认关闭”，并提供直达说明、参数保留和窄屏排版。当前源码 API 合约为 2.2、主兼容版本保持 2，算法、特征 v6 和图库格式不变，已有图库无需重建。发布时的变更见 [百科版本记录](https://github.com/CialloKing/Mosaicraft/blob/v1.14.10/docs/ENCYCLOPEDIA.md#v11410-web-ui-使用帮助与预览说明-2026-11-09)。
+v1.14.11 统一单图输出格式来源与超限适配，并在 Web UI 中展示输出计划和实际产物。API 合约为 2.2、主兼容版本保持 2，算法、特征 v6 和图库格式不变，已有图库无需重建。Web UI 继续提供离线使用帮助、参数恢复和可选结果预览。完整变更见 [百科版本记录](https://github.com/CialloKing/Mosaicraft/blob/v1.14.11/docs/ENCYCLOPEDIA.md#v11411-输出格式来源与超限适配-2026-11-10)。
 
 当前单图输出按“显式格式 → 输出后缀 → 输入后缀 → PNG”确定格式；自动 JPG/WebP 超限改存完整尺寸 PNG，显式选择 JPG/WebP 则缩小输出 Tile。页面展示适配前后尺寸与实际文件，验收见 [输出格式与超限适配](docs/OUTPUT_FORMAT_VERIFICATION.md)。
 

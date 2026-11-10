@@ -869,7 +869,7 @@ TEST_CASE("gridDistance8x8 — center cell has higher weight than corner")
 
 TEST_CASE("Version is shared by CLI and API")
 {
-    CHECK(std::string(kVersion) == "1.14.10");
+    CHECK(std::string(kVersion) == "1.14.11");
 }
 
 TEST_CASE("API endpoint metadata is shared and self-describing")
@@ -1026,7 +1026,7 @@ TEST_CASE("API JSON serialization is shared")
     CHECK_FALSE((*legacy)["enabled"].get<bool>());
 
     auto infoJson = apiInfoToJson(false, "MosaicraftWebUI");
-    CHECK(infoJson["version"].get<std::string>() == "1.14.10");
+    CHECK(infoJson["version"].get<std::string>() == "1.14.11");
     CHECK(infoJson["entry"].get<std::string>() == "MosaicraftWebUI");
     REQUIRE(infoJson["entryPoints"].is_array());
     CHECK(infoJson["entryPoints"].size() == 2);

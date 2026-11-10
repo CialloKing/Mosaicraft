@@ -652,6 +652,7 @@ try {
             "docs\API.md",
             "docs\ENGINE_REFACTOR_VERIFICATION.md",
             "docs\RUNTIME_DIAGNOSTICS_VERIFICATION.md",
+            "docs\OUTPUT_FORMAT_VERIFICATION.md",
             "docs\PREVIEW_VERIFICATION.md",
             "docs\SAME_SIZE_NORMALIZATION.md",
             "docs\CI_PACKAGING.md",
