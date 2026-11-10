@@ -20,6 +20,12 @@ struct MatchingAccess
     {
         engine.m_matchOnly = enabled;
     }
+    static void selectionPolicy(MosaicEngine &engine, SelectionOptions options,
+                                std::vector<SelectionDiagnostic> *diagnostics = nullptr)
+    {
+        engine.m_selectionOptions = options;
+        engine.m_selectionObserver = diagnostics;
+    }
     static size_t compatibleFeatureImages(const MosaicEngine &engine)
     {
         return engine.m_compatibleFeatureImages;

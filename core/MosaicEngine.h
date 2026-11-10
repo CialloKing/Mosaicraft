@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "MatchingBatch.h"
+#include "SelectionPolicy.h"
 
 #include <iostream>
 #include <string>
@@ -117,6 +118,8 @@ public:
     bool m_fixedSeed = false;
     uint32_t m_seed = 0;
     bool m_matchOnly = false;
+    SelectionOptions m_selectionOptions;
+    std::vector<SelectionDiagnostic> *m_selectionObserver = nullptr;
     std::vector<int> *m_selectedObserver = nullptr;
     size_t m_compatibleFeatureImages = 0;
     size_t m_compatibleScoreTiles = 0;

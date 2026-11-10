@@ -23,6 +23,8 @@ int main(int argc, char **argv)
         return 1;
     }
     std::string profile, summaryPath;
+    std::string strategy = "L", diagnosticsPath;
+    SelectionOptions selectionOptions;
     bool fixedSeed = false, capture = false;
     bool matchOnly = false;
     size_t batchTiles = 0;
@@ -64,6 +66,30 @@ int main(int argc, char **argv)
                 return 1;
             }
         }
+        else if (argument == "--strategy" && i + 1 < argc)
+        {
+            strategy = argv[++i];
+            if (strategy != "L" && strategy != "Q")
+            {
+                std::cerr << "invalid selection strategy\n";
+                return 1;
+            }
+        }
+        else if (argument == "--epsilon" && i + 1 < argc)
+        {
+            const std::string value = argv[++i];
+            const auto parsed = std::from_chars(value.data(), value.data() + value.size(), selectionOptions.relative);
+            if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() ||
+                !std::isfinite(selectionOptions.relative) || selectionOptions.relative < 0)
+            {
+                std::cerr << "invalid quality tolerance\n";
+                return 1;
+            }
+        }
+        else if (argument == "--diagnostics" && i + 1 < argc)
+        {
+            diagnosticsPath = argv[++i];
+        }
         else if (profile.empty() && (argument == "small" || argument == "indices" || argument == "small-indices"))
         {
             profile = argument;
@@ -84,7 +110,9 @@ int main(int argc, char **argv)
         return 1;
     }
     request.config.benchmark = true;
-    if (!profile.empty() || fixedSeed || capture || !summaryPath.empty() || batchTiles)
+    selectionOptions.quality = strategy == "Q";
+    if (!profile.empty() || fixedSeed || capture || !summaryPath.empty() || batchTiles ||
+        selectionOptions.enabled() || !diagnosticsPath.empty())
     {
         MosaicEngine engine;
         MatchingLimits limits;
@@ -98,6 +126,8 @@ int main(int argc, char **argv)
         }
         MatchingAccess::configure(engine, limits, fixedSeed, seed);
         MatchingAccess::matchOnly(engine, matchOnly);
+        std::vector<SelectionDiagnostic> diagnostics;
+        MatchingAccess::selectionPolicy(engine, selectionOptions, diagnosticsPath.empty() ? nullptr : &diagnostics);
         std::vector<int> selected;
         capture = capture || profile == "indices" || profile == "small-indices";
         if (capture)
@@ -118,6 +148,23 @@ int main(int argc, char **argv)
                 return 1;
             }
         }
+        if (!diagnosticsPath.empty())
+        {
+            nlohmann::json rows = nlohmann::json::array();
+            for (const auto &d : diagnostics)
+            {
+                rows.push_back({{"selected", d.selected}, {"candidates", d.candidates},
+                                {"quality_candidates", d.qualityCandidates}, {"minimum", d.minimum},
+                                {"limit", d.limit}, {"error", d.error}});
+            }
+            std::ofstream output(u8path(diagnosticsPath));
+            output << rows.dump() << '\n';
+            output.close();
+            if (!output)
+            {
+                return 1;
+            }
+        }
         if (!summaryPath.empty())
         {
             const auto state = runtime.snapshot();
@@ -126,7 +173,8 @@ int main(int argc, char **argv)
                 {"selected_count", selected.size()}, {"feature_backend", state.featureBackend},
                 {"score_backend", state.scoreBackend}, {"width", state.width}, {"height", state.height},
                 {"matched", state.matched}, {"failed", state.failed}, {"warnings", state.warningCount},
-                {"metrics", state.metrics}, {"opencv_version", CV_VERSION}, {"match_only", matchOnly}
+                {"metrics", state.metrics}, {"opencv_version", CV_VERSION}, {"match_only", matchOnly},
+                {"strategy", strategy}, {"epsilon", selectionOptions.relative}
             };
             std::ofstream output(u8path(summaryPath));
             output << summary.dump(2) << '\n';

@@ -98,6 +98,17 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         return false;
     }
     Config cfg = validated.config;
+    if (m_selectionOptions.enabled() &&
+        (!std::isfinite(m_selectionOptions.relative) || m_selectionOptions.relative < 0 ||
+         !std::isfinite(m_selectionOptions.absolute) || m_selectionOptions.absolute < 0 || cfg.analyze))
+    {
+        return runtime.fail("invalid_argument", "invalid experimental selection options or analyze enabled");
+    }
+    if (m_selectionObserver)
+    {
+        m_selectionObserver->clear();
+    }
+    const double scoreUsePenalty = m_selectionOptions.enabled() ? 0.0 : cfg.usePenalty;
 
     // Benchmark 计时变量
     using Clock = std::chrono::steady_clock;
@@ -568,6 +579,26 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 
     // 每个 tile 的最终选择结果：GPU 路径预分配，CPU 路径后续填充
     std::vector<int> bestLibIdx(totalTiles, -1);
+    std::unique_ptr<detail::SelectionPolicy> selection;
+    size_t selectionBytes = 0;
+    if (m_selectionOptions.enabled())
+    {
+        selection = std::make_unique<detail::SelectionPolicy>(allRecords, neighborhood, m_selectionOptions,
+                                                              cfg.usePenalty, N);
+        selectionBytes = selection->capacityBytes();
+        if (m_selectionObserver)
+        {
+            m_selectionObserver->resize(totalTiles);
+            selectionBytes += m_selectionObserver->capacity() * sizeof(SelectionDiagnostic);
+        }
+    }
+    if (selectionBytes >= m_limits.hostBytes)
+    {
+        return runtime.fail("invalid_argument", "selection diagnostics exceed matching host budget");
+    }
+    const size_t hostBudget = m_limits.hostBytes - selectionBytes;
+    MatchingLimits batchLimits = m_limits;
+    batchLimits.hostBytes = hostBudget;
 
     // 输出 Mat：批量模式时直接拼接，流式模式时仅作占位
 
@@ -595,7 +626,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 
     // 可控匹配缓冲按预算分批；图库记录和精简选择结果仍独立持有。
     size_t batchRows =
-        std::min<size_t>(totalTiles, matchingBatchRows(m_limits, featW, featH, N, dbCount, templateCuda));
+        std::min<size_t>(totalTiles, matchingBatchRows(batchLimits, featW, featH, N, dbCount, templateCuda));
     metrics.maximumBatchTiles = batchRows;
     int noCandidateCount = 0;
     int grid4Top1 = 0, grid8Top1 = 0, top1Differ = 0;
@@ -673,9 +704,9 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         {
             const size_t requestedRows = std::min<size_t>(batchRows, 256);
             const size_t hostRows = cpuMatchingBufferBytes(requestedRows, N);
-            compatibleFeatures = hostRows < m_limits.hostBytes && scratch < m_limits.hostBytes - hostRows &&
+            compatibleFeatures = hostRows < hostBudget && scratch < hostBudget - hostRows &&
                 compatible.prepare(featW, featH, static_cast<int>(requestedRows),
-                                   m_limits.hostBytes - hostRows - scratch, false, deviceBudget, m_limits.featureFault);
+                                   hostBudget - hostRows - scratch, false, deviceBudget, m_limits.featureFault);
             backends.features = compatibleFeatures ? FeatureBackend::CompatibleCuda : FeatureBackend::Cpu;
             if (compatibleFeatures)
             {
@@ -700,12 +731,12 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             while (batchRows > 1 &&
                    gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze) +
                            std::min<size_t>(batchRows, 256) * 2072 + batchRows * scoreRowBytes + scratch >
-                       m_limits.hostBytes)
+                       hostBudget)
             {
                 batchRows /= 2;
             }
             metrics.maximumBatchTiles = batchRows;
-            if (gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze) + scratch > m_limits.hostBytes)
+            if (gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze) + scratch > hostBudget)
             {
                 {
                     std::ostringstream detail;
@@ -716,7 +747,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             const size_t hostRows = gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, true);
             const size_t scoreHost = batchRows * scoreRowBytes;
-            if (m_limits.cudaPipeline && hostRows + scratch + scoreHost < m_limits.hostBytes &&
+            if (m_limits.cudaPipeline && hostRows + scratch + scoreHost < hostBudget &&
                 scoreRowBytes < 256ULL * 1024 * 1024)
             {
                 cuda::FeaturePipelineConfig options;
@@ -725,7 +756,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 options.height = featH;
                 options.downloadTiny = cfg.analyze;
                 options.downloadLbp = cfg.analyze || cfg.adaptiveWeights;
-                options.hostBudget = m_limits.hostBytes - hostRows - scratch - scoreHost;
+                options.hostBudget = hostBudget - hostRows - scratch - scoreHost;
                 options.deviceBudget -= scoreRowBytes;
                 pipeline = workspace->preparePipeline(options, cfg.benchmark ? &metrics.featureTimings : nullptr);
                 if (pipeline)
@@ -769,7 +800,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 const size_t hostRows = cpuMatchingBufferBytes(rows, N) +
                     rows * N * (sizeof(double) + 2 * sizeof(int)) + scratch;
                 const size_t hostUsed = hostRows + compatible.hostBytes();
-                const size_t remainingHost = hostUsed < m_limits.hostBytes ? m_limits.hostBytes - hostUsed : 0;
+                const size_t remainingHost = hostUsed < hostBudget ? hostBudget - hostUsed : 0;
                 const size_t remainingDevice = compatible.deviceBytes() < deviceBudget
                     ? deviceBudget - compatible.deviceBytes() : 0;
                 if (remainingHost >= scoreMinimum && remainingDevice >= scoreMinimum)
@@ -786,8 +817,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 if (compatibleFeatures)
                 {
                     const size_t reserved = cpuMatchingBufferBytes(rows, N) + scratch;
-                    compatibleFeatures = reserved < m_limits.hostBytes &&
-                        compatible.prepare(featW, featH, static_cast<int>(rows), m_limits.hostBytes - reserved,
+                    compatibleFeatures = reserved < hostBudget &&
+                        compatible.prepare(featW, featH, static_cast<int>(rows), hostBudget - reserved,
                                            false, deviceBudget, m_limits.featureFault);
                     backends.features = compatibleFeatures ? FeatureBackend::CompatibleCuda : FeatureBackend::Cpu;
                     if (compatibleFeatures)
@@ -1109,9 +1140,9 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             return true;
         };
         const bool prefetch =
-            templateCuda && totalTiles > batchRows && m_limits.hostBytes >= scratch + pinnedBytes &&
+            templateCuda && totalTiles > batchRows && hostBudget >= scratch + pinnedBytes &&
             gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, pipeline) <=
-                (m_limits.hostBytes - scratch - pinnedBytes) / 2;
+                (hostBudget - scratch - pinnedBytes) / 2;
         metrics.matchingPrefetch = prefetch;
         bool preparedNext = false;
         // 池必须在缓冲/prepare 之后创建，错误退出也会先等待预取线程，再销毁它引用的数据。
@@ -1147,6 +1178,23 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             auto &tileEdgeW = buffers.edgeW;
             auto &tileLbpW = buffers.lbpW;
             auto &tileGrid4x4 = buffers.grid4;
+            auto selectExperimental = [&](int ti)
+            {
+                SelectionDiagnostic diagnostic;
+                thread_local std::mt19937 rng(std::random_device{}());
+                const int chosen = selection->choose(ti, cfg.topNrandom, m_fixedSeed ? seededRng : rng, diagnostic);
+                if (m_selectionObserver)
+                {
+                    (*m_selectionObserver)[ti] = diagnostic;
+                }
+                if (chosen < 0)
+                {
+                    ++noCandidateCount;
+                    return;
+                }
+                bestLibIdx[ti] = chosen;
+                neighborhood.recordSelection(chosen, ti);
+            };
             if (templateCuda)
             {
                 const auto scoreStart = Clock::now();
@@ -1155,12 +1203,12 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     ? cuda::scoreDeviceBatch(workspace->deviceView(0, count), allTL.data(), allTA.data(), allTB.data(),
                                              allEdge.data(), allIndices.data(), N, gpuLib, tileLabW.data(),
                                              tileGridW.data(), tileTinyW.data(), tileEdgeW.data(), tileLbpW.data(),
-                                             cfg.usePenalty, allScores.data(), *scoreWorkspace,
+                                             scoreUsePenalty, allScores.data(), *scoreWorkspace,
                                              cfg.benchmark ? &batchTimings : nullptr)
                     : cuda::scoreBatch(count, allTL.data(), allTA.data(), allTB.data(), allGrid.data(), allTiny.data(),
                                       allEdge.data(), allLBP.data(), allIndices.data(), N, gpuLib, tileLabW.data(),
                                       tileGridW.data(), tileTinyW.data(), tileEdgeW.data(), tileLbpW.data(),
-                                      cfg.usePenalty, allScores.data(), cfg.benchmark ? &batchTimings : nullptr,
+                                      scoreUsePenalty, allScores.data(), cfg.benchmark ? &batchTimings : nullptr,
                                       256ULL * 1024 * 1024, scoreWorkspace.get());
                 if (!scoredOnGpu)
                 {
@@ -1209,6 +1257,16 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     const size_t rowOffset = static_cast<size_t>(local) * static_cast<size_t>(N);
                     double *scores = &allScores[rowOffset];
                     const int *indices = &allIndices[rowOffset];
+                    if (selection)
+                    {
+                        selection->clear();
+                        for (int j = 0; j < N; ++j)
+                        {
+                            selection->add(indices[j], scores[j]);
+                        }
+                        selectExperimental(ti);
+                        continue;
+                    }
                     // 统计有效候选数，跳过全为 -1 的 tile
                     int validCount = 0;
                     for (int j = 0; j < N; ++j)
@@ -1416,7 +1474,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 if (gpuScoring)
                 {
                     const auto scoreStart = Clock::now();
-                    compatibleScore.score(buffers, count, cfg.usePenalty, allScores.data(), &metrics.scoreTimings);
+                    compatibleScore.score(buffers, count, scoreUsePenalty, allScores.data(), &metrics.scoreTimings);
                     metrics.msGPUScore += Ms(Clock::now() - scoreStart).count();
                     m_compatibleScoreTiles += count;
                 }
@@ -1433,6 +1491,22 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 for (int local = 0; local < count; ++local)
                 {
                     const int ti = first + local;
+                    if (selection)
+                    {
+                        selection->clear();
+                        for (int j = 0; j < N; ++j)
+                        {
+                            const size_t offset = static_cast<size_t>(local) * N + j;
+                            const int index = allIndices[offset];
+                            if (index >= 0)
+                            {
+                                selection->add(index, gpuScoring ? allScores[offset]
+                                    : cpuBaseScore(buffers, local, allRecords[index], featureReader->get(index), 0));
+                            }
+                        }
+                        selectExperimental(ti);
+                        continue;
+                    }
                     scored.clear();
                     const auto scoreStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
                     for (int j = 0; j < N; ++j)
@@ -1510,7 +1584,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 }
             }
             const size_t temporary = featureReader ? featureReader->stats().temporaryPeakBytes : 0;
-            metrics.matchingPeakBytes = std::max(metrics.matchingPeakBytes, buffers.capacityBytes() + ahead.capacityBytes() +
+            metrics.matchingPeakBytes = std::max(metrics.matchingPeakBytes, selectionBytes + buffers.capacityBytes() + ahead.capacityBytes() +
                                                                 temporary + pinnedBytes + compatible.hostBytes() +
                                                                 idxs.capacity() * sizeof(int) +
                                                                 scored.capacity() * sizeof(std::pair<double, int>) +
@@ -1565,6 +1639,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
     } // 索引、缓存、线程池及大批次缓冲在贴图/编码之前释放。
     metrics.matchingWallMs = Ms(Clock::now() - matchingStart).count();
+    runtime.metric("selectionBufferBytes", selectionBytes);
     if (m_selectedObserver)
     {
         *m_selectedObserver = bestLibIdx;

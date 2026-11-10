@@ -20,6 +20,7 @@
 #include "../core/BrightnessAdjustment.h"
 #include "../core/FeatureUtils.h"
 #include "../core/NeighborhoodState.h"
+#include "../core/SelectionPolicy.h"
 #include "../core/JobManager.h"
 #include "../core/LegacyRun.h"
 #include "../core/Version.h"
@@ -667,6 +668,42 @@ TEST_CASE("neighborhood penalties retain frequency gap and independent window bo
         state.applyPenalty(expiredGrid, 0, 100);
         CHECK(expiredGrid == 0);
     }
+}
+
+TEST_CASE("quality selection gates pure error and resolves ties by stable IDs")
+{
+    using namespace mosaicraft;
+    std::vector<ImageRecord> records(3);
+    records[0].id = 30;
+    records[1].id = 10;
+    records[2].id = 20;
+    for (auto &record : records)
+    {
+        record.grid4x4.assign(192, 0);
+    }
+    detail::NeighborhoodState legacy(records, 4, 10, 100);
+    SelectionOptions options;
+    options.quality = true;
+    detail::SelectionPolicy policy(records, legacy, options, 0.01, 3);
+    std::mt19937 rng(42);
+    SelectionDiagnostic diagnostic;
+    CHECK(policy.choose(0, 10, rng, diagnostic) == -1);
+    policy.add(0, 0);
+    policy.add(1, 0);
+    policy.add(2, 0.001);
+    CHECK(policy.choose(0, 1, rng, diagnostic) == 1);
+    CHECK(diagnostic.qualityCandidates == 2);
+    CHECK(diagnostic.limit == doctest::Approx(0.0001));
+    policy.clear();
+    records[0].useCount = 100000;
+    policy.add(0, 1.0);
+    policy.add(0, 1.0);
+    policy.add(1, 1.051);
+    policy.add(2, INFINITY);
+    CHECK(policy.choose(1, 10, rng, diagnostic) == 0);
+    CHECK(diagnostic.candidates == 2);
+    CHECK(diagnostic.qualityCandidates == 1);
+    CHECK(diagnostic.error <= diagnostic.limit);
 }
 
 TEST_CASE("labDistance — identical colors")
