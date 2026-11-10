@@ -194,7 +194,7 @@ add_library(mosaicraft_core STATIC
     core/LegacyRun.cpp
     core/LibraryAccess.cpp
     core/LibraryPaths.cpp
-    core/DatabasePaths.cpp
+    core/DatabaseSchema.cpp
     core/LibraryColorOrder.cpp
     core/MosaicOutput.cpp
     core/OutputPlan.cpp

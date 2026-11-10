@@ -1,9 +1,10 @@
-﻿#include "Database.h"
+#include "Database.h"
 
 #include <sqlite3.h>
 #include "LibraryAccess.h"
 #include "LibraryPaths.h"
 #include "UnicodeIO.h"
+#include "Version.h"
 
 #include <cstring>
 #include <iostream>
@@ -19,92 +20,52 @@ namespace mosaicraft
 // 构造 / 析构
 // ============================================================
 
-Database::Database(const std::string& dbPath, OpenMode mode)
-    : m_db(nullptr)
+Database::Database(const std::string &dbPath, OpenMode mode) : m_db(nullptr)
 {
-    std::error_code pathError;
-    m_path = pathToUtf8(std::filesystem::weakly_canonical(u8path(dbPath), pathError));
-    if (pathError || (mode == OpenMode::Existing && !std::filesystem::is_regular_file(u8path(m_path), pathError)))
+    std::error_code error;
+    m_path = pathToUtf8(std::filesystem::weakly_canonical(u8path(dbPath), error));
+    if (error)
     {
-        m_error = "database file does not exist: " + dbPath;
+        m_error = "cannot resolve database: " + dbPath;
         return;
     }
     m_new = !std::filesystem::exists(u8path(m_path));
     m_exclusive = mode == OpenMode::Build;
-    m_access = std::make_unique<LibraryAccess>(m_path, m_exclusive, mode == OpenMode::Existing ? 5000 : 0);
+    if ((m_new && mode == OpenMode::Existing) ||
+        (m_new && std::filesystem::exists(libraryJournalPath(m_path))))
+    {
+        m_error = "database missing or has an orphaned reorder journal: " + dbPath;
+        return;
+    }
+    m_access = std::make_unique<LibraryAccess>(m_path, m_exclusive || m_new, 5000);
     if (!m_access->acquired())
     {
         m_error = "library is busy or its operation lock cannot be opened: " + dbPath;
-        std::cerr << m_error << std::endl;
         m_access.reset();
         return;
     }
-    if (mode != OpenMode::Build && std::filesystem::exists(libraryJournalPath(m_path)))
+    // 先只读校验；旧库失败时不得执行 WAL 设置、DDL 或任何升级。
+    bool valid = openConnection(m_new, !m_new);
+    if (valid && !m_new)
     {
-        m_error = "unfinished color reorder; run build to recover: " + dbPath;
-        std::cerr << m_error << std::endl;
-        m_access.reset();
-        return;
-    }
-    if (!openConnection(mode != OpenMode::Existing))
-    {
-        m_access.reset();
-        return;
-    }
-    // 重排恢复也必须按原库格式解析路径，但有恢复清单时不能提前转换旧库。
-    const auto pathFormat = getMeta("path_format");
-    m_portable = pathFormat == portablePathFormat;
-    if (!pathFormat.empty() && !m_portable)
-    {
-        m_error = "unsupported library path format: " + pathFormat;
-        closeConnection();
-        m_access.reset();
-        return;
-    }
-    bool valid = true;
-    if (valid && mode == OpenMode::Existing)
-    {
-        sqlite3_stmt* statement = nullptr;
-        valid = sqlite3_prepare_v2(m_db,
-            "SELECT id,file_path,file_hash,format,src_width,src_height,aspect_ratio,file_size,avg_l,avg_a,avg_b,"
-            "mean_brightness,std_brightness,contrast,saturation,color_variance,grid4x4,tiny_path,edge_density,"
-            "hist_path,feature_version,use_count "
-            "FROM images LIMIT 0", -1, &statement, nullptr) == SQLITE_OK;
+        valid = validateSchema();
+        if (valid && !m_exclusive && std::filesystem::exists(libraryJournalPath(m_path)))
+        {
+            m_error = "unfinished color reorder; run build to recover: " + dbPath;
+            valid = false;
+        }
         if (valid)
         {
-            valid = sqlite3_step(statement) == SQLITE_DONE;
+            closeConnection();
+            valid = openConnection(false);
         }
-        sqlite3_finalize(statement);
-        statement = nullptr;
-        if (valid)
-        {
-            // 能打开文件不代表其数据页完整；避免损坏索引仍被读成空库。
-            valid = sqlite3_prepare_v2(m_db, "PRAGMA quick_check(1)", -1, &statement, nullptr) == SQLITE_OK &&
-                    sqlite3_step(statement) == SQLITE_ROW;
-            if (valid)
-            {
-                const auto* result = sqlite3_column_text(statement, 0);
-                valid = result && std::string(reinterpret_cast<const char*>(result)) == "ok";
-            }
-            sqlite3_finalize(statement);
-        }
-    }
-    if (valid && mode != OpenMode::Build && !m_new)
-    {
-        valid = ensurePortablePaths();
     }
     if (valid)
     {
-        valid = exec("PRAGMA foreign_keys=ON") && exec("PRAGMA journal_mode=WAL") &&
-            exec("PRAGMA synchronous=NORMAL");
+        valid = exec("PRAGMA foreign_keys=ON");
     }
     if (!valid)
     {
-        if (m_error.empty())
-        {
-            m_error = "invalid database: " + dbPath;
-        }
-        std::cerr << "ERROR: Invalid database: " << dbPath << " (" << sqlite3_errmsg(m_db) << ")" << std::endl;
         closeConnection();
         m_access.reset();
     }
@@ -124,17 +85,24 @@ bool Database::isOpen() const
 // 建表
 // ============================================================
 
-bool Database::createTables()
+bool Database::createTables(int featureWidth, int featureHeight)
 {
     if (!m_db)
     {
         return false;
     }
 
-    // 建表语句：包含所有特征分层字段（V1~V4 预留）
-    // IF NOT EXISTS 保证幂等
+    if (!m_new)
+    {
+        return true;
+    }
+    // 完整结构与标记一次提交；已有库永远不补表或补列。
+    if (!exec("BEGIN IMMEDIATE"))
+    {
+        return false;
+    }
     const char* sql = R"SQL(
-        CREATE TABLE IF NOT EXISTS images (
+        CREATE TABLE images (
             -- 主键
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
 
@@ -162,7 +130,7 @@ bool Database::createTables()
             color_variance  REAL DEFAULT 0.0,
 
             -- 区域结构特征（V2）：8×8 LAB Grid = 192 float BLOB
-            grid4x4         BLOB,
+            grid_lab         BLOB NOT NULL CHECK(length(grid_lab)=768),
 
             -- TinyImage 16×16 灰度图文件路径（V3）
             tiny_path       TEXT,
@@ -171,28 +139,28 @@ bool Database::createTables()
             edge_density    REAL DEFAULT 0.0,
 
             -- 纹理特征文件路径（V4）
-            hist_path       TEXT,
+            lbp_path       TEXT,
 
             -- 使用统计
             use_count       INTEGER DEFAULT 0,
 
             -- 版本标记
-            feature_version INTEGER DEFAULT 0,
+            feature_version INTEGER NOT NULL,
 
             -- 时间戳
             created_at      TEXT DEFAULT (datetime('now'))
         );
 
-        CREATE INDEX IF NOT EXISTS idx_hash    ON images(file_hash);
-        CREATE INDEX IF NOT EXISTS idx_avg_l   ON images(avg_l);
-        CREATE INDEX IF NOT EXISTS idx_use     ON images(use_count);
+        CREATE INDEX idx_hash    ON images(file_hash);
+        CREATE INDEX idx_avg_l   ON images(avg_l);
+        CREATE INDEX idx_use     ON images(use_count);
 
-        CREATE TABLE IF NOT EXISTS meta (
+        CREATE TABLE meta (
             key   TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS image_color_order (
+        CREATE TABLE image_color_order (
             image_id INTEGER PRIMARY KEY REFERENCES images(id) ON DELETE CASCADE,
             file_hash TEXT NOT NULL,
             version INTEGER NOT NULL,
@@ -209,32 +177,33 @@ bool Database::createTables()
     {
         std::cerr << "Create tables error: " << errMsg << std::endl;
         sqlite3_free(errMsg);
+        exec("ROLLBACK");
         return false;
     }
 
-    // 自动迁移：为旧表补上缺失的列
-    migrate();
-
-    const char* sourceColumns[]
+    if (!exec("CREATE TABLE usage_stats(image_id INTEGER PRIMARY KEY REFERENCES images(id) ON DELETE CASCADE,"
+              "total_runs INTEGER DEFAULT 0,total_tiles INTEGER DEFAULT 0,last_used TEXT);") ||
+        !exec("CREATE TABLE target_runs(target_hash TEXT PRIMARY KEY,first_path TEXT,"
+              "run_count INTEGER DEFAULT 0,last_used TEXT);") ||
+        !setMeta("path_format", portablePathFormat) ||
+        !setMeta("feature_version", std::to_string(kFeatureVersion)) ||
+        !setMeta("feature_w", std::to_string(featureWidth)) ||
+        !setMeta("feature_h", std::to_string(featureHeight)) ||
+        !exec("PRAGMA user_version=" + std::to_string(kLibraryVersion)) || !exec("COMMIT"))
     {
-        "source_l", "source_a", "source_b"
-    };
-    for (const auto* column : sourceColumns)
-    {
-        if (!columnExists("image_color_order", column) &&
-            !exec("ALTER TABLE image_color_order ADD COLUMN " + std::string(column) + " REAL"))
-        {
-            return false;
-        }
+        exec("ROLLBACK");
+        return false;
     }
-    if (m_new)
+    m_new = false;
+    if (!m_exclusive)
     {
-        if (!setMeta("path_format", portablePathFormat))
+        m_access.reset();
+        m_access = std::make_unique<LibraryAccess>(m_path, false, 5000);
+        if (!m_access->acquired())
         {
+            m_error = "library is busy after initialization";
             return false;
         }
-        m_portable = true;
-        m_new = false;
     }
     return true;
 }
@@ -287,10 +256,10 @@ bool Database::insertImage(const ImageRecord& rec)
         return false;
     }
 
-    std::string file = rec.filePath, tiny = rec.tinyPath, hist = rec.histPath;
+    std::string file = rec.filePath, tiny = rec.tinyPath, hist = rec.lbpPath;
     try
     {
-        if (m_portable)
+        if (m_db)
         {
             const LibraryPaths paths(m_path);
             file = paths.store(file);
@@ -310,10 +279,10 @@ bool Database::insertImage(const ImageRecord& rec)
              avg_l, avg_a, avg_b,
              mean_brightness, std_brightness, contrast,
              saturation, color_variance,
-             grid4x4,
+             grid_lab,
              tiny_path,
              edge_density,
-             hist_path,
+             lbp_path,
              feature_version)
         VALUES
             (?, ?, ?, ?, ?, ?, ?,
@@ -329,8 +298,8 @@ bool Database::insertImage(const ImageRecord& rec)
             file_hash=excluded.file_hash, avg_l=excluded.avg_l, avg_a=excluded.avg_a, avg_b=excluded.avg_b,
             mean_brightness=excluded.mean_brightness, std_brightness=excluded.std_brightness,
             contrast=excluded.contrast, saturation=excluded.saturation, color_variance=excluded.color_variance,
-            grid4x4=excluded.grid4x4, tiny_path=excluded.tiny_path, edge_density=excluded.edge_density,
-            hist_path=excluded.hist_path, feature_version=excluded.feature_version
+            grid_lab=excluded.grid_lab, tiny_path=excluded.tiny_path, edge_density=excluded.edge_density,
+            lbp_path=excluded.lbp_path, feature_version=excluded.feature_version
     )SQL";
 
     auto *stmt = prepareCached(m_insertStatement, sql);
@@ -368,16 +337,16 @@ bool Database::insertImage(const ImageRecord& rec)
     sqlite3_bind_double(stmt, idx++, rec.saturation);
     sqlite3_bind_double(stmt, idx++, rec.colorVariance);
 
-    // 区域结构：grid4x4 序列化为 BLOB
-    if (rec.grid4x4.empty())
+    // 区域结构：grid_lab 序列化为 BLOB
+    if (rec.gridLab.empty())
     {
         sqlite3_bind_null(stmt, idx++);
     }
     else
     {
         // 48 个 float → 192 字节
-        std::size_t blobSize = rec.grid4x4.size() * sizeof(float);
-        sqlite3_bind_blob(stmt, idx++, rec.grid4x4.data(),
+        std::size_t blobSize = rec.gridLab.size() * sizeof(float);
+        sqlite3_bind_blob(stmt, idx++, rec.gridLab.data(),
                           static_cast<int>(blobSize), SQLITE_TRANSIENT);
     }
 
@@ -388,8 +357,8 @@ bool Database::insertImage(const ImageRecord& rec)
     // 边缘
     sqlite3_bind_double(stmt, idx++, rec.edgeDensity);
 
-    // hist_path
-    if (rec.histPath.empty()) { sqlite3_bind_null(stmt, idx++); }
+    // lbp_path
+    if (rec.lbpPath.empty()) { sqlite3_bind_null(stmt, idx++); }
     else                       { sqlite3_bind_text(stmt, idx++, hist.c_str(), -1, SQLITE_TRANSIENT); }
 
     // feature_version
@@ -478,7 +447,7 @@ bool Database::updateImagePath(int id, const std::string& oldPath, const std::st
     std::string oldValue = oldPath, newValue = newPath;
     try
     {
-        if (m_portable)
+        if (m_db)
         {
             const LibraryPaths paths(m_path);
             oldValue = paths.store(oldPath);
@@ -573,10 +542,10 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
                avg_l, avg_a, avg_b,
                mean_brightness, std_brightness, contrast,
                saturation, color_variance,
-               grid4x4,
+               grid_lab,
                tiny_path,
                edge_density,
-               hist_path,
+               lbp_path,
                use_count,
                feature_version
         FROM images
@@ -635,14 +604,14 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
         rec.saturation     = sqlite3_column_double(stmt, col++);
         rec.colorVariance  = sqlite3_column_double(stmt, col++);
 
-        // grid4x4 BLOB → std::vector<float>
+        // grid_lab BLOB → std::vector<float>
         if (sqlite3_column_type(stmt, col) != SQLITE_NULL)
         {
             int blobSize = sqlite3_column_bytes(stmt, col);
             const float* blobData = static_cast<const float*>(
                 sqlite3_column_blob(stmt, col));
             int numFloats = blobSize / static_cast<int>(sizeof(float));
-            rec.grid4x4.assign(blobData, blobData + numFloats);
+            rec.gridLab.assign(blobData, blobData + numFloats);
         }
         col++;
 
@@ -652,18 +621,18 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
 
         rec.edgeDensity   = sqlite3_column_double(stmt, col++);
 
-        rec.histPath = sqlite3_column_type(stmt, col) != SQLITE_NULL
+        rec.lbpPath = sqlite3_column_type(stmt, col) != SQLITE_NULL
                        ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, col)) : "";
         col++;
 
         rec.useCount       = sqlite3_column_int(stmt, col++);
         rec.featureVersion = sqlite3_column_int(stmt, col++);
 
-        if (m_portable)
+        if (m_db)
         {
             rec.filePath = paths.resolve(rec.filePath);
             rec.tinyPath = paths.resolve(rec.tinyPath);
-            rec.histPath = paths.resolve(rec.histPath);
+            rec.lbpPath = paths.resolve(rec.lbpPath);
         }
         results.push_back(rec);
     }
@@ -730,71 +699,6 @@ int Database::totalCount()
 // 迁移
 // ============================================================
 
-bool Database::columnExists(const std::string& table, const std::string& column)
-{
-    // PRAGMA table_info 返回每列：cid, name, type, notnull, dflt_value, pk
-    std::string sql = "PRAGMA table_info(" + table + ")";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return false;
-
-    bool found = false;
-    while (sqlite3_step(stmt) == SQLITE_ROW)
-    {
-        const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        if (name && column == name)
-        {
-            found = true;
-            break;
-        }
-    }
-    sqlite3_finalize(stmt);
-    return found;
-}
-
-void Database::migrate()
-{
-    if (!m_db)
-    {
-        return;
-    }
-
-    // 将缺失列及默认值定义为列表；新列追加到表末尾，SQLite 默认用 NULL 填充旧行
-    // 但 DEFAULT 对 ALTER TABLE ADD COLUMN 立即生效（旧行自动设为默认值）
-    struct ColumnDef
-    {
-        const char* name;
-        const char* typeAndDefault;  // 例如 "REAL DEFAULT 0.0"
-    };
-
-    // 只列出自上一个版本以来可能缺失的列（老表升级用）
-    const ColumnDef missing[] = {
-        {"format",           "TEXT DEFAULT ''"},
-        {"src_width",        "INTEGER DEFAULT 0"},
-        {"src_height",       "INTEGER DEFAULT 0"},
-        {"aspect_ratio",     "REAL DEFAULT 0.0"},
-        {"file_size",        "INTEGER DEFAULT 0"},
-        {"mean_brightness",  "REAL DEFAULT 0.0"},
-        {"std_brightness",   "REAL DEFAULT 0.0"},
-        {"contrast",         "REAL DEFAULT 0.0"},
-        {"saturation",       "REAL DEFAULT 0.0"},
-        {"color_variance",   "REAL DEFAULT 0.0"},
-        {"grid4x4",          "BLOB"},
-        {"edge_density",     "REAL DEFAULT 0.0"},
-        {"feature_version",  "INTEGER DEFAULT 0"},
-    };
-
-    for (const auto& col : missing)
-    {
-        if (!columnExists("images", col.name))
-        {
-            std::string alter = "ALTER TABLE images ADD COLUMN "
-                                + std::string(col.name) + " "
-                                + std::string(col.typeAndDefault);
-            exec(alter);
-        }
-    }
-}
-
 // ============================================================
 // 工具
 // ============================================================
@@ -819,18 +723,8 @@ bool Database::exec(const std::string& sql)
 
 bool Database::initUsageStats()
 {
-    bool ok = exec("CREATE TABLE IF NOT EXISTS usage_stats ("
-         "image_id INTEGER PRIMARY KEY,"
-         "total_runs INTEGER DEFAULT 0,"
-         "total_tiles INTEGER DEFAULT 0,"
-         "last_used TEXT,"
-         "FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE)");
-    // 目标图哈希记录：防止改名后重复计数
-    return exec("CREATE TABLE IF NOT EXISTS target_runs ("
-         "target_hash TEXT PRIMARY KEY,"
-         "first_path TEXT,"
-         "run_count INTEGER DEFAULT 0,"
-         "last_used TEXT)") && ok;
+    // 使用统计表属于完整图库结构，打开时已经验证，读取不能顺便建表。
+    return m_db != nullptr;
 }
 
 bool Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,

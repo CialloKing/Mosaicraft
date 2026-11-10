@@ -1,4 +1,4 @@
-﻿#include "compute/CudaBackend.h"
+#include "compute/CudaBackend.h"
 #include "core/Database.h"
 #include "core/FeatureIndex.h"
 #include "core/FeatureUtils.h"
@@ -51,9 +51,9 @@ int main(int argc, char **argv)
                 row[0] = static_cast<float>(record.avgL / 255.0);
                 row[1] = static_cast<float>(record.avgA / 255.0);
                 row[2] = static_cast<float>(record.avgB / 255.0);
-                for (size_t j = 0; j < std::min<size_t>(192, record.grid4x4.size()); ++j)
+                for (size_t j = 0; j < std::min<size_t>(192, record.gridLab.size()); ++j)
                 {
-                    row[3 + j] = record.grid4x4[j] / 255.0f;
+                    row[3 + j] = record.gridLab[j] / 255.0f;
                 }
                 row[451] = static_cast<float>(record.edgeDensity);
             }

@@ -128,7 +128,7 @@ class StampSampler
         }
         for (int index : needed)
         {
-            for (const auto *source : {&records[index].tinyPath, &records[index].histPath})
+            for (const auto *source : {&records[index].tinyPath, &records[index].lbpPath})
             {
                 if (!source->empty())
                 {
@@ -276,7 +276,7 @@ bool loadFeatures(const std::string &directory, const std::vector<ImageRecord> &
                     metadata.version = record.featureVersion;
                     metadata.imageHash = hashBytes(record.fileHash.data(), record.fileHash.size());
                     metadata.tiny = sampler.get(record.tinyPath);
-                    metadata.lbp = sampler.get(record.histPath);
+                    metadata.lbp = sampler.get(record.lbpPath);
                 });
 
     Manifest manifest;
@@ -359,10 +359,10 @@ bool loadFeatures(const std::string &directory, const std::vector<ImageRecord> &
                     if (readStats)
                     {
                         sourceReads += static_cast<size_t>(!record.tinyPath.empty() && metadata.tiny.size == 256) +
-                                       static_cast<size_t>(!record.histPath.empty() && metadata.lbp.size == 1024);
+                                       static_cast<size_t>(!record.lbpPath.empty() && metadata.lbp.size == 1024);
                     }
                     tinyValid[i] = readSource(record.tinyPath, metadata.tiny, tiny.data() + i * 256, 256);
-                    lbpValid[i] = readSource(record.histPath, metadata.lbp, lbp.data() + i * 256, 1024);
+                    lbpValid[i] = readSource(record.lbpPath, metadata.lbp, lbp.data() + i * 256, 1024);
                     if (!tinyValid[i])
                     {
                         std::fill_n(tiny.data() + i * 256, 256, 0);
@@ -560,7 +560,7 @@ struct FeaturePack::Reader::Impl
     {
         const auto &record = records[index];
         const auto ts = sampler ? sampler->get(record.tinyPath) : stamp(record.tinyPath);
-        const auto ls = sampler ? sampler->get(record.histPath) : stamp(record.histPath);
+        const auto ls = sampler ? sampler->get(record.lbpPath) : stamp(record.lbpPath);
         const int position = positions[index];
         if (tiny && lbp && position >= 0)
         {
@@ -582,12 +582,12 @@ struct FeaturePack::Reader::Impl
         {
             row.tiny.fill(0);
         }
-        if (!record.histPath.empty() && ls.size == 1024)
+        if (!record.lbpPath.empty() && ls.size == 1024)
         {
             ++statistics.sourceReads;
         }
         row.lbpValid =
-            readSource(record.histPath, ls, row.lbp.data(), 1024) && std::all_of(row.lbp.begin(), row.lbp.end(),
+            readSource(record.lbpPath, ls, row.lbp.data(), 1024) && std::all_of(row.lbp.begin(), row.lbp.end(),
                                                                                  [](float value)
                                                                                  {
                                                                                      return std::isfinite(value);
@@ -732,7 +732,7 @@ const FeaturePack::Reader::Row &FeaturePack::Reader::get(int index)
         m_impl->reportedMissing[index] = true;
         const auto &record = m_impl->records[index];
         m_impl->runtime->emit("warning", "feature_missing", "missing features retain the existing matching penalty",
-                              "dbPath", !row.tinyValid ? record.tinyPath : record.histPath);
+                              "dbPath", !row.tinyValid ? record.tinyPath : record.lbpPath);
     }
     return row;
 }

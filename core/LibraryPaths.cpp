@@ -96,26 +96,6 @@ std::string LibraryPaths::store(const std::string &value) const
     }
     return stored;
 }
-std::string LibraryPaths::legacy(const std::string &value) const
-{
-    if (value.empty())
-    {
-        return {};
-    }
-    auto path = u8path(value);
-    if (!path.is_absolute() && foreignAbsolute(value))
-    {
-        throw std::invalid_argument("legacy library belongs to another platform");
-    }
-    // 保留旧相对路径的 CWD 语义；不存在的文件仍可转换，交给健康检查处理。
-    std::error_code error;
-    path = std::filesystem::weakly_canonical(std::filesystem::absolute(path), error);
-    if (error)
-    {
-        throw std::invalid_argument("cannot resolve legacy library path: " + value);
-    }
-    return store(pathToUtf8(path));
-}
 std::string LibraryPaths::resolve(const std::string &value) const
 {
     if (value.empty())

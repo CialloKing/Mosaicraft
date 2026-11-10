@@ -337,7 +337,7 @@ TEST_CASE("dynamic CUDA features exactly reproduce CPU integers statistics and s
             CHECK(features[i].lab[0] == expected.avgL);
             CHECK(features[i].lab[1] == expected.avgA);
             CHECK(features[i].lab[2] == expected.avgB);
-            CHECK(std::equal(features[i].grid.begin(), features[i].grid.end(), expected.grid4x4.begin()));
+            CHECK(std::equal(features[i].grid.begin(), features[i].grid.end(), expected.gridLab.begin()));
             CHECK(std::equal(features[i].tiny.begin(), features[i].tiny.end(), tiny.begin()));
             CHECK(std::equal(features[i].lbp.begin(), features[i].lbp.end(), hist.begin()));
             CHECK(features[i].edge == expected.edgeDensity);
@@ -622,7 +622,7 @@ TEST_CASE("neighborhood penalties retain frequency gap and independent window bo
     for (int i = 0; i < 3; ++i)
     {
         records[i].id = 100 + i;
-        records[i].grid4x4.assign(192, i == 1 ? 100.0f : 0.0f);
+        records[i].gridLab.assign(192, i == 1 ? 100.0f : 0.0f);
     }
     SUBCASE("frequency levels saturate without changing state during scoring")
     {
@@ -680,7 +680,7 @@ TEST_CASE("quality selection gates pure error and resolves ties by stable IDs")
     records[2].id = 20;
     for (auto &record : records)
     {
-        record.grid4x4.assign(192, 0);
+        record.gridLab.assign(192, 0);
     }
     detail::NeighborhoodState legacy(records, 4, 10, 100);
     SelectionOptions options;
@@ -714,7 +714,7 @@ TEST_CASE("spatial selection covers row edges and relaxes distance before qualit
     for (int i = 0; i < 3; ++i)
     {
         records[i].id = i + 1;
-        records[i].grid4x4.assign(192, i == 2 ? 100.0f : 0.0f);
+        records[i].gridLab.assign(192, i == 2 ? 100.0f : 0.0f);
     }
     std::vector<int> selected(20, -1);
     SelectionOptions options;
@@ -772,7 +772,7 @@ TEST_CASE("expanded candidates merge by ID and recompute the quality boundary")
     for (int i = 0; i < 4; ++i)
     {
         records[i].id = i + 1;
-        records[i].grid4x4.assign(192, i * 50.0f);
+        records[i].gridLab.assign(192, i * 50.0f);
     }
     std::vector<int> selected(10, -1);
     selected[0] = 0;
@@ -1994,13 +1994,13 @@ TEST_CASE("ANN cache validates features and parallel queries preserve ordering")
     {
         records[i].id = i * 3 + 1;
         records[i].avgL = i * 7;
-        records[i].grid4x4.assign(192, static_cast<float>(i));
+        records[i].gridLab.assign(192, static_cast<float>(i));
     }
     FeatureIndex index;
     REQUIRE(index.build(records));
     CHECK(index.dimension() == 196);
     std::vector<float> query;
-    buildTileVector(10, 0, 0, records[2].grid4x4, {}, 0, {}, query);
+    buildTileVector(10, 0, 0, records[2].gridLab, {}, 0, {}, query);
     std::vector<float> queries;
     for (int i = 0; i < 20; ++i)
     {

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "MosaicService.h"
 
@@ -122,7 +122,7 @@ struct OrphanRecord
     int id = 0;
     std::string filePath;
     std::string tinyPath;
-    std::string histPath;
+    std::string lbpPath;
 };
 
 struct DatabasePurge

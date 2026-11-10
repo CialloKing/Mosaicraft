@@ -1,4 +1,4 @@
-﻿#include "DatabaseService.h"
+#include "DatabaseService.h"
 
 #include "Database.h"
 #include "MosaicService.h"
@@ -20,7 +20,7 @@ DatabaseStatsResult DatabaseService::stats(const DatabaseRequest& request) const
     Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (!db.isOpen())
     {
-        out.status = ServiceResult::failure(2, db.error());
+        out.status = ServiceResult::failure(2, db.error(), db.errorCode(), "dbPath");
         return out;
     }
 
@@ -35,7 +35,7 @@ DatabaseStatsResult DatabaseService::stats(const DatabaseRequest& request) const
 
     out.stats.featureWidth = db.getMeta("feature_w");
     out.stats.featureHeight = db.getMeta("feature_h");
-    out.stats.gridDim = static_cast<int>(all[0].grid4x4.size());
+    out.stats.gridDim = static_cast<int>(all[0].gridLab.size());
 
     double sumL = 0.0, sumA = 0.0, sumB = 0.0;
     out.stats.minL = out.stats.minA = out.stats.minB = 255.0;
@@ -89,14 +89,9 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
     Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (!db.isOpen())
     {
-        out.status = ServiceResult::failure(2, db.error());
+        out.status = ServiceResult::failure(2, db.error(), db.errorCode(), "dbPath");
         return out;
     }
-    if (!db.pathNotice().empty())
-    {
-        out.health.warnings.push_back(db.pathNotice());
-    }
-
     auto all = db.allRecords();
     out.health.total = static_cast<int>(all.size());
     out.health.empty = out.health.total == 0;
@@ -181,7 +176,7 @@ DatabaseUsageResult DatabaseService::usage(const DatabaseUsageRequest& request) 
     Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (!db.isOpen())
     {
-        out.status = ServiceResult::failure(2, db.error());
+        out.status = ServiceResult::failure(2, db.error(), db.errorCode(), "dbPath");
         return out;
     }
 
@@ -235,7 +230,7 @@ DatabaseUsageExportResult DatabaseService::exportUsage(const DatabaseUsageExport
     Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (!db.isOpen())
     {
-        out.status = ServiceResult::failure(2, db.error());
+        out.status = ServiceResult::failure(2, db.error(), db.errorCode(), "dbPath");
         return out;
     }
 
@@ -330,7 +325,7 @@ DatabasePurgeResult DatabaseService::purge(const DatabasePurgeRequest& request) 
     Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
     if (!db.isOpen())
     {
-        out.status = ServiceResult::failure(2, db.error());
+        out.status = ServiceResult::failure(2, db.error(), db.errorCode(), "dbPath");
         return out;
     }
 
@@ -342,7 +337,7 @@ DatabasePurgeResult DatabaseService::purge(const DatabasePurgeRequest& request) 
     {
         if (!rec.filePath.empty() && !std::filesystem::exists(u8path(rec.filePath)))
         {
-            orphans.push_back({rec.id, rec.filePath, rec.tinyPath, rec.histPath});
+            orphans.push_back({rec.id, rec.filePath, rec.tinyPath, rec.lbpPath});
         }
     }
 
@@ -381,9 +376,9 @@ DatabasePurgeResult DatabaseService::purge(const DatabasePurgeRequest& request) 
             {
                 std::filesystem::remove(u8path(orphan.tinyPath));
             }
-            if (!orphan.histPath.empty() && std::filesystem::exists(u8path(orphan.histPath)))
+            if (!orphan.lbpPath.empty() && std::filesystem::exists(u8path(orphan.lbpPath)))
             {
-                std::filesystem::remove(u8path(orphan.histPath));
+                std::filesystem::remove(u8path(orphan.lbpPath));
             }
 
             if (db.removeImage(orphan.id))

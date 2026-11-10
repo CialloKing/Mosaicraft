@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "MosaicEngine.h"
 #include "RuntimeContext.h"
@@ -29,9 +29,15 @@ struct ServiceResult
         return {true, 0, msg};
     }
 
-    static ServiceResult failure(int code, const std::string& msg)
+    static ServiceResult failure(int code, const std::string &msg,
+                                 const std::string &diagnosticCode = "operation_failed", const std::string &field = {})
     {
-        return {false, code, msg};
+        ServiceResult result{false, code, msg};
+        result.runtime.diagnostic.code = diagnosticCode;
+        result.runtime.diagnostic.severity = "error";
+        result.runtime.diagnostic.message = msg;
+        result.runtime.diagnostic.field = field;
+        return result;
     }
 };
 

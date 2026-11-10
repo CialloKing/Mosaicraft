@@ -94,14 +94,14 @@ int main(int argc, char **argv)
     std::iota(needed.begin(), needed.end(), 0);
     for (int i = 0; i < libraryCount; ++i)
     {
-        if (records[i].grid4x4.size() != 192)
+        if (records[i].gridLab.size() != 192)
         {
             return 1;
         }
         libraryLab[i * 3] = records[i].avgL;
         libraryLab[i * 3 + 1] = records[i].avgA;
         libraryLab[i * 3 + 2] = records[i].avgB;
-        std::copy(records[i].grid4x4.begin(), records[i].grid4x4.end(), libraryGrid.begin() + i * 192);
+        std::copy(records[i].gridLab.begin(), records[i].gridLab.end(), libraryGrid.begin() + i * 192);
         libraryEdge[i] = records[i].edgeDensity;
         use[i] = records[i].useCount;
     }

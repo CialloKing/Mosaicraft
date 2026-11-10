@@ -632,7 +632,7 @@ int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &r
     for (int i = 0; i < N; ++i)
     {
         auto &rec = records[i];
-        rec.grid4x4.assign(&h_grid[i * 192], &h_grid[i * 192] + 192);
+        rec.gridLab.assign(&h_grid[i * 192], &h_grid[i * 192] + 192);
         rec.avgL = h_avgLAB[i * 3 + 0];
         rec.avgA = h_avgLAB[i * 3 + 1];
         rec.avgB = h_avgLAB[i * 3 + 2];
@@ -677,7 +677,7 @@ int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &r
                 {
                     throw std::runtime_error("histogram feature write failed: " + lbpPath);
                 }
-                rec.histPath = lbpPath;
+                rec.lbpPath = lbpPath;
             }
         }
 

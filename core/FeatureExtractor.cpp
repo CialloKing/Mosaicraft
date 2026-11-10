@@ -1,4 +1,4 @@
-﻿#include "FeatureExtractor.h"
+#include "FeatureExtractor.h"
 #include "FeatureUtils.h"
 #include "Version.h"
 #include "UnicodeIO.h"
@@ -75,7 +75,7 @@ void FeatureExtractor::compute(const cv::Mat& bgr,
     rec.meanBrightness = cv::mean(gray)[0];
 
     // ——— V2：8×8 LAB Grid ———
-    rec.grid4x4 = computeGrid8x8FromLab(lab);
+    rec.gridLab = computeGrid8x8FromLab(lab);
 
     computeStatistics(bgr, rec, lab, gray);
 
@@ -115,7 +115,7 @@ void FeatureExtractor::saveFeatures(ImageRecord &record, const std::string &dire
     write(tinyPath, tiny, 256);
     write(histogramPath, lbp, 256 * sizeof(float));
     record.tinyPath = tinyPath;
-    record.histPath = histogramPath;
+    record.lbpPath = histogramPath;
 }
 
 } // namespace mosaicraft

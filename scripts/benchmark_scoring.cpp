@@ -43,7 +43,7 @@ int main(int argc, char **argv)
         tiles.a[row] = record.avgA;
         tiles.b[row] = record.avgB;
         tiles.edge[row] = record.edgeDensity;
-        tiles.grid[row] = record.grid4x4;
+        tiles.grid[row] = record.gridLab;
         std::copy(features.tiny.begin(), features.tiny.end(), tiles.tiny[row].data());
         std::copy(features.lbp.begin(), features.lbp.end(), tiles.lbp[row].data());
         tiles.labW[row] = 0.20;

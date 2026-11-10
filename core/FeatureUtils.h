@@ -22,7 +22,7 @@ inline double labDistance(double l1, double a1, double b1, double l2, double a2,
     return std::sqrt(dl * dl + da * da + db * db) / 100.0;
 }
 
-inline std::vector<float> computeGrid4x4(const cv::Mat &bgr)
+inline std::vector<float> computeGridLab(const cv::Mat &bgr)
 {
     const int gridRows = 4, gridCols = 4;
     if (bgr.rows < gridRows || bgr.cols < gridCols)

@@ -232,11 +232,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         {
             std::ostringstream detail;
             detail << "Cannot open database: " << dbPath;
-            runtime.fail("library_unavailable", detail.str(), "dbPath", dbPath);
+            runtime.fail(db.errorCode(), detail.str(), "dbPath", dbPath);
         }
         return false;
     }
-    db.reportPaths(runtime);
 
     int dbCount = db.totalCount();
     if (dbCount == 0)
@@ -244,7 +243,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         {
             std::ostringstream detail;
             detail << "Database is empty.";
-            runtime.fail("library_unavailable", detail.str(), "dbPath", dbPath);
+            runtime.fail(db.errorCode(), detail.str(), "dbPath", dbPath);
         }
         return false;
     }
@@ -302,8 +301,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     for (const auto& record : allRecords)
     {
         // 分析读取全部 192 维；拒绝不完整旧记录，避免越界和虚假的匹配报告。
-        if (record.featureVersion != FeatureExtractor::featureVersion() || record.grid4x4.size() != 192 ||
-            !std::all_of(record.grid4x4.begin(), record.grid4x4.end(),
+        if (record.featureVersion != FeatureExtractor::featureVersion() || record.gridLab.size() != 192 ||
+            !std::all_of(record.gridLab.begin(), record.gridLab.end(),
                          [](float value)
                          {
                              return std::isfinite(value);
@@ -377,8 +376,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         {
             const auto& rec = allRecords[i];
             h_lab[i*3+0] = rec.avgL; h_lab[i*3+1] = rec.avgA; h_lab[i*3+2] = rec.avgB;
-            if (rec.grid4x4.size() == 192)
-                std::memcpy(&h_grid[i*192], rec.grid4x4.data(), 192*sizeof(float));
+            if (rec.gridLab.size() == 192)
+                std::memcpy(&h_grid[i*192], rec.gridLab.data(), 192*sizeof(float));
             h_edge[i] = rec.edgeDensity;
             h_use[i] = rec.useCount;
         }
@@ -397,7 +396,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             if (!tinyValid[i] || !lbpValid[i])
             {
                 runtime.emit("warning", "feature_missing", "missing features retain the existing matching penalty",
-                             "dbPath", !tinyValid[i] ? allRecords[i].tinyPath : allRecords[i].histPath);
+                             "dbPath", !tinyValid[i] ? allRecords[i].tinyPath : allRecords[i].lbpPath);
             }
         }
         if (cuda::uploadLibrary(gpuLib, h_lab.data(), h_grid.data(), h_tiny.data(), h_edge.data(), h_lbp.data(),
@@ -913,7 +912,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             libGrid4x4.resize(dbCount);
             for (int i = 0; i < dbCount; ++i)
             {
-                downsampleGrid(allRecords[i].grid4x4, libGrid4x4[i]);
+                downsampleGrid(allRecords[i].gridLab, libGrid4x4[i]);
             }
         }
         MatchingBuffers buffers;
@@ -1434,7 +1433,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                 continue;
                             }
                             // GPU scores 基于 8x8 grid，4x4 分数 = 原分数 - 8x8 grid项 + 4x4 grid项
-                            double grid8d = gridDistance8x8(allGrid[local], allRecords[indices[j]].grid4x4, true);
+                            double grid8d = gridDistance8x8(allGrid[local], allRecords[indices[j]].gridLab, true);
                             double grid4d = gridDistance(tileGrid4x4[local], libGrid4x4[indices[j]]);
                             double score4 = scores[j] - nGridW * grid8d + nGridW * grid4d;
                             double score8 = scores[j]; // GPU , ,  8, 8
@@ -1488,7 +1487,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         const auto &rec = allRecords[chosenLibIdx];
                         double labD =
                             labDistance(allTL[local], allTA[local], allTB[local], rec.avgL, rec.avgA, rec.avgB);
-                        double gridD = gridDistance8x8(allGrid[local], rec.grid4x4, true);
+                        double gridD = gridDistance8x8(allGrid[local], rec.gridLab, true);
                         const auto &features = featureReader->get(chosenLibIdx);
                         const auto *recTiny = features.tinyValid ? &features.tiny : nullptr;
                         const auto *recLBP = features.lbpValid ? &features.lbp : nullptr;
@@ -1581,9 +1580,9 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         for (int ci = 0; ci < 64; ++ci)
                         {
                             int off = ci * 3;
-                            double dl = allGrid[local][off] / 255.0 - rec.grid4x4[off] / 255.0;
-                            double da = allGrid[local][off + 1] / 255.0 - rec.grid4x4[off + 1] / 255.0;
-                            double db = allGrid[local][off + 2] / 255.0 - rec.grid4x4[off + 2] / 255.0;
+                            double dl = allGrid[local][off] / 255.0 - rec.gridLab[off] / 255.0;
+                            double da = allGrid[local][off + 1] / 255.0 - rec.gridLab[off + 1] / 255.0;
+                            double db = allGrid[local][off + 2] / 255.0 - rec.gridLab[off + 2] / 255.0;
                             analyzeGridCellSum[ci] += std::sqrt(dl * dl + da * da + db * db);
                         }
                     }
@@ -1681,7 +1680,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 
                         double wLabD = tileLabW[local] *
                                        labDistance(allTL[local], allTA[local], allTB[local], w.avgL, w.avgA, w.avgB);
-                        double wGridD = tileGridW[local] * gridDistance8x8(allGrid[local], w.grid4x4, true);
+                        double wGridD = tileGridW[local] * gridDistance8x8(allGrid[local], w.gridLab, true);
                         double wEdgeD = tileEdgeW[local] * std::abs(allEdge[local] - w.edgeDensity);
                         double wS =
                             wLabD + wGridD + wEdgeD +

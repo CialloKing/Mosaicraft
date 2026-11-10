@@ -24,8 +24,8 @@ def main():
                 CREATE TABLE images(id INTEGER PRIMARY KEY,file_path TEXT UNIQUE,file_hash TEXT,format TEXT,
                     src_width INTEGER,src_height INTEGER,aspect_ratio REAL,file_size INTEGER,
                     avg_l REAL,avg_a REAL,avg_b REAL,mean_brightness REAL,std_brightness REAL,contrast REAL,
-                    saturation REAL,color_variance REAL,grid4x4 BLOB,tiny_path TEXT,edge_density REAL,
-                    hist_path TEXT,use_count INTEGER,feature_version INTEGER);
+                    saturation REAL,color_variance REAL,grid_lab BLOB,tiny_path TEXT,edge_density REAL,
+                    lbp_path TEXT,use_count INTEGER,feature_version INTEGER);
             """)
             connection.executemany("INSERT INTO images VALUES(" + ",".join("?" for _ in range(22)) + ")",
                 ((i, str(library / f"{i}.png"), str(i), "png", 180, 320, 180 / 320, 0,
@@ -39,7 +39,7 @@ def main():
         writer.execute("UPDATE images SET use_count=9 WHERE id=1")
         writer.commit()
         columns = [r[1] for r in writer.execute("PRAGMA table_info(images)") if r[1] not in
-                   ("file_path", "tiny_path", "hist_path")]
+                   ("file_path", "tiny_path", "lbp_path")]
         query = "SELECT " + ",".join(columns) + " FROM images ORDER BY id"
         before = writer.execute(query).fetchall()
 

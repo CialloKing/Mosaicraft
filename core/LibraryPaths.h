@@ -13,7 +13,6 @@ class LibraryPaths
   public:
     explicit LibraryPaths(const std::string &database);
     std::string store(const std::string &path) const;
-    std::string legacy(const std::string &path) const;
     std::string resolve(const std::string &path) const;
     static bool relative(const std::string &path);
 };

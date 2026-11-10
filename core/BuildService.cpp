@@ -1,4 +1,4 @@
-﻿#include "BuildService.h"
+#include "BuildService.h"
 
 #include "Database.h"
 #include "FeatureExtractor.h"
@@ -121,10 +121,10 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
     if (!db.isOpen())
     {
         return runtimeFailure(runtime, EXIT_ERR_DB, "cannot open database: " + dbPath + "; " + db.error(),
-                              "library_unavailable", "dbPath", dbPath);
+                              db.errorCode(), "dbPath", dbPath);
     }
 
-    if (!db.createTables())
+    if (!db.createTables(request.normalizeWidth, request.normalizeHeight))
     {
         return runtimeFailure(runtime, EXIT_ERR_DB, "cannot create database tables", "library_unavailable", "dbPath",
                               dbPath);
@@ -135,11 +135,6 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
     {
         return runtimeFailure(runtime, EXIT_ERR_DB, recoveryError, "operation_failed", "");
     }
-    if (!db.ensurePortablePaths())
-    {
-        return runtimeFailure(runtime, EXIT_ERR_DB, db.error(), "library_unavailable", "dbPath", dbPath);
-    }
-    db.reportPaths(runtime);
     if (!fs::is_directory(u8path(request.inputDir), ec))
     {
         return runtimeFailure(runtime, 1, "cannot read input directory: " + request.inputDir, "input_unreadable",
@@ -179,27 +174,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
             return runtimeFailure(runtime, 1, "feature dimensions differ; use a new library directory/database",
                                   "library_incompatible", "dbPath", dbPath);
         }
-        FeatureExtractor refresh;
-        for (auto record : existingRecords)
-        {
-            if (record.featureVersion == FeatureExtractor::featureVersion())
-            {
-                continue;
-            }
-            auto image = imreadUnicode(record.filePath, cv::IMREAD_COLOR);
-            if (image.empty())
-            {
-                return runtimeFailure(runtime, 1, "restore missing library files or run db-purge before rebuilding",
-                                      "operation_failed", "");
-            }
-            // 保留记录 ID、使用次数与原文件；刷新旧特征，同时修正旧 CUDA 的编码前哈希。
-            record.fileHash = hashMatForBuild(image);
-            refresh.compute(image, record, featDir, "id_" + std::to_string(record.id));
-            if (!db.insertImage(record))
-            {
-                return runtimeFailure(runtime, 2, "cannot refresh legacy features", "operation_failed", "");
-            }
-        }
+
     }
 
     // 入库前持久化尺寸；首次建库被中断后，已有记录仍可用同样尺寸继续追加。
@@ -823,7 +798,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
                                     record.avgL = feature.lab[0];
                                     record.avgA = feature.lab[1];
                                     record.avgB = feature.lab[2];
-                                    record.grid4x4.assign(feature.grid.begin(), feature.grid.end());
+                                    record.gridLab.assign(feature.grid.begin(), feature.grid.end());
                                     FeatureExtractor::saveFeatures(record, featDir, "hash_" + record.fileHash,
                                                                    feature.tiny.data(), feature.lbp.data());
                                     record.featureVersion = FeatureExtractor::featureVersion();

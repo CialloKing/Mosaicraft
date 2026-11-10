@@ -23,7 +23,7 @@ class GridDuplicateCache
     {
         for (const auto &record : records)
         {
-            const auto &grid = record.grid4x4;
+            const auto &grid = record.gridLab;
             m_finite.push_back(grid.size() == 192 &&
                                std::all_of(grid.begin(), grid.end(), [](float value) { return std::isfinite(value); }));
         }
@@ -48,8 +48,8 @@ class GridDuplicateCache
         auto &entry = m_slots[hash & (m_slots.size() - 1)];
         if (entry.key != key)
         {
-            const auto &a = m_records[first].grid4x4;
-            const auto &b = m_records[second].grid4x4;
+            const auto &a = m_records[first].gridLab;
+            const auto &b = m_records[second].gridLab;
             const double stop = m_finite[first] && m_finite[second] ? threshold : INFINITY;
             entry = {key, gridDistance8x8(a, b, false, stop) < threshold};
         }

@@ -302,7 +302,7 @@ void CompatibleScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &rec
             for (int i = 0; i < count; ++i)
             {
                 const auto &record = records[first + i];
-                if (record.grid4x4.size() != 192)
+                if (record.gridLab.size() != 192)
                 {
                     throw std::invalid_argument("compatible CUDA library requires v6 Grid features");
                 }
@@ -310,7 +310,7 @@ void CompatibleScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &rec
                 host.d_lab[i * 3] = record.avgL;
                 host.d_lab[i * 3 + 1] = record.avgA;
                 host.d_lab[i * 3 + 2] = record.avgB;
-                std::copy_n(record.grid4x4.data(), 192, host.d_grid + i * 192);
+                std::copy_n(record.gridLab.data(), 192, host.d_grid + i * 192);
                 std::copy(features.tiny.begin(), features.tiny.end(), host.d_tiny + i * 256);
                 std::copy(features.lbp.begin(), features.lbp.end(), host.d_lbp + i * 256);
                 host.d_edge[i] = record.edgeDensity;

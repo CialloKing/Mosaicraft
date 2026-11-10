@@ -54,7 +54,7 @@ class StudyPaths(unittest.TestCase):
             connection = sqlite3.connect(source / "mosaicraft.db")
             connection.executescript("CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT);"
                 "INSERT INTO meta VALUES('path_format','db-relative-v1');"
-                "CREATE TABLE images(id INTEGER PRIMARY KEY,file_path TEXT UNIQUE,tiny_path TEXT,hist_path TEXT);"
+                "CREATE TABLE images(id INTEGER PRIMARY KEY,file_path TEXT UNIQUE,tiny_path TEXT,lbp_path TEXT);"
                 "INSERT INTO images VALUES(1,'image.png','data.tiny','data.hist');")
             connection.close()
             target, count = private_library(source / "mosaicraft.db", root / "study", images=True)
@@ -63,7 +63,7 @@ class StudyPaths(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     resource(target, invalid, "db-relative-v1")
             with readonly_database(target) as connection:
-                paths = connection.execute("SELECT file_path,tiny_path,hist_path FROM images").fetchone()
+                paths = connection.execute("SELECT file_path,tiny_path,lbp_path FROM images").fetchone()
                 self.assertTrue(all(resource(target, path, "db-relative-v1").exists() for path in paths))
             target.parent.rename(root / "moved")
 

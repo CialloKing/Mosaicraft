@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <cstdint>
 #include <memory>
@@ -49,7 +49,7 @@ struct ImageRecord
     // ——— 区域结构特征（V2） ———
     // 4×4 LAB Grid：16 格 × 3 通道 = 48 个 float（192 字节 BLOB）
     // 为空表示尚未计算
-    std::vector<float> grid4x4;
+    std::vector<float> gridLab;
 
     // ——— TinyImage（V3） ———
     // 16×16 灰度图，存为独立文件
@@ -59,7 +59,7 @@ struct ImageRecord
     double edgeDensity = 0.0;       // 边缘像素占比（0~1）
 
     // ——— 纹理特征（V4 预留） ———
-    std::string histPath;           // 直方图 / LBP / GLCM 特征文件路径
+    std::string lbpPath;           // 直方图 / LBP / GLCM 特征文件路径
 
     // ——— 使用统计 ———
     int useCount = 0;               // 被匹配选用的次数
@@ -109,14 +109,11 @@ public:
         return m_error;
     }
 
-    // 首次使用时建表（幂等）；若旧表缺少列则自动迁移
-    bool createTables();
-    // Build 在完成旧重排恢复后调用；普通读取在构造时自动完成这一步。
-    bool ensurePortablePaths();
-    void reportPaths(RuntimeContext &runtime) const;
-    const std::string &pathNotice() const
+    // 仅新库建立完整结构；已有库不修改结构
+    bool createTables(int featureWidth = 180, int featureHeight = 320);
+    const char *errorCode() const
     {
-        return m_pathNotice;
+        return m_error.rfind("library_incompatible:", 0) == 0 ? "library_incompatible" : "library_unavailable";
     }
 
     // ——— 写操作 ———
@@ -180,9 +177,9 @@ private:
     std::unique_ptr<LibraryAccess> m_access;
     std::string m_path;
     std::string m_error;
-    bool m_portable = false, m_exclusive = false, m_new = false;
-    std::string m_pathNotice, m_pathBackup;
-    bool openConnection(bool create);
+    bool m_exclusive = false, m_new = false;
+    bool openConnection(bool create, bool readOnly = false);
+    bool validateSchema();
     void closeConnection();
     bool validateStoredPaths();
 
@@ -204,11 +201,7 @@ public:
     }
 private:
 
-    // 检查某列是否存在
-    bool columnExists(const std::string& table, const std::string& column);
 
-    // 自动添加旧表缺失的列
-    void migrate();
 };
 
 } // namespace mosaicraft

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "Database.h"
 #include "UnicodeIO.h"
@@ -85,11 +85,11 @@ class FeatureIndex
             vec[off++] = static_cast<float>(rec.avgA / 255.0);
             vec[off++] = static_cast<float>(rec.avgB / 255.0);
 
-            for (int j = 0; j < 192 && j < static_cast<int>(rec.grid4x4.size()); ++j)
+            for (int j = 0; j < 192 && j < static_cast<int>(rec.gridLab.size()); ++j)
             {
-                vec[off++] = rec.grid4x4[j] / 255.0f;
+                vec[off++] = rec.gridLab[j] / 255.0f;
             }
-            for (int j = static_cast<int>(rec.grid4x4.size()); j < 192; ++j)
+            for (int j = static_cast<int>(rec.gridLab.size()); j < 192; ++j)
             {
                 vec[off++] = 0.0f;
             }
@@ -340,9 +340,9 @@ class FeatureIndex
             values[0] = static_cast<float>(record->avgL / 255.0);
             values[1] = static_cast<float>(record->avgA / 255.0);
             values[2] = static_cast<float>(record->avgB / 255.0);
-            for (size_t i = 0; i < std::min<size_t>(192, record->grid4x4.size()); ++i)
+            for (size_t i = 0; i < std::min<size_t>(192, record->gridLab.size()); ++i)
             {
-                values[3 + i] = record->grid4x4[i] / 255.0f;
+                values[3 + i] = record->gridLab[i] / 255.0f;
             }
             values.back() = static_cast<float>(record->edgeDensity);
             for (float value : values)

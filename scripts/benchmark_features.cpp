@@ -58,7 +58,7 @@ int main(int argc, char **argv)
                 {
                     const auto &record = records[index];
                     std::ifstream t(u8path(record.tinyPath), std::ios::binary),
-                        l(u8path(record.histPath), std::ios::binary);
+                        l(u8path(record.lbpPath), std::ios::binary);
                     std::vector<uint8_t> td(256);
                     std::vector<float> ld(256);
                     if (t.read(reinterpret_cast<char *>(td.data()), 256) &&

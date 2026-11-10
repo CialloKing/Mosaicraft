@@ -421,7 +421,7 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
             double labD = labDistance(worstTiles.at(sample).lab[0], worstTiles.at(sample).lab[1],
                                       worstTiles.at(sample).lab[2], rec.avgL, rec.avgA, rec.avgB);
             double gridD = gridDistance8x8(
-                std::vector<float>(worstTiles.at(sample).grid.begin(), worstTiles.at(sample).grid.end()), rec.grid4x4,
+                std::vector<float>(worstTiles.at(sample).grid.begin(), worstTiles.at(sample).grid.end()), rec.gridLab,
                 true);
             double edgeD = std::abs(worstTiles.at(sample).edge - rec.edgeDensity);
             rpt << "\n#" << (k + 1) << " tile(" << tx << "," << ty << ") score=" << worstIdx[k].first << "\n";

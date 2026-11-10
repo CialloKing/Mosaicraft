@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CudaBackend.h"
 #include "core/Database.h"
@@ -18,7 +18,7 @@ namespace cuda
 // 一次处理多张归一化图（180×320 BGR），填充对应的 ImageRecord。
 //
 // images:           [batchSize] 张 BGR 归一化图，尺寸必须一致（180×320）
-// records:          [batchSize] 输出，各字段被填充（grid4x4, avgL/A/B,
+// records:          [batchSize] 输出，各字段被填充（grid_lab, avgL/A/B,
 //                   meanBrightness, stdBrightness, contrast, saturation,
 //                   colorVariance, edgeDensity, LBP, tinyPath, featureVersion）
 // featDir, stems:   [batchSize] 特征文件目录和文件名前缀

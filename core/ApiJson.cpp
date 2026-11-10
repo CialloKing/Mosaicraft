@@ -1,4 +1,4 @@
-﻿#include "ApiJson.h"
+#include "ApiJson.h"
 
 #include "Version.h"
 
@@ -314,7 +314,7 @@ nlohmann::json databasePurgeToJson(const DatabasePurge& purge)
             {"id", item.id},
             {"filePath", item.filePath},
             {"tinyPath", item.tinyPath},
-            {"histPath", item.histPath}
+            {"lbpPath", item.lbpPath}
         });
     }
     return {

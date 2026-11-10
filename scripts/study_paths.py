@@ -128,7 +128,7 @@ def source_inventory(database):
     summary = hashlib.sha256()
     with readonly_database(database) as connection:
         mode = path_mode(connection)
-        for row in connection.execute("SELECT id,file_path,tiny_path,hist_path FROM images ORDER BY id"):
+        for row in connection.execute("SELECT id,file_path,tiny_path,lbp_path FROM images ORDER BY id"):
             summary.update(str(row[0]).encode())
             for value in row[1:]:
                 path = resource(database, value, mode)
@@ -144,7 +144,7 @@ def private_library(source, root, images):
     with readonly_database(source) as original, closing(sqlite3.connect(snapshot)) as target:
         original.backup(target)
         mode = path_mode(original)
-        rows = original.execute("SELECT id,file_path,tiny_path,hist_path FROM images ORDER BY id").fetchall()
+        rows = original.execute("SELECT id,file_path,tiny_path,lbp_path FROM images ORDER BY id").fetchall()
         target.execute("BEGIN IMMEDIATE")
         target.execute("UPDATE images SET file_path='.__study_stage__/' || id")
         for image_id, image, tiny, histogram in rows:
@@ -162,7 +162,7 @@ def private_library(source, root, images):
                         except OSError:
                             shutil.copy2(old, new)
                 new_paths.append(relative if value else None)
-            target.execute("UPDATE images SET file_path=?,tiny_path=?,hist_path=? WHERE id=?", (*new_paths, image_id))
+            target.execute("UPDATE images SET file_path=?,tiny_path=?,lbp_path=? WHERE id=?", (*new_paths, image_id))
         target.execute("INSERT OR REPLACE INTO meta VALUES('path_format',?)", (FORMAT,))
         target.commit()
     return snapshot, len(rows)

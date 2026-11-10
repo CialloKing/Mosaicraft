@@ -10,7 +10,7 @@ inline double cpuBaseScore(const MatchingBuffers &tiles, size_t tile, const Imag
 {
     const double lab = tiles.labW[tile] *
         labDistance(tiles.l[tile], tiles.a[tile], tiles.b[tile], record.avgL, record.avgA, record.avgB);
-    const double grid = tiles.gridW[tile] * gridDistance8x8(tiles.grid[tile], record.grid4x4, true);
+    const double grid = tiles.gridW[tile] * gridDistance8x8(tiles.grid[tile], record.gridLab, true);
     const double edge = tiles.edgeW[tile] * std::abs(tiles.edge[tile] - record.edgeDensity);
     return lab + grid +
         tiles.tinyW[tile] * (features.tinyValid ? tinyMSE(tiles.tiny[tile], features.tiny) : 1.0) + edge +

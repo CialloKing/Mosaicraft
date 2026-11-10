@@ -184,33 +184,6 @@ MosaicRequest makeMosaicRequest(const TempWorkspace& workspace)
     return request;
 }
 
-void requireLegacyPaths(const fs::path &path)
-{
-    std::vector<ImageRecord> records;
-    {
-        Database database(utf8(path), Database::OpenMode::Existing);
-        REQUIRE(database.isOpen());
-        records = database.allRecords();
-    }
-    sqlite3 *raw = nullptr;
-    REQUIRE(sqlite3_open(utf8(path).c_str(), &raw) == SQLITE_OK);
-    sqlite3_stmt *statement = nullptr;
-    REQUIRE(sqlite3_prepare_v2(raw, "UPDATE images SET file_path=?,tiny_path=?,hist_path=? WHERE id=?", -1,
-                              &statement, nullptr) == SQLITE_OK);
-    for (const auto &record : records)
-    {
-        sqlite3_bind_text(statement, 1, record.filePath.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(statement, 2, record.tinyPath.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(statement, 3, record.histPath.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int(statement, 4, record.id);
-        REQUIRE(sqlite3_step(statement) == SQLITE_DONE);
-        sqlite3_reset(statement);
-    }
-    sqlite3_finalize(statement);
-    REQUIRE(sqlite3_exec(raw, "DELETE FROM meta WHERE key='path_format'", nullptr, nullptr, nullptr) == SQLITE_OK);
-    REQUIRE(sqlite3_close(raw) == SQLITE_OK);
-}
-
 int fixtureSql(const fs::path &path, const std::string &sql)
 {
     sqlite3 *raw = nullptr;
@@ -226,107 +199,45 @@ int fixtureSql(const fs::path &path, const std::string &sql)
 
 } // namespace
 
-TEST_CASE("old libraries upgrade atomically once and remain usable after relocation")
+TEST_CASE("new libraries reject incompatible structures and remain portable")
 {
     TempWorkspace workspace;
     writeLibraryImages(workspace.inputDir());
     writeTargetImage(workspace.targetPath());
-    const auto build = makeBuildRequest(workspace);
+    auto build = makeBuildRequest(workspace);
     REQUIRE(BuildService().run(build).ok);
-    requireLegacyPaths(workspace.dbPath());
-    std::vector<ImageRecord> before;
+    bool incompatible = false;
+    SUBCASE("unversioned old library")
     {
-        Database legacy(build.dbPath, Database::OpenMode::Build);
-        REQUIRE(legacy.isOpen());
-        before = legacy.allRecords();
-        REQUIRE(legacy.recordRunUsage({{before[0].id, 9}}, "fixture", "target.png"));
-        before = legacy.allRecords();
+        REQUIRE(fixtureSql(workspace.dbPath(), "PRAGMA user_version=0") == SQLITE_OK);
+        incompatible = true;
     }
-    bool failure = false, deferred = false, missing = false;
-    SUBCASE("backup failure leaves legacy paths intact")
+    SUBCASE("future library")
     {
-        std::ofstream(workspace.libraryDir() / ".mosaicraft-backups") << "occupied";
-        failure = true;
+        REQUIRE(fixtureSql(workspace.dbPath(), "PRAGMA user_version=99") == SQLITE_OK);
+        incompatible = true;
     }
-    SUBCASE("transaction failure rolls back temporary and final paths")
+    SUBCASE("missing required table")
     {
-        REQUIRE(fixtureSql(workspace.dbPath(), "CREATE TRIGGER path_fault BEFORE UPDATE OF tiny_path ON images "
-            "BEGIN SELECT RAISE(ABORT,'path upgrade fault'); END") == SQLITE_OK);
-        failure = true;
+        REQUIRE(fixtureSql(workspace.dbPath(), "DROP TABLE target_runs") == SQLITE_OK);
+        incompatible = true;
     }
-    SUBCASE("external resources retain legacy interpretation")
+    if (incompatible)
     {
-        const auto outside = utf8(workspace.root / "outside.png");
-        REQUIRE(fixtureSql(workspace.dbPath(), "UPDATE images SET file_path='" + outside + "' WHERE id=" +
-                           std::to_string(before[0].id)) == SQLITE_OK);
-        deferred = true;
-    }
-    SUBCASE("normalized path conflicts retain the complete legacy format")
-    {
-        // SQLite 的文本唯一性允许 /./ 别名，迁移不能让两个 ID 指向同一规范路径。
-        const auto original = u8path(before[0].filePath);
-        const auto alias = utf8(original.parent_path() / "." / original.filename());
-        REQUIRE(fixtureSql(workspace.dbPath(), "UPDATE images SET file_path='" + alias + "' WHERE id=" +
-                           std::to_string(before[1].id)) == SQLITE_OK);
-        deferred = true;
-    }
-    SUBCASE("missing internal images do not block upgrade or health diagnostics")
-    {
-        REQUIRE(fs::remove(u8path(before[0].filePath)));
-        missing = true;
-    }
-    if (failure)
-    {
-        Database blocked(build.dbPath, Database::OpenMode::Existing);
-        CHECK_FALSE(blocked.isOpen());
-        CHECK(blocked.error().find("upgrade failed") != std::string::npos);
-        Database legacy(build.dbPath, Database::OpenMode::Build);
-        REQUIRE(legacy.isOpen());
-        CHECK(legacy.getMeta("path_format").empty());
-        const auto after = legacy.allRecords();
-        REQUIRE(after.size() == before.size());
-        for (size_t i = 0; i < before.size(); ++i)
+        for (auto mode : {Database::OpenMode::Existing, Database::OpenMode::Build})
         {
-            CHECK(after[i].filePath == before[i].filePath);
-            CHECK(after[i].tinyPath == before[i].tinyPath);
+            Database blocked(build.dbPath, mode);
+            CHECK_FALSE(blocked.isOpen());
+            CHECK(std::string(blocked.errorCode()) == "library_incompatible");
         }
+        build.forceMode = true;
+        CHECK_FALSE(BuildService().run(build).ok);
+        CHECK_FALSE(fs::exists(workspace.libraryDir() / ".mosaicraft-backups"));
         return;
-    }
-    {
-        Database upgraded(build.dbPath, Database::OpenMode::Existing);
-        REQUIRE_MESSAGE(upgraded.isOpen(), upgraded.error());
-        if (deferred)
-        {
-            CHECK(upgraded.getMeta("path_format").empty());
-            CHECK_FALSE(fs::exists(workspace.libraryDir() / ".mosaicraft-backups"));
-            RuntimeContext runtime(false);
-            upgraded.reportPaths(runtime);
-            CHECK(runtime.snapshot().warnings.count("library_path_upgrade_deferred") == 1);
-            return;
-        }
-        CHECK(upgraded.getMeta("path_format") == "db-relative-v1");
-        const auto after = upgraded.allRecords();
-        REQUIRE(after.size() == before.size());
-        for (size_t i = 0; i < before.size(); ++i)
-        {
-            CHECK(after[i].id == before[i].id);
-            CHECK(after[i].filePath == before[i].filePath);
-            CHECK(after[i].grid4x4 == before[i].grid4x4);
-            CHECK(after[i].useCount == before[i].useCount);
-        }
-    }
-    const auto backupDir = workspace.libraryDir() / ".mosaicraft-backups";
-    REQUIRE(fs::is_directory(backupDir));
-    const auto backupCount = std::distance(fs::directory_iterator(backupDir), fs::directory_iterator{});
-    CHECK(backupCount == 1);
-    {
-        Database reopened(build.dbPath, Database::OpenMode::Existing);
-        REQUIRE(reopened.isOpen());
-        CHECK(std::distance(fs::directory_iterator(backupDir), fs::directory_iterator{}) == backupCount);
     }
     const auto moved = workspace.root / fs::u8path("移动 后图库");
     fs::rename(workspace.libraryDir(), moved);
-    const auto priorCwd = fs::current_path();
+    const auto previous = fs::current_path();
     struct RestoreCwd
     {
         fs::path path;
@@ -334,39 +245,22 @@ TEST_CASE("old libraries upgrade atomically once and remain usable after relocat
         {
             fs::current_path(path);
         }
-    } restore{priorCwd};
+    } restore{previous};
     fs::current_path(workspace.outputDir());
-    {
-        Database relocated(utf8(moved / "mosaicraft.db"), Database::OpenMode::Existing);
-        REQUIRE_MESSAGE(relocated.isOpen(), relocated.error());
-        for (const auto &record : relocated.allRecords())
-        {
-            CHECK(u8path(record.filePath).parent_path() == moved);
-            CHECK(fs::exists(u8path(record.tinyPath)));
-            CHECK(fs::exists(u8path(record.histPath)));
-        }
-    }
-    const auto movedDb = utf8(moved / "mosaicraft.db");
-    const auto health = DatabaseService().health({movedDb});
-    REQUIRE(health.status.ok);
-    CHECK(health.health.missingFiles == (missing ? 1 : 0));
-    if (!missing)
-    {
-        auto mosaic = makeMosaicRequest(workspace);
-        mosaic.dbPath = movedDb;
-        mosaic.config.lRange = 255;
-        REQUIRE(MosaicService().run(mosaic).ok);
-        REQUIRE(fs::exists(workspace.mosaicPath()));
-        DatabaseUsageExportRequest exportRequest;
-        exportRequest.dbPath = movedDb;
-        exportRequest.outputDir = utf8(workspace.root / "export");
-        REQUIRE(DatabaseService().exportUsage(exportRequest).status.ok);
-        auto append = build;
-        append.dbPath = movedDb;
-        append.outputDir = utf8(moved);
-        append.appendMode = true;
-        REQUIRE(BuildService().run(append).ok);
-    }
+    const auto database = utf8(moved / "mosaicraft.db");
+    REQUIRE(DatabaseService().health({database}).status.ok);
+    auto mosaic = makeMosaicRequest(workspace);
+    mosaic.dbPath = database;
+    mosaic.config.lRange = 255;
+    REQUIRE(MosaicService().run(mosaic).ok);
+    DatabaseUsageExportRequest exportRequest;
+    exportRequest.dbPath = database;
+    exportRequest.outputDir = utf8(workspace.root / "export");
+    REQUIRE(DatabaseService().exportUsage(exportRequest).status.ok);
+    build.dbPath = database;
+    build.outputDir = utf8(moved);
+    build.appendMode = true;
+    REQUIRE(BuildService().run(build).ok);
 }
 
 TEST_CASE("match-only uses feature payloads without photos output or usage writes")
@@ -590,14 +484,14 @@ TEST_CASE("compatible CUDA scores are exact and failures never publish partial r
         records[i].useCount = static_cast<int>(i * 37);
         if (i % 2)
         {
-            for (float &value : records[i].grid4x4)
+            for (float &value : records[i].gridLab)
             {
                 value = rng.uniform(0.0f, 255.0f);
             }
         }
     }
     records[0].tinyPath.clear();
-    records[1].histPath.clear();
+    records[1].lbpPath.clear();
     records[3] = records[2];
     records[3].id = 3; // 完全平分的两个图库索引。
     REQUIRE(FeaturePack::buildCache(utf8(workspace.outputDir()), records));
@@ -613,7 +507,7 @@ TEST_CASE("compatible CUDA scores are exact and failures never publish partial r
         tiles.a[row] = record.avgA;
         tiles.b[row] = record.avgB;
         tiles.edge[row] = record.edgeDensity;
-        tiles.grid[row] = record.grid4x4;
+        tiles.grid[row] = record.gridLab;
         std::copy(features.tiny.begin(), features.tiny.end(), tiles.tiny[row].data());
         std::copy(features.lbp.begin(), features.lbp.end(), tiles.lbp[row].data());
         if (row % 3)
@@ -732,10 +626,10 @@ TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encode
             CHECK(record.avgL == expected.avgL);
             CHECK(record.avgA == expected.avgA);
             CHECK(record.avgB == expected.avgB);
-            CHECK(record.grid4x4 == expected.grid4x4);
+            CHECK(record.gridLab == expected.gridLab);
             CHECK(record.edgeDensity == expected.edgeDensity);
             CHECK(bytes(u8path(record.tinyPath)) == bytes(u8path(expected.tinyPath)));
-            CHECK(bytes(u8path(record.histPath)) == bytes(u8path(expected.histPath)));
+            CHECK(bytes(u8path(record.lbpPath)) == bytes(u8path(expected.lbpPath)));
         }
     }
     build.appendMode = true;
@@ -752,7 +646,7 @@ TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encode
         }
     }
     fs::remove(u8path(original[0].tinyPath));
-    fs::remove(u8path(original[1].histPath));
+    fs::remove(u8path(original[1].lbpPath));
     auto request = makeMosaicRequest(workspace);
     request.config.outW = 41;
     request.config.outH = 73;
@@ -1168,21 +1062,6 @@ TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
         journal["database"] = path;
     }
 #endif
-    SUBCASE("relative paths use the original working directory")
-    {
-        requireLegacyPaths(workspace.dbPath());
-        Database database(request.dbPath, Database::OpenMode::Build);
-        journal["working_directory"] = utf8(workspace.root);
-        for (size_t i = 0; i < 2; ++i)
-        {
-            const auto relative = utf8(fs::relative(u8path(records[i].filePath), workspace.root));
-            REQUIRE(database.updateImagePath(records[i].id, records[i].filePath, relative));
-            journal["entries"][i]["old_db_path"] = relative;
-            records[i].filePath = relative;
-        }
-        const auto& entry = journal["entries"][0];
-        fs::rename(u8path(entry["original"].get<std::string>()), u8path(entry["temporary"].get<std::string>()));
-    }
     SUBCASE("interrupted publishing")
     {
         for (const auto& entry : journal["entries"])
@@ -1387,12 +1266,12 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
                 const auto pixels = imreadUnicode(record.filePath);
                 CHECK(record.fileHash == pixelHash(pixels));
                 CHECK(pixels.size() == size);
-                CHECK(record.featureVersion == 6);
+                CHECK(record.featureVersion == FeatureExtractor::featureVersion());
                 REQUIRE(expected.count(record.fileHash) == 1);
                 CHECK(readBytesUnicode(record.filePath) == expected.at(record.fileHash));
                 CHECK(fs::exists(u8path(record.tinyPath)));
-                CHECK(fs::exists(u8path(record.histPath)));
-                for (const auto& path : {record.tinyPath, record.histPath})
+                CHECK(fs::exists(u8path(record.lbpPath)));
+                for (const auto& path : {record.tinyPath, record.lbpPath})
                 {
                     // 固定旧时间，能识别追加时即使内容相同的无谓重写。
                     const auto stamp = fs::file_time_type::clock::now() - std::chrono::hours(1);
@@ -1425,11 +1304,11 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
                                              });
                 REQUIRE(old != before.end());
                 CHECK(record.fileHash == old->fileHash);
-                CHECK(record.grid4x4 == old->grid4x4);
+                CHECK(record.gridLab == old->gridLab);
                 CHECK(record.tinyPath == old->tinyPath);
-                CHECK(record.histPath == old->histPath);
+                CHECK(record.lbpPath == old->lbpPath);
                 CHECK(fs::last_write_time(u8path(record.tinyPath)) == featureTimes.at(record.tinyPath));
-                CHECK(fs::last_write_time(u8path(record.histPath)) == featureTimes.at(record.histPath));
+                CHECK(fs::last_write_time(u8path(record.lbpPath)) == featureTimes.at(record.lbpPath));
                 CHECK(readBytesUnicode(record.filePath) == expected.at(record.fileHash));
             }
         }
@@ -1526,11 +1405,11 @@ TEST_CASE("default color build and append keep bytes IDs usage and feature refer
             CHECK(bytes(found->filePath) == originalBytes.at(before.id));
             CHECK(found->fileHash == before.fileHash);
             CHECK(found->tinyPath == before.tinyPath);
-            CHECK(found->histPath == before.histPath);
-            CHECK(found->grid4x4 == before.grid4x4);
+            CHECK(found->lbpPath == before.lbpPath);
+            CHECK(found->gridLab == before.gridLab);
             CHECK(found->useCount == before.useCount);
             CHECK(fs::exists(u8path(found->tinyPath)));
-            CHECK(fs::exists(u8path(found->histPath)));
+            CHECK(fs::exists(u8path(found->lbpPath)));
         }
     }
     CHECK(fs::exists(input / "z_red.jpg"));
@@ -2129,14 +2008,14 @@ TEST_CASE("bounded grid comparisons preserve thresholds and ordered selections")
     std::vector<ImageRecord> records(80);
     for (int i = 0; i < 80; ++i)
     {
-        records[i].grid4x4.assign(192, static_cast<float>(i / 2) * 0.1f);
+        records[i].gridLab.assign(192, static_cast<float>(i / 2) * 0.1f);
     }
-    records[77].grid4x4.clear();
-    records[78].grid4x4[0] = std::numeric_limits<float>::infinity();
-    records[78].grid4x4[191] = std::numeric_limits<float>::quiet_NaN();
-    records[79].grid4x4[191] = std::numeric_limits<float>::quiet_NaN();
+    records[77].gridLab.clear();
+    records[78].gridLab[0] = std::numeric_limits<float>::infinity();
+    records[78].gridLab[191] = std::numeric_limits<float>::quiet_NaN();
+    records[79].gridLab[191] = std::numeric_limits<float>::quiet_NaN();
     GridDuplicateCache cache(records);
-    const double boundary = gridDistance8x8(records[0].grid4x4, records[2].grid4x4);
+    const double boundary = gridDistance8x8(records[0].gridLab, records[2].gridLab);
     for (double threshold : {0.010, boundary, std::nextafter(boundary, 0.0),
                              std::nextafter(boundary, 1.0)})
     {
@@ -2145,7 +2024,7 @@ TEST_CASE("bounded grid comparisons preserve thresholds and ordered selections")
             for (int b = 0; b < 80; ++b)
             {
                 CHECK(cache.similar(a, b, threshold) ==
-                      (gridDistance8x8(records[a].grid4x4, records[b].grid4x4) < threshold));
+                      (gridDistance8x8(records[a].gridLab, records[b].gridLab) < threshold));
             }
         }
     }
@@ -2161,7 +2040,7 @@ TEST_CASE("bounded grid comparisons preserve thresholds and ordered selections")
                 bool oldDuplicate = false, newDuplicate = false;
                 for (int r : recent)
                 {
-                    oldDuplicate |= gridDistance8x8(records[i].grid4x4, records[r].grid4x4) < 0.010;
+                    oldDuplicate |= gridDistance8x8(records[i].gridLab, records[r].gridLab) < 0.010;
                     newDuplicate |= cache.similar(i, r, 0.010);
                 }
                 reference.emplace_back(oldScore + (oldDuplicate ? 200 : 0), i);
@@ -2250,15 +2129,15 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     for (int i = 0; i < static_cast<int>(records.size()); ++i)
     {
         records[i].id = i * 7 + 1;
-        records[i].featureVersion = 6;
+        records[i].featureVersion = FeatureExtractor::featureVersion();
         records[i].fileHash = "image-" + std::to_string(i);
         records[i].tinyPath = dir + "/" + std::to_string(i) + ".tiny";
-        records[i].histPath = dir + "/" + std::to_string(i) + ".hist";
+        records[i].lbpPath = dir + "/" + std::to_string(i) + ".hist";
         std::vector<uint8_t> tiny(256, static_cast<uint8_t>(i + 1));
         std::vector<float> lbp(256, 0.25f);
         std::ofstream t(u8path(records[i].tinyPath), std::ios::binary);
         t.write(reinterpret_cast<const char *>(tiny.data()), 256);
-        std::ofstream l(u8path(records[i].histPath), std::ios::binary);
+        std::ofstream l(u8path(records[i].lbpPath), std::ios::binary);
         l.write(reinterpret_cast<const char *>(lbp.data()), 1024);
     }
     const auto manifestPath = folder / "features.pack";
@@ -2362,7 +2241,7 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     std::ofstream interrupted(folder / "features-123-456.tiny.bin");
     interrupted << "partial";
     interrupted.close();
-    fs::remove(u8path(records[0].histPath));
+    fs::remove(u8path(records[0].lbpPath));
     fs::resize_file(u8path(records[0].tinyPath), 5);
     CandidateFeatures missing(records, needed, dir);
     CHECK(missing.tiny(2)[0] == 42);
@@ -2489,7 +2368,7 @@ TEST_CASE("matching batches preserve seeded choices, padding and empty batches")
         const auto records = db.allRecords();
         // 两种后端必须在缓存来源缺失时保留同样的惩罚规则。
         fs::remove(u8path(records[0].tinyPath));
-        fs::remove(u8path(records[1].histPath));
+        fs::remove(u8path(records[1].lbpPath));
     }
     auto request = makeMosaicRequest(workspace);
     request.config.outW = 41;
