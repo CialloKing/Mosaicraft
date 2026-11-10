@@ -319,6 +319,7 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME portable_library COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/portable_library.py"
         --cli "$<TARGET_FILE:mosaicraft>")
     set_tests_properties(portable_library PROPERTIES TIMEOUT 120)
+    add_test(NAME study_paths COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/test_study_paths.py")
 endif()
 
 find_program(POWERSHELL_COMMAND NAMES pwsh powershell)

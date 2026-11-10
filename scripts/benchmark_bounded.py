@@ -15,6 +15,7 @@ import subprocess
 import time
 
 from benchmark import peak_rss
+from study_paths import private_library
 
 
 def digest(path):
@@ -43,7 +44,10 @@ def main():
     database = folder / "run.db"
     if database == snapshot:
         parser.error("snapshot must differ from disposable run.db")
+    snapshot, _ = private_library(snapshot, folder, images=True)
     request = json.loads(args.request.read_text(encoding="utf-8-sig"))
+    input_key = "inputPath" if "inputPath" in request else "input"
+    request[input_key] = str(Path(request[input_key]).resolve())
     request.update(topNrandom=1, colorAdjust=False, analyze=args.analysis_mode == "analysis")
     variants = [("small", args.exe.resolve(), ["small"]), ("default", args.exe.resolve(), [])]
     if args.skip_small:
@@ -74,7 +78,7 @@ def main():
             peak = 0
             with log.open("wb") as stream:
                 process = subprocess.Popen([str(exe), str(configuration)] + suffix,
-                                           stdout=stream, stderr=subprocess.STDOUT)
+                                           stdout=stream, stderr=subprocess.STDOUT, cwd=folder)
                 while process.poll() is None:
                     peak = max(peak, peak_rss(process) or 0)
                     time.sleep(.025)

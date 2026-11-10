@@ -22,10 +22,14 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from benchmark import gpu_memory, peak_rss
+from study_paths import REPO, configure, bind_database, private_library
+from quality_study import median_available, gpu_description
+from public_paths import public_report
 from quality_study import (SEEDS, command_output, digest, gray_ssim, load,
                            read_image, readonly_database, save, source_inventory)
 
 STRATEGIES = ("L", "Q", "D", "QD", "QDX")
+BACKENDS = ("cpu", "cuda")
 
 
 def prepare(args):
@@ -34,51 +38,31 @@ def prepare(args):
     path = root / "manifest.json"
     if path.exists():
         manifest = load(path)
-        if manifest["executables"] != executables(args):
+        if {k:v["sha256"] for k,v in manifest["executables"].items()} != {k:v["sha256"] for k,v in executables(args).items()}:
             raise RuntimeError("Binary changed; use a fresh study directory")
         return manifest
     previous = load(args.baseline_study / "manifest.json")
-    source = Path(previous["source_database"])
-    if digest(source) != previous["source_database_sha256"]:
+    source = args.database or Path(previous["source_database"])
+    bind_database(source)
+    subprocess.run([str(args.quality), "--open-library", str(source)], check=True)
+    if args.database is None and digest(source) != previous["source_database_sha256"]:
         raise RuntimeError("Original library differs from the fixed baseline")
-    snapshot = root / "snapshot.db"
-    with readonly_database(args.baseline_study / "snapshot.db") as old, sqlite3.connect(snapshot) as new:
-        old.backup(new)
-    features = root / "features"
-    features.mkdir(exist_ok=True)
-    with sqlite3.connect(snapshot) as db:
-        rows = db.execute("SELECT id,tiny_path,hist_path FROM images ORDER BY id").fetchall()
-        for image_id, tiny, histogram in rows:
-            paths = []
-            for old, suffix in ((tiny, ".tiny"), (histogram, ".hist")):
-                new = features / f"id_{image_id}{suffix}"
-                if new.exists():
-                    if not new.samefile(old) and digest(new) != digest(old):
-                        raise RuntimeError(f"Incomplete private feature: {new}")
-                else:
-                    try:
-                        new.hardlink_to(old)
-                    except OSError:
-                        shutil.copy2(old, new)
-                paths.append(str(new))
-            db.execute("UPDATE images SET tiny_path=?,hist_path=? WHERE id=?", (*paths, image_id))
-        db.commit()
+    snapshot, row_count = private_library(source, root, images=False)
     inputs = root / "inputs"
     inputs.mkdir(exist_ok=True)
     cases = []
     for case in previous["cases"]:
         target = inputs / f"{case['id']}.png"
-        shutil.copy2(case["input"], target)
+        shutil.copy2((args.inputs / Path(case["input"]).name) if args.inputs else case["input"], target)
         cases.append(dict(case, input=str(target), sha256=digest(target)))
     manifest = dict(schema=1, source_commit=command_output(["git", "rev-parse", "HEAD"]),
                     executables=executables(args), snapshot=str(snapshot), snapshot_sha256=digest(snapshot),
                     previous_snapshot_sha256=digest(args.baseline_study / "snapshot.db"),
                     source_database=str(source), source_database_sha256=digest(source),
-                    source_inventory=source_inventory(source), library_rows=len(rows), cases=cases,
-                    seeds=SEEDS, strategies=STRATEGIES, flags=previous["flags"],
+                    source_inventory=source_inventory(source), library_rows=row_count, cases=cases,
+                    seeds=SEEDS, backends=BACKENDS, strategies=STRATEGIES, flags=previous["flags"],
                     matching_only=True, baseline_study=str(args.baseline_study.resolve()),
-                    environment=dict(gpu=command_output(["nvidia-smi", "--query-gpu=name,memory.total,driver_version",
-                                                        "--format=csv,noheader"]),
+                    environment=dict(gpu=gpu_description(),
                                      platform=platform.platform(), python=sys.version, python_opencv=cv2.__version__),
                     script_sha256=digest(__file__),
                     memory_metric="PeakWorkingSet; GPU sampling covers the whole device, not this process alone")
@@ -143,7 +127,7 @@ def execute(args, manifest, case, strategy, seed, backend, tag=None, epsilon=0.0
     folder = root / "runs" / tag
     folder.mkdir(parents=True, exist_ok=True)
     output = folder / ("mosaic.png" if render else "selection")
-    request = dict(input=case["input"], db=str(root / "run.db"), output=str(output),
+    request = dict(input=case["input"], db=str(Path(manifest["snapshot"]).parent / "run.db"), output=str(output),
                    outW=case["width"], outH=case["height"], candidates=150, topNrandom=10,
                    cpu=backend == "cpu", format="png", writeMode="stream", **manifest["flags"])
     request["lRange"] = case.get("lRange", 20)
@@ -168,7 +152,7 @@ def execute(args, manifest, case, strategy, seed, backend, tag=None, epsilon=0.0
                "--diagnostics", str(folder / "diagnostics.json")]
     if not render:
         command.append("--match-only")
-    gpu = gpu_memory() or 0
+    gpu = gpu_memory()
     gpu_peak, rss, last_gpu = gpu, 0, 0.0
     start = time.perf_counter()
     with (folder / "console.log").open("w", encoding="utf-8") as log:
@@ -177,7 +161,9 @@ def execute(args, manifest, case, strategy, seed, backend, tag=None, epsilon=0.0
             rss = max(rss, peak_rss(process) or 0)
             now = time.perf_counter()
             if now - last_gpu >= 0.5:
-                gpu_peak = max(gpu_peak, gpu_memory() or 0)
+                sample = gpu_memory()
+                if sample is not None:
+                    gpu_peak = sample if gpu_peak is None else max(gpu_peak, sample)
                 last_gpu = now
             time.sleep(0.025)
     elapsed = time.perf_counter() - start
@@ -214,7 +200,7 @@ def run_main(args, manifest):
         for seed_number, seed in enumerate(SEEDS):
             strategies = STRATEGIES if (number + seed_number) % 2 == 0 else tuple(reversed(STRATEGIES))
             for strategy in strategies:
-                for backend in (("cpu", "cuda") if seed_number % 2 == 0 else ("cuda", "cpu")):
+                for backend in tuple(b for b in (("cpu", "cuda") if seed_number % 2 == 0 else ("cuda", "cpu")) if b in BACKENDS):
                     result = execute(args, manifest, case, strategy, seed, backend)
                     if strategy == "L":
                         previous = args.baseline_study / "runs" / f"{case['id']}-baseline-{seed}-{backend}"
@@ -236,7 +222,7 @@ def verify(args, manifest):
     checks = []
     for case in manifest["cases"]:
         for strategy in STRATEGIES[1:]:
-            for backend in ("cpu", "cuda"):
+            for backend in BACKENDS:
                 original = next(r for r in main if (r["case"], r["strategy"], r["backend"], r["seed"]) ==
                                 (case["id"], strategy, backend, 42))
                 for label, batch in (("repeat", 1024), ("batch17", 17)):
@@ -249,7 +235,7 @@ def verify(args, manifest):
     performance = []
     for case_id in ("portrait", "smooth"):
         case = next(c for c in manifest["cases"] if c["id"] == case_id)
-        for backend in ("cpu", "cuda"):
+        for backend in BACKENDS:
             for iteration in range(4):
                 for strategy in (("L", "QDX") if iteration % 2 == 0 else ("QDX", "L")):
                     tag = f"perf-{case_id}-{strategy}-{backend}-{iteration}"
@@ -312,7 +298,7 @@ def synthetic(args, original):
             subprocess.run([str(args.cli), "build", "-i", str(inputs), "-o", str(library),
                             "-d", str(database), "--normalize-size", "180x320", "-t", "4", "--yes"],
                            stdout=log, stderr=log, check=True)
-        snapshot = root / "snapshot.db"
+        snapshot = library / "snapshot.db"
         with readonly_database(database) as source, sqlite3.connect(snapshot) as target:
             source.backup(target)
         manifest = dict(original, snapshot=str(snapshot), snapshot_sha256=digest(snapshot), cases=cases,
@@ -330,13 +316,13 @@ def synthetic(args, original):
     results = []
     for case in manifest["cases"]:
         for strategy in STRATEGIES:
-            for backend in ("cpu", "cuda"):
+            for backend in BACKENDS:
                 tag = f"synthetic-{case['id']}-{strategy}-{backend}"
                 results.append(execute(args, manifest, case, strategy, 42, backend, tag, render=True))
                 save(root / "runs.json", results)
     checks = []
     for case in manifest["cases"]:
-        for backend in ("cpu", "cuda"):
+        for backend in BACKENDS:
             original_run = next(r for r in results if (r["case"], r["strategy"], r["backend"]) ==
                                 (case["id"], "QDX", backend))
             tag = f"synthetic-repeat-{case['id']}-{backend}"
@@ -366,7 +352,7 @@ def evaluate_runs(args, root, manifest, runs):
 def summarize(runs):
     output = []
     for case in dict.fromkeys(r["case"] for r in runs):
-        for backend in ("cpu", "cuda"):
+        for backend in BACKENDS:
             for strategy in STRATEGIES:
                 group = [r for r in runs if (r["case"], r["backend"], r["strategy"]) == (case, backend, strategy)]
                 if not group:
@@ -395,12 +381,12 @@ def synthetic_images(root, manifest, runs):
     key = {"A": "D", "B": "QDX", "C": "L", "D": "Q", "E": "QD"}
     save(comparisons / "key.json", key)
     for case in manifest["cases"]:
-        baseline = next(r for r in runs if (r["case"], r["strategy"], r["backend"]) == (case["id"], "L", "cpu"))
+        baseline = next(r for r in runs if (r["case"], r["strategy"], r["backend"]) == (case["id"], "L", BACKENDS[0]))
         columns = (case["width"] + 8) // 9
         rows = (case["height"] + 15) // 16
         centers = [rows // 2 * columns + columns // 2, *baseline["quality"]["worst_tiles"][:2]]
         save(comparisons / f"{case['id']}-coordinates.json", centers)
-        for backend in ("cpu", "cuda"):
+        for backend in BACKENDS:
             images = []
             for label, strategy in key.items():
                 run = next(r for r in runs if (r["case"], r["strategy"], r["backend"]) ==
@@ -442,7 +428,7 @@ def evaluate(args, manifest):
     synthetic_images(root / "synthetic", synthetic_manifest, synthetic_runs)
     performance_summary = []
     for case in ("portrait", "smooth"):
-        for backend in ("cpu", "cuda"):
+        for backend in BACKENDS:
             for strategy in ("L", "QDX"):
                 group = [r for r in performance if (r["case"], r["backend"], r["strategy"]) ==
                          (case, backend, strategy) and not r["warmup"]]
@@ -450,7 +436,7 @@ def evaluate(args, manifest):
                     matching_median_ms=statistics.median(r["runtime"]["metrics"]["matchingMs"] for r in group),
                     wall_median_seconds=statistics.median(r["wall_seconds"] for r in group),
                     peak_rss_median_bytes=statistics.median(r["peak_rss_bytes"] for r in group),
-                    gpu_device_peak_median_mib=statistics.median(r["gpu_device_peak_mib"] for r in group)))
+                    gpu_device_peak_median_mib=median_available(r["gpu_device_peak_mib"] for r in group)))
     report = dict(manifest=manifest, runs=main, summaries=summarize(main), sensitivity=sensitivity,
                   record_index_to_id=evaluation["record_index_to_id"],
                   performance=performance, performance_summary=performance_summary,
@@ -474,7 +460,7 @@ def plot(root, report):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     names = [c["id"] for c in report["manifest"]["cases"]]
-    by_key = {(r["case"], r["strategy"]): r for r in report["summaries"] if r["backend"] == "cuda"}
+    by_key = {(r["case"], r["strategy"]): r for r in report["summaries"] if r["backend"] == ("cuda" if "cuda" in BACKENDS else "cpu")}
     figure, axes = plt.subplots(2, 1, figsize=(11, 7), constrained_layout=True)
     x = np.arange(len(names))
     for number, strategy in enumerate(STRATEGIES[1:]):
@@ -500,7 +486,7 @@ def plot(root, report):
         figure, axes = plt.subplots(1, 3, figsize=(12, 5), constrained_layout=True)
         for axis, strategy in zip(axes[:2], ("QD", "QDX")):
             run = next(r for r in report["runs"] if (r["case"], r["strategy"], r["backend"], r["seed"]) ==
-                       (name, strategy, "cuda", 42))
+                       (name, strategy, ("cuda" if "cuda" in BACKENDS else "cpu"), 42))
             data = load(run["diagnostics"])
             chart = axis.imshow(np.array([d["radius"] for d in data]).reshape(shape), vmin=0, vmax=3,
                                 interpolation="nearest", cmap="viridis")
@@ -523,7 +509,7 @@ def export(root, report):
             run["diagnostics"] = f"diagnostics/{run['id']}.json"
             if run.get("rendered"):
                 run["output"] = f"synthetic/outputs/{run['id']}.png"
-    save(root / "public-results.json", public)
+    save(root / "public-results.json", public_report(public))
     archive = root / "selection-study-evidence.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
         bundle.write(root / "public-results.json", "results.json")
@@ -554,13 +540,27 @@ def main():
     parser.add_argument("--match", type=Path, required=True)
     parser.add_argument("--quality", type=Path, required=True)
     parser.add_argument("--cli", type=Path, required=True)
-    parser.add_argument("--baseline-study", type=Path, default=Path("build/quality-study-20261110"))
-    parser.add_argument("--output-dir", type=Path, default=Path("build/selection-study-20261110"))
+    parser.add_argument("--baseline-study", type=Path, default=REPO / "build/quality-study-20261110")
+    parser.add_argument("--output-dir", type=Path, default=REPO / "build/selection-study-20261110")
     parser.add_argument("--phase", choices=("prepare", "runs", "verify", "synthetic", "evaluate", "all"), default="all")
+    parser.add_argument("--database", type=Path, help="local source library binding")
+    parser.add_argument("--inputs", type=Path, help="local input directory for importing a legacy study")
+    parser.add_argument("--backends", choices=("cpu", "cuda", "both"), default="both")
     args = parser.parse_args()
     for name in ("match", "quality", "cli", "baseline_study", "output_dir"):
         setattr(args, name, getattr(args, name).resolve())
-    manifest = prepare(args)
+    global BACKENDS
+    BACKENDS = ("cpu", "cuda") if args.backends == "both" else (args.backends,)
+    import quality_study
+    quality_study.BACKENDS = BACKENDS
+    configure(args)
+    if args.phase == "synthetic":
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        manifest = dict(schema=2, executables=executables(args), backends=BACKENDS,
+                        flags=dict(colorAdjust=False, overlayStrength=0, adaptiveWeights=False,
+                                   nativeTileW=45, nativeTileH=80, tileW=9, tileH=16, lRange=20))
+    else:
+        manifest = prepare(args)
     if args.phase in ("runs", "all"):
         run_main(args, manifest)
     if args.phase in ("verify", "all"):

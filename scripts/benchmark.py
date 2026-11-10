@@ -15,6 +15,7 @@ import shutil
 import statistics
 import subprocess
 import time
+from study_paths import private_library
 
 
 def gpu_memory():
@@ -64,6 +65,8 @@ def main():
     folder = args.output_dir.resolve()
     folder.mkdir(parents=True, exist_ok=True)
     db = folder / "run.db"
+    args.target = args.target.resolve()
+    args.snapshot, _ = private_library(args.snapshot.resolve(), folder, images=True)
     if db == args.snapshot.resolve():
         parser.error("snapshot must differ from disposable run.db")
     variants = [("current", args.exe)]
@@ -102,7 +105,7 @@ def main():
         log = folder / f"{name}-{mode}-{run}.log"
         start = time.perf_counter()
         with log.open("wb") as stream:
-            process = subprocess.Popen(command, stdout=stream, stderr=subprocess.STDOUT)
+            process = subprocess.Popen(command, stdout=stream, stderr=subprocess.STDOUT, cwd=folder)
             while process.poll() is None:
                 rss = max(rss, peak_rss(process) or 0)
                 used = gpu_memory()

@@ -21,47 +21,37 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from benchmark import gpu_memory, peak_rss
+from public_paths import public_report
 
 SEEDS = (42, 20261110, 20261111)
 VARIANTS = {"baseline": (150, 10), "best": (150, 1),
             "top3": (150, 3), "recall600": (600, 1)}
 
 
-def digest(path):
-    with Path(path).open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+from study_paths import (REPO, configure, bind_database, digest, save, load, readonly_database,
+                         source_inventory, private_library, resource, path_mode)
 
-
-def save(path, value):
-    temporary = Path(str(path) + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2, ensure_ascii=False), encoding="utf-8")
-    temporary.replace(path)
-
-
-def load(path):
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+BACKENDS = ("cpu", "cuda")
 
 
 def command_output(command):
-    return subprocess.check_output(command, text=True, encoding="utf-8", errors="replace").strip()
+    return subprocess.check_output(command, cwd=REPO, text=True, encoding="utf-8", errors="replace").strip()
 
 
-def readonly_database(path):
-    return sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)
+def gpu_description():
+    try:
+        return command_output(["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"])
+    except (OSError, subprocess.CalledProcessError):
+        return None
 
 
-def source_inventory(database):
-    """Metadata audit includes every original image and independent feature file."""
-    summary = hashlib.sha256()
-    with readonly_database(database) as connection:
-        for row in connection.execute("SELECT id,file_path,tiny_path,hist_path FROM images ORDER BY id"):
-            summary.update(str(row[0]).encode())
-            for value in row[1:]:
-                path = Path(value)
-                stat = path.stat()
-                summary.update(str(path).encode("utf-8"))
-                summary.update(f"{stat.st_size}:{stat.st_mtime_ns}".encode())
-    return summary.hexdigest()
+def median_available(values):
+    values = [v for v in values if v is not None]
+    return statistics.median(values) if values else None
+
+
+def backend_order(index):
+    return tuple(b for b in (("cpu", "cuda") if index % 2 == 0 else ("cuda", "cpu")) if b in BACKENDS)
 
 
 def prepare(args):
@@ -73,27 +63,12 @@ def prepare(args):
         if digest(args.database) != manifest["source_database_sha256"]:
             raise RuntimeError("Original database differs from study manifest")
         return manifest
+    # 普通库打开会先完成自动升级，随后固定便携快照，不在实验运行中改写源库。
+    subprocess.run([str(args.quality), "--open-library", str(args.database)], check=True)
     source_hash = digest(args.database)
-    snapshot = root / "snapshot.db"
-    with readonly_database(args.database) as source, sqlite3.connect(snapshot) as target:
-        source.backup(target)
-    features = root / "features"
-    features.mkdir()
-    with sqlite3.connect(snapshot) as connection:
-        rows = connection.execute("SELECT id,tiny_path,hist_path FROM images ORDER BY id").fetchall()
-        for image_id, tiny, histogram in rows:
-            paths = []
-            for old, extension in ((tiny, ".tiny"), (histogram, ".hist")):
-                new = features / (f"id_{image_id}" + extension)
-                try:
-                    os.link(old, new)
-                except OSError:
-                    shutil.copy2(old, new)
-                paths.append(str(new))
-            connection.execute("UPDATE images SET tiny_path=?,hist_path=? WHERE id=?", (*paths, image_id))
-        connection.commit()
+    snapshot, row_count = private_library(args.database, root, images=True)
     inputs = root / "inputs"
-    inputs.mkdir()
+    inputs.mkdir(exist_ok=True)
     sources = [("screen", "屏幕测试图.png"), ("rainbow", "屏幕彩虹渐变测试图.png"),
                ("portrait", "target5.png")]
     for name, source in sources:
@@ -121,11 +96,11 @@ def prepare(args):
                                          ("quality_study.py", "benchmark_match.cpp", "benchmark_quality.cpp")},
                     source_database=str(args.database.resolve()), source_database_sha256=source_hash,
                     source_inventory=source_inventory(args.database), snapshot=str(snapshot),
-                    snapshot_sha256=digest(snapshot), library_rows=len(rows), cases=cases,
-                    seeds=SEEDS, variants=VARIANTS, python_opencv=cv2.__version__,
+                    snapshot_sha256=digest(snapshot), library_rows=row_count, cases=cases,
+                    seeds=SEEDS, backends=BACKENDS, variants=VARIANTS, python_opencv=cv2.__version__,
                     python_version=sys.version, platform=platform.platform(),
                     runtime_dependencies_sha256={p.name: digest(p) for p in args.match.resolve().parent.glob("*.dll")},
-                    gpu=command_output(["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"]),
+                    gpu=gpu_description(),
                     executables={"match": dict(path=str(args.match.resolve()), sha256=digest(args.match)),
                                  "quality": dict(path=str(args.quality.resolve()), sha256=digest(args.quality))},
                     flags=dict(colorAdjust=False, overlayStrength=0, adaptiveWeights=False,
@@ -210,7 +185,7 @@ def runs(args, manifest):
             if (case_number + seed_number) % 2:
                 variants.reverse()
             for variant in variants:
-                backends = ("cpu", "cuda") if seed_number % 2 == 0 else ("cuda", "cpu")
+                backends = backend_order(seed_number)
                 for backend in backends:
                     tag = f"{case['id']}-{variant}-{seed}-{backend}"
                     results.append(execute(args, manifest, case, variant, seed, backend, tag))
@@ -218,7 +193,7 @@ def runs(args, manifest):
     # Repeat a random-selection run on every scene/backend; Top-1 alone would not test the seed.
     repeats = []
     for case in manifest["cases"]:
-        for backend in ("cpu", "cuda"):
+        for backend in BACKENDS:
             tag = f"{case['id']}-repeat-42-{backend}"
             repeated = execute(args, manifest, case, "baseline", 42, backend, tag)
             original = next(r for r in results if r["case"] == case["id"] and
@@ -234,7 +209,7 @@ def runs(args, manifest):
     performance = []
     for case_id in ("portrait", "rainbow"):
         case = next(c for c in manifest["cases"] if c["id"] == case_id)
-        for backend in ("cpu", "cuda"):
+        for backend in BACKENDS:
             for iteration in range(4):
                 for variant in (("baseline", "best") if iteration % 2 == 0 else ("best", "baseline")):
                     tag = f"perf-{case_id}-{variant}-{backend}-{iteration}"
@@ -293,7 +268,7 @@ def evaluate(args, manifest):
                                      gray_ssim=gray_ssim(target, thumbnail))
     summaries = []
     for case in manifest["cases"]:
-        for backend in ("cpu", "cuda"):
+        for backend in BACKENDS:
             for variant in VARIANTS:
                 group = [r for r in results if r["case"] == case["id"] and
                          r["backend"] == backend and r["variant"] == variant]
@@ -307,14 +282,14 @@ def evaluate(args, manifest):
     performance = load(root / "performance.json")
     perf_summaries = []
     for case in ("portrait", "rainbow"):
-        for backend in ("cpu", "cuda"):
+        for backend in BACKENDS:
             for variant in ("baseline", "best"):
                 group = [r for r in performance if r["case"] == case and r["backend"] == backend and
                          r["variant"] == variant and not r["warmup"]]
                 perf_summaries.append(dict(case=case, backend=backend, variant=variant,
                     wall_median_seconds=statistics.median(r["wall_seconds"] for r in group),
                     peak_rss_median_bytes=statistics.median(r["peak_rss_bytes"] for r in group),
-                    gpu_total_peak_median_mib=statistics.median(r["gpu_device_peak_mib"] for r in group)))
+                    gpu_total_peak_median_mib=median_available(r["gpu_device_peak_mib"] for r in group)))
     report = dict(manifest=manifest, runs=results, summaries=summaries, oracle=evaluation["cases"],
                   analysis_commit=command_output(["git", "rev-parse", "HEAD"]),
                   analysis_script_sha256=digest(__file__),
@@ -344,13 +319,13 @@ def export_data(root, report):
             run.pop("output", None)
             run["request"].pop("output", None)
             run["selection"] = f"selections/{run['id']}.bin"
-    save(root / "public-results.json", public)
+    save(root / "public-results.json", public_report(public))
 
 
 def summary_plot(root, report):
     import matplotlib.pyplot as plt
     names = [c["id"] for c in report["manifest"]["cases"]]
-    summaries = {(r["case"], r["variant"]): r for r in report["summaries"] if r["backend"] == "cuda"}
+    summaries = {(r["case"], r["variant"]): r for r in report["summaries"] if r["backend"] == ("cuda" if "cuda" in BACKENDS else "cpu")}
     x = np.arange(len(names))
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), layout="constrained")
     for i, variant in enumerate(("best", "top3", "recall600")):
@@ -391,7 +366,7 @@ def comparisons(root, manifest, results):
     np.random.default_rng(20261110).shuffle(labels)
     key = {chr(65 + i): variant for i, variant in enumerate(labels)}
     save(folder / "key.json", key)
-    font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", 18) if os.name == "nt" else ImageFont.load_default()
+    font = ImageFont.load_default()
     # Match Database::allRecords exactly: omitting its WHERE clause changes equal-count row order.
     with readonly_database(manifest["snapshot"]) as connection:
         records = connection.execute(
@@ -413,7 +388,7 @@ def comparisons(root, manifest, results):
         reference = cv2.copyMakeBorder(reference, 0, rows * 16 - reference.shape[0],
                                        0, columns * 9 - reference.shape[1], cv2.BORDER_REFLECT)
         reference = Image.fromarray(cv2.cvtColor(reference, cv2.COLOR_BGR2RGB))
-        for backend in ("cpu", "cuda"):
+        for backend in BACKENDS:
             selections = []
             images = []
             for variant in labels:
@@ -457,13 +432,17 @@ def comparisons(root, manifest, results):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--database", type=Path, default=Path("library/180x320/mosaicraft.db"))
-    parser.add_argument("--inputs", type=Path, default=Path("test_input_photos"))
-    parser.add_argument("--output-dir", type=Path, default=Path("build/quality-study-20261110"))
+    parser.add_argument("--database", type=Path, default=REPO / "library/180x320/mosaicraft.db")
+    parser.add_argument("--inputs", type=Path, default=REPO / "test_input_photos")
+    parser.add_argument("--output-dir", type=Path, default=REPO / "build/quality-study-20261110")
     parser.add_argument("--match", type=Path, required=True)
     parser.add_argument("--quality", type=Path, required=True)
     parser.add_argument("--phase", choices=("prepare", "runs", "evaluate", "all"), default="all")
+    parser.add_argument("--backends", choices=("cpu", "cuda", "both"), default="both")
     args = parser.parse_args()
+    global BACKENDS
+    BACKENDS = ("cpu", "cuda") if args.backends == "both" else (args.backends,)
+    configure(args)
     manifest = prepare(args)
     for key, executable in (("match", args.match), ("quality", args.quality)):
         if digest(executable) != manifest["executables"][key]["sha256"]:

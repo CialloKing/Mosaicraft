@@ -73,6 +73,13 @@ std::string LibraryPaths::store(const std::string &value) const
     {
         if (b == path.end() || !equalComponent(*a, *b))
         {
+            // 输出目录可能经由符号链接访问；仅在前缀不匹配时解析真实位置。
+            std::error_code error;
+            const auto canonical = std::filesystem::weakly_canonical(path, error);
+            if (!error && canonical != path)
+            {
+                return store(pathToUtf8(canonical));
+            }
             throw std::invalid_argument("library resource is outside the database directory: " + value);
         }
     }

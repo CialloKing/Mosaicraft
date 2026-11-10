@@ -1,0 +1,23 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "my-windows-cpu",
+      "inherits": "windows-cpu",
+      "environment": { "VCPKG_ROOT": "<your-vcpkg-root>" }
+    },
+    {
+      "name": "my-windows-cuda",
+      "inherits": "windows-cuda",
+      "environment": {
+        "VCPKG_ROOT": "<your-vcpkg-root>",
+        "CUDAToolkit_ROOT": "<your-cuda-toolkit-root>"
+      }
+    },
+    {
+      "name": "my-linux-cpu",
+      "inherits": "linux-cpu",
+      "environment": { "VCPKG_ROOT": "<your-vcpkg-root>" }
+    }
+  ]
+}

@@ -266,11 +266,17 @@ int main(int argc, char **argv)
     try
     {
         const bool prepareCache = std::string(argv[1]) == "--prepare-cache";
-        const auto study = prepareCache ? Json{{"snapshot", localToUtf8(argv[2])}} : readJson(argv[1]);
+        const bool openLibrary = std::string(argv[1]) == "--open-library";
+        const auto study = prepareCache || openLibrary ? Json{{"snapshot", localToUtf8(argv[2])}} : readJson(argv[1]);
         Database db(study.at("snapshot").get<std::string>(), Database::OpenMode::Existing);
         if (!db.isOpen())
         {
             throw std::runtime_error(db.error());
+        }
+        if (openLibrary)
+        {
+            std::cout << "Library opened: " << db.totalCount() << " records, " << db.getMeta("path_format", "legacy") << '\n';
+            return 0;
         }
         const auto records = db.allRecords();
         if (records.empty())
