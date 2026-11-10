@@ -647,6 +647,7 @@ try {
             '--config', $Configuration, '--prefix', $packageRoot)
 
         Copy-RequiredFile -Source (Join-Path $RepoRoot "README.md") -Destination $packageRoot
+        Copy-RequiredFile -Source (Join-Path $RepoRoot "CMakeUserPresets.example.json") -Destination $packageRoot
         Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\API.md") -Destination (Join-Path $packageRoot "API.md")
         Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\ENCYCLOPEDIA.md") -Destination (Join-Path $packageRoot "ENCYCLOPEDIA.md")
         # README 的本版验证链接在解压后也应可读，保留文档与原始采样的相对路径。

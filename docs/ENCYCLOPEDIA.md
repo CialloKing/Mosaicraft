@@ -1,10 +1,10 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-11-10 | 版本 / Version：v1.14.11
+> 最后更新 / Last updated：2026-11-10 | 版本 / Version：v1.15.0
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
-当前源码提供 API 2.2，包含运行诊断、阶段进度、会话任务、产物访问和输出计划。单图格式按显式选择、输出后缀、输入后缀、PNG 的优先级确定；自动 JPG/WebP 超限转完整尺寸 PNG，显式选择则缩小输出 Tile。Web UI 展示适配前后结果，产品版本及特征 v6 保持不变。使用说明以 [README](../README.md#快速开始) 和 [API 文档](API.md) 为准，验收见 [输出格式与超限适配](OUTPUT_FORMAT_VERIFICATION.md)。下文历史版本记录保留发布时的 API 合约说明。
+当前源码提供 API 1.0，图库结构、特征、缓存及恢复格式统一从 1 开始。旧库需在新目录重建，没有自动升级或迁移器；结构化路由与现有选图能力保留。详见 [1.15.0 不兼容更新](BREAKING_1.15.0.md) 和 [API 文档](API.md)。下文历史版本记录保留发布时的说明。
 
 ## 目录 / Table of Contents
 
@@ -28,9 +28,9 @@
 
 Mosaicraft 是一个 GPU 加速的照片马赛克拼贴生成器。将数千张图库图片建立索引，目标图分割为小格后逐格匹配最相似图片，拼接输出超大分辨率马赛克。
 
-当前四种固定尺寸 180×320、320×180、360×640、640×360 使用模板 CUDA 提取和评分；其他合法尺寸（宽高各 1～8192）使用与原 CPU 精确兼容的通用 CUDA 特征统计和候选评分，保留 CPU 的邻域处理、排序、选图及分析。提取与评分独立准备资源，计算前资源不足只回退相应能力；v6 特征及数据库格式不变，旧自定义尺寸图库无需重建。详见 [动态尺寸特征验证](DYNAMIC_CUDA_FEATURES.md)及 [独立 CUDA 评分验证](INDEPENDENT_CUDA_SCORING.md)。
+当前四种固定尺寸 180×320、320×180、360×640、640×360 使用模板 CUDA 提取和评分；其他合法尺寸（宽高各 1～8192）使用与原 CPU 精确兼容的通用 CUDA 特征统计和候选评分，保留 CPU 的邻域处理、排序、选图及分析。提取与评分独立准备资源，计算前资源不足只回退相应能力。1.15.0 的特征编号为 1，数学定义沿用原 v6，旧库须重新建库。历史后端验证见 [动态尺寸特征验证](DYNAMIC_CUDA_FEATURES.md)及 [独立 CUDA 评分验证](INDEPENDENT_CUDA_SCORING.md)。
 
-> **EN**: Fixed sizes retain template CUDA extraction and scoring. Other valid dimensions (1–8192 per axis) use CPU-compatible generic CUDA feature statistics and candidate scoring, retaining CPU neighborhood processing, sorting, selection and analysis. Extraction and scoring prepare resources independently; shortages before computation fall back only for the affected capability. Features remain v6; existing custom-size libraries need no rebuild.
+> **EN**: Fixed sizes retain template CUDA extraction and scoring. Other valid dimensions (1–8192 per axis) use CPU-compatible generic CUDA statistics and scoring. Resource preparation remains independent. Version 1.15.0 resets the feature version to 1 with the former v6 mathematics; old libraries must be rebuilt.
 
 ### 核心能力
 
@@ -369,6 +369,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.14.9 | 统一运行诊断、阶段进度、API 2.1 与 Web UI 任务和结果体验 | 见运行诊断验收 |
 | 1.14.10 | Web UI 离线使用帮助、参数说明、明确预览默认状态与窄屏排版 | 见对应更新记录 |
 | **1.14.11** | 按来源选择输出格式、超限转 PNG 或缩小 Tile、API 2.2 输出计划与实际产物 | 见本版更新记录 |
+| **1.15.0** | 内部版本重置、严格新版图库与 API 1.0、删除旧库自动升级和命令接口 | 见不兼容更新验收 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -683,7 +684,7 @@ PNG 使用有界多行 RGB 转换及写入；过滤器、压缩等级和每 1000
 
 ### 第一轮缓存与性能更新（版本号保持 1.14.2）
 
-CPU/GPU 共用独立特征文件的 Unicode 读取和来源校验。缓存的 `features.pack` 清单指向同代次的 TinyImage、LBP 和二进制校验元数据；绑定记录 ID、特征版本、图片内容哈希及来源文件的路径、大小、修改时间和数据摘要。未经认证的旧 v2 包回退来源文件，建库时自动升级；新代次完整落盘后才切换清单，失败保留旧清单。无变化追加复用有效缓存，旧代次只在建库独占锁下清理。
+CPU/GPU 共用独立特征文件的 Unicode 读取和来源校验。缓存的 `features.pack` 清单指向同代次的 TinyImage、LBP 和二进制校验元数据；绑定记录 ID、特征版本、图片内容哈希及来源文件的路径、大小、修改时间和数据摘要。不支持的特征缓存回退到新版源特征并重新生成；新代次完整落盘后才切换清单，失败保留旧清单。无变化追加复用有效缓存，旧代次只在建库独占锁下清理。
 
 颜色重排复用本次路径信息，输出目录卷号只读取一次，路径、别名、目标冲突、跨卷和恢复检查保留。CPU 特征按最多 256 张、64 MiB 待处理像素分批并行计算，去重与数据库写入按扫描顺序进行，事务失败回滚整批；同目录输入采用单张批次，以兼容不同尺寸和超预算图片。CUDA 目标块准备和 Canny 补算各复用最多 8 个默认工作线程，计算公式不变。
 
@@ -787,6 +788,10 @@ Web UI 的预览提示改为“生成结果预览默认关闭，勾选后额外�
 功能修改已通过真实浏览器检查：预览说明、帮助直达、参数保留、刷新恢复、帮助页任务跟踪、键盘展开、窄屏排版与服务断开后的阅读均正常；JavaScript 语法与帮助锚点检查通过。发布继续按清单执行同提交的原生打包、本机 GPU Required 和真实附件验收。CLI、REST API 2.1、特征 v6、图库格式及评分算法保持兼容。
 
 > **EN**: Version 1.14.10 adds a self-contained Web UI help page covering setup, paths, options, task diagnostics and results. Preview wording explicitly names the option and explains its purpose. Context links open the relevant help section; form state and task tracking survive navigation, while help never generates or submits a command. Narrow screens use stacked option descriptions. API 2.1, feature v6, library formats and engine behavior remain unchanged.
+
+### v1.15.0: 内部版本重置与兼容逻辑清理 (2026-11-10)
+
+所有版本由 contracts.json 统一定义。图库使用 user_version=1，特征定义与原 v6 相同但编号为 1，API 为 1.0。移除路径迁移、自动补列、旧特征刷新、请求别名与 /api/run。旧库和历史证据保持原样，需要在新目录重新建库；不提供迁移器，不增加契约族或世代标识。路由、CLI 便捷参数、默认选图与 CPU/CUDA 能力保留。验证与回退说明见 [不兼容更新](BREAKING_1.15.0.md)。
 
 ### v1.14.11: 输出格式来源与超限适配 (2026-11-10)
 

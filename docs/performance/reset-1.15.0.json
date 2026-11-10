@@ -1,0 +1,710 @@
+{
+  "report_version": 1,
+  "software_version": "1.15.0",
+  "date": "2026-11-10",
+  "status": "local_windows_passed_linux_pending",
+  "contracts": {
+    "softwareVersion": "1.15.0",
+    "libraryVersion": 1,
+    "featureVersion": 1,
+    "apiVersion": "1.0",
+    "apiMajorVersion": 1,
+    "annVersion": 1,
+    "featurePackVersion": 1,
+    "colorOrderVersion": 1,
+    "journalVersion": 1,
+    "studySchemaVersion": 1,
+    "checkpointPathsVersion": 1,
+    "uiStateVersion": 1
+  },
+  "verified_code_commit": "67bbbf71d57b90846b2ad6dfe8595430e3688a73",
+  "verification_tools_commit": "0b510fe329f4162ecd0dc8a4d525d93161398992",
+  "source_sha256": {
+    "core/DatabaseSchema.cpp": "10603540ed8edaed121906d8cade251088c255f084695ed85bba91e8025ca4a3",
+    "core/FeatureIO.h": "e11599777b8aad3849543424f118ee59c886da828fafb382091bb1ef2668cc00",
+    "core/FeaturePack.cpp": "4ae84ea53b5fb9cdae6697390805f9a85e932a5ad858ffafc5910e7cf27fa01c",
+    "core/ApiRequestParser.cpp": "5a5b571e64e7b29e5f17ed3d2969b9bef7bf35253b7fc440b47a30087b3c7e5b",
+    "tests/portable_library.py": "b56a20506324f7de386c2e335bd8798cf66bfcf1eae8354e6382efca446348b9",
+    "tests/test_core.cpp": "d24ff74f1ca959d43dd0b62c1f4e07a47f06d02f9436025411374926bcfe4c72",
+    "tests/test_regression.cpp": "100ed6161a49656d60b24aad50cec429f26da475f3db2ae2bf2e72e2f7c89ac6",
+    "tests/webui_smoke.ps1": "f8f3f4a81c6fa2b9a2ba8e0f393121f71b1b574094e37512ccb1d4de704d2e79",
+    "scripts/study_paths.py": "469c2af33de530d138bd802bb9f594a5dea8d77ad37e226dc61b0caf04844b34",
+    "scripts/quality_study.py": "ca0b99d0758872200040d551748ce9405b6f90f628372f4f4f45725166fe7353",
+    "scripts/selection_study.py": "a368a025753f8fd912be310ab08380462f8d6b8ccf5acfa7df62febf4753fb39",
+    "scripts/verify-release-asset.ps1": "f4e7aa3952d07a26abe50b2d8cda09d1a91b0cfc8cee7e4eae7ac8f611e5b76a"
+  },
+  "scope": "Breaking format and API update. Safe procedural fixtures only. Historical reports are unchanged.",
+  "ctest": {
+    "cpu": {
+      "status": "passed",
+      "tests": 7,
+      "wall_seconds": 41.55,
+      "log": "build/reset-cpu-final-tests.log",
+      "log_sha256": "54e2a687bcc601c6eee1718c68085080f97f7e3c33215b28a9775c42f88008a9"
+    },
+    "cuda": {
+      "status": "passed",
+      "tests": 7,
+      "wall_seconds": 45.61,
+      "log": "build/reset-cuda-final-tests.log",
+      "log_sha256": "319d2e9d62aa8c74c0d9f8c8b48c2f4e2a8e34f65691e37791acd22c386388d0"
+    }
+  },
+  "gpu_probe": {
+    "status": "passed",
+    "device": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "compute_capability": "sm_89",
+    "driver_api": 13050,
+    "runtime_api": 13050,
+    "log": "build/reset-cuda-probe.log",
+    "log_sha256": "e1094d566e8e50b7043aa5d94e25ecf0830e0c060bb5766f7dccab417ff3893e"
+  },
+  "http_smoke": {
+    "status": "passed",
+    "log": "build/reset-webui-cpu.log",
+    "log_sha256": "f57960dddd79d88d2395b34e8a2ea14f1bf6c0f66c1cb76484002505fe7e526d",
+    "legacy_environment_value": "1",
+    "coverage": [
+      "version and endpoint discovery",
+      "safe build and mosaic jobs",
+      "progress, events, diagnostics, artifacts and previews",
+      "unknown fields and old aliases",
+      "duplicate JSON keys and query parameters",
+      "integer float types, numeric booleans and null rejection",
+      "common error envelope",
+      "api/run remains HTTP 404 with old environment variable set"
+    ]
+  },
+  "library_validation": {
+    "status": "passed",
+    "fixtures": [
+      "unversioned old relative library",
+      "future version",
+      "missing table",
+      "missing column",
+      "missing metadata primary key",
+      "committed old WAL and concurrent readers",
+      "new library concurrent opens",
+      "A to Chinese and spaced B, operations from C",
+      "append, match, stats, health, purge, export",
+      "interrupted current journal recovery",
+      "unsupported journal retains files",
+      "invalid source features and cache headers"
+    ],
+    "old_wal_preserved": true,
+    "no_upgrade_backups": true
+  },
+  "feature_equivalence": {
+    "records": 64,
+    "feature_payloads_equal": true,
+    "grid_blobs_equal": true,
+    "selected_tiles": 100,
+    "seed": 42,
+    "backend": "cpu",
+    "selections_equal": true,
+    "selection_sha256": "3ce2917cbdde2694958c20646d3b8149986a55c4c3b94ae3282ca2bbd9b4ea71",
+    "baseline_software": "1.14.10",
+    "baseline_feature_version": 6,
+    "new_feature_version": 1,
+    "fixture": "64 procedural images; fixed record IDs and order",
+    "evidence": "build/format-reset-validation/equivalence.json"
+  },
+  "quality_runner": {
+    "status": "passed",
+    "purpose": "Functional validation of complete runner, not a new quality or performance recommendation",
+    "library_rows": 80,
+    "main_runs": 72,
+    "repeat_runs": 6,
+    "performance_runs": 16,
+    "total_jobs": 94,
+    "backends": [
+      "cpu"
+    ],
+    "source_database_unchanged": true,
+    "source_inventory_unchanged": true,
+    "input_note": "screen, rainbow and portrait labels use the same safe generated placeholder; smooth, diagonal and texture are generated by the runner",
+    "evaluation_complete": true,
+    "lab_ssim_computed": true,
+    "resume_passed": true,
+    "executables": {
+      "match": {
+        "path": "@tool/match",
+        "sha256": "542b3d4490a4d62d27e00e1adc9cec2441d850f49b92f051d81e41c11b2f611c"
+      },
+      "quality": {
+        "path": "@tool/quality",
+        "sha256": "d5b8220c72747ea7dfc11862c06cc60e8d851c3f1cb8596630db82949d2cfdec"
+      }
+    },
+    "evidence": "build/format-reset-validation/quality-accepted/public-results.json",
+    "evidence_sha256": "a060098cf3395d42177a3ea09cbdcfea34fc82ada7ada1c9b2389eaf03bc7f33"
+  },
+  "selection_runner": {
+    "status": "passed",
+    "library_rows": 1037,
+    "generated_source_images": 1037,
+    "brightness_eligible": {
+      "scarce2": 2,
+      "scarce3": 3
+    },
+    "full_renders": 20,
+    "batch17_repeats": 4,
+    "backends": [
+      "cpu"
+    ],
+    "reproducibility": [
+      {
+        "id": "synthetic-repeat-abundant-cpu",
+        "selection_equal": true,
+        "pixels_equal": true
+      },
+      {
+        "id": "synthetic-repeat-scarce2-cpu",
+        "selection_equal": true,
+        "pixels_equal": true
+      },
+      {
+        "id": "synthetic-repeat-scarce3-cpu",
+        "selection_equal": true,
+        "pixels_equal": true
+      },
+      {
+        "id": "synthetic-repeat-near_cross_row-cpu",
+        "selection_equal": true,
+        "pixels_equal": true
+      }
+    ],
+    "study_and_identical_binaries_relocated": true,
+    "resume_passed": true,
+    "cases": [
+      "abundant",
+      "scarce2",
+      "scarce3",
+      "near_cross_row"
+    ],
+    "runs": [
+      {
+        "id": "synthetic-abundant-L-cpu",
+        "selection_sha256": "6c3590c1339d76fdc7a99a10860f55c3fcf3416837bfab0d8a92836afd413f3d",
+        "output_sha256": "90284f1e06e87f380b2ff122c8338dbfcb70975fc273f16002b70c01247fc944",
+        "diagnostic_summary": {}
+      },
+      {
+        "id": "synthetic-abundant-Q-cpu",
+        "selection_sha256": "7595d369dd49069dcaaad6f89e6816f5f5ffa6077f262862d18e46f24dc003fc",
+        "output_sha256": "411ff206eb4672df94d14ab1de722208600a30512c62acd5f5a1289ea0721bcb",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "-1": 256
+          },
+          "similar_fallback_count": 0,
+          "quality_candidates_mean": 1.19921875,
+          "quality_candidates_min": 1,
+          "expanded_count": 0,
+          "expanded_fraction": 0.0,
+          "expansion_ms": 0.0,
+          "added_candidates": 0,
+          "no_new_candidates": 0,
+          "still_scarce_count": 0,
+          "expansion_best_error_improvement": 0,
+          "queried_counts": {
+            "150": 256
+          }
+        }
+      },
+      {
+        "id": "synthetic-abundant-D-cpu",
+        "selection_sha256": "a2178699c3ac0ef015bb4467282e99bf6ac923f57ce9ece3e373644712d23a69",
+        "output_sha256": "211d439a503588a849c609f38e51a411da424c3fcfdad9d29dd2df8b042c50d3",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "3": 256
+          },
+          "similar_fallback_count": 0,
+          "quality_candidates_mean": 128.39453125,
+          "quality_candidates_min": 101,
+          "expanded_count": 0,
+          "expanded_fraction": 0.0,
+          "expansion_ms": 0.0,
+          "added_candidates": 0,
+          "no_new_candidates": 0,
+          "still_scarce_count": 0,
+          "expansion_best_error_improvement": 0,
+          "queried_counts": {
+            "150": 256
+          }
+        }
+      },
+      {
+        "id": "synthetic-abundant-QD-cpu",
+        "selection_sha256": "50f00323c1b0994b95cb0bc1d5a389560985f531f5c0c3f07c9a102b3ba827ad",
+        "output_sha256": "b9c0a04c3ff28b8514e0345ae42cd0a0bbdd3625e23ca54cc4ae4d1cc39db7d3",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "3": 154,
+            "1": 102
+          },
+          "similar_fallback_count": 0,
+          "quality_candidates_mean": 1.19921875,
+          "quality_candidates_min": 1,
+          "expanded_count": 0,
+          "expanded_fraction": 0.0,
+          "expansion_ms": 0.0,
+          "added_candidates": 0,
+          "no_new_candidates": 0,
+          "still_scarce_count": 0,
+          "expansion_best_error_improvement": 0,
+          "queried_counts": {
+            "150": 256
+          }
+        }
+      },
+      {
+        "id": "synthetic-abundant-QDX-cpu",
+        "selection_sha256": "50f00323c1b0994b95cb0bc1d5a389560985f531f5c0c3f07c9a102b3ba827ad",
+        "output_sha256": "b9c0a04c3ff28b8514e0345ae42cd0a0bbdd3625e23ca54cc4ae4d1cc39db7d3",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "3": 154,
+            "1": 102
+          },
+          "similar_fallback_count": 0,
+          "quality_candidates_mean": 1.19921875,
+          "quality_candidates_min": 1,
+          "expanded_count": 255,
+          "expanded_fraction": 0.99609375,
+          "expansion_ms": 126.8377,
+          "added_candidates": 51005,
+          "no_new_candidates": 0,
+          "still_scarce_count": 255,
+          "expansion_best_error_improvement": 0.0,
+          "queried_counts": {
+            "600": 255,
+            "150": 1
+          }
+        }
+      },
+      {
+        "id": "synthetic-scarce2-L-cpu",
+        "selection_sha256": "234111099d55770c64da3473771031149eb7ff3e78609d208d5e7c40275f6b04",
+        "output_sha256": "347b3c1cdb4bdaa61837af3376d97cdeba44bdcd22b92d4c1da594e8c6d634cb",
+        "diagnostic_summary": {}
+      },
+      {
+        "id": "synthetic-scarce2-Q-cpu",
+        "selection_sha256": "234111099d55770c64da3473771031149eb7ff3e78609d208d5e7c40275f6b04",
+        "output_sha256": "347b3c1cdb4bdaa61837af3376d97cdeba44bdcd22b92d4c1da594e8c6d634cb",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "-1": 64
+          },
+          "similar_fallback_count": 0,
+          "quality_candidates_mean": 2,
+          "quality_candidates_min": 2,
+          "expanded_count": 0,
+          "expanded_fraction": 0.0,
+          "expansion_ms": 0.0,
+          "added_candidates": 0,
+          "no_new_candidates": 0,
+          "still_scarce_count": 0,
+          "expansion_best_error_improvement": 0,
+          "queried_counts": {
+            "150": 64
+          }
+        }
+      },
+      {
+        "id": "synthetic-scarce2-D-cpu",
+        "selection_sha256": "3c5b38255f78fa827c2c02beb594db66605a66169f20077e37f7b81848e0f9de",
+        "output_sha256": "347b3c1cdb4bdaa61837af3376d97cdeba44bdcd22b92d4c1da594e8c6d634cb",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "3": 2,
+            "1": 62
+          },
+          "similar_fallback_count": 63,
+          "quality_candidates_mean": 2,
+          "quality_candidates_min": 2,
+          "expanded_count": 0,
+          "expanded_fraction": 0.0,
+          "expansion_ms": 0.0,
+          "added_candidates": 0,
+          "no_new_candidates": 0,
+          "still_scarce_count": 0,
+          "expansion_best_error_improvement": 0,
+          "queried_counts": {
+            "150": 64
+          }
+        }
+      },
+      {
+        "id": "synthetic-scarce2-QD-cpu",
+        "selection_sha256": "3c5b38255f78fa827c2c02beb594db66605a66169f20077e37f7b81848e0f9de",
+        "output_sha256": "347b3c1cdb4bdaa61837af3376d97cdeba44bdcd22b92d4c1da594e8c6d634cb",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "3": 2,
+            "1": 62
+          },
+          "similar_fallback_count": 63,
+          "quality_candidates_mean": 2,
+          "quality_candidates_min": 2,
+          "expanded_count": 0,
+          "expanded_fraction": 0.0,
+          "expansion_ms": 0.0,
+          "added_candidates": 0,
+          "no_new_candidates": 0,
+          "still_scarce_count": 0,
+          "expansion_best_error_improvement": 0,
+          "queried_counts": {
+            "150": 64
+          }
+        }
+      },
+      {
+        "id": "synthetic-scarce2-QDX-cpu",
+        "selection_sha256": "3c5b38255f78fa827c2c02beb594db66605a66169f20077e37f7b81848e0f9de",
+        "output_sha256": "347b3c1cdb4bdaa61837af3376d97cdeba44bdcd22b92d4c1da594e8c6d634cb",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "3": 2,
+            "1": 62
+          },
+          "similar_fallback_count": 63,
+          "quality_candidates_mean": 2,
+          "quality_candidates_min": 2,
+          "expanded_count": 64,
+          "expanded_fraction": 1.0,
+          "expansion_ms": 9.7151,
+          "added_candidates": 0,
+          "no_new_candidates": 64,
+          "still_scarce_count": 64,
+          "expansion_best_error_improvement": 0.0,
+          "queried_counts": {
+            "600": 64
+          }
+        }
+      },
+      {
+        "id": "synthetic-scarce3-L-cpu",
+        "selection_sha256": "08c3f74568aa570c0cafd0713060540c49344a8658de3ef291a1b1bed4f22640",
+        "output_sha256": "cb435ddb2f9a6fb2024df0ab0d6a31cc5c954bbe93c9b7fe903999fe98758b71",
+        "diagnostic_summary": {}
+      },
+      {
+        "id": "synthetic-scarce3-Q-cpu",
+        "selection_sha256": "08c3f74568aa570c0cafd0713060540c49344a8658de3ef291a1b1bed4f22640",
+        "output_sha256": "cb435ddb2f9a6fb2024df0ab0d6a31cc5c954bbe93c9b7fe903999fe98758b71",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "-1": 64
+          },
+          "similar_fallback_count": 0,
+          "quality_candidates_mean": 3,
+          "quality_candidates_min": 3,
+          "expanded_count": 0,
+          "expanded_fraction": 0.0,
+          "expansion_ms": 0.0,
+          "added_candidates": 0,
+          "no_new_candidates": 0,
+          "still_scarce_count": 0,
+          "expansion_best_error_improvement": 0,
+          "queried_counts": {
+            "150": 64
+          }
+        }
+      },
+      {
+        "id": "synthetic-scarce3-D-cpu",
+        "selection_sha256": "f9f03f3657bf4f1c6deb2e1171b690aeb6d62f897905f24dd0a46603c49380ed",
+        "output_sha256": "cb435ddb2f9a6fb2024df0ab0d6a31cc5c954bbe93c9b7fe903999fe98758b71",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "3": 3,
+            "2": 12,
+            "1": 49
+          },
+          "similar_fallback_count": 63,
+          "quality_candidates_mean": 3,
+          "quality_candidates_min": 3,
+          "expanded_count": 0,
+          "expanded_fraction": 0.0,
+          "expansion_ms": 0.0,
+          "added_candidates": 0,
+          "no_new_candidates": 0,
+          "still_scarce_count": 0,
+          "expansion_best_error_improvement": 0,
+          "queried_counts": {
+            "150": 64
+          }
+        }
+      },
+      {
+        "id": "synthetic-scarce3-QD-cpu",
+        "selection_sha256": "f9f03f3657bf4f1c6deb2e1171b690aeb6d62f897905f24dd0a46603c49380ed",
+        "output_sha256": "cb435ddb2f9a6fb2024df0ab0d6a31cc5c954bbe93c9b7fe903999fe98758b71",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "3": 3,
+            "2": 12,
+            "1": 49
+          },
+          "similar_fallback_count": 63,
+          "quality_candidates_mean": 3,
+          "quality_candidates_min": 3,
+          "expanded_count": 0,
+          "expanded_fraction": 0.0,
+          "expansion_ms": 0.0,
+          "added_candidates": 0,
+          "no_new_candidates": 0,
+          "still_scarce_count": 0,
+          "expansion_best_error_improvement": 0,
+          "queried_counts": {
+            "150": 64
+          }
+        }
+      },
+      {
+        "id": "synthetic-scarce3-QDX-cpu",
+        "selection_sha256": "f9f03f3657bf4f1c6deb2e1171b690aeb6d62f897905f24dd0a46603c49380ed",
+        "output_sha256": "cb435ddb2f9a6fb2024df0ab0d6a31cc5c954bbe93c9b7fe903999fe98758b71",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "3": 3,
+            "2": 12,
+            "1": 49
+          },
+          "similar_fallback_count": 63,
+          "quality_candidates_mean": 3,
+          "quality_candidates_min": 3,
+          "expanded_count": 63,
+          "expanded_fraction": 0.984375,
+          "expansion_ms": 14.1511,
+          "added_candidates": 0,
+          "no_new_candidates": 63,
+          "still_scarce_count": 63,
+          "expansion_best_error_improvement": 0.0,
+          "queried_counts": {
+            "150": 1,
+            "600": 63
+          }
+        }
+      },
+      {
+        "id": "synthetic-near_cross_row-L-cpu",
+        "selection_sha256": "87b97f2bf96b3b02a8247d98cd9c675ad8debba4f2d135bfdbaa74eeda2f5677",
+        "output_sha256": "09989d54cdbe64b12feb3b87d202d4de6df4bc1cec275786e75d80320e5ee6b2",
+        "diagnostic_summary": {}
+      },
+      {
+        "id": "synthetic-near_cross_row-Q-cpu",
+        "selection_sha256": "35c0f69da2a966398568535c0f33011c7dd6ee00414d4be6b7b3f49083acacc9",
+        "output_sha256": "dd692beed02f94f3b16526f23cfaec0691ce170f571325b6f250f979c5f9671d",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "-1": 256
+          },
+          "similar_fallback_count": 0,
+          "quality_candidates_mean": 8,
+          "quality_candidates_min": 8,
+          "expanded_count": 0,
+          "expanded_fraction": 0.0,
+          "expansion_ms": 0.0,
+          "added_candidates": 0,
+          "no_new_candidates": 0,
+          "still_scarce_count": 0,
+          "expansion_best_error_improvement": 0,
+          "queried_counts": {
+            "150": 256
+          }
+        }
+      },
+      {
+        "id": "synthetic-near_cross_row-D-cpu",
+        "selection_sha256": "7abd2d48980eec7b5dc7771db69e272bd35fa50c06ffc92db7e39ca711ea5a7c",
+        "output_sha256": "8cc51cbaab158ea2ae3d757db098b82e0c934824be95710cd994c6c7f7e2a386",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "3": 256
+          },
+          "similar_fallback_count": 0,
+          "quality_candidates_mean": 143,
+          "quality_candidates_min": 143,
+          "expanded_count": 0,
+          "expanded_fraction": 0.0,
+          "expansion_ms": 0.0,
+          "added_candidates": 0,
+          "no_new_candidates": 0,
+          "still_scarce_count": 0,
+          "expansion_best_error_improvement": 0,
+          "queried_counts": {
+            "150": 256
+          }
+        }
+      },
+      {
+        "id": "synthetic-near_cross_row-QD-cpu",
+        "selection_sha256": "7b618c81f3d62ce582e1a7e739755cd95e0d2f6a67a9949a2f515fe12cefe838",
+        "output_sha256": "fbc8896d57ed5dbb068179bf806308c0685ea056fabc116784ff07341b879765",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "3": 94,
+            "2": 162
+          },
+          "similar_fallback_count": 255,
+          "quality_candidates_mean": 8,
+          "quality_candidates_min": 8,
+          "expanded_count": 0,
+          "expanded_fraction": 0.0,
+          "expansion_ms": 0.0,
+          "added_candidates": 0,
+          "no_new_candidates": 0,
+          "still_scarce_count": 0,
+          "expansion_best_error_improvement": 0,
+          "queried_counts": {
+            "150": 256
+          }
+        }
+      },
+      {
+        "id": "synthetic-near_cross_row-QDX-cpu",
+        "selection_sha256": "7b618c81f3d62ce582e1a7e739755cd95e0d2f6a67a9949a2f515fe12cefe838",
+        "output_sha256": "fbc8896d57ed5dbb068179bf806308c0685ea056fabc116784ff07341b879765",
+        "diagnostic_summary": {
+          "quality_violations": 0,
+          "spatial_violations": 0,
+          "radius_counts": {
+            "3": 94,
+            "2": 162
+          },
+          "similar_fallback_count": 255,
+          "quality_candidates_mean": 8,
+          "quality_candidates_min": 8,
+          "expanded_count": 235,
+          "expanded_fraction": 0.91796875,
+          "expansion_ms": 93.8213,
+          "added_candidates": 45825,
+          "no_new_candidates": 0,
+          "still_scarce_count": 235,
+          "expansion_best_error_improvement": 0.0,
+          "queried_counts": {
+            "150": 21,
+            "600": 235
+          }
+        }
+      }
+    ]
+  },
+  "checkpoint_rejections": [
+    {
+      "change": "configuration",
+      "rejected": true,
+      "reason": "RuntimeError: Study configuration changed; use a fresh study directory"
+    },
+    {
+      "change": "backend",
+      "rejected": true,
+      "reason": "RuntimeError: Backend configuration changed; use a fresh study directory"
+    },
+    {
+      "change": "binary",
+      "rejected": true,
+      "reason": "RuntimeError: Executable changed; use a fresh output folder"
+    },
+    {
+      "change": "input",
+      "rejected": true,
+      "reason": "ValueError: Input changed; use a fresh study directory"
+    },
+    {
+      "change": "snapshot",
+      "rejected": true,
+      "reason": "ValueError: Snapshot changed; use a fresh study directory"
+    },
+    {
+      "change": "schema",
+      "rejected": true,
+      "reason": "ValueError: Unsupported or incomplete checkpoint; use a fresh study directory"
+    }
+  ],
+  "original_private_library": {
+    "status": "not_opened_or_rebuilt",
+    "database_at_original_location": false,
+    "user_confirmation": "User confirmed manually moving or cleaning the database, features and old backup directories. No restoration attempted.",
+    "original_database_hash_audited": false
+  },
+  "pending": [
+    {
+      "platform": "Linux CPU",
+      "status": "not_run",
+      "reason": "No usable local Linux environment; no remote CI dispatched or pushed",
+      "registered_in": ".github/workflows/ci.yml"
+    },
+    {
+      "platform": "Windows CUDA universal release architectures",
+      "status": "not_run",
+      "reason": "Local regression uses sm_89; this task does not publish a universal CUDA package"
+    },
+    {
+      "check": "visual browser UI inspection",
+      "status": "not_run",
+      "reason": "HTTP smoke and generated JavaScript syntax were checked; no visual browser claim"
+    },
+    {
+      "check": "old v6 versus new v1 CUDA byte-for-byte fixture",
+      "status": "not_run",
+      "reason": "The archived v6 fixture and selection capture use CPU; current CUDA regression and kernel probe passed"
+    }
+  ],
+  "reproduction": [
+    "cmake --preset windows-cpu",
+    "cmake --build --preset windows-cpu --target mosaicraft MosaicraftWebUI mosaicraft_tests mosaicraft_regression_tests mosaicraft_match_benchmark mosaicraft_quality_benchmark --parallel",
+    "ctest --preset windows-cpu --output-on-failure",
+    "cmake --build --preset windows-cpu --target mosaicraft_webui_smoke",
+    "cmake --preset windows-cuda",
+    "cmake --build --preset windows-cuda --target mosaicraft_tests mosaicraft_regression_tests --parallel",
+    "build/windows-cuda/Release/bin/mosaicraft_tests.exe --require-cuda",
+    "ctest --preset windows-cuda --output-on-failure",
+    "python scripts/selection_study.py --match build/windows-cpu/Release/bin/mosaicraft_match_benchmark.exe --quality build/windows-cpu/Release/bin/mosaicraft_quality_benchmark.exe --cli build/windows-cpu/Release/bin/mosaicraft.exe --phase synthetic --backends cpu --output-dir build/team-smoke",
+    "pwsh -NoProfile -File scripts/release.ps1 -BuildDir build/windows-cpu -NoCuda -SkipConfigure -SkipBuild -SkipTests -OutputDir build/format-reset-validation/packages",
+    "pwsh -NoProfile -File scripts/verify-release-asset.ps1 -ArchivePath build/format-reset-validation/packages/Mosaicraft_v1.15.0_windows-x64_cpu-only.zip -ExpectedVersion 1.15.0 -ExpectedRuntime cpu-only -ExpectedGpuValidation not-applicable -RequireStandalone"
+  ],
+  "packaging": {
+    "status": "pending_local_archive_validation",
+    "published": false,
+    "pushed": false,
+    "tagged": false
+  },
+  "paths_redacted": true,
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
+}

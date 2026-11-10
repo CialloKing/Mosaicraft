@@ -15,8 +15,9 @@ Both entries call the same core services for mosaic generation, library building
 `/api/info` 在 `entryPoints` 中暴露相同的入口边界，调用方可据此区分当前入口和支持的可执行入口集合。
 `/api/info` exposes the same entry point boundary in `entryPoints`, so callers can distinguish the current entry from the supported executable entry set.
 
-当前 API 合约为 **2.2**，主兼容版本仍为 **2**。保留现有字段和端点，增加按来源选择格式、超限适配和可选的输出计划字段。维护清理接口仍只允许 POST，Host/Origin/Content-Type 检查保持不变。
-Contract **2.2** retains major version **2** and existing fields/endpoints, adding output-format policy and an optional output plan. Purge remains POST-only with the same HTTP boundary checks.
+当前 API 版本为 **1.0**，主版本为 **1**。路由仍使用 /api/*，没有额外契约身份字段或强制版本请求头。旧别名和命令接口已删除；参数与错误规则见下文。图库只接受结构版本 1，旧库需在新目录重建，详见 [1.15.0 不兼容更新](BREAKING_1.15.0.md)。
+
+API **1.0** keeps the existing structured routes and job model, with canonical fields, strict validation and a common error envelope. Unsupported libraries must be rebuilt in a new directory.
 
 ---
 
@@ -24,8 +25,8 @@ Contract **2.2** retains major version **2** and existing fields/endpoints, addi
 
 ### `GET /api/info`
 
-返回服务版本、入口名称、结构化 API 状态、legacy `/api/run` 状态、API 合约版本、入口点列表、端点数量、元数据校验状态和功能清单。
-Returns service version, entry name, structured API status, legacy `/api/run` status, API contract version, entry point list, endpoint counts, metadata validation status, and a compact feature list.
+返回服务版本、入口名称、结构化 API 状态、API 合约版本、入口点列表、端点数量、元数据校验状态和功能清单。
+Returns service version, entry name, structured API status, API contract version, entry point list, endpoint counts, metadata validation status, and a compact feature list.
 
 结构化 API 上报字段 / Structured API fields:
 
@@ -36,7 +37,7 @@ Returns service version, entry name, structured API status, legacy `/api/run` st
 | `compatibility` | 稳定性标签，供生成客户端和 UI 适配器使用 / stability label for generated clients and UI adapters |
 | `stable` | 当前合约是否面向常规调用方 / whether the current contract is intended for regular callers |
 
-`info.runtime` 包含 `sessionId`、`workingDirectory`（相对路径解析目录）和 `finishedJobLimit: 50`。服务重启后会话 ID 改变，任务 ID 可能重新从 `job-000001` 开始；客户端必须将会话和任务 ID 一起识别。`info.features` 包含 `job-diagnostics`、`job-progress`、`job-artifacts`、`result-preview`；2.2 增加 `output-format-policy`。
+`info.runtime` 包含 `sessionId`、`workingDirectory`（相对路径解析目录）和 `finishedJobLimit: 50`。服务重启后会话 ID 改变，任务 ID 可能重新从 `job-000001` 开始；客户端必须将会话和任务 ID 一起识别。`info.features` 包含 `job-diagnostics`、`job-progress`、`job-artifacts`、`result-preview`；同时包含 `output-format-policy`。
 `info.runtime` identifies the current process session and working directory. Match jobs by session plus ID; IDs can repeat after a restart. Discover optional capabilities through `info.features`.
 
 ### `GET /api/endpoints`
@@ -50,27 +51,24 @@ Returns service version, entry name, structured API status, legacy `/api/run` st
 | `path` | 端点路径 / endpoint path |
 | `httpPattern` | 本地 HTTP 适配器使用的服务端路由模式 / server route pattern used by the local HTTP adapter |
 | `operation` | 稳定的核心 API 操作名 / stable core API operation name |
-| `requestShape` | HTTP 映射：`none`、`body`、`query`、`jobId`、`jobQuery`、`jobArtifact` 或 `legacyCommand` |
+| `requestShape` | HTTP 映射：`none`、`body`、`query`、`jobId`、`jobQuery`、`jobArtifact` |
 | `description` | 简短描述 / short endpoint description |
 | `category` | 功能分组，如 `jobs`、`database`、`inspect` |
 | `requestFields` | 端点接受的常用请求字段 / common request fields accepted by the endpoint |
 | `requiredFields` | 调用方必须提供的字段。未列出的字段有默认值或可选 / fields that callers must provide |
-| `fieldAliases` | 规范字段的可接受别名，如 `dbPath` 也接受 `db` |
 | `queryKeys` | 端点接受的机器可读查询字符串键 / machine-readable query string keys |
-| `acceptedQueryKeys` | HTTP 适配器接受的完整查询键，包括规范字段名和别名 |
+| `acceptedQueryKeys` | HTTP 适配器接受的完整规范查询键，不接受旧别名 |
 | `successStatus` | 成功响应的正常 HTTP 状态码 / normal HTTP status code for a successful response |
 | `responseKey` | 成功时返回的主要 JSON 载荷键 / primary JSON payload key returned on success |
 | `responseFormat` | `json` 或 `file`；文件成功响应为二进制，失败仍为 JSON / binary on file success, JSON on error |
 | `errorStatuses` | 结构化 handler 对预期失败可能返回的 HTTP 状态码 |
-| `errorShapes` | 端点使用的 JSON 错误信封变体：`serviceResult`、`apiError`、`jobError`、`payloadResult` |
+| `errorShapes` | JSON 错误统一为 `serviceResult`，包含 `ok/exitCode/message/diagnostic` |
 | `errorResponseKeys` | 错误响应中也可能出现的主要载荷键，如 `job`、`export`、`purge` |
 | `errorResponses` | 配对的错误响应合约，包含 `status`、`shape` 和可选 `responseKey` |
 | `sideEffects` | 端点是否会修改文件、任务或数据库 / whether the endpoint can modify files, jobs, or databases |
 | `longRunning` | 调用方是否应优先使用异步处理或轮询 / whether callers should prefer async handling or polling |
-| `legacy` | 是否仅为兼容端点 / whether this endpoint is only for compatibility |
 | `enabled` | 端点当前是否可用 / whether the endpoint is currently available |
 
-标记为 `legacy: true` 的条目为兼容端点，新 UI 代码不应使用 / Entries marked `legacy: true` are compatibility endpoints and should not be used by new UI code.
 
 ---
 
@@ -97,14 +95,15 @@ Returns service version, entry name, structured API status, legacy `/api/run` st
 {
   "ok": false,
   "exitCode": 1,
-  "message": "invalid JSON body: ..."
+  "message": "invalid JSON body: ...",
+  "diagnostic": {"code": "invalid_argument", "severity": "error", "message": "invalid JSON body: ...", "field": ""}
 }
 ```
 
 字段类型或范围不合法也返回 HTTP 400，且 `message` 指向具体字段。
 Invalid field types or ranges also return HTTP 400, and `message` names the field.
 
-2.1 增加 `diagnostic`，无终止错误时为 `null`。客户端应使用 `code` 和 `field`，避免解析英文 `message`。CLI、同步生成与异步任务共用执行失败的原因码；CLI 控制台格式为 `ERROR: [code] message`。异步执行失败保持 HTTP 200 查询成功、`job.state: "failed"` 的含义。
+所有 JSON 错误均包含 `ok/exitCode/message/diagnostic`，无终止错误时为 `null`。客户端应使用 `code` 和 `field`，避免解析英文 `message`。CLI、同步生成与异步任务共用执行失败的原因码；CLI 控制台格式为 `ERROR: [code] message`。异步执行失败保持 HTTP 200 查询成功、`job.state: "failed"` 的含义。
 Use structured `diagnostic.code` and `field`; do not infer them from English messages. Async execution failure is represented by job state, not by changing the successful job-query HTTP status.
 
 | 诊断字段 | 含义 |
@@ -113,7 +112,7 @@ Use structured `diagnostic.code` and `field`; do not infer them from English mes
 | `message`, `field`, `path` | 技术原因；相关规范请求字段和路径（可为空） |
 | `sequence`, `timestamp` | 任务内递增序号；Unix 毫秒时间 |
 
-主要原因码：`invalid_argument`、`input_unreadable`、`library_unavailable`、`library_incompatible`、`library_write_failed`、`no_candidates`、`cuda_unavailable`、`cuda_resource_fallback`、`cuda_execution_failed`、`out_of_memory`、`source_skipped`、`feature_missing`、`output_tile_missing`、`output_write_failed`、`preview_write_failed`、`analysis_write_failed`、`usage_commit_failed`。警告保持原有继续执行规则，不代表任务失败。
+主要原因码：`invalid_argument`、`input_unreadable`、`library_unavailable`、`library_incompatible`、`library_write_failed`、`no_candidates`、`cuda_unavailable`、`cuda_resource_fallback`、`cuda_execution_failed`、`out_of_memory`、`source_skipped`、`feature_invalid`、`output_tile_missing`、`output_write_failed`、`preview_write_failed`、`analysis_write_failed`、`usage_commit_failed`。警告保持原有继续执行规则，不代表任务失败。
 
 API 只接受本机服务的 Host（`localhost`、`127.0.0.1` 或 `[::1]` 加当前端口）。浏览器请求的 Origin 必须与该 Host 同源，跨站请求返回 HTTP 403；命令行客户端可以不发送 Origin。结构化请求体必须使用 `Content-Type: application/json`，否则返回 HTTP 415。非法 UTF-8 或包含 NUL 的 query 参数返回 HTTP 400 JSON。
 The API requires a local Host with the current port. Browser Origin must match that Host; cross-site requests return HTTP 403. Non-browser clients may omit Origin. Structured request bodies require `Content-Type: application/json` or return HTTP 415. Invalid UTF-8 or NUL bytes in query parameters return HTTP 400 JSON.
@@ -126,7 +125,7 @@ The API requires a local Host with the current port. Browser Origin must match t
 | `outW`, `outH` | `0..1000000`; `0=auto`, one axis preserves aspect ratio |
 | `nativeTileW`, `nativeTileH` | `1..1000000`, tile pixels `<=100000000` |
 | `candidates` | `10..10000` |
-| `topNrandom` | `1..10000` |
+| `topNRandom` | `1..10000` |
 | `neighborWindow` | `0..1000000` |
 | `upscale` | `1..64` when provided |
 | `quality` | `1..100` |
@@ -153,7 +152,8 @@ Base-image overlay is enabled by `overlayStrength`; `0.2` blends 80% tile pixels
 {
   "ok": false,
   "exitCode": 1,
-  "message": "tileW must be at least 4"
+  "message": "tileW must be at least 4",
+  "diagnostic": {"code": "invalid_argument", "severity": "error", "field": "tileW", "message": "tileW must be at least 4"}
 }
 ```
 
@@ -267,7 +267,7 @@ Runs a mosaic request synchronously. New UI code should prefer `POST /api/jobs/m
 Returns HTTP 200 with a service result after successful generation, without a job. Synchronous generation and asynchronous build/mosaic pipelines share a serial execution lock to keep feature cache writes consistent.
 
 两个生成端点默认允许超大输出，无需额外字段或开关。目标缩放/上采样后的工作图像最多 1 亿像素。单图 JPEG/WebP 超过各自尺寸限制时返回失败，请选择 PNG、TIFF 或 `tiled: true`。PNG/TIFF 可指定 `writeMode: "stream"` 降低内存占用。旧版图库特征需先通过建库端点原地刷新。
-Both mosaic endpoints allow large output by default, without an extra field or switch. Resized/upscaled working targets are limited to 100 million pixels. JPEG/WebP output exceeding format dimensions fails; select PNG, TIFF or `tiled: true`. PNG/TIFF can use `writeMode: "stream"` to reduce memory use. Refresh legacy features through the build endpoint before generation.
+Both mosaic endpoints allow large output by default, without an extra field or switch. Resized/upscaled working targets are limited to 100 million pixels. JPEG/WebP output exceeding format dimensions fails; select PNG, TIFF or `tiled: true`. PNG/TIFF can use `writeMode: "stream"` to reduce memory use. Unsupported libraries must be rebuilt in a new directory before generation.
 
 两个生成端点均接受 `generatePreview: true`，默认 `false`，等价于 CLI `--preview`。只支持单图；与 `tiled` 或 `deepZoom` 组合返回 400，诊断字段为 `generatePreview`。沿用宽度最多 1400、总像素最多 400 万、不放大的 JPEG 预览，质量固定为 92。同步响应只返回产物元数据，使用任务端点生成才能通过任务产物接口下载。
 `generatePreview` is optional and off by default. It uses the existing bounded JPEG preview generator and is incompatible with tiled/DeepZoom output.
@@ -345,12 +345,10 @@ Previews or removes orphan database records. Default is dry-run. Actual deletion
 
 ---
 
-## 兼容端点 / Legacy
+## 严格输入规则 / Strict inputs
 
-### `POST /api/run`
+仅接受端点元数据列出的规范字段。未知字段、旧别名、重复 JSON 键、重复查询参数、同一字段重复出现在查询和正文中，以及不支持的 null 均返回错误。整数参数只接受 JSON 整数类型，查询布尔值只接受 true/false。输入类型不会自动转换。
 
-旧式命令风格调用方的兼容端点。Web UI 不再使用此端点。默认禁用；在启动 `MosaicraftWebUI.exe` 前设置 `MOSAICRAFT_ENABLE_LEGACY_RUN=1` 可启用兼容模式。
-Compatibility endpoint for old command-style callers. The Web UI no longer uses this endpoint. It is disabled by default; set `MOSAICRAFT_ENABLE_LEGACY_RUN=1` before starting `MosaicraftWebUI.exe` to enable compatibility mode.
+生成使用 topNRandom、useGpu、nativeTileW/nativeTileH；建库使用 normalizeWidth/normalizeHeight。CLI 的 --cpu、--output-tile、--normalize-size 便捷参数仍然可用。/api/run 与其环境变量开关已删除。
 
-命令文本可使用 `Content-Type: text/plain`，仍须通过同一 Host/Origin 校验。
-Raw command text may use `Content-Type: text/plain`, with the same Host/Origin validation.
+HTTP 边界与业务错误使用相同的 ServiceResult/Diagnostic 基础结构；成功响应的业务载荷名称及任务状态模型保持不变。
