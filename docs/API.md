@@ -15,8 +15,8 @@ Both entries call the same core services for mosaic generation, library building
 `/api/info` 在 `entryPoints` 中暴露相同的入口边界，调用方可据此区分当前入口和支持的可执行入口集合。
 `/api/info` exposes the same entry point boundary in `entryPoints`, so callers can distinguish the current entry from the supported executable entry set.
 
-当前 API 合约为 **2.1**，主兼容版本仍为 **2**。保留 2.0 字段和端点，增加运行诊断、阶段进度、会话标识、结果产物和可选预览。维护清理接口仍只允许 POST，Host/Origin/Content-Type 检查保持不变。
-Contract **2.1** retains major version **2** and the 2.0 fields/endpoints, adding diagnostics, stage progress, session identity, artifacts and optional previews. Purge remains POST-only with the same HTTP boundary checks.
+当前 API 合约为 **2.2**，主兼容版本仍为 **2**。保留现有字段和端点，增加按来源选择格式、超限适配和可选的输出计划字段。维护清理接口仍只允许 POST，Host/Origin/Content-Type 检查保持不变。
+Contract **2.2** retains major version **2** and existing fields/endpoints, adding output-format policy and an optional output plan. Purge remains POST-only with the same HTTP boundary checks.
 
 ---
 
@@ -36,7 +36,7 @@ Returns service version, entry name, structured API status, legacy `/api/run` st
 | `compatibility` | 稳定性标签，供生成客户端和 UI 适配器使用 / stability label for generated clients and UI adapters |
 | `stable` | 当前合约是否面向常规调用方 / whether the current contract is intended for regular callers |
 
-`info.runtime` 包含 `sessionId`、`workingDirectory`（相对路径解析目录）和 `finishedJobLimit: 50`。服务重启后会话 ID 改变，任务 ID 可能重新从 `job-000001` 开始；客户端必须将会话和任务 ID 一起识别。`info.features` 新增 `job-diagnostics`、`job-progress`、`job-artifacts`、`result-preview`。
+`info.runtime` 包含 `sessionId`、`workingDirectory`（相对路径解析目录）和 `finishedJobLimit: 50`。服务重启后会话 ID 改变，任务 ID 可能重新从 `job-000001` 开始；客户端必须将会话和任务 ID 一起识别。`info.features` 包含 `job-diagnostics`、`job-progress`、`job-artifacts`、`result-preview`；2.2 增加 `output-format-policy`。
 `info.runtime` identifies the current process session and working directory. Match jobs by session plus ID; IDs can repeat after a restart. Discover optional capabilities through `info.features`.
 
 ### `GET /api/endpoints`
@@ -161,6 +161,31 @@ Base-image overlay is enabled by `overlayStrength`; `0.2` blends 80% tile pixels
 
 ## 任务 / Jobs
 
+### 单图格式策略 / Single-image output policy
+
+同步 `/api/mosaic`、异步 `/api/jobs/mosaic` 和 CLI 使用相同规则：有效的显式 `format` 优先于输出后缀，其次输入后缀，最后回退 PNG。省略 `outputPath` 默认使用无后缀的 `output/output`，无后缀文件名会追加最终后缀；显式空路径仍失败，父目录需已存在。支持的格式为 JPG/JPEG、PNG、WebP、TIFF/TIF，忽略大小写。输入后缀无法推导时可回退 PNG，无法读取的输入仍失败；未知输出后缀在没有显式格式时返回 HTTP 400，`diagnostic.field` 为 `outputPath`。未知显式格式的字段为 `format`。
+
+推导的 JPG（单轴上限 65,500）或 WebP（16,383）超限时保留尺寸，改存 PNG；显式 `format: "jpg"/"webp"` 超限时缩小输出 Tile，保留格式。整数取整可能改变比例；网格任一轴的块数已超编码上限时，显式模式失败，需要 PNG/TIFF 或分块。PNG/TIFF 仍检查现有尺寸和资源上限。分块和 DeepZoom 继续使用原分片规则。
+
+格式改变会发布 `output_format_changed` 警告，尺寸缩小会发布 `output_scaled` 警告。输入后缀回退 PNG 与显式格式调整后缀分别发布信息级 `output_format_defaulted`、`output_extension_adjusted`。兼容的后缀别名与大小写保留；冲突或回退时替换后缀。主图、预览和报告均使用实际路径。
+
+An explicit `format` wins over the output suffix, then the input suffix, then PNG. Inferred oversized JPG/WebP switches to full-size PNG; explicit JPG/WebP reduces output tile dimensions. Empty `format` is automatic. Request restoration omits inferred formats so it does not turn an automatic choice into an explicit one.
+
+单图计划确定后，同步结果和任务详情可包含 `runtime.outputPlan`：
+
+| 字段 | 含义 |
+| --- | --- |
+| `formatSource` | `explicit`、`output_extension`、`input_extension` 或 `fallback` |
+| `requestedFormat` | 尺寸适配前选定的规范格式 |
+| `originalWidth`, `originalHeight` | 适配前计划尺寸，64 位整数 |
+| `originalTileWidth`, `originalTileHeight` | 适配前的有效输出 Tile，已应用原有默认方向规则 |
+| `format`, `width`, `height`, `tileWidth`, `tileHeight`, `path` | 计划实际输出的格式、尺寸、Tile 和文件路径 |
+| `scaled`, `formatChanged` | 是否缩小 Tile、是否因尺寸超限切换格式 |
+
+`outputPlan` 不代表文件已经保存，失败任务也可能具有计划。现有 `runtime.format/width/height` 及 `artifacts` 仍表示已保存的结果；下载只能使用已登记产物。列表摘要不携带输出计划。请求中的 `outputPath` 不改写为实际文件名；恢复参数只保留原显式 `format`。
+
+The plan is optional and is not proof of a saved file. Existing runtime dimensions and registered artifacts describe saved output. Job summaries omit the plan; request paths retain their original meaning.
+
 ### `POST /api/jobs/mosaic`
 
 启动异步马赛克任务 / Starts an asynchronous mosaic job.
@@ -203,7 +228,7 @@ Returns the complete snapshot. `outputPath` retains its requested-path meaning; 
 | `progress` | `stage`、`startedAt`、`updatedAt`（Unix 毫秒）、`activities: [{id, completed, total, unit}]`；未知总量为 `null` |
 | `warningCount`, `warnings` | 总警告数量；按原因码汇总的 `code/count/message/paths`，每码最多 3 个路径样例 |
 | `diagnostic` | 首个终止错误，独立于事件缓冲保留 |
-| `runtime` | `featureBackend/scoreBackend/fallbackReason`、实际 `format/width/height/matched/failed`、`metrics` |
+| `runtime` | `featureBackend/scoreBackend/fallbackReason`、实际 `format/width/height/matched/failed`、`metrics`，以及可选 `outputPlan` |
 | `artifacts` | 已成功关闭的文件/目录：`id/kind/path/mime/bytes/directory`；路径为规范化绝对路径 |
 | `request` | 规范请求参数，供页面恢复编辑；恢复不会自动执行 |
 | `canCancel` | 仅排队任务为 `true` |

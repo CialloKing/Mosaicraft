@@ -211,6 +211,26 @@ TEST_CASE("output plans preserve inferred dimensions and fit explicit encoders")
     CHECK_FALSE(makeOutputPlan({"jpg", "explicit"}, "result", 0, 1, 1, 1, true, plan, error));
 }
 
+TEST_CASE("output plans do not claim saved artifacts and retain 64 bit dimensions")
+{
+    using namespace mosaicraft;
+    detail::OutputPlan plan;
+    std::string error;
+    REQUIRE(detail::makeOutputPlan({"jpg", "explicit"}, "result.png", 2, 1, INT_MAX, 1, true, plan, error));
+    RuntimeContext runtime(false);
+    runtime.planOutput(plan, "result.png");
+    const auto json = runtimeSnapshotToJson(runtime.snapshot());
+    CHECK(json["runtime"]["format"] == "");
+    CHECK(json["runtime"]["width"] == 0);
+    CHECK(json["artifacts"].empty());
+    CHECK(json["runtime"]["outputPlan"]["originalWidth"].get<int64_t>() == 2LL * INT_MAX);
+    CHECK(json["runtime"]["outputPlan"]["scaled"] == true);
+    CHECK(json["runtime"]["outputPlan"]["path"] == "result.jpg");
+    CHECK(json["warnings"][0]["code"] == "output_scaled");
+    CHECK(json["warnings"][0]["count"] == 1);
+    CHECK_FALSE(mosaicRequestToJson(MosaicRequest{}).contains("format"));
+}
+
 TEST_CASE("runtime diagnostics bound UTF-8 history and retain terminal errors")
 {
     using namespace mosaicraft;

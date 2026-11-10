@@ -366,6 +366,7 @@ try {
     $startArgs = @{
         FilePath = $webUiPath
         ArgumentList = @("$Port", "--no-open")
+        WorkingDirectory = $tempRoot
         PassThru = $true
         RedirectStandardOutput = $stdoutPath
         RedirectStandardError = $stderrPath
@@ -382,6 +383,8 @@ try {
     Assert-True ($info.ok -eq $true) "/api/info did not return ok=true"
     Assert-True ($info.info.api.structured -eq $true) "structured API is not enabled"
     Assert-True ([int]$info.info.api.contractMajorVersion -eq 2) "unexpected API contract major version"
+    Assert-True ($info.info.api.contractVersion -eq '2.2') "unexpected API contract version"
+    Assert-True ($info.info.features -contains 'output-format-policy') "output policy capability missing"
 
     $endpoints = Invoke-Api -Method "GET" -Path "/api/endpoints"
     Assert-True ($endpoints.ok -eq $true) "/api/endpoints did not return ok=true"
@@ -530,6 +533,68 @@ try {
         Assert-True ($overlayInspect.ok -eq $true) "overlay PNG should decode"
         Assert-True ([int]$overlayInspect.inspect.width -eq 36 -and [int]$overlayInspect.inspect.height -eq 64) "overlay PNG dimensions should match"
     }
+
+    # 窄条覆盖真实编码及同步/异步结果，不需要写入巨型测试图片。
+    foreach ($case in @(
+        @{ Name='auto-jpg'; Format='jpg'; Explicit=$false; Tile=33000; Expected='png'; Width=66000 },
+        @{ Name='explicit-jpg'; Format='jpg'; Explicit=$true; Tile=33000; Expected='jpg'; Width=65500 },
+        @{ Name='auto-webp'; Format='webp'; Explicit=$false; Tile=8200; Expected='png'; Width=16400 },
+        @{ Name='explicit-webp'; Format='webp'; Explicit=$true; Tile=8200; Expected='webp'; Width=16382 }
+    )) {
+        $policyBody = $mosaicBody.Clone()
+        $policyBody.Remove('format')
+        $policyBody.outputPath = Join-Path $outputDir ($case.Name + '.jpg')
+        $policyBody.outW = 18
+        $policyBody.outH = 16
+        $policyBody.nativeTileW = $case.Tile
+        $policyBody.nativeTileH = 1
+        $policyBody.lRange = 255
+        if ($case.Explicit) { $policyBody.format = $case.Format }
+        else { $policyBody.outputPath = Join-Path $outputDir ($case.Name + '.' + $case.Format) }
+        if ($case.Explicit) {
+            $policy = Invoke-Api -Method 'POST' -Path '/api/mosaic' -Body $policyBody
+        }
+        else {
+            $submitted = Invoke-Api -Method 'POST' -Path '/api/jobs/mosaic' -Body $policyBody
+            $policy = Wait-JobSucceeded -JobId $submitted.job.id -Label $case.Name -ExpectedType 'mosaic' -ExpectedInputPath $targetPath -ExpectedOutputPath $policyBody.outputPath
+            Assert-True (-not ($policy.request.PSObject.Properties.Name -contains 'format')) 'inferred format became explicit restoration data'
+        }
+        $plan = $policy.runtime.outputPlan
+        Assert-True ($plan.format -eq $case.Expected -and [int]$plan.width -eq $case.Width) 'output plan dimensions/format incorrect'
+        Assert-True ([int]$policy.runtime.width -eq $case.Width -and $policy.runtime.format -eq $case.Expected) 'saved output disagrees with plan'
+        Assert-True ($plan.scaled -eq $case.Explicit -and $plan.formatChanged -ne $case.Explicit) 'wrong output adjustment policy'
+        $saved = @($policy.artifacts | Where-Object id -eq 'main')[0]
+        Assert-True ($saved.path.EndsWith('.' + $case.Expected)) 'actual suffix incorrect'
+        Assert-True (Test-Path -LiteralPath $saved.path) 'planned output was not saved'
+        $decoded = Invoke-Api -Method 'POST' -Path '/api/inspect' -Body @{imagePath=$saved.path}
+        Assert-True ([int]$decoded.inspect.width -eq $case.Width -and [int]$decoded.inspect.height -eq 1) 'encoded image dimensions incorrect'
+        if ($case.Name -eq 'explicit-jpg') { $jpgForInference = $saved.path }
+    }
+    foreach ($source in @(
+        @{ Path=$targetPath; Format='png'; Source='fallback' },
+        @{ Path=$jpgForInference; Format='jpg'; Source='input_extension' }
+    )) {
+        $defaultOutput = $mosaicBody.Clone()
+        $defaultOutput.Remove('outputPath')
+        $defaultOutput.Remove('format')
+        $defaultOutput.inputPath = $source.Path
+        $defaultOutput.lRange = 255
+        $defaultResult = Invoke-Api -Method 'POST' -Path '/api/mosaic' -Body $defaultOutput
+        Assert-True ($defaultResult.runtime.outputPlan.formatSource -eq $source.Source) 'default filename prevented input format selection'
+        Assert-True ($defaultResult.runtime.format -eq $source.Format) 'input suffix/fallback selected wrong format'
+        $defaultMain = @($defaultResult.artifacts | Where-Object id -eq 'main')[0]
+        $expectedDefault = Join-Path $outputDir ('output.' + $source.Format)
+        Assert-True (Test-Path -LiteralPath $expectedDefault) 'default filename did not append actual suffix'
+        Assert-True ((Get-FileHash -LiteralPath $defaultMain.path).Hash -eq (Get-FileHash -LiteralPath $expectedDefault).Hash) 'default artifact differs from expected file'
+    }
+    $invalidSuffix = $mosaicBody.Clone()
+    $invalidSuffix.Remove('format')
+    $invalidSuffix.outputPath = Join-Path $outputDir 'unsupported.bmp'
+    $invalidResult = Invoke-ApiResponse -Method 'POST' -Path '/api/jobs/mosaic' -Body $invalidSuffix
+    Assert-True ($invalidResult.StatusCode -eq 400 -and $invalidResult.Json.diagnostic.field -eq 'outputPath') 'unsupported output suffix must identify outputPath'
+    $invalidSuffix.format = 'png'
+    $override = Invoke-Api -Method 'POST' -Path '/api/mosaic' -Body $invalidSuffix
+    Assert-True ($override.ok -and $override.runtime.format -eq 'png') 'explicit format should override an unsupported suffix'
 
     $usage = Invoke-Api -Method "POST" -Path "/api/db/usage" -Body @{
         dbPath = $dbPath

@@ -233,11 +233,83 @@ TEST_CASE("oversized single images use the planned format tile and actual path")
                 CHECK_FALSE(fs::exists(u8path(request.outputPath)));
             }
             const auto main = std::find_if(snapshot.artifacts.begin(), snapshot.artifacts.end(),
-                                          [](const Artifact &item) { return item.id == "main"; });
+                                          [](const Artifact &item)
+                                          {
+                                              return item.id == "main";
+                                          });
             REQUIRE(main != snapshot.artifacts.end());
             CHECK(u8path(main->path).extension() == "." + actualFormat);
         }
     }
+}
+
+TEST_CASE("output adaptation preserves fixed seed selections and committed usage")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    requireWriteImage(workspace.targetPath(), cv::Mat(4, 8, CV_8UC3, cv::Scalar(70, 110, 150)));
+    REQUIRE(BuildService().run(makeBuildRequest(workspace)).ok);
+    const auto snapshot = workspace.root / "snapshot.db";
+    fs::copy_file(workspace.dbPath(), snapshot);
+    for (bool gpu : {false, true})
+    {
+        if (gpu && !cuda::isCudaAvailable())
+        {
+            continue;
+        }
+        std::vector<int> reference, referenceUsage;
+        for (const auto &format : {std::string("png"), std::string("jpg"), std::string("webp")})
+        {
+            fs::copy_file(snapshot, workspace.dbPath(), fs::copy_options::overwrite_existing);
+            auto request = makeMosaicRequest(workspace);
+            request.outputPath = utf8(workspace.outputDir() / (format + "." + format));
+            request.config.outputFormat = format;
+            request.config.useGpu = gpu;
+            request.config.outW = request.config.outH = 0;
+            request.config.tileW = request.config.tileH = 4;
+            request.config.nativeTileW = 33000;
+            request.config.nativeTileH = 1;
+            request.config.topNrandom = 3;
+            request.config.lRange = 255;
+            request.config.analyze = true;
+            MosaicEngine engine;
+            MatchingAccess::configure(engine, MatchingLimits{}, true, 123);
+            std::vector<int> selected, usage;
+            MatchingAccess::captureSelections(engine, selected);
+            RuntimeContext runtime(false);
+            REQUIRE(engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config, runtime));
+            for (const auto &record : Database(request.dbPath).allRecords())
+            {
+                usage.push_back(record.useCount);
+            }
+            for (const auto &item : DatabaseService().usage({request.dbPath}).usage.top)
+            {
+                usage.insert(usage.end(), {item.id, item.runs, item.tiles});
+            }
+            if (format == "png")
+            {
+                reference = selected;
+                referenceUsage = usage;
+            }
+            else
+            {
+                CHECK(selected == reference);
+                CHECK(usage == referenceUsage);
+            }
+        }
+    }
+    auto failed = makeMosaicRequest(workspace);
+    const auto blocker = workspace.root / "blocked";
+    std::ofstream(blocker) << "not a directory";
+    failed.outputPath = utf8(blocker / "result.jpg");
+    RuntimeContext runtime(false);
+    CHECK_FALSE(MosaicService().run(failed, runtime).ok);
+    const auto result = runtime.snapshot();
+    REQUIRE(result.outputPlan.has_value());
+    CHECK(result.outputPlan->format == "png");
+    CHECK(result.format.empty());
+    CHECK(result.artifacts.empty());
+    CHECK(result.diagnostic.code == "output_write_failed");
 }
 
 TEST_CASE("compatible CUDA scores are exact and failures never publish partial results")

@@ -4,7 +4,7 @@
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
-当前源码提供 API 2.1 的运行诊断、阶段进度、会话任务与产物访问，并补齐 Web UI 的恢复跟踪、路径复用和可选预览；产品版本及特征 v6 保持不变。使用说明以 [README](../README.md#快速开始) 和 [API 文档](API.md) 为准，检查结果见 [运行诊断验收](RUNTIME_DIAGNOSTICS_VERIFICATION.md)。下文历史版本记录保留发布时的 API 合约说明。
+当前源码提供 API 2.2，包含运行诊断、阶段进度、会话任务、产物访问和输出计划。单图格式按显式选择、输出后缀、输入后缀、PNG 的优先级确定；自动 JPG/WebP 超限转完整尺寸 PNG，显式选择则缩小输出 Tile。Web UI 展示适配前后结果，产品版本及特征 v6 保持不变。使用说明以 [README](../README.md#快速开始) 和 [API 文档](API.md) 为准，验收见 [输出格式与超限适配](OUTPUT_FORMAT_VERIFICATION.md)。下文历史版本记录保留发布时的 API 合约说明。
 
 ## 目录 / Table of Contents
 
@@ -280,18 +280,18 @@ mosaicraft inspect -i <img> [-d <db>]
 
 ## 5. 输出格式行为 / Output Formats
 
-> **EN**: JPG (max 65,500px) and WebP (max 16,383px) reject oversized single images. PNG and TIFF preserve dimensions up to the signed 32-bit axis limit. Output extension determines format unless explicitly selected.
+> **EN**: Explicit format overrides the output suffix, then input suffix, then PNG fallback. Inferred oversized JPG/WebP becomes full-size PNG; explicit JPG/WebP reduces output tiles. PNG/TIFF preserve dimensions within existing integer and resource limits.
 
 | 格式 | 限制 | 超限行为 |
 |------|------|----------|
-| JPG (默认) | 65500px | 报错，请选择 PNG/TIFF/分块输出 |
+| JPG | 65500px | 推导格式时转 PNG；显式选择时缩小输出 Tile |
 | TIFF | 单轴 `INT_MAX` (BigTIFF) | 报错 |
-| WebP | **16383px** | 报错，请选择 PNG/TIFF/分块输出 |
+| WebP | **16383px** | 推导格式时转 PNG；显式选择时缩小输出 Tile |
 | PNG | 单轴 `INT_MAX` | 报错 |
 
-输出路径扩展名自动推断格式：`-o result.tiff` → TIFF，无需 `--format`。
+格式优先级为 `--format` / API `format` → 输出文件后缀 → 输入文件后缀 → PNG。默认文件名为 `output/output`，最终追加实际后缀。有效的显式格式覆盖冲突后缀；兼容的 `.jpeg/.tif` 和大小写保持原样。未知输出后缀在没有显式格式时失败，输入后缀无法推导时回退 PNG，但输入仍须能够解码。
 
-超大输出默认允许，无需额外开关；PNG/TIFF 可使用流式写入降低内存占用。工作图像最多 1 亿像素。程序不再自动切换格式或缩小尺寸；显式格式会调整文件后缀。v6 特征与兼容性变化见 [修复验证记录](BUGFIX_VERIFICATION.md)。
+超大输出默认允许，无需额外开关；PNG/TIFF 可使用流式写入降低内存占用。工作图像最多 1 亿像素。显式 JPG/WebP 通过统一比例缩小输出 Tile，整数取整可能改变比例；网格块数本身超限时仍失败。分块/DeepZoom 不按整图上限适配。输出计划与已保存产物分开记录，预览及报告使用实际主图路径。规则和验收见 [输出格式与超限适配](OUTPUT_FORMAT_VERIFICATION.md)。
 
 ---
 
@@ -477,7 +477,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 - `--force`/`-y` 安全确认 + TTY 检测
 - 退出码 0/1/2/3/4 + help 文档化
 - 31 个参数标签说明统一，帮助文本统一
-- 默认值: db=`library/mosaicraft.db`, output=`output/output.jpg`
+- 默认值: db=`library/mosaicraft.db`, output=`output/output`，单图后缀按最终格式追加
 
 **Web UI 集成**
 - `MosaicraftWebUI.exe`: cpp-httplib HTTP 服务器
