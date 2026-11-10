@@ -492,7 +492,7 @@ def plot(root, report):
     figure.savefig(root / "summary.png", dpi=150)
     figure.savefig(root / "summary.svg")
     svg = root / "summary.svg"
-    svg.write_text("\n".join(line.rstrip() for line in svg.read_text().splitlines()) + "\n", encoding="utf-8")
+    svg.write_text("\n".join(line.rstrip() for line in svg.read_text(encoding="utf-8").splitlines()) + "\n", encoding="utf-8")
     plt.close(figure)
     for name in ("screen", "smooth"):
         case = next(c for c in report["manifest"]["cases"] if c["id"] == name)
