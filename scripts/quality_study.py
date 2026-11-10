@@ -114,6 +114,9 @@ def prepare(args):
         cases.append(dict(id=name, input=str(path), width=max(1, round(width * scale)),
                           height=max(1, round(height * scale)), sha256=digest(path)))
     manifest = dict(schema=1, created_date="2026-11-10", source_commit=command_output(["git", "rev-parse", "HEAD"]),
+                    tools_commit=command_output(["git", "rev-parse", "HEAD"]),
+                    tool_sources_sha256={"scripts/" + name: digest(Path(__file__).with_name(name)) for name in
+                                         ("quality_study.py", "benchmark_match.cpp", "benchmark_quality.cpp")},
                     source_database=str(args.database.resolve()), source_database_sha256=source_hash,
                     source_inventory=source_inventory(args.database), snapshot=str(snapshot),
                     snapshot_sha256=digest(snapshot), library_rows=len(rows), cases=cases,
@@ -309,10 +312,15 @@ def evaluate(args, manifest):
                     peak_rss_median_bytes=statistics.median(r["peak_rss_bytes"] for r in group),
                     gpu_total_peak_median_mib=statistics.median(r["gpu_device_peak_mib"] for r in group)))
     report = dict(manifest=manifest, runs=results, summaries=summaries, oracle=evaluation["cases"],
+                  analysis_commit=command_output(["git", "rev-parse", "HEAD"]),
+                  analysis_script_sha256=digest(__file__),
                   performance=performance, performance_summary=perf_summaries,
                   reproducibility=load(root / "reproducibility.json"),
                   source_database_unchanged=digest(args.database) == manifest["source_database_sha256"],
                   source_inventory_unchanged=source_inventory(args.database) == manifest["source_inventory"])
+    check = root / "metric-crosscheck.json"
+    if check.exists():
+        report["independent_metric_crosscheck"] = load(check)
     if not report["source_database_unchanged"] or not report["source_inventory_unchanged"]:
         raise RuntimeError("Source library changed during the study")
     save(root / "results.json", report)
@@ -336,8 +344,11 @@ def comparisons(root, manifest, results):
         rows = (case["height"] + 15) // 16
         centers = [rows // 2 * columns + columns // 2, *baseline["quality"]["worst_tiles"][:2]]
         save(folder / f"{case['id']}-crop-tiles.json", centers)
-        with Image.open(case["input"]) as im:
-            reference = im.convert("RGB")
+        reference = read_image(case["input"])
+        reference = cv2.resize(reference, (case["width"], case["height"]), interpolation=cv2.INTER_AREA)
+        reference = cv2.copyMakeBorder(reference, 0, rows * 16 - reference.shape[0],
+                                       0, columns * 9 - reference.shape[1], cv2.BORDER_REFLECT)
+        reference = Image.fromarray(cv2.cvtColor(reference, cv2.COLOR_BGR2RGB))
         for backend in ("cpu", "cuda"):
             images = []
             for variant in labels:
@@ -353,16 +364,16 @@ def comparisons(root, manifest, results):
                 sheet.paste(preview, (i * 320 + (320 - preview.width) // 2, 40))
                 draw.text((i * 320 + 12, 10), label, fill="black", font=font)
             sheet.save(folder / f"{case['id']}-{backend}-overview.png")
-            crops = Image.new("RGB", (4 * 300, 3 * 290), "#eeeeee")
+            crops = Image.new("RGB", (4 * 300, 3 * 510), "#eeeeee")
             draw = ImageDraw.Draw(crops)
             for row, tile in enumerate(centers):
                 x = min(max(tile % columns - 1, 0), max(columns - 3, 0))
                 y = min(max(tile // columns - 1, 0), max(rows - 3, 0))
                 for col, (label, image) in enumerate(zip(key, images)):
                     crop = image.crop((x * 45, y * 80, min(x + 3, columns) * 45, min(y + 3, rows) * 80))
-                    crop.thumbnail((285, 245), Image.Resampling.NEAREST)
-                    crops.paste(crop, (col * 300 + (300 - crop.width) // 2, row * 290 + 35))
-                    draw.text((col * 300 + 10, row * 290 + 7), f"{label} / tile {tile}", fill="black", font=font)
+                    crop = crop.resize((crop.width * 2, crop.height * 2), Image.Resampling.NEAREST)
+                    crops.paste(crop, (col * 300 + (300 - crop.width) // 2, row * 510 + 30))
+                    draw.text((col * 300 + 10, row * 510 + 7), f"{label} / tile {tile}", fill="black", font=font)
             crops.save(folder / f"{case['id']}-{backend}-crops.png")
 
 
