@@ -61,6 +61,8 @@ def prepare(args):
     manifest_path = root / "manifest.json"
     if manifest_path.exists():
         manifest = load(manifest_path)
+        if tuple(manifest["backends"]) != BACKENDS:
+            raise RuntimeError("Backend configuration changed; use a fresh study directory")
         if digest(args.database) != manifest["source_database_sha256"]:
             raise RuntimeError("Original database differs from study manifest")
         return manifest

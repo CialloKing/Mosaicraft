@@ -33,14 +33,20 @@ STRATEGIES = ("L", "Q", "D", "QD", "QDX")
 BACKENDS = ("cpu", "cuda")
 
 
+def validate_configuration(manifest, binaries):
+    if tuple(manifest["backends"]) != BACKENDS:
+        raise RuntimeError("Backend configuration changed; use a fresh study directory")
+    if {k:v["sha256"] for k,v in manifest["executables"].items()} != {k:v["sha256"] for k,v in binaries.items()}:
+        raise RuntimeError("Binary changed; use a fresh study directory")
+
+
 def prepare(args):
     root = args.output_dir.resolve()
     root.mkdir(parents=True, exist_ok=True)
     path = root / "manifest.json"
     if path.exists():
         manifest = load(path)
-        if {k:v["sha256"] for k,v in manifest["executables"].items()} != {k:v["sha256"] for k,v in executables(args).items()}:
-            raise RuntimeError("Binary changed; use a fresh study directory")
+        validate_configuration(manifest, executables(args))
         return manifest
     previous = load(args.baseline_study / "manifest.json")
     source = args.database or Path(previous["source_database"])
@@ -211,11 +217,12 @@ def run_main(args, manifest):
                     results.append(result)
                     save(args.output_dir / "runs.json", results)
     sensitivity = []
-    for case in manifest["cases"]:
+    for case in manifest["cases"] if "cpu" in BACKENDS else ():
         for epsilon in (0.02, 0.10):
             tag = f"sensitivity-{case['id']}-{epsilon}"
             sensitivity.append(execute(args, manifest, case, "QDX", 42, "cpu", tag, epsilon=epsilon))
             save(args.output_dir / "sensitivity.json", sensitivity)
+    save(args.output_dir / "sensitivity.json", sensitivity)
 
 
 def verify(args, manifest):
@@ -252,6 +259,7 @@ def synthetic(args, original):
     manifest_path = root / "manifest.json"
     if manifest_path.exists():
         manifest = load(manifest_path)
+        validate_configuration(manifest, original["executables"])
     else:
         inputs = root / "source"
         targets = root / "targets"
