@@ -586,11 +586,16 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
     )SQL";
 
     sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) return results;
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK)
+    {
+        return results;
+    }
     sqlite3_bind_double(stmt, 1, minL);
     sqlite3_bind_double(stmt, 2, maxL);
     sqlite3_bind_int(stmt, 3, limit);
 
+    // 每次查询只准备一次库根目录，记录读取只拼接资源路径。
+    const LibraryPaths paths(m_path);
     while (sqlite3_step(stmt) == SQLITE_ROW)
     {
         ImageRecord rec;
@@ -656,7 +661,6 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
 
         if (m_portable)
         {
-            const LibraryPaths paths(m_path);
             rec.filePath = paths.resolve(rec.filePath);
             rec.tinyPath = paths.resolve(rec.tinyPath);
             rec.histPath = paths.resolve(rec.histPath);

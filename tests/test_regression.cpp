@@ -261,6 +261,15 @@ TEST_CASE("old libraries upgrade atomically once and remain usable after relocat
                            std::to_string(before[0].id)) == SQLITE_OK);
         deferred = true;
     }
+    SUBCASE("normalized path conflicts retain the complete legacy format")
+    {
+        // SQLite 的文本唯一性允许 /./ 别名，迁移不能让两个 ID 指向同一规范路径。
+        const auto original = u8path(before[0].filePath);
+        const auto alias = utf8(original.parent_path() / "." / original.filename());
+        REQUIRE(fixtureSql(workspace.dbPath(), "UPDATE images SET file_path='" + alias + "' WHERE id=" +
+                           std::to_string(before[1].id)) == SQLITE_OK);
+        deferred = true;
+    }
     SUBCASE("missing internal images do not block upgrade or health diagnostics")
     {
         REQUIRE(fs::remove(u8path(before[0].filePath)));
@@ -289,6 +298,7 @@ TEST_CASE("old libraries upgrade atomically once and remain usable after relocat
         if (deferred)
         {
             CHECK(upgraded.getMeta("path_format").empty());
+            CHECK_FALSE(fs::exists(workspace.libraryDir() / ".mosaicraft-backups"));
             RuntimeContext runtime(false);
             upgraded.reportPaths(runtime);
             CHECK(runtime.snapshot().warnings.count("library_path_upgrade_deferred") == 1);

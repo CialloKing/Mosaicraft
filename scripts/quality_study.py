@@ -1,7 +1,8 @@
-"""Explicit reproducible quality study; writes only under the selected study folder.
+"""Explicit reproducible quality study with private run snapshots.
 
 Production CLI/API and matching rules are unchanged. Requires NumPy, Pillow and
 Python OpenCV and Matplotlib; executables use the project's own OpenCV and scoring.
+Normal opening upgrades legacy source paths before the snapshot is fixed.
 """
 import argparse
 import hashlib
@@ -325,7 +326,8 @@ def export_data(root, report):
 def summary_plot(root, report):
     import matplotlib.pyplot as plt
     names = [c["id"] for c in report["manifest"]["cases"]]
-    summaries = {(r["case"], r["variant"]): r for r in report["summaries"] if r["backend"] == ("cuda" if "cuda" in BACKENDS else "cpu")}
+    backend = "cuda" if "cuda" in BACKENDS else "cpu"
+    summaries = {(r["case"], r["variant"]): r for r in report["summaries"] if r["backend"] == backend}
     x = np.arange(len(names))
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), layout="constrained")
     for i, variant in enumerate(("best", "top3", "recall600")):
@@ -348,7 +350,7 @@ def summary_plot(root, report):
     axes[2].set(title="Top-10 recall: 32 probes per target", ylabel="Recall (%)", ylim=(80, 101))
     axes[2].set_xticks(x, names, rotation=35, ha="right")
     axes[2].legend(fontsize=8)
-    fig.suptitle("Mosaicraft quality study | CUDA selections, common CPU scoring | 2026-11-10", fontsize=12)
+    fig.suptitle(f"Mosaicraft quality study | {backend.upper()} selections, common CPU scoring | 2026-11-10", fontsize=12)
     for extension in ("svg", "png"):
         path = root / "comparisons" / ("summary." + extension)
         fig.savefig(path, dpi=160)
