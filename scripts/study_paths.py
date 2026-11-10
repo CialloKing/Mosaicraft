@@ -116,9 +116,11 @@ def resource(database, value, mode):
         return None
     if mode == FORMAT:
         path = PureWindowsPath(value)
-        if absolute(value) or "\\" in value or ".." in path.parts:
+        if path.drive or path.root or "\\" in value or ".." in path.parts or value == ".":
             raise ValueError("Invalid portable library path")
         return Path(database).resolve().parent / value
+    if os.name != "nt" and PureWindowsPath(value).drive:
+        raise ValueError("Legacy library paths belong to another platform")
     return Path(value).resolve()
 
 

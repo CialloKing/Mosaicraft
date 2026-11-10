@@ -806,6 +806,8 @@ TEST_CASE("library paths are database relative and reject root escape")
     CHECK_THROWS_AS(paths.store((root.parent_path() / "outside.png").u8string()), std::invalid_argument);
     CHECK_THROWS_AS(paths.resolve("../outside.png"), std::invalid_argument);
     CHECK_FALSE(LibraryPaths::relative("C:/old/image.png"));
+    CHECK_FALSE(LibraryPaths::relative("C:relative.png"));
+    CHECK_FALSE(LibraryPaths::relative("/outside.png"));
     CHECK_FALSE(LibraryPaths::relative("features\\a.tiny"));
 #ifdef _WIN32
     auto alias = (root / "features" / "a.tiny").u8string();

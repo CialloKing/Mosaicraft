@@ -59,6 +59,9 @@ class StudyPaths(unittest.TestCase):
             connection.close()
             target, count = private_library(source / "mosaicraft.db", root / "study", images=True)
             self.assertEqual(count, 1)
+            for invalid in ("/outside.png", "C:relative.png", "../outside.png", "."):
+                with self.assertRaises(ValueError):
+                    resource(target, invalid, "db-relative-v1")
             with readonly_database(target) as connection:
                 paths = connection.execute("SELECT file_path,tiny_path,hist_path FROM images").fetchone()
                 self.assertTrue(all(resource(target, path, "db-relative-v1").exists() for path in paths))

@@ -39,7 +39,8 @@ bool LibraryPaths::relative(const std::string &value)
         return true;
     }
     const auto path = u8path(value);
-    if (path.is_absolute() || path.has_root_name() || foreignAbsolute(value) || value.find('\\') != std::string::npos)
+    // Windows 的 /file 有根目录却没有盘符，is_absolute() 不足以排除它。
+    if (path.has_root_directory() || path.has_root_name() || foreignAbsolute(value) || value.find('\\') != std::string::npos)
     {
         return false;
     }
