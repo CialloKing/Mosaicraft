@@ -60,3 +60,6 @@ Mosaicraft_*.tar.gz
 
 # Python benchmark helpers
 __pycache__/
+
+# Private research stays outside the repository
+/docs/research/
