@@ -135,8 +135,8 @@ Top-1 并非稳定的整体最优。例如 CUDA 人物场景的 SSIM 改善，�
 
 ```powershell
 cmake -S . -B build/quality-20261110 `
-  -DCMAKE_TOOLCHAIN_FILE=D:/C++project/SDK/vcpkg/scripts/buildsystems/vcpkg.cmake `
-  '-DCUDAToolkit_ROOT=C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5' `
+  "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
+  "-DCUDAToolkit_ROOT=$env:CUDAToolkit_ROOT" `
   -DCUDA_ARCH=sm_89
 cmake --build build/quality-20261110 --config Release `
   --target mosaicraft_match_benchmark mosaicraft_quality_benchmark --parallel 4
@@ -149,3 +149,5 @@ python scripts/quality_study.py `
 也可使用 `--phase prepare|runs|evaluate` 分阶段运行。成功的运行会保存检查点；二进制变化或旧运行摘要不匹配时需使用新的输出目录。默认输入目录为 `test_input_photos`，默认图库为 `library/180x320/mosaicraft.db`。
 
 工具源码为 [画质实验调度](../scripts/quality_study.py)、[固定种子生成入口](../scripts/benchmark_match.cpp)、[公共 CPU 评价与全库诊断](../scripts/benchmark_quality.cpp)。本次完整工作目录位于忽略目录 `build/quality-study-20261110`；可交付数值数据已归档到本文链接的 JSON，匿名编号/均色图和选图记录另打包为本地证据附件。
+
+本轮公开数据已去除机器位置，仅保留资源名称及原始测量摘要。它不是可执行的实验清单；原始证据另行备份，新实验使用本机参数绑定资源。字体与路径可搬移更新见 [团队协作与图库路径](PORTABLE_LIBRARIES.md)。

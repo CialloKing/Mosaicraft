@@ -94,7 +94,7 @@ python scripts/benchmark_bounded.py --exe build/Release/bin/mosaicraft_match_ben
 
 ```json
 {
-  "inputPath": "D:/private/target5.png",
+  "inputPath": "private/target5.png",
   "format": "png",
   "writeMode": "stream",
   "useGpu": true,

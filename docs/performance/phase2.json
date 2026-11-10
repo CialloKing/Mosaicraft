@@ -4503,5 +4503,7 @@
         "default": 46.73192160000326
       }
     }
-  ]
+  ],
+  "paths_redacted": true,
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
 }

@@ -728,5 +728,7 @@
     "256-image local sample, three measured runs; substantial full-build variance, no universal speedup claim",
     "image bytes exclude database and feature caches; original compression is retained",
     "source library was read only; independent inputs and fresh output folders for every command"
-  ]
+  ],
+  "paths_redacted": true,
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
 }

@@ -984,5 +984,7 @@
       "lbp": 0,
       "edge": 0
     }
-  }
+  },
+  "paths_redacted": true,
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
 }

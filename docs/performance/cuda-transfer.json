@@ -3005,5 +3005,7 @@
       43625
     ],
     "limitation": "Original and optimized CUDA binaries each produce the same two outputs. Fixed-feature scoring is bitwise identical; repeated LAB/Grid extraction retains the original floating atomic accumulation variation."
-  }
+  },
+  "paths_redacted": true,
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
 }

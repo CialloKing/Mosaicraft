@@ -3235,5 +3235,7 @@
       "normal_png_peak_memory_reduction_at_least_20_percent": true,
       "other_total_regression_at_most_5_percent": true
     }
-  }
+  },
+  "paths_redacted": true,
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
 }

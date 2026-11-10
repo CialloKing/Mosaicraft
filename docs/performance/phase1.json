@@ -1069,5 +1069,7 @@
         "=== Total": 8459.7
       }
     }
-  ]
+  ],
+  "paths_redacted": true,
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
 }

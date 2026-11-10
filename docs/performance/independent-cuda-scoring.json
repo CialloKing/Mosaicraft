@@ -8338,5 +8338,7 @@
     "independent-webui-cuda.log": "3de7830995588b7ee7343b3da125b99566eaf43a1de1e7ada35621085ad6d592",
     "independent-webui-cpu.log": "25be558dd366a18711f75a7b357729548df42d7ce48770fc6f387b59d582e229",
     "independent-memcheck.log": "82d4f5cc056576f4c2acf2c0cd700a28ca73accbc4d020bad0ddeb318f798cf2"
-  }
+  },
+  "paths_redacted": true,
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
 }

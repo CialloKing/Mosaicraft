@@ -63,5 +63,7 @@
     "main_image_readable": true,
     "error_reports_main_path": true
   },
-  "preview_pixel_and_row_buffer_bytes": 8455200
+  "preview_pixel_and_row_buffer_bytes": 8455200,
+  "paths_redacted": true,
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
 }

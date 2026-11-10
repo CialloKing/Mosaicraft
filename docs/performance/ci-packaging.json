@@ -32,7 +32,7 @@
         "opencvRebuilt": false,
         "vcpkgInstall": 3.2697754
       },
-      "toolchain": "GNU|11.4.0|/usr/bin/c++||cmake version 3.31.6vcpkg package management program version 2026-05-27-d5b6777d666efc1a7f491babfcdab37794c1ae3e\n\nSee LICENSE.txt for license information.\n",
+      "toolchain": "GNU|11.4.0|resources/c++||cmake version 3.31.6vcpkg package management program version 2026-05-27-d5b6777d666efc1a7f491babfcdab37794c1ae3e\n\nSee LICENSE.txt for license information.\n",
       "cacheKey": "ci-speed-20261108-874503e-linux-x64-09838df6458be33db1e9a32c26aa72a7045fa7072eb0e10210b0d94a92569de2-a0400024711b283056538ac19ced80b91a83c24c-a2ad66c52b14fe65338f380e6099d5d88b0b3c803e5d500de8b9ba46d3da7a99"
     },
     "windows-x64": {
@@ -61,7 +61,7 @@
         "opencvRebuilt": false,
         "vcpkgInstall": 8.4231634
       },
-      "toolchain": "MSVC|19.51.36260.0|C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe|10.0.26100.0|cmake version 4.4.5vcpkg package management program version 2026-05-27-d5b6777d666efc1a7f491babfcdab37794c1ae3e\r\n\r\nSee LICENSE.txt for license information.\r\n",
+      "toolchain": "MSVC|19.51.36260.0|tools/cl.exe|10.0.26100.0|cmake version 4.4.5vcpkg package management program version 2026-05-27-d5b6777d666efc1a7f491babfcdab37794c1ae3e\r\n\r\nSee LICENSE.txt for license information.\r\n",
       "cacheKey": "ci-speed-20261108-874503e-windows-x64-8e9d1bfa5e717e02ea4facdc8f7e2fb5ffe4a47b957f0dae6ac10c9b99844400-a0400024711b283056538ac19ced80b91a83c24c-4d8d5313ee1fecff96cc31615d54faf7590176c3d5d237d4f570d565a17c60fd"
     }
   },
@@ -182,7 +182,7 @@
     ]
   },
   "gpuRequiredNegative": {
-    "reason": "D:\\C++project\\Mosaicraft\\build\\validation-cuda\\Release\\bin\\mosaicraft_tests.exe failed with exit code 1. GPU validation requires an available CUDA device",
+    "reason": "resources/mosaicraft_tests.exe failed with exit code 1. GPU validation requires an available CUDA device",
     "gpuHidden": true,
     "rejected": true,
     "mode": "Required"
@@ -207,5 +207,7 @@
   "cudaCandidatePlatforms": [
     "windows-x64",
     "linux-x64"
-  ]
+  ],
+  "paths_redacted": true,
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
 }

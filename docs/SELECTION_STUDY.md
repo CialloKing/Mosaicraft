@@ -148,10 +148,10 @@ D 整体替换三个旧邻域惩罚，本轮不能单独分辨每个旧惩罚的
 - 原数据库前后 SHA-256 相同；全部原素材及独立特征的路径、尺寸、修改时间聚合摘要相同。没有逐文件前后内容哈希的声明。
 - 核心、回归测试通过；六个非法基准参数检查通过。
 
-本地证据包：`build/selection-study-20261110/selection-study-evidence.zip`，16,344,061 字节，SHA-256：
+本地证据包：`build/selection-study-20261110/selection-study-evidence.zip`，16,334,069 字节，SHA-256：
 
 ```text
-e7c54f466d9d679da91ea1d957b8db67757ef815cac523262304eab495554934
+a1a8f356efdc3c11dd0ae051b698e3b86116a2fa3e73b7ad38baeebb501ff752
 ```
 
 证据包包含完整 JSON、368 次运行的选图和诊断、数值图、合成全图和固定裁剪；原图库照片、原库马赛克和数据库均未打包。匿名图的 A～E 对应关系单独保存在 key.json，输入图位于 synthetic/targets。实验二进制及初始源码提交摘要保留在清单中；后续提交仅收紧实验指标可见范围、调整格式和修复图表编码，不改变选图算法。
@@ -162,8 +162,8 @@ e7c54f466d9d679da91ea1d957b8db67757ef815cac523262304eab495554934
 
 ```powershell
 cmake -S . -B build/quality-20261110 `
-  -DCMAKE_TOOLCHAIN_FILE=D:/C++project/SDK/vcpkg/scripts/buildsystems/vcpkg.cmake `
-  '-DCUDAToolkit_ROOT=C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5' `
+  "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
+  "-DCUDAToolkit_ROOT=$env:CUDAToolkit_ROOT" `
   -DCUDA_ARCH=sm_89
 cmake --build build/quality-20261110 --config Release `
   --target mosaicraft mosaicraft_match_benchmark mosaicraft_quality_benchmark `
@@ -181,3 +181,5 @@ python scripts/selection_study.py `
 也可使用 `--phase prepare|runs|verify|synthetic|evaluate` 分阶段执行。运行支持检查点；可执行文件、输入或配置变化时使用新输出目录，不能混入旧运行。基准程序另支持 `--strategy L|Q|D|QD|QDX`、`--epsilon`、`--diagnostics`、`--match-only` 和 `--batch-tiles`；这些都不是生产 CLI/API 参数。
 
 完整诊断包含每块的初始/最终最小误差、质量边界、候选数、半径 3 可用数、最终半径、相似图降级、查询 K 和扩搜耗时。选图下标通过评价器直接导出的 `Database::allRecords()` 素材 ID 映射解释。
+
+本轮公开数据已去除机器位置，仅保留资源名称及原始测量摘要。它不是可执行的实验清单；原始证据另行备份，新实验使用本机参数绑定资源。字体与路径可搬移更新见 [团队协作与图库路径](PORTABLE_LIBRARIES.md)。

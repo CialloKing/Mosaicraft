@@ -1311,5 +1311,7 @@
       "max_decoded_pixel_difference": 0.0
     },
     "cpu_jpg_max_pixel_difference": 0
-  }
+  },
+  "paths_redacted": true,
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
 }

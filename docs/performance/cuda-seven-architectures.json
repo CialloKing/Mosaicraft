@@ -615,5 +615,7 @@
     "nvidia_driver_package": "616.92",
     "cuda": "13.3.33",
     "opencv": "4.12.0"
-  }
+  },
+  "paths_redacted": true,
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
 }

@@ -1352,5 +1352,7 @@
       "output_sha256": "1c7ffd538e1f180da5b91498eb126cb5488873dda5751cb297da459f8c7adbf2",
       "output_bytes": 35806103
     }
-  ]
+  ],
+  "paths_redacted": true,
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
 }

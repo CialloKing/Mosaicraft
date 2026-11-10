@@ -18,7 +18,7 @@
       "manifest": {
         "snapshot_sha256": "30072868ffa1c7c50ba1c3c77d80cfc731e5bfd3eddbcbfe68016e73f1987588",
         "request": {
-          "inputPath": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\suite\\target.png",
+          "inputPath": "resources/target.png",
           "tileW": 8,
           "tileH": 8,
           "outW": 1280,
@@ -38,11 +38,11 @@
         "target_sha256": "a9b7f5c3c0e689088372668e98ec08c33f4df73f85bb3a77de10c3bb417efa89",
         "executables": {
           "baseline": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\baseline-cuda\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "38ff2e2bf15275b4533363c0f73772fbada7078f9d2d64596d06adf40f5ffecb"
           },
           "default": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\Release\\bin\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "4231b4f00dcd5fe49c0e804e7b67ac3728da89ce666eaf9e6c0c9a6498f3271a"
           }
         },
@@ -587,7 +587,7 @@
       "manifest": {
         "snapshot_sha256": "30072868ffa1c7c50ba1c3c77d80cfc731e5bfd3eddbcbfe68016e73f1987588",
         "request": {
-          "inputPath": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\suite\\target.png",
+          "inputPath": "resources/target.png",
           "tileW": 8,
           "tileH": 8,
           "outW": 1280,
@@ -607,11 +607,11 @@
         "target_sha256": "a9b7f5c3c0e689088372668e98ec08c33f4df73f85bb3a77de10c3bb417efa89",
         "executables": {
           "baseline": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\baseline-cuda\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "38ff2e2bf15275b4533363c0f73772fbada7078f9d2d64596d06adf40f5ffecb"
           },
           "default": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\Release\\bin\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "4231b4f00dcd5fe49c0e804e7b67ac3728da89ce666eaf9e6c0c9a6498f3271a"
           }
         },
@@ -1156,7 +1156,7 @@
       "manifest": {
         "snapshot_sha256": "59a3eeb220fea7494f7bd9bd068b52979910d463cf476558ae03ec6097541ac8",
         "request": {
-          "inputPath": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\suite\\target.png",
+          "inputPath": "resources/target.png",
           "tileW": 8,
           "tileH": 8,
           "outW": 1280,
@@ -1176,11 +1176,11 @@
         "target_sha256": "a9b7f5c3c0e689088372668e98ec08c33f4df73f85bb3a77de10c3bb417efa89",
         "executables": {
           "baseline": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\baseline-cuda\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "38ff2e2bf15275b4533363c0f73772fbada7078f9d2d64596d06adf40f5ffecb"
           },
           "default": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\Release\\bin\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "4231b4f00dcd5fe49c0e804e7b67ac3728da89ce666eaf9e6c0c9a6498f3271a"
           }
         },
@@ -1725,7 +1725,7 @@
       "manifest": {
         "snapshot_sha256": "59a3eeb220fea7494f7bd9bd068b52979910d463cf476558ae03ec6097541ac8",
         "request": {
-          "inputPath": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\suite\\target.png",
+          "inputPath": "resources/target.png",
           "tileW": 8,
           "tileH": 8,
           "outW": 1280,
@@ -1745,11 +1745,11 @@
         "target_sha256": "a9b7f5c3c0e689088372668e98ec08c33f4df73f85bb3a77de10c3bb417efa89",
         "executables": {
           "baseline": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\baseline-cuda\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "38ff2e2bf15275b4533363c0f73772fbada7078f9d2d64596d06adf40f5ffecb"
           },
           "default": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\Release\\bin\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "4231b4f00dcd5fe49c0e804e7b67ac3728da89ce666eaf9e6c0c9a6498f3271a"
           }
         },
@@ -2294,7 +2294,7 @@
       "manifest": {
         "snapshot_sha256": "30072868ffa1c7c50ba1c3c77d80cfc731e5bfd3eddbcbfe68016e73f1987588",
         "request": {
-          "inputPath": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\suite\\target.png",
+          "inputPath": "resources/target.png",
           "tileW": 8,
           "tileH": 8,
           "outW": 320,
@@ -2314,11 +2314,11 @@
         "target_sha256": "a9b7f5c3c0e689088372668e98ec08c33f4df73f85bb3a77de10c3bb417efa89",
         "executables": {
           "baseline": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\baseline-cuda\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "38ff2e2bf15275b4533363c0f73772fbada7078f9d2d64596d06adf40f5ffecb"
           },
           "default": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\Release\\bin\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "4231b4f00dcd5fe49c0e804e7b67ac3728da89ce666eaf9e6c0c9a6498f3271a"
           }
         },
@@ -2863,7 +2863,7 @@
       "manifest": {
         "snapshot_sha256": "30072868ffa1c7c50ba1c3c77d80cfc731e5bfd3eddbcbfe68016e73f1987588",
         "request": {
-          "inputPath": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\suite\\target.png",
+          "inputPath": "resources/target.png",
           "tileW": 8,
           "tileH": 8,
           "outW": 320,
@@ -2883,11 +2883,11 @@
         "target_sha256": "a9b7f5c3c0e689088372668e98ec08c33f4df73f85bb3a77de10c3bb417efa89",
         "executables": {
           "baseline": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\baseline-cuda\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "38ff2e2bf15275b4533363c0f73772fbada7078f9d2d64596d06adf40f5ffecb"
           },
           "default": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\Release\\bin\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "4231b4f00dcd5fe49c0e804e7b67ac3728da89ce666eaf9e6c0c9a6498f3271a"
           }
         },
@@ -3432,7 +3432,7 @@
       "manifest": {
         "snapshot_sha256": "59a3eeb220fea7494f7bd9bd068b52979910d463cf476558ae03ec6097541ac8",
         "request": {
-          "inputPath": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\suite\\target.png",
+          "inputPath": "resources/target.png",
           "tileW": 8,
           "tileH": 8,
           "outW": 320,
@@ -3452,11 +3452,11 @@
         "target_sha256": "a9b7f5c3c0e689088372668e98ec08c33f4df73f85bb3a77de10c3bb417efa89",
         "executables": {
           "baseline": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\baseline-cuda\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "38ff2e2bf15275b4533363c0f73772fbada7078f9d2d64596d06adf40f5ffecb"
           },
           "default": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\Release\\bin\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "4231b4f00dcd5fe49c0e804e7b67ac3728da89ce666eaf9e6c0c9a6498f3271a"
           }
         },
@@ -4001,7 +4001,7 @@
       "manifest": {
         "snapshot_sha256": "59a3eeb220fea7494f7bd9bd068b52979910d463cf476558ae03ec6097541ac8",
         "request": {
-          "inputPath": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\suite\\target.png",
+          "inputPath": "resources/target.png",
           "tileW": 8,
           "tileH": 8,
           "outW": 320,
@@ -4021,11 +4021,11 @@
         "target_sha256": "a9b7f5c3c0e689088372668e98ec08c33f4df73f85bb3a77de10c3bb417efa89",
         "executables": {
           "baseline": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\dynamic-cuda-validation\\baseline-cuda\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "38ff2e2bf15275b4533363c0f73772fbada7078f9d2d64596d06adf40f5ffecb"
           },
           "default": {
-            "path": "D:\\C++project\\Mosaicraft\\build\\Release\\bin\\mosaicraft_match_benchmark.exe",
+            "path": "tools/mosaicraft_match_benchmark.exe",
             "sha256": "4231b4f00dcd5fe49c0e804e7b67ac3728da89ce666eaf9e6c0c9a6498f3271a"
           }
         },
@@ -4558,5 +4558,7 @@
         }
       ]
     }
-  }
+  },
+  "paths_redacted": true,
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
 }

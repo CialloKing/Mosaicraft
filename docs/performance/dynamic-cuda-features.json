@@ -3312,5 +3312,7 @@
     "peak_rss_bytes"
   ],
   "real_snapshot_unchanged": true,
-  "performance_vs_final_build_note": "Performance manifests retain the measured executable hashes. Final CUDA build additionally handles allocation failure from cudaMemGetInfo before submission; kernel arithmetic and scheduling are unchanged."
+  "performance_vs_final_build_note": "Performance manifests retain the measured executable hashes. Final CUDA build additionally handles allocation failure from cudaMemGetInfo before submission; kernel arithmetic and scheduling are unchanged.",
+  "paths_redacted": true,
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
 }
