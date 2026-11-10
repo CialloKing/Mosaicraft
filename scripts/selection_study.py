@@ -23,7 +23,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from benchmark import gpu_memory, peak_rss
-from study_paths import REPO, configure, bind_database, private_library
+from study_paths import VERSIONS, REPO, configure, bind_database, private_library
 from quality_study import median_available, gpu_description
 from public_paths import public_report
 from quality_study import (SEEDS, command_output, digest, gray_ssim, load,
@@ -62,7 +62,7 @@ def prepare(args):
         target = inputs / f"{case['id']}.png"
         shutil.copy2((args.inputs / Path(case["input"]).name) if args.inputs else case["input"], target)
         cases.append(dict(case, input=str(target), sha256=digest(target)))
-    manifest = dict(schema=1, source_commit=command_output(["git", "rev-parse", "HEAD"]),
+    manifest = dict(schema=VERSIONS["studySchemaVersion"], source_commit=command_output(["git", "rev-parse", "HEAD"]),
                     executables=executables(args), snapshot=str(snapshot), snapshot_sha256=digest(snapshot),
                     previous_snapshot_sha256=digest(args.baseline_study / "snapshot.db"),
                     source_database=str(source), source_database_sha256=digest(source),
@@ -565,7 +565,7 @@ def main():
     configure(args)
     if args.phase == "synthetic":
         args.output_dir.mkdir(parents=True, exist_ok=True)
-        manifest = dict(schema=1, executables=executables(args), backends=BACKENDS,
+        manifest = dict(schema=VERSIONS["studySchemaVersion"], executables=executables(args), backends=BACKENDS,
                         flags=dict(colorAdjust=False, overlayStrength=0, adaptiveWeights=False,
                                    nativeTileW=45, nativeTileH=80, tileW=9, tileH=16, lRange=20))
     else:

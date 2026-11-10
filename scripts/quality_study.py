@@ -29,7 +29,7 @@ VARIANTS = {"baseline": (150, 10), "best": (150, 1),
             "top3": (150, 3), "recall600": (600, 1)}
 
 
-from study_paths import (REPO, configure, bind_database, digest, save, load, readonly_database,
+from study_paths import (VERSIONS, REPO, configure, bind_database, digest, save, load, readonly_database,
                          source_inventory, private_library, resource, path_mode)
 
 BACKENDS = ("cpu", "cuda")
@@ -93,7 +93,7 @@ def prepare(args):
         scale = 640 / max(width, height)
         cases.append(dict(id=name, input=str(path), width=max(1, round(width * scale)),
                           height=max(1, round(height * scale)), sha256=digest(path)))
-    manifest = dict(schema=1, created_date="2026-11-10", source_commit=command_output(["git", "rev-parse", "HEAD"]),
+    manifest = dict(schema=VERSIONS["studySchemaVersion"], created_date="2026-11-10", source_commit=command_output(["git", "rev-parse", "HEAD"]),
                     tools_commit=command_output(["git", "rev-parse", "HEAD"]),
                     tool_sources_sha256={"scripts/" + name: digest(Path(__file__).with_name(name)) for name in
                                          ("quality_study.py", "benchmark_match.cpp", "benchmark_quality.cpp")},
