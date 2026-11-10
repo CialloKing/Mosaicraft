@@ -1,6 +1,7 @@
 #include "Database.h"
 #include "LibraryPaths.h"
 #include "Version.h"
+#include "FeatureIO.h"
 #include <sqlite3.h>
 #include <charconv>
 #include <map>
@@ -38,7 +39,7 @@ void Database::closeConnection()
 bool Database::validateStoredPaths()
 {
     sqlite3_stmt *statement = nullptr;
-    if (sqlite3_prepare_v2(m_db, "SELECT file_path,tiny_path,lbp_path FROM images", -1, &statement, nullptr) != SQLITE_OK)
+    if (sqlite3_prepare_v2(m_db, "SELECT file_path,tiny_path,lbp_path,grid_lab,avg_l,avg_a,avg_b FROM images", -1, &statement, nullptr) != SQLITE_OK)
     {
         return false;
     }
@@ -50,6 +51,23 @@ bool Database::validateStoredPaths()
         {
             const auto *value = reinterpret_cast<const char *>(sqlite3_column_text(statement, column));
             valid = valid && (column != 0 || (value && *value)) && LibraryPaths::relative(value ? value : "");
+        }
+        const auto *grid = static_cast<const uint8_t *>(sqlite3_column_blob(statement, 3));
+        if (!grid || sqlite3_column_bytes(statement, 3) != 768)
+        {
+            valid = false;
+            continue;
+        }
+        std::array<float, 192> values{};
+        decodeFloats(grid, values.data(), values.size());
+        for (float value : values)
+        {
+            valid = valid && std::isfinite(value);
+        }
+        for (int column = 4; column < 7; ++column)
+        {
+            valid = valid && sqlite3_column_type(statement, column) != SQLITE_NULL &&
+                std::isfinite(sqlite3_column_double(statement, column));
         }
     }
     sqlite3_finalize(statement);

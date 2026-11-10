@@ -32,40 +32,40 @@ struct ImageRecord
     double aspectRatio = 0.0;       // 宽高比（srcWidth / srcHeight）
     int64_t fileSize = 0;           // 归一化后文件大小（字节）
 
-    // ——— 全局颜色特征（V1） ———
+    // ——— 全局颜色特征 ———
     double avgL = 0.0;              // 平均 LAB-L（亮度）
     double avgA = 0.0;              // 平均 LAB-A
     double avgB = 0.0;              // 平均 LAB-B
 
-    // ——— 亮度统计（V3） ———
+    // ——— 亮度统计 ———
     double meanBrightness = 0.0;    // 感知亮度均值
     double stdBrightness = 0.0;     // 感知亮度标准差
     double contrast = 0.0;          // RMS 对比度
 
-    // ——— 颜色统计（V3） ———
+    // ——— 颜色统计 ———
     double saturation = 0.0;        // 平均饱和度
     double colorVariance = 0.0;     // 颜色方差
 
-    // ——— 区域结构特征（V2） ———
-    // 4×4 LAB Grid：16 格 × 3 通道 = 48 个 float（192 字节 BLOB）
+    // ——— 区域结构特征 ———
+    // 8×8 LAB Grid：64 格 × 3 通道 = 192 个 float（768 字节 BLOB）
     // 为空表示尚未计算
     std::vector<float> gridLab;
 
-    // ——— TinyImage（V3） ———
+    // ——— TinyImage ———
     // 16×16 灰度图，存为独立文件
     std::string tinyPath;
 
-    // ——— 边缘特征（V4） ———
+    // ——— 边缘特征 ———
     double edgeDensity = 0.0;       // 边缘像素占比（0~1）
 
-    // ——— 纹理特征（V4 预留） ———
+    // ——— 纹理特征 ———
     std::string lbpPath;           // 直方图 / LBP / GLCM 特征文件路径
 
     // ——— 使用统计 ———
     int useCount = 0;               // 被匹配选用的次数
 
     // ——— 版本标记 ———
-    int featureVersion = 0;         // 特征计算版本号，递增便于增量更新
+    int featureVersion = 0;         // 特征版本，必须与图库元数据及当前程序一致
 };
 
 struct ImageColorOrder

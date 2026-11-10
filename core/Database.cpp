@@ -8,6 +8,7 @@
 #include "FeatureIO.h"
 
 #include <cstring>
+#include <algorithm>
 #include <iostream>
 #include <tuple>
 #include <unordered_map>
@@ -64,6 +65,11 @@ Database::Database(const std::string &dbPath, OpenMode mode) : m_db(nullptr)
     if (valid)
     {
         valid = exec("PRAGMA foreign_keys=ON");
+        if (valid && !m_new)
+        {
+            // 只在新版结构校验通过后恢复正常 WAL 配置，拒绝旧库时不写入。
+            valid = exec("PRAGMA journal_mode=WAL") && exec("PRAGMA synchronous=NORMAL");
+        }
     }
     if (!valid)
     {
@@ -116,30 +122,30 @@ bool Database::createTables(int featureWidth, int featureHeight)
             aspect_ratio    REAL DEFAULT 0.0,
             file_size       INTEGER DEFAULT 0,
 
-            -- 全局颜色特征（V1）
+            -- 全局颜色特征
             avg_l           REAL DEFAULT 0.0,
             avg_a           REAL DEFAULT 0.0,
             avg_b           REAL DEFAULT 0.0,
 
-            -- 亮度统计（V3）
+            -- 亮度统计
             mean_brightness REAL DEFAULT 0.0,
             std_brightness  REAL DEFAULT 0.0,
             contrast        REAL DEFAULT 0.0,
 
-            -- 颜色统计（V3）
+            -- 颜色统计
             saturation      REAL DEFAULT 0.0,
             color_variance  REAL DEFAULT 0.0,
 
-            -- 区域结构特征（V2）：8×8 LAB Grid = 192 float BLOB
+            -- 区域结构特征：8×8 LAB Grid = 192 float BLOB
             grid_lab         BLOB NOT NULL CHECK(length(grid_lab)=768),
 
-            -- TinyImage 16×16 灰度图文件路径（V3）
+            -- TinyImage 16×16 灰度图文件路径
             tiny_path       TEXT,
 
-            -- 边缘特征（V4）
+            -- 边缘特征
             edge_density    REAL DEFAULT 0.0,
 
-            -- 纹理特征文件路径（V4）
+            -- 纹理特征文件路径
             lbp_path       TEXT,
 
             -- 使用统计
@@ -196,6 +202,10 @@ bool Database::createTables(int featureWidth, int featureHeight)
         return false;
     }
     m_new = false;
+    if (!exec("PRAGMA journal_mode=WAL") || !exec("PRAGMA synchronous=NORMAL"))
+    {
+        return false;
+    }
     if (!m_exclusive)
     {
         m_access.reset();
@@ -254,6 +264,15 @@ bool Database::insertImage(const ImageRecord& rec)
 {
     if (!m_db)
     {
+        return false;
+    }
+    if (rec.featureVersion != kFeatureVersion || rec.gridLab.size() != 192 ||
+        !std::all_of(rec.gridLab.begin(), rec.gridLab.end(), [](float value)
+        {
+            return std::isfinite(value);
+        }) || !std::isfinite(rec.avgL) || !std::isfinite(rec.avgA) || !std::isfinite(rec.avgB))
+    {
+        m_error = "library_incompatible: invalid feature record";
         return false;
     }
 
@@ -345,7 +364,7 @@ bool Database::insertImage(const ImageRecord& rec)
     }
     else
     {
-        // 48 个 float → 192 字节
+        // 192 个 float → 768 字节
         std::size_t blobSize = rec.gridLab.size() * sizeof(float);
         sqlite3_bind_blob(stmt, idx++, rec.gridLab.data(),
                           static_cast<int>(blobSize), SQLITE_TRANSIENT);

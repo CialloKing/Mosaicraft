@@ -255,7 +255,7 @@ TEST_CASE("runtime diagnostics bound UTF-8 history and retain terminal errors")
     CHECK(nlohmann::json(truncateUtf8("中文路径", 8)).dump().size() > 0);
     RequestError error;
     MosaicRequest request;
-    CHECK_FALSE(parseMosaicRequestJson(R"({"tileW":"bad"})", request, error));
+    CHECK_FALSE(parseMosaicRequestJson(R"({"tileW":"bad","inputPath":"target.png"})", request, error));
     CHECK(error.field == "tileW");
 }
 
@@ -470,7 +470,7 @@ TEST_CASE("brightness API defaults and strength limits retain explicit opt in")
 {
     const char *bodies[] =
     {
-        "{}", "{\"colorStrength\":0.5}"
+        "{\"inputPath\":\"target.png\"}", "{\"inputPath\":\"target.png\",\"colorStrength\":0.5}"
     };
     for (const std::string body : bodies)
     {
@@ -478,7 +478,7 @@ TEST_CASE("brightness API defaults and strength limits retain explicit opt in")
         std::string error;
         REQUIRE(parseMosaicRequestJson(body, request, error));
         CHECK_FALSE(request.config.colorAdjust);
-        CHECK(request.config.colorStrength == (body == "{}" ? 0.04 : 0.5));
+        CHECK(request.config.colorStrength == (body.find("colorStrength") == std::string::npos ? 0.04 : 0.5));
     }
     const double strengths[] =
     {
@@ -489,7 +489,7 @@ TEST_CASE("brightness API defaults and strength limits retain explicit opt in")
         MosaicRequest request;
         std::string error;
         const bool valid = strength >= 0.0 && strength <= 0.5;
-        REQUIRE(parseMosaicRequestJson("{\"colorAdjust\":true,\"colorStrength\":" + std::to_string(strength) + "}",
+        REQUIRE(parseMosaicRequestJson("{\"inputPath\":\"target.png\",\"colorAdjust\":true,\"colorStrength\":" + std::to_string(strength) + "}",
                                      request, error) == valid);
         if (valid)
         {
@@ -503,7 +503,7 @@ TEST_CASE("preview remains opt in and rejects tiled output before generation")
 {
     MosaicRequest request;
     std::string error;
-    REQUIRE(parseMosaicRequestJson("{}", request, error));
+    REQUIRE(parseMosaicRequestJson(R"({"inputPath":"target.png"})", request, error));
     CHECK_FALSE(request.config.generatePreview);
     request.config.generatePreview = true;
     CHECK(validateMosaicRequest(request, error));
@@ -520,21 +520,21 @@ TEST_CASE("overlay API defaults bounds and nonfinite service options")
 {
     MosaicRequest request;
     std::string error;
-    REQUIRE(parseMosaicRequestJson("{}", request, error));
+    REQUIRE(parseMosaicRequestJson(R"({"inputPath":"target.png"})", request, error));
     CHECK(request.config.overlayStrength == 0);
     for (double strength : {0.0, 0.25, 1.0, -0.01, 1.01})
     {
         const bool valid = strength >= 0 && strength <= 1;
         request = {};
-        REQUIRE(parseMosaicRequestJson("{\"overlayStrength\":" + std::to_string(strength) + "}", request, error) == valid);
+        REQUIRE(parseMosaicRequestJson("{\"inputPath\":\"target.png\",\"overlayStrength\":" + std::to_string(strength) + "}", request, error) == valid);
         if (valid)
         {
             CHECK(request.config.overlayStrength == strength);
             CHECK_FALSE(request.config.colorAdjust);
         }
     }
-    for (const std::string body : {R"({"overlayStrength":"NaN"})", R"({"overlayStrength":"Infinity"})",
-                                   R"({"overlayStrength":true})"})
+    for (const std::string body : {R"({"overlayStrength":"NaN","inputPath":"target.png"})", R"({"overlayStrength":"Infinity","inputPath":"target.png"})",
+                                   R"({"overlayStrength":true,"inputPath":"target.png"})"})
     {
         CHECK_FALSE(parseMosaicRequestJson(body, request, error));
     }
@@ -1044,9 +1044,6 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(std::find(mosaicJob->requestFields.begin(), mosaicJob->requestFields.end(),
         "inputPath") != mosaicJob->requestFields.end());
     CHECK(mosaicJob->requiredFields == std::vector<std::string>{"inputPath"});
-    CHECK(mosaicJob->fieldAliases.at("inputPath") == std::vector<std::string>{"input"});
-    CHECK(mosaicJob->fieldAliases.at("dbPath") == std::vector<std::string>{"db"});
-    CHECK(mosaicJob->fieldAliases.at("outputPath") == std::vector<std::string>{"output"});
     CHECK(mosaicJob->successStatus == 202);
     CHECK(mosaicJob->responseKey == "job");
     CHECK(mosaicJob->errorStatuses == std::vector<int>{400, 500});
@@ -1063,10 +1060,9 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(dbStats->method == "GET|POST");
     CHECK(dbStats->methods == std::vector<std::string>{"GET", "POST"});
     CHECK(dbStats->httpPattern == "/api/db/stats");
-    CHECK(dbStats->queryKeys == std::vector<std::string>{"db"});
+    CHECK(dbStats->queryKeys == std::vector<std::string>{"dbPath"});
     CHECK(std::find(dbStats->acceptedQueryKeys.begin(), dbStats->acceptedQueryKeys.end(),
         "dbPath") != dbStats->acceptedQueryKeys.end());
-    CHECK(dbStats->fieldAliases.at("dbPath") == std::vector<std::string>{"db"});
     CHECK(dbStats->successStatus == 200);
     CHECK(dbStats->responseKey == "stats");
     CHECK(dbStats->errorStatuses == std::vector<int>{400, 500});
@@ -1077,7 +1073,7 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(jobStatus->queryKeys.empty());
     CHECK(jobStatus->requiredFields == std::vector<std::string>{"id"});
     CHECK(jobStatus->errorStatuses == std::vector<int>{404});
-    CHECK(jobStatus->errorShapes == std::vector<std::string>{"apiError"});
+    CHECK(jobStatus->errorShapes == std::vector<std::string>{"serviceResult"});
     CHECK_FALSE(jobStatus->sideEffects);
 
     auto cancelJob = std::find_if(endpoints.begin(), endpoints.end(),
@@ -1087,31 +1083,13 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     REQUIRE(cancelJob != endpoints.end());
     CHECK(cancelJob->errorStatuses == std::vector<int>{404, 409});
     CHECK(std::find(cancelJob->errorShapes.begin(), cancelJob->errorShapes.end(),
-        "jobError") != cancelJob->errorShapes.end());
+        "serviceResult") != cancelJob->errorShapes.end());
     CHECK(cancelJob->errorResponseKeys == std::vector<std::string>{"job"});
     REQUIRE(cancelJob->errorResponses.size() == 2);
     CHECK(cancelJob->errorResponses[1].status == 409);
     CHECK(cancelJob->errorResponses[1].responseKey == "job");
 
-    auto legacyRun = findEndpoint("/api/run");
-    REQUIRE(legacyRun != endpoints.end());
-    CHECK(legacyRun->operation == ApiOperation::LegacyRunDisabled);
-    CHECK(legacyRun->requestShape == ApiRequestShape::LegacyCommand);
-    CHECK(legacyRun->requiredFields == std::vector<std::string>{"command"});
-    CHECK(legacyRun->successStatus == 200);
-    CHECK(legacyRun->responseKey.empty());
-    CHECK(legacyRun->errorStatuses == std::vector<int>{404});
-    CHECK(legacyRun->sideEffects);
-    CHECK(legacyRun->longRunning);
-    CHECK(legacyRun->legacy);
-    CHECK_FALSE(legacyRun->enabled);
-
-    auto enabledEndpoints = apiEndpointMetadata();
-    auto enabledLegacyRun = std::find_if(enabledEndpoints.begin(), enabledEndpoints.end(),
-        [](const ApiEndpointMetadata& endpoint) { return endpoint.path == "/api/run"; });
-    REQUIRE(enabledLegacyRun != enabledEndpoints.end());
-    CHECK(enabledLegacyRun->enabled);
-
+    CHECK(findEndpoint("/api/run") == endpoints.end());
     CHECK(std::string(apiOperationName(ApiOperation::DatabaseUsageExport)) == "databaseUsageExport");
     CHECK(std::string(apiRequestShapeName(ApiRequestShape::JobId)) == "jobId");
 }
@@ -1146,30 +1124,7 @@ TEST_CASE("API JSON serialization is shared")
     REQUIRE(endpointsJson.is_array());
     auto legacy = std::find_if(endpointsJson.begin(), endpointsJson.end(),
         [](const nlohmann::json& endpoint) { return endpoint["path"] == "/api/run"; });
-    REQUIRE(legacy != endpointsJson.end());
-    CHECK((*legacy)["operation"].get<std::string>() == "legacyRunDisabled");
-    CHECK((*legacy)["methods"].size() == 1);
-    CHECK((*legacy)["methods"][0].get<std::string>() == "POST");
-    CHECK((*legacy)["httpPattern"].get<std::string>() == "/api/run");
-    CHECK((*legacy)["queryKeys"].empty());
-    CHECK((*legacy)["acceptedQueryKeys"].empty());
-    CHECK((*legacy)["successStatus"].get<int>() == 200);
-    CHECK((*legacy)["responseKey"].get<std::string>().empty());
-    CHECK((*legacy)["errorStatuses"].size() == 1);
-    CHECK((*legacy)["errorStatuses"][0].get<int>() == 404);
-    CHECK((*legacy)["errorShapes"][0].get<std::string>() == "apiError");
-    CHECK((*legacy)["errorResponseKeys"].empty());
-    REQUIRE((*legacy)["errorResponses"].size() == 1);
-    CHECK((*legacy)["errorResponses"][0]["status"].get<int>() == 404);
-    CHECK((*legacy)["errorResponses"][0]["shape"].get<std::string>() == "apiError");
-    CHECK((*legacy)["fieldAliases"].empty());
-    CHECK((*legacy)["requiredFields"].size() == 1);
-    CHECK((*legacy)["requiredFields"][0].get<std::string>() == "command");
-    CHECK((*legacy)["sideEffects"].get<bool>());
-    CHECK((*legacy)["longRunning"].get<bool>());
-    CHECK((*legacy)["requestShape"].get<std::string>() == "legacyCommand");
-    CHECK((*legacy)["legacy"].get<bool>());
-    CHECK_FALSE((*legacy)["enabled"].get<bool>());
+    CHECK(legacy == endpointsJson.end());
 
     auto infoJson = apiInfoToJson("MosaicraftWebUI");
     CHECK(infoJson["version"].get<std::string>() == kVersion);
@@ -1182,17 +1137,14 @@ TEST_CASE("API JSON serialization is shared")
     CHECK(infoJson["api"]["contractMajorVersion"].get<int>() == kApiMajorVersion);
     CHECK(infoJson["api"]["compatibility"].get<std::string>() == "stable");
     CHECK(infoJson["api"]["stable"].get<bool>());
-    CHECK_FALSE(infoJson["api"]["legacyRunEnabled"].get<bool>());
-    CHECK(infoJson["api"]["endpointCount"].get<int>() == 19);
+    CHECK(infoJson["api"]["endpointCount"].get<int>() == apiEndpointMetadata().size());
     CHECK(infoJson["api"]["enabledEndpointCount"].get<int>() == 18);
-    CHECK(infoJson["api"]["legacyEndpointCount"].get<int>() == 1);
     CHECK(infoJson["api"]["metadataValid"].get<bool>());
     CHECK(infoJson["api"]["metadataErrors"].empty());
 
     auto enabledInfoJson = apiInfoToJson("MosaicraftWebUI");
-    CHECK(enabledInfoJson["api"]["legacyRunEnabled"].get<bool>());
-    CHECK(enabledInfoJson["api"]["endpointCount"].get<int>() == 19);
-    CHECK(enabledInfoJson["api"]["enabledEndpointCount"].get<int>() == 19);
+    CHECK(enabledInfoJson["api"]["endpointCount"].get<int>() == apiEndpointMetadata().size());
+    CHECK(enabledInfoJson["api"]["enabledEndpointCount"].get<int>() == apiEndpointMetadata().size());
     CHECK(enabledInfoJson["api"]["metadataValid"].get<bool>());
 }
 
@@ -1274,7 +1226,7 @@ TEST_CASE("API request parser builds mosaic requests")
     std::string error;
 
     CHECK(parseMosaicRequestJson(
-        R"({"inputPath":"in.jpg","dbPath":"db.sqlite","outputPath":"out.png","quality":95,"writeMode":"stream","deepZoom":true,"cpu":true,"outputTile":"90x160"})",
+        R"({"inputPath":"in.jpg","dbPath":"db.sqlite","outputPath":"out.png","quality":95,"writeMode":"stream","deepZoom":true,"useGpu":false,"nativeTileW":90,"nativeTileH":160})",
         request,
         error));
 
@@ -1290,41 +1242,19 @@ TEST_CASE("API request parser builds mosaic requests")
     CHECK(request.config.nativeTileH == 160);
 }
 
-TEST_CASE("API request parser follows endpoint field aliases")
+TEST_CASE("API request parser rejects aliases unknown fields duplicates and incorrect types")
 {
-    MosaicRequest mosaic;
-    std::string error;
-    CHECK(parseMosaicRequestJson(
-        R"({"input":"target.jpg","db":"library.db","output":"out.webp","outputFormat":"webp","jpegQuality":75,"topNRandom":7,"penalty":0.2,"tiledOutput":true,"deepzoom":true})",
-        mosaic,
-        error));
-    CHECK(mosaic.inputPath == "target.jpg");
-    CHECK(mosaic.dbPath == "library.db");
-    CHECK(mosaic.outputPath == "out.webp");
-    CHECK(mosaic.config.outputFormat == "webp");
-    CHECK(mosaic.config.jpegQuality == 75);
-    CHECK(mosaic.config.topNRandom == 7);
-    CHECK(mosaic.config.usePenalty == doctest::Approx(0.2));
-    CHECK(mosaic.config.tiledOutput);
-    CHECK(mosaic.config.deepZoom);
-
-    BuildRequest build;
-    error.clear();
-    CHECK(parseBuildRequestJson(
-        R"({"input":"photos","output":"library-out","db":"library.db","append":true,"force":true})",
-        build,
-        error));
-    CHECK(build.inputDir == "photos");
-    CHECK(build.outputDir == "library-out");
-    CHECK(build.dbPath == "library.db");
-    CHECK(build.appendMode);
-    CHECK(build.forceMode);
-
-    DatabaseUsageRequest usage;
-    error.clear();
-    CHECK(applyDatabaseUsageRequestJson(R"({"db":"usage.db","unused":true})", usage, error));
-    CHECK(usage.dbPath == "usage.db");
-    CHECK(usage.showUnused);
+    for (const auto &body : {
+        R"({"input":"x"})", R"({"inputPath":"x","db":"old.db"})",
+        R"({"inputPath":"x","cpu":true})", R"({"inputPath":"x","topNrandom":3})",
+        R"({"inputPath":"x","tileW":9.0})", R"({"inputPath":"x","useGpu":1})",
+        R"({"inputPath":null})", R"({"inputPath":"x","inputPath":"y"})"})
+    {
+        MosaicRequest request;
+        RequestError error;
+        CHECK_FALSE(parseMosaicRequestJson(body, request, error));
+        CHECK_FALSE(error.empty());
+    }
 }
 
 TEST_CASE("API request parser reports invalid fields")
@@ -1332,44 +1262,44 @@ TEST_CASE("API request parser reports invalid fields")
     MosaicRequest request;
     std::string error;
 
-    CHECK_FALSE(parseMosaicRequestJson(R"({"writeMode":"invalid"})", request, error));
+    CHECK_FALSE(parseMosaicRequestJson(R"({"writeMode":"invalid","inputPath":"target.png"})", request, error));
     CHECK(error == "writeMode must be auto, stream, or batch");
 
     error.clear();
     BuildRequest build;
-    CHECK_FALSE(parseBuildRequestJson(R"({"threads":"many"})", build, error));
+    CHECK_FALSE(parseBuildRequestJson(R"({"threads":"many","inputDir":"photos"})", build, error));
     CHECK(error == "threads must be a number");
 
     error.clear();
-    CHECK_FALSE(parseMosaicRequestJson(R"({"outputTile":"90x160bad"})", request, error));
-    CHECK(error == "outputTile must use WxH format");
+    CHECK_FALSE(parseMosaicRequestJson(R"({"nativeTileW":"90x160bad","inputPath":"target.png"})", request, error));
+    CHECK(error == "nativeTileW must be a number");
 
     error.clear();
-    CHECK_FALSE(parseBuildRequestJson(R"({"normalizeSize":"180xbad"})", build, error));
-    CHECK(error == "normalizeSize must use WxH format");
+    CHECK_FALSE(parseBuildRequestJson(R"({"normalizeWidth":"180xbad","inputDir":"photos"})", build, error));
+    CHECK(error == "normalizeWidth must be a number");
 
     error.clear();
-    CHECK_FALSE(parseMosaicRequestJson(R"({"tileW":9.5})", request, error));
-    CHECK(error == "tileW must be an integer");
+    CHECK_FALSE(parseMosaicRequestJson(R"({"tileW":9.5,"inputPath":"target.png"})", request, error));
+    CHECK(error == "tileW must be a number");
 
     error.clear();
-    CHECK_FALSE(parseMosaicRequestJson(R"({"tileW":3})", request, error));
+    CHECK_FALSE(parseMosaicRequestJson(R"({"tileW":3,"inputPath":"target.png"})", request, error));
     CHECK(error == "tileW must be at least 4");
 
     error.clear();
-    CHECK_FALSE(parseMosaicRequestJson(R"({"quality":120})", request, error));
+    CHECK_FALSE(parseMosaicRequestJson(R"({"quality":120,"inputPath":"target.png"})", request, error));
     CHECK(error == "quality must be between 1 and 100");
 
     error.clear();
-    CHECK_FALSE(parseMosaicRequestJson(R"({"pngLevel":0})", request, error));
+    CHECK_FALSE(parseMosaicRequestJson(R"({"pngLevel":0,"inputPath":"target.png"})", request, error));
     CHECK(error == "pngLevel must be between 1 and 9");
 
     error.clear();
-    CHECK_FALSE(parseMosaicRequestJson(R"({"colorStrength":0.75})", request, error));
+    CHECK_FALSE(parseMosaicRequestJson(R"({"colorStrength":0.75,"inputPath":"target.png"})", request, error));
     CHECK(error == "colorStrength must be between 0.000000 and 0.500000");
 
     error.clear();
-    CHECK_FALSE(parseBuildRequestJson(R"({"threads":-1})", build, error));
+    CHECK_FALSE(parseBuildRequestJson(R"({"threads":-1,"inputDir":"photos"})", build, error));
     CHECK(error == "threads must be at least 0");
 }
 
@@ -1400,38 +1330,16 @@ TEST_CASE("API request parser applies database and inspect requests")
     CHECK(inspect.dbPath == "library.db");
 }
 
-TEST_CASE("API request parser merges query and JSON body")
+TEST_CASE("API request parser accepts disjoint query fields and rejects duplicate sources")
 {
     std::string error;
-
     DatabaseUsageRequest usage;
-    CHECK(parseDatabaseUsageRequestApi(
-        {{"db", "query.db"}, {"limit", "2"}, {"unused", "1"}},
-        R"({"dbPath":"body.db","limit":12,"showUnused":false})",
-        usage,
-        error));
-    CHECK(usage.dbPath == "body.db");
+    REQUIRE(parseDatabaseUsageRequestApi({{"dbPath", "query.db"}}, R"({"limit":12,"showUnused":false})", usage, error));
+    CHECK(usage.dbPath == "query.db");
     CHECK(usage.limit == 12);
     CHECK_FALSE(usage.showUnused);
-
-    DatabasePurgeRequest purge;
-    CHECK(parseDatabasePurgeRequestApi(
-        {{"db", "query.db"}, {"dryRun", "0"}, {"confirm", "1"}},
-        "",
-        purge,
-        error));
-    CHECK(purge.dbPath == "query.db");
-    CHECK_FALSE(purge.dryRun);
-    CHECK(purge.confirm);
-
-    InspectRequest inspect;
-    CHECK(parseInspectRequestApi(
-        {{"input", "query.jpg"}, {"db", "query.db"}},
-        R"({"imagePath":"body.jpg"})",
-        inspect,
-        error));
-    CHECK(inspect.imagePath == "body.jpg");
-    CHECK(inspect.dbPath == "query.db");
+    error.clear();
+    CHECK_FALSE(parseDatabaseUsageRequestApi({{"dbPath", "query.db"}}, R"({"dbPath":"body.db"})", usage, error));
 }
 
 TEST_CASE("API request parser accepts canonical query keys from metadata")
@@ -1440,7 +1348,7 @@ TEST_CASE("API request parser accepts canonical query keys from metadata")
 
     DatabaseUsageRequest usage;
     CHECK(parseDatabaseUsageRequestApi(
-        {{"dbPath", "canonical.db"}, {"limit", "2"}, {"showUnused", "1"}},
+        {{"dbPath", "canonical.db"}, {"limit", "2"}, {"showUnused", "true"}},
         "",
         usage,
         error));
@@ -1450,7 +1358,7 @@ TEST_CASE("API request parser accepts canonical query keys from metadata")
 
     DatabaseUsageExportRequest exportRequest;
     CHECK(parseDatabaseUsageExportRequestApi(
-        {{"dbPath", "export.db"}, {"outputDir", "used"}, {"confirm", "1"}},
+        {{"dbPath", "export.db"}, {"outputDir", "used"}, {"confirm", "true"}},
         "",
         exportRequest,
         error));
@@ -1474,7 +1382,7 @@ TEST_CASE("API request parser rejects invalid query values")
 
     DatabaseUsageRequest usage;
     CHECK_FALSE(parseDatabaseUsageRequestApi(
-        {{"db", "usage.db"}, {"limit", "bad"}},
+        {{"dbPath", "usage.db"}, {"limit", "bad"}},
         "",
         usage,
         error));
@@ -1482,7 +1390,7 @@ TEST_CASE("API request parser rejects invalid query values")
 
     error.clear();
     CHECK_FALSE(parseDatabaseUsageRequestApi(
-        {{"db", "usage.db"}, {"limit", "0"}},
+        {{"dbPath", "usage.db"}, {"limit", "0"}},
         "",
         usage,
         error));
@@ -1490,7 +1398,7 @@ TEST_CASE("API request parser rejects invalid query values")
 
     error.clear();
     CHECK_FALSE(parseDatabaseUsageRequestApi(
-        {{"db", "usage.db"}, {"unused", "maybe"}},
+        {{"dbPath", "usage.db"}, {"showUnused", "maybe"}},
         "",
         usage,
         error));
@@ -1499,7 +1407,7 @@ TEST_CASE("API request parser rejects invalid query values")
     DatabaseUsageExportRequest exportRequest;
     error.clear();
     CHECK_FALSE(parseDatabaseUsageExportRequestApi(
-        {{"db", "usage.db"}, {"output", "used"}, {"confirm", "maybe"}},
+        {{"dbPath", "usage.db"}, {"outputDir", "used"}, {"confirm", "maybe"}},
         "",
         exportRequest,
         error));
@@ -1508,7 +1416,7 @@ TEST_CASE("API request parser rejects invalid query values")
     DatabasePurgeRequest purge;
     error.clear();
     CHECK_FALSE(parseDatabasePurgeRequestApi(
-        {{"db", "purge.db"}, {"dryRun", "sometimes"}},
+        {{"dbPath", "purge.db"}, {"dryRun", "sometimes"}},
         "",
         purge,
         error));
@@ -1521,24 +1429,19 @@ TEST_CASE("API handlers expose discovery and health without HTTP")
     CHECK(info.status == 200);
     CHECK(info.body["ok"].get<bool>());
     CHECK(info.body["info"]["entry"].get<std::string>() == "MosaicraftWebUI");
-    CHECK_FALSE(info.body["info"]["api"]["legacyRunEnabled"].get<bool>());
 
     auto endpoints = apiEndpoints();
     CHECK(endpoints.status == 200);
     CHECK(endpoints.body["ok"].get<bool>());
     auto legacy = std::find_if(endpoints.body["endpoints"].begin(), endpoints.body["endpoints"].end(),
         [](const nlohmann::json& endpoint) { return endpoint["path"] == "/api/run"; });
-    REQUIRE(legacy != endpoints.body["endpoints"].end());
-    CHECK((*legacy)["enabled"].get<bool>());
+    CHECK(legacy == endpoints.body["endpoints"].end());
 
     auto ping = apiPing();
     CHECK(ping.status == 200);
     CHECK(ping.body["ok"].get<bool>());
     CHECK(ping.body["message"].get<std::string>() == "pong");
 
-    CHECK(legacyDisabled.status == 404);
-    CHECK_FALSE(legacyDisabled.body["ok"].get<bool>());
-    CHECK(legacyDisabled.body["message"].get<std::string>().find("disabled") != std::string::npos);
 }
 
 TEST_CASE("API request dispatcher routes operations without HTTP")
@@ -1566,7 +1469,7 @@ TEST_CASE("API request dispatcher routes operations without HTTP")
 
     auto badUsage = handleApiRequest(
         apiQueryRequest(ApiOperation::DatabaseUsage,
-            {{"db", "__dispatch_status_test__.db"}},
+            {{"dbPath", "__dispatch_status_test__.db"}},
             R"({"limit":"bad"})"),
         manager);
     CHECK(badUsage.status == 400);
@@ -1576,26 +1479,25 @@ TEST_CASE("API request dispatcher routes operations without HTTP")
 TEST_CASE("API request factories set semantic fields")
 {
     ApiRequestContext context;
-    context.query = {{"db", "library.db"}};
+    context.query = {{"dbPath", "library.db"}};
     context.body = "body";
     context.id = "job-1";
     context.entryName = "MosaicraftWebUI";
 
     auto operation = apiOperationRequest(ApiOperation::DatabaseUsage, std::move(context));
     CHECK(operation.operation == ApiOperation::DatabaseUsage);
-    CHECK(operation.query.at("db") == "library.db");
+    CHECK(operation.query.at("dbPath") == "library.db");
     CHECK(operation.body == "body");
     CHECK(operation.id == "job-1");
-    CHECK(operation.legacyRunEnabled);
     CHECK(std::string(operation.entryName) == "MosaicraftWebUI");
 
     auto body = apiBodyRequest(ApiOperation::Mosaic, "body");
     CHECK(body.operation == ApiOperation::Mosaic);
     CHECK(body.body == "body");
 
-    auto query = apiQueryRequest(ApiOperation::DatabaseUsage, {{"db", "library.db"}}, "json");
+    auto query = apiQueryRequest(ApiOperation::DatabaseUsage, {{"dbPath", "library.db"}}, "json");
     CHECK(query.operation == ApiOperation::DatabaseUsage);
-    CHECK(query.query.at("db") == "library.db");
+    CHECK(query.query.at("dbPath") == "library.db");
     CHECK(query.body == "json");
 
     auto job = apiJobRequest(ApiOperation::CancelJob, "job-1");
@@ -1604,7 +1506,6 @@ TEST_CASE("API request factories set semantic fields")
 
     auto info = apiInfoRequest("MosaicraftWebUI");
     CHECK(info.operation == ApiOperation::Info);
-    CHECK(info.legacyRunEnabled);
     CHECK(std::string(info.entryName) == "MosaicraftWebUI");
 }
 
@@ -1619,22 +1520,20 @@ TEST_CASE("API endpoint request factory applies endpoint context")
     auto infoEndpoint = findEndpoint("/api/info");
     REQUIRE(infoEndpoint != endpoints.end());
     ApiRequestContext infoContext;
-    infoContext.legacyRunEnabled = true;
     infoContext.entryName = "CustomEntry";
     auto info = apiEndpointRequest(*infoEndpoint, std::move(infoContext));
     CHECK(info.operation == ApiOperation::Info);
-    CHECK(info.legacyRunEnabled);
     CHECK(std::string(info.entryName) == "CustomEntry");
 
     auto usageEndpoint = findEndpoint("/api/db/usage");
     REQUIRE(usageEndpoint != endpoints.end());
     ApiRequestContext usageContext;
-    usageContext.query = {{"db", "library.db"}};
-    usageContext.body = R"({"limit":3})";
+    usageContext.query = {{"dbPath", "library.db"}};
+    usageContext.body = R"({"limit":3,"inputPath":"target.png"})";
     auto usage = apiEndpointRequest(*usageEndpoint, std::move(usageContext));
     CHECK(usage.operation == ApiOperation::DatabaseUsage);
-    CHECK(usage.query.at("db") == "library.db");
-    CHECK(usage.body == R"({"limit":3})");
+    CHECK(usage.query.at("dbPath") == "library.db");
+    CHECK(usage.body == R"({"limit":3,"inputPath":"target.png"})");
 
     auto jobEndpoint = findEndpoint("/api/jobs/{id}");
     REQUIRE(jobEndpoint != endpoints.end());
@@ -1648,33 +1547,33 @@ TEST_CASE("API endpoint request factory applies endpoint context")
 TEST_CASE("API operation query keys are centralized")
 {
     auto usageKeyList = apiQueryKeyList(ApiOperation::DatabaseUsage);
-    CHECK(usageKeyList == std::vector<std::string>{"db", "limit", "unused"});
+    CHECK(usageKeyList == std::vector<std::string>{"dbPath", "limit", "showUnused"});
 
     auto usageKeys = apiQueryKeys(ApiOperation::DatabaseUsage);
-    CHECK(std::find(usageKeys.begin(), usageKeys.end(), std::string("db")) != usageKeys.end());
+    CHECK(std::find(usageKeys.begin(), usageKeys.end(), std::string("dbPath")) != usageKeys.end());
     CHECK(std::find(usageKeys.begin(), usageKeys.end(), std::string("limit")) != usageKeys.end());
-    CHECK(std::find(usageKeys.begin(), usageKeys.end(), std::string("unused")) != usageKeys.end());
+    CHECK(std::find(usageKeys.begin(), usageKeys.end(), std::string("showUnused")) != usageKeys.end());
 
     auto exportKeys = apiQueryKeys(ApiOperation::DatabaseUsageExport);
-    CHECK(std::find(exportKeys.begin(), exportKeys.end(), std::string("output")) != exportKeys.end());
+    CHECK(std::find(exportKeys.begin(), exportKeys.end(), std::string("outputDir")) != exportKeys.end());
     CHECK(std::find(exportKeys.begin(), exportKeys.end(), std::string("confirm")) != exportKeys.end());
 
     auto inspectKeys = apiQueryKeys(ApiOperation::Inspect);
-    CHECK(std::find(inspectKeys.begin(), inspectKeys.end(), std::string("input")) != inspectKeys.end());
-    CHECK(std::find(inspectKeys.begin(), inspectKeys.end(), std::string("db")) != inspectKeys.end());
+    CHECK(std::find(inspectKeys.begin(), inspectKeys.end(), std::string("imagePath")) != inspectKeys.end());
+    CHECK(std::find(inspectKeys.begin(), inspectKeys.end(), std::string("dbPath")) != inspectKeys.end());
 
     CHECK(apiQueryKeys(ApiOperation::Ping).empty());
     CHECK(apiQueryKeyList(ApiOperation::Ping).empty());
     CHECK(apiQueryKeys(ApiOperation::SubmitBuildJob).empty());
 
     auto acceptedUsageKeys = apiAcceptedQueryKeyList(ApiOperation::DatabaseUsage);
-    CHECK(std::find(acceptedUsageKeys.begin(), acceptedUsageKeys.end(), "db") != acceptedUsageKeys.end());
     CHECK(std::find(acceptedUsageKeys.begin(), acceptedUsageKeys.end(), "dbPath") != acceptedUsageKeys.end());
-    CHECK(std::find(acceptedUsageKeys.begin(), acceptedUsageKeys.end(), "unused") != acceptedUsageKeys.end());
+    CHECK(std::find(acceptedUsageKeys.begin(), acceptedUsageKeys.end(), "dbPath") != acceptedUsageKeys.end());
+    CHECK(std::find(acceptedUsageKeys.begin(), acceptedUsageKeys.end(), "showUnused") != acceptedUsageKeys.end());
     CHECK(std::find(acceptedUsageKeys.begin(), acceptedUsageKeys.end(), "showUnused") != acceptedUsageKeys.end());
 
     auto acceptedInspectKeys = apiAcceptedQueryKeyList(ApiOperation::Inspect);
-    CHECK(std::find(acceptedInspectKeys.begin(), acceptedInspectKeys.end(), "input") != acceptedInspectKeys.end());
+    CHECK(std::find(acceptedInspectKeys.begin(), acceptedInspectKeys.end(), "imagePath") != acceptedInspectKeys.end());
     CHECK(std::find(acceptedInspectKeys.begin(), acceptedInspectKeys.end(), "imagePath") != acceptedInspectKeys.end());
 
     auto endpoints = apiEndpointMetadata();
@@ -1706,7 +1605,7 @@ TEST_CASE("API endpoint metadata carries dispatch operations")
         }
         if (endpoint.path == "/api/inspect") {
             CHECK(endpoint.requestShape == ApiRequestShape::Query);
-            CHECK(std::find(keys.begin(), keys.end(), std::string("input")) != keys.end());
+            CHECK(std::find(keys.begin(), keys.end(), std::string("imagePath")) != keys.end());
         }
         if (endpoint.path == "/api/jobs/{id}") {
             CHECK(endpoint.requestShape == ApiRequestShape::JobId);
@@ -1732,10 +1631,9 @@ TEST_CASE("API endpoint metadata validation catches contract errors")
     bad.operation = ApiOperation::Ping;
     bad.requestShape = ApiRequestShape::None;
     bad.methods = {"PATCH"};
-    bad.queryKeys = {"db"};
+    bad.queryKeys = {"dbPath"};
     bad.acceptedQueryKeys = {"other"};
     bad.requiredFields = {"missing"};
-    bad.fieldAliases = {{"missing", {"alias"}}};
     bad.successStatus = 500;
     bad.errorStatuses = {200};
     bad.errorShapes = {"unknown"};
@@ -1765,8 +1663,6 @@ TEST_CASE("API endpoint metadata validation catches contract errors")
         [](const std::string& error) { return error.find("acceptedQueryKeys missing query key") != std::string::npos; }) != badErrors.end());
     CHECK(std::find_if(badErrors.begin(), badErrors.end(),
         [](const std::string& error) { return error.find("required field is not listed") != std::string::npos; }) != badErrors.end());
-    CHECK(std::find_if(badErrors.begin(), badErrors.end(),
-        [](const std::string& error) { return error.find("field alias target is not listed") != std::string::npos; }) != badErrors.end());
 }
 
 TEST_CASE("API response contract validation matches handlers")
@@ -1785,7 +1681,7 @@ TEST_CASE("API response contract validation matches handlers")
 
     auto mosaicEndpoint = findEndpoint(ApiOperation::SubmitMosaicJob);
     REQUIRE(mosaicEndpoint != endpoints.end());
-    auto badMosaic = apiSubmitMosaicJob(R"({"writeMode":"invalid"})", manager);
+    auto badMosaic = apiSubmitMosaicJob(R"({"writeMode":"invalid","inputPath":"target.png"})", manager);
     CHECK(badMosaic.status == 400);
     CHECK(validateApiResponseContract(*mosaicEndpoint, badMosaic).empty());
     auto syncEndpoint = findEndpoint(ApiOperation::Mosaic);
@@ -1822,7 +1718,7 @@ TEST_CASE("API response contract validation matches handlers")
     auto exportEndpoint = findEndpoint(ApiOperation::DatabaseUsageExport);
     REQUIRE(exportEndpoint != endpoints.end());
     auto missingExportConfirm = apiDatabaseUsageExport(
-        {{"db", "__contract_status_test__.db"}, {"output", "__contract_export__"}},
+        {{"dbPath", "__contract_status_test__.db"}, {"output", "__contract_export__"}},
         "");
     CHECK(missingExportConfirm.status == 400);
     CHECK(validateApiResponseContract(*exportEndpoint, missingExportConfirm).empty());
@@ -1830,7 +1726,7 @@ TEST_CASE("API response contract validation matches handlers")
     auto purgeEndpoint = findEndpoint(ApiOperation::DatabasePurge);
     REQUIRE(purgeEndpoint != endpoints.end());
     auto badPurge = apiDatabasePurge(
-        {{"db", "__contract_status_test__.db"}},
+        {{"dbPath", "__contract_status_test__.db"}},
         R"({"dryRun":"no"})");
     CHECK(badPurge.status == 400);
     CHECK(validateApiResponseContract(*purgeEndpoint, badPurge).empty());
@@ -1842,7 +1738,7 @@ TEST_CASE("API response contract validation matches handlers")
             return error.find("not declared") != std::string::npos;
         }) != undeclaredErrors.end());
 
-    ApiResponse missingPayload{409, apiErrorJson("only queued jobs can be canceled")};
+    ApiResponse missingPayload{409, {{"ok", false}}};
     auto shapeErrors = validateApiResponseContract(*cancelEndpoint, missingPayload);
     CHECK(std::find_if(shapeErrors.begin(), shapeErrors.end(),
         [](const std::string& error) {
@@ -1854,7 +1750,7 @@ TEST_CASE("API handlers expose structured jobs without HTTP")
 {
     JobManager manager(false);
 
-    auto badMosaic = apiSubmitMosaicJob(R"({"writeMode":"invalid"})", manager);
+    auto badMosaic = apiSubmitMosaicJob(R"({"writeMode":"invalid","inputPath":"target.png"})", manager);
     CHECK(badMosaic.status == 400);
     CHECK_FALSE(badMosaic.body["ok"].get<bool>());
     CHECK(badMosaic.body["message"].get<std::string>() == "writeMode must be auto, stream, or batch");
@@ -1891,60 +1787,44 @@ TEST_CASE("API handlers expose structured jobs without HTTP")
 TEST_CASE("API handlers centralize database and inspect status mapping")
 {
     auto badUsage = apiDatabaseUsage(
-        {{"db", "__api_handler_status_test__.db"}},
+        {{"dbPath", "__api_handler_status_test__.db"}},
         R"({"limit":"bad"})");
     CHECK(badUsage.status == 400);
     CHECK_FALSE(badUsage.body["ok"].get<bool>());
     CHECK(badUsage.body["message"].get<std::string>() == "limit must be a number");
 
     auto badUsageQuery = apiDatabaseUsage(
-        {{"db", "__api_handler_status_test__.db"}, {"limit", "bad"}},
+        {{"dbPath", "__api_handler_status_test__.db"}, {"limit", "bad"}},
         "");
     CHECK(badUsageQuery.status == 400);
     CHECK_FALSE(badUsageQuery.body["ok"].get<bool>());
     CHECK(badUsageQuery.body["message"].get<std::string>() == "limit must be a number");
 
     auto missingExportConfirm = apiDatabaseUsageExport(
-        {{"db", "__api_handler_status_test__.db"}, {"output", "__unused_export__"}},
+        {{"dbPath", "__api_handler_status_test__.db"}, {"outputDir", "__unused_export__"}},
         "");
     CHECK(missingExportConfirm.status == 400);
     CHECK_FALSE(missingExportConfirm.body["ok"].get<bool>());
     CHECK(missingExportConfirm.body["export"]["outputDir"].get<std::string>() == "__unused_export__");
 
     auto badPurge = apiDatabasePurge(
-        {{"db", "__api_handler_status_test__.db"}},
+        {{"dbPath", "__api_handler_status_test__.db"}},
         R"({"dryRun":"no"})");
     CHECK(badPurge.status == 400);
     CHECK_FALSE(badPurge.body["ok"].get<bool>());
     CHECK(badPurge.body["message"].get<std::string>() == "dryRun must be a boolean");
 
     auto badPurgeQuery = apiDatabasePurge(
-        {{"db", "__api_handler_status_test__.db"}, {"dryRun", "maybe"}},
+        {{"dbPath", "__api_handler_status_test__.db"}, {"dryRun", "maybe"}},
         "");
     CHECK(badPurgeQuery.status == 400);
     CHECK_FALSE(badPurgeQuery.body["ok"].get<bool>());
     CHECK(badPurgeQuery.body["message"].get<std::string>() == "dryRun must be a boolean");
 
-    auto badInspect = apiInspect({{"input", ""}}, R"({"imagePath":123})");
+    auto badInspect = apiInspect({}, R"({"imagePath":123})");
     CHECK(badInspect.status == 400);
     CHECK_FALSE(badInspect.body["ok"].get<bool>());
     CHECK(badInspect.body["message"].get<std::string>() == "imagePath must be a string");
-}
-
-TEST_CASE("Legacy run command validation is shared")
-{
-    auto valid = validateLegacyRunCommand("mosaicraft db-health -d library.db");
-    CHECK(valid.ok);
-    CHECK(valid.commandName == "db-health");
-    CHECK(valid.subCommand == "db-health -d library.db");
-
-    auto injected = validateLegacyRunCommand("mosaicraft mosaic\nrm -rf home");
-    CHECK_FALSE(injected.ok);
-    CHECK(injected.error == "ERROR: invalid characters in command");
-
-    auto unknown = validateLegacyRunCommand("mosaicraft shell");
-    CHECK_FALSE(unknown.ok);
-    CHECK(unknown.error == "ERROR: unknown command: shell");
 }
 
 TEST_CASE("JobManager can cancel queued jobs and clear finished jobs")

@@ -304,7 +304,7 @@ void CompatibleScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &rec
                 const auto &record = records[first + i];
                 if (record.gridLab.size() != 192)
                 {
-                    throw std::invalid_argument("compatible CUDA library requires v6 Grid features");
+                    throw std::invalid_argument("compatible CUDA library requires current 8x8 Grid features");
                 }
                 const auto &features = reader.get(first + i);
                 host.d_lab[i * 3] = record.avgL;

@@ -6,6 +6,8 @@
 #include "../core/CandidateFeatures.h"
 #include "../core/FeatureExtractor.h"
 #include "../core/FeatureUtils.h"
+#include "../core/FeatureIO.h"
+#include "../core/LibraryPaths.h"
 #include "../core/GridDuplicateCache.h"
 #include "../core/ImageCache.h"
 #include "../core/ImageNormalizer.h"
@@ -263,6 +265,47 @@ TEST_CASE("new libraries reject incompatible structures and remain portable")
     REQUIRE(BuildService().run(build).ok);
 }
 
+TEST_CASE("feature payloads validate type version count finite values and exact length")
+{
+    TempWorkspace workspace;
+    const auto tinyPath = utf8(workspace.outputDir() / "fixture.tiny");
+    const auto lbpPath = utf8(workspace.outputDir() / "fixture.lbp");
+    std::array<uint8_t, 256> tiny{};
+    std::array<float, 256> lbp{};
+    lbp[0] = 1.0f;
+    writeFeature(tinyPath, FeatureKind::Tiny, tiny.data());
+    writeFeature(lbpPath, FeatureKind::Lbp, lbp.data());
+    CHECK(fs::file_size(u8path(tinyPath)) == 272);
+    CHECK(fs::file_size(u8path(lbpPath)) == 1040);
+    CHECK(readFeature(tinyPath, FeatureKind::Tiny, tiny.data()));
+    CHECK(readFeature(lbpPath, FeatureKind::Lbp, lbp.data()));
+    std::ifstream payload(u8path(lbpPath), std::ios::binary);
+    const std::vector<char> encoded(std::istreambuf_iterator<char>(payload), {});
+    payload.close();
+    REQUIRE(encoded.size() == 1040);
+    CHECK(encoded[16] == 0);
+    CHECK(encoded[17] == 0);
+    CHECK(static_cast<uint8_t>(encoded[18]) == 128);
+    CHECK(encoded[19] == 63);
+    CHECK_FALSE(readFeature(tinyPath, FeatureKind::Lbp, lbp.data()));
+    {
+        std::fstream corrupt(u8path(tinyPath), std::ios::binary | std::ios::in | std::ios::out);
+        corrupt.seekp(8);
+        corrupt.put(99);
+    }
+    CHECK_FALSE(readFeature(tinyPath, FeatureKind::Tiny, tiny.data()));
+    writeFeature(tinyPath, FeatureKind::Tiny, tiny.data());
+    {
+        std::ofstream extra(u8path(tinyPath), std::ios::binary | std::ios::app);
+        extra.put(0);
+    }
+    CHECK_FALSE(readFeature(tinyPath, FeatureKind::Tiny, tiny.data()));
+    fs::resize_file(u8path(lbpPath), 10);
+    CHECK_FALSE(readFeature(lbpPath, FeatureKind::Lbp, lbp.data()));
+    lbp[0] = std::numeric_limits<float>::quiet_NaN();
+    CHECK_THROWS_AS(writeFeature(lbpPath, FeatureKind::Lbp, lbp.data()), std::runtime_error);
+}
+
 TEST_CASE("match-only uses feature payloads without photos output or usage writes")
 {
     TempWorkspace workspace;
@@ -490,8 +533,6 @@ TEST_CASE("compatible CUDA scores are exact and failures never publish partial r
             }
         }
     }
-    records[0].tinyPath.clear();
-    records[1].lbpPath.clear();
     records[3] = records[2];
     records[3].id = 3; // 完全平分的两个图库索引。
     REQUIRE(FeaturePack::buildCache(utf8(workspace.outputDir()), records));
@@ -645,8 +686,6 @@ TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encode
             CHECK(repeated[i].fileHash == original[i].fileHash);
         }
     }
-    fs::remove(u8path(original[0].tinyPath));
-    fs::remove(u8path(original[1].lbpPath));
     auto request = makeMosaicRequest(workspace);
     request.config.outW = 41;
     request.config.outH = 73;
@@ -943,35 +982,25 @@ TEST_CASE("rebuilding preserves indexed files and source files")
     }
 }
 
-TEST_CASE("color cache migrates legacy tables and retains fractional LAB sources")
+TEST_CASE("color cache rejects old structures and retains fractional LAB sources")
 {
     TempWorkspace workspace;
-    fs::create_directories(workspace.libraryDir());
-    sqlite3* legacy = nullptr;
-    REQUIRE(sqlite3_open(utf8(workspace.dbPath()).c_str(), &legacy) == SQLITE_OK);
-    const int created = sqlite3_exec(legacy,
-        "CREATE TABLE image_color_order(image_id INTEGER PRIMARY KEY REFERENCES images(id) ON DELETE CASCADE,"
-        "file_hash TEXT NOT NULL,version INTEGER NOT NULL,sort_key INTEGER NOT NULL);"
-        "INSERT INTO image_color_order VALUES(1,'legacy',1,0)", nullptr, nullptr, nullptr);
-    sqlite3_close(legacy);
-    REQUIRE(created == SQLITE_OK);
-    Database database(utf8(workspace.dbPath()), Database::OpenMode::Build);
-    REQUIRE(database.createTables());
-    const auto old = database.imageColorOrders().at(1);
-    CHECK(old.version == 1);
-    CHECK(std::isnan(old.sourceL));
-    ImageRecord record;
-    record.filePath = "fixture.png";
-    record.fileHash = "legacy";
-    REQUIRE(database.insertImage(record));
-    ImageColorOrder color
+    writeLibraryImages(workspace.inputDir());
+    REQUIRE(BuildService().run(makeBuildRequest(workspace)).ok);
+    SUBCASE("incomplete cache structure is not upgraded")
     {
-        record.fileHash, kColorOrderVersion, meanLabColorOrderKey(100.25, 128.6, 128.2),
-        100.25, 128.6, 128.2
-    };
-    REQUIRE(database.saveImageColorOrder(1, color));
-    const auto cached = database.imageColorOrders().at(1);
-    CHECK(cached.version == 2);
+        REQUIRE(fixtureSql(workspace.dbPath(), "ALTER TABLE image_color_order DROP COLUMN source_l") == SQLITE_OK);
+        Database blocked(utf8(workspace.dbPath()));
+        CHECK_FALSE(blocked.isOpen());
+        return;
+    }
+    Database database(utf8(workspace.dbPath()));
+    REQUIRE(database.isOpen());
+    const auto record = database.allRecords().front();
+    ImageColorOrder color{record.fileHash, kColorOrderVersion, meanLabColorOrderKey(100.25,128.6,128.2),100.25,128.6,128.2};
+    REQUIRE(database.saveImageColorOrder(record.id,color));
+    const auto cached=database.imageColorOrders().at(record.id);
+    CHECK(cached.version == kColorOrderVersion);
     CHECK(cached.key == color.key);
     CHECK(cached.sourceL == color.sourceL);
     CHECK(cached.sourceA == color.sourceA);
@@ -1100,7 +1129,22 @@ TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
     }
     {
         std::ofstream output(libraryJournalPath(request.dbPath));
-        output << journal;
+        auto stored = journal;
+        stored["version"] = kJournalVersion;
+        stored["library_version"] = kLibraryVersion;
+        stored["feature_version"] = kFeatureVersion;
+        const LibraryPaths paths(utf8(workspace.dbPath()));
+        stored["database"] = paths.store(stored["database"].get<std::string>());
+        stored["output"] = ".";
+        stored["staging"] = paths.store(stored["staging"].get<std::string>());
+        for (auto &entry : stored["entries"])
+        {
+            for (const auto *key : {"old_db_path","original","final","temporary"})
+            {
+                entry[key] = paths.store(entry[key].get<std::string>());
+            }
+        }
+        output << stored;
     }
     {
         Database blocked(request.dbPath, Database::OpenMode::Existing);
@@ -1160,10 +1204,10 @@ TEST_CASE("color reorder handles occupied paths and releases library locks")
         CHECK(repeated.renamed == 0);
         CHECK(database.imageColorOrders().size() == 10);
     }
-    SUBCASE("v1 cache upgrades without modifying matching features")
+    SUBCASE("invalid color cache is recomputed without modifying matching features")
     {
         auto cached = database.imageColorOrders().at(records[0].id);
-        cached.version = 1;
+        cached.version = 0;
         REQUIRE(database.saveImageColorOrder(records[0].id, cached));
         REQUIRE_MESSAGE(reorderLibraryByColor(database, request.outputDir, result, error), error);
         CHECK(result.computed == 1);
@@ -2135,10 +2179,8 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
         records[i].lbpPath = dir + "/" + std::to_string(i) + ".hist";
         std::vector<uint8_t> tiny(256, static_cast<uint8_t>(i + 1));
         std::vector<float> lbp(256, 0.25f);
-        std::ofstream t(u8path(records[i].tinyPath), std::ios::binary);
-        t.write(reinterpret_cast<const char *>(tiny.data()), 256);
-        std::ofstream l(u8path(records[i].lbpPath), std::ios::binary);
-        l.write(reinterpret_cast<const char *>(lbp.data()), 1024);
+        writeFeature(records[i].tinyPath, FeatureKind::Tiny, tiny.data());
+        writeFeature(records[i].lbpPath, FeatureKind::Lbp, lbp.data());
     }
     const auto manifestPath = folder / "features.pack";
     auto publishedPath = [&](const char *suffix)
@@ -2146,7 +2188,8 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
         std::ifstream manifest(manifestPath);
         std::string magic, generation;
         int version;
-        manifest >> magic >> version >> generation;
+        int libraryVersion, featureVersion, gridDimension, tinyDimension, lbpDimension;
+        manifest >> magic >> version >> libraryVersion >> featureVersion >> gridDimension >> tinyDimension >> lbpDimension >> generation;
         return folder / ("features-" + generation + suffix);
     };
     // Unverified v2 bytes cannot override refreshed source files with the same IDs.
@@ -2206,8 +2249,7 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     CHECK(corruptReader.stats().sourceReads == 2);
     {
         std::vector<uint8_t> changed(256, 42);
-        std::ofstream file(u8path(records[2].tinyPath), std::ios::binary);
-        file.write(reinterpret_cast<const char *>(changed.data()), 256);
+        writeFeature(records[2].tinyPath, FeatureKind::Tiny, changed.data());
     }
     ++records[2].featureVersion;
     REQUIRE(FeaturePack::buildCache(dir, records));
@@ -2219,8 +2261,7 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     const auto sourceTime = fs::last_write_time(u8path(records[1].tinyPath));
     {
         std::vector<uint8_t> changed(256, 99);
-        std::ofstream file(u8path(records[1].tinyPath), std::ios::binary);
-        file.write(reinterpret_cast<const char *>(changed.data()), 256);
+        writeFeature(records[1].tinyPath, FeatureKind::Tiny, changed.data());
     }
     fs::last_write_time(u8path(records[1].tinyPath), sourceTime + std::chrono::seconds(1));
     beforeChange.prepare({1});
@@ -2243,17 +2284,11 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     interrupted.close();
     fs::remove(u8path(records[0].lbpPath));
     fs::resize_file(u8path(records[0].tinyPath), 5);
-    CandidateFeatures missing(records, needed, dir);
-    CHECK(missing.tiny(2)[0] == 42);
-    CHECK_FALSE(missing.hasTiny(0));
-    CHECK_FALSE(missing.hasLbp(0));
+    CHECK_THROWS_AS(CandidateFeatures(records, needed, dir), std::runtime_error);
     FeaturePack::Reader missingReader(dir, records);
-    CHECK_FALSE(missingReader.get(0).tinyValid);
-    CHECK_FALSE(missingReader.get(0).lbpValid);
+    CHECK_THROWS_AS(missingReader.get(0), std::runtime_error);
     fs::resize_file(publishedPath(".lbp.bin"), 5);
-    CandidateFeatures truncated(records, needed, dir);
-    CHECK(truncated.tiny(2)[0] == 42);
-    CHECK_FALSE(truncated.hasLbp(0));
+    CHECK_THROWS_AS(CandidateFeatures(records, needed, dir), std::runtime_error);
 }
 
 TEST_CASE("CPU build rolls back a failing ordered batch")
@@ -2363,13 +2398,6 @@ TEST_CASE("matching batches preserve seeded choices, padding and empty batches")
     build.normalizeWidth = 180;
     build.normalizeHeight = 320;
     REQUIRE(BuildService().run(build).ok);
-    {
-        Database db(build.dbPath);
-        const auto records = db.allRecords();
-        // 两种后端必须在缓存来源缺失时保留同样的惩罚规则。
-        fs::remove(u8path(records[0].tinyPath));
-        fs::remove(u8path(records[1].lbpPath));
-    }
     auto request = makeMosaicRequest(workspace);
     request.config.outW = 41;
     request.config.outH = 73;
@@ -2404,7 +2432,7 @@ TEST_CASE("matching batches preserve seeded choices, padding and empty batches")
             MatchingAccess::captureSelections(engine, selected);
             RuntimeContext runtime(batch == 1);
             REQUIRE(engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config, runtime));
-            CHECK(runtime.snapshot().warnings.count("feature_missing") == 1);
+            CHECK(runtime.snapshot().warnings.count("feature_missing") == 0);
             const auto pixels = imreadUnicode(request.outputPath);
             std::ifstream encoded(u8path(request.outputPath), std::ios::binary);
             const std::string bytes(std::istreambuf_iterator<char>(encoded), {});

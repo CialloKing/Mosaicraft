@@ -107,6 +107,96 @@ struct Metadata
 };
 static_assert(sizeof(Metadata) == 88, "feature metadata layout changed");
 
+// 缓存元数据也按字段编码，不能把宿主结构体布局当作磁盘协议。
+std::array<uint8_t, 88> encodeMetadata(const Metadata &value)
+{
+    std::array<uint8_t, 88> bytes{};
+    size_t offset = 0;
+    auto put = [&](uint64_t v, size_t count)
+    {
+        encodeUnsigned(bytes.data() + offset, v, count);
+        offset += count;
+    };
+    put(value.id, 4);
+    put(value.version, 4);
+    put(value.imageHash, 8);
+    for (const auto &source : {value.tiny, value.lbp})
+    {
+        put(source.path, 8);
+        put(source.size, 8);
+        put(source.time, 8);
+    }
+    put(value.tinyHash, 8);
+    put(value.lbpHash, 8);
+    put(value.tinyValid, 4);
+    put(value.lbpValid, 4);
+    return bytes;
+}
+Metadata decodeMetadata(const uint8_t *bytes)
+{
+    Metadata value;
+    size_t offset = 0;
+    auto get = [&](size_t count)
+    {
+        const auto result = decodeUnsigned(bytes + offset, count);
+        offset += count;
+        return result;
+    };
+    value.id = static_cast<int32_t>(get(4));
+    value.version = static_cast<int32_t>(get(4));
+    value.imageHash = get(8);
+    for (auto *source : {&value.tiny, &value.lbp})
+    {
+        source->path = get(8);
+        source->size = get(8);
+        source->time = get(8);
+    }
+    value.tinyHash = get(8);
+    value.lbpHash = get(8);
+    value.tinyValid = static_cast<uint32_t>(get(4));
+    value.lbpValid = static_cast<uint32_t>(get(4));
+    return value;
+}
+template<class T> bool readInteger(FILE *file, T &value)
+{
+    std::array<uint8_t, 4> bytes{};
+    if (fread(bytes.data(), 1, 4, file) != 4)
+    {
+        return false;
+    }
+    value = static_cast<T>(decodeUnsigned(bytes.data(), 4));
+    return true;
+}
+bool writeInteger(FILE *file, uint32_t value)
+{
+    std::array<uint8_t, 4> bytes{};
+    encodeUnsigned(bytes.data(), value, 4);
+    return fwrite(bytes.data(), 1, 4, file) == 4;
+}
+bool readFloatRow(FILE *file, float *values)
+{
+    std::array<uint8_t, 1024> bytes{};
+    if (fread(bytes.data(), 1, bytes.size(), file) != bytes.size())
+    {
+        return false;
+    }
+    decodeFloats(bytes.data(), values, 256);
+    return std::all_of(values, values + 256, [](float value)
+    {
+        return std::isfinite(value);
+    });
+}
+bool writeFloatRow(FILE *file, const float *values)
+{
+    const auto bytes = encodeFloats(values, 256);
+    return fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
+}
+uint64_t hashFloatRow(const float *values)
+{
+    const auto bytes = encodeFloats(values, 256);
+    return hashBytes(bytes.data(), bytes.size());
+}
+
 // 大图库的逐文件属性查询会盖过 GPU 收益；目录枚举提供相同的大小和修改时间。
 // 枚举失败、大小写别名或未找到的文件仍走原属性查询，不将不可读目录当成空目录。
 class StampSampler
@@ -221,9 +311,18 @@ bool readMetadata(const std::string &directory, const Manifest &manifest, size_t
     {
         return false;
     }
+    std::vector<uint8_t> bytes(count * 88);
+    if (fread(bytes.data(), 1, bytes.size(), file.get()) != bytes.size() || fgetc(file.get()) != EOF ||
+        ferror(file.get()) || hashBytes(bytes.data(), bytes.size()) != manifest.metadataHash)
+    {
+        return false;
+    }
     metadata.resize(count);
-    return fread(metadata.data(), sizeof(Metadata), count, file.get()) == count && fgetc(file.get()) == EOF &&
-           !ferror(file.get()) && hashBytes(metadata.data(), count * sizeof(Metadata)) == manifest.metadataHash;
+    for (size_t i = 0; i < count; ++i)
+    {
+        metadata[i] = decodeMetadata(bytes.data() + i * 88);
+    }
+    return true;
 }
 
 bool readSource(const std::string &path, const Stamp &source, void *data, size_t bytes)
@@ -309,8 +408,8 @@ bool loadFeatures(const std::string &directory, const std::vector<ImageRecord> &
                 int32_t ti = -1, li = -1;
                 auto record = ids.find(metadata.id);
                 if (metadata.id <= previous || record == ids.end() || metadata.tinyValid > 1 || metadata.lbpValid > 1 ||
-                    fread(&ti, 4, 1, tinyFile.get()) != 1 || fread(t.data(), 1, 256, tinyFile.get()) != 256 ||
-                    fread(&li, 4, 1, lbpFile.get()) != 1 || fread(l.data(), 4, 256, lbpFile.get()) != 256 ||
+                    !readInteger(tinyFile.get(), ti) || fread(t.data(), 1, 256, tinyFile.get()) != 256 ||
+                    !readInteger(lbpFile.get(), li) || !readFloatRow(lbpFile.get(), l.data()) ||
                     ti != metadata.id || li != ti)
                 {
                     packed = false;
@@ -322,7 +421,7 @@ bool loadFeatures(const std::string &directory, const std::vector<ImageRecord> &
                 {
                     continue;
                 }
-                if (hashBytes(t.data(), 256) != metadata.tinyHash || hashBytes(l.data(), 1024) != metadata.lbpHash)
+                if (hashBytes(t.data(), 256) != metadata.tinyHash || hashFloatRow(l.data()) != metadata.lbpHash)
                 {
                     packed = false;
                     break;
@@ -376,10 +475,15 @@ bool loadFeatures(const std::string &directory, const std::vector<ImageRecord> &
                         lbpValid[i] = 0;
                         std::fill_n(lbp.data() + i * 256, 256, 0.0f);
                     }
+                    if (!tinyValid[i] || !lbpValid[i])
+                    {
+                        throw std::runtime_error("missing or invalid required feature: " +
+                            (!tinyValid[i] ? record.tinyPath : record.lbpPath));
+                    }
                     metadata.tinyValid = tinyValid[i];
                     metadata.lbpValid = lbpValid[i];
                     metadata.tinyHash = hashBytes(tiny.data() + i * 256, 256);
-                    metadata.lbpHash = hashBytes(lbp.data() + i * 256, 1024);
+                    metadata.lbpHash = hashFloatRow(lbp.data() + i * 256);
                 });
     if (readStats)
     {
@@ -505,7 +609,7 @@ struct FeaturePack::Reader::Impl
             setvbuf(lbp.get(), nullptr, _IOFBF, 64 * 1024);
         }
         uint32_t tc = 0, lc = 0;
-        if (!tiny || !lbp || fread(&tc, 4, 1, tiny.get()) != 1 || fread(&lc, 4, 1, lbp.get()) != 1 ||
+        if (!tiny || !lbp || !readInteger(tiny.get(), tc) || !readInteger(lbp.get(), lc) ||
             tc != records.size() || lc != tc)
         {
             tiny.reset();
@@ -544,10 +648,10 @@ struct FeaturePack::Reader::Impl
         }
         int32_t ti = -1, li = -1;
         const auto &entry = metadata[position];
-        if (fread(&ti, 4, 1, tiny.get()) != 1 || fread(row.tiny.data(), 1, 256, tiny.get()) != 256 ||
-            fread(&li, 4, 1, lbp.get()) != 1 || fread(row.lbp.data(), 4, 256, lbp.get()) != 256 || ti != entry.id ||
+        if (!readInteger(tiny.get(), ti) || fread(row.tiny.data(), 1, 256, tiny.get()) != 256 ||
+            !readInteger(lbp.get(), li) || !readFloatRow(lbp.get(), row.lbp.data()) || ti != entry.id ||
             li != ti || hashBytes(row.tiny.data(), 256) != entry.tinyHash ||
-            hashBytes(row.lbp.data(), 1024) != entry.lbpHash)
+            hashFloatRow(row.lbp.data()) != entry.lbpHash)
         {
             return false;
         }
@@ -806,7 +910,7 @@ bool FeaturePack::buildCache(const std::string &directory, const std::vector<Ima
     auto t = openFile(tinyPath, "wb");
     auto l = openFile(lbpPath, "wb");
     auto m = openFile(metadataPath, "wb");
-    if (!t || !l || !m || fwrite(&manifest.count, 4, 1, t.get()) != 1 || fwrite(&manifest.count, 4, 1, l.get()) != 1)
+    if (!t || !l || !m || !writeInteger(t.get(), manifest.count) || !writeInteger(l.get(), manifest.count))
     {
         return false;
     }
@@ -818,15 +922,16 @@ bool FeaturePack::buildCache(const std::string &directory, const std::vector<Ima
     for (int index : needed)
     {
         const auto &entry = metadata[index];
-        if (fwrite(&entry.id, 4, 1, t.get()) != 1 ||
+        const auto encoded = encodeMetadata(entry);
+        if (!writeInteger(t.get(), entry.id) ||
             fwrite(tiny.data() + static_cast<size_t>(index) * 256, 1, 256, t.get()) != 256 ||
-            fwrite(&entry.id, 4, 1, l.get()) != 1 ||
-            fwrite(lbp.data() + static_cast<size_t>(index) * 256, 4, 256, l.get()) != 256 ||
-            fwrite(&entry, sizeof(entry), 1, m.get()) != 1)
+            !writeInteger(l.get(), entry.id) ||
+            !writeFloatRow(l.get(), lbp.data() + static_cast<size_t>(index) * 256) ||
+            fwrite(encoded.data(), 1, encoded.size(), m.get()) != encoded.size())
         {
             return false;
         }
-        manifest.metadataHash = hashBytes(&entry, sizeof(entry), manifest.metadataHash);
+        manifest.metadataHash = hashBytes(encoded.data(), encoded.size(), manifest.metadataHash);
     }
     if (!persist(t) || !persist(l) || !persist(m))
     {

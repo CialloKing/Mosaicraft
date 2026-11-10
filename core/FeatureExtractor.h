@@ -10,13 +10,8 @@ namespace mosaicraft
 
 // FeatureExtractor — 从归一化图像中提取全部特征。
 //
-// V1: AvgLAB + 亮度均值
-// V2: 4×4 LAB Grid (48 float)
-// V3: 16×16 TinyImage + 颜色统计 (contrast, std brightness, saturation,
-//     color variance)
-// V4: 边缘密度 + 纹理（预留）
-//
-// 接口固定，内部实现随版本递增；featureVersion() 标记当前版本号。
+// 当前特征包含 8×8 LAB Grid、16×16 TinyImage、256 桶 LBP、颜色和边缘统计。
+// 版本从 contracts.json 生成，所有后端复用相同定义与文件编码。
 class FeatureExtractor
 {
 public:
