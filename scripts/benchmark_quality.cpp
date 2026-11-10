@@ -307,6 +307,11 @@ int main(int argc, char **argv)
         GridDuplicateCache duplicates(records);
         Json output = {{"reference", "CPU v6 five-feature score; no history/neighborhood penalty"},
                        {"library_rows", records.size()}, {"cases", Json::object()}, {"runs", Json::array()}};
+        output["record_index_to_id"] = Json::array();
+        for (const auto &record : records)
+        {
+            output["record_index_to_id"].push_back(record.id);
+        }
         for (const auto &item : study.at("cases"))
         {
             const auto name = item.at("id").get<std::string>();

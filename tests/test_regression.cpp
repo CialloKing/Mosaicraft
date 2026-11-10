@@ -217,6 +217,40 @@ TEST_CASE("match-only uses feature payloads without photos output or usage write
     CHECK_FALSE(fs::exists(workspace.mosaicPath()));
     CHECK(runtime.snapshot().format == "selection");
     CHECK(runtime.snapshot().artifacts.empty());
+    for (int mode = 1; mode <= 4; ++mode)
+    {
+        SelectionOptions options;
+        options.quality = mode != 2;
+        options.spatial = mode != 1;
+        options.expand = mode == 4;
+        std::vector<int> reference;
+        for (const size_t batch : {4, 1})
+        {
+            MatchingLimits limits;
+            limits.maxTiles = batch;
+            MatchingAccess::configure(engine, limits, true, 42);
+            std::vector<SelectionDiagnostic> diagnostics;
+            MatchingAccess::selectionPolicy(engine, options, &diagnostics);
+            REQUIRE(engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config, runtime));
+            REQUIRE(diagnostics.size() == selected.size());
+            for (const auto &diagnostic : diagnostics)
+            {
+                CHECK(diagnostic.selected >= 0);
+                if (options.quality)
+                {
+                    CHECK(diagnostic.error <= diagnostic.limit);
+                }
+            }
+            if (reference.empty())
+            {
+                reference = selected;
+            }
+            else
+            {
+                CHECK(selected == reference);
+            }
+        }
+    }
     const auto after = db.allRecords();
     REQUIRE(after.size() == before.size());
     for (size_t i = 0; i < before.size(); ++i)
