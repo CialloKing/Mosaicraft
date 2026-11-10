@@ -184,6 +184,33 @@ MosaicRequest makeMosaicRequest(const TempWorkspace& workspace)
     return request;
 }
 
+void requireLegacyPaths(const fs::path &path)
+{
+    std::vector<ImageRecord> records;
+    {
+        Database database(utf8(path), Database::OpenMode::Existing);
+        REQUIRE(database.isOpen());
+        records = database.allRecords();
+    }
+    sqlite3 *raw = nullptr;
+    REQUIRE(sqlite3_open(utf8(path).c_str(), &raw) == SQLITE_OK);
+    sqlite3_stmt *statement = nullptr;
+    REQUIRE(sqlite3_prepare_v2(raw, "UPDATE images SET file_path=?,tiny_path=?,hist_path=? WHERE id=?", -1,
+                              &statement, nullptr) == SQLITE_OK);
+    for (const auto &record : records)
+    {
+        sqlite3_bind_text(statement, 1, record.filePath.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(statement, 2, record.tinyPath.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(statement, 3, record.histPath.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(statement, 4, record.id);
+        REQUIRE(sqlite3_step(statement) == SQLITE_DONE);
+        sqlite3_reset(statement);
+    }
+    sqlite3_finalize(statement);
+    REQUIRE(sqlite3_exec(raw, "DELETE FROM meta WHERE key='path_format'", nullptr, nullptr, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_close(raw) == SQLITE_OK);
+}
+
 } // namespace
 
 TEST_CASE("match-only uses feature payloads without photos output or usage writes")
@@ -987,6 +1014,7 @@ TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
 #endif
     SUBCASE("relative paths use the original working directory")
     {
+        requireLegacyPaths(workspace.dbPath());
         Database database(request.dbPath, Database::OpenMode::Build);
         journal["working_directory"] = utf8(workspace.root);
         for (size_t i = 0; i < 2; ++i)

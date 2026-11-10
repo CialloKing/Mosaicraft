@@ -21,6 +21,7 @@
 #include "../core/FeatureUtils.h"
 #include "../core/NeighborhoodState.h"
 #include "../core/SelectionPolicy.h"
+#include "../core/LibraryPaths.h"
 #include "../core/JobManager.h"
 #include "../core/LegacyRun.h"
 #include "../core/Version.h"
@@ -791,6 +792,26 @@ TEST_CASE("expanded candidates merge by ID and recompute the quality boundary")
     CHECK(d.qualityCandidates == 3);
     CHECK(d.radius3Candidates == 3);
     CHECK(d.limit == doctest::Approx(0.5251));
+}
+
+TEST_CASE("library paths are database relative and reject root escape")
+{
+    using namespace mosaicraft;
+    const auto root = std::filesystem::temp_directory_path() / std::filesystem::u8path("库 with spaces");
+    LibraryPaths paths((root / "mosaicraft.db").u8string());
+    CHECK(paths.store((root / "features" / "a.tiny").u8string()) == "features/a.tiny");
+    CHECK(paths.resolve("features/a.tiny") == (root / "features" / "a.tiny").u8string());
+    CHECK(paths.store("features/a.tiny") == "features/a.tiny");
+    CHECK(paths.store("").empty());
+    CHECK_THROWS_AS(paths.store((root.parent_path() / "outside.png").u8string()), std::invalid_argument);
+    CHECK_THROWS_AS(paths.resolve("../outside.png"), std::invalid_argument);
+    CHECK_FALSE(LibraryPaths::relative("C:/old/image.png"));
+    CHECK_FALSE(LibraryPaths::relative("features\\a.tiny"));
+#ifdef _WIN32
+    auto alias = (root / "features" / "a.tiny").u8string();
+    alias[0] = static_cast<char>(std::tolower(alias[0]));
+    CHECK(paths.store(alias) == "features/a.tiny");
+#endif
 }
 
 TEST_CASE("labDistance — identical colors")

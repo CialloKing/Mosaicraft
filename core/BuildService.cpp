@@ -106,6 +106,9 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
         dbPath = outputDir + "/mosaicraft.db";
     }
 
+    // 统一内部写入绝对位置，数据库负责转换为相对库根的持久路径。
+    outputDir = pathToUtf8(fs::absolute(u8path(outputDir)).lexically_normal());
+    dbPath = pathToUtf8(fs::absolute(u8path(dbPath)).lexically_normal());
     std::error_code ec;
     fs::create_directories(u8path(outputDir), ec);
     if (ec)
@@ -132,6 +135,11 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
     {
         return runtimeFailure(runtime, EXIT_ERR_DB, recoveryError, "operation_failed", "");
     }
+    if (!db.ensurePortablePaths())
+    {
+        return runtimeFailure(runtime, EXIT_ERR_DB, db.error(), "library_unavailable", "dbPath", dbPath);
+    }
+    db.reportPaths(runtime);
     if (!fs::is_directory(u8path(request.inputDir), ec))
     {
         return runtimeFailure(runtime, 1, "cannot read input directory: " + request.inputDir, "input_unreadable",

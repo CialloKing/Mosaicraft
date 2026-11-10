@@ -16,6 +16,7 @@ namespace mosaicraft
 {
 
 class LibraryAccess;
+class RuntimeContext;
 
 // ImageRecord — 图片在数据库中的一条完整记录。
 // 按特征分层设计：元数据 → 全局颜色 → 区域结构 → 纹理 → 语义。
@@ -110,6 +111,9 @@ public:
 
     // 首次使用时建表（幂等）；若旧表缺少列则自动迁移
     bool createTables();
+    // Build 在完成旧重排恢复后调用；普通读取在构造时自动完成这一步。
+    bool ensurePortablePaths();
+    void reportPaths(RuntimeContext &runtime) const;
 
     // ——— 写操作 ———
 
@@ -172,6 +176,11 @@ private:
     std::unique_ptr<LibraryAccess> m_access;
     std::string m_path;
     std::string m_error;
+    bool m_portable = false, m_exclusive = false, m_new = false;
+    std::string m_pathNotice, m_pathBackup;
+    bool openConnection(bool create);
+    void closeConnection();
+    bool validateStoredPaths();
 
     // 执行无结果集 SQL（CREATE / INSERT / DELETE）
     bool exec(const std::string& sql);

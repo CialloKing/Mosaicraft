@@ -2,6 +2,7 @@
 
 #include <sqlite3.h>
 #include "LibraryAccess.h"
+#include "LibraryPaths.h"
 #include "UnicodeIO.h"
 
 #include <cstring>
@@ -28,7 +29,9 @@ Database::Database(const std::string& dbPath, OpenMode mode)
         m_error = "database file does not exist: " + dbPath;
         return;
     }
-    m_access = std::make_unique<LibraryAccess>(m_path, mode == OpenMode::Build);
+    m_new = !std::filesystem::exists(u8path(m_path));
+    m_exclusive = mode == OpenMode::Build;
+    m_access = std::make_unique<LibraryAccess>(m_path, m_exclusive);
     if (!m_access->acquired())
     {
         m_error = "library is busy or its operation lock cannot be opened: " + dbPath;
@@ -43,24 +46,13 @@ Database::Database(const std::string& dbPath, OpenMode mode)
         m_access.reset();
         return;
     }
-    // SQLITE_OPEN_CREATE: 文件不存在时自动创建
-    // SQLITE_OPEN_READWRITE: 读写模式
-    int rc = sqlite3_open_v2(m_path.c_str(), &m_db,
-                              SQLITE_OPEN_READWRITE | (mode != OpenMode::Existing ? SQLITE_OPEN_CREATE : 0),
-                              nullptr);
-    if (rc != SQLITE_OK)
+    if (!openConnection(mode != OpenMode::Existing))
     {
-        m_error = sqlite3_errmsg(m_db);
-        std::cerr << "Database open error: " << sqlite3_errmsg(m_db) << std::endl;
-        sqlite3_close(m_db);
-        m_db = nullptr;
         return;
     }
-
-    // 竞争写者时先等待；只有建库允许创建文件，维护命令必须验证已有索引。
-    sqlite3_busy_timeout(m_db, 5000);
-    bool valid = exec("PRAGMA foreign_keys=ON") && exec("PRAGMA journal_mode=WAL") &&
-                 exec("PRAGMA synchronous=NORMAL");
+    // 重排恢复也必须按原库格式解析路径，但有恢复清单时不能提前转换旧库。
+    m_portable = getMeta("path_format") == portablePathFormat;
+    bool valid = true;
     if (valid && mode == OpenMode::Existing)
     {
         sqlite3_stmt* statement = nullptr;
@@ -88,25 +80,29 @@ Database::Database(const std::string& dbPath, OpenMode mode)
             sqlite3_finalize(statement);
         }
     }
+    if (valid && mode != OpenMode::Build && !m_new)
+    {
+        valid = ensurePortablePaths();
+    }
+    if (valid)
+    {
+        valid = exec("PRAGMA foreign_keys=ON") && exec("PRAGMA journal_mode=WAL") &&
+            exec("PRAGMA synchronous=NORMAL");
+    }
     if (!valid)
     {
-        m_error = "invalid database: " + dbPath;
+        if (m_error.empty())
+        {
+            m_error = "invalid database: " + dbPath;
+        }
         std::cerr << "ERROR: Invalid database: " << dbPath << " (" << sqlite3_errmsg(m_db) << ")" << std::endl;
-        sqlite3_close(m_db);
-        m_db = nullptr;
+        closeConnection();
     }
 }
 
 Database::~Database()
 {
-    sqlite3_finalize(m_insertStatement);
-    sqlite3_finalize(m_hashStatement);
-    sqlite3_finalize(m_pathStatement);
-    sqlite3_finalize(m_colorStatement);
-    if (m_db)
-    {
-        sqlite3_close(m_db);
-    }
+    closeConnection();
 }
 
 bool Database::isOpen() const
@@ -221,6 +217,15 @@ bool Database::createTables()
             return false;
         }
     }
+    if (m_new)
+    {
+        if (!setMeta("path_format", portablePathFormat))
+        {
+            return false;
+        }
+        m_portable = true;
+        m_new = false;
+    }
     return true;
 }
 
@@ -272,6 +277,23 @@ bool Database::insertImage(const ImageRecord& rec)
         return false;
     }
 
+    std::string file = rec.filePath, tiny = rec.tinyPath, hist = rec.histPath;
+    try
+    {
+        if (m_portable)
+        {
+            const LibraryPaths paths(m_path);
+            file = paths.store(file);
+            tiny = paths.store(tiny);
+            hist = paths.store(hist);
+        }
+    }
+    catch (const std::exception &error)
+    {
+        m_error = error.what();
+        return false;
+    }
+
     const char* sql = R"SQL(
         INSERT INTO images
             (file_path, file_hash, format, src_width, src_height, aspect_ratio, file_size,
@@ -312,7 +334,7 @@ bool Database::insertImage(const ImageRecord& rec)
     int idx = 1;
 
     // 元数据
-    sqlite3_bind_text(stmt, idx++, rec.filePath.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, idx++, file.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, idx++, rec.fileHash.c_str(), -1, SQLITE_TRANSIENT);
     // format
     if (rec.format.empty()) { sqlite3_bind_null(stmt, idx++); }
@@ -351,14 +373,14 @@ bool Database::insertImage(const ImageRecord& rec)
 
     // tiny_path
     if (rec.tinyPath.empty()) { sqlite3_bind_null(stmt, idx++); }
-    else                       { sqlite3_bind_text(stmt, idx++, rec.tinyPath.c_str(), -1, SQLITE_TRANSIENT); }
+    else                       { sqlite3_bind_text(stmt, idx++, tiny.c_str(), -1, SQLITE_TRANSIENT); }
 
     // 边缘
     sqlite3_bind_double(stmt, idx++, rec.edgeDensity);
 
     // hist_path
     if (rec.histPath.empty()) { sqlite3_bind_null(stmt, idx++); }
-    else                       { sqlite3_bind_text(stmt, idx++, rec.histPath.c_str(), -1, SQLITE_TRANSIENT); }
+    else                       { sqlite3_bind_text(stmt, idx++, hist.c_str(), -1, SQLITE_TRANSIENT); }
 
     // feature_version
     sqlite3_bind_int(stmt, idx++, rec.featureVersion);
@@ -443,14 +465,29 @@ bool Database::saveImageColorOrder(int id, const ImageColorOrder& color)
 
 bool Database::updateImagePath(int id, const std::string& oldPath, const std::string& newPath)
 {
+    std::string oldValue = oldPath, newValue = newPath;
+    try
+    {
+        if (m_portable)
+        {
+            const LibraryPaths paths(m_path);
+            oldValue = paths.store(oldPath);
+            newValue = paths.store(newPath);
+        }
+    }
+    catch (const std::exception &error)
+    {
+        m_error = error.what();
+        return false;
+    }
     auto *statement = prepareCached(m_pathStatement, "UPDATE images SET file_path=? WHERE id=? AND file_path=?");
     if (!statement)
     {
         return false;
     }
-    sqlite3_bind_text(statement, 1, newPath.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(statement, 1, newValue.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(statement, 2, id);
-    sqlite3_bind_text(statement, 3, oldPath.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(statement, 3, oldValue.c_str(), -1, SQLITE_TRANSIENT);
     const bool ok = sqlite3_step(statement) == SQLITE_DONE && sqlite3_changes(m_db) == 1;
     sqlite3_reset(statement);
     return ok;
@@ -607,6 +644,13 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
         rec.useCount       = sqlite3_column_int(stmt, col++);
         rec.featureVersion = sqlite3_column_int(stmt, col++);
 
+        if (m_portable)
+        {
+            const LibraryPaths paths(m_path);
+            rec.filePath = paths.resolve(rec.filePath);
+            rec.tinyPath = paths.resolve(rec.tinyPath);
+            rec.histPath = paths.resolve(rec.histPath);
+        }
         results.push_back(rec);
     }
 
