@@ -764,6 +764,35 @@ TEST_CASE("spatial selection covers row edges and relaxes distance before qualit
     }
 }
 
+TEST_CASE("expanded candidates merge by ID and recompute the quality boundary")
+{
+    using namespace mosaicraft;
+    std::vector<ImageRecord> records(4);
+    for (int i = 0; i < 4; ++i)
+    {
+        records[i].id = i + 1;
+        records[i].grid4x4.assign(192, i * 50.0f);
+    }
+    std::vector<int> selected(10, -1);
+    selected[0] = 0;
+    SelectionOptions options;
+    options.quality = options.spatial = options.expand = true;
+    detail::NeighborhoodState legacy(records, 5, 10, 100);
+    detail::SelectionPolicy policy(records, legacy, options, 0, 4, &selected, 5);
+    policy.add(0, 1.0);
+    CHECK(policy.inspect(1).radius3Candidates == 0);
+    CHECK(policy.contains(0));
+    policy.add(0, 1.0);
+    policy.add(1, 0.5);
+    policy.add(2, 0.51);
+    policy.add(3, 0.52);
+    const auto d = policy.inspect(1);
+    CHECK(d.candidates == 4);
+    CHECK(d.qualityCandidates == 3);
+    CHECK(d.radius3Candidates == 3);
+    CHECK(d.limit == doctest::Approx(0.5251));
+}
+
 TEST_CASE("labDistance — identical colors")
 {
     CHECK(labDistance(50, 0, 0, 50, 0, 0) == doctest::Approx(0.0));

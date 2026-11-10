@@ -104,6 +104,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     {
         return runtime.fail("invalid_argument", "invalid experimental selection options or analyze enabled");
     }
+    if (m_selectionOptions.expand && (!m_selectionOptions.quality || !m_selectionOptions.spatial || cfg.candidates > 600))
+    {
+        return runtime.fail("invalid_argument", "expansion requires quality and spatial selection, candidates <= 600");
+    }
     if (m_selectionObserver)
     {
         m_selectionObserver->clear();
@@ -584,8 +588,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     if (m_selectionOptions.enabled())
     {
         selection = std::make_unique<detail::SelectionPolicy>(allRecords, neighborhood, m_selectionOptions,
-                                                              cfg.usePenalty, N, &bestLibIdx, tilesX);
+                                                              cfg.usePenalty, N + (m_selectionOptions.expand ? 900 : 0),
+                                                              &bestLibIdx, tilesX);
         selectionBytes = selection->capacityBytes();
+        // 两个单块 CUDA 评分暂存和最多 600 个查询/分数的上界；不随总图块数增长。
+        selectionBytes += m_selectionOptions.expand ? 32 * 1024 : 0;
         if (m_selectionObserver)
         {
             if (selectionBytes >= m_limits.hostBytes ||
@@ -697,6 +704,19 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         WorkerPool featureWorkers(static_cast<unsigned>(std::min<size_t>(batchRows, featureThreads)));
         std::unique_ptr<cuda::FeatureWorkspace> workspace;
         std::unique_ptr<cuda::ScoreWorkspace> scoreWorkspace;
+        std::unique_ptr<cuda::ScoreWorkspace> expandedScores[2];
+        std::vector<int> expandedIndices;
+        std::vector<double> expandedErrors;
+        const size_t expansionDeviceReserve = m_selectionOptions.expand ? 64 * 1024 : 0;
+        if (m_selectionOptions.expand)
+        {
+            expandedIndices.reserve(600);
+            expandedErrors.reserve(600);
+            for (auto &scores : expandedScores)
+            {
+                scores = std::make_unique<cuda::ScoreWorkspace>();
+            }
+        }
         const size_t scratch = checkedMatchProduct(N, sizeof(int) + sizeof(std::pair<double, int>)) +
                                FeatureIndex::kDimension * sizeof(float);
         cuda::CompatibleFeatureWorkspace compatible;
@@ -762,13 +782,14 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 options.downloadTiny = cfg.analyze;
                 options.downloadLbp = cfg.analyze || cfg.adaptiveWeights;
                 options.hostBudget = hostBudget - hostRows - scratch - scoreHost;
-                options.deviceBudget -= scoreRowBytes;
+                options.deviceBudget -= scoreRowBytes + expansionDeviceReserve;
                 pipeline = workspace->preparePipeline(options, cfg.benchmark ? &metrics.featureTimings : nullptr);
                 if (pipeline)
                 {
                     const auto allocationStart = Clock::now();
                     pipeline = scoreWorkspace->preparePipeline(static_cast<int>(batchRows), N, scoreHost,
-                                                                 workspace->residentBytes());
+                                                                 workspace->residentBytes(),
+                                                                 256ULL * 1024 * 1024 - expansionDeviceReserve);
                     metrics.scoreTimings.allocationMs += Ms(Clock::now() - allocationStart).count();
                 }
                 if (!pipeline)
@@ -779,6 +800,18 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     metrics.featureTimings.pinnedBytes = metrics.featureTimings.residentBytes = metrics.featureTimings.pixelBytes = 0;
                 }
                 pinnedBytes = workspace->pinnedBytes() + scoreWorkspace->pinnedBytes();
+            }
+            if (pipeline && m_selectionOptions.expand)
+            {
+                for (int i = 0; i < 2; ++i)
+                {
+                    if (!expandedScores[i]->preparePipeline(1, i == 0 ? 300 : 600, 16 * 1024,
+                                                           workspace->residentBytes() + scoreWorkspace->pinnedBytes()))
+                    {
+                        return runtime.fail("cuda_execution_failed", "cannot prepare expansion scoring workspace");
+                    }
+                }
+                // 这部分 pinned 暂存已包含在 selectionBytes 的额外预算中。
             }
         }
         std::unique_ptr<FeaturePack::Reader> featureReader;
@@ -869,6 +902,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                                   : "compatible_cuda";
         };
         runtime.backends(backendName(backends.features), backendName(backends.scoring));
+        if (m_selectionOptions.expand && backends.scoring == ScoreBackend::CompatibleCuda)
+        {
+            return runtime.fail("invalid_argument", "experimental expansion supports CPU and template CUDA scoring");
+        }
         std::vector<std::vector<float>> libGrid4x4;
         if (templateCuda && cfg.analyze)
         {
@@ -1144,8 +1181,9 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             return true;
         };
+        // 扩搜会再次读取当前设备特征；下一批预取不能提前覆盖同一个工作区。
         const bool prefetch =
-            templateCuda && totalTiles > batchRows && hostBudget >= scratch + pinnedBytes &&
+            templateCuda && !m_selectionOptions.expand && totalTiles > batchRows && hostBudget >= scratch + pinnedBytes &&
             gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, pipeline) <=
                 (hostBudget - scratch - pinnedBytes) / 2;
         metrics.matchingPrefetch = prefetch;
@@ -1183,11 +1221,83 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             auto &tileEdgeW = buffers.edgeW;
             auto &tileLbpW = buffers.lbpW;
             auto &tileGrid4x4 = buffers.grid4;
-            auto selectExperimental = [&](int ti)
+            auto selectExperimental = [&](int local, int ti) -> bool
             {
+                const auto initial = selection->inspect(ti);
+                int queried = N, steps = 0;
+                double expansionMs = 0;
+                for (const int wanted : {300, 600})
+                {
+                    if (!m_selectionOptions.expand || wanted <= N || selection->inspect(ti).radius3Candidates >= 3)
+                    {
+                        continue;
+                    }
+                    const auto expansionStart = Clock::now();
+                    const auto queryStart = Clock::now();
+                    const auto ids = annIndex->query(buffers.queries.data() + local * FeatureIndex::kDimension, wanted);
+                    expandedIndices.assign(wanted, -1);
+                    size_t added = 0;
+                    for (const int id : ids)
+                    {
+                        const int index = annIndex->idToAllRecordsIndex(id);
+                        if (index >= 0 && std::abs(allRecords[index].avgL - allTL[local]) <= cfg.lRange &&
+                            !selection->contains(index))
+                        {
+                            expandedIndices[added++] = index;
+                        }
+                    }
+                    metrics.msANNQuery += Ms(Clock::now() - queryStart).count();
+                    if (added)
+                    {
+                        const auto scoreStart = Clock::now();
+                        expandedErrors.resize(wanted);
+                        if (templateCuda)
+                        {
+                            auto &extra = *expandedScores[wanted == 300 ? 0 : 1];
+                            const bool ok = pipeline
+                                ? cuda::scoreDeviceBatch(workspace->deviceView(local, 1), &allTL[local], &allTA[local],
+                                    &allTB[local], &allEdge[local], expandedIndices.data(), wanted, gpuLib,
+                                    &tileLabW[local], &tileGridW[local], &tileTinyW[local], &tileEdgeW[local],
+                                    &tileLbpW[local], 0, expandedErrors.data(), extra)
+                                : cuda::scoreBatch(1, &allTL[local], &allTA[local], &allTB[local], allGrid[local].data(),
+                                    allTiny[local].data(), &allEdge[local], allLBP[local].data(), expandedIndices.data(),
+                                    wanted, gpuLib, &tileLabW[local], &tileGridW[local], &tileTinyW[local],
+                                    &tileEdgeW[local], &tileLbpW[local], 0, expandedErrors.data(), nullptr, 32 * 1024, &extra);
+                            if (!ok)
+                            {
+                                return runtime.fail("cuda_execution_failed", "CUDA expansion scoring failed");
+                            }
+                            metrics.msGPUScore += Ms(Clock::now() - scoreStart).count();
+                        }
+                        else
+                        {
+                            featureReader->prepare(expandedIndices);
+                            for (size_t j = 0; j < added; ++j)
+                            {
+                                const int index = expandedIndices[j];
+                                expandedErrors[j] = cpuBaseScore(buffers, local, allRecords[index],
+                                                                featureReader->get(index), 0);
+                            }
+                            metrics.msCPUScore += Ms(Clock::now() - scoreStart).count();
+                        }
+                        for (size_t j = 0; j < added; ++j)
+                        {
+                            selection->add(expandedIndices[j], expandedErrors[j]);
+                        }
+                    }
+                    queried = wanted;
+                    ++steps;
+                    expansionMs += Ms(Clock::now() - expansionStart).count();
+                }
                 SelectionDiagnostic diagnostic;
                 thread_local std::mt19937 rng(std::random_device{}());
                 const int chosen = selection->choose(ti, cfg.topNrandom, m_fixedSeed ? seededRng : rng, diagnostic);
+                diagnostic.initialCandidates = initial.candidates;
+                diagnostic.initialMinimum = initial.minimum;
+                diagnostic.initialRadius3Candidates = initial.radius3Candidates;
+                diagnostic.queried = queried;
+                diagnostic.expansionSteps = steps;
+                diagnostic.expansionMs = expansionMs;
                 if (m_selectionObserver)
                 {
                     (*m_selectionObserver)[ti] = diagnostic;
@@ -1195,13 +1305,15 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 if (chosen < 0)
                 {
                     ++noCandidateCount;
-                    return;
+                    return true;
                 }
                 bestLibIdx[ti] = chosen;
+                hasCandidates = true;
                 if (!m_selectionOptions.spatial)
                 {
                     neighborhood.recordSelection(chosen, ti);
                 }
+                return true;
             };
             if (templateCuda)
             {
@@ -1272,7 +1384,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         {
                             selection->add(indices[j], scores[j]);
                         }
-                        selectExperimental(ti);
+                        if (!selectExperimental(local, ti))
+                        {
+                            return false;
+                        }
                         continue;
                     }
                     // 统计有效候选数，跳过全为 -1 的 tile
@@ -1512,7 +1627,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                     : cpuBaseScore(buffers, local, allRecords[index], featureReader->get(index), 0));
                             }
                         }
-                        selectExperimental(ti);
+                        if (!selectExperimental(local, ti))
+                        {
+                            return false;
+                        }
                         continue;
                     }
                     scored.clear();
@@ -1651,6 +1769,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     if (m_selectedObserver)
     {
         *m_selectedObserver = bestLibIdx;
+    }
+    if (selection && noCandidateCount)
+    {
+        releaseGpuLib();
+        return runtime.fail("no_candidates", "experimental selection has tiles without eligible candidates");
     }
     if (m_matchOnly)
     {

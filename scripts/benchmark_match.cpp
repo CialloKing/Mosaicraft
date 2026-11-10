@@ -19,6 +19,7 @@ int main(int argc, char **argv)
     {
         std::cerr << "usage: benchmark_match <request.json> [small|indices|small-indices]"
                      " [--seed uint32] [--selections] [--match-only] [--batch-tiles count]"
+                     " [--strategy L|Q|D|QD|QDX] [--epsilon fraction] [--diagnostics rows.json]"
                      " [--summary output.json]\n";
         return 1;
     }
@@ -69,7 +70,7 @@ int main(int argc, char **argv)
         else if (argument == "--strategy" && i + 1 < argc)
         {
             strategy = argv[++i];
-            if (strategy != "L" && strategy != "Q" && strategy != "D" && strategy != "QD")
+            if (strategy != "L" && strategy != "Q" && strategy != "D" && strategy != "QD" && strategy != "QDX")
             {
                 std::cerr << "invalid selection strategy\n";
                 return 1;
@@ -110,8 +111,9 @@ int main(int argc, char **argv)
         return 1;
     }
     request.config.benchmark = true;
-    selectionOptions.quality = strategy == "Q" || strategy == "QD";
-    selectionOptions.spatial = strategy == "D" || strategy == "QD";
+    selectionOptions.quality = strategy == "Q" || strategy == "QD" || strategy == "QDX";
+    selectionOptions.spatial = strategy == "D" || strategy == "QD" || strategy == "QDX";
+    selectionOptions.expand = strategy == "QDX";
     if (!profile.empty() || fixedSeed || capture || !summaryPath.empty() || batchTiles ||
         selectionOptions.enabled() || !diagnosticsPath.empty())
     {
@@ -158,6 +160,9 @@ int main(int argc, char **argv)
                                 {"quality_candidates", d.qualityCandidates}, {"minimum", d.minimum},
                                 {"limit", d.limit}, {"error", d.error}, {"radius", d.radius},
                                 {"radius3_candidates", d.radius3Candidates}, {"similar_fallback", d.similarFallback},
+                                {"initial_candidates", d.initialCandidates}, {"initial_minimum", d.initialMinimum},
+                                {"initial_radius3_candidates", d.initialRadius3Candidates}, {"queried", d.queried},
+                                {"expansion_steps", d.expansionSteps}, {"expansion_ms", d.expansionMs},
                                 {"radius_reason", d.radius >= 0 && d.radius < 3 ? "same_image_conflict" : "none"}});
             }
             std::ofstream output(u8path(diagnosticsPath));

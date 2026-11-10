@@ -12,11 +12,12 @@ struct SelectionOptions
 {
     bool quality = false;
     bool spatial = false;
+    bool expand = false;
     double relative = 0.05;
     double absolute = 0.0001;
     bool enabled() const
     {
-        return quality || spatial;
+        return quality || spatial || expand;
     }
 };
 
@@ -25,6 +26,9 @@ struct SelectionDiagnostic
     int selected = -1, candidates = 0, qualityCandidates = 0;
     int radius = -1, radius3Candidates = -1;
     bool similarFallback = false;
+    int initialCandidates = 0, initialRadius3Candidates = -1, queried = 0, expansionSteps = 0;
+    double initialMinimum = std::numeric_limits<double>::quiet_NaN();
+    double expansionMs = 0;
     double minimum = std::numeric_limits<double>::quiet_NaN();
     double limit = std::numeric_limits<double>::quiet_NaN();
     double error = std::numeric_limits<double>::quiet_NaN();
@@ -127,6 +131,13 @@ class SelectionPolicy
             }
         }
         m_candidates.push_back({index, error, 0});
+    }
+    bool contains(int index) const
+    {
+        return std::any_of(m_candidates.begin(), m_candidates.end(), [&](const Candidate &candidate)
+        {
+            return m_records[candidate.index].id == m_records[index].id;
+        });
     }
     SelectionDiagnostic inspect(int tile)
     {
