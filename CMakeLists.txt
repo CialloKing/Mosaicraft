@@ -336,6 +336,9 @@ target_link_libraries(mosaicraft_features_benchmark PRIVATE mosaicraft_core mosa
 add_executable(mosaicraft_match_benchmark EXCLUDE_FROM_ALL scripts/benchmark_match.cpp)
 target_link_libraries(mosaicraft_match_benchmark PRIVATE mosaicraft_core mosaicraft_cuda)
 
+add_executable(mosaicraft_quality_benchmark EXCLUDE_FROM_ALL scripts/benchmark_quality.cpp)
+target_link_libraries(mosaicraft_quality_benchmark PRIVATE mosaicraft_core mosaicraft_cuda)
+
 add_executable(mosaicraft_cuda_replay EXCLUDE_FROM_ALL scripts/benchmark_cuda_replay.cpp)
 target_link_libraries(mosaicraft_cuda_replay PRIVATE mosaicraft_core mosaicraft_cuda)
 

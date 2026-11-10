@@ -1,20 +1,60 @@
 #include "core/ApiRequestParser.h"
 #include "core/MatchingAccess.h"
 #include "core/MosaicService.h"
+#include "core/RuntimeContext.h"
 #include "core/UnicodeIO.h"
+#include "core/json.hpp"
+#include <charconv>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <opencv2/core/version.hpp>
 
 using namespace mosaicraft;
 
 // 复用 API 配置以指定小输出 tile，不给生产 CLI 增加基准专用参数。
 int main(int argc, char **argv)
 {
-    if (argc < 2 || argc > 3)
+    if (argc < 2)
     {
-        std::cerr << "usage: benchmark_match <mosaic-request.json> [small|indices|small-indices]\n";
+        std::cerr << "usage: benchmark_match <request.json> [small|indices|small-indices]"
+                     " [--seed uint32] [--selections] [--summary output.json]\n";
         return 1;
+    }
+    std::string profile, summaryPath;
+    bool fixedSeed = false, capture = false;
+    uint32_t seed = 0;
+    for (int i = 2; i < argc; ++i)
+    {
+        const std::string argument = argv[i];
+        if (argument == "--seed" && i + 1 < argc)
+        {
+            const std::string value = argv[++i];
+            const auto parsed = std::from_chars(value.data(), value.data() + value.size(), seed);
+            if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size())
+            {
+                std::cerr << "invalid uint32 seed\n";
+                return 1;
+            }
+            fixedSeed = true;
+        }
+        else if (argument == "--summary" && i + 1 < argc)
+        {
+            summaryPath = argv[++i];
+        }
+        else if (argument == "--selections")
+        {
+            capture = true;
+        }
+        else if (profile.empty() && (argument == "small" || argument == "indices" || argument == "small-indices"))
+        {
+            profile = argument;
+        }
+        else
+        {
+            std::cerr << "unknown benchmark option: " << argument << '\n';
+            return 1;
+        }
     }
     std::ifstream input(u8path(argv[1]));
     const std::string body((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
@@ -26,34 +66,51 @@ int main(int argc, char **argv)
         return 1;
     }
     request.config.benchmark = true;
-    if (argc == 3)
+    if (!profile.empty() || fixedSeed || capture || !summaryPath.empty())
     {
-        const std::string profile = argv[2];
-        if (profile != "small" && profile != "indices" && profile != "small-indices")
-        {
-            std::cerr << "unknown benchmark budget profile\n";
-            return 1;
-        }
         MosaicEngine engine;
-        if (profile != "indices")
+        MatchingLimits limits;
+        if (profile == "small" || profile == "small-indices")
         {
-            MatchingAccess::configure(engine, MatchingLimits{64ULL * 1024 * 1024, 64ULL * 1024 * 1024, 256});
+            limits = MatchingLimits{64ULL * 1024 * 1024, 64ULL * 1024 * 1024, 256};
         }
+        MatchingAccess::configure(engine, limits, fixedSeed, seed);
         std::vector<int> selected;
-        if (profile != "small")
+        capture = capture || profile == "indices" || profile == "small-indices";
+        if (capture)
         {
             MatchingAccess::captureSelections(engine, selected);
         }
-        if (!engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config))
+        RuntimeContext runtime;
+        if (!engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config, runtime))
         {
             return 1;
         }
-        if (profile != "small")
+        if (capture)
         {
             std::ofstream output(u8path(request.outputPath + ".indices.bin"), std::ios::binary);
             output.write(reinterpret_cast<const char *>(selected.data()), selected.size() * sizeof(int));
             if (!output)
             {
+                return 1;
+            }
+        }
+        if (!summaryPath.empty())
+        {
+            const auto state = runtime.snapshot();
+            nlohmann::json summary = {
+                {"seed", fixedSeed ? nlohmann::json(seed) : nlohmann::json(nullptr)},
+                {"selected_count", selected.size()}, {"feature_backend", state.featureBackend},
+                {"score_backend", state.scoreBackend}, {"width", state.width}, {"height", state.height},
+                {"matched", state.matched}, {"failed", state.failed}, {"warnings", state.warningCount},
+                {"metrics", state.metrics}, {"opencv_version", CV_VERSION}
+            };
+            std::ofstream output(u8path(summaryPath));
+            output << summary.dump(2) << '\n';
+            output.close();
+            if (!output)
+            {
+                std::cerr << "cannot write benchmark summary\n";
                 return 1;
             }
         }
