@@ -1569,6 +1569,24 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     {
         *m_selectedObserver = bestLibIdx;
     }
+    if (m_matchOnly)
+    {
+        // 特征研究止于选图；不读取素材像素、不生成输出，也不累计图库使用次数。
+        releaseGpuLib();
+        const int selected = static_cast<int>(std::count_if(bestLibIdx.begin(), bestLibIdx.end(),
+                                                          [](int index) { return index >= 0; }));
+        runtime.output(tilesX, tilesY, "selection", selected, totalTiles - selected);
+        runtime.metric("totalMs", Ms(Clock::now() - tStart).count());
+        runtime.metric("matchingMs", metrics.matchingWallMs);
+        runtime.metric("featureMs", metrics.msFeat);
+        runtime.metric("annQueryMs", metrics.msANNQuery);
+        runtime.metric("selectionMs", metrics.msSelect);
+        runtime.metric("matchingBufferPeakBytes", metrics.matchingPeakBytes);
+        runtime.metric("featureCachePeakBytes", metrics.featureReadStats.peakBytes);
+        runtime.metric("deviceTemporaryBytes", m_compatibleTemporaryBytes);
+        runtime.stage("finalizing");
+        return selected == totalTiles || runtime.fail("no_candidates", "some tiles have no eligible candidates");
+    }
     std::cout << " done" << std::endl;
     if (templateCuda && cfg.adaptiveWeights)
     {

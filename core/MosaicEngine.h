@@ -116,6 +116,7 @@ public:
     MatchingLimits m_limits;
     bool m_fixedSeed = false;
     uint32_t m_seed = 0;
+    bool m_matchOnly = false;
     std::vector<int> *m_selectedObserver = nullptr;
     size_t m_compatibleFeatureImages = 0;
     size_t m_compatibleScoreTiles = 0;

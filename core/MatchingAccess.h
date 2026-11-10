@@ -16,6 +16,10 @@ struct MatchingAccess
     {
         engine.m_selectedObserver = &selected;
     }
+    static void matchOnly(MosaicEngine &engine, bool enabled = true)
+    {
+        engine.m_matchOnly = enabled;
+    }
     static size_t compatibleFeatureImages(const MosaicEngine &engine)
     {
         return engine.m_compatibleFeatureImages;

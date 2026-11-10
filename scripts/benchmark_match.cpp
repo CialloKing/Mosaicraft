@@ -18,11 +18,14 @@ int main(int argc, char **argv)
     if (argc < 2)
     {
         std::cerr << "usage: benchmark_match <request.json> [small|indices|small-indices]"
-                     " [--seed uint32] [--selections] [--summary output.json]\n";
+                     " [--seed uint32] [--selections] [--match-only] [--batch-tiles count]"
+                     " [--summary output.json]\n";
         return 1;
     }
     std::string profile, summaryPath;
     bool fixedSeed = false, capture = false;
+    bool matchOnly = false;
+    size_t batchTiles = 0;
     uint32_t seed = 0;
     for (int i = 2; i < argc; ++i)
     {
@@ -46,6 +49,21 @@ int main(int argc, char **argv)
         {
             capture = true;
         }
+        else if (argument == "--match-only")
+        {
+            matchOnly = true;
+            capture = true;
+        }
+        else if (argument == "--batch-tiles" && i + 1 < argc)
+        {
+            const std::string value = argv[++i];
+            const auto parsed = std::from_chars(value.data(), value.data() + value.size(), batchTiles);
+            if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || batchTiles == 0)
+            {
+                std::cerr << "invalid batch size\n";
+                return 1;
+            }
+        }
         else if (profile.empty() && (argument == "small" || argument == "indices" || argument == "small-indices"))
         {
             profile = argument;
@@ -66,7 +84,7 @@ int main(int argc, char **argv)
         return 1;
     }
     request.config.benchmark = true;
-    if (!profile.empty() || fixedSeed || capture || !summaryPath.empty())
+    if (!profile.empty() || fixedSeed || capture || !summaryPath.empty() || batchTiles)
     {
         MosaicEngine engine;
         MatchingLimits limits;
@@ -74,7 +92,12 @@ int main(int argc, char **argv)
         {
             limits = MatchingLimits{64ULL * 1024 * 1024, 64ULL * 1024 * 1024, 256};
         }
+        if (batchTiles)
+        {
+            limits.maxTiles = batchTiles;
+        }
         MatchingAccess::configure(engine, limits, fixedSeed, seed);
+        MatchingAccess::matchOnly(engine, matchOnly);
         std::vector<int> selected;
         capture = capture || profile == "indices" || profile == "small-indices";
         if (capture)
@@ -103,7 +126,7 @@ int main(int argc, char **argv)
                 {"selected_count", selected.size()}, {"feature_backend", state.featureBackend},
                 {"score_backend", state.scoreBackend}, {"width", state.width}, {"height", state.height},
                 {"matched", state.matched}, {"failed", state.failed}, {"warnings", state.warningCount},
-                {"metrics", state.metrics}, {"opencv_version", CV_VERSION}
+                {"metrics", state.metrics}, {"opencv_version", CV_VERSION}, {"match_only", matchOnly}
             };
             std::ofstream output(u8path(summaryPath));
             output << summary.dump(2) << '\n';

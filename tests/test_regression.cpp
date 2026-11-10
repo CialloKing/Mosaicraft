@@ -186,6 +186,43 @@ MosaicRequest makeMosaicRequest(const TempWorkspace& workspace)
 
 } // namespace
 
+TEST_CASE("match-only uses feature payloads without photos output or usage writes")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    writeTargetImage(workspace.targetPath());
+    REQUIRE(BuildService().run(makeBuildRequest(workspace)).ok);
+    auto request = makeMosaicRequest(workspace);
+    request.config.lRange = 255;
+    Database db(request.dbPath, Database::OpenMode::Existing);
+    REQUIRE(db.isOpen());
+    // 不存在的素材路径可证明匹配入口没有偷偷走贴图或图像解码分支。
+    sqlite3 *raw = nullptr;
+    REQUIRE(sqlite3_open(request.dbPath.c_str(), &raw) == SQLITE_OK);
+    REQUIRE(sqlite3_exec(raw, "UPDATE images SET file_path='missing-photo-' || id || '.png'", nullptr, nullptr, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_close(raw) == SQLITE_OK);
+    const auto before = db.allRecords();
+    MosaicEngine engine;
+    MatchingAccess::configure(engine, MatchingLimits{}, true, 42);
+    MatchingAccess::matchOnly(engine);
+    std::vector<int> selected;
+    MatchingAccess::captureSelections(engine, selected);
+    RuntimeContext runtime(false);
+    REQUIRE(engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config, runtime));
+    CHECK(selected.size() == 4);
+    CHECK(std::all_of(selected.begin(), selected.end(), [](int index) { return index >= 0; }));
+    CHECK_FALSE(fs::exists(workspace.mosaicPath()));
+    CHECK(runtime.snapshot().format == "selection");
+    CHECK(runtime.snapshot().artifacts.empty());
+    const auto after = db.allRecords();
+    REQUIRE(after.size() == before.size());
+    for (size_t i = 0; i < before.size(); ++i)
+    {
+        CHECK(after[i].id == before[i].id);
+        CHECK(after[i].useCount == before[i].useCount);
+    }
+}
+
 TEST_CASE("oversized single images use the planned format tile and actual path")
 {
     TempWorkspace workspace;
