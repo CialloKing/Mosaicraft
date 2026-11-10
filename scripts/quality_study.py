@@ -325,11 +325,25 @@ def evaluate(args, manifest):
         raise RuntimeError("Source library changed during the study")
     save(root / "results.json", report)
     comparisons(root, manifest, results)
+    export_data(root, report)
     print(f"Complete study: {root / 'results.json'}", flush=True)
 
 
+def export_data(root, report):
+    # 可交付数据保留全部测量与选图摘要，不附带原始马赛克图像。
+    public = json.loads(json.dumps(report))
+    public["comparison_visualization"] = "stored mean colors and numeric image IDs; no library photographs"
+    public["visualization_script_sha256"] = digest(__file__)
+    for group in ("runs", "performance"):
+        for run in public[group]:
+            run.pop("output", None)
+            run["request"].pop("output", None)
+            run["selection"] = f"selections/{run['id']}.bin"
+    save(root / "public-results.json", public)
+
+
 def comparisons(root, manifest, results):
-    """A fixed anonymization and baseline-selected crop coordinates prevent cherry-picking."""
+    """Draw numeric color/identity maps, without reproducing library photographs."""
     folder = root / "comparisons"
     folder.mkdir(exist_ok=True)
     labels = list(VARIANTS)
@@ -337,6 +351,15 @@ def comparisons(root, manifest, results):
     key = {chr(65 + i): variant for i, variant in enumerate(labels)}
     save(folder / "key.json", key)
     font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", 18) if os.name == "nt" else ImageFont.load_default()
+    # Match Database::allRecords exactly: omitting its WHERE clause changes equal-count row order.
+    with readonly_database(manifest["snapshot"]) as connection:
+        records = connection.execute(
+            "SELECT id,avg_l,avg_a,avg_b FROM images WHERE avg_l BETWEEN ? AND ? "
+            "ORDER BY use_count ASC LIMIT ?", (-np.finfo(float).max, np.finfo(float).max,
+                                             manifest["library_rows"] + 1)).fetchall()
+    save(folder / "record-index-to-id.json", [record[0] for record in records])
+    colors = np.clip(np.rint(np.array([r[1:] for r in records])), 0, 255).astype(np.uint8)
+    colors = cv2.cvtColor(colors.reshape(-1, 1, 3), cv2.COLOR_LAB2RGB).reshape(-1, 3)
     for case in manifest["cases"]:
         baseline = next(r for r in results if r["case"] == case["id"] and
                         r["backend"] == "cpu" and r["variant"] == "baseline" and r["seed"] == 42)
@@ -350,30 +373,44 @@ def comparisons(root, manifest, results):
                                        0, columns * 9 - reference.shape[1], cv2.BORDER_REFLECT)
         reference = Image.fromarray(cv2.cvtColor(reference, cv2.COLOR_BGR2RGB))
         for backend in ("cpu", "cuda"):
+            selections = []
             images = []
             for variant in labels:
                 run = next(r for r in results if r["case"] == case["id"] and
                            r["backend"] == backend and r["variant"] == variant and r["seed"] == 42)
-                with Image.open(run["output"]) as image:
-                    images.append(image.convert("RGB"))
-            sheet = Image.new("RGB", (1600, 520), "#eeeeee")
+                selected = np.fromfile(run["selection"], dtype=np.int32).reshape(rows, columns)
+                if np.any(selected < 0) or np.any(selected >= len(records)):
+                    raise RuntimeError("Invalid selection in numeric comparison")
+                selections.append(selected)
+                images.append(Image.fromarray(colors[selected]).resize((columns * 45, rows * 80),
+                                                                       Image.Resampling.NEAREST))
+            preview_height = min(470, round(304 * rows * 80 / (columns * 45)))
+            sheet = Image.new("RGB", (1600, preview_height + 80), "#eeeeee")
             draw = ImageDraw.Draw(sheet)
             for i, (label, image) in enumerate(zip(["Reference", *key], [reference, *images])):
                 preview = image.copy()
-                preview.thumbnail((304, 470), Image.Resampling.LANCZOS)
+                preview.thumbnail((304, preview_height), Image.Resampling.LANCZOS)
                 sheet.paste(preview, (i * 320 + (320 - preview.width) // 2, 40))
                 draw.text((i * 320 + 12, 10), label, fill="black", font=font)
+            draw.text((12, preview_height + 48), "A-D: stored mean colors only; source photographs are not shown.",
+                      fill="black", font=font)
             sheet.save(folder / f"{case['id']}-{backend}-overview.png")
-            crops = Image.new("RGB", (4 * 300, 3 * 510), "#eeeeee")
+            crops = Image.new("RGB", (1200, 1530), "#eeeeee")
             draw = ImageDraw.Draw(crops)
             for row, tile in enumerate(centers):
                 x = min(max(tile % columns - 1, 0), max(columns - 3, 0))
                 y = min(max(tile // columns - 1, 0), max(rows - 3, 0))
-                for col, (label, image) in enumerate(zip(key, images)):
-                    crop = image.crop((x * 45, y * 80, min(x + 3, columns) * 45, min(y + 3, rows) * 80))
-                    crop = crop.resize((crop.width * 2, crop.height * 2), Image.Resampling.NEAREST)
-                    crops.paste(crop, (col * 300 + (300 - crop.width) // 2, row * 510 + 30))
+                for col, (label, selected) in enumerate(zip(key, selections)):
                     draw.text((col * 300 + 10, row * 510 + 7), f"{label} / tile {tile}", fill="black", font=font)
+                    for dy in range(min(3, rows)):
+                        for dx in range(min(3, columns)):
+                            index = selected[y + dy, x + dx]
+                            color = tuple(int(v) for v in colors[index])
+                            left = col * 300 + 15 + dx * 90
+                            top = row * 510 + 30 + dy * 160
+                            draw.rectangle((left, top, left + 89, top + 159), fill=color, outline="#888888")
+                            ink = "white" if sum(color) < 350 else "black"
+                            draw.text((left + 4, top + 60), str(records[index][0]), fill=ink, font=font)
             crops.save(folder / f"{case['id']}-{backend}-crops.png")
 
 
