@@ -210,7 +210,10 @@ TEST_CASE("match-only uses feature payloads without photos output or usage write
     RuntimeContext runtime(false);
     REQUIRE(engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config, runtime));
     CHECK(selected.size() == 4);
-    CHECK(std::all_of(selected.begin(), selected.end(), [](int index) { return index >= 0; }));
+    CHECK(std::all_of(selected.begin(), selected.end(), [](int index)
+    {
+        return index >= 0;
+    }));
     CHECK_FALSE(fs::exists(workspace.mosaicPath()));
     CHECK(runtime.snapshot().format == "selection");
     CHECK(runtime.snapshot().artifacts.empty());

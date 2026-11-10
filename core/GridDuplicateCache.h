@@ -55,5 +55,9 @@ class GridDuplicateCache
         }
         return entry.similar;
     }
+    size_t capacityBytes() const
+    {
+        return m_slots.capacity() * sizeof(Entry) + (m_finite.capacity() + 7) / 8;
+    }
 };
 } // namespace mosaicraft

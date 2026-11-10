@@ -706,6 +706,64 @@ TEST_CASE("quality selection gates pure error and resolves ties by stable IDs")
     CHECK(diagnostic.error <= diagnostic.limit);
 }
 
+TEST_CASE("spatial selection covers row edges and relaxes distance before quality")
+{
+    using namespace mosaicraft;
+    std::vector<ImageRecord> records(3);
+    for (int i = 0; i < 3; ++i)
+    {
+        records[i].id = i + 1;
+        records[i].grid4x4.assign(192, i == 2 ? 100.0f : 0.0f);
+    }
+    std::vector<int> selected(20, -1);
+    SelectionOptions options;
+    options.quality = options.spatial = true;
+    detail::NeighborhoodState legacy(records, 5, 10, 100);
+    detail::SelectionPolicy policy(records, legacy, options, 0, 3, &selected, 5);
+    SelectionDiagnostic d;
+    std::mt19937 rng(42);
+    SUBCASE("vertical and upper-right neighbors are inspected")
+    {
+        selected[4] = 0;
+        policy.add(0, 1);
+        policy.add(2, 1.01);
+        CHECK(policy.choose(8, 1, rng, d) == 2);
+        CHECK(d.radius == 3);
+        CHECK(d.radius3Candidates == 1);
+    }
+    SUBCASE("row seam is not a false spatial neighbor and old gap is absent")
+    {
+        selected[4] = 0;
+        legacy.recordSelection(0, 4);
+        policy.add(0, 1);
+        policy.add(2, 1.01);
+        CHECK(policy.choose(5, 1, rng, d) == 0);
+        CHECK(d.radius == 3);
+    }
+    SUBCASE("a sole quality candidate relaxes radius instead of error")
+    {
+        selected[0] = 0;
+        policy.add(0, 1);
+        policy.add(2, 1.5);
+        CHECK(policy.choose(5, 10, rng, d) == 0);
+        CHECK(d.radius == 0);
+        CHECK(d.qualityCandidates == 1);
+        CHECK(d.error <= d.limit);
+    }
+    SUBCASE("distinct similar images are avoided when an alternative exists")
+    {
+        selected[0] = 0;
+        policy.add(1, 1);
+        policy.add(2, 1.01);
+        CHECK(policy.choose(1, 1, rng, d) == 2);
+        CHECK_FALSE(d.similarFallback);
+        policy.clear();
+        policy.add(1, 1);
+        CHECK(policy.choose(1, 1, rng, d) == 1);
+        CHECK(d.similarFallback);
+    }
+}
+
 TEST_CASE("labDistance — identical colors")
 {
     CHECK(labDistance(50, 0, 0, 50, 0, 0) == doctest::Approx(0.0));

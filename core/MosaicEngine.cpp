@@ -584,10 +584,15 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     if (m_selectionOptions.enabled())
     {
         selection = std::make_unique<detail::SelectionPolicy>(allRecords, neighborhood, m_selectionOptions,
-                                                              cfg.usePenalty, N);
+                                                              cfg.usePenalty, N, &bestLibIdx, tilesX);
         selectionBytes = selection->capacityBytes();
         if (m_selectionObserver)
         {
+            if (selectionBytes >= m_limits.hostBytes ||
+                checkedMatchProduct(totalTiles, sizeof(SelectionDiagnostic)) >= m_limits.hostBytes - selectionBytes)
+            {
+                return runtime.fail("invalid_argument", "selection diagnostics exceed matching host budget");
+            }
             m_selectionObserver->resize(totalTiles);
             selectionBytes += m_selectionObserver->capacity() * sizeof(SelectionDiagnostic);
         }
@@ -1193,7 +1198,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     return;
                 }
                 bestLibIdx[ti] = chosen;
-                neighborhood.recordSelection(chosen, ti);
+                if (!m_selectionOptions.spatial)
+                {
+                    neighborhood.recordSelection(chosen, ti);
+                }
             };
             if (templateCuda)
             {

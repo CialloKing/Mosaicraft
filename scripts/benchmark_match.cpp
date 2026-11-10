@@ -69,7 +69,7 @@ int main(int argc, char **argv)
         else if (argument == "--strategy" && i + 1 < argc)
         {
             strategy = argv[++i];
-            if (strategy != "L" && strategy != "Q")
+            if (strategy != "L" && strategy != "Q" && strategy != "D" && strategy != "QD")
             {
                 std::cerr << "invalid selection strategy\n";
                 return 1;
@@ -110,7 +110,8 @@ int main(int argc, char **argv)
         return 1;
     }
     request.config.benchmark = true;
-    selectionOptions.quality = strategy == "Q";
+    selectionOptions.quality = strategy == "Q" || strategy == "QD";
+    selectionOptions.spatial = strategy == "D" || strategy == "QD";
     if (!profile.empty() || fixedSeed || capture || !summaryPath.empty() || batchTiles ||
         selectionOptions.enabled() || !diagnosticsPath.empty())
     {
@@ -155,7 +156,9 @@ int main(int argc, char **argv)
             {
                 rows.push_back({{"selected", d.selected}, {"candidates", d.candidates},
                                 {"quality_candidates", d.qualityCandidates}, {"minimum", d.minimum},
-                                {"limit", d.limit}, {"error", d.error}});
+                                {"limit", d.limit}, {"error", d.error}, {"radius", d.radius},
+                                {"radius3_candidates", d.radius3Candidates}, {"similar_fallback", d.similarFallback},
+                                {"radius_reason", d.radius >= 0 && d.radius < 3 ? "same_image_conflict" : "none"}});
             }
             std::ofstream output(u8path(diagnosticsPath));
             output << rows.dump() << '\n';
