@@ -429,6 +429,10 @@ nlohmann::json apiInfoToJson(bool legacyRunEnabled, const char* entryName)
         {"version", kVersion},
         {"entry", entryName},
         {"entryPoints", entryPoints},
+        {"versions", {{"library", kLibraryVersion}, {"feature", kFeatureVersion},
+                      {"ann", kAnnVersion}, {"featurePack", kFeaturePackVersion},
+                      {"colorOrder", kColorOrderVersion}, {"journal", kJournalVersion},
+                      {"studySchema", kStudySchemaVersion}, {"checkpointPaths", kCheckpointPathsVersion}}},
         {"api", {
             {"structured", true},
             {"contractVersion", apiContractVersion()},

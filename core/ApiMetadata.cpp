@@ -1,6 +1,7 @@
 ﻿#include "ApiMetadata.h"
 
 #include <algorithm>
+#include "Version.h"
 #include <initializer_list>
 #include <set>
 #include <unordered_map>
@@ -383,13 +384,12 @@ const char* apiRequestShapeName(ApiRequestShape shape)
 
 const char* apiContractVersion()
 {
-    return "2.2";
+    return kApiVersion;
 }
 
 int apiContractMajorVersion()
 {
-    // 移除 GET purge 和收紧 HTTP 请求边界属于合约变更，旧 UI 应显式升级。
-    return 2;
+    return kApiMajorVersion;
 }
 
 const char* apiCompatibilityLevel()

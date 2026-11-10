@@ -182,7 +182,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 <body>
 <header>
   <h1>🧩 Mosaicraft</h1>
-  <span id="version-badge">命令生成器 v1.14.11</span>
+  <span id="version-badge">命令生成器 v@softwareVersion@</span>
 </header>
 <nav class="tabs" id="tabs" aria-label="功能导航">
   <button class="tab active" data-cmd="mosaic" aria-current="page">🎨 生成马赛克</button>
@@ -650,7 +650,7 @@ let currentJobId = '';
 let apiInfo = null;
 let serviceInfo = null;
 let apiEndpoints = [];
-const SUPPORTED_API_MAJOR = 2;
+const SUPPORTED_API_MAJOR = Number('@apiMajorVersion@');
 const REQUIRED_API_OPERATIONS = [
   'info',
   'endpoints',

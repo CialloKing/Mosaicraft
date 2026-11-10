@@ -1,5 +1,6 @@
 ﻿#include "FeatureExtractor.h"
 #include "FeatureUtils.h"
+#include "Version.h"
 #include "UnicodeIO.h"
 
 #include <opencv2/imgproc.hpp>
@@ -16,11 +17,8 @@ namespace mosaicraft
 
 int FeatureExtractor::featureVersion()
 {
-    // V1 = 1: AvgLAB + mean brightness
-    // V2 = 2: + Grid4x4
-    // V3 = 3: + TinyImage + 颜色统计
-    // V4 = 4: + EdgeDensity + LBP 纹理直方图
-    return 6;  // v6: 完整 8×8 分区及统一后端统计/Canny 定义
+    // 编号重置不改变现有 8×8 Grid 与各后端的计算语义。
+    return kFeatureVersion;
 }
 
 void FeatureExtractor::computeStatistics(const cv::Mat& bgr, ImageRecord& rec,

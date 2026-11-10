@@ -86,17 +86,12 @@ function Resolve-RepoPath {
 }
 
 function Get-ProjectVersion {
-    if ($Version) {
-        return $Version
+    $versions = Get-Content -LiteralPath (Join-Path $RepoRoot "contracts.json") -Raw | ConvertFrom-Json
+    if ($Version -and $Version -ne $versions.softwareVersion)
+    {
+        throw "Version must match contracts.json: $($versions.softwareVersion)"
     }
-
-    $versionHeader = Join-Path $RepoRoot "core\Version.h"
-    $content = Get-Content -LiteralPath $versionHeader -Raw
-    $match = [regex]::Match($content, 'kVersion\s*=\s*"([^"]+)"')
-    if (-not $match.Success) {
-        throw "Unable to read version from $versionHeader"
-    }
-    return $match.Groups[1].Value
+    return $versions.softwareVersion
 }
 
 function Get-GitCommit
@@ -317,6 +312,7 @@ function Write-BuildInfo
     )
 
     $buildInfoPath = Join-Path $Destination "BUILD_INFO.txt"
+    $versions = Get-Content -LiteralPath (Join-Path $RepoRoot "contracts.json") -Raw | ConvertFrom-Json
     $lines = @(
         "Name: Mosaicraft",
         "Version: $VersionText",
@@ -329,6 +325,11 @@ function Write-BuildInfo
         "Commit: $CommitHash",
         "GeneratedAtUtc: $((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"))"
     )
+    foreach ($property in $versions.PSObject.Properties)
+    {
+        $lines += "Internal.$($property.Name): $($property.Value)"
+    }
+    Copy-Item -LiteralPath (Join-Path $RepoRoot "contracts.json") -Destination (Join-Path $Destination "contracts.json")
     if ($Runtime -eq 'cuda')
     {
         foreach ($field in @('CudaArchitectures', 'CudaPtx', 'CudaToolkit', 'CudaRuntimeMode'))

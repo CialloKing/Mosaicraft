@@ -1,0 +1,17 @@
+#pragma once
+
+namespace mosaicraft
+{
+inline constexpr const char *kVersion = "@softwareVersion@";
+inline constexpr const char *kApiVersion = "@apiVersion@";
+inline constexpr int kApiMajorVersion = @apiMajorVersion@;
+inline constexpr int kLibraryVersion = @libraryVersion@;
+inline constexpr int kFeatureVersion = @featureVersion@;
+inline constexpr int kAnnVersion = @annVersion@;
+inline constexpr int kFeaturePackVersion = @featurePackVersion@;
+inline constexpr int kColorOrderVersion = @colorOrderVersion@;
+inline constexpr int kJournalVersion = @journalVersion@;
+inline constexpr int kStudySchemaVersion = @studySchemaVersion@;
+inline constexpr int kCheckpointPathsVersion = @checkpointPathsVersion@;
+inline constexpr int kUiStateVersion = @uiStateVersion@;
+}

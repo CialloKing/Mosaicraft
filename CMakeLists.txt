@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
-project(Mosaicraft VERSION 1.14.11 LANGUAGES CXX)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/contracts.json" MOSAICRAFT_CONTRACTS_JSON)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/contracts.json")
+foreach(key IN ITEMS softwareVersion libraryVersion featureVersion apiVersion apiMajorVersion annVersion
+        featurePackVersion colorOrderVersion journalVersion studySchemaVersion checkpointPathsVersion uiStateVersion)
+    string(JSON ${key} GET "${MOSAICRAFT_CONTRACTS_JSON}" ${key})
+endforeach()
+project(Mosaicraft VERSION ${softwareVersion} LANGUAGES CXX)
+configure_file(cmake/Contracts.h.in generated/MosaicraftContracts.h @ONLY)
+configure_file(tools/command-builder/index.html generated/index.html @ONLY)
 
 # C++17
 set(CMAKE_CXX_STANDARD 17)
@@ -95,7 +103,7 @@ add_custom_command(
         -o "${CUDA_OBJ1}"
         ${CUDA_CODE_FLAGS} -std=c++17
         -ccbin "${CMAKE_CXX_COMPILER}"
-        -I"${CMAKE_SOURCE_DIR}"
+        -I"${CMAKE_SOURCE_DIR}" -I"${CMAKE_BINARY_DIR}/generated"
         -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
         -I"${VCPKG_TRIPLET_INCLUDE}"
         -I"${TIFF_INCLUDE_DIR}"
@@ -112,7 +120,7 @@ add_custom_command(
         -o "${CUDA_OBJ2}"
         ${CUDA_CODE_FLAGS} -std=c++17
         -ccbin "${CMAKE_CXX_COMPILER}"
-        -I"${CMAKE_SOURCE_DIR}"
+        -I"${CMAKE_SOURCE_DIR}" -I"${CMAKE_BINARY_DIR}/generated"
         -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
         -I"${VCPKG_TRIPLET_INCLUDE}"
         -I"${TIFF_INCLUDE_DIR}"
@@ -131,7 +139,7 @@ add_custom_command(
         -o "${CUDA_OBJ3}"
         ${CUDA_CODE_FLAGS} -std=c++17
         -ccbin "${CMAKE_CXX_COMPILER}"
-        -I"${CMAKE_SOURCE_DIR}"
+        -I"${CMAKE_SOURCE_DIR}" -I"${CMAKE_BINARY_DIR}/generated"
         -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
         -I"${VCPKG_TRIPLET_INCLUDE}"
         -I"${TIFF_INCLUDE_DIR}"
@@ -151,7 +159,7 @@ add_custom_command(
         -o "${CUDA_OBJ4}"
         ${CUDA_CODE_FLAGS} -std=c++17 --fmad=false --prec-div=true --prec-sqrt=true --ftz=false
         -ccbin "${CMAKE_CXX_COMPILER}"
-        -I"${CMAKE_SOURCE_DIR}"
+        -I"${CMAKE_SOURCE_DIR}" -I"${CMAKE_BINARY_DIR}/generated"
         -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
         -I"${VCPKG_TRIPLET_INCLUDE}"
         ${NVCC_EXTRA_FLAGS}
@@ -205,6 +213,7 @@ target_compile_definitions(mosaicraft_core PRIVATE
 
 target_include_directories(mosaicraft_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
     ${TIFF_INCLUDE_DIR}
 )
 
@@ -277,7 +286,7 @@ target_include_directories(MosaicraftWebUI PRIVATE
 # 发布时自动复制 HTML 到 exe 同目录
 add_custom_command(TARGET MosaicraftWebUI POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/tools/command-builder/index.html"
+        "${CMAKE_BINARY_DIR}/generated/index.html"
         "$<TARGET_FILE_DIR:MosaicraftWebUI>/index.html"
 )
 

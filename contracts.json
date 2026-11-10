@@ -1,0 +1,14 @@
+{
+  "softwareVersion": "1.15.0",
+  "libraryVersion": 1,
+  "featureVersion": 1,
+  "apiVersion": "1.0",
+  "apiMajorVersion": 1,
+  "annVersion": 1,
+  "featurePackVersion": 1,
+  "colorOrderVersion": 1,
+  "journalVersion": 1,
+  "studySchemaVersion": 1,
+  "checkpointPathsVersion": 1,
+  "uiStateVersion": 1
+}
