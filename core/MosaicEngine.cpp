@@ -1765,7 +1765,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
     } // 索引、缓存、线程池及大批次缓冲在贴图/编码之前释放。
     metrics.matchingWallMs = Ms(Clock::now() - matchingStart).count();
-    runtime.metric("selectionBufferBytes", selectionBytes);
+    if (selection || m_matchOnly)
+    {
+        runtime.metric("selectionBufferBytes", selectionBytes);
+    }
     if (m_selectedObserver)
     {
         *m_selectedObserver = bestLibIdx;
@@ -1779,8 +1782,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     {
         // 特征研究止于选图；不读取素材像素、不生成输出，也不累计图库使用次数。
         releaseGpuLib();
-        const int selected = static_cast<int>(std::count_if(bestLibIdx.begin(), bestLibIdx.end(),
-                                                          [](int index) { return index >= 0; }));
+        const int selected = static_cast<int>(std::count_if(bestLibIdx.begin(), bestLibIdx.end(), [](int index)
+        {
+            return index >= 0;
+        }));
         runtime.output(tilesX, tilesY, "selection", selected, totalTiles - selected);
         runtime.metric("totalMs", Ms(Clock::now() - tStart).count());
         runtime.metric("matchingMs", metrics.matchingWallMs);
