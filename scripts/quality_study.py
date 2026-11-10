@@ -375,7 +375,11 @@ def summary_plot(root, report):
     axes[2].legend(fontsize=8)
     fig.suptitle("Mosaicraft quality study | CUDA selections, common CPU scoring | 2026-11-10", fontsize=12)
     for extension in ("svg", "png"):
-        fig.savefig(root / "comparisons" / ("summary." + extension), dpi=160)
+        path = root / "comparisons" / ("summary." + extension)
+        fig.savefig(path, dpi=160)
+        if extension == "svg":
+            path.write_text("\n".join(line.rstrip() for line in path.read_text(encoding="utf-8").splitlines()) + "\n",
+                            encoding="utf-8")
     plt.close(fig)
 
 
