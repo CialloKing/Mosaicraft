@@ -12,7 +12,7 @@ std::filesystem::path libraryJournalPath(const std::string& dbPath);
 class LibraryAccess
 {
 public:
-    LibraryAccess(const std::string& dbPath, bool exclusive);
+    LibraryAccess(const std::string& dbPath, bool exclusive, int waitMilliseconds = 0);
     ~LibraryAccess();
     LibraryAccess(const LibraryAccess&) = delete;
     LibraryAccess& operator=(const LibraryAccess&) = delete;

@@ -211,7 +211,153 @@ void requireLegacyPaths(const fs::path &path)
     REQUIRE(sqlite3_close(raw) == SQLITE_OK);
 }
 
+int fixtureSql(const fs::path &path, const std::string &sql)
+{
+    sqlite3 *raw = nullptr;
+    if (sqlite3_open(utf8(path).c_str(), &raw) != SQLITE_OK)
+    {
+        sqlite3_close(raw);
+        return SQLITE_CANTOPEN;
+    }
+    const int result = sqlite3_exec(raw, sql.c_str(), nullptr, nullptr, nullptr);
+    sqlite3_close(raw);
+    return result;
+}
+
 } // namespace
+
+TEST_CASE("old libraries upgrade atomically once and remain usable after relocation")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    writeTargetImage(workspace.targetPath());
+    const auto build = makeBuildRequest(workspace);
+    REQUIRE(BuildService().run(build).ok);
+    requireLegacyPaths(workspace.dbPath());
+    std::vector<ImageRecord> before;
+    {
+        Database legacy(build.dbPath, Database::OpenMode::Build);
+        REQUIRE(legacy.isOpen());
+        before = legacy.allRecords();
+        REQUIRE(legacy.recordRunUsage({{before[0].id, 9}}, "fixture", "target.png"));
+        before = legacy.allRecords();
+    }
+    bool failure = false, deferred = false, missing = false;
+    SUBCASE("backup failure leaves legacy paths intact")
+    {
+        std::ofstream(workspace.libraryDir() / ".mosaicraft-backups") << "occupied";
+        failure = true;
+    }
+    SUBCASE("transaction failure rolls back temporary and final paths")
+    {
+        REQUIRE(fixtureSql(workspace.dbPath(), "CREATE TRIGGER path_fault BEFORE UPDATE OF tiny_path ON images "
+            "BEGIN SELECT RAISE(ABORT,'path upgrade fault'); END") == SQLITE_OK);
+        failure = true;
+    }
+    SUBCASE("external resources retain legacy interpretation")
+    {
+        const auto outside = utf8(workspace.root / "outside.png");
+        REQUIRE(fixtureSql(workspace.dbPath(), "UPDATE images SET file_path='" + outside + "' WHERE id=" +
+                           std::to_string(before[0].id)) == SQLITE_OK);
+        deferred = true;
+    }
+    SUBCASE("missing internal images do not block upgrade or health diagnostics")
+    {
+        REQUIRE(fs::remove(u8path(before[0].filePath)));
+        missing = true;
+    }
+    if (failure)
+    {
+        Database blocked(build.dbPath, Database::OpenMode::Existing);
+        CHECK_FALSE(blocked.isOpen());
+        CHECK(blocked.error().find("upgrade failed") != std::string::npos);
+        Database legacy(build.dbPath, Database::OpenMode::Build);
+        REQUIRE(legacy.isOpen());
+        CHECK(legacy.getMeta("path_format").empty());
+        const auto after = legacy.allRecords();
+        REQUIRE(after.size() == before.size());
+        for (size_t i = 0; i < before.size(); ++i)
+        {
+            CHECK(after[i].filePath == before[i].filePath);
+            CHECK(after[i].tinyPath == before[i].tinyPath);
+        }
+        return;
+    }
+    {
+        Database upgraded(build.dbPath, Database::OpenMode::Existing);
+        REQUIRE_MESSAGE(upgraded.isOpen(), upgraded.error());
+        if (deferred)
+        {
+            CHECK(upgraded.getMeta("path_format").empty());
+            RuntimeContext runtime(false);
+            upgraded.reportPaths(runtime);
+            CHECK(runtime.snapshot().warnings.count("library_path_upgrade_deferred") == 1);
+            return;
+        }
+        CHECK(upgraded.getMeta("path_format") == "db-relative-v1");
+        const auto after = upgraded.allRecords();
+        REQUIRE(after.size() == before.size());
+        for (size_t i = 0; i < before.size(); ++i)
+        {
+            CHECK(after[i].id == before[i].id);
+            CHECK(after[i].filePath == before[i].filePath);
+            CHECK(after[i].grid4x4 == before[i].grid4x4);
+            CHECK(after[i].useCount == before[i].useCount);
+        }
+    }
+    const auto backupDir = workspace.libraryDir() / ".mosaicraft-backups";
+    REQUIRE(fs::is_directory(backupDir));
+    const auto backupCount = std::distance(fs::directory_iterator(backupDir), fs::directory_iterator{});
+    CHECK(backupCount == 1);
+    {
+        Database reopened(build.dbPath, Database::OpenMode::Existing);
+        REQUIRE(reopened.isOpen());
+        CHECK(std::distance(fs::directory_iterator(backupDir), fs::directory_iterator{}) == backupCount);
+    }
+    const auto moved = workspace.root / fs::u8path("移动 后图库");
+    fs::rename(workspace.libraryDir(), moved);
+    const auto priorCwd = fs::current_path();
+    struct RestoreCwd
+    {
+        fs::path path;
+        ~RestoreCwd()
+        {
+            fs::current_path(path);
+        }
+    } restore{priorCwd};
+    fs::current_path(workspace.outputDir());
+    {
+        Database relocated(utf8(moved / "mosaicraft.db"), Database::OpenMode::Existing);
+        REQUIRE_MESSAGE(relocated.isOpen(), relocated.error());
+        for (const auto &record : relocated.allRecords())
+        {
+            CHECK(u8path(record.filePath).parent_path() == moved);
+            CHECK(fs::exists(u8path(record.tinyPath)));
+            CHECK(fs::exists(u8path(record.histPath)));
+        }
+    }
+    const auto movedDb = utf8(moved / "mosaicraft.db");
+    const auto health = DatabaseService().health({movedDb});
+    REQUIRE(health.status.ok);
+    CHECK(health.health.missingFiles == (missing ? 1 : 0));
+    if (!missing)
+    {
+        auto mosaic = makeMosaicRequest(workspace);
+        mosaic.dbPath = movedDb;
+        mosaic.config.lRange = 255;
+        REQUIRE(MosaicService().run(mosaic).ok);
+        REQUIRE(fs::exists(workspace.mosaicPath()));
+        DatabaseUsageExportRequest exportRequest;
+        exportRequest.dbPath = movedDb;
+        exportRequest.outputDir = utf8(workspace.root / "export");
+        REQUIRE(DatabaseService().exportUsage(exportRequest).status.ok);
+        auto append = build;
+        append.dbPath = movedDb;
+        append.outputDir = utf8(moved);
+        append.appendMode = true;
+        REQUIRE(BuildService().run(append).ok);
+    }
+}
 
 TEST_CASE("match-only uses feature payloads without photos output or usage writes")
 {

@@ -31,7 +31,7 @@ Database::Database(const std::string& dbPath, OpenMode mode)
     }
     m_new = !std::filesystem::exists(u8path(m_path));
     m_exclusive = mode == OpenMode::Build;
-    m_access = std::make_unique<LibraryAccess>(m_path, m_exclusive);
+    m_access = std::make_unique<LibraryAccess>(m_path, m_exclusive, mode == OpenMode::Existing ? 5000 : 0);
     if (!m_access->acquired())
     {
         m_error = "library is busy or its operation lock cannot be opened: " + dbPath;
@@ -48,10 +48,19 @@ Database::Database(const std::string& dbPath, OpenMode mode)
     }
     if (!openConnection(mode != OpenMode::Existing))
     {
+        m_access.reset();
         return;
     }
     // 重排恢复也必须按原库格式解析路径，但有恢复清单时不能提前转换旧库。
-    m_portable = getMeta("path_format") == portablePathFormat;
+    const auto pathFormat = getMeta("path_format");
+    m_portable = pathFormat == portablePathFormat;
+    if (!pathFormat.empty() && !m_portable)
+    {
+        m_error = "unsupported library path format: " + pathFormat;
+        closeConnection();
+        m_access.reset();
+        return;
+    }
     bool valid = true;
     if (valid && mode == OpenMode::Existing)
     {
@@ -97,6 +106,7 @@ Database::Database(const std::string& dbPath, OpenMode mode)
         }
         std::cerr << "ERROR: Invalid database: " << dbPath << " (" << sqlite3_errmsg(m_db) << ")" << std::endl;
         closeConnection();
+        m_access.reset();
     }
 }
 

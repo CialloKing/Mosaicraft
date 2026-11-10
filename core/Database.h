@@ -114,6 +114,10 @@ public:
     // Build 在完成旧重排恢复后调用；普通读取在构造时自动完成这一步。
     bool ensurePortablePaths();
     void reportPaths(RuntimeContext &runtime) const;
+    const std::string &pathNotice() const
+    {
+        return m_pathNotice;
+    }
 
     // ——— 写操作 ———
 

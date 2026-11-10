@@ -236,6 +236,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
         return false;
     }
+    db.reportPaths(runtime);
 
     int dbCount = db.totalCount();
     if (dbCount == 0)

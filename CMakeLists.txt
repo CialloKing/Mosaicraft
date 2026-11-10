@@ -314,6 +314,12 @@ target_include_directories(mosaicraft_regression_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME mosaicraft_regression_tests COMMAND mosaicraft_regression_tests)
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME portable_library COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/portable_library.py"
+        --cli "$<TARGET_FILE:mosaicraft>")
+    set_tests_properties(portable_library PROPERTIES TIMEOUT 120)
+endif()
 
 find_program(POWERSHELL_COMMAND NAMES pwsh powershell)
 if (POWERSHELL_COMMAND)

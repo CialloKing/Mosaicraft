@@ -92,6 +92,10 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
         out.status = ServiceResult::failure(2, db.error());
         return out;
     }
+    if (!db.pathNotice().empty())
+    {
+        out.health.warnings.push_back(db.pathNotice());
+    }
 
     auto all = db.allRecords();
     out.health.total = static_cast<int>(all.size());

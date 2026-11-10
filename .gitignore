@@ -63,3 +63,6 @@ __pycache__/
 
 # Private research stays outside the repository
 /docs/research/
+
+# Verified pre-upgrade SQLite backups
+**/.mosaicraft-backups/
