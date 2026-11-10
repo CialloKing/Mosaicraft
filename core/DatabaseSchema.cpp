@@ -116,13 +116,26 @@ bool Database::validateSchema()
             return incompatible("incomplete table: " + table.first);
         }
     }
+    // 主键和非空约束决定后续更新语义；只有列名相同的仿造表不能视为完整图库。
     if (!scalar("SELECT count(*) FROM pragma_table_info('images') WHERE "
-                "(name='id' AND type='INTEGER' AND pk=1) OR (name='file_path' AND \"notnull\"=1)", 2) ||
+                "(name='id' AND type='INTEGER' AND pk=1) OR "
+                "(name IN ('file_path','file_hash','grid_lab','feature_version') AND \"notnull\"=1)", 5) ||
+        !scalar("SELECT count(*) FROM pragma_table_info('meta') WHERE "
+                "(name='key' AND type='TEXT' AND pk=1) OR (name='value' AND \"notnull\"=1)", 2) ||
+        !scalar("SELECT count(*) FROM pragma_table_info('image_color_order') WHERE "
+                "(name='image_id' AND type='INTEGER' AND pk=1) OR "
+                "(name IN ('file_hash','version','sort_key') AND \"notnull\"=1)", 4) ||
+        !scalar("SELECT count(*) FROM pragma_table_info('usage_stats') WHERE "
+                "name='image_id' AND type='INTEGER' AND pk=1", 1) ||
+        !scalar("SELECT count(*) FROM pragma_table_info('target_runs') WHERE "
+                "name='target_hash' AND type='TEXT' AND pk=1", 1) ||
         !scalar("SELECT count(*) FROM pragma_index_list('images') i WHERE i.\"unique\"=1 AND "
                 "(SELECT count(*) FROM pragma_index_info(i.name))=1 AND "
                 "(SELECT name FROM pragma_index_info(i.name))='file_path'", 1) ||
         !scalar("SELECT count(*) FROM pragma_foreign_key_list('usage_stats') WHERE "
-                "\"table\"='images' AND \"from\"='image_id' AND on_delete='CASCADE'", 1))
+                "\"table\"='images' AND \"from\"='image_id' AND \"to\"='id' AND on_delete='CASCADE'", 1) ||
+        !scalar("SELECT count(*) FROM pragma_foreign_key_list('image_color_order') WHERE "
+                "\"table\"='images' AND \"from\"='image_id' AND \"to\"='id' AND on_delete='CASCADE'", 1))
     {
         return incompatible("missing library constraints");
     }

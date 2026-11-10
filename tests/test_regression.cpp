@@ -224,6 +224,18 @@ TEST_CASE("new libraries reject incompatible structures and remain portable")
         REQUIRE(fixtureSql(workspace.dbPath(), "DROP TABLE target_runs") == SQLITE_OK);
         incompatible = true;
     }
+    SUBCASE("missing required column")
+    {
+        REQUIRE(fixtureSql(workspace.dbPath(), "ALTER TABLE images DROP COLUMN contrast") == SQLITE_OK);
+        incompatible = true;
+    }
+    SUBCASE("metadata without a primary key")
+    {
+        REQUIRE(fixtureSql(workspace.dbPath(), "ALTER TABLE meta RENAME TO prior_meta;"
+            "CREATE TABLE meta(key TEXT,value TEXT NOT NULL);"
+            "INSERT INTO meta SELECT * FROM prior_meta;DROP TABLE prior_meta;") == SQLITE_OK);
+        incompatible = true;
+    }
     if (incompatible)
     {
         for (auto mode : {Database::OpenMode::Existing, Database::OpenMode::Build})
