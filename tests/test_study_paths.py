@@ -24,9 +24,13 @@ class StudyPaths(unittest.TestCase):
                  source_database=str(args.database), executable=dict(path=str(args.match)),
                  identity=dict(snapshot="a" * 64)))
             stored = json.loads((first / "manifest.json").read_text(encoding="utf8"))
-            self.assertEqual(stored["snapshot"], "snapshot.db")
+            self.assertEqual(stored["payload"]["snapshot"], "snapshot.db")
             moved = root / "B"
             first.rename(moved)
+            old = moved / "old.json"
+            old.write_text('{"schema":2,"checkpoint_paths":2}', encoding="utf8")
+            with self.assertRaises(ValueError):
+                load(old)
             args.match = root / "other-tools/match"
             configure(args)
             result = load(moved / "manifest.json")
@@ -53,9 +57,9 @@ class StudyPaths(unittest.TestCase):
             (source / "data.hist").write_bytes(bytes(1024))
             connection = sqlite3.connect(source / "mosaicraft.db")
             connection.executescript("CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT);"
-                "INSERT INTO meta VALUES('path_format','db-relative-v1');"
-                "CREATE TABLE images(id INTEGER PRIMARY KEY,file_path TEXT UNIQUE,tiny_path TEXT,lbp_path TEXT);"
-                "INSERT INTO images VALUES(1,'image.png','data.tiny','data.hist');")
+                "PRAGMA user_version=1;INSERT INTO meta VALUES('path_format','db-relative-v1'),('feature_version','1');"
+                "CREATE TABLE images(id INTEGER PRIMARY KEY,file_path TEXT UNIQUE,file_hash TEXT,grid_lab BLOB,tiny_path TEXT,lbp_path TEXT,feature_version INTEGER);"
+                "INSERT INTO images VALUES(1,'image.png','fixture',zeroblob(768),'data.tiny','data.hist',1);CREATE TABLE usage_stats(image_id,total_runs,total_tiles,last_used);CREATE TABLE target_runs(target_hash,first_path,run_count,last_used);CREATE TABLE image_color_order(image_id,file_hash,version,sort_key,source_l,source_a,source_b);")
             connection.close()
             target, count = private_library(source / "mosaicraft.db", root / "study", images=True)
             self.assertEqual(count, 1)

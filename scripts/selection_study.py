@@ -134,9 +134,9 @@ def execute(args, manifest, case, strategy, seed, backend, tag=None, epsilon=0.0
     folder = root / "runs" / tag
     folder.mkdir(parents=True, exist_ok=True)
     output = folder / ("mosaic.png" if render else "selection")
-    request = dict(input=case["input"], db=str(Path(manifest["snapshot"]).parent / "run.db"), output=str(output),
+    request = dict(inputPath=case["input"], dbPath=str(Path(manifest["snapshot"]).parent / "run.db"), outputPath=str(output),
                    outW=case["width"], outH=case["height"], candidates=150, topNRandom=10,
-                   cpu=backend == "cpu", format="png", writeMode="stream", **manifest["flags"])
+                   useGpu=backend != "cpu", format="png", writeMode="stream", **manifest["flags"])
     request["lRange"] = case.get("lRange", 20)
     identity = dict(request=request, seed=seed, strategy=strategy, epsilon=epsilon,
                     batch=batch, render=render, executables=manifest["executables"],
@@ -150,8 +150,8 @@ def execute(args, manifest, case, strategy, seed, backend, tag=None, epsilon=0.0
             return result
         raise RuntimeError(f"Stale checkpoint: {tag}; use a fresh directory")
     for suffix in ("-wal", "-shm", "-journal"):
-        Path(request["db"] + suffix).unlink(missing_ok=True)
-    shutil.copy2(manifest["snapshot"], request["db"])
+        Path(request["dbPath"] + suffix).unlink(missing_ok=True)
+    shutil.copy2(manifest["snapshot"], request["dbPath"])
     save(folder / "request.json", request)
     command = [str(args.match), str(folder / "request.json"), "--seed", str(seed),
                "--strategy", strategy, "--epsilon", str(epsilon), "--batch-tiles", str(batch),
@@ -182,7 +182,7 @@ def execute(args, manifest, case, strategy, seed, backend, tag=None, epsilon=0.0
         raise RuntimeError(f"Unexpected backend or missing tiles: {tag}")
     if not render and output.exists():
         raise RuntimeError("Match-only unexpectedly rendered a mosaic")
-    if not render and digest(request["db"]) != manifest["snapshot_sha256"]:
+    if not render and digest(request["dbPath"]) != manifest["snapshot_sha256"]:
         raise RuntimeError("Match-only changed database bytes")
     selection = Path(str(output) + ".indices.bin")
     values = np.fromfile(selection, dtype=np.int32)
@@ -553,7 +553,7 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=REPO / "build/selection-study-20261110")
     parser.add_argument("--phase", choices=("prepare", "runs", "verify", "synthetic", "evaluate", "all"), default="all")
     parser.add_argument("--database", type=Path, help="local source library binding")
-    parser.add_argument("--inputs", type=Path, help="local input directory for importing a legacy study")
+    parser.add_argument("--inputs", type=Path, help="local input directory for the current study")
     parser.add_argument("--backends", choices=("cpu", "cuda", "both"), default="both")
     args = parser.parse_args()
     for name in ("match", "quality", "cli", "baseline_study", "output_dir"):
@@ -565,7 +565,7 @@ def main():
     configure(args)
     if args.phase == "synthetic":
         args.output_dir.mkdir(parents=True, exist_ok=True)
-        manifest = dict(schema=2, executables=executables(args), backends=BACKENDS,
+        manifest = dict(schema=1, executables=executables(args), backends=BACKENDS,
                         flags=dict(colorAdjust=False, overlayStrength=0, adaptiveWeights=False,
                                    nativeTileW=45, nativeTileH=80, tileW=9, tileH=16, lRange=20))
     else:

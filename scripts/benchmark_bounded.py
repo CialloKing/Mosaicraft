@@ -47,7 +47,7 @@ def main():
         parser.error("snapshot must differ from disposable run.db")
     snapshot, _ = private_library(snapshot, folder, images=True)
     request = json.loads(args.request.read_text(encoding="utf-8-sig"))
-    input_key = "inputPath" if "inputPath" in request else "input"
+    input_key = "inputPath"
     request[input_key] = str(Path(request[input_key]).resolve())
     request.update(topNRandom=1, colorAdjust=False, analyze=args.analysis_mode == "analysis")
     variants = [("small", args.exe.resolve(), ["small"]), ("default", args.exe.resolve(), [])]

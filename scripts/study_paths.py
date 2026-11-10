@@ -13,6 +13,7 @@ import sqlite3
 from contextlib import contextmanager, closing
 
 REPO = Path(__file__).resolve().parents[1]
+VERSIONS = json.loads((REPO / "contracts.json").read_text(encoding="utf-8"))
 FORMAT = "db-relative-v1"
 PATH_KEYS = {"path", "snapshot", "source_database", "baseline_study", "input", "output", "db",
              "inputPath", "outputPath", "dbPath", "selection", "diagnostics", "database"}
@@ -76,9 +77,8 @@ def save(path, value):
     path = Path(path)
     # These two files are consumed immediately by C++, relative to its process.
     if path.name not in ("request.json", "study.json", "public-results.json"):
-        value = _convert(value, path.resolve().parent, True)
-        if isinstance(value, dict):
-            value = dict(value, checkpoint_paths=2)
+        value = dict(schema=VERSIONS["studySchemaVersion"], checkpoint_paths=VERSIONS["checkpointPathsVersion"],
+                     payload=_convert(value, path.resolve().parent, True))
     temporary = Path(str(path) + ".tmp")
     temporary.write_text(json.dumps(value, indent=2, ensure_ascii=False), encoding="utf-8")
     temporary.replace(path)
@@ -90,7 +90,10 @@ def load(path):
     if isinstance(value, dict):
         if value.get("paths_redacted"):
             raise ValueError("A public redacted report is not a runtime checkpoint")
-        value.pop("checkpoint_paths", None)
+    if path.name not in ("runtime.json", "diagnostics.json", "evaluation.json", "study.json", "request.json", "metric-crosscheck.json"):
+        if not isinstance(value, dict) or type(value.get("schema")) is not int or type(value.get("checkpoint_paths")) is not int or value.get("schema") != VERSIONS["studySchemaVersion"] or value.get("checkpoint_paths") != VERSIONS["checkpointPathsVersion"] or "payload" not in value:
+            raise ValueError("Unsupported or incomplete checkpoint; use a fresh study directory")
+        value = value["payload"]
     return _convert(value, path.resolve().parent, False)
 
 
@@ -104,24 +107,35 @@ def readonly_database(path):
 
 
 def path_mode(connection):
+    if connection.execute("PRAGMA user_version").fetchone()[0] != VERSIONS["libraryVersion"]:
+        raise ValueError("Unsupported library version; rebuild in a new directory")
+    required = {
+        "images": {"id", "file_path", "file_hash", "grid_lab", "tiny_path", "lbp_path", "feature_version"},
+        "usage_stats": {"image_id", "total_runs", "total_tiles", "last_used"},
+        "target_runs": {"target_hash", "first_path", "run_count", "last_used"},
+        "image_color_order": {"image_id", "file_hash", "version", "sort_key", "source_l", "source_a", "source_b"}}
+    for table, columns in required.items():
+        if not columns.issubset({row[1] for row in connection.execute(f"PRAGMA table_info({table})")}):
+            raise ValueError(f"Incomplete library table: {table}")
     row = connection.execute("SELECT value FROM meta WHERE key='path_format'").fetchone()
     mode = row[0] if row else ""
-    if mode not in ("", FORMAT):
+    if mode != FORMAT:
         raise ValueError(f"Unknown library path format: {mode}")
+    feature = connection.execute("SELECT value FROM meta WHERE key='feature_version'").fetchone()
+    if not feature or feature[0] != str(VERSIONS["featureVersion"]):
+        raise ValueError("Unsupported feature version")
+    if connection.execute("SELECT count(*) FROM images WHERE feature_version IS NOT ? OR grid_lab IS NULL OR length(grid_lab)!=768", (VERSIONS["featureVersion"],)).fetchone()[0]:
+        raise ValueError("Invalid library features")
     return mode
 
 
 def resource(database, value, mode):
     if not value:
         return None
-    if mode == FORMAT:
-        path = PureWindowsPath(value)
-        if path.drive or path.root or "\\" in value or ".." in path.parts or value == ".":
-            raise ValueError("Invalid portable library path")
-        return Path(database).resolve().parent / value
-    if os.name != "nt" and PureWindowsPath(value).drive:
-        raise ValueError("Legacy library paths belong to another platform")
-    return Path(value).resolve()
+    path = PureWindowsPath(value)
+    if mode != FORMAT or path.drive or path.root or "\\" in value or ".." in path.parts or value == ".":
+        raise ValueError("Invalid portable library path")
+    return Path(database).resolve().parent / value
 
 
 def source_inventory(database):
@@ -142,8 +156,8 @@ def private_library(source, root, images):
     root.mkdir(parents=True, exist_ok=True)
     snapshot = root / "snapshot.db"
     with readonly_database(source) as original, closing(sqlite3.connect(snapshot)) as target:
-        original.backup(target)
         mode = path_mode(original)
+        original.backup(target)
         rows = original.execute("SELECT id,file_path,tiny_path,lbp_path FROM images ORDER BY id").fetchall()
         target.execute("BEGIN IMMEDIATE")
         target.execute("UPDATE images SET file_path='.__study_stage__/' || id")
@@ -151,7 +165,7 @@ def private_library(source, root, images):
             new_paths = []
             for value, relative, include in ((image, f"images/id_{image_id}{Path(image).suffix}", images),
                                             (tiny, f"features/id_{image_id}.tiny", True),
-                                            (histogram, f"features/id_{image_id}.hist", True)):
+                                            (histogram, f"features/id_{image_id}.lbp", True)):
                 if value and include:
                     old = resource(source, value, mode)
                     new = root / relative

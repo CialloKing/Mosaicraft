@@ -2,7 +2,7 @@
 
 Production CLI/API and matching rules are unchanged. Requires NumPy, Pillow and
 Python OpenCV and Matplotlib; executables use the project's own OpenCV and scoring.
-Normal opening upgrades legacy source paths before the snapshot is fixed.
+Only a fully supported library is accepted before the private snapshot is fixed.
 """
 import argparse
 import hashlib
@@ -66,7 +66,7 @@ def prepare(args):
         if digest(args.database) != manifest["source_database_sha256"]:
             raise RuntimeError("Original database differs from study manifest")
         return manifest
-    # 普通库打开会先完成自动升级，随后固定便携快照，不在实验运行中改写源库。
+    # 先验证图库版本，再固定便携快照；不在实验准备或运行中修改源库。
     subprocess.run([str(args.quality), "--open-library", str(args.database)], check=True)
     source_hash = digest(args.database)
     snapshot, row_count = private_library(args.database, root, images=True)
@@ -133,9 +133,9 @@ def execute(args, manifest, case, variant, seed, backend, tag):
     shutil.copy2(manifest["snapshot"], database)
     candidates, topn = VARIANTS[variant]
     output = folder / "mosaic.png"
-    request = dict(input=case["input"], db=str(database), output=str(output),
+    request = dict(inputPath=case["input"], dbPath=str(database), outputPath=str(output),
                    outW=case["width"], outH=case["height"], candidates=candidates,
-                   topNRandom=topn, cpu=backend == "cpu", format="png", writeMode="stream",
+                   topNRandom=topn, useGpu=backend != "cpu", format="png", writeMode="stream",
                    **manifest["flags"])
     request_path = folder / "request.json"
     save(request_path, request)
@@ -171,7 +171,7 @@ def execute(args, manifest, case, variant, seed, backend, tag):
     selection = str(output) + ".indices.bin"
     result = dict(id=tag, case=case["id"], variant=variant, seed=seed, backend=backend,
                   executable_sha256=digest(args.match), request=request, runtime=runtime,
-                  selection=selection, selection_sha256=digest(selection), output=str(output),
+                  selection=selection, selection_sha256=digest(selection), outputPath=str(output),
                   output_sha256=digest(output), wall_seconds=elapsed, peak_rss_bytes=rss,
                   gpu_device_before_mib=before_gpu, gpu_device_peak_mib=gpu_peak)
     save(saved, result)

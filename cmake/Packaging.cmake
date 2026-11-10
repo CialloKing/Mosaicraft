@@ -6,7 +6,7 @@ elseif(UNIX)
 endif()
 set_target_properties(mosaicraft MosaicraftWebUI PROPERTIES INSTALL_RPATH "${_package_rpath}")
 install(TARGETS mosaicraft MosaicraftWebUI RUNTIME DESTINATION .)
-install(FILES "${CMAKE_SOURCE_DIR}/tools/command-builder/index.html" DESTINATION .)
+install(FILES "${CMAKE_BINARY_DIR}/generated/index.html" "${CMAKE_SOURCE_DIR}/contracts.json" DESTINATION .)
 # Ship the license texts associated with the locked dependency graph.
 file(GLOB _dependency_licenses "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/*/copyright")
 foreach(_license IN LISTS _dependency_licenses)

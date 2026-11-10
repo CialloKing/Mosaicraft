@@ -651,6 +651,7 @@ let apiInfo = null;
 let serviceInfo = null;
 let apiEndpoints = [];
 const SUPPORTED_API_MAJOR = Number('@apiMajorVersion@');
+const UI_STATE_VERSION = Number('@uiStateVersion@');
 const REQUIRED_API_OPERATIONS = [
   'info',
   'endpoints',
@@ -914,7 +915,7 @@ function renderApiErrorSuggestion(data) {
   if (field && fieldHints[field]) return fieldHints[field];
   if (message.indexOf('invalid JSON body') === 0) return '请求体不是合法 JSON，请重新提交。';
   if (message.indexOf('无法连接 Web UI/API') === 0) return '请确认当前页面由 MosaicraftWebUI.exe 打开，且服务仍在运行。';
-  if (data.status === 404) return '请确认接口、任务 ID 或 legacy /api/run 状态。';
+  if (data.status === 404) return '请确认接口、任务 ID 或 服务版本。';
   if (data.status === 409) return '当前任务状态不允许执行该操作。';
   if (data.status >= 500) return '服务端处理失败，请查看 MosaicraftWebUI 控制台日志。';
   return '';
@@ -1217,7 +1218,6 @@ function setIfSize(payload, key, id, label) {
   }
   const maximum = id === 'b-normsize' ? 8192 : 1000000;
   if (w > maximum || h > maximum || w * h > 100000000) throw uiFieldError(id, label + ' 超过支持的尺寸范围');
-  payload[key] = raw;
   return { w, h };
 }
 
@@ -1235,7 +1235,7 @@ function buildMosaicPayload() {
   setIfNumber(payload, 'tileW', 'm-tilew', 'Tile 宽度', { integer: true, min: 4 });
   setIfNumber(payload, 'tileH', 'm-tileh', 'Tile 高度', { integer: true, min: 4 });
   setIfNumber(payload, 'candidates', 'm-candidates', '候选数', { integer: true, min: 10, max:10000 });
-  setIfNumber(payload, 'topNrandom', 'm-topn', 'TopN 随机', { integer: true, min: 1, max:10000 });
+  setIfNumber(payload, 'topNRandom', 'm-topn', 'TopN 随机', { integer: true, min: 1, max:10000 });
   setIfNumber(payload, 'lRange', 'm-lrange', 'L 亮度范围', {min:0,max:255});
   setIfNumber(payload, 'neighborWindow', 'm-nwin', '邻域窗口', { integer: true, min: 0, max:1000000 });
   setIfNumber(payload, 'neighborPenalty', 'm-npen', '邻域惩罚', {min:0});
@@ -1599,7 +1599,7 @@ document.addEventListener('click', event => {
 });
 
 
-const FORM_FIELDS = {"mosaic": {"inputPath": "m-input", "dbPath": "m-db", "outputPath": "m-output", "format": "m-format", "writeMode": "m-writemode", "tileW": "m-tilew", "tileH": "m-tileh", "candidates": "m-candidates", "topNrandom": "m-topn", "lRange": "m-lrange", "neighborWindow": "m-nwin", "neighborPenalty": "m-npen", "upscale": "m-upscale", "outW": "m-outw", "outH": "m-outh", "labWeight": "m-labw", "gridWeight": "m-gridw", "tinyWeight": "m-tinyw", "edgeWeight": "m-edgew", "lbpWeight": "m-lbpw", "usePenalty": "m-penalty", "quality": "m-quality", "pngLevel": "m-pnglevel", "colorStrength": "m-colorstr", "overlayStrength": "m-overlaystr", "tiled": "m-tiled", "deepZoom": "m-deepzoom", "analyze": "m-analyze", "adaptiveWeights": "m-adaptive", "benchmark": "m-benchmark", "colorAdjust": "m-coloradj", "generatePreview": "m-preview"}, "build": {"inputDir": "b-input", "outputDir": "b-output", "dbPath": "b-db", "threads": "b-threads", "appendMode": "b-append", "recursive": "b-recursive", "normalizeOnly": "b-normonly", "forceMode": "b-force"}};
+const FORM_FIELDS = {"mosaic": {"inputPath": "m-input", "dbPath": "m-db", "outputPath": "m-output", "format": "m-format", "writeMode": "m-writemode", "tileW": "m-tilew", "tileH": "m-tileh", "candidates": "m-candidates", "topNRandom": "m-topn", "lRange": "m-lrange", "neighborWindow": "m-nwin", "neighborPenalty": "m-npen", "upscale": "m-upscale", "outW": "m-outw", "outH": "m-outh", "labWeight": "m-labw", "gridWeight": "m-gridw", "tinyWeight": "m-tinyw", "edgeWeight": "m-edgew", "lbpWeight": "m-lbpw", "usePenalty": "m-penalty", "quality": "m-quality", "pngLevel": "m-pnglevel", "colorStrength": "m-colorstr", "overlayStrength": "m-overlaystr", "tiled": "m-tiled", "deepZoom": "m-deepzoom", "analyze": "m-analyze", "adaptiveWeights": "m-adaptive", "benchmark": "m-benchmark", "colorAdjust": "m-coloradj", "generatePreview": "m-preview"}, "build": {"inputDir": "b-input", "outputDir": "b-output", "dbPath": "b-db", "threads": "b-threads", "appendMode": "b-append", "recursive": "b-recursive", "normalizeOnly": "b-normonly", "forceMode": "b-force"}};
 
 function restoreRequestParameters(job) {
   if (!job || !job.request || !FORM_FIELDS[job.type]) {
@@ -1640,7 +1640,7 @@ function quotePowerShell(value) { return "'" + String(value).replace(/'/g, "''")
 function uiFieldError(field, message) { return Object.assign(new Error(message), { field }); }
 function highlightDiagnostic(diagnostic) {
   const tab = document.querySelector('.tab.active').dataset.cmd;
-  const maps = { ...FORM_FIELDS[tab], imagePath: 'i-input', normalizeSize: 'b-normsize', outputTile: 'm-otile',
+  const maps = { ...FORM_FIELDS[tab], imagePath: 'i-input', normalizeWidth: 'b-normsize', normalizeHeight: 'b-normsize', nativeTileW: 'm-otile', nativeTileH: 'm-otile',
     nativeTileW: 'm-otile', nativeTileH: 'm-otile', normalizeWidth: 'b-normsize', normalizeHeight: 'b-normsize' };
   const field = diagnostic.field || '';
   const element = document.getElementById(maps[field] || field);
@@ -1688,7 +1688,7 @@ function readFormPayload(tab) {
 const CLI_FIELDS = {
   mosaic: [['inputPath','-i','path'],['dbPath','-d','path'],['outputPath','-o','path'],['format','--format'],
     ['quality','--quality'],['pngLevel','--png-level'],['writeMode','--write-mode'],['tileW','--tile-w'],['tileH','--tile-h'],
-    ['candidates','--candidates'],['topNrandom','--topn-random'],['lRange','--l-range'],['neighborWindow','--neighbor-window'],
+    ['candidates','--candidates'],['topNRandom','--topn-random'],['lRange','--l-range'],['neighborWindow','--neighbor-window'],
     ['neighborPenalty','--neighbor-penalty'],['upscale','--upscale'],['outW','--out-w'],['outH','--out-h'],['outputTile','--output-tile'],
     ['labWeight','--lab-weight'],['gridWeight','--grid-weight'],['tinyWeight','--tiny-weight'],['edgeWeight','--edge-weight'],['lbpWeight','--lbp-weight'],
     ['usePenalty','--penalty'],['colorStrength','--color-strength'],['overlayStrength','--overlay-strength'],['tiled','--tiled','flag'],
@@ -1702,14 +1702,20 @@ const CLI_FIELDS = {
   dbusage: [['dbPath','-d','path'],['limit','-n'],['outputDir','--export','path']]
 };
 const CLI_DEFAULTS = { mosaic: { quality:100, pngLevel:1, writeMode:'auto', tileW:9, tileH:16, candidates:150,
-  topNrandom:10, lRange:20, neighborWindow:0, neighborPenalty:100, upscale:1, outW:0, outH:0, outputTile:'180x320',
+  topNRandom:10, lRange:20, neighborWindow:0, neighborPenalty:100, upscale:1, outW:0, outH:0, outputTile:'180x320',
   labWeight:.2, gridWeight:.45, tinyWeight:.25, edgeWeight:.05, lbpWeight:.05, usePenalty:.01, colorStrength:.04, overlayStrength:0 },
   build: {threads:0,normalizeSize:'180x320'}, dbusage:{limit:50} };
 function commandFromPayload(tab, payload) {
   const command = {dbstats:'db-stats',dbpurge:'db-purge',dbhealth:'db-health',dbusage:'db-usage'}[tab] || tab;
   const parts = ['mosaicraft', command];
+  // CLI 的尺寸便捷参数只在命令生成时组合，不进入 API 请求。
+  const cli = {...payload};
+  if (tab === 'mosaic' && payload.nativeTileW !== undefined && payload.nativeTileH !== undefined)
+    cli.outputTile = payload.nativeTileW + 'x' + payload.nativeTileH;
+  if (tab === 'build' && payload.normalizeWidth !== undefined && payload.normalizeHeight !== undefined)
+    cli.normalizeSize = payload.normalizeWidth + 'x' + payload.normalizeHeight;
   for (const [key, flag, type] of CLI_FIELDS[tab]) {
-    const value = payload[key];
+    const value = cli[key];
     if (value === undefined || value === '' || value === false || value === (CLI_DEFAULTS[tab] || {})[key]) continue;
     if (type === 'flag') { if (value) parts.push(flag); }
     else parts.push(flag, type === 'path' ? quotePowerShell(value) : String(value));
@@ -1723,7 +1729,7 @@ function persistDraft() {
   document.querySelectorAll('.panel input[id], .panel select[id]').forEach(element => {
     fields[element.id] = element.type === 'checkbox' ? element.checked : element.value;
   });
-  saveJson('mosaicraft-form-v1', {version:1, fields, tab:document.querySelector('.tab.active').dataset.cmd});
+  saveJson('mosaicraft-form-v1', {version:UI_STATE_VERSION, fields, tab:document.querySelector('.tab.active').dataset.cmd});
 }
 function updateRecentLists() {
   const recent = storedJson('mosaicraft-recent-paths-v1', {});
@@ -1756,7 +1762,14 @@ function initializeFormUi() {
   });
   restoringDraft = true;
   const draft = storedJson('mosaicraft-form-v1', {});
-  if (draft.version === 1 && draft.fields && typeof draft.fields === 'object') {
+  const validDraft = draft.version === UI_STATE_VERSION && draft.fields && typeof draft.fields === 'object' &&
+    !Array.isArray(draft.fields) && Object.entries(draft.fields).every(([id, value]) => {
+      const element = document.getElementById(id);
+      return element && element.closest('.panel') &&
+        (element.type === 'checkbox' ? typeof value === 'boolean' : typeof value === 'string' &&
+          (element.tagName !== 'SELECT' || Array.from(element.options).some(option => option.value === value)));
+    });
+  if (validDraft) {
     for (const [id, value] of Object.entries(draft.fields)) {
       const element = document.getElementById(id);
       if (!element || !element.closest('.panel')) continue;
@@ -1764,7 +1777,7 @@ function initializeFormUi() {
       else if (typeof value === 'string') element.value = value;
     }
   }
-  const tab = Array.from(document.querySelectorAll('.tab')).find(item => item.dataset.cmd === draft.tab);
+  const tab = validDraft && Array.from(document.querySelectorAll('.tab')).find(item => item.dataset.cmd === draft.tab);
   if (tab) tab.click();
   restoringDraft = false;
   updateRecentLists(); syncPreviewOption();

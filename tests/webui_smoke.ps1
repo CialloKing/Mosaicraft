@@ -9,6 +9,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$Versions = Get-Content -LiteralPath (Join-Path $RepoRoot "contracts.json") -Raw | ConvertFrom-Json
 
 function Find-WebUiExe {
     param([string]$Requested)
@@ -382,8 +383,8 @@ try {
     $info = Invoke-Api -Method "GET" -Path "/api/info"
     Assert-True ($info.ok -eq $true) "/api/info did not return ok=true"
     Assert-True ($info.info.api.structured -eq $true) "structured API is not enabled"
-    Assert-True ([int]$info.info.api.contractMajorVersion -eq 2) "unexpected API contract major version"
-    Assert-True ($info.info.api.contractVersion -eq '2.2') "unexpected API contract version"
+    Assert-True ([int]$info.info.api.contractMajorVersion -eq $Versions.apiMajorVersion) "unexpected API contract major version"
+    Assert-True ($info.info.api.contractVersion -eq $Versions.apiVersion) "unexpected API contract version"
     Assert-True ($info.info.features -contains 'output-format-policy') "output policy capability missing"
 
     $endpoints = Invoke-Api -Method "GET" -Path "/api/endpoints"
@@ -428,7 +429,7 @@ try {
         Assert-True ($badStrength.Json.message -eq "colorStrength must be between 0.000000 and 0.500000") "colorStrength bounds should be explicit"
     }
 
-    $badUsage = Invoke-ApiResponse -Method "GET" -Path "/api/db/usage?db=missing.db&limit=0"
+    $badUsage = Invoke-ApiResponse -Method "GET" -Path "/api/db/usage?dbPath=missing.db&limit=0"
     foreach ($strength in @(-0.01, 1.01, "NaN", "Infinity")) {
         $badOverlay = Invoke-ApiResponse -Method "POST" -Path "/api/jobs/mosaic" -Body @{
             inputPath = $targetPath
@@ -445,7 +446,7 @@ try {
     Assert-True ($missingJob.StatusCode -eq 404) "missing job should return HTTP 404"
     Assert-True ($missingJob.Json.ok -eq $false) "missing job should return ok=false"
 
-    $legacyRun = Invoke-ApiResponse -Method "POST" -Path "/api/run" -Body "mosaicraft db-stats" -RawBody
+    $legacyRun = Invoke-ApiResponse -Method "POST" -Path "/api/run" -Body @{ command = "mosaicraft db-stats" }
     Assert-True ($legacyRun.StatusCode -eq 404) "disabled legacy run should return HTTP 404"
     Assert-True ($legacyRun.Json.ok -eq $false) "disabled legacy run should return ok=false"
 
@@ -455,7 +456,8 @@ try {
         dbPath = $dbPath
         threads = 1
         forceMode = $true
-        normalizeSize = "36x64"
+        normalizeWidth = 36
+        normalizeHeight = 64
     }
     Assert-True ($build.ok -eq $true -and $null -ne $build.job) "build job was not accepted"
     Assert-JobSnapshot -Job $build.job -ExpectedType "build" -ExpectedInputPath $inputDir -ExpectedOutputPath $libraryDir

@@ -283,6 +283,7 @@ function Assert-ArchiveDocumentationPolicy {
         "API.md",
         "ENCYCLOPEDIA.md",
         "BUILD_INFO.txt",
+        "contracts.json",
         "LICENSE",
         "third_party_versions.txt"
     )) {
@@ -660,6 +661,9 @@ try {
             "docs\CUDA_ARCHITECTURES.md",
             "docs\CUDA_13_5_MIGRATION.md",
             "docs\RELEASE_CHECKLIST.md",
+            "docs\BREAKING_1.15.0.md",
+            "docs\PORTABLE_LIBRARIES.md",
+            "docs\performance\reset-1.15.0.json",
             "docs\performance\preview.json",
             "docs\performance\same-size-normalization.json",
             "docs\performance\ci-packaging.json",

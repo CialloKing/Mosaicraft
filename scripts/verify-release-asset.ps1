@@ -99,14 +99,7 @@ function Resolve-OutputPath
 
 function Get-ProjectVersion
 {
-    $versionHeader = Join-Path $RepoRoot "core\Version.h"
-    $content = Get-Content -LiteralPath $versionHeader -Raw
-    $match = [regex]::Match($content, 'kVersion\s*=\s*"([^"]+)"')
-    if (-not $match.Success)
-    {
-        throw "Unable to read version from $versionHeader"
-    }
-    return $match.Groups[1].Value
+    return (Get-Content -LiteralPath (Join-Path $RepoRoot "contracts.json") -Raw | ConvertFrom-Json).softwareVersion
 }
 
 function Get-VersionFromTag
@@ -340,6 +333,7 @@ function Assert-ArchiveDocumentationPolicy
         "API.md",
         "ENCYCLOPEDIA.md",
         "BUILD_INFO.txt",
+        "contracts.json",
         "LICENSE",
         "third_party_versions.txt"
     ))
@@ -388,6 +382,17 @@ function Assert-BuildInfo
         [string]$TagCommitHash
     )
 
+    $versionsPath = Join-Path $Root "contracts.json"
+    Assert-FileExists -Path $versionsPath
+    $versions = Get-Content -LiteralPath $versionsPath -Raw | ConvertFrom-Json
+    $expected = Get-Content -LiteralPath (Join-Path $RepoRoot "contracts.json") -Raw | ConvertFrom-Json
+    foreach ($property in $expected.PSObject.Properties)
+    {
+        if ($versions.($property.Name) -ne $property.Value)
+        {
+            throw "Package internal version mismatch: $($property.Name)"
+        }
+    }
     $buildInfoPath = Join-Path $Root "BUILD_INFO.txt"
     Assert-FileExists -Path $buildInfoPath
     $info = Read-BuildInfo -Path $buildInfoPath
