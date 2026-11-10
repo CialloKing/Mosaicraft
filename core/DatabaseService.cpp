@@ -1,6 +1,7 @@
 #include "DatabaseService.h"
 
 #include "Database.h"
+#include "FeatureIO.h"
 #include "MosaicService.h"
 #include "UnicodeIO.h"
 
@@ -109,6 +110,12 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
         if (r.filePath.empty() || !std::filesystem::is_regular_file(u8path(r.filePath), error))
         {
             ++out.health.missingFiles;
+        }
+        std::array<uint8_t, 256> tiny{};
+        std::array<float, 256> lbp{};
+        if (!readFeature(r.tinyPath, FeatureKind::Tiny, tiny.data()) || !readFeature(r.lbpPath, FeatureKind::Lbp, lbp.data()))
+        {
+            out.health.warnings.push_back("Missing or invalid feature for image " + std::to_string(r.id));
         }
         if (r.avgL < 50) out.health.dark++;
         else if (r.avgL < 150) out.health.mid++;

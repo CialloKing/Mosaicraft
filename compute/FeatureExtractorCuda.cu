@@ -645,40 +645,7 @@ int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &r
         // Save TinyImage
         if (!featDir.empty() && i < static_cast<int>(stems.size()))
         {
-            std::string tinyPath = featDir + "/" + stems[i] + ".tiny";
-            std::ofstream ofs(u8path(tinyPath), std::ios::binary);
-            if (!ofs)
-            {
-                throw std::runtime_error("cannot write tiny feature: " + tinyPath);
-            }
-            if (ofs.is_open())
-            {
-                ofs.write(reinterpret_cast<const char *>(&h_tiny[i * 256]), 256);
-                ofs.close();
-                if (!ofs)
-                {
-                    throw std::runtime_error("tiny feature write failed: " + tinyPath);
-                }
-                rec.tinyPath = tinyPath;
-            }
-
-            // Save LBP histogram
-            std::string lbpPath = featDir + "/" + stems[i] + ".hist";
-            std::ofstream ofs2(u8path(lbpPath), std::ios::binary);
-            if (!ofs2)
-            {
-                throw std::runtime_error("cannot write histogram feature: " + lbpPath);
-            }
-            if (ofs2.is_open())
-            {
-                ofs2.write(reinterpret_cast<const char *>(&h_lbp[i * 256]), 256 * sizeof(float));
-                ofs2.close();
-                if (!ofs2)
-                {
-                    throw std::runtime_error("histogram feature write failed: " + lbpPath);
-                }
-                rec.lbpPath = lbpPath;
-            }
+            FeatureExtractor::saveFeatures(rec, featDir, stems[i], &h_tiny[i * 256], &h_lbp[i * 256]);
         }
 
         rec.featureVersion = FeatureExtractor::featureVersion();

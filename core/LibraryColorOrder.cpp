@@ -2,6 +2,7 @@
 #include "ColorOrder.h"
 #include "Database.h"
 #include "LibraryAccess.h"
+#include "LibraryPaths.h"
 #include "UnicodeIO.h"
 #include "json.hpp"
 
@@ -113,11 +114,43 @@ void moveFile(const fs::path& from, const fs::path& to)
 #endif
 }
 
+Json journalPaths(Json journal, const std::string &database, bool storing)
+{
+    const LibraryPaths paths(database);
+    auto transform = [&](Json &value, bool directory = false)
+    {
+        const auto text = value.get<std::string>();
+        if (storing && directory && identity(u8path(text)) == identity(u8path(database).parent_path()))
+        {
+            value = ".";
+        }
+        else if (!storing && directory && text == ".")
+        {
+            value = pathToUtf8(u8path(database).parent_path());
+        }
+        else
+        {
+            value = storing ? paths.store(text) : paths.resolve(text);
+        }
+    };
+    transform(journal.at("database"));
+    transform(journal.at("output"), true);
+    transform(journal.at("staging"));
+    for (auto &entry : journal.at("entries"))
+    {
+        for (const auto *key : {"old_db_path", "original", "final", "temporary"})
+        {
+            transform(entry.at(key));
+        }
+    }
+    return journal;
+}
+
 void writeJournal(const fs::path& path, const Json& journal)
 {
     const auto temporary = u8path(pathToUtf8(path) + ".tmp");
     std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-    output << journal.dump(2);
+    output << journalPaths(journal, journal.at("database").get<std::string>(), true).dump(2);
     output.close();
     if (!output)
     {
@@ -173,7 +206,8 @@ void cleanupJournal(const fs::path& path, const Json& journal)
 
 void validateJournal(Database& database, const Json& journal, bool committed)
 {
-    if (journal.at("version") != 1 ||
+    if (journal.at("version") != kJournalVersion || journal.at("library_version") != kLibraryVersion ||
+        journal.at("feature_version") != kFeatureVersion ||
         identity(u8path(journal.at("database").get<std::string>())) != identity(u8path(database.path())))
     {
         throw std::runtime_error("color reorder journal belongs to another database or version");
@@ -201,9 +235,7 @@ void validateJournal(Database& database, const Json& journal, bool committed)
         const int id = entry.at("id");
         const auto found = records.find(id);
         const auto original = absolutePath(entry.at("original").get<std::string>());
-        const auto oldDbPath = u8path(entry.at("old_db_path").get<std::string>());
-        const auto expectedOriginal = fs::weakly_canonical(oldDbPath.is_absolute() ? oldDbPath :
-            u8path(journal.at("working_directory").get<std::string>()) / oldDbPath);
+        const auto expectedOriginal = fs::weakly_canonical(u8path(entry.at("old_db_path").get<std::string>()));
         const auto final = absolutePath(entry.at("final").get<std::string>());
         const auto temporary = absolutePath(entry.at("temporary").get<std::string>());
         if (found == records.end() || !ids.insert(id).second ||
@@ -241,6 +273,7 @@ bool recoverLibraryColorOrder(Database& database, std::string& error)
         Json journal;
         input >> journal;
         input.close();
+        journal = journalPaths(std::move(journal), database.path(), false);
         const bool committed = database.getMeta("color_order_batch") == journal.at("token").get<std::string>();
         validateJournal(database, journal, committed);
         if (committed)
@@ -401,8 +434,8 @@ bool reorderLibraryByColor(Database& database, const std::string& outputDir,
         const auto destinationCheckStart = Clock::now();
         const auto token = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
         staging = root / (".mosaicraft-color-order-" + token);
-        Json journal = {{"version", 1}, {"database", database.path()}, {"token", token},
-            {"working_directory", pathToUtf8(fs::current_path())},
+        Json journal = {{"version", kJournalVersion}, {"library_version", kLibraryVersion},
+            {"feature_version", kFeatureVersion}, {"database", database.path()}, {"token", token},
             {"output", pathToUtf8(root)}, {"staging", pathToUtf8(staging)},
             {"phase", "staging"}, {"entries", Json::array()}};
         const int width = std::max(6, static_cast<int>(std::to_string(records.empty() ? 0 : records.size() - 1).size()));

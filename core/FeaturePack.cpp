@@ -1,4 +1,5 @@
 #include "FeaturePack.h"
+#include "FeatureIO.h"
 #include "RuntimeContext.h"
 #include "UnicodeIO.h"
 #include "WorkerPool.h"
@@ -201,9 +202,10 @@ bool readManifest(const std::string &directory, Manifest &manifest)
 {
     std::ifstream input(u8path(directory) / "features.pack");
     std::string magic;
-    int version = 0;
-    if (!(input >> magic >> version >> manifest.generation >> manifest.count >> manifest.metadataHash) ||
-        magic != "MOSAICRAFT_PACK" || version != 3 || manifest.generation.empty() ||
+    int version = 0, libraryVersion = 0, featureVersion = 0, gridDimension = 0, tinyDimension = 0, lbpDimension = 0;
+    if (!(input >> magic >> version >> libraryVersion >> featureVersion >> gridDimension >> tinyDimension >> lbpDimension >> manifest.generation >> manifest.count >> manifest.metadataHash) ||
+        magic != "MOSAICRAFT_PACK" || version != kFeaturePackVersion || libraryVersion != kLibraryVersion || featureVersion != kFeatureVersion ||
+        gridDimension != 192 || tinyDimension != 256 || lbpDimension != 256 || manifest.generation.empty() ||
         manifest.generation.find_first_not_of("0123456789-") != std::string::npos)
     {
         return false;
@@ -226,13 +228,11 @@ bool readMetadata(const std::string &directory, const Manifest &manifest, size_t
 
 bool readSource(const std::string &path, const Stamp &source, void *data, size_t bytes)
 {
-    if (path.empty() || source.size != bytes)
+    if (path.empty() || source.size != bytes + kFeatureHeaderBytes)
     {
         return false;
     }
-    auto file = openFile(u8path(path), "rb");
-    return file && fread(data, 1, bytes, file.get()) == bytes && fgetc(file.get()) == EOF && !ferror(file.get()) &&
-           source == stamp(path);
+    return readFeature(path, bytes == 256 ? FeatureKind::Tiny : FeatureKind::Lbp, data) && source == stamp(path);
 }
 
 bool loadFeatures(const std::string &directory, const std::vector<ImageRecord> &records, const std::vector<int> &needed,
@@ -358,8 +358,8 @@ bool loadFeatures(const std::string &directory, const std::vector<ImageRecord> &
                     auto &metadata = current[i];
                     if (readStats)
                     {
-                        sourceReads += static_cast<size_t>(!record.tinyPath.empty() && metadata.tiny.size == 256) +
-                                       static_cast<size_t>(!record.lbpPath.empty() && metadata.lbp.size == 1024);
+                        sourceReads += static_cast<size_t>(!record.tinyPath.empty() && metadata.tiny.size == 256 + kFeatureHeaderBytes) +
+                                       static_cast<size_t>(!record.lbpPath.empty() && metadata.lbp.size == 1024 + kFeatureHeaderBytes);
                     }
                     tinyValid[i] = readSource(record.tinyPath, metadata.tiny, tiny.data() + i * 256, 256);
                     lbpValid[i] = readSource(record.lbpPath, metadata.lbp, lbp.data() + i * 256, 1024);
@@ -573,7 +573,7 @@ struct FeaturePack::Reader::Impl
                 return;
             }
         }
-        if (!record.tinyPath.empty() && ts.size == 256)
+        if (!record.tinyPath.empty() && ts.size == 256 + kFeatureHeaderBytes)
         {
             ++statistics.sourceReads;
         }
@@ -582,7 +582,7 @@ struct FeaturePack::Reader::Impl
         {
             row.tiny.fill(0);
         }
-        if (!record.lbpPath.empty() && ls.size == 1024)
+        if (!record.lbpPath.empty() && ls.size == 1024 + kFeatureHeaderBytes)
         {
             ++statistics.sourceReads;
         }
@@ -726,13 +726,15 @@ void FeaturePack::Reader::prepare(const std::vector<int> &candidates)
 const FeaturePack::Reader::Row &FeaturePack::Reader::get(int index)
 {
     const auto &row = m_impl->get(index);
-    if (m_impl->runtime && (!row.tinyValid || !row.lbpValid) && !m_impl->reportedMissing[index])
+    if (!row.tinyValid || !row.lbpValid)
     {
-        // 每条素材只诊断一次；复用读取结果，不额外读取特征或逐候选分配去重节点。
-        m_impl->reportedMissing[index] = true;
         const auto &record = m_impl->records[index];
-        m_impl->runtime->emit("warning", "feature_missing", "missing features retain the existing matching penalty",
-                              "dbPath", !row.tinyValid ? record.tinyPath : record.lbpPath);
+        const auto &path = !row.tinyValid ? record.tinyPath : record.lbpPath;
+        if (m_impl->runtime)
+        {
+            m_impl->runtime->fail("feature_invalid", "missing or invalid required feature", "dbPath", path);
+        }
+        throw std::runtime_error("missing or invalid required feature: " + path);
     }
     return row;
 }
@@ -832,7 +834,7 @@ bool FeaturePack::buildCache(const std::string &directory, const std::vector<Ima
     }
     auto publication = openFile(temporary, "wb");
     if (!publication ||
-        fprintf(publication.get(), "MOSAICRAFT_PACK 3 %s %u %llu\n", manifest.generation.c_str(), manifest.count,
+        fprintf(publication.get(), "MOSAICRAFT_PACK %d %d %d 192 256 256 %s %u %llu\n", kFeaturePackVersion, kLibraryVersion, kFeatureVersion, manifest.generation.c_str(), manifest.count,
                 static_cast<unsigned long long>(manifest.metadataHash)) < 0 ||
         !persist(publication))
     {

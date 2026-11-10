@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Database.h"
+#include "Version.h"
 #include "UnicodeIO.h"
 #include "WorkerPool.h"
 #include <array>
@@ -124,7 +125,7 @@ class FeatureIndex
             m_index->saveIndex(temporary);
             const auto digest = fileDigest(temporary);
             std::ofstream meta(u8path(path + ".meta.tmp"));
-            meta << "MOSAICRAFT_ANN 1 " << kDimension << ' ' << m_count << ' ' << m_fingerprint << ' ' << digest
+            meta << "MOSAICRAFT_ANN " << kAnnVersion << ' ' << kLibraryVersion << ' ' << kFeatureVersion << ' ' << kDimension << ' ' << m_count << ' ' << m_fingerprint << ' ' << digest
                  << '\n';
             meta.close();
             if (!meta)
@@ -161,12 +162,18 @@ class FeatureIndex
         }
 
         std::string magic;
-        int version = 0, storedDimension = 0, storedCount = 0;
+        int version = 0, libraryVersion = 0, featureVersion = 0, storedDimension = 0, storedCount = 0;
         uint64_t storedFingerprint = 0, digest = 0;
         std::ifstream meta(u8path(path + ".meta"));
-        if (!(meta >> magic >> version >> storedDimension >> storedCount >> storedFingerprint >> digest) ||
-            magic != "MOSAICRAFT_ANN" || version != 1 || storedDimension != kDimension || storedCount != count ||
+        if (!(meta >> magic >> version >> libraryVersion >> featureVersion >> storedDimension >> storedCount >> storedFingerprint >> digest) ||
+            magic != "MOSAICRAFT_ANN" || version != kAnnVersion || libraryVersion != kLibraryVersion || featureVersion != kFeatureVersion || storedDimension != kDimension || storedCount != count ||
             storedFingerprint != fingerprint(records) || !digest || digest != fileDigest(path))
+        {
+            return false;
+        }
+
+        meta >> std::ws;
+        if (!meta.eof())
         {
             return false;
         }

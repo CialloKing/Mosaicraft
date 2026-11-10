@@ -1,5 +1,6 @@
 #include "FeatureExtractor.h"
 #include "FeatureUtils.h"
+#include "FeatureIO.h"
 #include "Version.h"
 #include "UnicodeIO.h"
 
@@ -96,24 +97,10 @@ void FeatureExtractor::saveFeatures(ImageRecord &record, const std::string &dire
     {
         return;
     }
-    auto write = [&](const std::string &path, const void *data, size_t bytes)
-    {
-        std::ofstream output(u8path(path), std::ios::binary);
-        if (!output)
-        {
-            throw std::runtime_error("cannot write feature: " + path);
-        }
-        output.write(static_cast<const char *>(data), static_cast<std::streamsize>(bytes));
-        output.close();
-        if (!output)
-        {
-            throw std::runtime_error("feature write failed: " + path);
-        }
-    };
     const std::string tinyPath = directory + "/" + stem + ".tiny";
-    const std::string histogramPath = directory + "/" + stem + ".hist";
-    write(tinyPath, tiny, 256);
-    write(histogramPath, lbp, 256 * sizeof(float));
+    const std::string histogramPath = directory + "/" + stem + ".lbp";
+    writeFeature(tinyPath, FeatureKind::Tiny, tiny);
+    writeFeature(histogramPath, FeatureKind::Lbp, lbp);
     record.tinyPath = tinyPath;
     record.lbpPath = histogramPath;
 }

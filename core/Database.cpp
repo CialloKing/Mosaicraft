@@ -5,6 +5,7 @@
 #include "LibraryPaths.h"
 #include "UnicodeIO.h"
 #include "Version.h"
+#include "FeatureIO.h"
 
 #include <cstring>
 #include <iostream>
@@ -611,7 +612,8 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
             const float* blobData = static_cast<const float*>(
                 sqlite3_column_blob(stmt, col));
             int numFloats = blobSize / static_cast<int>(sizeof(float));
-            rec.gridLab.assign(blobData, blobData + numFloats);
+            rec.gridLab.resize(numFloats);
+            decodeFloats(reinterpret_cast<const uint8_t *>(blobData), rec.gridLab.data(), numFloats);
         }
         col++;
 
