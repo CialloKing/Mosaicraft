@@ -31,7 +31,8 @@
     "scripts/study_paths.py": "469c2af33de530d138bd802bb9f594a5dea8d77ad37e226dc61b0caf04844b34",
     "scripts/quality_study.py": "ca0b99d0758872200040d551748ce9405b6f90f628372f4f4f45725166fe7353",
     "scripts/selection_study.py": "a368a025753f8fd912be310ab08380462f8d6b8ccf5acfa7df62febf4753fb39",
-    "scripts/verify-release-asset.ps1": "f4e7aa3952d07a26abe50b2d8cda09d1a91b0cfc8cee7e4eae7ac8f611e5b76a"
+    "scripts/verify-release-asset.ps1": "f4e7aa3952d07a26abe50b2d8cda09d1a91b0cfc8cee7e4eae7ac8f611e5b76a",
+    "scripts/release.ps1": "8d13b2b777610ccbd03f54d4bb215a1afba039542b2295e67886fab812d4f395"
   },
   "scope": "Breaking format and API update. Safe procedural fixtures only. Historical reports are unchanged.",
   "ctest": {
@@ -700,11 +701,18 @@
     "pwsh -NoProfile -File scripts/verify-release-asset.ps1 -ArchivePath build/format-reset-validation/packages/Mosaicraft_v1.15.0_windows-x64_cpu-only.zip -ExpectedVersion 1.15.0 -ExpectedRuntime cpu-only -ExpectedGpuValidation not-applicable -RequireStandalone"
   ],
   "packaging": {
-    "status": "pending_local_archive_validation",
+    "status": "passed",
+    "runtime": "windows-x64_cpu-only",
+    "standalone": true,
+    "versions_manifest_and_build_info_consistent": true,
+    "extracted_cli_and_http_smoke": "passed",
+    "artifact": "build/format-reset-validation/packages/Mosaicraft_v1.15.0_windows-x64_cpu-only.zip",
+    "checksum": "SHA256 is emitted beside the archive; not embedded here to avoid self-reference.",
     "published": false,
     "pushed": false,
     "tagged": false
   },
   "paths_redacted": true,
-  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint."
+  "path_contract": "Resource names relative to the evidence root; not a runtime checkpoint.",
+  "completed_date": "2026-11-11"
 }
