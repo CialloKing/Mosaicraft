@@ -1,17 +1,19 @@
 """Explicit reproducible quality study; writes only under the selected study folder.
 
 Production CLI/API and matching rules are unchanged. Requires NumPy, Pillow and
-Python OpenCV; benchmark executables use the project's own OpenCV and scoring.
+Python OpenCV and Matplotlib; executables use the project's own OpenCV and scoring.
 """
 import argparse
 import hashlib
 import json
 import os
+import platform
 from pathlib import Path
 import shutil
 import sqlite3
 import statistics
 import subprocess
+import sys
 import time
 
 import cv2
@@ -121,6 +123,8 @@ def prepare(args):
                     source_inventory=source_inventory(args.database), snapshot=str(snapshot),
                     snapshot_sha256=digest(snapshot), library_rows=len(rows), cases=cases,
                     seeds=SEEDS, variants=VARIANTS, python_opencv=cv2.__version__,
+                    python_version=sys.version, platform=platform.platform(),
+                    runtime_dependencies_sha256={p.name: digest(p) for p in args.match.resolve().parent.glob("*.dll")},
                     gpu=command_output(["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"]),
                     executables={"match": dict(path=str(args.match.resolve()), sha256=digest(args.match)),
                                  "quality": dict(path=str(args.quality.resolve()), sha256=digest(args.quality))},
@@ -325,6 +329,7 @@ def evaluate(args, manifest):
         raise RuntimeError("Source library changed during the study")
     save(root / "results.json", report)
     comparisons(root, manifest, results)
+    summary_plot(root, report)
     export_data(root, report)
     print(f"Complete study: {root / 'results.json'}", flush=True)
 
@@ -340,6 +345,38 @@ def export_data(root, report):
             run["request"].pop("output", None)
             run["selection"] = f"selections/{run['id']}.bin"
     save(root / "public-results.json", public)
+
+
+def summary_plot(root, report):
+    import matplotlib.pyplot as plt
+    names = [c["id"] for c in report["manifest"]["cases"]]
+    summaries = {(r["case"], r["variant"]): r for r in report["summaries"] if r["backend"] == "cuda"}
+    x = np.arange(len(names))
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), layout="constrained")
+    for i, variant in enumerate(("best", "top3", "recall600")):
+        values = [(summaries[name, variant]["mean"] / summaries[name, "baseline"]["mean"] - 1) * 100 for name in names]
+        axes[0].bar(x + (i - 1) * 0.25, values, 0.25, label=variant)
+    axes[0].set(title="Feature error vs baseline (lower is better)", ylabel="Change (%)")
+    axes[0].axhline(0, color="black", linewidth=0.7)
+    axes[0].set_xticks(x, names, rotation=35, ha="right")
+    axes[0].legend(fontsize=8)
+    for i, variant in enumerate(VARIANTS):
+        values = [summaries[name, variant]["same_pair_rate_r3"] * 100 for name in ("screen", "smooth")]
+        axes[1].bar(np.arange(2) + (i - 1.5) * 0.2, values, 0.2, label=variant)
+    axes[1].set(title="Same-image neighbor pairs, radius 3", ylabel="Pair rate (%)")
+    axes[1].set_xticks([0, 1], ["screen", "smooth"])
+    axes[1].legend(fontsize=8)
+    for i, count in enumerate(("150", "600")):
+        values = [statistics.mean(r["ann"][count]["top10_recall"] for r in report["oracle"][name]["oracle"]
+                                  if r["ann"][count]["top10_recall"] is not None) * 100 for name in names]
+        axes[2].bar(x + (i - 0.5) * 0.35, values, 0.35, label=count + " candidates")
+    axes[2].set(title="Top-10 recall: 32 probes per target", ylabel="Recall (%)", ylim=(80, 101))
+    axes[2].set_xticks(x, names, rotation=35, ha="right")
+    axes[2].legend(fontsize=8)
+    fig.suptitle("Mosaicraft quality study | CUDA selections, common CPU scoring | 2026-11-10", fontsize=12)
+    for extension in ("svg", "png"):
+        fig.savefig(root / "comparisons" / ("summary." + extension), dpi=160)
+    plt.close(fig)
 
 
 def comparisons(root, manifest, results):
