@@ -396,6 +396,13 @@ function Assert-BuildInfo
     $buildInfoPath = Join-Path $Root "BUILD_INFO.txt"
     Assert-FileExists -Path $buildInfoPath
     $info = Read-BuildInfo -Path $buildInfoPath
+    foreach ($property in $versions.PSObject.Properties)
+    {
+        if ($info["Internal.$($property.Name)"] -ne [string]$property.Value)
+        {
+            throw "BUILD_INFO internal version mismatch: $($property.Name)"
+        }
+    }
     Assert-CudaBuildInfo $info
     $commit = [string]$info["Commit"]
 
