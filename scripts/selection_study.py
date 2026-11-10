@@ -4,6 +4,7 @@ Reuses the first quality study's inputs, feature snapshot and evaluator. Full-im
 comparisons use a deterministic procedural library, independently of that snapshot.
 """
 import argparse
+from contextlib import closing
 import collections
 import hashlib
 import json
@@ -299,7 +300,7 @@ def synthetic(args, original):
                             "-d", str(database), "--normalize-size", "180x320", "-t", "4", "--yes"],
                            stdout=log, stderr=log, check=True)
         snapshot = library / "snapshot.db"
-        with readonly_database(database) as source, sqlite3.connect(snapshot) as target:
+        with readonly_database(database) as source, closing(sqlite3.connect(snapshot)) as target:
             source.backup(target)
         manifest = dict(original, snapshot=str(snapshot), snapshot_sha256=digest(snapshot), cases=cases,
                         library="procedural", generator_seed=20261110, generated_source_images=1037)

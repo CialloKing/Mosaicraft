@@ -13,9 +13,10 @@ import sqlite3
 import statistics
 import subprocess
 import time
+from contextlib import closing
 
 from benchmark import peak_rss
-from study_paths import private_library
+from study_paths import private_library, readonly_database
 
 
 def digest(path):
@@ -58,7 +59,7 @@ def main():
         variants = [(name, exe, ["small-indices" if suffix else "indices"])
                     for name, exe, suffix in variants]
     manifest = dict(snapshot_sha256=digest(snapshot), request=request,
-                    target_sha256=digest(Path(request["inputPath"])),
+                    target_sha256=digest(Path(request[input_key])),
                     executables={name: dict(path=str(exe), sha256=digest(exe)) for name, exe, _ in variants},
                     host_memory_metric="Windows PeakWorkingSetSize; 25 ms polling; excludes VRAM")
     (folder / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -67,7 +68,7 @@ def main():
         # 轮换起始版本，让两档预算和基线都覆盖相邻的采样位置。
         offset = run % len(variants)
         for name, exe, suffix in variants[offset:] + variants[:offset]:
-            with sqlite3.connect(snapshot.as_uri() + "?mode=ro", uri=True) as source, sqlite3.connect(database) as dest:
+            with readonly_database(snapshot) as source, closing(sqlite3.connect(database)) as dest:
                 source.backup(dest)
             output = folder / (name + "." + request.get("format", "png"))
             request.update(dbPath=str(database), outputPath=str(output))
