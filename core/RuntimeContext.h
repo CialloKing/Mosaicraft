@@ -1,10 +1,12 @@
 #pragma once
 #include <chrono>
+#include "OutputPlan.h"
 #include <cstdint>
 #include <deque>
 #include <filesystem>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -57,6 +59,7 @@ struct RuntimeSnapshot
     int width = 0, height = 0, matched = 0, failed = 0;
     std::map<std::string, double> metrics;
     std::vector<Artifact> artifacts;
+    std::optional<detail::OutputPlan> outputPlan;
 };
 
 struct EventPage
@@ -80,6 +83,7 @@ class RuntimeContext
               const std::string &path = {}) noexcept;
     void backends(const std::string &features, const std::string &scoring, const std::string &reason = {}) noexcept;
     void output(int width, int height, const std::string &format, int matched, int failed) noexcept;
+    void planOutput(const detail::OutputPlan &plan, const std::string &requestedPath) noexcept;
     void metric(const std::string &name, double value) noexcept;
     void artifact(const std::string &id, const std::string &kind, const std::string &path,
                   const std::string &mime = "application/octet-stream") noexcept;

@@ -61,7 +61,7 @@ nlohmann::json runtimeSnapshotToJson(const RuntimeSnapshot &value)
     {
         artifacts.push_back(artifactToJson(item));
     }
-    return {{"diagnostic", diagnosticToJson(value.diagnostic)},
+    nlohmann::json result = {{"diagnostic", diagnosticToJson(value.diagnostic)},
             {"warningCount", value.warningCount},
             {"warnings", warnings},
             {"artifacts", artifacts},
@@ -77,7 +77,19 @@ nlohmann::json runtimeSnapshotToJson(const RuntimeSnapshot &value)
               {"height", value.height},
               {"matched", value.matched},
               {"failed", value.failed},
-              {"metrics", value.metrics}}}};
+               {"metrics", value.metrics}}}};
+    if (value.outputPlan)
+    {
+        const auto &plan = *value.outputPlan;
+        result["runtime"]["outputPlan"] = {
+            {"formatSource", plan.formatSource}, {"requestedFormat", plan.requestedFormat},
+            {"originalWidth", plan.originalWidth}, {"originalHeight", plan.originalHeight},
+            {"originalTileWidth", plan.originalTileWidth}, {"originalTileHeight", plan.originalTileHeight},
+            {"format", plan.format}, {"path", plan.path}, {"width", plan.width}, {"height", plan.height},
+            {"tileWidth", plan.tileWidth}, {"tileHeight", plan.tileHeight},
+            {"scaled", plan.scaled}, {"formatChanged", plan.formatChanged}};
+    }
+    return result;
 }
 
 nlohmann::json eventPageToJson(const EventPage &page)

@@ -383,7 +383,7 @@ const char* apiRequestShapeName(ApiRequestShape shape)
 
 const char* apiContractVersion()
 {
-    return "2.1";
+    return "2.2";
 }
 
 int apiContractMajorVersion()
@@ -592,7 +592,7 @@ std::vector<std::string> apiFeatureList()
 {
     return {"mosaic-jobs",    "build-jobs",      "job-management", "job-diagnostics",
             "job-progress",   "job-artifacts",   "result-preview", "inspect",
-            "database-stats", "database-health", "database-usage", "database-maintenance"};
+            "database-stats", "database-health", "database-usage", "database-maintenance", "output-format-policy"};
 }
 
 std::vector<ApiEntryPointMetadata> apiEntryPointMetadata()

@@ -199,6 +199,53 @@ void RuntimeContext::metric(const std::string &name, double value) noexcept
     }
 }
 
+void RuntimeContext::planOutput(const detail::OutputPlan &plan, const std::string &requestedPath) noexcept
+{
+    try
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_snapshot.outputPlan = plan;
+        }
+        const auto dimensions = std::to_string(plan.originalWidth) + "x" + std::to_string(plan.originalHeight) +
+                                " -> " + std::to_string(plan.width) + "x" + std::to_string(plan.height);
+        if (plan.formatChanged)
+        {
+            emit("warning", "output_format_changed",
+                 "Inferred " + plan.requestedFormat + " exceeds its dimension limit; using PNG at full size: " +
+                     dimensions, "format", plan.path);
+        }
+        if (plan.scaled)
+        {
+            emit("warning", "output_scaled",
+                 "Explicit " + plan.format + " requires smaller output tiles: " + dimensions + "; tile " +
+                     std::to_string(plan.originalTileWidth) + "x" + std::to_string(plan.originalTileHeight) + " -> " +
+                     std::to_string(plan.tileWidth) + "x" + std::to_string(plan.tileHeight) +
+                     ". Integer rounding can change aspect ratio; choose PNG/TIFF for full size.",
+                 "format", plan.path);
+        }
+        auto info = [&](const std::string &code, const std::string &message, const std::string &field)
+        {
+            emit("info", code, message, field, plan.path);
+            if (m_console)
+            {
+                std::cout << "INFO: [" << code << "] " << message << std::endl;
+            }
+        };
+        if (plan.formatSource == "fallback")
+        {
+            info("output_format_defaulted", "Input suffix cannot select an output format; using PNG.", "inputPath");
+        }
+        if (plan.formatSource == "explicit" && plan.path != requestedPath)
+        {
+            info("output_extension_adjusted", "Output suffix follows explicit format: " + plan.path, "outputPath");
+        }
+    }
+    catch (...)
+    {
+    }
+}
+
 void RuntimeContext::artifact(const std::string &id, const std::string &kind, const std::string &path,
                               const std::string &mime) noexcept
 {

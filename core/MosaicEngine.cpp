@@ -423,6 +423,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     // 实际编码格式不回写请求和匹配配置；报告、编码及产物使用同一份结果。
     Config outputConfig = cfg;
     outputConfig.outputFormat = outputPlan.format;
+    if (singleImage)
+    {
+        runtime.planOutput(outputPlan, outputPath);
+    }
 
     // 宽高比校验：DB 特征空间 vs 输出 tile，featW/featH 从meta解析而来
     if (featH <= 0 || featW <= 0) {

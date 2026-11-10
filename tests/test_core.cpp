@@ -962,7 +962,7 @@ TEST_CASE("API feature metadata is shared")
     const auto features = apiFeatureList();
     CHECK(std::find(features.begin(), features.end(), "mosaic-jobs") != features.end());
     CHECK(std::find(features.begin(), features.end(), "database-maintenance") != features.end());
-    CHECK(std::string(apiContractVersion()) == "2.1");
+    CHECK(std::string(apiContractVersion()) == "2.2");
     CHECK(apiContractMajorVersion() == 2);
     CHECK(std::string(apiCompatibilityLevel()) == "stable");
     CHECK(apiContractStable());
@@ -1012,7 +1012,7 @@ TEST_CASE("API JSON serialization is shared")
     CHECK(infoJson["entryPoints"].size() == 2);
     CHECK(infoJson["entryPoints"][0]["executable"].get<std::string>() == "mosaicraft.exe");
     CHECK(infoJson["entryPoints"][1]["executable"].get<std::string>() == "MosaicraftWebUI.exe");
-    CHECK(infoJson["api"]["contractVersion"].get<std::string>() == "2.1");
+    CHECK(infoJson["api"]["contractVersion"].get<std::string>() == "2.2");
     CHECK(infoJson["api"]["contractMajorVersion"].get<int>() == 2);
     CHECK(infoJson["api"]["compatibility"].get<std::string>() == "stable");
     CHECK(infoJson["api"]["stable"].get<bool>());

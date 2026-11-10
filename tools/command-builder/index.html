@@ -204,17 +204,18 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <div class="row">
       <div class="field field-full"><label>目标图片 -i（必填）</label><input type="text" id="m-input" placeholder="粘贴绝对路径，如 D:\photos\target.jpg"></div>
       <div class="field field-full"><label>数据库 -d（默认情况下不需要填，默认 ./library/mosaicraft.db）</label><input type="text" id="m-db" placeholder="留空使用默认值，或粘贴目录路径如 D:\my_library"></div>
-      <div class="field field-full"><label>输出路径 -o（文件路径，默认 ./output/output.jpg）⚠ 注意：--format 选择会覆盖 -o 的后缀名</label><input type="text" id="m-output" value="" placeholder="留空使用默认值，或粘贴文件路径如 D:\results\mosaic.jpg"></div>
+      <div class="field field-full"><label>输出路径 -o（留空保存到 ./output/，文件名为 output，后缀自动确定）</label><input type="text" id="m-output" value="" placeholder="留空使用默认文件名，或粘贴文件路径如 D:\results\mosaic.jpg"><p class="hint">显式选择输出格式时，实际文件后缀以所选格式为准。</p></div>
     </div>
   </div>
   <div class="card">
     <h3>🎨 格式与质量</h3>
     <div class="row">
-      <div class="field"><label>输出格式 --format</label><select id="m-format"><option value="">由扩展名决定</option><option value="jpg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option><option value="tiff">TIFF</option></select></div>
+      <div class="field"><label>输出格式 --format</label><select id="m-format" title="自动：输出后缀优先，否则使用输入后缀"><option value="">自动：输出后缀优先，否则使用输入后缀</option><option value="jpg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option><option value="tiff">TIFF</option></select></div>
       <div class="field"><label>JPEG/WebP 质量 --quality</label><input type="number" id="m-quality" value="100" min="1" max="100"></div>
       <div class="field"><label>PNG 压缩级别 --png-level</label><select id="m-pnglevel"><option value="">默认(1)</option><option value="1">1 最快</option><option value="3">3 平衡</option><option value="6">6 默认</option><option value="9">9 最小</option></select></div>
       <div class="field"><label>写入模式 --write-mode</label><select id="m-writemode"><option value="">auto(自动)</option><option value="stream">stream(流式低内存)</option><option value="batch">batch(全量缓冲)</option></select></div>
     </div>
+    <p class="hint" id="format-policy-hint">自动推导的 JPG/WebP 超限时改存 PNG，保留完整尺寸；显式选择 JPG/WebP 时缩小输出 Tile。</p>
   </div>
   <div class="card">
     <h3>📐 Tile 参数</h3>
@@ -381,13 +382,15 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
           <tr><td>输出 Tile 尺寸<br><code>--output-tile</code></td><td>每张入选素材在最终主图中占用的像素尺寸，格式为 <code>宽x高</code>。调小可减少主图体积；默认 <code>180x320</code>，横向图库会自动调整默认方向。</td></tr>
           <tr><td>输出宽度 / 高度<br><code>--out-w / --out-h</code></td><td>设置切块前目标图的缩放尺寸。留空或 0 为自动；只填写一轴时另一轴按原比例推导，同时填写两轴时按指定尺寸缩放。最终主图还取决于小块数量与输出 Tile 尺寸。</td></tr>
           <tr><td>上采样<br><code>--upscale</code></td><td>将目标图先放大再切块。2 倍上采样通常带来约 4 倍的小块数量，也会增加耗时。留空使用默认值，先从 1 倍开始。</td></tr>
-          <tr><td>输出格式<br><code>--format</code></td><td>“由扩展名决定”使用输出路径的后缀。JPG 适合日常分享；PNG 保留像素且支持流式写入；WebP 适合压缩存储；PNG/TIFF 适合超大单图。明确选择格式会覆盖文件后缀。</td></tr>
+          <tr><td>输出格式<br><code>--format</code></td><td>优先级为：显式选择格式 → 指定输出文件后缀 → 输入文件后缀 → PNG。无后缀输出会追加实际格式；留空保存为 <code>./output/output.实际后缀</code>。支持 JPG/JPEG、PNG、WebP、TIFF/TIF，忽略大小写。输入后缀无法推导时回退 PNG；不支持的输出后缀需要修改或显式选择格式。</td></tr>
+          <tr><td>超限适配</td><td>JPG 单轴上限为 65,500，WebP 为 16,383。自动推导时超限改存 PNG，保留完整尺寸；显式选择 JPG/WebP 时缩小每块输出 Tile，整数取整可能略微改变比例。网格某一轴的块数本身已超限时无法缩小到合法单图，需要 PNG/TIFF 或分块输出。分块和 DeepZoom 沿用分片规则。</td></tr>
           <tr><td>JPEG/WebP 质量<br><code>--quality</code></td><td>范围 1～100，数值越高通常越清晰、文件越大；不控制 PNG、TIFF 或结果预览的质量。</td></tr>
-          <tr><td>PNG 压缩级别<br><code>--png-level</code></td><td>范围 1～9。较高通常更省空间、编码更慢，不改变 PNG 的像素内容。默认 1 优先保存速度。</td></tr>
+          <tr><td>PNG 压缩级别<br><code>--png-level</code></td><td>范围 1～9。较高通常更省空间、编码更慢，不改变 PNG 的像素内容。默认 1 优先保存速度。自动改存 PNG 后也使用此设置，JPEG/WebP 质量不控制 PNG。</td></tr>
           <tr><td>写入模式<br><code>--write-mode</code></td><td><code>auto</code> 自动选择；<code>stream</code> 按行分段写入以降低整图内存占用；<code>batch</code> 在内存中完成整图再保存。WebP 使用整图编码。</td></tr>
         </tbody>
       </table></div>
       <p class="help-example">例如目标图为 <code>90 × 160</code>，匹配 Tile 为 <code>9 × 16</code>，会得到 <code>10 × 10</code> 个小块。输出 Tile 为 <code>180 × 320</code> 时，主图是 <code>1800 × 3200</code>；改为 <code>18 × 32</code> 时，主图为 <code>180 × 320</code>。</p>
+      <p class="help-example">输入 <code>target.jpg</code>、输出 <code>result.webp</code> 且保持自动时，优先使用 WebP，超限改存 <code>result.png</code>。若输出为 <code>result.png</code>，但显式选择 JPG，则保存为 <code>result.jpg</code>，超限时缩小 Tile。任务中的“输出计划”解释适配过程，“实际结果”提供已保存文件。</p>
     </details>
     <details id="help-matching">
       <summary>匹配与权重：选哪些图片，怎样减少重复</summary>
@@ -1472,6 +1475,10 @@ const DIAGNOSTIC_HINTS = {
   analysis_write_failed: '分析报告未完整写出，请检查报告目录和访问权限。', usage_commit_failed: '使用统计未提交；已保存的主图仍可使用。',
   source_skipped: '部分素材无法处理，已按原规则跳过。', output_tile_missing: '部分素材无法贴入，相关位置保留背景。',
   feature_missing: '部分素材特征缺失，匹配继续沿用缺失特征惩罚。请通过建库刷新图库。',
+  output_format_changed: '自动推导的格式尺寸超限，已改用 PNG，保留完整分辨率。',
+  output_scaled: '显式选择的格式尺寸超限，已缩小输出 Tile；实际尺寸见输出计划。需要完整尺寸时选择 PNG/TIFF。',
+  output_format_defaulted: '输入后缀无法推导输出格式，本次使用 PNG。',
+  output_extension_adjusted: '实际文件后缀遵循显式选择的输出格式。',
   library_write_failed: '图库写入或事务提交失败，请检查磁盘空间和数据库访问权限。',
   artifact_changed: '文件已被其他操作改写，不能再作为此任务的原始结果下载。',
   feature_cache_failed: '特征缓存未能写入，请检查图库目录和访问权限。'
@@ -1494,6 +1501,21 @@ function renderTaskProgress(job) {
   }
   return html + '<p class="hint">计数代表当前阶段，不是整体完成百分比。</p></div>';
 }
+function renderOutputPlan(job) {
+  const plan = job.runtime && job.runtime.outputPlan;
+  if (!plan) return '';
+  const source = {explicit:'显式选择',output_extension:'输出文件后缀',input_extension:'输入文件后缀',fallback:'PNG 回退'}[plan.formatSource] || plan.formatSource;
+  const size = (w,h) => Number(w) + ' × ' + Number(h);
+  let html = '<section class="task-section output-plan"><h3>输出计划</h3><p>格式来源：' + escapeHtml(source) + '</p>';
+  html += '<p>适配前：' + escapeHtml(String(plan.requestedFormat).toUpperCase()) + ' · ' + size(plan.originalWidth, plan.originalHeight) +
+    ' · Tile ' + size(plan.originalTileWidth, plan.originalTileHeight) + '</p>';
+  html += '<p>计划输出：' + escapeHtml(String(plan.format).toUpperCase()) + ' · ' + size(plan.width, plan.height) +
+    ' · Tile ' + size(plan.tileWidth, plan.tileHeight) + '</p>';
+  if (plan.formatChanged) html += '<p>自动模式尺寸超限，改存 PNG 并保留完整尺寸。</p>';
+  if (plan.scaled) html += '<p>显式格式尺寸超限，已缩小输出 Tile；整数取整可能略微改变比例。</p>';
+  html += '<p>计划路径：<code>' + escapeHtml(plan.path) + '</code></p><p class="hint">计划不代表文件已保存；下载和路径复制请使用下方实际结果。</p></section>';
+  return html;
+}
 function renderTaskDiagnostic(job) {
   let html = '';
   if (job.diagnostic) {
@@ -1509,6 +1531,7 @@ function renderTaskDiagnostic(job) {
     }
     html += '</div>';
   }
+  html += renderOutputPlan(job);
   if (job.runtime) {
     const runtime = job.runtime;
     const backendName = value => ({ cpu: 'CPU', template_cuda: '模板 CUDA', compatible_cuda: '兼容 CUDA', none: '不适用' }[value] || '待检测');
@@ -1636,6 +1659,11 @@ function syncPreviewOption() {
   const preview = document.getElementById('m-preview');
   const incompatible = val('m-tiled') || val('m-deepzoom');
   const unsupported = serverAvailable && !hasFeature('result-preview');
+  document.getElementById('format-policy-hint').textContent = incompatible
+    ? '分块和 DeepZoom 使用现有分片编码与路径前缀，整图尺寸不触发格式回退或缩小。'
+    : serverAvailable && !hasFeature('output-format-policy')
+    ? '当前服务使用旧版格式规则；新格式优先级与超限适配需要更新服务。'
+    : '自动推导的 JPG/WebP 超限时改存 PNG，保留完整尺寸；显式选择 JPG/WebP 时缩小输出 Tile。';
   preview.disabled = incompatible || unsupported;
   if (preview.disabled) preview.checked = false;
   document.getElementById('preview-hint').textContent = incompatible

@@ -212,6 +212,11 @@ TEST_CASE("oversized single images use the planned format tile and actual path")
             REQUIRE(MosaicService().run(request, runtime).ok);
             const auto snapshot = runtime.snapshot();
             const std::string actualFormat = explicitFormat ? format : "png";
+            REQUIRE(snapshot.outputPlan.has_value());
+            CHECK(snapshot.outputPlan->formatSource == (explicitFormat ? "explicit" : "output_extension"));
+            CHECK(snapshot.outputPlan->requestedFormat == format);
+            CHECK(snapshot.outputPlan->format == actualFormat);
+            CHECK(snapshot.warnings.at(explicitFormat ? "output_scaled" : "output_format_changed").count == 1);
             const auto actual = utf8(stem) + "." + actualFormat;
             CHECK(snapshot.format == actualFormat);
             CHECK(snapshot.width == (explicitFormat ? (format == "jpg" ? 65500 : 16382)
