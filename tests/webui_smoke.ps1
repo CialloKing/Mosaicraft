@@ -419,6 +419,21 @@ try {
     Assert-True ($badTile.Json.ok -eq $false) "invalid tileW should return ok=false"
     Assert-True ($badTile.Json.message -eq "tileW must be at least 4") "invalid tileW message should be explicit"
 
+    foreach ($body in @(
+        '{"inputPath":"x","cpu":true}', '{"inputPath":"x","unknown":1}',
+        '{"inputPath":"x","tileW":9.0}', '{"inputPath":"x","useGpu":1}',
+        '{"inputPath":"x","tileW":null}', '{"inputPath":"x","tileW":9,"tileW":10}'
+    )) {
+        $invalid = Invoke-ApiResponse -Method "POST" -Path "/api/jobs/mosaic" -Body $body -RawBody
+        Assert-True ($invalid.StatusCode -eq 400 -and $invalid.Json.ok -eq $false) "noncanonical body should fail"
+        Assert-True ($invalid.Json.exitCode -eq 1 -and $invalid.Json.diagnostic.code) "body error envelope is incomplete"
+    }
+    foreach ($query in @('db=x', 'dbPath=x&unknown=1', 'dbPath=x&dbPath=y', 'dbPath=x&showUnused=1')) {
+        $invalid = Invoke-ApiResponse -Method "GET" -Path "/api/db/usage?$query"
+        Assert-True ($invalid.StatusCode -eq 400 -and $invalid.Json.ok -eq $false) "noncanonical query should fail"
+        Assert-True ($invalid.Json.exitCode -eq 1 -and $invalid.Json.diagnostic.code) "query error envelope is incomplete"
+    }
+
     foreach ($strength in @(-0.01, 0.51)) {
         $badStrength = Invoke-ApiResponse -Method "POST" -Path "/api/jobs/mosaic" -Body @{
             inputPath = $targetPath
