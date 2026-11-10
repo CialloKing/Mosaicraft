@@ -23,8 +23,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from benchmark import gpu_memory, peak_rss
-from study_paths import VERSIONS, REPO, configure, bind_database, private_library
-from quality_study import median_available, gpu_description
+from study_paths import VERSIONS, REPO, configure, bind_database, private_library, validate_resources
+from quality_study import median_available, gpu_description, STUDY_FLAGS
 from public_paths import public_report
 from quality_study import (SEEDS, command_output, digest, gray_ssim, load,
                            read_image, readonly_database, save, source_inventory)
@@ -38,6 +38,9 @@ def validate_configuration(manifest, binaries):
         raise RuntimeError("Backend configuration changed; use a fresh study directory")
     if {k:v["sha256"] for k,v in manifest["executables"].items()} != {k:v["sha256"] for k,v in binaries.items()}:
         raise RuntimeError("Binary changed; use a fresh study directory")
+    if manifest["flags"] != STUDY_FLAGS:
+        raise RuntimeError("Study configuration changed; use a fresh study directory")
+    validate_resources(manifest)
 
 
 def prepare(args):
@@ -566,8 +569,7 @@ def main():
     if args.phase == "synthetic":
         args.output_dir.mkdir(parents=True, exist_ok=True)
         manifest = dict(schema=VERSIONS["studySchemaVersion"], executables=executables(args), backends=BACKENDS,
-                        flags=dict(colorAdjust=False, overlayStrength=0, adaptiveWeights=False,
-                                   nativeTileW=45, nativeTileH=80, tileW=9, tileH=16, lRange=20))
+                        flags=STUDY_FLAGS)
     else:
         manifest = prepare(args)
     if args.phase in ("runs", "all"):

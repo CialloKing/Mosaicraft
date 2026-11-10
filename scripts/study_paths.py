@@ -41,6 +41,15 @@ def digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def validate_resources(manifest):
+    # Paths may be rebound; the snapshot and target contents must retain identity.
+    if digest(manifest["snapshot"]) != manifest["snapshot_sha256"]:
+        raise ValueError("Snapshot changed; use a fresh study directory")
+    for case in manifest["cases"]:
+        if digest(case["input"]) != case["sha256"]:
+            raise ValueError("Input changed; use a fresh study directory")
+
+
 def absolute(value):
     return Path(value).is_absolute() or PureWindowsPath(value).is_absolute()
 

@@ -27,9 +27,11 @@ from public_paths import public_report
 SEEDS = (42, 20261110, 20261111)
 VARIANTS = {"baseline": (150, 10), "best": (150, 1),
             "top3": (150, 3), "recall600": (600, 1)}
+STUDY_FLAGS = dict(colorAdjust=False, overlayStrength=0, adaptiveWeights=False,
+                  nativeTileW=45, nativeTileH=80, tileW=9, tileH=16, lRange=20)
 
 
-from study_paths import (VERSIONS, REPO, configure, bind_database, digest, save, load, readonly_database,
+from study_paths import (VERSIONS, REPO, configure, bind_database, digest, save, load, validate_resources, readonly_database,
                          source_inventory, private_library, resource, path_mode)
 
 BACKENDS = ("cpu", "cuda")
@@ -63,8 +65,12 @@ def prepare(args):
         manifest = load(manifest_path)
         if tuple(manifest["backends"]) != BACKENDS:
             raise RuntimeError("Backend configuration changed; use a fresh study directory")
+        if (manifest["flags"] != STUDY_FLAGS or tuple(manifest["seeds"]) != SEEDS or
+                manifest["variants"] != {key: list(value) for key, value in VARIANTS.items()}):
+            raise RuntimeError("Study configuration changed; use a fresh study directory")
         if digest(args.database) != manifest["source_database_sha256"]:
             raise RuntimeError("Original database differs from study manifest")
+        validate_resources(manifest)
         return manifest
     # 先验证图库版本，再固定便携快照；不在实验准备或运行中修改源库。
     subprocess.run([str(args.quality), "--open-library", str(args.database)], check=True)
@@ -106,8 +112,7 @@ def prepare(args):
                     gpu=gpu_description(),
                     executables={"match": dict(path=str(args.match.resolve()), sha256=digest(args.match)),
                                  "quality": dict(path=str(args.quality.resolve()), sha256=digest(args.quality))},
-                    flags=dict(colorAdjust=False, overlayStrength=0, adaptiveWeights=False,
-                               nativeTileW=45, nativeTileH=80, tileW=9, tileH=16, lRange=20),
+                    flags=STUDY_FLAGS,
                     memory_metric="Windows process peak working set; sampled total GPU device usage, not per-process VRAM")
     save(manifest_path, manifest)
     subprocess.run([str(args.quality.resolve()), "--prepare-cache", str(snapshot)], check=True)
@@ -119,24 +124,26 @@ def execute(args, manifest, case, variant, seed, backend, tag):
     folder = root / "runs" / tag
     folder.mkdir(parents=True, exist_ok=True)
     saved = folder / "run.json"
-    if saved.exists():
-        result = load(saved)
-        if (result["executable_sha256"] == digest(args.match) and
-                digest(result["selection"]) == result["selection_sha256"] and
-                digest(result["output"]) == result["output_sha256"]):
-            return result
-        raise RuntimeError(f"Stale run needs a new study folder: {tag}")
     database = root / "run.db"
-    # A closed child owns this disposable database; restore its history for every run.
-    for suffix in ("-wal", "-shm", "-journal"):
-        Path(str(database) + suffix).unlink(missing_ok=True)
-    shutil.copy2(manifest["snapshot"], database)
     candidates, topn = VARIANTS[variant]
     output = folder / "mosaic.png"
     request = dict(inputPath=case["input"], dbPath=str(database), outputPath=str(output),
                    outW=case["width"], outH=case["height"], candidates=candidates,
                    topNRandom=topn, useGpu=backend != "cpu", format="png", writeMode="stream",
                    **manifest["flags"])
+    if saved.exists():
+        result = load(saved)
+        if (result["request"] == request and result["seed"] == seed and
+                result["backend"] == backend and result["variant"] == variant and
+                result["executable_sha256"] == digest(args.match) and
+                digest(result["selection"]) == result["selection_sha256"] and
+                digest(result["output"]) == result["output_sha256"]):
+            return result
+        raise RuntimeError(f"Stale run needs a new study folder: {tag}")
+    # A closed child owns this disposable database; restore its history for every run.
+    for suffix in ("-wal", "-shm", "-journal"):
+        Path(str(database) + suffix).unlink(missing_ok=True)
+    shutil.copy2(manifest["snapshot"], database)
     request_path = folder / "request.json"
     save(request_path, request)
     summary = folder / "runtime.json"
@@ -171,7 +178,7 @@ def execute(args, manifest, case, variant, seed, backend, tag):
     selection = str(output) + ".indices.bin"
     result = dict(id=tag, case=case["id"], variant=variant, seed=seed, backend=backend,
                   executable_sha256=digest(args.match), request=request, runtime=runtime,
-                  selection=selection, selection_sha256=digest(selection), outputPath=str(output),
+                  selection=selection, selection_sha256=digest(selection), output=str(output),
                   output_sha256=digest(output), wall_seconds=elapsed, peak_rss_bytes=rss,
                   gpu_device_before_mib=before_gpu, gpu_device_peak_mib=gpu_peak)
     save(saved, result)
@@ -320,7 +327,7 @@ def export_data(root, report):
     for group in ("runs", "performance"):
         for run in public[group]:
             run.pop("output", None)
-            run["request"].pop("output", None)
+            run["request"].pop("outputPath", None)
             run["selection"] = f"selections/{run['id']}.bin"
     save(root / "public-results.json", public_report(public))
 
