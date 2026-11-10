@@ -175,7 +175,7 @@ nlohmann::json mosaicRequestToJson(const MosaicRequest &request)
     value["lbpWeight"] = cfg.lbpWeight;
     value["neighborWindow"] = cfg.neighborWindow;
     value["neighborPenalty"] = cfg.neighborPenalty;
-    value["topNrandom"] = cfg.topNrandom;
+    value["topNRandom"] = cfg.topNRandom;
     value["useGpu"] = cfg.useGpu;
     value["deepZoom"] = cfg.deepZoom;
     value["generatePreview"] = cfg.generatePreview;
@@ -360,8 +360,6 @@ nlohmann::json apiEndpointToJson(const ApiEndpointMetadata& endpoint)
     for (const auto& field : endpoint.requestFields) fields.push_back(field);
     nlohmann::json requiredFields = nlohmann::json::array();
     for (const auto& field : endpoint.requiredFields) requiredFields.push_back(field);
-    nlohmann::json fieldAliases = nlohmann::json::object();
-    for (const auto& item : endpoint.fieldAliases) fieldAliases[item.first] = item.second;
     nlohmann::json errorResponses = nlohmann::json::array();
     for (const auto& item : endpoint.errorResponses) {
         errorResponses.push_back({
@@ -380,7 +378,6 @@ nlohmann::json apiEndpointToJson(const ApiEndpointMetadata& endpoint)
             {"category", endpoint.category},
             {"requestFields", fields},
             {"requiredFields", requiredFields},
-            {"fieldAliases", fieldAliases},
             {"queryKeys", endpoint.queryKeys},
             {"acceptedQueryKeys", endpoint.acceptedQueryKeys},
             {"successStatus", endpoint.successStatus},
@@ -392,27 +389,24 @@ nlohmann::json apiEndpointToJson(const ApiEndpointMetadata& endpoint)
             {"errorResponses", errorResponses},
             {"sideEffects", endpoint.sideEffects},
             {"longRunning", endpoint.longRunning},
-            {"legacy", endpoint.legacy},
             {"enabled", endpoint.enabled}};
 }
 
-nlohmann::json apiEndpointsToJson(bool legacyRunEnabled)
+nlohmann::json apiEndpointsToJson()
 {
     nlohmann::json endpoints = nlohmann::json::array();
-    for (const auto& endpoint : apiEndpointMetadata(legacyRunEnabled)) {
+    for (const auto& endpoint : apiEndpointMetadata()) {
         endpoints.push_back(apiEndpointToJson(endpoint));
     }
     return endpoints;
 }
 
-nlohmann::json apiInfoToJson(bool legacyRunEnabled, const char* entryName)
+nlohmann::json apiInfoToJson(const char* entryName)
 {
-    const auto endpoints = apiEndpointMetadata(legacyRunEnabled);
+    const auto endpoints = apiEndpointMetadata();
     const auto metadataErrors = validateApiEndpointMetadata(endpoints);
-    int legacyCount = 0;
     int enabledCount = 0;
     for (const auto& endpoint : endpoints) {
-        if (endpoint.legacy) ++legacyCount;
         if (endpoint.enabled) ++enabledCount;
     }
     nlohmann::json entryPoints = nlohmann::json::array();
@@ -439,10 +433,8 @@ nlohmann::json apiInfoToJson(bool legacyRunEnabled, const char* entryName)
             {"contractMajorVersion", apiContractMajorVersion()},
             {"compatibility", apiCompatibilityLevel()},
             {"stable", apiContractStable()},
-            {"legacyRunEnabled", legacyRunEnabled},
             {"endpointCount", static_cast<int>(endpoints.size())},
             {"enabledEndpointCount", enabledCount},
-            {"legacyEndpointCount", legacyCount},
             {"metadataValid", metadataErrors.empty()},
             {"metadataErrors", metadataErrors}
         }},
@@ -464,11 +456,7 @@ nlohmann::json apiOkJson(const std::string& key, nlohmann::json value)
 
 nlohmann::json apiErrorJson(const std::string& message)
 {
-    Diagnostic diagnostic;
-    diagnostic.code = "request_failed";
-    diagnostic.severity = "error";
-    diagnostic.message = message;
-    return {{"ok", false}, {"message", message}, {"diagnostic", diagnosticToJson(diagnostic)}};
+    return serviceResultToJson(ServiceResult::failure(1, message, "request_failed"));
 }
 
 nlohmann::json apiPayloadJson(const ServiceResult& status, const std::string& key, nlohmann::json value)
@@ -508,14 +496,14 @@ nlohmann::json apiRemovedJobsJson(int removed)
     return apiOkJson("removed", removed);
 }
 
-nlohmann::json apiEndpointsResponseJson(bool legacyRunEnabled)
+nlohmann::json apiEndpointsResponseJson()
 {
-    return apiOkJson("endpoints", apiEndpointsToJson(legacyRunEnabled));
+    return apiOkJson("endpoints", apiEndpointsToJson());
 }
 
-nlohmann::json apiInfoResponseJson(bool legacyRunEnabled, const char* entryName)
+nlohmann::json apiInfoResponseJson(const char* entryName)
 {
-    return apiOkJson("info", apiInfoToJson(legacyRunEnabled, entryName));
+    return apiOkJson("info", apiInfoToJson(entryName));
 }
 
 } // namespace mosaicraft

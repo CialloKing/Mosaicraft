@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "ApiMetadata.h"
 #include "ApiRequestParser.h"
@@ -19,7 +19,7 @@ struct ApiRequest
     std::string body;
     std::string id;
     std::string artifactId;
-    bool legacyRunEnabled = false;
+
     const char* entryName = "Mosaicraft";
 };
 
@@ -29,7 +29,7 @@ struct ApiRequestContext
     std::string body;
     std::string id;
     std::string artifactId;
-    bool legacyRunEnabled = false;
+
     const char* entryName = "Mosaicraft";
 };
 
@@ -46,8 +46,7 @@ ApiRequest apiRequest(ApiOperation operation);
 ApiRequest apiBodyRequest(ApiOperation operation, std::string body);
 ApiRequest apiQueryRequest(ApiOperation operation, ApiQueryParams query, std::string body = {});
 ApiRequest apiJobRequest(ApiOperation operation, std::string id);
-ApiRequest apiInfoRequest(bool legacyRunEnabled, const char* entryName);
-ApiRequest apiLegacyRunDisabledRequest();
+ApiRequest apiInfoRequest(const char* entryName);
 std::vector<std::string> apiQueryKeyList(ApiOperation operation);
 std::vector<const char*> apiQueryKeys(ApiOperation operation);
 std::vector<std::string> apiAcceptedQueryKeyList(ApiOperation operation);
@@ -56,10 +55,9 @@ ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs);
 std::vector<std::string> validateApiResponseContract(const ApiEndpointMetadata& endpoint,
                                                       const ApiResponse& response);
 
-ApiResponse apiEndpoints(bool legacyRunEnabled);
-ApiResponse apiInfo(bool legacyRunEnabled, const char* entryName);
+ApiResponse apiEndpoints();
+ApiResponse apiInfo(const char* entryName);
 ApiResponse apiPing();
-ApiResponse apiLegacyRunDisabled();
 
 ApiResponse apiMosaic(const std::string& body, JobManager& jobs);
 ApiResponse apiSubmitMosaicJob(const std::string& body, JobManager& jobs);

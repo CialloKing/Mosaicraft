@@ -135,7 +135,7 @@ def execute(args, manifest, case, variant, seed, backend, tag):
     output = folder / "mosaic.png"
     request = dict(input=case["input"], db=str(database), output=str(output),
                    outW=case["width"], outH=case["height"], candidates=candidates,
-                   topNrandom=topn, cpu=backend == "cpu", format="png", writeMode="stream",
+                   topNRandom=topn, cpu=backend == "cpu", format="png", writeMode="stream",
                    **manifest["flags"])
     request_path = folder / "request.json"
     save(request_path, request)

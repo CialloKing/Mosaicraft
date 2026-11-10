@@ -191,7 +191,6 @@ add_library(mosaicraft_core STATIC
     core/ExecutablePath.cpp
     core/InspectService.cpp
     core/JobManager.cpp
-    core/LegacyRun.cpp
     core/LibraryAccess.cpp
     core/LibraryPaths.cpp
     core/DatabaseSchema.cpp

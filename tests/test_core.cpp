@@ -23,7 +23,6 @@
 #include "../core/SelectionPolicy.h"
 #include "../core/LibraryPaths.h"
 #include "../core/JobManager.h"
-#include "../core/LegacyRun.h"
 #include "../core/Version.h"
 #include "../core/ExecutablePath.h"
 #include "../core/ColorOrder.h"
@@ -546,7 +545,7 @@ TEST_CASE("overlay API defaults bounds and nonfinite service options")
         request.config.overlayStrength = strength;
         CHECK_FALSE(validateMosaicRequest(request, error));
     }
-    for (const auto &endpoint : apiEndpointMetadata(false))
+    for (const auto &endpoint : apiEndpointMetadata())
     {
         if (endpoint.operation == ApiOperation::Mosaic || endpoint.operation == ApiOperation::SubmitMosaicJob)
         {
@@ -1021,7 +1020,7 @@ TEST_CASE("Version is shared by CLI and API")
 
 TEST_CASE("API endpoint metadata is shared and self-describing")
 {
-    auto endpoints = apiEndpointMetadata(false);
+    auto endpoints = apiEndpointMetadata();
 
     CHECK(endpoints.size() >= 16);
 
@@ -1107,7 +1106,7 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(legacyRun->legacy);
     CHECK_FALSE(legacyRun->enabled);
 
-    auto enabledEndpoints = apiEndpointMetadata(true);
+    auto enabledEndpoints = apiEndpointMetadata();
     auto enabledLegacyRun = std::find_if(enabledEndpoints.begin(), enabledEndpoints.end(),
         [](const ApiEndpointMetadata& endpoint) { return endpoint.path == "/api/run"; });
     REQUIRE(enabledLegacyRun != enabledEndpoints.end());
@@ -1143,7 +1142,7 @@ TEST_CASE("API JSON serialization is shared")
     CHECK(resultJson["exitCode"].get<int>() == 7);
     CHECK(resultJson["message"].get<std::string>() == "bad request");
 
-    auto endpointsJson = apiEndpointsToJson(false);
+    auto endpointsJson = apiEndpointsToJson();
     REQUIRE(endpointsJson.is_array());
     auto legacy = std::find_if(endpointsJson.begin(), endpointsJson.end(),
         [](const nlohmann::json& endpoint) { return endpoint["path"] == "/api/run"; });
@@ -1172,7 +1171,7 @@ TEST_CASE("API JSON serialization is shared")
     CHECK((*legacy)["legacy"].get<bool>());
     CHECK_FALSE((*legacy)["enabled"].get<bool>());
 
-    auto infoJson = apiInfoToJson(false, "MosaicraftWebUI");
+    auto infoJson = apiInfoToJson("MosaicraftWebUI");
     CHECK(infoJson["version"].get<std::string>() == kVersion);
     CHECK(infoJson["entry"].get<std::string>() == "MosaicraftWebUI");
     REQUIRE(infoJson["entryPoints"].is_array());
@@ -1190,7 +1189,7 @@ TEST_CASE("API JSON serialization is shared")
     CHECK(infoJson["api"]["metadataValid"].get<bool>());
     CHECK(infoJson["api"]["metadataErrors"].empty());
 
-    auto enabledInfoJson = apiInfoToJson(true, "MosaicraftWebUI");
+    auto enabledInfoJson = apiInfoToJson("MosaicraftWebUI");
     CHECK(enabledInfoJson["api"]["legacyRunEnabled"].get<bool>());
     CHECK(enabledInfoJson["api"]["endpointCount"].get<int>() == 19);
     CHECK(enabledInfoJson["api"]["enabledEndpointCount"].get<int>() == 19);
@@ -1260,11 +1259,11 @@ TEST_CASE("API JSON response envelopes are shared")
     CHECK(payloadError["exitCode"].get<int>() == 2);
     CHECK(payloadError["purge"]["failedCount"].get<int>() == 1);
 
-    auto endpoints = apiEndpointsResponseJson(false);
+    auto endpoints = apiEndpointsResponseJson();
     CHECK(endpoints["ok"].get<bool>());
     CHECK(endpoints["endpoints"].is_array());
 
-    auto info = apiInfoResponseJson(false, "MosaicraftWebUI");
+    auto info = apiInfoResponseJson("MosaicraftWebUI");
     CHECK(info["ok"].get<bool>());
     CHECK(info["info"]["entry"].get<std::string>() == "MosaicraftWebUI");
 }
@@ -1304,7 +1303,7 @@ TEST_CASE("API request parser follows endpoint field aliases")
     CHECK(mosaic.outputPath == "out.webp");
     CHECK(mosaic.config.outputFormat == "webp");
     CHECK(mosaic.config.jpegQuality == 75);
-    CHECK(mosaic.config.topNrandom == 7);
+    CHECK(mosaic.config.topNRandom == 7);
     CHECK(mosaic.config.usePenalty == doctest::Approx(0.2));
     CHECK(mosaic.config.tiledOutput);
     CHECK(mosaic.config.deepZoom);
@@ -1518,13 +1517,13 @@ TEST_CASE("API request parser rejects invalid query values")
 
 TEST_CASE("API handlers expose discovery and health without HTTP")
 {
-    auto info = apiInfo(false, "MosaicraftWebUI");
+    auto info = apiInfo("MosaicraftWebUI");
     CHECK(info.status == 200);
     CHECK(info.body["ok"].get<bool>());
     CHECK(info.body["info"]["entry"].get<std::string>() == "MosaicraftWebUI");
     CHECK_FALSE(info.body["info"]["api"]["legacyRunEnabled"].get<bool>());
 
-    auto endpoints = apiEndpoints(true);
+    auto endpoints = apiEndpoints();
     CHECK(endpoints.status == 200);
     CHECK(endpoints.body["ok"].get<bool>());
     auto legacy = std::find_if(endpoints.body["endpoints"].begin(), endpoints.body["endpoints"].end(),
@@ -1537,7 +1536,6 @@ TEST_CASE("API handlers expose discovery and health without HTTP")
     CHECK(ping.body["ok"].get<bool>());
     CHECK(ping.body["message"].get<std::string>() == "pong");
 
-    auto legacyDisabled = apiLegacyRunDisabled();
     CHECK(legacyDisabled.status == 404);
     CHECK_FALSE(legacyDisabled.body["ok"].get<bool>());
     CHECK(legacyDisabled.body["message"].get<std::string>().find("disabled") != std::string::npos);
@@ -1551,7 +1549,7 @@ TEST_CASE("API request dispatcher routes operations without HTTP")
     CHECK(ping.status == 200);
     CHECK(ping.body["message"].get<std::string>() == "pong");
 
-    auto info = handleApiRequest(apiInfoRequest(false, "MosaicraftWebUI"), manager);
+    auto info = handleApiRequest(apiInfoRequest("MosaicraftWebUI"), manager);
     CHECK(info.status == 200);
     CHECK(info.body["info"]["entry"].get<std::string>() == "MosaicraftWebUI");
 
@@ -1581,7 +1579,6 @@ TEST_CASE("API request factories set semantic fields")
     context.query = {{"db", "library.db"}};
     context.body = "body";
     context.id = "job-1";
-    context.legacyRunEnabled = true;
     context.entryName = "MosaicraftWebUI";
 
     auto operation = apiOperationRequest(ApiOperation::DatabaseUsage, std::move(context));
@@ -1605,7 +1602,7 @@ TEST_CASE("API request factories set semantic fields")
     CHECK(job.operation == ApiOperation::CancelJob);
     CHECK(job.id == "job-1");
 
-    auto info = apiInfoRequest(true, "MosaicraftWebUI");
+    auto info = apiInfoRequest("MosaicraftWebUI");
     CHECK(info.operation == ApiOperation::Info);
     CHECK(info.legacyRunEnabled);
     CHECK(std::string(info.entryName) == "MosaicraftWebUI");
@@ -1613,7 +1610,7 @@ TEST_CASE("API request factories set semantic fields")
 
 TEST_CASE("API endpoint request factory applies endpoint context")
 {
-    auto endpoints = apiEndpointMetadata(true);
+    auto endpoints = apiEndpointMetadata();
     auto findEndpoint = [&](const std::string& path) {
         return std::find_if(endpoints.begin(), endpoints.end(),
             [&](const ApiEndpointMetadata& endpoint) { return endpoint.path == path; });
@@ -1680,7 +1677,7 @@ TEST_CASE("API operation query keys are centralized")
     CHECK(std::find(acceptedInspectKeys.begin(), acceptedInspectKeys.end(), "input") != acceptedInspectKeys.end());
     CHECK(std::find(acceptedInspectKeys.begin(), acceptedInspectKeys.end(), "imagePath") != acceptedInspectKeys.end());
 
-    auto endpoints = apiEndpointMetadata(false);
+    auto endpoints = apiEndpointMetadata();
     auto usageEndpoint = std::find_if(endpoints.begin(), endpoints.end(),
         [](const ApiEndpointMetadata& endpoint) { return endpoint.operation == ApiOperation::DatabaseUsage; });
     REQUIRE(usageEndpoint != endpoints.end());
@@ -1689,7 +1686,7 @@ TEST_CASE("API operation query keys are centralized")
 
 TEST_CASE("API endpoint metadata carries dispatch operations")
 {
-    for (const auto& endpoint : apiEndpointMetadata(false)) {
+    for (const auto& endpoint : apiEndpointMetadata()) {
         CHECK(std::string(apiOperationName(endpoint.operation)) != "unknown");
         CHECK(std::string(apiRequestShapeName(endpoint.requestShape)) != "unknown");
         CHECK_FALSE(endpoint.methods.empty());
@@ -1719,10 +1716,10 @@ TEST_CASE("API endpoint metadata carries dispatch operations")
 
 TEST_CASE("API endpoint metadata validation catches contract errors")
 {
-    CHECK(validateApiEndpointMetadata(apiEndpointMetadata(false)).empty());
-    CHECK(validateApiEndpointMetadata(apiEndpointMetadata(true)).empty());
+    CHECK(validateApiEndpointMetadata(apiEndpointMetadata()).empty());
+    CHECK(validateApiEndpointMetadata(apiEndpointMetadata()).empty());
 
-    auto endpoints = apiEndpointMetadata(false);
+    auto endpoints = apiEndpointMetadata();
     endpoints.push_back(endpoints.front());
     auto duplicateErrors = validateApiEndpointMetadata(endpoints);
     CHECK(std::find_if(duplicateErrors.begin(), duplicateErrors.end(),
@@ -1774,7 +1771,7 @@ TEST_CASE("API endpoint metadata validation catches contract errors")
 
 TEST_CASE("API response contract validation matches handlers")
 {
-    auto endpoints = apiEndpointMetadata(false);
+    auto endpoints = apiEndpointMetadata();
     auto findEndpoint = [&](ApiOperation operation) {
         return std::find_if(endpoints.begin(), endpoints.end(),
             [&](const ApiEndpointMetadata& endpoint) { return endpoint.operation == operation; });

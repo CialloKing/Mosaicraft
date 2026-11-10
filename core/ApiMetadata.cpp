@@ -1,4 +1,4 @@
-﻿#include "ApiMetadata.h"
+#include "ApiMetadata.h"
 
 #include <algorithm>
 #include "Version.h"
@@ -42,85 +42,23 @@ std::vector<std::string> endpointQueryKeys(ApiOperation operation)
         return {"after", "limit"};
     case ApiOperation::DatabaseStats:
     case ApiOperation::DatabaseHealth:
-        return {"db"};
+        return {"dbPath"};
     case ApiOperation::DatabaseUsage:
-        return {"db", "limit", "unused"};
+        return {"dbPath", "limit", "showUnused"};
     case ApiOperation::DatabaseUsageExport:
-        return {"db", "output", "confirm"};
+        return {"dbPath", "outputDir", "confirm"};
     case ApiOperation::DatabasePurge:
-        return {"db", "dryRun", "confirm"};
+        return {"dbPath", "dryRun", "confirm"};
     case ApiOperation::Inspect:
-        return {"input", "db"};
+        return {"imagePath", "dbPath"};
     case ApiOperation::Endpoints:
     case ApiOperation::Info:
     case ApiOperation::Ping:
-    case ApiOperation::LegacyRunDisabled:
     case ApiOperation::Mosaic:
     case ApiOperation::SubmitMosaicJob:
     case ApiOperation::SubmitBuildJob:
     case ApiOperation::ListJobs:
     case ApiOperation::ClearFinishedJobs:
-    case ApiOperation::GetJobArtifact:
-    case ApiOperation::GetJob:
-    case ApiOperation::CancelJob:
-        return {};
-    }
-    return {};
-}
-
-std::unordered_map<std::string, std::vector<std::string>> endpointFieldAliases(ApiOperation operation)
-{
-    switch (operation)
-    {
-    case ApiOperation::Mosaic:
-    case ApiOperation::SubmitMosaicJob:
-        return {
-            {"inputPath", {"input"}},
-            {"dbPath", {"db"}},
-            {"outputPath", {"output"}},
-            {"format", {"outputFormat"}},
-            {"quality", {"jpegQuality"}},
-            {"pngLevel", {"pngCompressionLevel"}},
-            {"topNrandom", {"topNRandom"}},
-            {"usePenalty", {"penalty"}},
-            {"tiled", {"tiledOutput"}},
-            {"deepZoom", {"deepzoom"}}
-        };
-    case ApiOperation::SubmitBuildJob:
-        return {
-            {"inputDir", {"input"}},
-            {"outputDir", {"output"}},
-            {"dbPath", {"db"}},
-            {"appendMode", {"append"}},
-            {"forceMode", {"force"}}
-        };
-    case ApiOperation::DatabaseStats:
-    case ApiOperation::DatabaseHealth:
-        return {{"dbPath", {"db"}}};
-    case ApiOperation::DatabaseUsage:
-        return {
-            {"dbPath", {"db"}},
-            {"showUnused", {"unused"}}
-        };
-    case ApiOperation::DatabaseUsageExport:
-        return {
-            {"dbPath", {"db"}},
-            {"outputDir", {"output"}}
-        };
-    case ApiOperation::DatabasePurge:
-        return {{"dbPath", {"db"}}};
-    case ApiOperation::Inspect:
-        return {
-            {"imagePath", {"input"}},
-            {"dbPath", {"db"}}
-        };
-    case ApiOperation::Endpoints:
-    case ApiOperation::Info:
-    case ApiOperation::Ping:
-    case ApiOperation::LegacyRunDisabled:
-    case ApiOperation::ListJobs:
-    case ApiOperation::ClearFinishedJobs:
-    case ApiOperation::GetJobEvents:
     case ApiOperation::GetJobArtifact:
     case ApiOperation::GetJob:
     case ApiOperation::CancelJob:
@@ -138,7 +76,6 @@ void addUnique(std::vector<std::string>& values, const std::string& value)
 
 std::vector<std::string> endpointAcceptedQueryKeys(const std::vector<std::string>& queryKeys,
                                                    const std::vector<std::string>& requestFields,
-                                                   const std::unordered_map<std::string, std::vector<std::string>>& fieldAliases,
                                                    ApiRequestShape requestShape)
 {
     std::vector<std::string> keys;
@@ -146,9 +83,7 @@ std::vector<std::string> endpointAcceptedQueryKeys(const std::vector<std::string
     if ((requestShape == ApiRequestShape::Query || requestShape == ApiRequestShape::JobQuery))
     {
         for (const auto& field : requestFields) addUnique(keys, field);
-        for (const auto& item : fieldAliases) {
-            for (const auto& alias : item.second) addUnique(keys, alias);
-        }
+
     }
     return keys;
 }
@@ -163,7 +98,6 @@ int endpointSuccessStatus(ApiOperation operation)
     case ApiOperation::Endpoints:
     case ApiOperation::Info:
     case ApiOperation::Ping:
-    case ApiOperation::LegacyRunDisabled:
     case ApiOperation::Mosaic:
     case ApiOperation::ListJobs:
     case ApiOperation::ClearFinishedJobs:
@@ -206,7 +140,6 @@ std::string endpointResponseKey(ApiOperation operation)
     case ApiOperation::DatabaseUsageExport: return "export";
     case ApiOperation::DatabasePurge: return "purge";
     case ApiOperation::Inspect: return "inspect";
-    case ApiOperation::LegacyRunDisabled:
     case ApiOperation::Mosaic:
         return "";
     }
@@ -241,15 +174,12 @@ void populateEndpointErrors(ApiEndpointMetadata& info)
     {
     case ApiOperation::GetJobEvents:
         addErrorContract(info, 400, "serviceResult");
-        addErrorContract(info, 404, "apiError");
+        addErrorContract(info, 404, "serviceResult");
         break;
     case ApiOperation::GetJobArtifact:
-        addErrorContract(info, 404, "apiError");
-        addErrorContract(info, 409, "apiError");
-        addErrorContract(info, 500, "apiError");
-        break;
-    case ApiOperation::LegacyRunDisabled:
-        addErrorContract(info, 404, "apiError");
+        addErrorContract(info, 404, "serviceResult");
+        addErrorContract(info, 409, "serviceResult");
+        addErrorContract(info, 500, "serviceResult");
         break;
     case ApiOperation::Mosaic:
     case ApiOperation::SubmitMosaicJob:
@@ -258,11 +188,11 @@ void populateEndpointErrors(ApiEndpointMetadata& info)
         addErrorContract(info, 500, "serviceResult");
         break;
     case ApiOperation::GetJob:
-        addErrorContract(info, 404, "apiError");
+        addErrorContract(info, 404, "serviceResult");
         break;
     case ApiOperation::CancelJob:
-        addErrorContract(info, 404, "apiError");
-        addErrorContract(info, 409, "jobError", "job");
+        addErrorContract(info, 404, "serviceResult");
+        addErrorContract(info, 409, "serviceResult", "job");
         break;
     case ApiOperation::DatabaseStats:
     case ApiOperation::DatabaseHealth:
@@ -272,13 +202,13 @@ void populateEndpointErrors(ApiEndpointMetadata& info)
         break;
     case ApiOperation::DatabaseUsageExport:
         addErrorContract(info, 400, "serviceResult");
-        addErrorContract(info, 400, "payloadResult", "export");
-        addErrorContract(info, 500, "payloadResult", "export");
+        addErrorContract(info, 400, "serviceResult", "export");
+        addErrorContract(info, 500, "serviceResult", "export");
         break;
     case ApiOperation::DatabasePurge:
         addErrorContract(info, 400, "serviceResult");
-        addErrorContract(info, 400, "payloadResult", "purge");
-        addErrorContract(info, 500, "payloadResult", "purge");
+        addErrorContract(info, 400, "serviceResult", "purge");
+        addErrorContract(info, 500, "serviceResult", "purge");
         break;
     case ApiOperation::Inspect:
         addErrorContract(info, 400, "serviceResult");
@@ -302,8 +232,7 @@ ApiEndpointMetadata endpoint(const std::string& method,
                              std::initializer_list<const char*> requiredFields = {},
                              bool sideEffects = false,
                              bool longRunning = false,
-                             bool legacy = false,
-                             bool enabled = true)
+                                                          bool enabled = true)
 {
     ApiEndpointMetadata info;
     info.operation = operation;
@@ -314,14 +243,12 @@ ApiEndpointMetadata endpoint(const std::string& method,
     info.httpPattern = endpointHttpPattern(path);
     info.description = description;
     info.category = category;
-    info.legacy = legacy;
     info.enabled = enabled;
     info.successStatus = endpointSuccessStatus(operation);
     info.responseKey = endpointResponseKey(operation);
     info.sideEffects = sideEffects;
     info.longRunning = longRunning;
     info.queryKeys = endpointQueryKeys(operation);
-    info.fieldAliases = endpointFieldAliases(operation);
     for (const char* field : requestFields) {
         info.requestFields.emplace_back(field);
     }
@@ -329,7 +256,7 @@ ApiEndpointMetadata endpoint(const std::string& method,
         info.requiredFields.emplace_back(field);
     }
     info.acceptedQueryKeys = endpointAcceptedQueryKeys(
-        info.queryKeys, info.requestFields, info.fieldAliases, info.requestShape);
+        info.queryKeys, info.requestFields, info.requestShape);
     populateEndpointErrors(info);
     return info;
 }
@@ -343,7 +270,6 @@ const char* apiOperationName(ApiOperation operation)
     case ApiOperation::Endpoints: return "endpoints";
     case ApiOperation::Info: return "info";
     case ApiOperation::Ping: return "ping";
-    case ApiOperation::LegacyRunDisabled: return "legacyRunDisabled";
     case ApiOperation::Mosaic: return "mosaic";
     case ApiOperation::SubmitMosaicJob: return "submitMosaicJob";
     case ApiOperation::SubmitBuildJob: return "submitBuildJob";
@@ -377,7 +303,6 @@ const char* apiRequestShapeName(ApiRequestShape shape)
         return "jobQuery";
     case ApiRequestShape::JobArtifact:
         return "jobArtifact";
-    case ApiRequestShape::LegacyCommand: return "legacyCommand";
     }
     return "unknown";
 }
@@ -402,7 +327,7 @@ bool apiContractStable()
     return true;
 }
 
-std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled)
+std::vector<ApiEndpointMetadata> apiEndpointMetadata()
 {
     return {
         endpoint("GET", "/api/endpoints", "structured API endpoint discovery", "discovery", ApiOperation::Endpoints,
@@ -414,27 +339,27 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled)
                  ApiRequestShape::Body,
                  {"inputPath",  "dbPath",         "outputPath",      "tileW",         "tileH",
                   "outW",       "outH",           "nativeTileW",     "nativeTileH",   "candidates",
-                  "topNrandom", "neighborWindow", "upscale",         "quality",       "pngLevel",
+                  "topNRandom", "neighborWindow", "upscale",         "quality",       "pngLevel",
                   "lRange",     "usePenalty",     "labWeight",       "gridWeight",    "tinyWeight",
                   "edgeWeight", "lbpWeight",      "neighborPenalty", "colorStrength", "overlayStrength",
-                  "format",     "writeMode",      "outputTile",      "useGpu",        "tiled",
+                  "format",     "writeMode",            "useGpu",        "tiled",
                   "deepZoom",   "colorAdjust",    "adaptiveWeights", "analyze",       "benchmark",
-                  "cpu",        "generatePreview"},
+                  "generatePreview"},
                  {"inputPath"}, true, true),
         endpoint("POST", "/api/jobs/mosaic", "start mosaic job", "jobs", ApiOperation::SubmitMosaicJob,
                  ApiRequestShape::Body,
                  {"inputPath",  "dbPath",         "outputPath",      "tileW",         "tileH",
                   "outW",       "outH",           "nativeTileW",     "nativeTileH",   "candidates",
-                  "topNrandom", "neighborWindow", "upscale",         "quality",       "pngLevel",
+                  "topNRandom", "neighborWindow", "upscale",         "quality",       "pngLevel",
                   "lRange",     "usePenalty",     "labWeight",       "gridWeight",    "tinyWeight",
                   "edgeWeight", "lbpWeight",      "neighborPenalty", "colorStrength", "overlayStrength",
-                  "format",     "writeMode",      "outputTile",      "useGpu",        "tiled",
+                  "format",     "writeMode",            "useGpu",        "tiled",
                   "deepZoom",   "colorAdjust",    "adaptiveWeights", "analyze",       "benchmark",
-                  "cpu",        "generatePreview"},
+                  "generatePreview"},
                  {"inputPath"}, true, true),
         endpoint("POST", "/api/jobs/build", "start library build job", "jobs", ApiOperation::SubmitBuildJob,
                  ApiRequestShape::Body,
-                 {"inputDir", "outputDir", "dbPath", "threads", "normalizeSize", "normalizeWidth", "normalizeHeight",
+                 {"inputDir", "outputDir", "dbPath", "threads",  "normalizeWidth", "normalizeHeight",
                   "appendMode", "recursive", "normalizeOnly", "forceMode"},
                  {"inputDir"}, true, true),
         endpoint("GET", "/api/jobs", "list jobs", "jobs", ApiOperation::ListJobs, ApiRequestShape::None),
@@ -460,9 +385,8 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled)
         endpoint("POST", "/api/db/purge", "preview or purge orphan records", "database", ApiOperation::DatabasePurge,
                  ApiRequestShape::Query, {"dbPath", "dryRun", "confirm"}, {}, true),
         endpoint("GET|POST", "/api/inspect", "inspect a source image", "inspect", ApiOperation::Inspect,
-                 ApiRequestShape::Query, {"imagePath", "dbPath"}, {"imagePath"}),
-        endpoint("POST", "/api/run", "legacy command compatibility endpoint", "legacy", ApiOperation::LegacyRunDisabled,
-                 ApiRequestShape::LegacyCommand, {"command"}, {"command"}, true, true, true, legacyRunEnabled)};
+                 ApiRequestShape::Query, {"imagePath", "dbPath"}, {"imagePath"})
+    };
 }
 
 std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpointMetadata>& endpoints)
@@ -529,8 +453,8 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
             }
         }
         for (const auto& shape : endpoint.errorShapes) {
-            if (shape != "serviceResult" && shape != "apiError" &&
-                shape != "jobError" && shape != "payloadResult") {
+            if (shape != "serviceResult" && shape != "serviceResult" &&
+                shape != "serviceResult" && shape != "serviceResult") {
                 errors.push_back("endpoint has unsupported errorShape: " + operationName + " " + shape);
             }
         }
@@ -564,12 +488,6 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
             if (std::find(endpoint.requestFields.begin(), endpoint.requestFields.end(), field) ==
                 endpoint.requestFields.end()) {
                 errors.push_back("required field is not listed in requestFields: " + operationName + " " + field);
-            }
-        }
-        for (const auto& item : endpoint.fieldAliases) {
-            if (std::find(endpoint.requestFields.begin(), endpoint.requestFields.end(), item.first) ==
-                endpoint.requestFields.end()) {
-                errors.push_back("field alias target is not listed in requestFields: " + operationName + " " + item.first);
             }
         }
 

@@ -1291,7 +1291,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 }
                 SelectionDiagnostic diagnostic;
                 thread_local std::mt19937 rng(std::random_device{}());
-                const int chosen = selection->choose(ti, cfg.topNrandom, m_fixedSeed ? seededRng : rng, diagnostic);
+                const int chosen = selection->choose(ti, cfg.topNRandom, m_fixedSeed ? seededRng : rng, diagnostic);
                 diagnostic.initialCandidates = initial.candidates;
                 diagnostic.initialMinimum = initial.minimum;
                 diagnostic.initialRadius3Candidates = initial.radius3Candidates;
@@ -1464,7 +1464,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 
                     const auto sortStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
                     std::iota(idxs.begin(), idxs.end(), 0);
-                    int topN = std::min(cfg.topNrandom, std::min(N, validCount));
+                    int topN = std::min(cfg.topNRandom, std::min(N, validCount));
                     std::partial_sort(idxs.begin(), idxs.begin() + topN, idxs.end(),
                                       [&](int a, int b)
                                       {
@@ -1660,7 +1660,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         continue;
                     }
                     const auto sortStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
-                    const int topN = std::min(cfg.topNrandom, static_cast<int>(scored.size()));
+                    const int topN = std::min(cfg.topNRandom, static_cast<int>(scored.size()));
                     std::partial_sort(scored.begin(), scored.begin() + topN, scored.end());
                     if (cfg.benchmark)
                     {

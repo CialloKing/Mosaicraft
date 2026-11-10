@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$WebUiExe = "",
     [int]$Port = 0,
     [int]$TimeoutSeconds = 60,
@@ -489,7 +489,7 @@ try {
         nativeTileW = 18
         nativeTileH = 32
         candidates = 10
-        topNrandom = 1
+        topNRandom = 1
         pngLevel = 1
     }
     $mosaic = Invoke-Api -Method "POST" -Path "/api/jobs/mosaic" -Body $mosaicBody

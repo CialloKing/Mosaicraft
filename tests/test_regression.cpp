@@ -180,7 +180,7 @@ MosaicRequest makeMosaicRequest(const TempWorkspace& workspace)
     request.config.nativeTileW = 18;
     request.config.nativeTileH = 32;
     request.config.candidates = 4;
-    request.config.topNrandom = 1;
+    request.config.topNRandom = 1;
     return request;
 }
 
@@ -420,7 +420,7 @@ TEST_CASE("output adaptation preserves fixed seed selections and committed usage
             request.config.tileW = request.config.tileH = 4;
             request.config.nativeTileW = 33000;
             request.config.nativeTileH = 1;
-            request.config.topNrandom = 3;
+            request.config.topNRandom = 3;
             request.config.lRange = 255;
             request.config.analyze = true;
             MosaicEngine engine;
@@ -651,7 +651,7 @@ TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encode
     request.config.outW = 41;
     request.config.outH = 73;
     request.config.lRange = 255;
-    request.config.topNrandom = 3;
+    request.config.topNRandom = 3;
     request.config.adaptiveWeights = true;
     request.config.overlayStrength = 0.35;
     for (bool analyze : {false, true})
@@ -2373,7 +2373,7 @@ TEST_CASE("matching batches preserve seeded choices, padding and empty batches")
     auto request = makeMosaicRequest(workspace);
     request.config.outW = 41;
     request.config.outH = 73;
-    request.config.topNrandom = 3;
+    request.config.topNRandom = 3;
     request.config.lRange = 255;
     request.config.adaptiveWeights = true;
     request.config.analyze = true;
@@ -2439,7 +2439,7 @@ TEST_CASE("matching batches preserve seeded choices, padding and empty batches")
     request.config.outH = 64;
     request.config.lRange = 1; // CUDA 与 OpenCV 的灰阶 LAB 量化有原有差异。
     request.config.analyze = false;
-    request.config.topNrandom = 1;
+    request.config.topNRandom = 1;
     for (bool gpu : {false, true})
     {
         if (gpu && !cuda::isCudaAvailable())

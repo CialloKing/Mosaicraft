@@ -49,7 +49,7 @@ def main():
     request = json.loads(args.request.read_text(encoding="utf-8-sig"))
     input_key = "inputPath" if "inputPath" in request else "input"
     request[input_key] = str(Path(request[input_key]).resolve())
-    request.update(topNrandom=1, colorAdjust=False, analyze=args.analysis_mode == "analysis")
+    request.update(topNRandom=1, colorAdjust=False, analyze=args.analysis_mode == "analysis")
     variants = [("small", args.exe.resolve(), ["small"]), ("default", args.exe.resolve(), [])]
     if args.skip_small:
         variants = variants[1:]

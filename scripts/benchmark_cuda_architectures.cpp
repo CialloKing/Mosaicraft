@@ -60,7 +60,7 @@ int main(int argc, char **argv)
     MatchingAccess::captureSelections(engine, selected);
     MosaicEngine::Config cfg;
     cfg.outW = 180; cfg.outH = 320; cfg.nativeTileW = 18; cfg.nativeTileH = 32;
-    cfg.candidates = 16; cfg.topNrandom = 3; cfg.lRange = 100;
+    cfg.candidates = 16; cfg.topNRandom = 3; cfg.lRange = 100;
     cfg.outputFormat = "png"; cfg.formatExplicit = true;
     // Brightness jitter has a separate random generator; leave it at the product
     // default so A/B pixels measure architecture changes, not fresh jitter.

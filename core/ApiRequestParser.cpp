@@ -1,10 +1,12 @@
-﻿#include "ApiRequestParser.h"
+#include "ApiRequestParser.h"
 
 #include "ApiMetadata.h"
 #include "json.hpp"
 #include "RequestValidation.h"
 
 #include <algorithm>
+#include <set>
+#include <stdexcept>
 #include <cerrno>
 #include <cctype>
 #include <cstdlib>
@@ -22,7 +24,42 @@ namespace
 
 using json = nlohmann::json;
 
-using FieldAliases = std::unordered_map<std::string, std::vector<std::string>>;
+
+
+bool validateFields(const json &body, ApiOperation operation, RequestError &error)
+{
+    for (const auto &endpoint : apiEndpointMetadata())
+    {
+        if (endpoint.operation != operation)
+        {
+            continue;
+        }
+        for (auto value = body.begin(); value != body.end(); ++value)
+        {
+            if (std::find(endpoint.requestFields.begin(), endpoint.requestFields.end(), value.key()) == endpoint.requestFields.end() || value->is_null())
+            {
+                error.field = value.key();
+                error = "unknown or null field: " + value.key();
+                return false;
+            }
+        }
+        if (operation == ApiOperation::Mosaic || operation == ApiOperation::SubmitBuildJob)
+        {
+            for (const auto &field : endpoint.requiredFields)
+            {
+                if (!body.contains(field))
+                {
+                    error.field = field;
+                    error = "required field: " + field;
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+    error = "unsupported operation";
+    return false;
+}
 
 bool parseStrictInt(const std::string &text, int &out)
 {
@@ -127,11 +164,33 @@ bool parseJsonObject(const std::string &body, json &values, RequestError &error)
     }
     try
     {
-        values = json::parse(body);
+        std::vector<std::set<std::string>> keys;
+        auto uniqueKeys = [&](int, json::parse_event_t event, json &value)
+        {
+            if (event == json::parse_event_t::object_start)
+            {
+                keys.emplace_back();
+            }
+            else if (event == json::parse_event_t::key && !keys.back().insert(value.get<std::string>()).second)
+            {
+                throw std::runtime_error("duplicate JSON key: " + value.get<std::string>());
+            }
+            else if (event == json::parse_event_t::object_end)
+            {
+                keys.pop_back();
+            }
+            return true;
+        };
+        values = json::parse(body, uniqueKeys);
     }
     catch (const json::parse_error &e)
     {
         error = std::string("invalid JSON body: ") + e.what();
+        return false;
+    }
+    catch (const std::runtime_error &e)
+    {
+        error = e.what();
         return false;
     }
     if (!values.is_object())
@@ -140,6 +199,33 @@ bool parseJsonObject(const std::string &body, json &values, RequestError &error)
         return false;
     }
     return true;
+}
+
+bool validateQuery(const ApiQueryParams &query, const std::string &body, ApiOperation operation, RequestError &error)
+{
+    json values;
+    if (!parseJsonObject(body, values, error))
+    {
+        return false;
+    }
+    for (const auto &endpoint : apiEndpointMetadata())
+    {
+        if (endpoint.operation != operation)
+        {
+            continue;
+        }
+        for (const auto &item : query)
+        {
+            if (std::find(endpoint.acceptedQueryKeys.begin(), endpoint.acceptedQueryKeys.end(), item.first) == endpoint.acceptedQueryKeys.end() || values.contains(item.first))
+            {
+                error.field = item.first;
+                error = "unknown or repeated parameter: " + item.first;
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
 }
 
 bool getStringField(const json &body, const std::vector<std::string> &keys, std::string &out, RequestError &error)
@@ -180,7 +266,7 @@ bool getIntField(const json &body, const std::vector<std::string> &keys, int &ou
         {
             continue;
         }
-        if (!it->is_number())
+        if (!it->is_number_integer() && !it->is_number_unsigned())
         {
             error.field = keys.front();
             error = key + " must be a number";
@@ -274,32 +360,14 @@ std::string getQuery(const ApiQueryParams &query, const std::string &key)
     return it == query.end() ? std::string() : it->second;
 }
 
-FieldAliases aliasesFor(ApiOperation operation)
+std::vector<std::string> keysFor(const std::string &field)
 {
-    for (const auto &endpoint : apiEndpointMetadata(false))
-    {
-        if (endpoint.operation == operation)
-        {
-            return endpoint.fieldAliases;
-        }
-    }
-    return {};
+    return {field};
 }
 
-std::vector<std::string> keysFor(const FieldAliases &aliases, const std::string &field)
+bool getQueryField(const ApiQueryParams &query, const std::string &field, std::string &out)
 {
-    std::vector<std::string> keys{field};
-    auto it = aliases.find(field);
-    if (it != aliases.end())
-    {
-        keys.insert(keys.end(), it->second.begin(), it->second.end());
-    }
-    return keys;
-}
-
-bool getQueryField(const ApiQueryParams &query, const FieldAliases &aliases, const std::string &field, std::string &out)
-{
-    for (const auto &key : keysFor(aliases, field))
+    for (const auto &key : keysFor(field))
     {
         if (hasQuery(query, key))
         {
@@ -310,30 +378,20 @@ bool getQueryField(const ApiQueryParams &query, const FieldAliases &aliases, con
     return false;
 }
 
-bool getQueryBool(const ApiQueryParams &query, const FieldAliases &aliases, const std::string &field,
+bool getQueryBool(const ApiQueryParams &query, const std::string &field,
                   bool defaultForPresence, bool &out, RequestError &error)
 {
     std::string value;
-    if (!getQueryField(query, aliases, field, value))
+    if (!getQueryField(query, field, value))
     {
         return false;
     }
-    if (value.empty())
-    {
-        out = defaultForPresence;
-        return true;
-    }
-    std::transform(value.begin(), value.end(), value.begin(),
-                   [](unsigned char ch)
-                   {
-                       return static_cast<char>(std::tolower(ch));
-                   });
-    if (value == "1" || value == "true" || value == "yes" || value == "on")
+    if (value == "true")
     {
         out = true;
         return true;
     }
-    if (value == "0" || value == "false" || value == "no" || value == "off")
+    if (value == "false")
     {
         out = false;
         return true;
@@ -343,11 +401,11 @@ bool getQueryBool(const ApiQueryParams &query, const FieldAliases &aliases, cons
     return false;
 }
 
-bool getQueryInt(const ApiQueryParams &query, const FieldAliases &aliases, const std::string &field, int &out,
+bool getQueryInt(const ApiQueryParams &query, const std::string &field, int &out,
                  RequestError &error)
 {
     std::string value;
-    if (!getQueryField(query, aliases, field, value))
+    if (!getQueryField(query, field, value))
     {
         return false;
     }
@@ -374,23 +432,26 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
     int intValue = 0;
     double doubleValue = 0.0;
     bool boolValue = false;
-    const auto aliases = aliasesFor(ApiOperation::Mosaic);
+    if (!validateFields(values, ApiOperation::Mosaic, error))
+    {
+        return false;
+    }
 
-    if (getStringField(values, keysFor(aliases, "inputPath"), text, error))
+    if (getStringField(values, keysFor("inputPath"), text, error))
     {
         request.inputPath = text;
     }
-    if (getStringField(values, keysFor(aliases, "dbPath"), text, error))
+    if (getStringField(values, keysFor("dbPath"), text, error))
     {
         request.dbPath = text;
     }
-    if (getStringField(values, keysFor(aliases, "outputPath"), text, error))
+    if (getStringField(values, keysFor("outputPath"), text, error))
     {
         request.outputPath = text;
     }
 
     auto &cfg = request.config;
-    if (getIntField(values, keysFor(aliases, "tileW"), intValue, error))
+    if (getIntField(values, keysFor("tileW"), intValue, error))
     {
         if (!requireIntAtLeast("tileW", intValue, 4, error))
         {
@@ -398,7 +459,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         }
         cfg.tileW = intValue;
     }
-    if (getIntField(values, keysFor(aliases, "tileH"), intValue, error))
+    if (getIntField(values, keysFor("tileH"), intValue, error))
     {
         if (!requireIntAtLeast("tileH", intValue, 4, error))
         {
@@ -406,7 +467,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         }
         cfg.tileH = intValue;
     }
-    if (getIntField(values, keysFor(aliases, "outW"), intValue, error))
+    if (getIntField(values, keysFor("outW"), intValue, error))
     {
         if (!requireIntAtLeast("outW", intValue, 0, error))
         {
@@ -414,7 +475,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         }
         cfg.outW = intValue;
     }
-    if (getIntField(values, keysFor(aliases, "outH"), intValue, error))
+    if (getIntField(values, keysFor("outH"), intValue, error))
     {
         if (!requireIntAtLeast("outH", intValue, 0, error))
         {
@@ -422,7 +483,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         }
         cfg.outH = intValue;
     }
-    if (getIntField(values, keysFor(aliases, "nativeTileW"), intValue, error))
+    if (getIntField(values, keysFor("nativeTileW"), intValue, error))
     {
         if (!requireIntAtLeast("nativeTileW", intValue, 1, error))
         {
@@ -430,7 +491,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         }
         cfg.nativeTileW = intValue;
     }
-    if (getIntField(values, keysFor(aliases, "nativeTileH"), intValue, error))
+    if (getIntField(values, keysFor("nativeTileH"), intValue, error))
     {
         if (!requireIntAtLeast("nativeTileH", intValue, 1, error))
         {
@@ -438,7 +499,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         }
         cfg.nativeTileH = intValue;
     }
-    if (getIntField(values, keysFor(aliases, "candidates"), intValue, error))
+    if (getIntField(values, keysFor("candidates"), intValue, error))
     {
         if (!requireIntAtLeast("candidates", intValue, 10, error))
         {
@@ -446,15 +507,15 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         }
         cfg.candidates = intValue;
     }
-    if (getIntField(values, keysFor(aliases, "topNrandom"), intValue, error))
+    if (getIntField(values, keysFor("topNRandom"), intValue, error))
     {
-        if (!requireIntAtLeast("topNrandom", intValue, 1, error))
+        if (!requireIntAtLeast("topNRandom", intValue, 1, error))
         {
             return false;
         }
-        cfg.topNrandom = intValue;
+        cfg.topNRandom = intValue;
     }
-    if (getIntField(values, keysFor(aliases, "neighborWindow"), intValue, error))
+    if (getIntField(values, keysFor("neighborWindow"), intValue, error))
     {
         if (!requireIntAtLeast("neighborWindow", intValue, 0, error))
         {
@@ -462,7 +523,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         }
         cfg.neighborWindow = intValue;
     }
-    if (getIntField(values, keysFor(aliases, "upscale"), intValue, error))
+    if (getIntField(values, keysFor("upscale"), intValue, error))
     {
         if (!requireIntAtLeast("upscale", intValue, 1, error))
         {
@@ -470,7 +531,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         }
         cfg.upscale = intValue;
     }
-    if (getIntField(values, keysFor(aliases, "quality"), intValue, error))
+    if (getIntField(values, keysFor("quality"), intValue, error))
     {
         if (!requireIntBetween("quality", intValue, 1, 100, error))
         {
@@ -478,7 +539,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         }
         cfg.jpegQuality = intValue;
     }
-    if (getIntField(values, keysFor(aliases, "pngLevel"), intValue, error))
+    if (getIntField(values, keysFor("pngLevel"), intValue, error))
     {
         if (!requireIntBetween("pngLevel", intValue, 1, 9, error))
         {
@@ -487,7 +548,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         cfg.pngCompressionLevel = intValue;
     }
 
-    if (getDoubleField(values, keysFor(aliases, "lRange"), doubleValue, error))
+    if (getDoubleField(values, keysFor("lRange"), doubleValue, error))
     {
         if (!requireDoubleAtLeast("lRange", doubleValue, 0.0, error))
         {
@@ -495,31 +556,31 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         }
         cfg.lRange = doubleValue;
     }
-    if (getDoubleField(values, keysFor(aliases, "usePenalty"), doubleValue, error))
+    if (getDoubleField(values, keysFor("usePenalty"), doubleValue, error))
     {
         cfg.usePenalty = doubleValue;
     }
-    if (getDoubleField(values, keysFor(aliases, "labWeight"), doubleValue, error))
+    if (getDoubleField(values, keysFor("labWeight"), doubleValue, error))
     {
         cfg.labWeight = doubleValue;
     }
-    if (getDoubleField(values, keysFor(aliases, "gridWeight"), doubleValue, error))
+    if (getDoubleField(values, keysFor("gridWeight"), doubleValue, error))
     {
         cfg.gridWeight = doubleValue;
     }
-    if (getDoubleField(values, keysFor(aliases, "tinyWeight"), doubleValue, error))
+    if (getDoubleField(values, keysFor("tinyWeight"), doubleValue, error))
     {
         cfg.tinyWeight = doubleValue;
     }
-    if (getDoubleField(values, keysFor(aliases, "edgeWeight"), doubleValue, error))
+    if (getDoubleField(values, keysFor("edgeWeight"), doubleValue, error))
     {
         cfg.edgeWeight = doubleValue;
     }
-    if (getDoubleField(values, keysFor(aliases, "lbpWeight"), doubleValue, error))
+    if (getDoubleField(values, keysFor("lbpWeight"), doubleValue, error))
     {
         cfg.lbpWeight = doubleValue;
     }
-    if (getDoubleField(values, keysFor(aliases, "neighborPenalty"), doubleValue, error))
+    if (getDoubleField(values, keysFor("neighborPenalty"), doubleValue, error))
     {
         if (!requireDoubleAtLeast("neighborPenalty", doubleValue, 0.0, error))
         {
@@ -527,7 +588,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         }
         cfg.neighborPenalty = doubleValue;
     }
-    if (getDoubleField(values, keysFor(aliases, "colorStrength"), doubleValue, error))
+    if (getDoubleField(values, keysFor("colorStrength"), doubleValue, error))
     {
         if (!requireDoubleBetween("colorStrength", doubleValue, 0.0, 0.5, error))
         {
@@ -536,7 +597,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         cfg.colorStrength = doubleValue;
     }
 
-    if (getDoubleField(values, keysFor(aliases, "overlayStrength"), doubleValue, error))
+    if (getDoubleField(values, keysFor("overlayStrength"), doubleValue, error))
     {
         if (!requireDoubleBetween("overlayStrength", doubleValue, 0.0, 1.0, error))
         {
@@ -545,7 +606,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         cfg.overlayStrength = doubleValue;
     }
 
-    if (getStringField(values, keysFor(aliases, "format"), text, error))
+    if (getStringField(values, keysFor("format"), text, error))
     {
         if (!text.empty())
         {
@@ -553,7 +614,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
             cfg.formatExplicit = true;
         }
     }
-    if (getStringField(values, keysFor(aliases, "writeMode"), text, error))
+    if (getStringField(values, keysFor("writeMode"), text, error))
     {
         if (text == "auto" || text == "stream" || text == "batch")
         {
@@ -566,33 +627,22 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
             return false;
         }
     }
-    if (getStringField(values, keysFor(aliases, "outputTile"), text, error))
-    {
-        if (!parseSize(text, cfg.nativeTileW, cfg.nativeTileH))
-        {
-            error.field = "outputTile";
-            error = "outputTile must use WxH format";
-            return false;
-        }
-    }
 
-    if (getBoolField(values, keysFor(aliases, "generatePreview"), boolValue, error))
+
+    if (getBoolField(values, keysFor("generatePreview"), boolValue, error))
     {
         cfg.generatePreview = boolValue;
     }
-    if (getBoolField(values, keysFor(aliases, "useGpu"), boolValue, error))
+    if (getBoolField(values, keysFor("useGpu"), boolValue, error))
     {
         cfg.useGpu = boolValue;
     }
-    if (getBoolField(values, keysFor(aliases, "cpu"), boolValue, error) && boolValue)
-    {
-        cfg.useGpu = false;
-    }
-    if (getBoolField(values, keysFor(aliases, "tiled"), boolValue, error))
+
+    if (getBoolField(values, keysFor("tiled"), boolValue, error))
     {
         cfg.tiledOutput = boolValue;
     }
-    if (getBoolField(values, keysFor(aliases, "deepZoom"), boolValue, error))
+    if (getBoolField(values, keysFor("deepZoom"), boolValue, error))
     {
         cfg.deepZoom = boolValue;
         if (boolValue)
@@ -600,19 +650,19 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
             cfg.tiledOutput = true;
         }
     }
-    if (getBoolField(values, keysFor(aliases, "colorAdjust"), boolValue, error))
+    if (getBoolField(values, keysFor("colorAdjust"), boolValue, error))
     {
         cfg.colorAdjust = boolValue;
     }
-    if (getBoolField(values, keysFor(aliases, "adaptiveWeights"), boolValue, error))
+    if (getBoolField(values, keysFor("adaptiveWeights"), boolValue, error))
     {
         cfg.adaptiveWeights = boolValue;
     }
-    if (getBoolField(values, keysFor(aliases, "analyze"), boolValue, error))
+    if (getBoolField(values, keysFor("analyze"), boolValue, error))
     {
         cfg.analyze = boolValue;
     }
-    if (getBoolField(values, keysFor(aliases, "benchmark"), boolValue, error))
+    if (getBoolField(values, keysFor("benchmark"), boolValue, error))
     {
         cfg.benchmark = boolValue;
     }
@@ -630,30 +680,25 @@ bool parseBuildRequestJson(const std::string &body, BuildRequest &request, Reque
     std::string text;
     int intValue = 0;
     bool boolValue = false;
-    const auto aliases = aliasesFor(ApiOperation::SubmitBuildJob);
+    if (!validateFields(values, ApiOperation::SubmitBuildJob, error))
+    {
+        return false;
+    }
 
-    if (getStringField(values, keysFor(aliases, "inputDir"), text, error))
+    if (getStringField(values, keysFor("inputDir"), text, error))
     {
         request.inputDir = text;
     }
-    if (getStringField(values, keysFor(aliases, "outputDir"), text, error))
+    if (getStringField(values, keysFor("outputDir"), text, error))
     {
         request.outputDir = text;
     }
-    if (getStringField(values, keysFor(aliases, "dbPath"), text, error))
+    if (getStringField(values, keysFor("dbPath"), text, error))
     {
         request.dbPath = text;
     }
-    if (getStringField(values, keysFor(aliases, "normalizeSize"), text, error))
-    {
-        if (!parseSize(text, request.normalizeWidth, request.normalizeHeight))
-        {
-            error.field = "normalizeSize";
-            error = "normalizeSize must use WxH format";
-            return false;
-        }
-    }
-    if (getIntField(values, keysFor(aliases, "threads"), intValue, error))
+
+    if (getIntField(values, keysFor("threads"), intValue, error))
     {
         if (!requireIntAtLeast("threads", intValue, 0, error))
         {
@@ -661,7 +706,7 @@ bool parseBuildRequestJson(const std::string &body, BuildRequest &request, Reque
         }
         request.threads = intValue;
     }
-    if (getIntField(values, keysFor(aliases, "normalizeWidth"), intValue, error))
+    if (getIntField(values, keysFor("normalizeWidth"), intValue, error))
     {
         if (!requireIntAtLeast("normalizeWidth", intValue, 1, error))
         {
@@ -669,7 +714,7 @@ bool parseBuildRequestJson(const std::string &body, BuildRequest &request, Reque
         }
         request.normalizeWidth = intValue;
     }
-    if (getIntField(values, keysFor(aliases, "normalizeHeight"), intValue, error))
+    if (getIntField(values, keysFor("normalizeHeight"), intValue, error))
     {
         if (!requireIntAtLeast("normalizeHeight", intValue, 1, error))
         {
@@ -678,19 +723,19 @@ bool parseBuildRequestJson(const std::string &body, BuildRequest &request, Reque
         request.normalizeHeight = intValue;
     }
 
-    if (getBoolField(values, keysFor(aliases, "appendMode"), boolValue, error))
+    if (getBoolField(values, keysFor("appendMode"), boolValue, error))
     {
         request.appendMode = boolValue;
     }
-    if (getBoolField(values, keysFor(aliases, "normalizeOnly"), boolValue, error))
+    if (getBoolField(values, keysFor("normalizeOnly"), boolValue, error))
     {
         request.normalizeOnly = boolValue;
     }
-    if (getBoolField(values, keysFor(aliases, "forceMode"), boolValue, error))
+    if (getBoolField(values, keysFor("forceMode"), boolValue, error))
     {
         request.forceMode = boolValue;
     }
-    if (getBoolField(values, keysFor(aliases, "recursive"), boolValue, error))
+    if (getBoolField(values, keysFor("recursive"), boolValue, error))
     {
         request.recursive = boolValue;
     }
@@ -708,8 +753,11 @@ bool applyDatabaseRequestJson(const std::string &body, DatabaseRequest &request,
     }
 
     std::string text;
-    const auto aliases = aliasesFor(ApiOperation::DatabaseStats);
-    if (getStringField(values, keysFor(aliases, "dbPath"), text, error))
+    if (!validateFields(values, ApiOperation::DatabaseStats, error))
+    {
+        return false;
+    }
+    if (getStringField(values, keysFor("dbPath"), text, error))
     {
         request.dbPath = text;
     }
@@ -727,12 +775,15 @@ bool applyDatabaseUsageRequestJson(const std::string &body, DatabaseUsageRequest
     std::string text;
     int intValue = 0;
     bool boolValue = false;
-    const auto aliases = aliasesFor(ApiOperation::DatabaseUsage);
-    if (getStringField(values, keysFor(aliases, "dbPath"), text, error))
+    if (!validateFields(values, ApiOperation::DatabaseUsage, error))
+    {
+        return false;
+    }
+    if (getStringField(values, keysFor("dbPath"), text, error))
     {
         request.dbPath = text;
     }
-    if (getIntField(values, keysFor(aliases, "limit"), intValue, error))
+    if (getIntField(values, keysFor("limit"), intValue, error))
     {
         if (!requireIntAtLeast("limit", intValue, 1, error))
         {
@@ -740,7 +791,7 @@ bool applyDatabaseUsageRequestJson(const std::string &body, DatabaseUsageRequest
         }
         request.limit = intValue;
     }
-    if (getBoolField(values, keysFor(aliases, "showUnused"), boolValue, error))
+    if (getBoolField(values, keysFor("showUnused"), boolValue, error))
     {
         request.showUnused = boolValue;
     }
@@ -758,16 +809,19 @@ bool applyDatabaseUsageExportRequestJson(const std::string &body, DatabaseUsageE
 
     std::string text;
     bool boolValue = false;
-    const auto aliases = aliasesFor(ApiOperation::DatabaseUsageExport);
-    if (getStringField(values, keysFor(aliases, "dbPath"), text, error))
+    if (!validateFields(values, ApiOperation::DatabaseUsageExport, error))
+    {
+        return false;
+    }
+    if (getStringField(values, keysFor("dbPath"), text, error))
     {
         request.dbPath = text;
     }
-    if (getStringField(values, keysFor(aliases, "outputDir"), text, error))
+    if (getStringField(values, keysFor("outputDir"), text, error))
     {
         request.outputDir = text;
     }
-    if (getBoolField(values, keysFor(aliases, "confirm"), boolValue, error))
+    if (getBoolField(values, keysFor("confirm"), boolValue, error))
     {
         request.confirm = boolValue;
     }
@@ -784,16 +838,19 @@ bool applyDatabasePurgeRequestJson(const std::string &body, DatabasePurgeRequest
 
     std::string text;
     bool boolValue = false;
-    const auto aliases = aliasesFor(ApiOperation::DatabasePurge);
-    if (getStringField(values, keysFor(aliases, "dbPath"), text, error))
+    if (!validateFields(values, ApiOperation::DatabasePurge, error))
+    {
+        return false;
+    }
+    if (getStringField(values, keysFor("dbPath"), text, error))
     {
         request.dbPath = text;
     }
-    if (getBoolField(values, keysFor(aliases, "dryRun"), boolValue, error))
+    if (getBoolField(values, keysFor("dryRun"), boolValue, error))
     {
         request.dryRun = boolValue;
     }
-    if (getBoolField(values, keysFor(aliases, "confirm"), boolValue, error))
+    if (getBoolField(values, keysFor("confirm"), boolValue, error))
     {
         request.confirm = boolValue;
     }
@@ -809,12 +866,15 @@ bool applyInspectRequestJson(const std::string &body, InspectRequest &request, R
     }
 
     std::string text;
-    const auto aliases = aliasesFor(ApiOperation::Inspect);
-    if (getStringField(values, keysFor(aliases, "imagePath"), text, error))
+    if (!validateFields(values, ApiOperation::Inspect, error))
+    {
+        return false;
+    }
+    if (getStringField(values, keysFor("imagePath"), text, error))
     {
         request.imagePath = text;
     }
-    if (getStringField(values, keysFor(aliases, "dbPath"), text, error))
+    if (getStringField(values, keysFor("dbPath"), text, error))
     {
         request.dbPath = text;
     }
@@ -824,9 +884,12 @@ bool applyInspectRequestJson(const std::string &body, InspectRequest &request, R
 bool parseDatabaseRequestApi(const ApiQueryParams &query, const std::string &body, DatabaseRequest &request,
                              RequestError &error)
 {
-    const auto aliases = aliasesFor(ApiOperation::DatabaseStats);
+    if (!validateQuery(query, body, ApiOperation::DatabaseStats, error))
+    {
+        return false;
+    }
     std::string text;
-    if (getQueryField(query, aliases, "dbPath", text))
+    if (getQueryField(query, "dbPath", text))
     {
         request.dbPath = text;
     }
@@ -836,15 +899,18 @@ bool parseDatabaseRequestApi(const ApiQueryParams &query, const std::string &bod
 bool parseDatabaseUsageRequestApi(const ApiQueryParams &query, const std::string &body, DatabaseUsageRequest &request,
                                   RequestError &error)
 {
-    const auto aliases = aliasesFor(ApiOperation::DatabaseUsage);
+    if (!validateQuery(query, body, ApiOperation::DatabaseUsage, error))
+    {
+        return false;
+    }
     std::string text;
     int intValue = 0;
     bool boolValue = false;
-    if (getQueryField(query, aliases, "dbPath", text))
+    if (getQueryField(query, "dbPath", text))
     {
         request.dbPath = text;
     }
-    if (getQueryInt(query, aliases, "limit", intValue, error))
+    if (getQueryInt(query, "limit", intValue, error))
     {
         if (!requireIntAtLeast("limit", intValue, 1, error))
         {
@@ -856,7 +922,7 @@ bool parseDatabaseUsageRequestApi(const ApiQueryParams &query, const std::string
     {
         return false;
     }
-    if (getQueryBool(query, aliases, "showUnused", false, boolValue, error))
+    if (getQueryBool(query, "showUnused", false, boolValue, error))
     {
         request.showUnused = boolValue;
     }
@@ -870,18 +936,21 @@ bool parseDatabaseUsageRequestApi(const ApiQueryParams &query, const std::string
 bool parseDatabaseUsageExportRequestApi(const ApiQueryParams &query, const std::string &body,
                                         DatabaseUsageExportRequest &request, RequestError &error)
 {
-    const auto aliases = aliasesFor(ApiOperation::DatabaseUsageExport);
+    if (!validateQuery(query, body, ApiOperation::DatabaseUsageExport, error))
+    {
+        return false;
+    }
     std::string text;
     bool boolValue = false;
-    if (getQueryField(query, aliases, "dbPath", text))
+    if (getQueryField(query, "dbPath", text))
     {
         request.dbPath = text;
     }
-    if (getQueryField(query, aliases, "outputDir", text))
+    if (getQueryField(query, "outputDir", text))
     {
         request.outputDir = text;
     }
-    if (getQueryBool(query, aliases, "confirm", false, boolValue, error))
+    if (getQueryBool(query, "confirm", false, boolValue, error))
     {
         request.confirm = boolValue;
     }
@@ -895,14 +964,17 @@ bool parseDatabaseUsageExportRequestApi(const ApiQueryParams &query, const std::
 bool parseDatabasePurgeRequestApi(const ApiQueryParams &query, const std::string &body, DatabasePurgeRequest &request,
                                   RequestError &error)
 {
-    const auto aliases = aliasesFor(ApiOperation::DatabasePurge);
+    if (!validateQuery(query, body, ApiOperation::DatabasePurge, error))
+    {
+        return false;
+    }
     std::string text;
     bool boolValue = false;
-    if (getQueryField(query, aliases, "dbPath", text))
+    if (getQueryField(query, "dbPath", text))
     {
         request.dbPath = text;
     }
-    if (getQueryBool(query, aliases, "dryRun", true, boolValue, error))
+    if (getQueryBool(query, "dryRun", true, boolValue, error))
     {
         request.dryRun = boolValue;
     }
@@ -910,7 +982,7 @@ bool parseDatabasePurgeRequestApi(const ApiQueryParams &query, const std::string
     {
         return false;
     }
-    if (getQueryBool(query, aliases, "confirm", false, boolValue, error))
+    if (getQueryBool(query, "confirm", false, boolValue, error))
     {
         request.confirm = boolValue;
     }
@@ -924,13 +996,16 @@ bool parseDatabasePurgeRequestApi(const ApiQueryParams &query, const std::string
 bool parseInspectRequestApi(const ApiQueryParams &query, const std::string &body, InspectRequest &request,
                             RequestError &error)
 {
-    const auto aliases = aliasesFor(ApiOperation::Inspect);
+    if (!validateQuery(query, body, ApiOperation::Inspect, error))
+    {
+        return false;
+    }
     std::string text;
-    if (getQueryField(query, aliases, "imagePath", text))
+    if (getQueryField(query, "imagePath", text))
     {
         request.imagePath = text;
     }
-    if (getQueryField(query, aliases, "dbPath", text))
+    if (getQueryField(query, "dbPath", text))
     {
         request.dbPath = text;
     }

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <string>
 #include <unordered_map>
@@ -17,7 +17,7 @@ enum class ApiOperation
     Endpoints,
     Info,
     Ping,
-    LegacyRunDisabled,
+
     Mosaic,
     SubmitMosaicJob,
     SubmitBuildJob,
@@ -43,7 +43,7 @@ enum class ApiRequestShape
     JobId,
     JobQuery,
     JobArtifact,
-    LegacyCommand
+
 };
 
 struct ApiErrorResponseMetadata
@@ -74,7 +74,6 @@ struct ApiEndpointMetadata
     std::vector<std::string> requiredFields;
     std::vector<std::string> queryKeys;
     std::vector<std::string> acceptedQueryKeys;
-    std::unordered_map<std::string, std::vector<std::string>> fieldAliases;
     int successStatus = 200;
     std::string responseKey;
     std::vector<int> errorStatuses;
@@ -83,7 +82,6 @@ struct ApiEndpointMetadata
     std::vector<ApiErrorResponseMetadata> errorResponses;
     bool sideEffects = false;
     bool longRunning = false;
-    bool legacy = false;
     bool enabled = true;
 };
 
@@ -93,7 +91,7 @@ const char* apiContractVersion();
 int apiContractMajorVersion();
 const char* apiCompatibilityLevel();
 bool apiContractStable();
-std::vector<ApiEndpointMetadata> apiEndpointMetadata(bool legacyRunEnabled);
+std::vector<ApiEndpointMetadata> apiEndpointMetadata();
 std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpointMetadata>& endpoints);
 std::vector<ApiEntryPointMetadata> apiEntryPointMetadata();
 std::vector<std::string> apiFeatureList();

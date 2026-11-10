@@ -427,7 +427,7 @@ static int cmdMosaic(int argc, char* argv[])
         {
             int _v = 0;
             if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.topNrandom = _v;
+            cfg.topNRandom = _v;
         }
         else if (arg == "-f" || arg == "--format")
         {

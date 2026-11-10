@@ -135,7 +135,7 @@ def execute(args, manifest, case, strategy, seed, backend, tag=None, epsilon=0.0
     folder.mkdir(parents=True, exist_ok=True)
     output = folder / ("mosaic.png" if render else "selection")
     request = dict(input=case["input"], db=str(Path(manifest["snapshot"]).parent / "run.db"), output=str(output),
-                   outW=case["width"], outH=case["height"], candidates=150, topNrandom=10,
+                   outW=case["width"], outH=case["height"], candidates=150, topNRandom=10,
                    cpu=backend == "cpu", format="png", writeMode="stream", **manifest["flags"])
     request["lRange"] = case.get("lRange", 20)
     identity = dict(request=request, seed=seed, strategy=strategy, epsilon=epsilon,

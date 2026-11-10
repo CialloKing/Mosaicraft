@@ -58,7 +58,7 @@ inline bool validateMosaicRequest(MosaicRequest &request, std::string &error, st
     if (cfg.tileW < 4 || cfg.tileH < 4 || !validImageSize(cfg.tileW, cfg.tileH) ||
         !validImageSize(cfg.nativeTileW, cfg.nativeTileH) || cfg.outW < 0 || cfg.outH < 0 || cfg.outW > 1000000 ||
         cfg.outH > 1000000 || cfg.upscale < 0 || cfg.upscale > 64 || cfg.candidates < 1 || cfg.candidates > 10000 ||
-        cfg.topNrandom < 1 || cfg.topNrandom > 10000 || cfg.neighborWindow < 0 || cfg.neighborWindow > 1000000 ||
+        cfg.topNRandom < 1 || cfg.topNRandom > 10000 || cfg.neighborWindow < 0 || cfg.neighborWindow > 1000000 ||
         cfg.jpegQuality < 1 || cfg.jpegQuality > 100 || cfg.pngCompressionLevel < 1 || cfg.pngCompressionLevel > 9)
     {
         if (field)

@@ -1,10 +1,10 @@
-﻿// Mosaicraft Web UI local HTTP server.
-// Serves the Web UI and structured API while keeping legacy command compatibility.
+// Mosaicraft Web UI local HTTP server.
+// Serves the Web UI and structured API.
 #include "core/httplib.h"
 #include "core/ApiHandlers.h"
+#include "core/ApiJson.h"
 #include "core/JobManager.h"
 #include "core/json.hpp"
-#include "core/LegacyRun.h"
 #include "core/ExecutablePath.h"
 #include <algorithm>
 #include <chrono>
@@ -42,16 +42,6 @@ namespace
 {
 
 using json = nlohmann::json;
-
-static bool envFlagEnabled(const char* name)
-{
-    const char* value = std::getenv(name);
-    if (!value) return false;
-    std::string text(value);
-    std::transform(text.begin(), text.end(), text.begin(),
-        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-    return text == "1" || text == "true" || text == "yes" || text == "on";
-}
 
 static void setJsonBody(httplib::Response& res, const json& body)
 {
@@ -179,48 +169,34 @@ static mosaicraft::ApiRequest apiRequestFromHttp(const httplib::Request& req,
             context.id = req.matches[1].str();
         }
         break;
-    case mosaicraft::ApiRequestShape::LegacyCommand:
-        context.body = req.body;
-        break;
     }
     return mosaicraft::apiEndpointRequest(endpoint, std::move(context));
 }
 
 #ifndef _WIN32
-static std::vector<char*> buildExecArgv(const std::string& executable, const std::string& subCmd, std::vector<std::string>& storage)
-{
-    storage.clear();
-    storage.push_back(executable);
-    std::istringstream iss(subCmd);
-    std::string token;
-    while (iss >> token)
-    {
-        storage.push_back(token);
-    }
-    std::vector<char*> argv;
-    argv.reserve(storage.size() + 1);
-    for (auto& item : storage)
-    {
-        argv.push_back(item.data());
-    }
-    argv.push_back(nullptr);
-    return argv;
-}
 #endif
 
 static void registerApiMethod(httplib::Server& svr,
                               const std::string& method,
                               mosaicraft::JobManager& jobManager,
-                              const mosaicraft::ApiEndpointMetadata& endpoint,
-                              bool legacyRunEnabled)
+                              const mosaicraft::ApiEndpointMetadata& endpoint)
 {
     if (endpoint.httpPattern.empty()) {
         throw std::logic_error("API endpoint has no HTTP pattern");
     }
     const std::string pattern = endpoint.httpPattern;
-    auto handler = [&, endpoint, legacyRunEnabled](const httplib::Request& req, httplib::Response& res) {
+    auto handler = [&, endpoint](const httplib::Request& req, httplib::Response& res) {
+        for (const auto &parameter : req.params)
+        {
+            if (req.get_param_value_count(parameter.first) != 1 ||
+                std::find(endpoint.acceptedQueryKeys.begin(), endpoint.acceptedQueryKeys.end(), parameter.first) == endpoint.acceptedQueryKeys.end())
+            {
+                res.status = 400;
+                setJsonBody(res, mosaicraft::apiErrorJson("unknown or repeated query parameter: " + parameter.first));
+                return;
+            }
+        }
         mosaicraft::ApiRequestContext context;
-        context.legacyRunEnabled = legacyRunEnabled;
         context.entryName = "MosaicraftWebUI";
         handleApi(res, jobManager,
             apiRequestFromHttp(req, endpoint, std::move(context)));
@@ -240,19 +216,15 @@ static void registerApiMethod(httplib::Server& svr,
 static void registerStructuredApiRoutes(
     httplib::Server& svr,
     mosaicraft::JobManager& jobManager,
-    const std::vector<mosaicraft::ApiEndpointMetadata>& apiEndpoints,
-    bool legacyRunEnabled)
+    const std::vector<mosaicraft::ApiEndpointMetadata>& apiEndpoints)
 {
     for (const auto& endpoint : apiEndpoints) {
-        if (endpoint.operation == mosaicraft::ApiOperation::LegacyRunDisabled) {
-            continue;
-        }
 
         if (endpoint.methods.empty()) {
             throw std::logic_error("API endpoint has no methods");
         }
         for (const auto& method : endpoint.methods) {
-            registerApiMethod(svr, method, jobManager, endpoint, legacyRunEnabled);
+            registerApiMethod(svr, method, jobManager, endpoint);
         }
     }
 }
@@ -333,6 +305,16 @@ static std::string findMosaicraft()
     return "mosaicraft";  // hope it's in PATH
 }
 
+static bool envFlagEnabled(const char* name)
+{
+    const char* value = std::getenv(name);
+    if (!value) return false;
+    std::string text(value);
+    std::transform(text.begin(), text.end(), text.begin(),
+        [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return text == "1" || text == "true" || text == "yes" || text == "on";
+}
+
 int main(int argc, char* argv[])
 {
     int port = 8080;
@@ -365,7 +347,6 @@ int main(int argc, char* argv[])
         portSet = true;
     }
 
-    const bool legacyRunEnabled = envFlagEnabled("MOSAICRAFT_ENABLE_LEGACY_RUN");
     std::string mosaicPath = findMosaicraft();
     std::string htmlPath = findHtml();
     if (htmlPath.empty()) {
@@ -377,14 +358,13 @@ int main(int argc, char* argv[])
     std::cout << "  Server: http://localhost:" << port << std::endl;
     std::cout << "  Mosaicraft: " << mosaicPath << std::endl;
     std::cout << "  HTML: " << htmlPath << std::endl;
-    std::cout << "  Legacy /api/run: " << (legacyRunEnabled ? "enabled" : "disabled") << std::endl;
     std::cout << "  Browser: " << (openBrowser ? "auto-open" : "disabled") << std::endl;
 
     std::string htmlContent = readFile(htmlPath);
     std::mutex htmlMutex;
     std::mutex runMutex;
     mosaicraft::JobManager jobManager;
-    const auto apiEndpoints = mosaicraft::apiEndpointMetadata(legacyRunEnabled);
+    const auto apiEndpoints = mosaicraft::apiEndpointMetadata();
     const auto endpointErrors = mosaicraft::validateApiEndpointMetadata(apiEndpoints);
     if (!endpointErrors.empty()) {
         std::cerr << "ERROR: Invalid API endpoint metadata" << std::endl;
@@ -395,6 +375,13 @@ int main(int argc, char* argv[])
     }
 
     httplib::Server svr;
+    svr.set_error_handler([](const httplib::Request &request, httplib::Response &response)
+    {
+        if (request.path.rfind("/api/", 0) == 0 && response.get_header_value("Content-Type").find("application/json") == std::string::npos)
+        {
+            setJsonBody(response, mosaicraft::apiErrorJson("HTTP request failed: " + std::to_string(response.status)));
+        }
+    });
     svr.set_pre_routing_handler(
         [port](const httplib::Request& request, httplib::Response& response)
         {
@@ -406,7 +393,7 @@ int main(int argc, char* argv[])
             auto reject = [&](int status, const char* message)
             {
                 response.status = status;
-                setJsonBody(response, {{"ok", false}, {"message", message}});
+                setJsonBody(response, mosaicraft::apiErrorJson(message));
                 return Result::Handled;
             };
             auto host = request.get_header_value("Host");
@@ -435,8 +422,7 @@ int main(int argc, char* argv[])
                                    return static_cast<char>(std::tolower(c));
                                });
                 // 兼容端点仍接收原始命令文本，同样先通过 Host/Origin 检查。
-                const bool legacyText = request.path == "/api/run" && type == "text/plain";
-                if (type != "application/json" && !legacyText)
+                if (type != "application/json")
                 {
                     return reject(415, "API request body must use application/json");
                 }
@@ -474,160 +460,7 @@ int main(int argc, char* argv[])
         res.set_content("HTML reloaded", "text/plain");
     });
 
-    registerStructuredApiRoutes(svr, jobManager, apiEndpoints, legacyRunEnabled);
-
-    // Legacy command endpoint.
-    svr.Post("/api/run", [&, legacyRunEnabled](const httplib::Request& req, httplib::Response& res) {
-        if (!legacyRunEnabled) {
-            handleApi(res, jobManager, mosaicraft::apiLegacyRunDisabledRequest());
-            return;
-        }
-
-        std::unique_lock<std::mutex> runLock(runMutex, std::try_to_lock);
-        if (!runLock.owns_lock()) {
-            res.status = 429;
-            res.set_content("ERROR: another mosaicraft job is already running", "text/plain");
-            return;
-        }
-
-        auto validation = mosaicraft::validateLegacyRunCommand(req.body);
-        if (!validation.ok) {
-            res.set_content(validation.error, "text/plain");
-            return;
-        }
-        const std::string& subCmd = validation.subCommand;
-
-        // Use CreateProcess on Windows to preserve Unicode paths.
-        std::string output;
-        try {
-            std::cout << "[RUN] " << mosaicPath << " " << subCmd << std::endl;
-#ifdef _WIN32
-            HANDLE hReadPipe, hWritePipe;
-            SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
-            if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 0)) {
-                res.set_content("ERROR: CreatePipe failed", "text/plain");
-                return;
-            }
-            SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
-
-            PROCESS_INFORMATION pi = {};
-            STARTUPINFOW si = {sizeof(STARTUPINFOW)};
-            si.dwFlags = STARTF_USESTDHANDLES;
-            si.hStdOutput = hWritePipe;
-            si.hStdError = hWritePipe;
-
-            std::wstring wCmd = utf8ToWide(mosaicPath);
-            if (wCmd.empty()) {
-                CloseHandle(hReadPipe);
-                CloseHandle(hWritePipe);
-                res.set_content("ERROR: invalid executable path", "text/plain");
-                return;
-            }
-            // subCmd is UTF-8 from the browser request.
-            std::wstring wArgs = utf8ToWide(subCmd);
-            std::wstring cmdLine = L"\"" + wCmd + L"\" " + wArgs;
-
-            // Keep the command line buffer writable for CreateProcessW.
-            std::vector<wchar_t> cmdBuf(cmdLine.size() + 1);
-            wcscpy(cmdBuf.data(), cmdLine.c_str());
-
-            if (!CreateProcessW(NULL, cmdBuf.data(),
-                               nullptr, nullptr, TRUE,
-                               CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-                CloseHandle(hReadPipe);
-                CloseHandle(hWritePipe);
-                std::cerr << "[ERROR] CreateProcess failed (" << GetLastError() << ")" << std::endl;
-                res.set_content("ERROR: failed to start process", "text/plain");
-                return;
-            }
-            CloseHandle(hWritePipe);
-            CloseHandle(pi.hThread);
-
-            char buf[4096];
-            DWORD bytesRead;
-            while (ReadFile(hReadPipe, buf, sizeof(buf), &bytesRead, nullptr) && bytesRead > 0) {
-                std::cout.write(buf, bytesRead);
-                output.append(buf, bytesRead);
-            }
-            CloseHandle(hReadPipe);
-
-            DWORD waitResult = WaitForSingleObject(pi.hProcess, 30 * 60 * 1000);  // 30 分钟超时
-            DWORD exitCode = 0;
-            if (waitResult == WAIT_TIMEOUT) {
-                TerminateProcess(pi.hProcess, 1);
-                CloseHandle(pi.hProcess);
-                res.set_content("ERROR: command timed out after 30 minutes\n" + output, "text/plain; charset=utf-8");
-                return;
-            }
-            if (waitResult == WAIT_FAILED || !GetExitCodeProcess(pi.hProcess, &exitCode)) {
-                DWORD err = GetLastError();
-                CloseHandle(pi.hProcess);
-                res.set_content("ERROR: failed to wait for command (" + std::to_string(err) + ")\n" + output,
-                                "text/plain; charset=utf-8");
-                return;
-            }
-            CloseHandle(pi.hProcess);
-
-            if (exitCode == 0)
-                res.set_content(output.empty() ? "OK" : output, "text/plain; charset=utf-8");
-            else
-                res.set_content("EXIT " + std::to_string(exitCode) + "\n" + output, "text/plain; charset=utf-8");
-#else
-            // Linux/macOS fallback for the legacy command endpoint.
-            int pipefd[2];
-            if (pipe(pipefd) != 0) {
-                std::cerr << "[ERROR] pipe failed: " << std::strerror(errno) << std::endl;
-                res.set_content("ERROR: failed to start process", "text/plain");
-                return;
-            }
-            pid_t pid = fork();
-            if (pid < 0) {
-                close(pipefd[0]);
-                close(pipefd[1]);
-                std::cerr << "[ERROR] fork failed: " << std::strerror(errno) << std::endl;
-                res.set_content("ERROR: failed to start process", "text/plain");
-                return;
-            }
-            if (pid == 0) {
-                dup2(pipefd[1], STDOUT_FILENO);
-                dup2(pipefd[1], STDERR_FILENO);
-                close(pipefd[0]);
-                close(pipefd[1]);
-                std::vector<std::string> argvStorage;
-                auto execArgv = buildExecArgv(mosaicPath, subCmd, argvStorage);
-                execvp(execArgv[0], execArgv.data());
-                _exit(127);
-            }
-            close(pipefd[1]);
-            FILE* pipe = fdopen(pipefd[0], "r");
-            if (!pipe) {
-                close(pipefd[0]);
-                res.set_content("ERROR: failed to start process", "text/plain");
-                return;
-            }
-            char buf[4096];
-            size_t n;
-            while ((n = fread(buf, 1, sizeof(buf), pipe)) > 0) {
-                std::cout.write(buf, n);
-                output.append(buf, n);
-            }
-            int status = 0;
-            waitpid(pid, &status, 0);
-            int rc = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
-            fclose(pipe);
-            if (rc == 0)
-                res.set_content(output.empty() ? "OK" : output, "text/plain; charset=utf-8");
-            else
-                res.set_content("EXIT " + std::to_string(rc) + "\n" + output, "text/plain; charset=utf-8");
-#endif
-        } catch (const std::exception& e) {
-            std::cerr << "[ERROR] Exception in /api/run: " << e.what() << std::endl;
-            res.set_content(std::string("ERROR: ") + e.what(), "text/plain");
-        } catch (...) {
-            std::cerr << "[ERROR] Unknown exception in /api/run" << std::endl;
-            res.set_content("ERROR: internal error", "text/plain");
-        }
-    });
+    registerStructuredApiRoutes(svr, jobManager, apiEndpoints);
 
     std::cout << "  Listening on http://localhost:" << port << std::endl;
     std::cout << "  Press Ctrl+C to stop" << std::endl;

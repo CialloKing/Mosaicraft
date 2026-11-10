@@ -1,4 +1,4 @@
-﻿#include "ApiHandlers.h"
+#include "ApiHandlers.h"
 
 #include "ApiJson.h"
 
@@ -97,7 +97,6 @@ ApiRequest apiOperationRequest(ApiOperation operation, ApiRequestContext context
     request.body = std::move(context.body);
     request.id = std::move(context.id);
     request.artifactId = std::move(context.artifactId);
-    request.legacyRunEnabled = context.legacyRunEnabled;
     request.entryName = context.entryName;
     return request;
 }
@@ -134,22 +133,16 @@ ApiRequest apiJobRequest(ApiOperation operation, std::string id)
     return apiOperationRequest(operation, std::move(context));
 }
 
-ApiRequest apiInfoRequest(bool legacyRunEnabled, const char* entryName)
+ApiRequest apiInfoRequest(const char* entryName)
 {
     ApiRequestContext context;
-    context.legacyRunEnabled = legacyRunEnabled;
     context.entryName = entryName;
     return apiOperationRequest(ApiOperation::Info, std::move(context));
 }
 
-ApiRequest apiLegacyRunDisabledRequest()
-{
-    return apiRequest(ApiOperation::LegacyRunDisabled);
-}
-
 std::vector<std::string> apiQueryKeyList(ApiOperation operation)
 {
-    static const auto endpoints = apiEndpointMetadata(false);
+    static const auto endpoints = apiEndpointMetadata();
     for (const auto& endpoint : endpoints) {
         if (endpoint.operation == operation) {
             return endpoint.queryKeys;
@@ -160,7 +153,7 @@ std::vector<std::string> apiQueryKeyList(ApiOperation operation)
 
 std::vector<const char*> apiQueryKeys(ApiOperation operation)
 {
-    static const auto endpoints = apiEndpointMetadata(false);
+    static const auto endpoints = apiEndpointMetadata();
     std::vector<const char*> keys;
     for (const auto& endpoint : endpoints) {
         if (endpoint.operation != operation) continue;
@@ -173,7 +166,7 @@ std::vector<const char*> apiQueryKeys(ApiOperation operation)
 
 std::vector<std::string> apiAcceptedQueryKeyList(ApiOperation operation)
 {
-    static const auto endpoints = apiEndpointMetadata(false);
+    static const auto endpoints = apiEndpointMetadata();
     for (const auto& endpoint : endpoints) {
         if (endpoint.operation == operation) return endpoint.acceptedQueryKeys;
     }
@@ -185,9 +178,9 @@ ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
     switch (request.operation)
     {
     case ApiOperation::Endpoints:
-        return apiEndpoints(request.legacyRunEnabled);
+        return apiEndpoints();
     case ApiOperation::Info: {
-        auto response = apiInfo(request.legacyRunEnabled, request.entryName);
+        auto response = apiInfo(request.entryName);
         std::error_code error;
         const auto directory = std::filesystem::current_path(error);
         response.body["info"]["runtime"] = {{"sessionId", jobs.sessionId()},
@@ -197,8 +190,6 @@ ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
     }
     case ApiOperation::Ping:
         return apiPing();
-    case ApiOperation::LegacyRunDisabled:
-        return apiLegacyRunDisabled();
     case ApiOperation::Mosaic:
         return apiMosaic(request.body, jobs);
     case ApiOperation::SubmitMosaicJob:
@@ -294,27 +285,19 @@ std::vector<std::string> validateApiResponseContract(const ApiEndpointMetadata& 
     return errors;
 }
 
-ApiResponse apiEndpoints(bool legacyRunEnabled)
+ApiResponse apiEndpoints()
 {
-    return {200, apiEndpointsResponseJson(legacyRunEnabled)};
+    return {200, apiEndpointsResponseJson()};
 }
 
-ApiResponse apiInfo(bool legacyRunEnabled, const char* entryName)
+ApiResponse apiInfo(const char* entryName)
 {
-    return {200, apiInfoResponseJson(legacyRunEnabled, entryName)};
+    return {200, apiInfoResponseJson(entryName)};
 }
 
 ApiResponse apiPing()
 {
     return {200, apiOkJson("message", "pong")};
-}
-
-ApiResponse apiLegacyRunDisabled()
-{
-    return {
-        404,
-        apiErrorJson("legacy /api/run is disabled; set MOSAICRAFT_ENABLE_LEGACY_RUN=1 to enable compatibility mode")
-    };
 }
 
 ApiResponse apiMosaic(const std::string& body, JobManager& jobs)
