@@ -2,7 +2,7 @@
 
 Mosaicraft 是一款本地照片马赛克生成器。它用图库中的照片拼出目标图，支持 CUDA 加速、浏览器实时预览和超大图流式输出。
 
-[下载发布包](https://github.com/CialloKing/Mosaicraft/releases/latest) · [快速开始](#快速开始) · [CUDA 模板](#cuda-分辨率模板) · [源码构建](#安装与构建)
+[下载发布包](https://github.com/CialloKing/Mosaicraft/releases/latest) · [快速开始](#快速开始) · [CUDA 模板](#cuda-分辨率模板) · [源码构建](#安装与构建) · [Star 历史](#star-历史)
 
 （本项目纯AI生成，绝无手写代码）
 
@@ -164,6 +164,18 @@ cmake --build --preset $preset --target mosaicraft_webui_smoke
 - 匹配流程使用 AvgLAB、8×8 Grid、TinyImage、边缘密度和 LBP，结合候选召回、评分与邻域去重。 [项目百科](https://github.com/CialloKing/Mosaicraft/blob/main/docs/ENCYCLOPEDIA.md)
 - 固定样本的预览耗时、流式 PNG 导出和 CPU 建库结果。 [v1.15.2 性能对照](docs/PREVIEW_VERIFICATION.md#v1152-预览性能对照)
 - 原生包构建、GPU 验收和 SHA256 校验流程。 [CI 与打包](docs/CI_PACKAGING.md) · [发布清单](docs/RELEASE_CHECKLIST.md)
+
+## Star 历史
+
+GitHub Actions 每天北京时间 03:17 将 Star 数量更新到独立的 `star-history` 分支。
+
+<p align="center">
+  <a href="https://github.com/CialloKing/Mosaicraft/blob/star-history/stars.csv">
+    <img src="https://raw.githubusercontent.com/CialloKing/Mosaicraft/refs/heads/star-history/star-history.svg" alt="Mosaicraft Star 数量历史图" width="960">
+  </a>
+</p>
+
+首次运行按当前仍有效的 Star 时间重建历史，后续记录每日实测值。漏跑日期在实测记录中保留为空缺。 [查看 CSV 原始数据](https://github.com/CialloKing/Mosaicraft/blob/star-history/stars.csv)
 
 ## 许可证
 
