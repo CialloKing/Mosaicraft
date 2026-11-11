@@ -1,10 +1,10 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-11-10 | 版本 / Version：v1.15.0
+> 最后更新 / Last updated：2026-11-11 | 版本 / Version：v1.15.1
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
-当前源码提供 API 1.0，图库结构、特征、缓存及恢复格式统一从 1 开始。旧库需在新目录重建，没有自动升级或迁移器；结构化路由与现有选图能力保留。详见 [1.15.0 不兼容更新](BREAKING_1.15.0.md) 和 [API 文档](API.md)。下文历史版本记录保留发布时的说明。
+当前源码提供 API 1.2，支持实时预览、候选查询及手动替换。图库结构、特征、缓存及恢复格式沿用 v1.15.0 定义的版本 1。早于 v1.15.0 的图库需要在新目录重建，详见 [1.15.0 不兼容更新](BREAKING_1.15.0.md) 和 [API 文档](API.md)。下文历史版本记录保留发布时的说明。
 
 ## 目录 / Table of Contents
 
@@ -370,6 +370,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.14.10 | Web UI 离线使用帮助、参数说明、明确预览默认状态与窄屏排版 | 见对应更新记录 |
 | **1.14.11** | 按来源选择输出格式、超限转 PNG 或缩小 Tile、API 2.2 输出计划与实际产物 | 见本版更新记录 |
 | **1.15.0** | 内部版本重置、严格新版图库与 API 1.0、删除旧库自动升级和命令接口 | 见不兼容更新验收 |
+| **1.15.1** | 独立实时预览页、整库手动选图、窗口调节及 API 1.2 | 见预览验收 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
 
 > v2.0 不代表算法更强，代表使用方式从 CLI 变为 GUI。Major 版本反映交互模式的根本变化。
@@ -788,6 +789,14 @@ Web UI 的预览提示改为“生成结果预览默认关闭，勾选后额外�
 功能修改已通过真实浏览器检查：预览说明、帮助直达、参数保留、刷新恢复、帮助页任务跟踪、键盘展开、窄屏排版与服务断开后的阅读均正常；JavaScript 语法与帮助锚点检查通过。发布继续按清单执行同提交的原生打包、本机 GPU Required 和真实附件验收。CLI、REST API 2.1、特征 v6、图库格式及评分算法保持兼容。
 
 > **EN**: Version 1.14.10 adds a self-contained Web UI help page covering setup, paths, options, task diagnostics and results. Preview wording explicitly names the option and explains its purpose. Context links open the relevant help section; form state and task tracking survive navigation, while help never generates or submits a command. Narrow screens use stacked option descriptions. API 2.1, feature v6, library formats and engine behavior remain unchanged.
+
+### v1.15.1: 独立实时预览与手动选图 (2026-11-11)
+
+Web UI 在生成与建库之间加入独立预览页。后端返回逐格选图，Canvas 按需加载可见素材，重复图片复用位图，窗口同时最多显示 16,000 格。支持缩放、平移、拖动调整窗口宽高及恢复默认尺寸。每格提供最多 60 张推荐候选，也可从整个图库按文件名或素材 ID 搜索并手动替换。
+
+正式生成可绑定预览的选图与手动替换。目标、图库或选图参数变化时要求刷新，质量报告按实际输出的排列统计。API 增至 1.2，主版本为 1。预览页显示实际 CPU/CUDA 后端，模板 CUDA 复用批次预取，手动开启时直接发起请求。浏览器、输出对照及性能数据见 [预览验收](PREVIEW_VERIFICATION.md)。
+
+> **EN**: Version 1.15.1 adds a resizable interactive preview with viewport-only thumbnails, up to 60 recommendations per tile, and manual replacement from the full library. Export can reuse the edited placement. API 1.2 adds preview endpoints, and the Web UI shows the active CPU or CUDA backend.
 
 ### v1.15.0: 内部版本重置与兼容逻辑清理 (2026-11-10)
 
