@@ -167,4 +167,4 @@ cmake --build --preset $preset --target mosaicraft_webui_smoke
 
 ## 许可证
 
-[GPL v2](LICENSE)
+本项目采用 GNU 通用公共许可证第 3 版（`GPL-3.0-only`）。 [许可证全文](LICENSE)
