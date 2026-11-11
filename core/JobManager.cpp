@@ -29,6 +29,10 @@ JobManager::~JobManager()
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_stopping = true;
+        if (m_runningPreview)
+        {
+            m_runningPreview->canceled = true;
+        }
     }
     m_cv.notify_all();
     if (m_worker.joinable())
@@ -53,10 +57,11 @@ JobManager::JobManager(bool autoStartWorker)
     }
 }
 
-std::string JobManager::submitMosaic(MosaicRequest request)
+std::string JobManager::submitMosaic(MosaicRequest request, std::shared_ptr<const MosaicSelection> selection)
 {
     auto record = std::make_shared<JobRecord>();
     record->request = std::move(request);
+    record->selection = std::move(selection);
     record->snapshot.id = nextId();
     record->snapshot.type = "mosaic";
     record->snapshot.requestJson = mosaicRequestToJson(record->request).dump();
@@ -70,10 +75,154 @@ std::string JobManager::submitMosaic(MosaicRequest request)
         std::lock_guard<std::mutex> lock(m_mutex);
         m_jobs.emplace(record->snapshot.id, record);
         m_queue.push_back(record->snapshot.id);
+        interruptPreview();
     }
     m_cv.notify_one();
 
     return record->snapshot.id;
+}
+
+std::string JobManager::submitPreview(MosaicRequest request, uint32_t seed)
+{
+    auto job = std::make_shared<PreviewJob>();
+    job->request = std::move(request);
+    job->seed = seed;
+    job->accessed = std::chrono::steady_clock::now();
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        trimPreviews();
+        job->snapshot.id = m_sessionId + "-" + std::to_string(m_nextPreviewId++);
+        if (m_pendingPreview)
+        {
+            m_previews.erase(m_pendingPreview->snapshot.id);
+        }
+        if (m_runningPreview)
+        {
+            m_runningPreview->interrupted = false;
+            m_runningPreview->canceled = true;
+        }
+        m_previews.emplace(job->snapshot.id, job);
+        m_pendingPreview = job;
+    }
+    m_cv.notify_one();
+    return job->snapshot.id;
+}
+
+bool JobManager::getPreview(const std::string &id, PreviewSnapshot &out)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    trimPreviews();
+    const auto it = m_previews.find(id);
+    if (it == m_previews.end())
+    {
+        return false;
+    }
+    it->second->accessed = std::chrono::steady_clock::now();
+    out = it->second->snapshot;
+    return true;
+}
+
+bool JobManager::closePreview(const std::string &id)
+{
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const auto it = m_previews.find(id);
+        if (it == m_previews.end())
+        {
+            return false;
+        }
+        it->second->canceled = true;
+        if (m_pendingPreview == it->second)
+        {
+            m_pendingPreview.reset();
+        }
+        m_previews.erase(it);
+        m_releasePreviewWorkspace = m_previews.empty();
+    }
+    m_cv.notify_one();
+    return true;
+}
+
+void JobManager::trimPreviews()
+{
+    const auto cutoff = std::chrono::steady_clock::now() - std::chrono::minutes(10);
+    std::vector<std::shared_ptr<PreviewJob>> finished;
+    for (auto it = m_previews.begin(); it != m_previews.end();)
+    {
+        const auto &job = it->second;
+        if (job == m_pendingPreview || job == m_runningPreview)
+        {
+            ++it;
+        }
+        else if (job->accessed < cutoff)
+        {
+            it = m_previews.erase(it);
+        }
+        else
+        {
+            finished.push_back(job);
+            ++it;
+        }
+    }
+    std::sort(finished.begin(), finished.end(), [](const auto &left, const auto &right)
+    {
+        return left->accessed > right->accessed;
+    });
+    for (size_t i = 4; i < finished.size(); ++i)
+    {
+        m_previews.erase(finished[i]->snapshot.id);
+    }
+}
+
+void JobManager::runPreview(const std::shared_ptr<PreviewJob> &job)
+{
+    std::shared_ptr<MosaicSelection> selection;
+    ServiceResult result;
+    try
+    {
+        selection = std::make_shared<MosaicSelection>();
+        result = MosaicService().preview(job->request, job->seed, m_previewWorkspace, job->canceled, *selection);
+    }
+    catch (const std::exception &error)
+    {
+        result = ServiceResult::failure(1, error.what());
+    }
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (job->interrupted && !m_pendingPreview && !m_stopping &&
+        m_previews.find(job->snapshot.id) != m_previews.end())
+    {
+        // 用户仍在等待这份预览，正式任务结束后继续处理。
+        job->interrupted = false;
+        job->canceled = false;
+        job->snapshot.state = JobState::Queued;
+        m_pendingPreview = job;
+    }
+    else if (job->canceled)
+    {
+        job->snapshot.state = JobState::Canceled;
+    }
+    else
+    {
+        job->snapshot.state = result.ok ? JobState::Succeeded : JobState::Failed;
+        if (result.ok)
+        {
+            job->snapshot.selection = std::move(selection);
+        }
+        job->snapshot.result = std::move(result);
+    }
+    job->accessed = std::chrono::steady_clock::now();
+    m_runningPreview.reset();
+    trimPreviews();
+}
+
+void JobManager::interruptPreview()
+{
+    if (m_runningPreview && !m_runningPreview->canceled)
+    {
+        m_runningPreview->interrupted = true;
+        m_runningPreview->canceled = true;
+    }
 }
 
 std::string JobManager::submitBuild(BuildRequest request)
@@ -93,6 +242,7 @@ std::string JobManager::submitBuild(BuildRequest request)
         std::lock_guard<std::mutex> lock(m_mutex);
         m_jobs.emplace(record->snapshot.id, record);
         m_queue.push_back(record->snapshot.id);
+        interruptPreview();
     }
     m_cv.notify_one();
 
@@ -222,6 +372,7 @@ bool JobManager::cancelQueuedJob(const std::string& id, JobSnapshot& out)
     }
 
     record->snapshot.state = JobState::Canceled;
+    record->selection.reset();
     record->snapshot.result = ServiceResult::failure(1, "job canceled");
     record->snapshot.finishedAt = std::chrono::system_clock::now();
     record->runtime->stage("canceled");
@@ -265,22 +416,51 @@ void JobManager::workerLoop()
     while (true)
     {
         std::string id;
+        std::shared_ptr<PreviewJob> preview;
         {
             std::unique_lock<std::mutex> lock(m_mutex);
-            m_cv.wait(lock, [this]() {
-                return m_stopping || !m_queue.empty();
+            const bool work = m_cv.wait_for(lock, std::chrono::minutes(1), [this]() {
+                return m_stopping || !m_queue.empty() || m_pendingPreview || m_releasePreviewWorkspace;
             });
-            if (m_stopping && m_queue.empty()) return;
-            id = m_queue.front();
-            m_queue.pop_front();
-            auto record = m_jobs.find(id);
-            if (record == m_jobs.end() || record->second->snapshot.state != JobState::Queued)
+            if (!work)
             {
-                continue;
+                trimPreviews();
+                m_releasePreviewWorkspace = m_previews.empty();
             }
-            // 取出队列与置 Running 必须在同一把锁里，取消不能在两者之间成功。
-            record->second->snapshot.state = JobState::Running;
-            record->second->snapshot.startedAt = std::chrono::system_clock::now();
+            if (m_stopping && m_queue.empty()) return;
+            if (m_releasePreviewWorkspace)
+            {
+                m_previewWorkspace = {};
+                m_releasePreviewWorkspace = false;
+            }
+            if (!m_queue.empty())
+            {
+                id = m_queue.front();
+                m_queue.pop_front();
+                auto record = m_jobs.find(id);
+                if (record == m_jobs.end() || record->second->snapshot.state != JobState::Queued)
+                {
+                    continue;
+                }
+                // 取出队列与置 Running 必须在同一把锁里，取消不能在两者之间成功。
+                record->second->snapshot.state = JobState::Running;
+                record->second->snapshot.startedAt = std::chrono::system_clock::now();
+            }
+            else if (m_pendingPreview)
+            {
+                preview = std::move(m_pendingPreview);
+                m_runningPreview = preview;
+                preview->snapshot.state = JobState::Running;
+            }
+        }
+        if (preview)
+        {
+            runPreview(preview);
+            continue;
+        }
+        if (id.empty())
+        {
+            continue;
         }
 
         std::string type;
@@ -305,6 +485,7 @@ void JobManager::runMosaicJob(const std::string& id)
 {
     MosaicRequest request;
     std::shared_ptr<RuntimeContext> runtime;
+    std::shared_ptr<const MosaicSelection> selection;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_jobs.find(id);
@@ -316,13 +497,14 @@ void JobManager::runMosaicJob(const std::string& id)
         }
         request = record->request;
         runtime = record->runtime;
+        selection = std::move(record->selection);
     }
 
     ServiceResult result;
     try
     {
         MosaicService service;
-        result = service.run(request, *runtime);
+        result = service.run(request, *runtime, selection.get());
     }
     catch (const std::exception& e)
     {

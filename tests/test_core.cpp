@@ -1048,10 +1048,10 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(mosaicJob->requiredFields == std::vector<std::string>{"inputPath"});
     CHECK(mosaicJob->successStatus == 202);
     CHECK(mosaicJob->responseKey == "job");
-    CHECK(mosaicJob->errorStatuses == std::vector<int>{400, 500});
+    CHECK(mosaicJob->errorStatuses == std::vector<int>{400, 409, 500});
     CHECK(std::find(mosaicJob->errorShapes.begin(), mosaicJob->errorShapes.end(),
         "serviceResult") != mosaicJob->errorShapes.end());
-    REQUIRE(mosaicJob->errorResponses.size() == 2);
+    REQUIRE(mosaicJob->errorResponses.size() == 3);
     CHECK(mosaicJob->errorResponses[0].status == 400);
     CHECK(mosaicJob->errorResponses[0].shape == "serviceResult");
     CHECK(mosaicJob->sideEffects);
@@ -1140,7 +1140,7 @@ TEST_CASE("API JSON serialization is shared")
     CHECK(infoJson["api"]["compatibility"].get<std::string>() == "stable");
     CHECK(infoJson["api"]["stable"].get<bool>());
     CHECK(infoJson["api"]["endpointCount"].get<int>() == apiEndpointMetadata().size());
-    CHECK(infoJson["api"]["enabledEndpointCount"].get<int>() == 18);
+    CHECK(infoJson["api"]["enabledEndpointCount"].get<int>() == 22);
     CHECK(infoJson["api"]["metadataValid"].get<bool>());
     CHECK(infoJson["api"]["metadataErrors"].empty());
 

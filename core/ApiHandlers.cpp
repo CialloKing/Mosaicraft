@@ -1,6 +1,14 @@
 #include "ApiHandlers.h"
 
 #include "ApiJson.h"
+#include "UnicodeIO.h"
+
+#include <opencv2/imgproc.hpp>
+
+// Unicode I/O includes the Windows spooler macro after ApiMetadata.h.
+#ifdef GetJob
+#undef GetJob
+#endif
 
 #include <exception>
 #include <charconv>
@@ -85,6 +93,147 @@ std::string statusText(int status)
     std::ostringstream oss;
     oss << status;
     return oss.str();
+}
+
+ApiResponse previewConflict(const std::string &message)
+{
+    return resultResponse(409, ServiceResult::failure(1, message, "preview_stale", "previewId"));
+}
+
+ApiResponse previewNotFound()
+{
+    return resultResponse(404, ServiceResult::failure(1, "preview is unavailable", "preview_unavailable"));
+}
+
+ApiResponse previewImageNotFound()
+{
+    return resultResponse(404, ServiceResult::failure(1, "preview image is unavailable", "preview_image_unavailable"));
+}
+
+ApiResponse submitPreview(const std::string &body, JobManager &jobs)
+{
+    const auto payload = nlohmann::json::parse(body, nullptr, false);
+    if (!payload.is_object() || payload.size() != 2 || !payload.contains("request") ||
+        !payload.contains("seed") || !payload["seed"].is_number_unsigned() ||
+        payload["seed"].get<uint64_t>() > UINT32_MAX)
+    {
+        return badRequest("preview requires request and a uint32 seed");
+    }
+    MosaicRequest request;
+    RequestError error;
+    if (!parseMosaicRequestJson(payload["request"].dump(), request, error))
+    {
+        return badRequest(error);
+    }
+    try
+    {
+        const auto id = jobs.submitPreview(std::move(request), payload["seed"].get<uint32_t>());
+        return {202, apiOkJson("preview", {{"id", id}, {"state", "queued"}})};
+    }
+    catch (const std::exception &exception)
+    {
+        return internalError(exception.what());
+    }
+}
+
+ApiResponse getPreview(const std::string &id, JobManager &jobs)
+{
+    PreviewSnapshot snapshot;
+    if (!jobs.getPreview(id, snapshot))
+    {
+        return previewNotFound();
+    }
+    nlohmann::json body{{"id", snapshot.id}, {"state", jobStateName(snapshot.state)}};
+    if (snapshot.state == JobState::Failed)
+    {
+        body["result"] = serviceResultToJson(snapshot.result);
+    }
+    if (snapshot.selection)
+    {
+        const auto &selection = *snapshot.selection;
+        body["columns"] = selection.columns;
+        body["rows"] = selection.rows;
+        body["featureWidth"] = selection.featureWidth;
+        body["featureHeight"] = selection.featureHeight;
+        body["imageIds"] = selection.imageIds;
+        body["missing"] = snapshot.result.runtime.failed;
+        body["metrics"] = snapshot.result.runtime.metrics;
+        auto &versions = body["assetVersions"] = nlohmann::json::object();
+        for (const auto &[imageId, asset] : selection.assets)
+        {
+            versions[std::to_string(imageId)] = asset.hash + ":" + std::to_string(asset.bytes) + ":" +
+                std::to_string(asset.modified.time_since_epoch().count());
+        }
+    }
+    return {200, apiOkJson("preview", std::move(body))};
+}
+
+ApiResponse previewImage(const ApiRequest &request, JobManager &jobs)
+{
+    PreviewSnapshot snapshot;
+    if (!jobs.getPreview(request.id, snapshot) || !snapshot.selection)
+    {
+        return previewNotFound();
+    }
+    const auto jpegResponse = [](const std::vector<unsigned char> &jpeg) -> ApiResponse
+    {
+        if (jpeg.empty())
+        {
+            return previewImageNotFound();
+        }
+        return {200, apiOkJson(), {}, std::string(jpeg.begin(), jpeg.end())};
+    };
+    if (request.artifactId == "reference")
+    {
+        return jpegResponse(snapshot.selection->referenceJpeg);
+    }
+    int imageId = 0, edge = 0;
+    const auto &key = request.artifactId;
+    const auto dash = key.find('-');
+    if (dash == std::string::npos)
+    {
+        return badRequest("thumbnail must identify an image and a size");
+    }
+    const auto idResult = std::from_chars(key.data(), key.data() + dash, imageId);
+    const auto sizeResult = std::from_chars(key.data() + dash + 1, key.data() + key.size(), edge);
+    if (idResult.ec != std::errc{} || idResult.ptr != key.data() + dash ||
+        sizeResult.ec != std::errc{} || sizeResult.ptr != key.data() + key.size() ||
+        (edge != 32 && edge != 64 && edge != 128))
+    {
+        return badRequest("invalid thumbnail image ID or size");
+    }
+    const auto asset = snapshot.selection->assets.find(imageId);
+    if (asset == snapshot.selection->assets.end() || !asset->second.available)
+    {
+        return previewImageNotFound();
+    }
+    if (!asset->second.current())
+    {
+        return previewConflict("selected image changed; refresh the preview");
+    }
+    try
+    {
+        const auto image = imreadUnicode(asset->second.path, cv::IMREAD_COLOR);
+        if (image.empty())
+        {
+            return previewImageNotFound();
+        }
+        if (!asset->second.current())
+        {
+            return previewConflict("selected image changed; refresh the preview");
+        }
+        const double scale = std::min(1.0, static_cast<double>(edge) / std::max(image.cols, image.rows));
+        cv::Mat thumbnail;
+        cv::resize(image, thumbnail, {std::max(1, cvRound(image.cols * scale)),
+                                      std::max(1, cvRound(image.rows * scale))}, 0, 0, cv::INTER_AREA);
+        std::vector<unsigned char> jpeg;
+        cv::imencode(".jpg", thumbnail, jpeg, {cv::IMWRITE_JPEG_QUALITY, 80});
+        return jpegResponse(jpeg);
+    }
+    catch (const std::exception &error)
+    {
+        return internalError(error.what());
+    }
 }
 
 } // namespace
@@ -192,6 +341,14 @@ ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
         return apiPing();
     case ApiOperation::Mosaic:
         return apiMosaic(request.body, jobs);
+    case ApiOperation::SubmitPreview:
+        return submitPreview(request.body, jobs);
+    case ApiOperation::GetPreview:
+        return getPreview(request.id, jobs);
+    case ApiOperation::ClosePreview:
+        return jobs.closePreview(request.id) ? ApiResponse{200, apiOkJson()} : previewNotFound();
+    case ApiOperation::GetPreviewImage:
+        return previewImage(request, jobs);
     case ApiOperation::SubmitMosaicJob:
         return apiSubmitMosaicJob(request.body, jobs);
     case ApiOperation::SubmitBuildJob:
@@ -328,10 +485,33 @@ ApiResponse apiSubmitMosaicJob(const std::string& body, JobManager& jobs)
 {
     MosaicRequest request;
     RequestError error;
-    if (!parseMosaicRequestJson(body, request, error)) return badRequest(error);
+    auto payload = nlohmann::json::parse(body, nullptr, false);
+    std::string previewId;
+    if (payload.is_object() && payload.contains("previewId"))
+    {
+        if (!payload["previewId"].is_string() || payload["previewId"].get_ref<const std::string &>().empty())
+        {
+            return badRequest("previewId must be a non-empty string");
+        }
+        previewId = payload["previewId"].get<std::string>();
+        payload.erase("previewId");
+    }
+    if (!parseMosaicRequestJson(previewId.empty() ? body : payload.dump(), request, error))
+    {
+        return badRequest(error);
+    }
 
-    try {
-        const std::string jobId = jobs.submitMosaic(request);
+    try
+    {
+        PreviewSnapshot preview;
+        if (!previewId.empty() &&
+            (!jobs.getPreview(previewId, preview) || !preview.selection ||
+             !MosaicEngine::selectionCurrent(request.inputPath, resolveDbPathForService(request.dbPath),
+                                             request.config, *preview.selection)))
+        {
+            return previewConflict("preview expired or target, library, or matching parameters changed");
+        }
+        const std::string jobId = jobs.submitMosaic(std::move(request), std::move(preview.selection));
         JobSnapshot snapshot;
         jobs.getJob(jobId, snapshot);
         return {202, apiJobJson(snapshot)};

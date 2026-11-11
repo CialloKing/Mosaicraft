@@ -31,6 +31,14 @@ std::string endpointHttpPattern(const std::string& path)
     if (path == "/api/jobs/{id}") {
         return R"(/api/jobs/([A-Za-z0-9_-]+))";
     }
+    if (path == "/api/mosaic/preview/{id}")
+    {
+        return R"(/api/mosaic/preview/([A-Za-z0-9_-]+))";
+    }
+    if (path == "/api/mosaic/preview/{id}/image/{asset}")
+    {
+        return R"(/api/mosaic/preview/([A-Za-z0-9_-]+)/image/([A-Za-z0-9_-]+))";
+    }
     return path;
 }
 
@@ -55,6 +63,10 @@ std::vector<std::string> endpointQueryKeys(ApiOperation operation)
     case ApiOperation::Info:
     case ApiOperation::Ping:
     case ApiOperation::Mosaic:
+    case ApiOperation::SubmitPreview:
+    case ApiOperation::GetPreview:
+    case ApiOperation::ClosePreview:
+    case ApiOperation::GetPreviewImage:
     case ApiOperation::SubmitMosaicJob:
     case ApiOperation::SubmitBuildJob:
     case ApiOperation::ListJobs:
@@ -92,6 +104,7 @@ int endpointSuccessStatus(ApiOperation operation)
 {
     switch (operation)
     {
+    case ApiOperation::SubmitPreview:
     case ApiOperation::SubmitMosaicJob:
     case ApiOperation::SubmitBuildJob:
         return 202;
@@ -99,6 +112,9 @@ int endpointSuccessStatus(ApiOperation operation)
     case ApiOperation::Info:
     case ApiOperation::Ping:
     case ApiOperation::Mosaic:
+    case ApiOperation::GetPreview:
+    case ApiOperation::ClosePreview:
+    case ApiOperation::GetPreviewImage:
     case ApiOperation::ListJobs:
     case ApiOperation::ClearFinishedJobs:
     case ApiOperation::GetJobEvents:
@@ -120,6 +136,12 @@ std::string endpointResponseKey(ApiOperation operation)
 {
     switch (operation)
     {
+    case ApiOperation::SubmitPreview:
+    case ApiOperation::GetPreview:
+        return "preview";
+    case ApiOperation::ClosePreview:
+    case ApiOperation::GetPreviewImage:
+        return "";
     case ApiOperation::GetJobEvents:
         return "events";
     case ApiOperation::GetJobArtifact:
@@ -172,6 +194,20 @@ void populateEndpointErrors(ApiEndpointMetadata& info)
 {
     switch (info.operation)
     {
+    case ApiOperation::SubmitPreview:
+        addErrorContract(info, 400, "serviceResult");
+        addErrorContract(info, 500, "serviceResult");
+        break;
+    case ApiOperation::GetPreview:
+    case ApiOperation::ClosePreview:
+        addErrorContract(info, 404, "serviceResult");
+        break;
+    case ApiOperation::GetPreviewImage:
+        addErrorContract(info, 400, "serviceResult");
+        addErrorContract(info, 404, "serviceResult");
+        addErrorContract(info, 409, "serviceResult");
+        addErrorContract(info, 500, "serviceResult");
+        break;
     case ApiOperation::GetJobEvents:
         addErrorContract(info, 400, "serviceResult");
         addErrorContract(info, 404, "serviceResult");
@@ -181,8 +217,12 @@ void populateEndpointErrors(ApiEndpointMetadata& info)
         addErrorContract(info, 409, "serviceResult");
         addErrorContract(info, 500, "serviceResult");
         break;
-    case ApiOperation::Mosaic:
     case ApiOperation::SubmitMosaicJob:
+        addErrorContract(info, 400, "serviceResult");
+        addErrorContract(info, 409, "serviceResult");
+        addErrorContract(info, 500, "serviceResult");
+        break;
+    case ApiOperation::Mosaic:
     case ApiOperation::SubmitBuildJob:
         addErrorContract(info, 400, "serviceResult");
         addErrorContract(info, 500, "serviceResult");
@@ -271,6 +311,10 @@ const char* apiOperationName(ApiOperation operation)
     case ApiOperation::Info: return "info";
     case ApiOperation::Ping: return "ping";
     case ApiOperation::Mosaic: return "mosaic";
+    case ApiOperation::SubmitPreview: return "submitPreview";
+    case ApiOperation::GetPreview: return "getPreview";
+    case ApiOperation::ClosePreview: return "closePreview";
+    case ApiOperation::GetPreviewImage: return "getPreviewImage";
     case ApiOperation::SubmitMosaicJob: return "submitMosaicJob";
     case ApiOperation::SubmitBuildJob: return "submitBuildJob";
     case ApiOperation::ListJobs: return "listJobs";
@@ -346,6 +390,16 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata()
                   "deepZoom",   "colorAdjust",    "adaptiveWeights", "analyze",       "benchmark",
                   "generatePreview"},
                  {"inputPath"}, true, true),
+        endpoint("POST", "/api/mosaic/preview", "queue the latest interactive selection", "preview",
+                 ApiOperation::SubmitPreview, ApiRequestShape::Body, {"request", "seed"}, {"request", "seed"},
+                 true, true),
+        endpoint("GET", "/api/mosaic/preview/{id}", "read interactive selection status and grid", "preview",
+                 ApiOperation::GetPreview, ApiRequestShape::JobId, {"id"}, {"id"}),
+        endpoint("DELETE", "/api/mosaic/preview/{id}", "cancel or release interactive selection", "preview",
+                 ApiOperation::ClosePreview, ApiRequestShape::JobId, {"id"}, {"id"}, true),
+        endpoint("GET", "/api/mosaic/preview/{id}/image/{asset}", "read a selected thumbnail or target reference",
+                 "preview", ApiOperation::GetPreviewImage, ApiRequestShape::JobArtifact, {"id", "asset"},
+                 {"id", "asset"}),
         endpoint("POST", "/api/jobs/mosaic", "start mosaic job", "jobs", ApiOperation::SubmitMosaicJob,
                  ApiRequestShape::Body,
                  {"inputPath",  "dbPath",         "outputPath",      "tileW",         "tileH",
@@ -355,7 +409,7 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata()
                   "edgeWeight", "lbpWeight",      "neighborPenalty", "colorStrength", "overlayStrength",
                   "format",     "writeMode",            "useGpu",        "tiled",
                   "deepZoom",   "colorAdjust",    "adaptiveWeights", "analyze",       "benchmark",
-                  "generatePreview"},
+                  "generatePreview", "previewId"},
                  {"inputPath"}, true, true),
         endpoint("POST", "/api/jobs/build", "start library build job", "jobs", ApiOperation::SubmitBuildJob,
                  ApiRequestShape::Body,
@@ -509,7 +563,7 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
 std::vector<std::string> apiFeatureList()
 {
     return {"mosaic-jobs",    "build-jobs",      "job-management", "job-diagnostics",
-            "job-progress",   "job-artifacts",   "result-preview", "inspect",
+            "job-progress",   "job-artifacts",   "result-preview", "interactive-preview", "inspect",
             "database-stats", "database-health", "database-usage", "database-maintenance", "output-format-policy"};
 }
 

@@ -13,6 +13,7 @@
 #include "../core/ImageNormalizer.h"
 #include "../core/MatchingAccess.h"
 #include "../core/MosaicOutput.h"
+#include "../core/MosaicSelection.h"
 #include "../core/PngStreamWriter.h"
 #include "../core/PreviewAccumulator.h"
 #include "../core/TileCompositor.h"
@@ -1612,6 +1613,66 @@ TEST_CASE("normalization retains resized encoding conversion and failure behavio
     CHECK_FALSE(normalizer.process(invalid, converted));
     CHECK(normalizer.processToMat(invalid).empty());
     CHECK_FALSE(normalizer.process(utf8(workspace.root / "missing.png"), converted));
+}
+
+TEST_CASE("interactive selection is read-only and pins the exported tiles and analysis")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    writeTargetImage(workspace.targetPath());
+    REQUIRE(BuildService().run(makeBuildRequest(workspace)).ok);
+    auto request = makeMosaicRequest(workspace);
+    request.config.nativeTileW = 36;
+    request.config.nativeTileH = 64;
+    request.config.lRange = 255;
+    request.config.topNRandom = 3;
+    request.config.analyze = true;
+    const auto before = readBytesUnicode(request.dbPath);
+
+    PreviewWorkspace cache;
+    std::atomic_bool canceled{false};
+    MosaicSelection selection;
+    REQUIRE(MosaicService().preview(request, 42, cache, canceled, selection).ok);
+    CHECK(readBytesUnicode(request.dbPath) == before);
+    CHECK(fs::is_empty(workspace.outputDir()));
+    REQUIRE(selection.imageIds.size() == 4);
+    CHECK(selection.analysis.imageIds == selection.imageIds);
+
+    auto different = request;
+    different.config.topNRandom = 1;
+    CHECK_FALSE(MosaicEngine::selectionCurrent(different.inputPath, different.dbPath, different.config, selection));
+    MosaicSelection adjusted;
+    different.config.lRange = 254;
+    const auto hot = MosaicService().preview(different, 42, cache, canceled, adjusted);
+    REQUIRE(hot.ok);
+    CHECK(hot.runtime.metrics.at("previewIndexReused") == 1);
+    CHECK(hot.runtime.metrics.at("previewCandidatesReused") == 1);
+
+    const auto original = readBytesUnicode(request.inputPath);
+    requireWriteImage(workspace.targetPath(), cv::Mat(64, 36, CV_8UC3, cv::Scalar(40, 90, 140)));
+    CHECK_FALSE(MosaicEngine::selectionCurrent(request.inputPath, request.dbPath, request.config, selection));
+    RuntimeContext staleRuntime(false);
+    const auto stale = MosaicService().run(request, staleRuntime, &selection);
+    CHECK_FALSE(stale.ok);
+    CHECK(stale.runtime.diagnostic.code == "preview_stale");
+    CHECK_FALSE(fs::exists(workspace.mosaicPath()));
+    REQUIRE(writeBytesUnicode(request.inputPath, original));
+
+    REQUIRE(MosaicEngine::selectionCurrent(request.inputPath, request.dbPath, request.config, selection));
+    RuntimeContext runtime(false);
+    const auto result = MosaicService().run(request, runtime, &selection);
+    REQUIRE(result.ok);
+    CHECK(result.runtime.metrics.at("reusedPreviewSelection") == 1);
+    const auto output = imreadUnicode(request.outputPath);
+    REQUIRE(output.size() == cv::Size(72, 128));
+    for (size_t position = 0; position < selection.imageIds.size(); ++position)
+    {
+        const auto image = imreadUnicode(selection.assets.at(selection.imageIds[position]).path);
+        const cv::Rect region(static_cast<int>(position % 2) * 36, static_cast<int>(position / 2) * 64, 36, 64);
+        REQUIRE(image.size() == region.size());
+        CHECK(cv::norm(output(region), image, cv::NORM_INF) == 0);
+    }
+    CHECK_FALSE(MosaicEngine::selectionCurrent(request.inputPath, request.dbPath, request.config, selection));
 }
 
 TEST_CASE("preview accumulator bounds dimensions and preserves small images")

@@ -386,6 +386,7 @@ try {
     Assert-True ([int]$info.info.api.contractMajorVersion -eq $Versions.apiMajorVersion) "unexpected API contract major version"
     Assert-True ($info.info.api.contractVersion -eq $Versions.apiVersion) "unexpected API contract version"
     Assert-True ($info.info.features -contains 'output-format-policy') "output policy capability missing"
+    Assert-True ($info.info.features -contains 'interactive-preview') "interactive preview capability missing"
 
     $endpoints = Invoke-Api -Method "GET" -Path "/api/endpoints"
     Assert-True ($endpoints.ok -eq $true) "/api/endpoints did not return ok=true"
@@ -623,6 +624,32 @@ try {
     # Real file responses and cursored diagnostics, independent of HTML text assertions.
     Assert-True (-not [string]::IsNullOrWhiteSpace($info.info.runtime.sessionId)) "session id missing"
     Assert-True (-not [string]::IsNullOrWhiteSpace($info.info.runtime.workingDirectory)) "working directory missing"
+    $interactiveBody = $mosaicBody.Clone()
+    $interactiveBody.outputPath = Join-Path $outputDir 'interactive.png'
+    $interactiveBody.topNRandom = 3
+    $interactiveBody.lRange = 255
+    $interactiveBody.analyze = $true
+    $interactive = Invoke-Api -Method 'POST' -Path '/api/mosaic/preview' -Body @{ request = $interactiveBody; seed = 42 }
+    $interactivePath = '/api/mosaic/preview/' + $interactive.preview.id
+    $previewDeadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    do {
+        Start-Sleep -Milliseconds 100
+        $grid = (Invoke-Api -Method 'GET' -Path $interactivePath).preview
+    } while ($grid.state -in @('queued', 'running') -and [DateTime]::UtcNow -lt $previewDeadline)
+    Assert-True ($grid.state -eq 'succeeded' -and $grid.imageIds.Count -eq 4) "interactive preview grid is missing"
+    Assert-True (-not (Test-Path -LiteralPath $interactiveBody.outputPath)) "interactive preview wrote a mosaic"
+    $thumb = Invoke-WebRequest -Uri ($script:BaseUrl + $interactivePath + '/image/' + $grid.imageIds[0] + '-64') -TimeoutSec $TimeoutSeconds
+    Assert-True (($thumb.Headers['Content-Type'] -join ',') -match 'image/jpeg') "interactive thumbnail is not JPEG"
+    $unknownImage = Invoke-ApiResponse -Method 'GET' -Path ($interactivePath + '/image/2147483647-64')
+    Assert-True ($unknownImage.StatusCode -eq 404) "preview served an image outside its selection"
+    $interactiveBody.previewId = $interactive.preview.id
+    $interactiveExport = Invoke-Api -Method 'POST' -Path '/api/jobs/mosaic' -Body $interactiveBody
+    $pinned = Wait-JobSucceeded -JobId $interactiveExport.job.id -Label 'interactive preview export' -ExpectedType 'mosaic' -ExpectedInputPath $targetPath -ExpectedOutputPath $interactiveBody.outputPath
+    Assert-True ($pinned.runtime.metrics.reusedPreviewSelection -eq 1) "formal export did not reuse preview selection"
+    Invoke-Api -Method 'DELETE' -Path $interactivePath | Out-Null
+    $closed = Invoke-ApiResponse -Method 'POST' -Path '/api/jobs/mosaic' -Body $interactiveBody
+    Assert-True ($closed.StatusCode -eq 409 -and $closed.Json.diagnostic.code -eq 'preview_stale') "closed preview must require refresh"
+
     $previewBody = $mosaicBody.Clone()
     $previewBody.outputPath = Join-Path $outputDir "preview result.jpg"
     $previewBody.generatePreview = $true

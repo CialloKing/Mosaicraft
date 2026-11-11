@@ -25,7 +25,8 @@ std::string resolveDbPathForService(const std::string& rawPath)
     return rawPath;
 }
 
-static ServiceResult runMosaic(const MosaicRequest &request, RuntimeContext &runtime)
+static ServiceResult runMosaic(const MosaicRequest &request, RuntimeContext &runtime,
+                               const MosaicSelection *selection)
 {
     runtime.stage("validating");
     if (request.inputPath.empty())
@@ -58,8 +59,10 @@ static ServiceResult runMosaic(const MosaicRequest &request, RuntimeContext &run
     {
         std::lock_guard<std::mutex> lock(pipelineMutex());
         MosaicEngine engine;
-        bool ok = engine.generate(request.inputPath, resolveDbPathForService(request.dbPath), request.outputPath,
-                                  validated.config, runtime);
+        const auto dbPath = resolveDbPathForService(request.dbPath);
+        const bool ok = selection
+            ? engine.renderSelection(request.inputPath, dbPath, request.outputPath, validated.config, *selection, runtime)
+            : engine.generate(request.inputPath, dbPath, request.outputPath, validated.config, runtime);
 
         return ok ? ServiceResult::success("mosaic generated")
                   : ServiceResult::failure(1, runtime.snapshot().diagnostic.message.empty()
@@ -92,8 +95,32 @@ ServiceResult MosaicService::run(const MosaicRequest &request) const
     return run(request, runtime);
 }
 
-ServiceResult MosaicService::run(const MosaicRequest &request, RuntimeContext &runtime) const
+ServiceResult MosaicService::run(const MosaicRequest &request, RuntimeContext &runtime,
+                                 const MosaicSelection *selection) const
 {
-    return runtimeResult(runMosaic(request, runtime), runtime);
+    return runtimeResult(runMosaic(request, runtime, selection), runtime);
+}
+
+ServiceResult MosaicService::preview(const MosaicRequest &request, uint32_t seed, PreviewWorkspace &workspace,
+                                     const std::atomic_bool &canceled, MosaicSelection &selection) const
+{
+    RuntimeContext runtime(false);
+    try
+    {
+        std::lock_guard<std::mutex> lock(pipelineMutex());
+        const bool ok = MosaicEngine().preview(request.inputPath, resolveDbPathForService(request.dbPath),
+                                               request.config, seed, workspace, canceled, selection, runtime);
+        return runtimeResult(ok ? ServiceResult::success() :
+            ServiceResult::failure(1, runtime.snapshot().diagnostic.message), runtime);
+    }
+    catch (const std::bad_alloc &)
+    {
+        return runtimeResult(runtimeFailure(runtime, 3, "not enough memory to preview mosaic", "out_of_memory"),
+                             runtime);
+    }
+    catch (const std::exception &error)
+    {
+        return runtimeResult(runtimeFailure(runtime, 1, error.what(), "internal_error"), runtime);
+    }
 }
 } // namespace mosaicraft

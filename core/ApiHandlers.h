@@ -38,6 +38,7 @@ struct ApiResponse
     int status = 200;
     nlohmann::json body;
     std::optional<Artifact> file;
+    std::string jpeg;
 };
 
 ApiRequest apiOperationRequest(ApiOperation operation, ApiRequestContext context = {});

@@ -15,9 +15,9 @@ Both entries call the same core services for mosaic generation, library building
 `/api/info` 在 `entryPoints` 中暴露相同的入口边界，调用方可据此区分当前入口和支持的可执行入口集合。
 `/api/info` exposes the same entry point boundary in `entryPoints`, so callers can distinguish the current entry from the supported executable entry set.
 
-当前 API 版本为 **1.0**，主版本为 **1**。路由仍使用 /api/*，没有额外契约身份字段或强制版本请求头。旧别名和命令接口已删除；参数与错误规则见下文。图库只接受结构版本 1，旧库需在新目录重建，详见 [1.15.0 不兼容更新](BREAKING_1.15.0.md)。
+当前 API 版本为 **1.1**，主版本为 **1**。路由仍使用 /api/*，没有额外契约身份字段或强制版本请求头。旧别名和命令接口已删除；参数与错误规则见下文。图库只接受结构版本 1，旧库需在新目录重建，详见 [1.15.0 不兼容更新](BREAKING_1.15.0.md)。
 
-API **1.0** keeps the existing structured routes and job model, with canonical fields, strict validation and a common error envelope. Unsupported libraries must be rebuilt in a new directory.
+API **1.1** adds interactive preview to the structured routes and job model. Unsupported libraries must be rebuilt in a new directory.
 
 ---
 
@@ -271,6 +271,14 @@ Both mosaic endpoints allow large output by default, without an extra field or s
 
 两个生成端点均接受 `generatePreview: true`，默认 `false`，等价于 CLI `--preview`。只支持单图；与 `tiled` 或 `deepZoom` 组合返回 400，诊断字段为 `generatePreview`。沿用宽度最多 1400、总像素最多 400 万、不放大的 JPEG 预览，质量固定为 92。同步响应只返回产物元数据，使用任务端点生成才能通过任务产物接口下载。
 `generatePreview` is optional and off by default. It uses the existing bounded JPEG preview generator and is incompatible with tiled/DeepZoom output.
+
+### 实时预览 / Interactive preview
+
+发现 `interactive-preview` 功能后，向 `POST /api/mosaic/preview` 提交 `{"request":{"inputPath":"target.png","dbPath":"library/mosaicraft.db"},"seed":42}`。请求使用标准生成参数。返回 202 和 `preview.id`。预览采用最新请求，正式任务优先，预览不进入普通任务列表。
+
+`GET /api/mosaic/preview/{id}` 返回 `preview.state`。完成后为 `succeeded`，包含 `columns`、`rows`、行优先排列的 `imageIds`（`-1` 表示无候选）及按素材 ID 索引的 `assetVersions`。网格上限为 160,000 格。向 `GET /api/mosaic/preview/{id}/image/{asset}` 请求 JPEG，`asset` 为 `reference` 或 `<imageId>-<size>`，尺寸支持 32、64、128，只能访问该预览中选中的素材。使用 `DELETE /api/mosaic/preview/{id}` 取消或释放预览。
+
+向 `POST /api/jobs/mosaic` 提交同一组匹配参数及 `previewId`，可直接使用预览中的素材排列。提交时过期、目标或图库变更、参数不匹配返回 409 `preview_stale`。执行前再次检查来源。正式任务一旦入队就持有选图结果，关闭预览不会撤销已提交的任务。
 
 ---
 

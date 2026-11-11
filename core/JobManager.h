@@ -2,6 +2,7 @@
 
 #include "BuildService.h"
 #include "MosaicService.h"
+#include "MosaicSelection.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -40,6 +41,14 @@ struct JobSnapshot
     std::chrono::system_clock::time_point finishedAt;
 };
 
+struct PreviewSnapshot
+{
+    std::string id;
+    JobState state = JobState::Queued;
+    ServiceResult result;
+    std::shared_ptr<const MosaicSelection> selection;
+};
+
 class JobManager
 {
 public:
@@ -49,8 +58,11 @@ public:
     JobManager(const JobManager&) = delete;
     JobManager& operator=(const JobManager&) = delete;
 
-    std::string submitMosaic(MosaicRequest request);
+    std::string submitMosaic(MosaicRequest request, std::shared_ptr<const MosaicSelection> selection = {});
     std::string submitBuild(BuildRequest request);
+    std::string submitPreview(MosaicRequest request, uint32_t seed);
+    bool getPreview(const std::string &id, PreviewSnapshot &out);
+    bool closePreview(const std::string &id);
     bool getJob(const std::string& id, JobSnapshot& out) const;
     bool waitJob(const std::string& id, JobSnapshot& out);
     std::vector<JobSnapshot> listJobs() const;
@@ -69,6 +81,17 @@ private:
         std::shared_ptr<RuntimeContext> runtime = std::make_shared<RuntimeContext>();
         MosaicRequest request;
         BuildRequest buildRequest;
+        std::shared_ptr<const MosaicSelection> selection;
+    };
+
+    struct PreviewJob
+    {
+        PreviewSnapshot snapshot;
+        MosaicRequest request;
+        uint32_t seed = 0;
+        std::atomic_bool canceled{false};
+        bool interrupted = false;
+        std::chrono::steady_clock::time_point accessed;
     };
 
     std::string nextId();
@@ -76,15 +99,23 @@ private:
     void workerLoop();
     void runMosaicJob(const std::string& id);
     void runBuildJob(const std::string& id);
+    void runPreview(const std::shared_ptr<PreviewJob> &job);
+    void interruptPreview();
+    void trimPreviews();
     void finishJob(const std::string& id, const ServiceResult& result);
 
     mutable std::mutex m_mutex;
     std::condition_variable m_cv;
     std::unordered_map<std::string, std::shared_ptr<JobRecord>> m_jobs;
     std::deque<std::string> m_queue;
+    std::unordered_map<std::string, std::shared_ptr<PreviewJob>> m_previews;
+    std::shared_ptr<PreviewJob> m_pendingPreview, m_runningPreview;
+    PreviewWorkspace m_previewWorkspace;
+    bool m_releasePreviewWorkspace = false;
     bool m_stopping = false;
     std::thread m_worker;
     uint64_t m_nextId = 1;
+    uint64_t m_nextPreviewId = 1;
     std::string m_sessionId;
 };
 

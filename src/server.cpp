@@ -68,6 +68,13 @@ static bool validUtf8(const std::string& value)
 static void sendApiResponse(httplib::Response& res, const mosaicraft::ApiResponse& response)
 {
     res.status = response.status;
+    if (!response.jpeg.empty())
+    {
+        res.set_header("Cache-Control", "no-store");
+        res.set_header("X-Content-Type-Options", "nosniff");
+        res.set_content(response.jpeg, "image/jpeg");
+        return;
+    }
     if (response.file)
     {
         const auto &file = *response.file;
@@ -127,6 +134,10 @@ static void handleApi(httplib::Response& res,
                       mosaicraft::JobManager& jobs,
                       mosaicraft::ApiRequest request)
 {
+    if (request.operation == mosaicraft::ApiOperation::GetPreview)
+    {
+        res.set_header("Cache-Control", "no-store");
+    }
     sendApiResponse(res, mosaicraft::handleApiRequest(request, jobs));
 }
 

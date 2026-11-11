@@ -810,6 +810,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     {
         bestLibIdx = m_renderSelection->indices;
         noCandidateCount = static_cast<int>(std::count(bestLibIdx.begin(), bestLibIdx.end(), -1));
+        if (noCandidateCount == totalTiles)
+        {
+            return runtime.fail("no_candidates", "no candidates within --l-range; increase the brightness range",
+                                "lRange");
+        }
         runtime.backends(m_renderSelection->featureBackend, m_renderSelection->scoreBackend);
         runtime.metric("reusedPreviewSelection", 1);
     }

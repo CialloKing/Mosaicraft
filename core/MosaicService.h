@@ -9,6 +9,9 @@
 namespace mosaicraft
 {
 
+struct MosaicSelection;
+struct PreviewWorkspace;
+
 struct MosaicRequest
 {
     std::string inputPath;
@@ -45,7 +48,10 @@ class MosaicService
 {
 public:
     ServiceResult run(const MosaicRequest& request) const;
-    ServiceResult run(const MosaicRequest &request, RuntimeContext &runtime) const;
+    ServiceResult run(const MosaicRequest &request, RuntimeContext &runtime,
+                      const MosaicSelection *selection = nullptr) const;
+    ServiceResult preview(const MosaicRequest &request, uint32_t seed, PreviewWorkspace &workspace,
+                          const std::atomic_bool &canceled, MosaicSelection &selection) const;
 };
 
 std::string resolveDbPathForService(const std::string& rawPath);
