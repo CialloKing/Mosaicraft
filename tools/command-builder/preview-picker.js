@@ -14,6 +14,9 @@ function createPreviewPicker(byId, actions) {
   const pages = byId('pages');
   const previous = byId('prev');
   const next = byId('next');
+  const page = byId('page');
+  const pageTotal = byId('page-total');
+  const pageGo = byId('page-go');
   const pageSize = 24;
   let active = false;
   let usable = false;
@@ -22,6 +25,7 @@ function createPreviewPicker(byId, actions) {
   let position = -1;
   let browse = false;
   let offset = 0;
+  let totalPages = 0;
   let generation = 0;
   let timer = 0;
   let loadedKey = '';
@@ -45,6 +49,7 @@ function createPreviewPicker(byId, actions) {
     items.replaceChildren();
     status.textContent = key ? '加载中…' : '';
     previous.disabled = next.disabled = true;
+    page.disabled = pageGo.disabled = true;
     if (!key) return;
 
     timer = setTimeout(async () => {
@@ -61,6 +66,14 @@ function createPreviewPicker(byId, actions) {
       }
       previous.disabled = offset === 0;
       next.disabled = !list.more;
+      if (browse) {
+        totalPages = Math.ceil(list.total / pageSize);
+        page.setCustomValidity('');
+        page.value = totalPages ? String(Math.floor(offset / pageSize) + 1) : '';
+        page.max = String(Math.max(1, totalPages));
+        pageTotal.textContent = '页 / 共 ' + totalPages + ' 页';
+        page.disabled = pageGo.disabled = totalPages === 0;
+      }
       status.textContent = list.images.length ? '' :
         browse ? '没有找到素材。' : '此格暂无推荐，可从整个图库选图。';
       const cards = document.createDocumentFragment();
@@ -152,6 +165,25 @@ function createPreviewPicker(byId, actions) {
     offset += pageSize;
     load();
   });
+  function goToPage() {
+    const value = Number(page.value);
+    if (!Number.isSafeInteger(value) || value < 1 || value > totalPages) {
+      page.setCustomValidity('请输入 1 到 ' + totalPages + ' 之间的整数页码。');
+      page.reportValidity();
+      return;
+    }
+    page.setCustomValidity('');
+    offset = (value - 1) * pageSize;
+    load();
+  }
+  page.addEventListener('input', () => page.setCustomValidity(''));
+  page.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      goToPage();
+    }
+  });
+  pageGo.addEventListener('click', goToPage);
 
   return {
     get position() { return active && usable ? position : -1; },

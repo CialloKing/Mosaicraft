@@ -649,6 +649,13 @@ try {
     $catalog = (Invoke-Api -Method 'GET' -Path ($interactivePath + '/library')).library
     $choice = $catalog.images | Where-Object { $_.id -ne $grid.imageIds[0] -and $_.available } | Select-Object -First 1
     Assert-True ($null -ne $choice) "preview library is missing replacement images"
+    Assert-True ($catalog.total -eq $catalog.images.Count -and -not $catalog.more) "preview library total is incorrect"
+    $filteredCatalog = (Invoke-Api -Method 'GET' -Path ($interactivePath + '/library?q=' + $choice.id)).library
+    Assert-True ($filteredCatalog.total -eq $filteredCatalog.images.Count -and @($filteredCatalog.images | Where-Object id -eq $choice.id).Count -eq 1) "filtered preview library total is incorrect"
+    $emptyCatalog = (Invoke-Api -Method 'GET' -Path ($interactivePath + '/library?q=no-such-preview-image')).library
+    Assert-True ($emptyCatalog.total -eq 0 -and $emptyCatalog.images.Count -eq 0 -and -not $emptyCatalog.more) "empty preview library filter is incorrect"
+    $pastCatalog = (Invoke-Api -Method 'GET' -Path ($interactivePath + '/library?offset=999999')).library
+    Assert-True ($pastCatalog.total -eq $catalog.total -and $pastCatalog.images.Count -eq 0 -and -not $pastCatalog.more) "out-of-range preview library page is incorrect"
     $interactiveBody.previewId = $interactive.preview.id
     $interactiveBody.previewEdits = @(@{ position = 0; imageId = $choice.id; version = $choice.version })
     $interactiveExport = Invoke-Api -Method 'POST' -Path '/api/jobs/mosaic' -Body $interactiveBody

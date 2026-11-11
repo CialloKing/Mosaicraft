@@ -10,6 +10,7 @@
 #undef GetJob
 #endif
 
+#include <algorithm>
 #include <exception>
 #include <charconv>
 #include <climits>
@@ -243,28 +244,38 @@ ApiResponse browsePreviewLibrary(const ApiRequest &request, JobManager &jobs)
     }
     constexpr size_t pageSize = 24;
     auto images = nlohmann::json::array();
-    size_t skipped = 0;
-    bool more = false;
-    for (const auto &entry : snapshot.selection->catalog->entries)
+    const auto &entries = snapshot.selection->catalog->entries;
+    size_t total = 0;
+    if (filter.empty())
     {
-        if (!filter.empty() && std::to_string(entry.id) != filter &&
-            lowerAscii(entry.name).find(filter) == std::string::npos)
+        total = entries.size();
+        // 无筛选时直接定位页面，避免大图库跳页时遍历此前的所有素材。
+        if (offset < total)
         {
-            continue;
+            const size_t end = offset + std::min(pageSize, total - offset);
+            for (size_t i = offset; i < end; ++i)
+            {
+                images.push_back(previewCatalogItem(entries[i]));
+            }
         }
-        if (skipped < offset)
-        {
-            ++skipped;
-            continue;
-        }
-        if (images.size() == pageSize)
-        {
-            more = true;
-            break;
-        }
-        images.push_back(previewCatalogItem(entry));
     }
-    return {200, apiOkJson("library", {{"images", std::move(images)}, {"offset", offset}, {"more", more}})};
+    else
+    {
+        for (const auto &entry : entries)
+        {
+            if (std::to_string(entry.id) != filter && lowerAscii(entry.name).find(filter) == std::string::npos)
+            {
+                continue;
+            }
+            if (total >= offset && images.size() < pageSize)
+            {
+                images.push_back(previewCatalogItem(entry));
+            }
+            ++total;
+        }
+    }
+    const bool more = offset < total && total - offset > images.size();
+    return {200, apiOkJson("library", {{"images", std::move(images)}, {"offset", offset}, {"more", more}, {"total", total}})};
 }
 
 ApiResponse previewImage(const ApiRequest &request, JobManager &jobs)

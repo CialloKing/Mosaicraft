@@ -72,6 +72,9 @@ main:has(#panel-preview.active) { max-width: 1660px; }
 #live-preview-status { margin: 8px 0 0; min-height: 1.5em; overflow-wrap: anywhere; }
 .preview-picker .preview-toolbar { margin: 8px 0; }
 .preview-picker .field { margin-top: 8px; }
+.preview-pages-input { width: 5em; padding: 6px; background: var(--input-bg); color: var(--fg);
+  border: 1px solid var(--input-border); border-radius: 6px; }
+.preview-pages-total { color: var(--fg2); font-size: .85rem; }
 .preview-picker-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
   gap: 8px; padding: 4px; max-height: 52vh; overflow: auto; }
 .preview-picker-item { min-width: 0; padding: 6px; background: var(--input-bg); color: var(--fg);
@@ -381,6 +384,10 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
         <div class="preview-toolbar" id="live-preview-pages" hidden>
           <button type="button" class="btn btn-secondary" id="live-preview-prev">上一页</button>
           <button type="button" class="btn btn-secondary" id="live-preview-next">下一页</button>
+          <label for="live-preview-page">第</label>
+          <input class="preview-pages-input" type="number" id="live-preview-page" min="1" step="1" inputmode="numeric" aria-label="跳转到第几页">
+          <span class="preview-pages-total" id="live-preview-page-total" aria-live="polite">页</span>
+          <button type="button" class="btn btn-secondary" id="live-preview-page-go">跳转</button>
         </div>
       </div>
     </section>
