@@ -226,6 +226,11 @@ const interactivePreview = (() => {
     else if (enabled && lastError) message = lastError;
     else if (enabled && hasPlan) {
       message = plan.columns + ' × ' + plan.rows + ' 格';
+      if (plan.featureBackend && plan.scoreBackend) {
+        const feature = matchingBackendName(plan.featureBackend);
+        const score = matchingBackendName(plan.scoreBackend);
+        message += feature === score ? ' · ' + score : ' · 特征 ' + feature + ' / 评分 ' + score;
+      }
       let missing = plan.missing;
       for (const position of edits.keys()) {
         if (plan.imageIds[position] < 0) --missing;
@@ -236,6 +241,7 @@ const interactivePreview = (() => {
       if (planKey !== requestKey) message += ' · 回到预览窗口后更新';
     }
     if (status.textContent !== message) status.textContent = message;
+    status.title = hasPlan ? plan.fallbackReason || '' : '';
     picker.sync(plan, hasPlan && !pending && planKey === requestKey && capable() && hasFeature('preview-editing'),
       tab === 'preview' && !document.hidden);
     const generation = byId('generation-note');
@@ -339,7 +345,7 @@ const interactivePreview = (() => {
       ? 320 / 180 : width / height;
   }
 
-  function sync(activeTab) {
+  function sync(activeTab, delay = 200) {
     tab = activeTab;
     const current = serviceInfo?.runtime?.sessionId || '';
     if (serverSession !== current) {
@@ -364,7 +370,8 @@ const interactivePreview = (() => {
       }
       opacity = Math.min(1, Math.max(0, Number(val('m-overlaystr')) || 0));
       updateAspect();
-      visibilityChanged();
+      if (clip()) schedule(delay);
+      else visibilityChanged();
     } catch (error) {
       cancelPending();
       request = null;
@@ -380,7 +387,7 @@ const interactivePreview = (() => {
     cancelPending();
     planKey = '';
     lastError = '';
-    sync(tab);
+    sync(tab, 0);
     updateRunButton();
   }
 
@@ -688,9 +695,8 @@ const interactivePreview = (() => {
     lastError = '';
     if (enabled) {
       seed = crypto.getRandomValues(new Uint32Array(1))[0];
-      sync(tab);
       canvas.scrollIntoView({block: 'nearest'});
-      visibilityChanged();
+      sync(tab, 0);
     } else {
       cancelPending();
       discardPlan();

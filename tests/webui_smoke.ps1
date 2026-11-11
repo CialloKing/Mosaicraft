@@ -638,6 +638,7 @@ try {
         $grid = (Invoke-Api -Method 'GET' -Path $interactivePath).preview
     } while ($grid.state -in @('queued', 'running') -and [DateTime]::UtcNow -lt $previewDeadline)
     Assert-True ($grid.state -eq 'succeeded' -and $grid.imageIds.Count -eq 4) "interactive preview grid is missing"
+    Assert-True ($grid.featureBackend -eq 'cpu' -and $grid.scoreBackend -eq 'cpu') "preview did not report the active CPU backend"
     Assert-True (-not (Test-Path -LiteralPath $interactiveBody.outputPath)) "interactive preview wrote a mosaic"
     $thumb = Invoke-WebRequest -Uri ($script:BaseUrl + $interactivePath + '/image/' + $grid.imageIds[0] + '-64') -TimeoutSec $TimeoutSeconds
     Assert-True (($thumb.Headers['Content-Type'] -join ',') -match 'image/jpeg') "interactive thumbnail is not JPEG"

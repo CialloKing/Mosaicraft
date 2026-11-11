@@ -1643,6 +1643,9 @@ function renderOutputPlan(job) {
   html += '<p>计划路径：<code>' + escapeHtml(plan.path) + '</code></p><p class="hint">计划不代表文件已保存；下载和路径复制请使用下方实际结果。</p></section>';
   return html;
 }
+function matchingBackendName(value) {
+  return {cpu: 'CPU', template_cuda: '模板 CUDA', compatible_cuda: '兼容 CUDA', none: '不适用'}[value] || '待检测';
+}
 function renderTaskDiagnostic(job) {
   let html = '';
   if (job.diagnostic) {
@@ -1661,8 +1664,7 @@ function renderTaskDiagnostic(job) {
   html += renderOutputPlan(job);
   if (job.runtime) {
     const runtime = job.runtime;
-    const backendName = value => ({ cpu: 'CPU', template_cuda: '模板 CUDA', compatible_cuda: '兼容 CUDA', none: '不适用' }[value] || '待检测');
-    html += '<p>特征提取：' + escapeHtml(backendName(runtime.featureBackend)) + ' · 评分：' + escapeHtml(backendName(runtime.scoreBackend)) + '</p>';
+    html += '<p>特征提取：' + escapeHtml(matchingBackendName(runtime.featureBackend)) + ' · 评分：' + escapeHtml(matchingBackendName(runtime.scoreBackend)) + '</p>';
     if (Object.keys(runtime.metrics || {}).length) html += '<details data-section="metrics"><summary>性能详情（并行阶段不可相加）</summary><pre>' + escapeHtml(JSON.stringify(runtime.metrics, null, 2)) + '</pre></details>';
   }
   if (hasFeature('job-diagnostics')) {

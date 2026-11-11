@@ -157,6 +157,9 @@ ApiResponse getPreview(const std::string &id, JobManager &jobs)
         body["rows"] = selection.rows;
         body["featureWidth"] = selection.featureWidth;
         body["featureHeight"] = selection.featureHeight;
+        body["featureBackend"] = selection.featureBackend;
+        body["scoreBackend"] = selection.scoreBackend;
+        body["fallbackReason"] = snapshot.result.runtime.fallbackReason;
         body["editKey"] = selection.editKey;
         body["imageIds"] = selection.imageIds;
         body["missing"] = snapshot.result.runtime.failed;

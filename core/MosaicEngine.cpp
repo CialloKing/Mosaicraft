@@ -1255,6 +1255,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
         auto prepare = [&](int first, int count, MatchingBuffers &buffers)
         {
+            if (canceled())
+            {
+                return runtime.fail("preview_canceled", "preview canceled");
+            }
             buffers.resize(count, featBytes, N, templateCuda, cfg.analyze, pipeline);
             if (backends.scoring == ScoreBackend::CompatibleCuda)
             {
@@ -1286,6 +1290,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 }
                 for (int piece = 0; piece < count; piece += 256)
                 {
+                    if (canceled())
+                    {
+                        return runtime.fail("preview_canceled", "preview canceled");
+                    }
                     const int pieceCount = std::min(256, count - piece);
                     auto *input = pipeline ? workspace->pipelineInput() : buffers.images.data();
                     featureWorkers.run(
@@ -1406,14 +1414,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                    });
             }
             metrics.msFeat += Ms(Clock::now() - featureStart).count();
-            const auto queryStart = Clock::now();
-            for (int local = 0; local < count; ++local)
+            if (canceled())
             {
-                buildTileVector(allTL[local], allTA[local], allTB[local], allGrid[local], allTiny[local],
-                                allEdge[local], allLBP[local], tileVector);
-                std::copy(tileVector.begin(), tileVector.end(),
-                          buffers.queries.begin() + static_cast<size_t>(local) * FeatureIndex::kDimension);
+                return runtime.fail("preview_canceled", "preview canceled");
             }
+            const auto queryStart = Clock::now();
             const size_t candidateOffset = static_cast<size_t>(first) * N;
             const size_t candidateCount = static_cast<size_t>(count) * N;
             if (reuseCandidates)
@@ -1423,6 +1428,13 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             else
             {
+                for (int local = 0; local < count; ++local)
+                {
+                    buildTileVector(allTL[local], allTA[local], allTB[local], allGrid[local], allTiny[local],
+                                    allEdge[local], allLBP[local], tileVector);
+                    std::copy(tileVector.begin(), tileVector.end(),
+                              buffers.queries.begin() + static_cast<size_t>(local) * FeatureIndex::kDimension);
+                }
                 annIndex->queryBatch(buffers.queries, N, allIndices, queryWorkers);
                 if (!newCandidates.empty())
                 {
@@ -1488,7 +1500,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         };
         // 扩搜会再次读取当前设备特征；下一批预取不能提前覆盖同一个工作区。
         const bool prefetch =
-            templateCuda && !m_preview && !m_selectionOptions.expand && totalTiles > batchRows && hostBudget >= scratch + pinnedBytes &&
+            templateCuda && !m_selectionOptions.expand && totalTiles > batchRows && hostBudget >= scratch + pinnedBytes &&
             gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, pipeline) <=
                 (hostBudget - scratch - pinnedBytes) / 2;
         metrics.matchingPrefetch = prefetch;
@@ -1986,8 +1998,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         continue;
                     }
                     const auto sortStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
-                    const int topN = std::min(cfg.topNRandom, static_cast<int>(scored.size()));
-                    std::partial_sort(scored.begin(), scored.begin() + topN, scored.end());
+                    const int scoredCount = static_cast<int>(scored.size());
+                    const int topN = std::min(cfg.topNRandom, scoredCount);
+                    const int recommended = m_preview ? std::min(MosaicSelection::recommendationLimit, scoredCount) : 0;
+                    // 分数相同按图库下标排序。共用一个有序前缀，Top-N 和推荐次序保持一致。
+                    std::partial_sort(scored.begin(), scored.begin() + std::max(topN, recommended), scored.end());
                     if (cfg.benchmark)
                     {
                         metrics.msSort += Ms(Clock::now() - sortStart).count();
@@ -2022,14 +2037,9 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         analyzeGridD.push_back(wGridD);
                         analyzeEdgeD.push_back(wEdgeD);
                     }
-                    if (m_preview)
+                    for (int rank = 0; rank < recommended; ++rank)
                     {
-                        const auto limit = std::min<size_t>(MosaicSelection::recommendationLimit, scored.size());
-                        std::partial_sort(scored.begin(), scored.begin() + limit, scored.end());
-                        for (size_t rank = 0; rank < limit; ++rank)
-                        {
-                            m_preview->recommendations[ti][rank] = allRecords[scored[rank].second].id;
-                        }
+                        m_preview->recommendations[ti][rank] = allRecords[scored[rank].second].id;
                     }
                     neighborhood.recordSelection(pickIdx, ti);
                 }
@@ -2164,7 +2174,13 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                    0, 0, cv::INTER_AREA);
         cv::imencode(".jpg", reference, m_preview->referenceJpeg, {cv::IMWRITE_JPEG_QUALITY, 85});
         runtime.output(tilesX, tilesY, "selection", totalTiles - noCandidateCount, noCandidateCount);
+        runtime.metric("totalMs", Ms(Clock::now() - tStart).count());
+        runtime.metric("prepareMs", metrics.msPrep);
         runtime.metric("matchingMs", metrics.matchingWallMs);
+        runtime.metric("featureMs", metrics.msFeat);
+        runtime.metric("annQueryMs", metrics.msANNQuery);
+        runtime.metric("selectionMs", metrics.msSelect);
+        runtime.metric("matchingPrefetch", metrics.matchingPrefetch ? 1 : 0);
         runtime.stage("finalizing");
         return true;
     }
