@@ -988,7 +988,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             return;
         }
         const auto now = Clock::now();
-        if (boundary || now - lastPreviewProgress >= std::chrono::seconds(2))
+        if (boundary || now - lastPreviewProgress >= std::chrono::seconds(1))
         {
             // 换行保留进度记录，按时间节流避免大图每批都刷屏。
             const auto tenths = static_cast<int64_t>(completed) * 1000 / totalTiles;
