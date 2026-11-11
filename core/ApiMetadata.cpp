@@ -39,6 +39,14 @@ std::string endpointHttpPattern(const std::string& path)
     {
         return R"(/api/mosaic/preview/([A-Za-z0-9_-]+)/image/([A-Za-z0-9_-]+))";
     }
+    if (path == "/api/mosaic/preview/{id}/recommendations")
+    {
+        return R"(/api/mosaic/preview/([A-Za-z0-9_-]+)/recommendations)";
+    }
+    if (path == "/api/mosaic/preview/{id}/library")
+    {
+        return R"(/api/mosaic/preview/([A-Za-z0-9_-]+)/library)";
+    }
     return path;
 }
 
@@ -48,6 +56,10 @@ std::vector<std::string> endpointQueryKeys(ApiOperation operation)
     {
     case ApiOperation::GetJobEvents:
         return {"after", "limit"};
+    case ApiOperation::GetPreviewRecommendations:
+        return {"position"};
+    case ApiOperation::BrowsePreviewLibrary:
+        return {"q", "offset"};
     case ApiOperation::DatabaseStats:
     case ApiOperation::DatabaseHealth:
         return {"dbPath"};
@@ -115,6 +127,8 @@ int endpointSuccessStatus(ApiOperation operation)
     case ApiOperation::GetPreview:
     case ApiOperation::ClosePreview:
     case ApiOperation::GetPreviewImage:
+    case ApiOperation::GetPreviewRecommendations:
+    case ApiOperation::BrowsePreviewLibrary:
     case ApiOperation::ListJobs:
     case ApiOperation::ClearFinishedJobs:
     case ApiOperation::GetJobEvents:
@@ -142,6 +156,10 @@ std::string endpointResponseKey(ApiOperation operation)
     case ApiOperation::ClosePreview:
     case ApiOperation::GetPreviewImage:
         return "";
+    case ApiOperation::GetPreviewRecommendations:
+        return "recommendations";
+    case ApiOperation::BrowsePreviewLibrary:
+        return "library";
     case ApiOperation::GetJobEvents:
         return "events";
     case ApiOperation::GetJobArtifact:
@@ -207,6 +225,11 @@ void populateEndpointErrors(ApiEndpointMetadata& info)
         addErrorContract(info, 404, "serviceResult");
         addErrorContract(info, 409, "serviceResult");
         addErrorContract(info, 500, "serviceResult");
+        break;
+    case ApiOperation::GetPreviewRecommendations:
+    case ApiOperation::BrowsePreviewLibrary:
+        addErrorContract(info, 400, "serviceResult");
+        addErrorContract(info, 404, "serviceResult");
         break;
     case ApiOperation::GetJobEvents:
         addErrorContract(info, 400, "serviceResult");
@@ -315,6 +338,8 @@ const char* apiOperationName(ApiOperation operation)
     case ApiOperation::GetPreview: return "getPreview";
     case ApiOperation::ClosePreview: return "closePreview";
     case ApiOperation::GetPreviewImage: return "getPreviewImage";
+    case ApiOperation::GetPreviewRecommendations: return "getPreviewRecommendations";
+    case ApiOperation::BrowsePreviewLibrary: return "browsePreviewLibrary";
     case ApiOperation::SubmitMosaicJob: return "submitMosaicJob";
     case ApiOperation::SubmitBuildJob: return "submitBuildJob";
     case ApiOperation::ListJobs: return "listJobs";
@@ -397,9 +422,14 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata()
                  ApiOperation::GetPreview, ApiRequestShape::JobId, {"id"}, {"id"}),
         endpoint("DELETE", "/api/mosaic/preview/{id}", "cancel or release interactive selection", "preview",
                  ApiOperation::ClosePreview, ApiRequestShape::JobId, {"id"}, {"id"}, true),
-        endpoint("GET", "/api/mosaic/preview/{id}/image/{asset}", "read a selected thumbnail or target reference",
+        endpoint("GET", "/api/mosaic/preview/{id}/image/{asset}", "read a library thumbnail or target reference",
                  "preview", ApiOperation::GetPreviewImage, ApiRequestShape::JobArtifact, {"id", "asset"},
                  {"id", "asset"}),
+        endpoint("GET", "/api/mosaic/preview/{id}/recommendations", "read the highest-ranked images for one tile",
+                 "preview", ApiOperation::GetPreviewRecommendations, ApiRequestShape::JobQuery,
+                 {"id", "position"}, {"id", "position"}),
+        endpoint("GET", "/api/mosaic/preview/{id}/library", "browse the preview library by name or ID", "preview",
+                 ApiOperation::BrowsePreviewLibrary, ApiRequestShape::JobQuery, {"id", "q", "offset"}, {"id"}),
         endpoint("POST", "/api/jobs/mosaic", "start mosaic job", "jobs", ApiOperation::SubmitMosaicJob,
                  ApiRequestShape::Body,
                  {"inputPath",  "dbPath",         "outputPath",      "tileW",         "tileH",
@@ -409,7 +439,7 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata()
                   "edgeWeight", "lbpWeight",      "neighborPenalty", "colorStrength", "overlayStrength",
                   "format",     "writeMode",            "useGpu",        "tiled",
                   "deepZoom",   "colorAdjust",    "adaptiveWeights", "analyze",       "benchmark",
-                  "generatePreview", "previewId"},
+                  "generatePreview", "previewId", "previewEdits"},
                  {"inputPath"}, true, true),
         endpoint("POST", "/api/jobs/build", "start library build job", "jobs", ApiOperation::SubmitBuildJob,
                  ApiRequestShape::Body,
@@ -563,7 +593,7 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
 std::vector<std::string> apiFeatureList()
 {
     return {"mosaic-jobs",    "build-jobs",      "job-management", "job-diagnostics",
-            "job-progress",   "job-artifacts",   "result-preview", "interactive-preview", "inspect",
+            "job-progress",   "job-artifacts",   "result-preview", "interactive-preview", "preview-editing", "inspect",
             "database-stats", "database-health", "database-usage", "database-maintenance", "output-format-policy"};
 }
 

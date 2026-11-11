@@ -12,8 +12,10 @@
 
 #include <exception>
 #include <charconv>
+#include <climits>
 #include <filesystem>
 #include <sstream>
+#include <unordered_set>
 #include <utility>
 
 namespace mosaicraft
@@ -155,17 +157,111 @@ ApiResponse getPreview(const std::string &id, JobManager &jobs)
         body["rows"] = selection.rows;
         body["featureWidth"] = selection.featureWidth;
         body["featureHeight"] = selection.featureHeight;
+        body["editKey"] = selection.editKey;
         body["imageIds"] = selection.imageIds;
         body["missing"] = snapshot.result.runtime.failed;
         body["metrics"] = snapshot.result.runtime.metrics;
         auto &versions = body["assetVersions"] = nlohmann::json::object();
         for (const auto &[imageId, asset] : selection.assets)
         {
-            versions[std::to_string(imageId)] = asset.hash + ":" + std::to_string(asset.bytes) + ":" +
-                std::to_string(asset.modified.time_since_epoch().count());
+            versions[std::to_string(imageId)] = asset.version();
         }
     }
     return {200, apiOkJson("preview", std::move(body))};
+}
+
+bool previewNumber(const ApiQueryParams &query, const char *key, size_t &value, bool required)
+{
+    const auto entry = query.find(key);
+    if (entry == query.end())
+    {
+        return !required;
+    }
+    const auto &text = entry->second;
+    const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
+    return result.ec == std::errc{} && result.ptr == text.data() + text.size();
+}
+
+nlohmann::json previewCatalogItem(const PreviewCatalogEntry &entry)
+{
+    const auto asset = previewAsset(entry);
+    return {{"id", entry.id}, {"name", entry.name}, {"version", asset.version()}, {"available", asset.available}};
+}
+
+ApiResponse previewRecommendations(const ApiRequest &request, JobManager &jobs)
+{
+    PreviewSnapshot snapshot;
+    if (!jobs.getPreview(request.id, snapshot) || !snapshot.selection || !snapshot.selection->catalog)
+    {
+        return previewNotFound();
+    }
+    size_t position = 0;
+    const auto &selection = *snapshot.selection;
+    if (!previewNumber(request.query, "position", position, true) || position >= selection.recommendations.size())
+    {
+        return badRequest("invalid tile position");
+    }
+    auto images = nlohmann::json::array();
+    for (int id : selection.recommendations[position])
+    {
+        if (const auto *entry = selection.catalog->find(id))
+        {
+            images.push_back(previewCatalogItem(*entry));
+        }
+    }
+    return {200, apiOkJson("recommendations", {{"position", position}, {"images", std::move(images)}})};
+}
+
+std::string lowerAscii(std::string value)
+{
+    for (auto &ch : value)
+    {
+        if (ch >= 'A' && ch <= 'Z')
+        {
+            ch = static_cast<char>(ch - 'A' + 'a');
+        }
+    }
+    return value;
+}
+
+ApiResponse browsePreviewLibrary(const ApiRequest &request, JobManager &jobs)
+{
+    PreviewSnapshot snapshot;
+    if (!jobs.getPreview(request.id, snapshot) || !snapshot.selection || !snapshot.selection->catalog)
+    {
+        return previewNotFound();
+    }
+    size_t offset = 0;
+    const auto query = request.query.find("q");
+    const auto filter = query == request.query.end() ? std::string{} : lowerAscii(query->second);
+    if (!previewNumber(request.query, "offset", offset, false) || filter.size() > 256)
+    {
+        return badRequest("invalid library query");
+    }
+    constexpr size_t pageSize = 24;
+    auto images = nlohmann::json::array();
+    size_t skipped = 0;
+    bool more = false;
+    for (const auto &entry : snapshot.selection->catalog->entries)
+    {
+        if (!filter.empty() && std::to_string(entry.id) != filter &&
+            lowerAscii(entry.name).find(filter) == std::string::npos)
+        {
+            continue;
+        }
+        if (skipped < offset)
+        {
+            ++skipped;
+            continue;
+        }
+        if (images.size() == pageSize)
+        {
+            more = true;
+            break;
+        }
+        images.push_back(previewCatalogItem(entry));
+    }
+    return {200, apiOkJson("library", {{"images", std::move(images)}, {"offset", offset}, {"more", more}})};
 }
 
 ApiResponse previewImage(const ApiRequest &request, JobManager &jobs)
@@ -198,27 +294,39 @@ ApiResponse previewImage(const ApiRequest &request, JobManager &jobs)
     const auto sizeResult = std::from_chars(key.data() + dash + 1, key.data() + key.size(), edge);
     if (idResult.ec != std::errc{} || idResult.ptr != key.data() + dash ||
         sizeResult.ec != std::errc{} || sizeResult.ptr != key.data() + key.size() ||
-        (edge != 32 && edge != 64 && edge != 128))
+        (edge != 16 && edge != 32 && edge != 64 && edge != 128))
     {
         return badRequest("invalid thumbnail image ID or size");
     }
-    const auto asset = snapshot.selection->assets.find(imageId);
-    if (asset == snapshot.selection->assets.end() || !asset->second.available)
+    const auto selected = snapshot.selection->assets.find(imageId);
+    PreviewAsset asset;
+    if (selected != snapshot.selection->assets.end())
+    {
+        asset = selected->second;
+    }
+    else if (snapshot.selection->catalog)
+    {
+        if (const auto *entry = snapshot.selection->catalog->find(imageId))
+        {
+            asset = previewAsset(*entry);
+        }
+    }
+    if (!asset.available)
     {
         return previewImageNotFound();
     }
-    if (!asset->second.current())
+    if (!asset.current())
     {
         return previewConflict("selected image changed; refresh the preview");
     }
     try
     {
-        const auto image = imreadUnicode(asset->second.path, cv::IMREAD_COLOR);
+        const auto image = imreadUnicode(asset.path, cv::IMREAD_COLOR);
         if (image.empty())
         {
             return previewImageNotFound();
         }
-        if (!asset->second.current())
+        if (!asset.current())
         {
             return previewConflict("selected image changed; refresh the preview");
         }
@@ -234,6 +342,55 @@ ApiResponse previewImage(const ApiRequest &request, JobManager &jobs)
     {
         return internalError(error.what());
     }
+}
+
+std::optional<ApiResponse> applyPreviewEdits(const nlohmann::json &edits,
+                                             std::shared_ptr<const MosaicSelection> &selection)
+{
+    if (!edits.is_array() || !selection || !selection->catalog || edits.size() > selection->indices.size())
+    {
+        return badRequest("previewEdits requires a preview and an array of tile replacements");
+    }
+    if (edits.empty())
+    {
+        return {};
+    }
+    auto updated = std::make_shared<MosaicSelection>(*selection);
+    std::unordered_set<size_t> seen;
+    for (const auto &edit : edits)
+    {
+        if (!edit.is_object() || edit.size() != 3 || !edit.contains("position") || !edit.contains("imageId") ||
+            !hasString(edit, "version") || !edit["position"].is_number_unsigned() ||
+            !edit["imageId"].is_number_unsigned())
+        {
+            return badRequest("preview edit requires position, imageId and version");
+        }
+        const auto position = edit["position"].get<uint64_t>();
+        const auto imageId = edit["imageId"].get<uint64_t>();
+        if (position >= updated->indices.size() || imageId == 0 || imageId > INT_MAX || !seen.insert(position).second)
+        {
+            return badRequest("invalid or repeated preview edit");
+        }
+        const auto *entry = selection->catalog->find(static_cast<int>(imageId));
+        if (!entry)
+        {
+            return badRequest("replacement image is not in the preview library");
+        }
+        const auto asset = previewAsset(*entry);
+        if (!asset.available || asset.version() != edit["version"].get_ref<const std::string &>())
+        {
+            return previewConflict("replacement image changed; select it again after refreshing");
+        }
+        if (updated->indices[position] != entry->index)
+        {
+            updated->indices[position] = entry->index;
+            updated->imageIds[position] = entry->id;
+            updated->assets.insert_or_assign(entry->id, asset);
+            ++updated->manualEdits;
+        }
+    }
+    selection = std::move(updated);
+    return {};
 }
 
 } // namespace
@@ -349,6 +506,10 @@ ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
         return jobs.closePreview(request.id) ? ApiResponse{200, apiOkJson()} : previewNotFound();
     case ApiOperation::GetPreviewImage:
         return previewImage(request, jobs);
+    case ApiOperation::GetPreviewRecommendations:
+        return previewRecommendations(request, jobs);
+    case ApiOperation::BrowsePreviewLibrary:
+        return browsePreviewLibrary(request, jobs);
     case ApiOperation::SubmitMosaicJob:
         return apiSubmitMosaicJob(request.body, jobs);
     case ApiOperation::SubmitBuildJob:
@@ -487,6 +648,13 @@ ApiResponse apiSubmitMosaicJob(const std::string& body, JobManager& jobs)
     RequestError error;
     auto payload = nlohmann::json::parse(body, nullptr, false);
     std::string previewId;
+    nlohmann::json edits;
+    const bool hasEdits = payload.is_object() && payload.contains("previewEdits");
+    if (hasEdits)
+    {
+        edits = std::move(payload["previewEdits"]);
+        payload.erase("previewEdits");
+    }
     if (payload.is_object() && payload.contains("previewId"))
     {
         if (!payload["previewId"].is_string() || payload["previewId"].get_ref<const std::string &>().empty())
@@ -495,6 +663,10 @@ ApiResponse apiSubmitMosaicJob(const std::string& body, JobManager& jobs)
         }
         previewId = payload["previewId"].get<std::string>();
         payload.erase("previewId");
+    }
+    if (hasEdits && previewId.empty())
+    {
+        return badRequest("previewEdits requires previewId");
     }
     if (!parseMosaicRequestJson(previewId.empty() ? body : payload.dump(), request, error))
     {
@@ -510,6 +682,13 @@ ApiResponse apiSubmitMosaicJob(const std::string& body, JobManager& jobs)
                                              request.config, *preview.selection)))
         {
             return previewConflict("preview expired or target, library, or matching parameters changed");
+        }
+        if (hasEdits)
+        {
+            if (auto error = applyPreviewEdits(edits, preview.selection))
+            {
+                return std::move(*error);
+            }
         }
         const std::string jobId = jobs.submitMosaic(std::move(request), std::move(preview.selection));
         JobSnapshot snapshot;

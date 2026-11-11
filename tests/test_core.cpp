@@ -1140,7 +1140,7 @@ TEST_CASE("API JSON serialization is shared")
     CHECK(infoJson["api"]["compatibility"].get<std::string>() == "stable");
     CHECK(infoJson["api"]["stable"].get<bool>());
     CHECK(infoJson["api"]["endpointCount"].get<int>() == apiEndpointMetadata().size());
-    CHECK(infoJson["api"]["enabledEndpointCount"].get<int>() == 22);
+    CHECK(infoJson["api"]["enabledEndpointCount"].get<int>() == 24);
     CHECK(infoJson["api"]["metadataValid"].get<bool>());
     CHECK(infoJson["api"]["metadataErrors"].empty());
 

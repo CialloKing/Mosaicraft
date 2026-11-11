@@ -134,7 +134,9 @@ static void handleApi(httplib::Response& res,
                       mosaicraft::JobManager& jobs,
                       mosaicraft::ApiRequest request)
 {
-    if (request.operation == mosaicraft::ApiOperation::GetPreview)
+    if (request.operation == mosaicraft::ApiOperation::GetPreview ||
+        request.operation == mosaicraft::ApiOperation::GetPreviewRecommendations ||
+        request.operation == mosaicraft::ApiOperation::BrowsePreviewLibrary)
     {
         res.set_header("Cache-Control", "no-store");
     }

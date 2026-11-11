@@ -387,6 +387,7 @@ try {
     Assert-True ($info.info.api.contractVersion -eq $Versions.apiVersion) "unexpected API contract version"
     Assert-True ($info.info.features -contains 'output-format-policy') "output policy capability missing"
     Assert-True ($info.info.features -contains 'interactive-preview') "interactive preview capability missing"
+    Assert-True ($info.info.features -contains 'preview-editing') "preview editing capability missing"
 
     $endpoints = Invoke-Api -Method "GET" -Path "/api/endpoints"
     Assert-True ($endpoints.ok -eq $true) "/api/endpoints did not return ok=true"
@@ -641,11 +642,18 @@ try {
     $thumb = Invoke-WebRequest -Uri ($script:BaseUrl + $interactivePath + '/image/' + $grid.imageIds[0] + '-64') -TimeoutSec $TimeoutSeconds
     Assert-True (($thumb.Headers['Content-Type'] -join ',') -match 'image/jpeg') "interactive thumbnail is not JPEG"
     $unknownImage = Invoke-ApiResponse -Method 'GET' -Path ($interactivePath + '/image/2147483647-64')
-    Assert-True ($unknownImage.StatusCode -eq 404) "preview served an image outside its selection"
+    Assert-True ($unknownImage.StatusCode -eq 404) "preview served an image outside its library"
+    $recommendations = (Invoke-Api -Method 'GET' -Path ($interactivePath + '/recommendations?position=0')).recommendations
+    Assert-True ($recommendations.position -eq 0 -and $recommendations.images.Count -gt 0) "tile recommendations missing"
+    $catalog = (Invoke-Api -Method 'GET' -Path ($interactivePath + '/library')).library
+    $choice = $catalog.images | Where-Object { $_.id -ne $grid.imageIds[0] -and $_.available } | Select-Object -First 1
+    Assert-True ($null -ne $choice) "preview library is missing replacement images"
     $interactiveBody.previewId = $interactive.preview.id
+    $interactiveBody.previewEdits = @(@{ position = 0; imageId = $choice.id; version = $choice.version })
     $interactiveExport = Invoke-Api -Method 'POST' -Path '/api/jobs/mosaic' -Body $interactiveBody
     $pinned = Wait-JobSucceeded -JobId $interactiveExport.job.id -Label 'interactive preview export' -ExpectedType 'mosaic' -ExpectedInputPath $targetPath -ExpectedOutputPath $interactiveBody.outputPath
     Assert-True ($pinned.runtime.metrics.reusedPreviewSelection -eq 1) "formal export did not reuse preview selection"
+    Assert-True ($pinned.runtime.metrics.manualPreviewEdits -eq 1) "formal export did not apply the manual replacement"
     Invoke-Api -Method 'DELETE' -Path $interactivePath | Out-Null
     $closed = Invoke-ApiResponse -Method 'POST' -Path '/api/jobs/mosaic' -Body $interactiveBody
     Assert-True ($closed.StatusCode -eq 409 -and $closed.Json.diagnostic.code -eq 'preview_stale') "closed preview must require refresh"

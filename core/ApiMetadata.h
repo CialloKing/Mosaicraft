@@ -23,6 +23,8 @@ enum class ApiOperation
     GetPreview,
     ClosePreview,
     GetPreviewImage,
+    GetPreviewRecommendations,
+    BrowsePreviewLibrary,
     SubmitMosaicJob,
     SubmitBuildJob,
     ListJobs,
