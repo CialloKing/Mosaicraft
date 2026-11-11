@@ -12,6 +12,7 @@ param(
     [switch]$NoCuda,
     [ValidateSet('Required', 'BuildOnly')][string]$CudaValidation = 'Required',
     [switch]$AllowUnvalidatedCudaRelease,
+    [switch]$AllowUntestedRelease,
     [switch]$SkipConfigure,
     [switch]$SkipBuild,
     [switch]$SkipTests,
@@ -345,7 +346,7 @@ function Write-BuildInfo
     }
     Set-Content -LiteralPath $buildInfoPath -Value $lines -Encoding UTF8
     Assert-CudaBuildInfo (Read-BuildInfo $buildInfoPath)
-    Assert-CudaPackageName (Read-BuildInfo $buildInfoPath) $PackageName
+    Assert-CudaPackageName (Read-BuildInfo $buildInfoPath) $PackageName -AllowUntestedRelease:$AllowUntestedRelease
 }
 
 function Read-BuildInfo
@@ -483,6 +484,15 @@ if (-not $NoCuda -and $CudaValidation -eq 'Required' -and ($SkipTests -or $SkipS
 {
     throw 'CUDA Required packaging cannot skip tests, smoke or archive validation'
 }
+if ($AllowUntestedRelease)
+{
+    if ($NoCuda -or $CudaValidation -ne 'BuildOnly' -or
+        -not ($SkipTests -and $SkipSmoke -and $SkipArchiveValidation) -or
+        $packagePlatform -notin @('windows', 'linux') -or $packageArch -ne 'x64' -or $PackageSuffix)
+    {
+        throw 'AllowUntestedRelease requires a Windows/Linux x64 CUDA BuildOnly package without suffix and all tests, smoke and archive validation skipped'
+    }
+}
 if ($AllowUnvalidatedCudaRelease)
 {
     if ($NoCuda -or $CudaValidation -ne 'BuildOnly' -or $packagePlatform -ne 'linux' -or
@@ -491,7 +501,7 @@ if ($AllowUnvalidatedCudaRelease)
     {
         throw 'AllowUnvalidatedCudaRelease requires a native Linux x64 CUDA BuildOnly tar.gz package without suffix'
     }
-    if ($SkipTests -or $SkipSmoke -or $SkipArchiveValidation)
+    if (($SkipTests -or $SkipSmoke -or $SkipArchiveValidation) -and -not $AllowUntestedRelease)
     {
         throw 'Linux CUDA release packaging cannot skip tests, smoke or archive validation'
     }
@@ -510,7 +520,7 @@ if ($PackageSuffix) {
     $suffix = "_" + ($PackageSuffix -replace '[^A-Za-z0-9_.-]', '-')
 }
 $packageName = "Mosaicraft_v${versionText}_${packagePlatform}-${packageArch}_${packageRuntime}${suffix}"
-if (-not $NoCuda -and $CudaValidation -eq 'BuildOnly' -and -not $AllowUnvalidatedCudaRelease) { $packageName += '_candidate' }
+if (-not $NoCuda -and $CudaValidation -eq 'BuildOnly' -and -not $AllowUnvalidatedCudaRelease -and -not $AllowUntestedRelease) { $packageName += '_candidate' }
 if ($ArchiveFormat -eq 'auto') { $ArchiveFormat = if (Test-IsWindows) { 'zip' } else { 'tar.gz' } }
 $archiveName = "$packageName.$ArchiveFormat"
 $archivePath = Join-Path $outputPath $archiveName
@@ -560,11 +570,16 @@ try {
 
     if (-not $SkipBuild) {
         Invoke-Step "Build release targets" {
-            Invoke-Native -FilePath "cmake" -Arguments @(
+            $buildTargets = @("mosaicraft", "MosaicraftWebUI")
+            if (-not $SkipTests)
+            {
+                $buildTargets += @("mosaicraft_tests", "mosaicraft_regression_tests")
+            }
+            Invoke-Native -FilePath "cmake" -Arguments (@(
                 "--build", $buildPath,
                 "--config", $Configuration,
-                "--target", "mosaicraft", "MosaicraftWebUI", "mosaicraft_tests", "mosaicraft_regression_tests", "--parallel"
-            )
+                "--target"
+            ) + $buildTargets + "--parallel")
         }
     }
 

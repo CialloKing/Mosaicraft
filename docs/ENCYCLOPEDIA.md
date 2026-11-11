@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-11-12 | 版本 / Version：v1.15.3
+> 最后更新 / Last updated：2026-11-12 | 版本 / Version：v1.15.4
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -370,6 +370,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.14.10 | Web UI 离线使用帮助、参数说明、明确预览默认状态与窄屏排版 | 见对应更新记录 |
 | **1.14.11** | 按来源选择输出格式、超限转 PNG 或缩小 Tile、API 2.2 输出计划与实际产物 | 见本版更新记录 |
 | **1.15.0** | 内部版本重置、严格新版图库与 API 1.0、删除旧库自动升级和命令接口 | 见不兼容更新验收 |
+| **1.15.4** | 实时预览进度条；按维护者要求跳过全部测试，CUDA 未验收 | 见本版更新记录 |
 | **1.15.3** | 十种 CUDA 分辨率模板、预览取消总格数上限、默认放大与进度日志、GPL-3.0 | 见本版更新记录 |
 | **1.15.2** | 预览热调参、按需推荐、高密度平移、流式 PNG 与 CPU 建库 | 见预览验收 |
 | **1.15.1** | 独立实时预览页、整库手动选图、窗口调节及 API 1.2 | 见预览验收 |
@@ -791,6 +792,14 @@ Web UI 的预览提示改为“生成结果预览默认关闭，勾选后额外�
 功能修改已通过真实浏览器检查：预览说明、帮助直达、参数保留、刷新恢复、帮助页任务跟踪、键盘展开、窄屏排版与服务断开后的阅读均正常；JavaScript 语法与帮助锚点检查通过。发布继续按清单执行同提交的原生打包、本机 GPU Required 和真实附件验收。CLI、REST API 2.1、特征 v6、图库格式及评分算法保持兼容。
 
 > **EN**: Version 1.14.10 adds a self-contained Web UI help page covering setup, paths, options, task diagnostics and results. Preview wording explicitly names the option and explains its purpose. Context links open the relevant help section; form state and task tracking survive navigation, while help never generates or submits a command. Narrow screens use stacked option descriptions. API 2.1, feature v6, library formats and engine behavior remain unchanged.
+
+### v1.15.4: 实时预览进度条 (2026-11-12)
+
+实时预览在 `GET /api/mosaic/preview/{id}` 中返回 `progress`，包含当前阶段和 `matching` 活动的 `completed`/`total`。Web UI 在预览窗口下方显示进度条：准备阶段使用不确定动画，匹配阶段显示百分比；状态文字改为当前阶段。
+
+本次发布按维护者要求跳过全部测试：未运行 CTest、Web UI/API smoke、解压后验证或发布后附件验收，五个平台包只完成编译、打包和静态元数据校验。Windows 和 Linux CUDA 包均为 `GpuValidation: not-run`，不能视为通过 GPU 实机验收；API 1.2、特征编号 1 和图库格式不变。
+
+> **EN**: Version 1.15.4 adds a live preview progress bar driven by the preview progress field. Per maintainer request, this release skipped all tests; CUDA packages are marked not-run and are not GPU-validated.
 
 ### v1.15.3: 十种 CUDA 模板与预览网格 (2026-11-12)
 

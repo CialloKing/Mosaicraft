@@ -2,6 +2,13 @@ name: Native packages
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: Skip CTest, smoke and archive validation
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -38,7 +45,14 @@ jobs:
           sudo apt-get install -y --no-install-recommends patchelf
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build, test and package CPU Release
-        run: ./scripts/release.ps1 -BuildDir build/package-cpu -NoCuda -OutputDir build/archives
+        run: |
+          $releaseOptions = @{}
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.skip_tests }}' -eq 'true') {
+            $releaseOptions.SkipTests = $true
+            $releaseOptions.SkipSmoke = $true
+            $releaseOptions.SkipArchiveValidation = $true
+          }
+          ./scripts/release.ps1 -BuildDir build/package-cpu -NoCuda -OutputDir build/archives @releaseOptions
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cpu-${{ matrix.platform }}
@@ -56,6 +70,7 @@ jobs:
           if-no-files-found: ignore
   cpu-verify:
     name: Standalone ${{ matrix.platform }} CPU-only
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_tests != true }}
     needs: cpu-package
     strategy:
       fail-fast: false
@@ -120,9 +135,16 @@ jobs:
       - name: Build seven-architecture CUDA package and inspect native/PTX images
         run: |
           $releaseOptions = @{}
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.skip_tests }}' -eq 'true') {
+            $releaseOptions.SkipTests = $true
+            $releaseOptions.SkipSmoke = $true
+            $releaseOptions.SkipArchiveValidation = $true
+            $releaseOptions.AllowUntestedRelease = $true
+          }
           if ($IsLinux) { $releaseOptions.AllowUnvalidatedCudaRelease = $true }
           ./scripts/release.ps1 -BuildDir build/package-cuda -CudaValidation BuildOnly -OutputDir build/archives @releaseOptions
       - name: Prove Required mode rejects a runner without GPU
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_tests != true }}
         run: |
           $extension = if ($IsWindows) { '.exe' } else { '' }
           $probe = & "./build/package-cuda/Release/bin/mosaicraft_tests$extension" --require-cuda 2>&1 | Out-String
@@ -146,6 +168,7 @@ jobs:
           if-no-files-found: ignore
   cuda-verify:
     name: Standalone ${{ matrix.platform }} CUDA
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_tests != true }}
     needs: cuda-package
     strategy:
       fail-fast: false

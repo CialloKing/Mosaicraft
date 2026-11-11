@@ -49,13 +49,16 @@ function Assert-CudaBuildInfo([hashtable]$Info)
     else { throw 'Invalid CUDA validation state' }
 }
 
-function Assert-CudaPackageName([hashtable]$Info, [string]$PackageName)
+function Assert-CudaPackageName([hashtable]$Info, [string]$PackageName, [switch]$AllowUntestedRelease)
 {
     if ($Info['Runtime'] -ne 'cuda' -or $Info['GpuValidation'] -ne 'not-run') { return }
     if ($PackageName -match '_candidate\.(zip|tar\.gz)$') { return }
     # Linux releases may ship without GPU hardware acceptance. Preserve not-run;
-    # Windows formal CUDA packages still require actual GPU validation.
+    # Windows formal CUDA packages normally require actual GPU validation.
     if ($Info['Platform'] -eq 'linux' -and $Info['Arch'] -eq 'x64' -and
         $PackageName -match '^Mosaicraft_v[0-9]+\.[0-9]+\.[0-9]+_linux-x64_cuda\.tar\.gz$') { return }
+    if ($AllowUntestedRelease -and $Info['Arch'] -eq 'x64' -and
+        (($Info['Platform'] -eq 'windows' -and $PackageName -match '^Mosaicraft_v[0-9]+\.[0-9]+\.[0-9]+_windows-x64_cuda\.zip$') -or
+         ($Info['Platform'] -eq 'linux' -and $PackageName -match '^Mosaicraft_v[0-9]+\.[0-9]+\.[0-9]+_linux-x64_cuda\.tar\.gz$'))) { return }
     throw 'Unvalidated CUDA packages require a candidate name, except Linux x64 release tar.gz'
 }
