@@ -279,7 +279,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <div class="row">
       <div class="field"><label>输出格式 --format</label><select id="m-format" title="自动：输出后缀优先，否则使用输入后缀"><option value="">自动：输出后缀优先，否则使用输入后缀</option><option value="jpg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option><option value="tiff">TIFF</option></select></div>
       <div class="field"><label>JPEG/WebP 质量 --quality</label><input type="number" id="m-quality" value="100" min="1" max="100"></div>
-      <div class="field"><label>PNG 压缩级别 --png-level</label><select id="m-pnglevel"><option value="">默认(1)</option><option value="1">1 最快</option><option value="3">3 平衡</option><option value="6">6 默认</option><option value="9">9 最小</option></select></div>
+      <div class="field"><label>PNG 压缩级别 --png-level</label><select id="m-pnglevel"><option value="">默认(1)</option><option value="1">1 最快</option><option value="3">3 平衡</option><option value="6">6 较小</option><option value="9">9 最小</option></select></div>
       <div class="field"><label>写入模式 --write-mode</label><select id="m-writemode"><option value="">auto(自动)</option><option value="stream">stream(流式低内存)</option><option value="batch">batch(全量缓冲)</option></select></div>
     </div>
     <p class="hint" id="format-policy-hint">自动推导的 JPG/WebP 超限时改存 PNG，保留完整尺寸；显式选择 JPG/WebP 时缩小输出 Tile。</p>
@@ -461,8 +461,10 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <a href="#help-paths" data-open-help="help-paths">路径与图库</a>
       <a href="#help-size" data-open-help="help-size">尺寸与格式</a>
       <a href="#help-matching" data-open-help="help-matching">匹配与权重</a>
-      <a href="#help-switches" data-open-help="help-switches">开关与预览</a>
+      <a href="#help-switches" data-open-help="help-switches">生成开关</a>
+      <a href="#help-live-preview" data-open-help="help-live-preview">实时预览与手动选图</a>
       <a href="#help-build" data-open-help="help-build">建库选项</a>
+      <a href="#help-scenarios" data-open-help="help-scenarios">通用操作示例</a>
       <a href="#help-tools" data-open-help="help-tools">查询与管理</a>
       <a href="#help-results" data-open-help="help-results">任务与结果</a>
       <a href="#help-faq" data-open-help="help-faq">常见问题</a>
@@ -474,7 +476,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <ol class="help-steps">
       <li><strong>准备素材图库。</strong>在“建库”页填写素材所在的图片目录和图库输出目录，点击“运行”。生成会从这些素材中挑选图片，拼成你的目标图片。</li>
       <li><strong>复用建好的图库。</strong>等建库任务完成，在下方结果区点击“使用此图库”，数据库路径会自动填入生成和查询页面。</li>
-      <li><strong>提交生成任务。</strong>在“生成马赛克”页填写目标图片和主图输出路径，打开“预览”页并点击“开启预览”。用“手动选图”点击格子，可从推荐候选或整个图库替换。返回生成页运行时会沿用预览排列。</li>
+      <li><strong>生成或先预览。</strong>在“生成马赛克”页填写目标图片、数据库和主图输出路径，可直接运行；也可先打开“预览”、点击“开启预览”，用“手动选图”替换格子。预览完成且保持开启时，正式生成会沿用当前排列。</li>
       <li><strong>到“任务与结果”查看。</strong>点击任务可查看阶段、警告和结果。完成后复制实际路径或下载主图；已生成的预览图会直接显示在页面中。</li>
     </ol>
     <div class="btns">
@@ -488,110 +490,147 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <h3 id="help-paths-title">路径怎么填，图库是什么</h3>
     <p><strong>目标图片</strong>是你希望拼出来的整体画面；<strong>素材图库</strong>是组成这幅画面的许多小图片。建库会准备统一尺寸的素材、数据库和特征文件。</p>
     <p>输入或粘贴服务器所在电脑上的路径，例如 <code>D:\photos\target.jpg</code> 或 <code>/home/me/photos/target.jpg</code>。页面上方显示服务工作目录，相对路径从那里开始解析。“复制为路径”附带的外层双引号会自动去掉，中文和空格可以保留。</p>
-    <p>数据库可填写 <code>mosaicraft.db</code> 文件，或包含它的图库目录。首次建库时将素材输入目录与图库输出目录分开填写，后续移动图库时一起保留图片、数据库和特征文件。</p>
-    <p>生成的输出路径填写到文件名，例如 <code>D:\results\mosaic.png</code>。选择明确的输出格式后，程序会调整扩展名；结果区会显示最终保存的位置。</p>
+    <p>生成、查询与管理的数据库栏可填写 <code>mosaicraft.db</code> 文件，或包含它的图库目录；留空时使用工作目录下的 <code>library/mosaicraft.db</code>。首次建库建议把素材输入与图库输出分开。搬移图库前关闭使用它的程序，将数据库、素材和 <code>features</code> 等整个图库目录一起移动，不要只复制数据库文件。</p>
+    <p>生成的输出路径填写到文件名，例如 <code>D:\results\mosaic.png</code>，父目录应事先存在；留空使用工作目录下的 <code>output/output.实际后缀</code>。选择明确的输出格式后程序可能调整后缀；结果区显示最终位置。请避免将输出指向不想覆盖的现有文件。</p>
     <p class="help-intro">浏览器会保存表单草稿和按用途分类的最近 10 个路径，刷新会恢复上次的选择。“清空最近路径”只清空候选记录。</p>
   </section>
 
   <section class="card" aria-labelledby="help-options-title">
-    <h3 id="help-options-title">生成选项速查</h3>
+    <h3 id="help-options-title">生成选项详解</h3>
     <p class="help-intro">选项后面的 <code>-i</code>、<code>--preview</code> 等名称对应命令行参数。网页会根据同一份表单生成命令和提交请求，初次使用可以保留默认匹配参数。</p>
     <details id="help-size">
-      <summary>尺寸与格式：小块有多少，最终图片有多大</summary>
+      <summary>尺寸与格式：小块数量、输出大小和文件类型</summary>
+      <p>先对目标图缩放与上采样，再按匹配 Tile 划网格；最后用选中的素材填充每个网格。最终尺寸由网格数和输出 Tile 尺寸共同决定，页面上的“输出宽度 / 高度”不是最终主图尺寸。</p>
       <div class="help-table-wrap"><table class="help-table">
-        <thead><tr><th scope="col">选项</th><th scope="col">作用与使用方式</th></tr></thead>
-        <tbody>
-          <tr><td>Tile 宽度 / 高度<br><code>--tile-w / --tile-h</code></td><td>把目标图片按多大的区域划成一个匹配小块，默认 <code>9 × 16</code>。数值越小，小块通常越多，处理量和输出尺寸也会增加。</td></tr>
-          <tr><td>输出 Tile 尺寸<br><code>--output-tile</code></td><td>每张入选素材在最终主图中占用的像素尺寸，格式为 <code>宽x高</code>。调小可减少主图体积；默认 <code>180x320</code>，横向图库会自动调整默认方向。</td></tr>
-          <tr><td>输出宽度 / 高度<br><code>--out-w / --out-h</code></td><td>设置切块前目标图的缩放尺寸。留空或 0 为自动；只填写一轴时另一轴按原比例推导，同时填写两轴时按指定尺寸缩放。最终主图还取决于小块数量与输出 Tile 尺寸。</td></tr>
-          <tr><td>上采样<br><code>--upscale</code></td><td>将目标图先放大再切块。2 倍上采样通常带来约 4 倍的小块数量，也会增加耗时。留空使用默认值，先从 1 倍开始。</td></tr>
-          <tr><td>输出格式<br><code>--format</code></td><td>优先级为：显式选择格式 → 指定输出文件后缀 → 输入文件后缀 → PNG。无后缀输出会追加实际格式；留空保存为 <code>./output/output.实际后缀</code>。支持 JPG/JPEG、PNG、WebP、TIFF/TIF，忽略大小写。输入后缀无法推导时回退 PNG；不支持的输出后缀需要修改或显式选择格式。</td></tr>
-          <tr><td>超限适配</td><td>JPG 单轴上限为 65,500，WebP 为 16,383。自动推导时超限改存 PNG，保留完整尺寸；显式选择 JPG/WebP 时缩小每块输出 Tile，整数取整可能略微改变比例。网格某一轴的块数本身已超限时无法缩小到合法单图，需要 PNG/TIFF 或分块输出。分块和 DeepZoom 沿用分片规则。</td></tr>
-          <tr><td>JPEG/WebP 质量<br><code>--quality</code></td><td>范围 1～100，数值越高通常越清晰、文件越大；不控制 PNG、TIFF 或结果预览的质量。</td></tr>
-          <tr><td>PNG 压缩级别<br><code>--png-level</code></td><td>范围 1～9。较高通常更省空间、编码更慢，不改变 PNG 的像素内容。默认 1 优先保存速度。自动改存 PNG 后也使用此设置，JPEG/WebP 质量不控制 PNG。</td></tr>
-          <tr><td>写入模式<br><code>--write-mode</code></td><td><code>auto</code> 自动选择；<code>stream</code> 按行分段写入以降低整图内存占用；<code>batch</code> 在内存中完成整图再保存。WebP 使用整图编码。</td></tr>
+        <thead><tr><th scope="col">选项</th><th scope="col">作用、默认值与适用场景</th></tr></thead><tbody>
+          <tr><td>Tile 宽度 / 高度<br><code>--tile-w / --tile-h</code></td><td>每个匹配区域在处理后目标图中占用的宽高，默认 <code>9 × 16</code>，各轴至少 4。缩小可得到更多素材块和更细的整体轮廓，但匹配和输出成本更高；放大适合先快速试图或减少素材块数。尽量让宽高比与图库素材、输出 Tile 接近，以免最终画面比例改变。</td></tr>
+          <tr><td>输出宽度 / 高度<br><code>--out-w / --out-h</code></td><td>切块前把目标图缩放到指定像素。留空或 0 不指定；只填一轴时另一轴按原比例推导，两轴都填则按填写尺寸缩放，可能拉伸画面。原图很大或实时预览格数过多时，可先缩小一轴来减少网格数量；原始目标图本身也须满足尺寸上限。</td></tr>
+          <tr><td>上采样<br><code>--upscale</code></td><td>在上述目标缩放之后、切块之前按整数倍放大，默认 1，范围 1～64。2 倍通常约产生 4 倍网格；需要更密的拼图时使用，代价是更长耗时、更大输出和内存开销，放大不会创造原图细节。</td></tr>
+          <tr><td>输出 Tile 尺寸<br><code>--output-tile</code></td><td>每个入选素材在最终图中占用的像素，写成 <code>宽x高</code>，默认 <code>180x320</code>；横向图库遇到该默认值时使用 <code>320x180</code>。需要较小文件时可按相同比例缩小，如 <code>32x18</code>；放大会使素材更易看清，但不会增加匹配块数。比例与匹配 Tile 不同时，整体画面比例也会改变。</td></tr>
+          <tr><td>输出格式<br><code>--format</code></td><td>默认自动：先看输出文件后缀，再看目标图后缀，否则用 PNG；显式选择优先，并调整不一致的输出后缀。JPG 适合照片和较小文件，PNG 适合无损保存，WebP 适合需要该格式的场景，TIFF 适合支持它的后续流程。不支持的输出后缀会报错，除非显式选择支持的格式。</td></tr>
+          <tr><td>格式尺寸上限</td><td>JPG 单轴最多 65,500 像素，WebP 为 16,383。自动推导的 JPG/WebP 超限时改存 PNG 并保留尺寸；显式选定时缩小输出 Tile 以适配。若网格某轴的块数本身超限，需改用 PNG/TIFF 或分块输出。任务“输出计划”显示适配，结果区显示实际文件。</td></tr>
+          <tr><td>JPEG/WebP 质量<br><code>--quality</code></td><td>默认 100，范围 1～100；数值较低通常减小文件，但压缩损失更明显。照片输出过大时可适当降低并检查画质；不控制 PNG、TIFF 或单独保存的结果预览。分块 JPEG 也使用此质量。</td></tr>
+          <tr><td>PNG 压缩级别<br><code>--png-level</code></td><td>默认 1，范围 1～9。提高级别通常更省空间、保存更慢，不改变 PNG 像素；经常分享或归档时可尝试较高级别，频繁试图可保留 1。自动改存 PNG 时也使用此值。</td></tr>
+          <tr><td>写入模式<br><code>--write-mode</code></td><td><code>auto</code> 按估计内存自动选；<code>stream</code> 逐行分段写入，适合内存紧张的大图；<code>batch</code> 使用整图缓冲，适合内存充足的情况。流式仍需缓冲小块行，WebP 仍使用整图编码；分块输出另按小块保存。</td></tr>
         </tbody>
       </table></div>
-      <p class="help-example">例如目标图为 <code>90 × 160</code>，匹配 Tile 为 <code>9 × 16</code>，会得到 <code>10 × 10</code> 个小块。输出 Tile 为 <code>180 × 320</code> 时，主图是 <code>1800 × 3200</code>；改为 <code>18 × 32</code> 时，主图为 <code>180 × 320</code>。</p>
-      <p class="help-example">输入 <code>target.jpg</code>、输出 <code>result.webp</code> 且保持自动时，优先使用 WebP，超限改存 <code>result.png</code>。若输出为 <code>result.png</code>，但显式选择 JPG，则保存为 <code>result.jpg</code>，超限时缩小 Tile。任务中的“输出计划”解释适配过程，“实际结果”提供已保存文件。</p>
+      <p class="help-example">例如目标为 <code>90 × 160</code>、匹配 Tile 为 <code>9 × 16</code>，得到 <code>10 × 10</code> 个小块。输出 Tile 为 <code>180 × 320</code> 时主图为 <code>1800 × 3200</code>；改为 <code>18 × 32</code> 时主图为 <code>180 × 320</code>。边缘不足整块时会补边，因此网格数按各轴向上取整。</p>
+      <p class="help-example">例如输出 <code>result.webp</code> 且格式自动，超出 WebP 上限时改存 <code>result.png</code>。若显式选 JPG，则以 JPG 保存并在需要时缩小输出 Tile。工作图像含放大后目标与单个 Tile 最多 1 亿像素、单轴最多 100 万。</p>
     </details>
     <details id="help-matching">
-      <summary>匹配与权重：选哪些图片，怎样减少重复</summary>
+      <summary>匹配与权重：候选范围、重复和视觉相似度</summary>
+      <p>程序先检索候选，再按相似度与重复惩罚评分。先用默认值观察效果，一次调整一项；图库颜色和内容覆盖不足时，单纯调参数无法补出缺少的素材。</p>
       <div class="help-table-wrap"><table class="help-table">
-        <thead><tr><th scope="col">选项</th><th scope="col">作用与使用方式</th></tr></thead>
-        <tbody>
-          <tr><td>候选数<br><code>--candidates</code></td><td>每个小块先检索多少张素材供精细比较，默认 150。增大可扩大选择范围，也会增加计算量；效果还受图库内容影响。</td></tr>
-          <tr><td>TopN 随机<br><code>--topn-random</code></td><td>从评分靠前的 N 个候选中随机选一张，默认 10。设为 1 时选最优候选，较大的值增加变化和多样性，也可能降低局部贴合程度。</td></tr>
-          <tr><td>L 亮度范围<br><code>--l-range</code></td><td>允许的目标小块与候选素材亮度差，默认 20，范围 0～255。调大可接纳更多明暗不同的素材；调得过小可能使某些小块没有候选。</td></tr>
-          <tr><td>邻域窗口<br><code>--neighbor-window</code></td><td>检查本次选图中最近一段选择，减少附近反复使用同一素材。0 使用自动窗口；具体抑制效果还受图库和评分影响。</td></tr>
-          <tr><td>邻域惩罚<br><code>--neighbor-penalty</code></td><td>提高窗口内重复素材的评分成本，默认 100；数值越大越倾向换用其他候选。它与其他去重规则共同生效。</td></tr>
-          <tr><td>复用惩罚<br><code>--penalty</code></td><td>按图库记录的素材使用计数增加评分成本，默认 0.01，与本次任务的邻域惩罚分开计算。</td></tr>
-          <tr><td>LAB 权重<br><code>--lab-weight</code></td><td>整张素材与目标小块的平均颜色、亮度相似程度。</td></tr>
-          <tr><td>Grid 权重<br><code>--grid-weight</code></td><td>不同位置的颜色布局，例如上方偏亮、下方偏暗的分布。</td></tr>
-          <tr><td>Tiny 权重<br><code>--tiny-weight</code></td><td>缩略图中的整体明暗结构。</td></tr>
-          <tr><td>Edge 权重<br><code>--edge-weight</code></td><td>边缘密度，例如平滑区域和轮廓较多的区域。</td></tr>
-          <tr><td>LBP 权重<br><code>--lbp-weight</code></td><td>局部纹理，例如细碎纹理与较平坦的表面。</td></tr>
+        <thead><tr><th scope="col">选项</th><th scope="col">作用、默认值与适用场景</th></tr></thead><tbody>
+          <tr><td>候选数<br><code>--candidates</code></td><td>每块进入精细比较的候选范围，默认 150，界面支持 10～10000。选图不够贴合且图库充足时可尝试增大；候选越多通常耗时和内存越高，不保证效果一定更好。</td></tr>
+          <tr><td>TopN 随机<br><code>--topn-random</code></td><td>从评分靠前的最多 N 个有效候选中随机选择，默认 10，界面支持 1～10000。设 1 倾向使用当前评分最优项；增大可增加多样性，但可能降低局部贴合。实际池大小不会超过有效候选数。</td></tr>
+          <tr><td>L 亮度范围<br><code>--l-range</code></td><td>候选与目标小块的平均 L 亮度差上限，默认 20，范围 0～255。缺少候选或有空格时可尝试增大；缩小会更严格地限制亮度，但可能排除可用素材。</td></tr>
+          <tr><td>邻域窗口<br><code>--neighbor-window</code></td><td>考虑本次选图中附近重复的窗口，0 为自动，界面最大 1000000。局部重复明显时可与邻域惩罚一起调整；窗口越大并不保证完全不重复，效果取决于候选与图库。</td></tr>
+          <tr><td>邻域惩罚<br><code>--neighbor-penalty</code></td><td>默认 100，非负。提高会增加邻域内重复素材的评分成本，适合减轻相邻重复；代价可能是选用相似度较低的素材。它影响本次布局，与历史使用计数的复用惩罚不同。</td></tr>
+          <tr><td>复用惩罚<br><code>--penalty</code></td><td>默认 0.01，非负；按图片记录中的使用计数增加评分成本，0 不施加这项惩罚。该计数与“使用记录”页由质量分析写入的统计分开；新建图库的计数通常为 0，调高后不一定产生变化。排查本次相邻重复时优先查看邻域选项。</td></tr>
+          <tr><td>LAB 权重<br><code>--lab-weight</code></td><td>默认 0.20，比较整体平均颜色与亮度。整体色调不够贴合时可尝试提高。</td></tr>
+          <tr><td>Grid 权重<br><code>--grid-weight</code></td><td>默认 0.45，比较 8×8 区域的颜色布局。希望素材内部明暗、色块位置更接近目标块时可尝试提高。</td></tr>
+          <tr><td>Tiny 权重<br><code>--tiny-weight</code></td><td>默认 0.25，比较缩略灰度图的明暗结构。整体轮廓和明暗分布比色彩更重要时可尝试提高。</td></tr>
+          <tr><td>Edge 权重<br><code>--edge-weight</code></td><td>默认 0.05，比较边缘密度。希望区分平滑区域与轮廓密集区域时可尝试提高。</td></tr>
+          <tr><td>LBP 权重<br><code>--lbp-weight</code></td><td>默认 0.05，比较局部纹理。材质和细碎纹理的相似性重要时可尝试提高。</td></tr>
         </tbody>
       </table></div>
-      <p>特征权重决定各项相似度的相对重要程度，必须非负且总和大于 0。初次使用先保留默认值，随后一次调整一项，结合主图与分析报告观察效果。</p>
+      <p>五项特征权重均须非负、总和大于 0；数值反映相对重要程度，单项增大可能牺牲其他特征的贴合。开启自适应权重后，程序还会根据小块内容调整权重。</p>
     </details>
     <details id="help-switches">
-      <summary>开关与预览：勾选后会发生什么</summary>
-      <p>实时预览支持拖动和缩放，按需加载窗口内的图库图片。勾选“生成结果预览”则会在正式生成时额外保存 JPEG。</p>
+      <summary>生成开关：输出方式、分析与画面调整</summary>
+      <p>以下开关初始均关闭，浏览器恢复表单草稿后可能保留上次选择。实时预览是单独的操作，不等于这里的“生成结果预览”。</p>
       <div class="help-table-wrap"><table class="help-table">
-        <thead><tr><th scope="col">选项</th><th scope="col">勾选后的行为</th></tr></thead>
-        <tbody>
-          <tr><td>生成结果预览<br><code>--preview</code></td><td><strong>生成结果预览默认关闭。</strong>勾选后在主图旁额外保存 <code>主图名_preview.jpg</code>，供页面快速查看。预览保持比例、不放大，宽度最多 1400 像素、总像素最多 400 万；主图仍按原设置保存。分块和 DeepZoom 模式不能同时生成单图预览。</td></tr>
-          <tr><td>质量分析<br><code>--analyze</code></td><td>生成匹配评分、素材频次、热力图和 HTML 等分析文件，方便检查效果；增加分析与写文件的耗时。使用统计在分析流程到达提交点时写入。</td></tr>
-          <tr><td>性能分析<br><code>--benchmark</code></td><td>采集和显示处理阶段耗时及缓冲统计，便于判断时间花在哪里。并行阶段的时间可能重叠，不能直接相加。</td></tr>
-          <tr><td>自适应权重<br><code>--adaptive-weights</code></td><td>根据目标小块的平滑、边缘、纹理等特征调整匹配权重，可能改变选图结果。</td></tr>
-          <tr><td>随机亮度调整<br><code>--color-adjust</code></td><td>选图后随机改变每个小块的亮度，默认关闭。“亮度扰动幅度”控制变化范围，例如 0.04 对应最多约 ±4%；只填幅度不会启用该功能。</td></tr>
-          <tr><td>基础图叠加强度<br><code>--overlay-strength</code></td><td>将处理后的目标图叠加到素材上，0 关闭，范围 0～1。0.2 表示 80% 素材与 20% 目标图；增大可增强整体目标画面，也会弱化素材本身的细节。</td></tr>
-          <tr><td>仅 CPU<br><code>--cpu</code></td><td>强制使用 CPU。未勾选时会尝试可用的 CUDA 后端；CUDA 不可用或准备资源不足时，允许回退的阶段会显示警告与实际使用后端。</td></tr>
-          <tr><td>分块输出<br><code>--tiled</code></td><td>将结果分别保存为许多 JPEG 小块，输出前缀后会生成 <code>_files</code> 目录。结果区提供实际目录路径，可在服务器电脑上打开该目录。</td></tr>
-          <tr><td>DeepZoom<br><code>--deepzoom</code></td><td>生成分层小块、<code>.dzi</code> 清单和 HTML 查看页，供缩放浏览。需要一起保留相关文件与目录；查看页依赖的浏览组件需要联网加载。</td></tr>
+        <thead><tr><th scope="col">选项</th><th scope="col">作用与适用场景</th></tr></thead><tbody>
+          <tr><td>生成结果预览<br><code>--preview</code></td><td>正式生成单图时额外保存 <code>主图名_preview.jpg</code>，方便快速查看或分享；主图仍按设置保存。预览保持比例、不放大，宽度最多 1400、总像素最多 400 万，JPEG 质量固定 92；不能与分块或 DeepZoom 同用。预览写入失败时主图可能已经保存，查看任务结果确认。</td></tr>
+          <tr><td>质量分析<br><code>--analyze</code></td><td>生成评分、素材频次、热力图及报告，适合比较方案或排查选图；增加处理和写文件耗时。使用统计只在分析流程到达提交点后写入，普通生成不会补写；报告描述选图质量，不衡量叠加后的画面。</td></tr>
+          <tr><td>性能分析<br><code>--benchmark</code></td><td>显示索引、匹配、输出等阶段耗时及缓冲统计；运行较慢、需要定位瓶颈时开启。并行阶段可能重叠，耗时不能直接相加。</td></tr>
+          <tr><td>自适应权重<br><code>--adaptive-weights</code></td><td>根据各目标块的平滑、边缘和纹理特征调整匹配权重。目标同时包含平坦区域和复杂纹理时可尝试，并与关闭时的结果比较；它会改变选图，不保证所有画面都更好。</td></tr>
+          <tr><td>随机亮度调整<br><code>--color-adjust</code></td><td>选图后随机调整各素材块的 LAB 亮度，使块与块的亮度有变化；希望画面有更多细微变化时可开启。不会改变选图结果，也可能带来额外颜色转换。</td></tr>
+          <tr><td>亮度扰动幅度<br><code>--color-strength</code></td><td>默认 0.04，范围 0～0.5；0.04 表示 L 通道相对乘数在约 ±4% 内随机变化，0 不改变像素。必须同时勾选“随机亮度调整”，只填写幅度不会启用；效果过强时调低。</td></tr>
+          <tr><td>基础图叠加强度<br><code>--overlay-strength</code></td><td>默认 0，范围 0～1；将处理后的目标图按此比例叠在素材上，0.2 约为 80% 素材加 20% 基础图。远看轮廓不明显时可从较低值尝试；越高越弱化素材细节。若同时开启亮度调整，先调整素材再叠加。</td></tr>
+          <tr><td>仅 CPU<br><code>--cpu</code></td><td>强制 CPU，适合没有可用 CUDA 或排查 GPU 结果、资源问题。未勾选时尝试可用 CUDA；准备阶段资源不足等情况可回退，实际后端和警告以任务结果为准。</td></tr>
+          <tr><td>分块输出<br><code>--tiled</code></td><td>按输出前缀生成 <code>_files</code> 目录，分别保存 JPEG 素材块，适合主图过大或后续自行处理分块；结果区提供实际目录。分块不是一张完整主图，不支持同时保存单图预览。</td></tr>
+          <tr><td>DeepZoom<br><code>--deepzoom</code></td><td>生成分层图块、<code>.dzi</code> 清单和 HTML 查看页，适合浏览超大图的不同缩放级别。需一起保留相关文件与目录；查看页加载浏览组件需要联网。它使用分块输出，不能同时保存单图预览。</td></tr>
         </tbody>
       </table></div>
     </details>
   </section>
 
-  <section class="card" id="help-build" aria-labelledby="help-build-title">
-    <h3 id="help-build-title">建库选项</h3>
+  <section class="card" id="help-live-preview" aria-labelledby="help-live-preview-title">
+    <h3 id="help-live-preview-title">实时预览与手动选图</h3>
+    <p>先在生成页填写目标图片和数据库，再打开“预览”并点击“开启预览”。实时预览用于查看、调整选图，本身不保存正式主图；需要另外保存小尺寸 JPEG 时，在生成页勾选“生成结果预览”。</p>
     <div class="help-table-wrap"><table class="help-table">
-      <thead><tr><th scope="col">选项</th><th scope="col">作用与使用方式</th></tr></thead>
-      <tbody>
-        <tr><td>图片目录 / 输出目录 / 数据库</td><td>分别填写素材来源、准备后的图库目录和数据库位置。数据库留空时自动在输出目录内生成，输出目录留空使用 <code>library</code>。</td></tr>
-        <tr><td>归一化尺寸<br><code>--normalize-size</code></td><td>建库素材统一处理到的尺寸，默认 <code>180x320</code>，宽高各支持 1～8192。同一已有图库须保持尺寸一致，改变尺寸请使用新的输出目录和数据库。</td></tr>
-        <tr><td>线程数<br><code>-t</code></td><td>CPU 图片处理使用的线程数量，留空或 0 自动选择。线程更多不保证一定更快，也会增加同时处理图片的资源占用。</td></tr>
-        <tr><td>增量模式<br><code>--append</code></td><td>向现有图库加入新素材并刷新需要更新的特征；结束后仍会按颜色排列整个图库，旧数字文件名可能改变。</td></tr>
-        <tr><td>递归扫描子目录<br><code>-r</code></td><td>同时查找图片目录的下级文件夹，默认只扫描指定目录这一层。</td></tr>
-        <tr><td>仅归一化<br><code>--normalize-only</code></td><td>只准备统一尺寸的素材，不完成用于匹配的特征提取，也不进行全库颜色重编号。要用于生成马赛克，还需正常建库。</td></tr>
-        <tr><td>跳过已有图库确认<br><code>-y</code></td><td>允许在已有记录的图库继续普通建库；选择增量模式时也可继续建库。普通和增量建库都会按颜色重新编号；输入与输出目录相同时，已索引原图的文件名也可能改变。</td></tr>
+      <thead><tr><th scope="col">操作</th><th scope="col">作用与使用方式</th></tr></thead><tbody>
+        <tr><td>开启 / 关闭预览</td><td>开启后计算当前参数的选图；调整相关参数后等待预览更新。关闭会释放当前预览和手动选图；不需要沿用预览时可关闭后直接生成。</td></tr>
+        <tr><td>刷新</td><td>预览过期或提示素材变更时刷新，重新计算当前预览。生成页提示正在更新时，等待完成或关闭预览后再运行。</td></tr>
+        <tr><td>缩放、平移与适应窗口</td><td>使用加减按钮或鼠标滚轮缩放，拖动画布平移；“适应窗口”显示完整画面。画布获得焦点时可用方向键平移、<code>+</code>/<code>-</code> 缩放、<code>0</code> 适应窗口。</td></tr>
+        <tr><td>调整预览窗口大小</td><td>拖动画布右下角手柄改变窗口大小；手柄获得焦点后可用方向键调整，按住 Shift 加大步长。“恢复默认大小”恢复窗口尺寸，不改变生成图片尺寸。</td></tr>
+        <tr><td>手动选图 / 替换素材</td><td>点击“手动选图”后选择画布格子，再从“推荐候选”或“整个图库”点选可用素材。也可让画布获得焦点并按回车选择中心格。灰色素材不可选；手动选图适合修正局部重复或不合适的画面。</td></tr>
+        <tr><td>整个图库 / 搜索 / 页码</td><td>可按文件名包含内容或素材 ID 搜索；每页 24 张，使用上一页、下一页，或输入页码后按回车 / 点击“跳转”。搜索结果重新从第一页开始，总页数随筛选变化。</td></tr>
+        <tr><td>恢复自动选图 / 清除全部替换</td><td>前者撤销当前格的手动替换，后者撤销所有手动替换。预览可用且参数未过期时，返回生成页运行会沿用当前选图及手动替换；目标、图库或影响网格的参数变化后，应按提示更新预览。</td></tr>
+      </tbody>
+    </table></div>
+    <p>实时预览最多支持 160,000 格；超过时可减小目标缩放尺寸、降低上采样或增大匹配 Tile。随机亮度扰动在正式输出时应用，实时预览不能完整呈现其最终效果。</p>
+  </section>
+
+  <section class="card" id="help-build" aria-labelledby="help-build-title">
+    <h3 id="help-build-title">建库选项：准备、追加和更新素材</h3>
+    <p>普通建库会扫描图片、归一化、提取特征并按内容去重，最后按整张图片的综合色调排序并重新编号；素材 ID 和数字文件名不是同一个概念。先确定图库尺寸，再开始建库。</p>
+    <div class="help-table-wrap"><table class="help-table">
+      <thead><tr><th scope="col">选项</th><th scope="col">作用、默认值与适用场景</th></tr></thead><tbody>
+        <tr><td>图片目录<br><code>-i</code></td><td>必填，指向原始素材所在文件夹。默认只扫描这一层；下级目录也要扫描时勾选“递归”。输入与输出分开时，程序处理副本，不给原始素材改名。</td></tr>
+        <tr><td>输出目录<br><code>-o</code></td><td>保存归一化素材与特征的图库目录，留空为工作目录下的 <code>library</code>。每组想独立使用的素材可指定不同的输出目录；避免把输出放在将递归扫描的输入目录内部。</td></tr>
+        <tr><td>数据库<br><code>-d</code></td><td>图库索引位置；留空时在输出目录创建 <code>mosaicraft.db</code>。通常保持默认即可，生成时选择这个文件或整个图库目录；搬移或备份时同时保留数据库和完整图库资源。</td></tr>
+        <tr><td>归一化尺寸<br><code>--normalize-size</code></td><td>默认 <code>180x320</code>，格式为宽 × 高，单轴 1～8192。程序等比缩放覆盖后中心裁剪，尺寸不同可能裁掉画面边缘；横屏素材可用 <code>320x180</code>。原图尺寸和格式完全匹配时保留原文件字节。已有非空图库的尺寸必须一致；改尺寸请在新目录重建。</td></tr>
+        <tr><td>线程数<br><code>-t</code></td><td>控制 CPU 图片处理线程，留空或 0 自动选择，界面支持至 256。电脑同时运行其他任务或资源占用过高时可降低；增加线程未必更快，也可能增加内存和磁盘压力。</td></tr>
+        <tr><td>增量模式<br><code>--append</code></td><td>向现有图库加入新素材，跳过内容重复项并刷新需要更新的特征，适合定期补充图片。仍会对全库按颜色排序、重新编号；已删除的原始素材若仍在输入目录，重新导入时可能再次入库。</td></tr>
+        <tr><td>递归扫描子目录<br><code>-r</code></td><td>连同图片目录的下级文件夹一起扫描，适合素材按相册或日期分层存放。默认关闭，只扫描指定目录；不希望混入其他文件夹时保持关闭。</td></tr>
+        <tr><td>仅归一化<br><code>--normalize-only</code></td><td>只输出统一尺寸素材，不完成匹配所需的特征提取和全库颜色重排。仅想准备尺寸一致的图片时使用；要作为马赛克图库还需正常建库。</td></tr>
+        <tr><td>跳过已有图库确认<br><code>-y</code></td><td>允许对已有记录的图库继续普通建库；新增素材通常可用增量模式。普通和增量建库都可能改变全库数字文件名；输入与输出为同一目录时，已索引原图也会被重新编号。使用前确认图库路径。</td></tr>
+      </tbody>
+    </table></div>
+    <p>旧版图库结构不兼容时，请在新目录正常重建；不要只修改版本标记。建库中断并留下颜色排序恢复清单时，恢复文件访问后使用原建库参数并勾选增量模式继续，让程序完成恢复。</p>
+  </section>
+
+  <section class="card" id="help-scenarios" aria-labelledby="help-scenarios-title">
+    <h3 id="help-scenarios-title">通用操作示例</h3>
+    <p>以下路径和参数仅用于说明，请替换成自己电脑上的实际位置。路径中的素材、图库和结果目录分别存放，便于管理。</p>
+    <div class="help-table-wrap"><table class="help-table">
+      <thead><tr><th scope="col">场景</th><th scope="col">操作建议</th></tr></thead><tbody>
+        <tr><td>第一次建立图库</td><td>在“建库”页把图片目录设为 <code>D:\mosaic\photos</code>，输出目录设为 <code>D:\mosaic\library</code>，数据库留空，选择适合素材方向的归一化尺寸后运行。完成后使用 <code>D:\mosaic\library\mosaicraft.db</code>，或在结果区点击“使用此图库”。</td></tr>
+        <tr><td>制作并预览拼图</td><td>在“生成马赛克”页选择目标图、图库和输出路径，例如 <code>D:\mosaic\results\mosaic.png</code>，先确保输出父目录存在。可直接运行，也可先打开实时预览、手动替换素材，再返回生成页运行。</td></tr>
+        <tr><td>使用横屏素材拼画面</td><td>使用横屏图库时，可从匹配 Tile <code>16 × 9</code>、输出 Tile <code>320x180</code> 开始；想缩小主图可把输出 Tile 改为同一比例的 <code>32x18</code>。先用预览确认素材块数量与效果。</td></tr>
+        <tr><td>向现有图库添加素材</td><td>图片目录选择新增素材所在文件夹，输出目录和数据库选择原有图库，归一化尺寸保持一致，勾选“增量模式”后运行。完成后全库可能重新按颜色编号；此前从图库删除的图片，如仍在来源目录中，可能重新入库。</td></tr>
+        <tr><td>删除图库中的不合适图片</td><td>删除后先打开“健康”查看缺图，再在“清理”中预览并确认移除悬空记录。若以后从仍含这些图片的原素材目录重新建库或追加，它们可能再次入库；如不希望重新加入，请先整理来源素材。</td></tr>
+        <tr><td>快速试图、主图太大或内存不足</td><td>先减小切块前目标宽高或增大匹配 Tile 以减少格数；也可按比例减小输出 Tile。大图优先考虑 PNG/TIFF 流式写入，或按需使用分块 / DeepZoom。输出计划和任务诊断可帮助判断限制。</td></tr>
+        <tr><td>局部重复或整体不像目标</td><td>先检查图库是否有足够的亮度、颜色和内容，必要时增加素材或适当放宽 L 亮度范围；局部重复可调整邻域选项、TopN 或手动替换。远看轮廓仍不清楚时，可少量尝试基础图叠加。</td></tr>
       </tbody>
     </table></div>
   </section>
 
   <section class="card" id="help-tools" aria-labelledby="help-tools-title">
     <h3 id="help-tools-title">查询、统计、健康、清理和使用记录</h3>
+    <p>这些功能使用各自页面填写的数据库路径；留空为默认图库。检查或维护其他图库时，先确认填写的是对应的目录或数据库文件。</p>
     <div class="help-table-wrap"><table class="help-table">
-      <thead><tr><th scope="col">功能</th><th scope="col">什么时候用</th></tr></thead>
-      <tbody>
-        <tr><td>查询</td><td>填写图片路径，查看图像信息，以及指定图库中亮度接近的候选数量和亮度分布。</td></tr>
-        <tr><td>统计</td><td>查看图库图片数量、尺寸和特征等汇总，确认当前使用的是哪个图库。</td></tr>
-        <tr><td>健康</td><td>检查素材文件是否缺失、特征状态等，排查图库读取或生成问题。</td></tr>
-        <tr><td>清理</td><td>清理素材文件已丢失的悬空记录及关联特征文件。未勾选“跳过确认”时只预览；勾选后运行还会要求确认实际操作。</td></tr>
-        <tr><td>使用记录 / Top N</td><td>查看已记录的素材使用情况，Top N 控制显示多少条。该统计由质量分析流程写入，普通生成不会补写。</td></tr>
-        <tr><td>使用记录 / 导出目录</td><td>填写后运行会将记录为使用过的素材复制到指定目录，并要求确认；留空时只查询使用记录。</td></tr>
+      <thead><tr><th scope="col">功能 / 选项</th><th scope="col">作用与适用场景</th></tr></thead><tbody>
+        <tr><td>查询：图片路径、数据库</td><td>选择一张待查询图片，可查看图片特征，并在图库可用时查看亮度接近的候选数量与分布。适合判断图片是否可读取或图库亮度覆盖情况；图片路径必填。</td></tr>
+        <tr><td>统计：数据库</td><td>查看素材总数、特征尺寸、平均颜色与亮度分布等，适合确认图库规模和规格，以及初步发现色彩覆盖不足。</td></tr>
+        <tr><td>健康：数据库</td><td>检查素材文件、Tiny/LBP 特征及明暗和色彩覆盖，并给出使用情况提示。素材打不开或预览出现缺图时先运行；“未使用”提示依赖分析统计，不能单凭此项断定图片无价值。</td></tr>
+        <tr><td>清理：数据库 / 跳过确认</td><td>适合从图库目录手动删除图片后同步数据库。先不勾选“跳过确认”并运行，查看失去图片的记录预览；确认无误后勾选并运行，在弹窗中确认，程序删除这些记录及关联特征。它不按“未使用”删除仍存在的图片，也不会从原始素材重新导入图片。</td></tr>
+        <tr><td>使用记录：Top N<br><code>-n</code></td><td>默认 50，设置显示多少条已记录的使用排名。正式生成勾选“质量分析”且分析统计成功提交后才有记录；Top N 只限制列表数量，不代表图库其余素材已删除或无用。</td></tr>
+        <tr><td>使用记录：导出目录<br><code>--export</code></td><td>留空查询排名；填写目录并确认后，将所有已记录使用过的素材复制到该目录，不受 Top N 显示数量限制。适合整理已用素材，目标目录中的同名导出文件可能被覆盖。</td></tr>
       </tbody>
     </table></div>
   </section>
 
   <section class="card" id="help-results" aria-labelledby="help-results-title">
     <h3 id="help-results-title">任务进度、诊断与结果怎么读</h3>
+    <p><strong>生成命令</strong>根据当前功能页和表单参数更新下方 PowerShell 命令；<strong>复制到剪贴板</strong>便于在终端执行。连接本地 Web UI 服务后也可直接点击<strong>运行</strong>；仅打开 HTML 时可查看帮助和复制命令，但页面不能替代服务运行任务。<strong>清空最近路径</strong>只清除路径候选，不删除文件或清空表单。</p>
     <p><strong>排队</strong>表示等待执行，只有排队任务可取消；<strong>运行中</strong>显示当前阶段和已完成数量，计数是阶段进度。读取索引、单次编码等阶段可能只有阶段名称与运行时间。</p>
     <p><strong>警告</strong>可能表示 CUDA 回退、跳过素材或缺失小块，结合实际后端和最终状态判断结果。<strong>失败</strong>区会给出原因、相关路径及处理建议，技术详情可展开查看，也可复制或导出诊断 JSON。</p>
     <p>主图保存后仍可能进行预览、分析和统计提交。后续阶段失败时，已经有效保存的主图仍显示在结果区。下载以登记的实际产物为准；文件已被改写或删除时会提示不可用。</p>
-    <p>切换功能页或阅读帮助时任务继续跟踪。“恢复参数”将选中任务的参数填回表单，检查后需要自行点击运行。HTML 报告以附件下载；分块结果显示实际目录或清单路径。</p>
+    <p>切换功能页或阅读帮助时任务继续跟踪。选中任务后，“恢复参数”将参数填回表单，检查后需要自行点击运行；“复制诊断”和“导出诊断 JSON”可用于保存或提供排错信息。“清理完成任务记录”只从当前会话移除已完成记录，不删除生成文件。HTML 报告以附件下载；分块结果显示实际目录或清单路径。</p>
     <p class="help-intro">任务和诊断只保留在当前服务会话，保留最近 50 个完成任务。刷新页面可恢复同会话中的跟踪；重启服务会清空旧会话记录。清理任务记录只移除记录，输出文件仍然保留。</p>
   </section>
 
@@ -602,6 +641,8 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <details><summary>为什么文件名后缀或最终尺寸和预想的不一样？</summary><p>明确选择输出格式时，最终后缀会按格式调整。最终尺寸由目标图处理后的网格数量与输出 Tile 尺寸共同决定，参见“尺寸与格式”的例子；实际结果区提供最终路径和尺寸。</p></details>
     <details><summary>为什么使用记录没有数据？</summary><p>使用统计在勾选“质量分析”的生成任务到达分析提交点后写入。普通生成不会提交这份统计，分析提前退出或统计提交失败时也不会产生本轮完整记录。</p></details>
     <details><summary>服务断线或提交超时后怎么办？</summary><p>页面会保留最后状态并自动重连。若提示“提交结果未知”，先检查任务列表确认是否已经创建任务，再决定是否重新提交，以免重复执行。</p></details>
+    <details><summary>为什么大尺寸目标还没缩放就被拒绝？</summary><p>原始目标图、缩放后和上采样后的工作图都受尺寸限制；原图本身超过 1 亿像素时，页面中的输出宽高无法绕过原图检查。请先在外部将目标图片缩小，再重新选择。</p></details>
+    <details><summary>删除图片并清理后，为什么重新建库又出现了？</summary><p>清理只同步图库中已缺失图片的记录，不修改原始素材。重新从仍包含这些图片的来源建库或追加时，它们可能再次被导入。要避免重新加入，请先整理来源素材，再建库。</p></details>
     <details><summary>为什么刷新后某些开关仍然勾选？</summary><p>页面会恢复你上次的表单草稿，包括勾选状态。“默认关闭”表示新表单的初始设置；开始新任务前可以调整已恢复的选项。</p></details>
   </section>
 </article>
