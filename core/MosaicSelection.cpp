@@ -97,7 +97,10 @@ PreviewAsset previewAsset(const PreviewCatalogEntry &entry)
 
 std::string PreviewAsset::version() const
 {
-    return hash + ":" + std::to_string(bytes) + ":" + std::to_string(modified.time_since_epoch().count());
+    // libc++ can use 128-bit file clock ticks, so fingerprint the full value without narrowing it.
+    Fingerprint timestamp;
+    timestamp.add(modified.time_since_epoch().count());
+    return hash + ":" + std::to_string(bytes) + ":" + std::to_string(timestamp.value());
 }
 
 const PreviewCatalogEntry *PreviewCatalog::find(int id) const
