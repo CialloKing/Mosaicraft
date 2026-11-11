@@ -3,11 +3,14 @@
 #include "SelectionPolicy.h"
 
 #include <iostream>
+#include <atomic>
 #include <string>
 
 namespace mosaicraft
 {
 class RuntimeContext;
+struct MosaicSelection;
+struct PreviewWorkspace;
 
 class MosaicEngine
 {
@@ -112,6 +115,15 @@ public:
                   const std::string& dbPath,
                   const std::string& outputPath);
 
+    bool preview(const std::string &targetPath, const std::string &dbPath, const Config &config, uint32_t seed,
+                 PreviewWorkspace &workspace, const std::atomic_bool &canceled, MosaicSelection &result,
+                 RuntimeContext &runtime);
+    bool renderSelection(const std::string &targetPath, const std::string &dbPath, const std::string &outputPath,
+                         const Config &config, const MosaicSelection &selection, RuntimeContext &runtime);
+    static std::string matchingKey(const Config &config);
+    static bool selectionCurrent(const std::string &targetPath, const std::string &dbPath,
+                                 const Config &config, const MosaicSelection &selection);
+
   private:
     friend struct MatchingAccess;
     MatchingLimits m_limits;
@@ -121,6 +133,10 @@ public:
     SelectionOptions m_selectionOptions;
     std::vector<SelectionDiagnostic> *m_selectionObserver = nullptr;
     std::vector<int> *m_selectedObserver = nullptr;
+    MosaicSelection *m_preview = nullptr;
+    const MosaicSelection *m_renderSelection = nullptr;
+    PreviewWorkspace *m_previewWorkspace = nullptr;
+    const std::atomic_bool *m_cancelPreview = nullptr;
     size_t m_compatibleFeatureImages = 0;
     size_t m_compatibleScoreTiles = 0;
     size_t m_compatibleTemporaryBytes = 0;

@@ -89,6 +89,7 @@ public:
     {
         Create,
         Existing,
+        ReadOnly,
         Build
     };
     explicit Database(const std::string& dbPath, OpenMode mode = OpenMode::Create);

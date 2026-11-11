@@ -1,6 +1,7 @@
 #include "compute/CompatibleScoring.h"
 #include "MatchingScore.h"
 #include "MosaicEngine.h"
+#include "MosaicSelection.h"
 #include "RuntimeContext.h"
 #include "AnalysisReport.h"
 #include "BenchmarkTimer.h"
@@ -20,6 +21,7 @@
 #include "compute/CudaBackend.h"
 #include "compute/CompatibleFeatures.h"
 #include <numeric>
+#include <locale>
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -78,6 +80,65 @@ bool MosaicEngine::generate(const std::string& targetPath,
     return generate(targetPath, dbPath, outputPath, config, runtime);
 }
 
+std::string MosaicEngine::matchingKey(const Config &cfg)
+{
+    std::ostringstream key;
+    key.imbue(std::locale::classic());
+    key << std::setprecision(std::numeric_limits<double>::max_digits10)
+        << cfg.tileW << ':' << cfg.tileH << ':' << cfg.outW << ':' << cfg.outH << ':' << std::max(1, cfg.upscale)
+        << ':' << cfg.candidates << ':' << cfg.lRange << ':' << cfg.usePenalty << ':' << cfg.labWeight
+        << ':' << cfg.gridWeight << ':' << cfg.tinyWeight << ':' << cfg.edgeWeight << ':' << cfg.lbpWeight
+        << ':' << cfg.neighborWindow << ':' << cfg.neighborPenalty << ':' << cfg.topNRandom
+        << ':' << cfg.useGpu << ':' << cfg.adaptiveWeights << ':' << cfg.analyze;
+    return key.str();
+}
+
+bool MosaicEngine::selectionCurrent(const std::string &targetPath, const std::string &dbPath, const Config &config,
+                                    const MosaicSelection &selection)
+{
+    if (matchingKey(config) != selection.matchingKey)
+    {
+        return false;
+    }
+    const auto bytes = readBytesUnicode(targetPath);
+    if (bytes.empty() || previewFileVersion(bytes) != selection.targetVersion)
+    {
+        return false;
+    }
+    Database db(dbPath, Database::OpenMode::ReadOnly);
+    return db.isOpen() && db.path() == selection.dbPath &&
+           db.getMeta("feature_w") == std::to_string(selection.featureWidth) &&
+           db.getMeta("feature_h") == std::to_string(selection.featureHeight) &&
+           previewLibraryVersion(db.allRecords(), selection.featureWidth, selection.featureHeight) ==
+               selection.libraryVersion && previewAssetsCurrent(selection);
+}
+
+bool MosaicEngine::preview(const std::string &targetPath, const std::string &dbPath, const Config &config,
+                           uint32_t seed, PreviewWorkspace &workspace, const std::atomic_bool &canceled,
+                           MosaicSelection &result, RuntimeContext &runtime)
+{
+    MosaicEngine engine;
+    engine.m_preview = &result;
+    engine.m_previewWorkspace = &workspace;
+    engine.m_cancelPreview = &canceled;
+    engine.m_fixedSeed = true;
+    engine.m_seed = seed;
+    Config matching = config;
+    matching.generatePreview = matching.tiledOutput = matching.deepZoom = false;
+    matching.formatExplicit = false;
+    matching.outputFormat = "png";
+    return engine.generate(targetPath, dbPath, "preview.png", matching, runtime);
+}
+
+bool MosaicEngine::renderSelection(const std::string &targetPath, const std::string &dbPath,
+                                   const std::string &outputPath, const Config &config,
+                                   const MosaicSelection &selection, RuntimeContext &runtime)
+{
+    MosaicEngine engine;
+    engine.m_renderSelection = &selection;
+    return engine.generate(targetPath, dbPath, outputPath, config, runtime);
+}
+
 bool MosaicEngine::generate(const std::string &targetPath, const std::string &dbPath, const std::string &outputPath,
                             const Config &config, RuntimeContext &runtime)
 {
@@ -118,26 +179,72 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     using Clock = std::chrono::steady_clock;
     using Ms = std::chrono::duration<double, std::milli>;
     auto tStart = Clock::now();
-    const auto preflight = cfg.useGpu ? cuda::queryCudaAvailability() : cuda::CudaAvailability{};
-    const bool cudaEnabled = cfg.useGpu && preflight.available;
+    const auto canceled = [&]()
+    {
+        return m_cancelPreview && m_cancelPreview->load(std::memory_order_relaxed);
+    };
+    const bool useGpu = cfg.useGpu && !m_renderSelection;
+    const auto preflight = useGpu ? cuda::queryCudaAvailability() : cuda::CudaAvailability{};
+    const bool cudaEnabled = useGpu && preflight.available;
     const double preflightMs = Ms(Clock::now() - tStart).count();
     // 跨阶段统计集中持有，算子线程继续使用原子计数。
     detail::MosaicMetrics metrics;
 
     std::cout << "GPU: " << (cudaEnabled ? "CUDA enabled" : "disabled (CPU only)") << std::endl;
-    if (cfg.useGpu && !cudaEnabled)
+    if (useGpu && !cudaEnabled)
     {
         runtime.emit("warning", "cuda_unavailable", preflight.reason);
         runtime.backends("cpu", "cpu", preflight.reason);
         std::cout << "  CUDA unavailable; using CPU before computation: " << preflight.reason << std::endl;
     }
-    if (cfg.benchmark && cfg.useGpu)
+    if (cfg.benchmark && useGpu)
     {
         std::cout << "  CUDA preflight: " << preflightMs << " ms" << std::endl;
     }
     cfg.print();
 
-    cv::Mat target = imreadUnicode(targetPath, cv::IMREAD_COLOR);
+    if (canceled())
+    {
+        return runtime.fail("preview_canceled", "preview canceled");
+    }
+
+    cv::Mat target;
+    uint64_t targetVersion = 0;
+    std::string preparedKey;
+    bool reusedTarget = false;
+    if (m_preview || m_renderSelection)
+    {
+        const auto bytes = readBytesUnicode(targetPath);
+        targetVersion = previewFileVersion(bytes);
+        preparedKey = std::to_string(targetVersion) + ":" + std::to_string(cfg.outW) + ":" +
+                      std::to_string(cfg.outH) + ":" + std::to_string(std::max(1, cfg.upscale));
+        reusedTarget = m_previewWorkspace && m_previewWorkspace->targetKey == preparedKey &&
+                       !m_previewWorkspace->target.empty();
+        if (m_renderSelection && (bytes.empty() || targetVersion != m_renderSelection->targetVersion ||
+                                 matchingKey(cfg) != m_renderSelection->matchingKey))
+        {
+            return runtime.fail("preview_stale", "target or matching parameters changed; refresh the preview", "previewId");
+        }
+        if (reusedTarget)
+        {
+            target = m_previewWorkspace->target;
+        }
+        else if (!bytes.empty())
+        {
+            try
+            {
+                target = cv::imdecode(bytes, cv::IMREAD_COLOR);
+            }
+            catch (const cv::Exception &)
+            {
+                return runtime.fail("input_unreadable", "cannot decode target image", "inputPath", targetPath);
+            }
+        }
+    }
+    else
+    {
+        target = imreadUnicode(targetPath, cv::IMREAD_COLOR);
+    }
     if (target.empty())
     {
         {
@@ -176,7 +283,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     }
 
     // 用户指定输出尺寸时，先缩放目标图到指定分辨率，后续 tile 划分基于此尺寸
-    if (cfg.outW > 0 || cfg.outH > 0)
+    if (!reusedTarget && (cfg.outW > 0 || cfg.outH > 0))
     {
         // 未指定的一轴按原图比例推导，0 保留 auto 语义。
         int64_t width =
@@ -205,7 +312,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     }
 
     // --upscale：放大原图后再分 tile，提高最终输出分辨率
-    if (cfg.upscale > 1)
+    if (!reusedTarget && cfg.upscale > 1)
     {
         int64_t width = static_cast<int64_t>(target.cols) * cfg.upscale;
         int64_t height = static_cast<int64_t>(target.rows) * cfg.upscale;
@@ -225,8 +332,35 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                   << target.cols << "x" << target.rows << std::endl;
     }
 
+    const int tilesX = (target.cols + cfg.tileW - 1) / cfg.tileW;
+    const int tilesY = (target.rows + cfg.tileH - 1) / cfg.tileH;
+    const auto totalTiles64 = static_cast<int64_t>(tilesX) * tilesY;
+    if (m_preview && totalTiles64 > MosaicSelection::maxTiles)
+    {
+        return runtime.fail("preview_grid_limit", "preview exceeds 160000 tiles; reduce the matching grid", "config");
+    }
+    if (totalTiles64 > INT_MAX)
+    {
+        return runtime.fail("invalid_argument", "too many tiles", "config");
+    }
+    const int totalTiles = static_cast<int>(totalTiles64);
+    if (m_previewWorkspace && !reusedTarget)
+    {
+        // 缓存补边前的目标，改变匹配块大小时可以沿用缩放结果。
+        m_previewWorkspace->target.release();
+        m_previewWorkspace->targetKey = preparedKey;
+        if (target.total() * target.elemSize() <= 32ULL * 1024 * 1024)
+        {
+            m_previewWorkspace->target = target;
+        }
+    }
+    if (canceled())
+    {
+        return runtime.fail("preview_canceled", "preview canceled");
+    }
+
     runtime.stage("reading_library");
-    Database db(dbPath, Database::OpenMode::Existing);
+    Database db(dbPath, m_preview ? Database::OpenMode::ReadOnly : Database::OpenMode::Existing);
     if (!db.isOpen())
     {
         {
@@ -316,6 +450,16 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             return false;
         }
+    }
+
+    const uint64_t libraryVersion = m_preview || m_renderSelection
+        ? previewLibraryVersion(allRecords, featW, featH) : 0;
+    if (m_renderSelection &&
+        (m_renderSelection->dbPath != db.path() || m_renderSelection->libraryVersion != libraryVersion ||
+         m_renderSelection->columns != tilesX || m_renderSelection->rows != tilesY ||
+         m_renderSelection->indices.size() != static_cast<size_t>(totalTiles) || !previewAssetsCurrent(*m_renderSelection)))
+    {
+        return runtime.fail("preview_stale", "library or selected images changed; refresh the preview", "previewId");
     }
 
     // 从第一条记录的 tinyPath 推断特征目录
@@ -418,15 +562,19 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
     }
 
-    // 计算 tile 网格：按 tileW x tileH 划分目标图
-    int tilesX = (target.cols + cfg.tileW - 1) / cfg.tileW;
-    int tilesY = (target.rows + cfg.tileH - 1) / cfg.tileH;
-
     detail::OutputFormat outputFormat;
     detail::OutputPlan outputPlan;
     std::string outputError;
     const bool singleImage = !cfg.tiledOutput && !cfg.deepZoom;
-    if (!detail::resolveOutputFormat(targetPath, outputPath, cfg.outputFormat, cfg.formatExplicit,
+    if (m_preview)
+    {
+        // 预览的网格与编码器的输出尺寸上限无关。
+        outputPlan.tileWidth = cfg.nativeTileW;
+        outputPlan.tileHeight = cfg.nativeTileH;
+        outputPlan.width = tilesX;
+        outputPlan.height = tilesY;
+    }
+    else if (!detail::resolveOutputFormat(targetPath, outputPath, cfg.outputFormat, cfg.formatExplicit,
                                      singleImage, outputFormat, outputError) ||
         !detail::makeOutputPlan(outputFormat, outputPath, tilesX, tilesY, cfg.nativeTileW, cfg.nativeTileH,
                                 singleImage, outputPlan, outputError))
@@ -438,7 +586,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     // 实际编码格式不回写请求和匹配配置；报告、编码及产物使用同一份结果。
     Config outputConfig = cfg;
     outputConfig.outputFormat = outputPlan.format;
-    if (singleImage)
+    if (singleImage && !m_preview)
     {
         runtime.planOutput(outputPlan, outputPath);
     }
@@ -498,19 +646,6 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
               << " out=" << outRatio << " (diff=" << std::abs(srcRatio - outRatio) << ")"
               << std::endl;
 
-    // 计算总 tile 数量，溢出检查
-    int64_t totalTiles64 = static_cast<int64_t>(tilesX) * tilesY;
-    if (totalTiles64 > INT_MAX) {
-        {
-            std::ostringstream detail;
-            detail << "Too many tiles (" << totalTiles64 << ")";
-            runtime.fail("invalid_argument", detail.str(), "config");
-        }
-        releaseGpuLib();
-        return false;
-    }
-    int totalTiles = static_cast<int>(totalTiles64);
-
     // 进度期间隐藏光标，消除 \r 回行首时光标闪烁导致的"跳动"视觉
 #ifdef _WIN32
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -534,16 +669,18 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     }
 #endif
 
-    // --analyze: ...
-    std::vector<double> analyzeScores;
-    std::vector<int>    analyzeImageIds;
-    std::vector<double> analyzeLabD, analyzeGridD, analyzeEdgeD;
-    std::vector<double> analyzeGaps;      // winner-runnerUp , , ,
-    std::vector<int>    analyzeRanks;     // winner 在 Top-N 中的排名 (1-based)
-    std::vector<int>    analyzeAnnRanks;  // winner 在 ANN Top200 中的排名 (0=未找到)
-    std::vector<int>    analyzeCat;       // 0=Smooth, 1=Edge, 2=Texture, 3=Normal
-    double analyzeGridCellSum[64] = {0};   // 每个 cell 的累计 L2 误差，用于分析网格匹配质量
-    WorstTiles worstTiles;
+    SelectionAnalysis diagnostics;
+    auto &analyzeScores = diagnostics.scores;
+    auto &analyzeImageIds = diagnostics.imageIds;
+    auto &analyzeLabD = diagnostics.lab;
+    auto &analyzeGridD = diagnostics.grid;
+    auto &analyzeEdgeD = diagnostics.edge;
+    auto &analyzeGaps = diagnostics.gaps;
+    auto &analyzeRanks = diagnostics.ranks;
+    auto &analyzeAnnRanks = diagnostics.annRanks;
+    auto &analyzeCat = diagnostics.categories;
+    auto &analyzeGridCellSum = diagnostics.gridCells;
+    auto &worstTiles = diagnostics.worstTiles;
 
     int N = cfg.candidates;  // 候选数量，GPU 路径需提前确定，用于 benchmark
 
@@ -616,6 +753,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 
     auto runAnalysis = [&](const std::string &analysisOutputPath)
     {
+        const auto &report = m_renderSelection ? m_renderSelection->analysis : diagnostics;
         if (cfg.analyze)
         {
             runtime.stage("analyzing");
@@ -624,9 +762,9 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             detail::AnalysisReportContext{
                 outputConfig, analysisOutputPath, target,        totalTiles,      tilesX,
                 tilesY,       outTileW,           outTileH,      featW,           featH,
-                dbCount,      matched.load(),     analyzeScores, analyzeImageIds, analyzeLabD,
-                analyzeGridD, analyzeEdgeD,       analyzeGaps,   analyzeRanks,    analyzeAnnRanks,
-                analyzeCat,   analyzeGridCellSum, worstTiles,    allRecords,      bestLibIdx},
+                dbCount,      matched.load(),     report.scores, report.imageIds, report.lab,
+                report.grid,  report.edge,       report.gaps,   report.ranks,    report.annRanks,
+                report.categories, report.gridCells, report.worstTiles, allRecords, bestLibIdx},
             &runtime);
         if (db.isOpen() && !usage.empty() && !db.recordRunUsage(usage, targetHash, targetPath))
         {
@@ -668,14 +806,28 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
         }
     };
+    if (m_renderSelection)
+    {
+        bestLibIdx = m_renderSelection->indices;
+        noCandidateCount = static_cast<int>(std::count(bestLibIdx.begin(), bestLibIdx.end(), -1));
+        runtime.backends(m_renderSelection->featureBackend, m_renderSelection->scoreBackend);
+        runtime.metric("reusedPreviewSelection", 1);
+    }
+    else
     {
         const auto preparationEnd = Clock::now();
         metrics.msPrep = Ms(preparationEnd - tStart).count();
         runtime.stage("building_index");
-        auto annIndex = std::make_unique<FeatureIndex>();
+        if (canceled())
+        {
+            return runtime.fail("preview_canceled", "preview canceled");
+        }
+        const bool reuseIndex = m_previewWorkspace && m_previewWorkspace->index &&
+            m_previewWorkspace->libraryPath == db.path() && m_previewWorkspace->libraryVersion == libraryVersion;
+        auto annIndex = reuseIndex ? m_previewWorkspace->index : std::make_shared<FeatureIndex>();
         const std::string annPath = featDirCache.empty() ? "lib.ann196" : featDirCache + "/lib.ann196";
         const auto indexStart = Clock::now();
-        bool loaded = annIndex->load(annPath, FeatureIndex::kDimension, allRecords);
+        bool loaded = reuseIndex || annIndex->load(annPath, FeatureIndex::kDimension, allRecords);
         metrics.msANNLoad = Ms(Clock::now() - indexStart).count();
         if (!loaded)
         {
@@ -686,7 +838,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 releaseGpuLib();
                 return runtime.fail("library_unavailable", "ANN index could not be built", "dbPath", dbPath);
             }
-            if (!annIndex->save(annPath))
+            if (!m_preview && !annIndex->save(annPath))
             {
                 {
                     std::ostringstream detail;
@@ -697,6 +849,14 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             metrics.msANNBuild = Ms(Clock::now() - buildStart).count();
         }
 
+        if (m_previewWorkspace)
+        {
+            // 196 维索引按图库代际复用；超大图库仍沿用单次匹配的内存模型。
+            m_previewWorkspace->index = dbCount <= 100000 ? annIndex : nullptr;
+            m_previewWorkspace->libraryPath = db.path();
+            m_previewWorkspace->libraryVersion = libraryVersion;
+            runtime.metric("previewIndexReused", reuseIndex ? 1 : 0);
+        }
         runtime.stage("matching");
         WorkerPool queryWorkers;
         unsigned featureThreads = templateCuda ? std::min(8u, std::max(1u, std::thread::hardware_concurrency()))
@@ -922,6 +1082,27 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         scored.reserve(N);
         bool hasCandidates = false;
         MatchingBuffers ahead;
+        std::string candidateKey;
+        bool reuseCandidates = false;
+        std::vector<int> newCandidates;
+        if (m_previewWorkspace)
+        {
+            candidateKey = preparedKey + ":" + db.path() + ":" + std::to_string(libraryVersion) + ":" +
+                std::to_string(cfg.tileW) + ":" + std::to_string(cfg.tileH) + ":" + std::to_string(N) +
+                ":" + std::to_string(static_cast<int>(backends.features));
+            reuseCandidates = m_previewWorkspace->candidateKey == candidateKey;
+            const auto entries = static_cast<uint64_t>(totalTiles) * N;
+            if (!reuseCandidates)
+            {
+                std::vector<int>().swap(m_previewWorkspace->candidates);
+                m_previewWorkspace->candidateKey.clear();
+                if (entries <= 64ULL * 1024 * 1024 / sizeof(int))
+                {
+                    newCandidates.resize(static_cast<size_t>(entries));
+                }
+            }
+            runtime.metric("previewCandidatesReused", reuseCandidates ? 1 : 0);
+        }
         auto prepare = [&](int first, int count, MatchingBuffers &buffers)
         {
             buffers.resize(count, featBytes, N, templateCuda, cfg.analyze, pipeline);
@@ -1083,7 +1264,22 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 std::copy(tileVector.begin(), tileVector.end(),
                           buffers.queries.begin() + static_cast<size_t>(local) * FeatureIndex::kDimension);
             }
-            annIndex->queryBatch(buffers.queries, N, allIndices, queryWorkers);
+            const size_t candidateOffset = static_cast<size_t>(first) * N;
+            const size_t candidateCount = static_cast<size_t>(count) * N;
+            if (reuseCandidates)
+            {
+                std::copy_n(m_previewWorkspace->candidates.begin() + candidateOffset, candidateCount,
+                            allIndices.begin());
+            }
+            else
+            {
+                annIndex->queryBatch(buffers.queries, N, allIndices, queryWorkers);
+                if (!newCandidates.empty())
+                {
+                    // 亮度阈值会变，缓存必须在原地过滤之前保存。
+                    std::copy_n(allIndices.begin(), candidateCount, newCandidates.begin() + candidateOffset);
+                }
+            }
             for (int local = 0; local < count; ++local)
             {
                 for (int j = 0; j < N; ++j)
@@ -1183,7 +1379,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         };
         // 扩搜会再次读取当前设备特征；下一批预取不能提前覆盖同一个工作区。
         const bool prefetch =
-            templateCuda && !m_selectionOptions.expand && totalTiles > batchRows && hostBudget >= scratch + pinnedBytes &&
+            templateCuda && !m_preview && !m_selectionOptions.expand && totalTiles > batchRows && hostBudget >= scratch + pinnedBytes &&
             gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, pipeline) <=
                 (hostBudget - scratch - pinnedBytes) / 2;
         metrics.matchingPrefetch = prefetch;
@@ -1193,6 +1389,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         if (prefetch)
         {
             prefetchWorkers = std::make_unique<WorkerPool>(1);
+        }
+        if (canceled())
+        {
+            return runtime.fail("preview_canceled", "preview canceled");
         }
         if (!prepare(0, static_cast<int>(batchRows), buffers))
         {
@@ -1715,6 +1915,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                                                 idxs.capacity() * sizeof(int) +
                                                                 scored.capacity() * sizeof(std::pair<double, int>) +
                                                                 tileVector.capacity() * sizeof(float));
+            if (canceled())
+            {
+                return runtime.fail("preview_canceled", "preview canceled");
+            }
             first += count;
             runtime.advance("matching", first, totalTiles, "tiles", first == totalTiles);
             std::cout << "\r  matching " << first << "/" << totalTiles << std::flush;
@@ -1754,7 +1958,12 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                       << metrics.scoreTimings.eventComputeMs << "/" << metrics.scoreTimings.eventDownloadMs << " ms"
                       << std::endl;
         }
-        if (!hasCandidates)
+        if (!newCandidates.empty())
+        {
+            m_previewWorkspace->candidateKey = std::move(candidateKey);
+            m_previewWorkspace->candidates = std::move(newCandidates);
+        }
+        if (!hasCandidates && !m_preview)
         {
             {
                 std::ostringstream detail;
@@ -1777,6 +1986,48 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     {
         releaseGpuLib();
         return runtime.fail("no_candidates", "experimental selection has tiles without eligible candidates");
+    }
+    if (m_preview)
+    {
+        releaseGpuLib();
+        m_preview->matchingKey = matchingKey(config);
+        m_preview->targetVersion = targetVersion;
+        m_preview->libraryVersion = libraryVersion;
+        m_preview->dbPath = db.path();
+        m_preview->columns = tilesX;
+        m_preview->rows = tilesY;
+        m_preview->featureWidth = featW;
+        m_preview->featureHeight = featH;
+        const auto state = runtime.snapshot();
+        m_preview->featureBackend = state.featureBackend;
+        m_preview->scoreBackend = state.scoreBackend;
+        m_preview->imageIds.reserve(totalTiles);
+        for (int index : bestLibIdx)
+        {
+            if (index < 0)
+            {
+                m_preview->imageIds.push_back(-1);
+                continue;
+            }
+            const auto &record = allRecords[index];
+            m_preview->imageIds.push_back(record.id);
+            if (m_preview->assets.find(record.id) == m_preview->assets.end())
+            {
+                m_preview->assets.emplace(record.id, previewAsset(record));
+            }
+        }
+        m_preview->indices = std::move(bestLibIdx);
+        m_preview->analysis = std::move(diagnostics);
+        const double scale = std::min(1.0, 1400.0 / std::max(target.cols, target.rows));
+        cv::Mat reference;
+        cv::resize(target, reference, {std::max(1, static_cast<int>(target.cols * scale)),
+                                      std::max(1, static_cast<int>(target.rows * scale))},
+                   0, 0, cv::INTER_AREA);
+        cv::imencode(".jpg", reference, m_preview->referenceJpeg, {cv::IMWRITE_JPEG_QUALITY, 85});
+        runtime.output(tilesX, tilesY, "selection", totalTiles - noCandidateCount, noCandidateCount);
+        runtime.metric("matchingMs", metrics.matchingWallMs);
+        runtime.stage("finalizing");
+        return true;
     }
     if (m_matchOnly)
     {

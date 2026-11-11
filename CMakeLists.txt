@@ -200,6 +200,7 @@ add_library(mosaicraft_core STATIC
     core/MosaicMetrics.cpp
     core/NeighborhoodState.cpp
     core/MosaicEngine.cpp
+    core/MosaicSelection.cpp
     core/MosaicService.cpp
 )
 if (NOT MOSAICRAFT_CUDA)

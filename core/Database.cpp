@@ -33,7 +33,7 @@ Database::Database(const std::string &dbPath, OpenMode mode) : m_db(nullptr)
     }
     m_new = !std::filesystem::exists(u8path(m_path));
     m_exclusive = mode == OpenMode::Build;
-    if ((m_new && mode == OpenMode::Existing) ||
+    if ((m_new && (mode == OpenMode::Existing || mode == OpenMode::ReadOnly)) ||
         (m_new && std::filesystem::exists(libraryJournalPath(m_path))))
     {
         m_error = "database missing or has an orphaned reorder journal: " + dbPath;
@@ -56,7 +56,7 @@ Database::Database(const std::string &dbPath, OpenMode mode) : m_db(nullptr)
             m_error = "unfinished color reorder; run build to recover: " + dbPath;
             valid = false;
         }
-        if (valid)
+        if (valid && mode != OpenMode::ReadOnly)
         {
             closeConnection();
             valid = openConnection(false);
@@ -65,7 +65,7 @@ Database::Database(const std::string &dbPath, OpenMode mode) : m_db(nullptr)
     if (valid)
     {
         valid = exec("PRAGMA foreign_keys=ON");
-        if (valid && !m_new)
+        if (valid && !m_new && mode != OpenMode::ReadOnly)
         {
             // 只在新版结构校验通过后恢复正常 WAL 配置，拒绝旧库时不写入。
             valid = exec("PRAGMA journal_mode=WAL") && exec("PRAGMA synchronous=NORMAL");
