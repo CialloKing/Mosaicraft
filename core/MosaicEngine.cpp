@@ -344,6 +344,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     bool reusedTarget = false;
     if (m_preview || m_renderSelection)
     {
+        if (m_preview)
+        {
+            std::cout << "[Preview] Reading target image and preparing the matching grid..." << std::endl;
+        }
         const auto bytes = readBytesUnicode(targetPath);
         targetVersion = previewFileVersion(bytes);
         preparedKey = std::to_string(targetVersion) + ":" + std::to_string(cfg.outW) + ":" +
@@ -485,6 +489,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         return runtime.fail("preview_canceled", "preview canceled");
     }
 
+    if (m_preview)
+    {
+        std::cout << "[Preview] Target " << target.cols << 'x' << target.rows << ", grid " << tilesX << 'x' << tilesY
+                  << " (" << totalTiles << " tiles). Reading the library..." << std::endl;
+    }
     runtime.stage("reading_library");
     Database db(dbPath, m_preview ? Database::OpenMode::ReadOnly : Database::OpenMode::Existing);
     if (!db.isOpen())
@@ -556,6 +565,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 
     // 提取特征目录路径，供 FeaturePack / ANN 持久化缓存使用
     std::string featDirCache;
+    if (m_preview)
+    {
+        std::cout << "[Preview] Preparing library features and scoring backend..." << std::endl;
+    }
     auto allRecords = db.allRecords();  // 全量记录，GPU 路径需连续索引
     dbCount = static_cast<int>(allRecords.size());
     for (const auto& record : allRecords)
@@ -964,6 +977,28 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     std::vector<double> edgeDistribution, entropyDistribution;
     std::mt19937 seededRng(m_seed);
     const auto matchingStart = Clock::now();
+    auto lastPreviewProgress = matchingStart;
+    const auto reportMatching = [&](int completed)
+    {
+        const bool boundary = completed == 0 || completed == totalTiles;
+        runtime.advance("matching", completed, totalTiles, "tiles", boundary);
+        if (!m_preview)
+        {
+            std::cout << "\r  matching " << completed << "/" << totalTiles << std::flush;
+            return;
+        }
+        const auto now = Clock::now();
+        if (boundary || now - lastPreviewProgress >= std::chrono::seconds(2))
+        {
+            // 换行保留进度记录，按时间节流避免大图每批都刷屏。
+            const auto tenths = static_cast<int64_t>(completed) * 1000 / totalTiles;
+            std::ostringstream line;
+            line << "[Preview] matching " << completed << '/' << totalTiles << " (" << tenths / 10
+                 << '.' << tenths % 10 << "%)\n";
+            std::cout << line.str() << std::flush;
+            lastPreviewProgress = now;
+        }
+    };
     auto downsampleGrid = [](const auto &g8, std::vector<float> &g4)
     {
         g4.resize(48);
@@ -1006,15 +1041,20 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         runtime.metric("previewIndexReused", m_previewWorkspace->index ? 1 : 0);
         runtime.metric("previewCandidatesReused", 1);
         runtime.stage("matching");
+        std::cout << "[Preview] Reusing cached candidate scores..." << std::endl;
         std::vector<double> values(N);
         std::vector<int> order(N);
         std::vector<std::pair<double, int>> ranked;
         ranked.reserve(N);
         for (int tile = 0; tile < totalTiles; ++tile)
         {
-            if (tile % 256 == 0 && canceled())
+            if (tile % 256 == 0)
             {
-                return runtime.fail("preview_canceled", "preview canceled");
+                if (canceled())
+                {
+                    return runtime.fail("preview_canceled", "preview canceled");
+                }
+                reportMatching(tile);
             }
             const size_t offset = static_cast<size_t>(tile) * N;
             const int *indices = reusedScores->indices.data() + offset;
@@ -1061,7 +1101,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             neighborhood.recordSelection(chosen, tile);
         }
         metrics.msSelect = Ms(Clock::now() - matchingStart).count();
-        runtime.advance("matching", totalTiles, totalTiles, "tiles", true);
+        reportMatching(totalTiles);
     }
     else
     {
@@ -1071,6 +1111,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         if (canceled())
         {
             return runtime.fail("preview_canceled", "preview canceled");
+        }
+        if (m_preview)
+        {
+            std::cout << "[Preview] Preparing the ANN index..." << std::endl;
         }
         const bool reuseIndex = m_previewWorkspace && m_previewWorkspace->index &&
             m_previewWorkspace->libraryPath == db.path() && m_previewWorkspace->libraryVersion == libraryVersion;
@@ -1082,7 +1126,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         if (!loaded)
         {
             const auto buildStart = Clock::now();
-            std::cout << "  building ANN index (196 dimensions)..." << std::flush;
+            std::cout << "  building ANN index (196 dimensions)..." << (m_preview ? "\n" : "") << std::flush;
             if (!annIndex->build(allRecords))
             {
                 releaseGpuLib();
@@ -1113,6 +1157,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             runtime.metric("previewIndexReused", reuseIndex ? 1 : 0);
         }
         runtime.stage("matching");
+        if (m_preview)
+        {
+            reportMatching(0);
+        }
         WorkerPool queryWorkers;
         unsigned featureThreads = templateCuda ? std::min(8u, std::max(1u, std::thread::hardware_concurrency()))
                                              : std::max(2u, std::thread::hardware_concurrency());
@@ -2235,8 +2283,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 return runtime.fail("preview_canceled", "preview canceled");
             }
             first += count;
-            runtime.advance("matching", first, totalTiles, "tiles", first == totalTiles);
-            std::cout << "\r  matching " << first << "/" << totalTiles << std::flush;
+            reportMatching(first);
             if (nextCount > 0)
             {
                 if (prefetch)
@@ -2314,6 +2361,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     }
     if (m_preview)
     {
+        runtime.stage("finalizing");
+        std::cout << "[Preview] Preparing the selection grid and reference image..." << std::endl;
         releaseGpuLib();
         m_preview->matchingKey = matchingKey(config);
         m_preview->targetVersion = targetVersion;
@@ -2368,7 +2417,6 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         runtime.metric("matchingPrefetch", metrics.matchingPrefetch ? 1 : 0);
         runtime.metric("previewScoresReused", reusedScores ? 1 : 0);
         runtime.metric("recommendationSortMs", recommendationSortMs);
-        runtime.stage("finalizing");
         return true;
     }
     if (m_matchOnly)

@@ -5,6 +5,7 @@
 
 #include <exception>
 #include <iomanip>
+#include <iostream>
 #include <sstream>
 #include "core/ConsoleGuard.h"
 
@@ -87,7 +88,7 @@ std::string JobManager::submitPreview(MosaicRequest request, uint32_t seed)
     auto job = std::make_shared<PreviewJob>();
     job->request = std::move(request);
     job->seed = seed;
-    job->accessed = std::chrono::steady_clock::now();
+    job->queuedAt = job->accessed = std::chrono::steady_clock::now();
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         trimPreviews();
@@ -176,6 +177,11 @@ void JobManager::trimPreviews()
 
 void JobManager::runPreview(const std::shared_ptr<PreviewJob> &job)
 {
+    ConsoleQuickEditGuard guard;
+    const auto started = std::chrono::steady_clock::now();
+    const auto queuedMs = std::chrono::duration_cast<std::chrono::milliseconds>(started - job->queuedAt).count();
+    std::cout << ("[Preview] started " + job->snapshot.id + " (queued for " + std::to_string(queuedMs) + " ms)\n")
+              << std::flush;
     std::shared_ptr<MosaicSelection> selection;
     ServiceResult result;
     try
@@ -188,32 +194,61 @@ void JobManager::runPreview(const std::shared_ptr<PreviewJob> &job)
         result = ServiceResult::failure(1, error.what());
     }
 
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (job->interrupted && !m_pendingPreview && !m_stopping &&
-        m_previews.find(job->snapshot.id) != m_previews.end())
     {
-        // 用户仍在等待这份预览，正式任务结束后继续处理。
-        job->interrupted = false;
-        job->canceled = false;
-        job->snapshot.state = JobState::Queued;
-        m_pendingPreview = job;
-    }
-    else if (job->canceled)
-    {
-        job->snapshot.state = JobState::Canceled;
-    }
-    else
-    {
-        job->snapshot.state = result.ok ? JobState::Succeeded : JobState::Failed;
-        if (result.ok)
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (job->interrupted && !m_pendingPreview && !m_stopping &&
+            m_previews.find(job->snapshot.id) != m_previews.end())
         {
-            job->snapshot.selection = std::move(selection);
+            // 用户仍在等待这份预览，正式任务结束后继续处理。
+            job->interrupted = false;
+            job->canceled = false;
+            job->snapshot.state = JobState::Queued;
+            job->queuedAt = std::chrono::steady_clock::now();
+            m_pendingPreview = job;
         }
-        job->snapshot.result = std::move(result);
+        else if (job->canceled)
+        {
+            job->snapshot.state = JobState::Canceled;
+        }
+        else
+        {
+            job->snapshot.state = result.ok ? JobState::Succeeded : JobState::Failed;
+            if (result.ok)
+            {
+                job->snapshot.selection = std::move(selection);
+            }
+            job->snapshot.result = std::move(result);
+        }
+        job->accessed = std::chrono::steady_clock::now();
+        m_runningPreview.reset();
+        trimPreviews();
     }
-    job->accessed = std::chrono::steady_clock::now();
-    m_runningPreview.reset();
-    trimPreviews();
+
+    // 控制台可能被重定向，写日志不能阻塞 HTTP 读取任务状态。
+    const auto &snapshot = job->snapshot;
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - started).count();
+    std::ostringstream summary;
+    summary << "[Preview] " << jobStateName(snapshot.state) << ' ' << snapshot.id << " after " << elapsed << " ms";
+    if (snapshot.state == JobState::Succeeded)
+    {
+        summary << " (" << snapshot.result.runtime.matched << " matched, " << snapshot.result.runtime.failed
+                << " without candidates)";
+    }
+    else if (snapshot.state == JobState::Failed)
+    {
+        if (!snapshot.result.runtime.diagnostic.code.empty())
+        {
+            summary << " [" << snapshot.result.runtime.diagnostic.code << ']';
+        }
+        summary << ": " << snapshot.result.message;
+    }
+    else if (snapshot.state == JobState::Queued)
+    {
+        summary << " (resumes after the foreground job)";
+    }
+    summary << '\n';
+    std::cout << summary.str() << std::flush;
 }
 
 void JobManager::interruptPreview()

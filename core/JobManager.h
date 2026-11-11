@@ -91,7 +91,7 @@ private:
         uint32_t seed = 0;
         std::atomic_bool canceled{false};
         bool interrupted = false;
-        std::chrono::steady_clock::time_point accessed;
+        std::chrono::steady_clock::time_point queuedAt, accessed;
     };
 
     std::string nextId();
