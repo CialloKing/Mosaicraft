@@ -278,7 +278,7 @@ Both mosaic endpoints allow large output by default, without an extra field or s
 
 `GET /api/mosaic/preview/{id}` 返回 `preview.state`。完成后为 `succeeded`，包含 `columns`、`rows`、行优先排列的 `imageIds`（`-1` 表示无候选）、按素材 ID 索引的 `assetVersions` 和标识网格及图库的 `editKey`。网格上限为 160,000 格。向 `GET /api/mosaic/preview/{id}/image/{asset}` 请求 JPEG，`asset` 为 `reference` 或 `<imageId>-<size>`，尺寸支持 16、32、64、128，素材 ID 必须来自该预览的图库。使用 `DELETE /api/mosaic/preview/{id}` 取消或释放预览。
 
-发现 `preview-editing` 后，可用 `GET /api/mosaic/preview/{id}/recommendations?position=0` 查询单格最多 12 张推荐，位置从 0 开始按行计数。`GET /api/mosaic/preview/{id}/library?q=&offset=0` 按素材 ID 顺序每页返回 24 张，可按文件名或 ID 过滤。两种列表的每项均包含 `id`、`name`、`version` 和 `available`。
+发现 `preview-editing` 后，可用 `GET /api/mosaic/preview/{id}/recommendations?position=0` 查询单格最多 60 张推荐，实际数量取决于匹配候选数和通过筛选的素材数。位置从 0 开始按行计数。`GET /api/mosaic/preview/{id}/library?q=&offset=0` 按素材 ID 顺序每页返回 24 张，可按文件名或 ID 过滤。两种列表的每项均包含 `id`、`name`、`version` 和 `available`。
 
 向 `POST /api/jobs/mosaic` 提交同一组匹配参数及 `previewId`，可直接使用预览中的素材排列。提交时过期、目标或图库变更、参数不匹配返回 409 `preview_stale`。执行前再次检查来源。正式任务一旦入队就持有选图结果，关闭预览不会撤销已提交的任务。
 
