@@ -253,6 +253,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
             format != "webp" &&
             (config.writeMode == "stream" ||
              (config.writeMode == "auto" && (memory ? estimated > memory : rawBytes > 500ULL * 1024 * 1024)));
+        const bool rgbStream = stream && format == "png";
         std::cout << "  output: " << (stream ? "stream (two tile rows)" : "batch") << std::endl;
 
         std::unique_ptr<PreviewAccumulator> preview;
@@ -283,7 +284,16 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
                          auto image = load(static_cast<size_t>(tileRow) * tilesX + x);
                          if (image)
                          {
-                             image->copyTo(destination(cv::Rect(static_cast<int>(x) * tileW, 0, tileW, tileH)));
+                             auto region = destination(cv::Rect(static_cast<int>(x) * tileW, 0, tileW, tileH));
+                             if (rgbStream)
+                             {
+                                 // 直接填编码器需要的通道顺序，省去读写整条带的二次转换。
+                                 cv::cvtColor(*image, region, cv::COLOR_BGR2RGB);
+                             }
+                             else
+                             {
+                                 image->copyTo(region);
+                             }
                          }
                          finish(static_cast<size_t>(tileRow) * tilesX + x);
                      });
@@ -312,18 +322,29 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         {
             if (png)
             {
-                for (int y = 0; y < rows.rows; y += rgbRows)
+                const auto encodeRows = [&](const cv::Mat &pixels)
                 {
-                    const int count = std::min(rgbRows, rows.rows - y);
-                    const auto colorStart = now();
-                    cv::cvtColor(rows.rowRange(y, y + count), rgb, cv::COLOR_BGR2RGB);
-                    stats.colorMs += elapsed(colorStart);
                     const auto codecStart = now();
-                    const bool ok = png->writeRows(rgb.data, rgb.step, count);
+                    const bool ok = png->writeRows(pixels.data, pixels.step, pixels.rows);
                     stats.codecMs += elapsed(codecStart);
                     if (!ok)
                     {
                         throw std::runtime_error("PNG rows write failed");
+                    }
+                };
+                if (rgbStream)
+                {
+                    encodeRows(rows);
+                }
+                else
+                {
+                    for (int y = 0; y < rows.rows; y += rgbRows)
+                    {
+                        const int count = std::min(rgbRows, rows.rows - y);
+                        const auto colorStart = now();
+                        cv::cvtColor(rows.rowRange(y, y + count), rgb, cv::COLOR_BGR2RGB);
+                        stats.colorMs += elapsed(colorStart);
+                        encodeRows(rgb);
                     }
                 }
                 return;
@@ -338,8 +359,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
                 }
                 stats.colorMs += elapsed(colorStart);
                 const auto codecStart = now();
-                bool ok = png ? png->writeRow(rgb.data)
-                              : (jpg ? jpg->writeRow(rgb.data) : tiff->writeRow(offset + y, rows.ptr<uint8_t>(y)));
+                const bool ok = jpg ? jpg->writeRow(rgb.data) : tiff->writeRow(offset + y, rows.ptr<uint8_t>(y));
                 stats.codecMs += elapsed(codecStart);
                 if (!ok)
                 {
@@ -491,7 +511,13 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
             try
             {
                 // 主图已关闭成功，预览失败只报告错误，不删除已经成功的主图。
-                if (!imwriteUnicode(previewPath, preview->image(),
+                const auto &pixels = preview->image();
+                cv::Mat bgr;
+                if (rgbStream)
+                {
+                    cv::cvtColor(pixels, bgr, cv::COLOR_RGB2BGR);
+                }
+                if (!imwriteUnicode(previewPath, rgbStream ? bgr : pixels,
                                     {cv::IMWRITE_JPEG_QUALITY, PreviewAccumulator::kJpegQuality}))
                 {
                     throw std::runtime_error("JPEG could not be written");

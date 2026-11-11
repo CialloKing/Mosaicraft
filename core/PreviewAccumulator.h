@@ -42,7 +42,7 @@ public:
         if (rows.empty() || rows.type() != CV_8UC3 || rows.cols != m_source.width || firstRow != m_rowsRead ||
             rows.rows > m_source.height - m_rowsRead)
         {
-            throw std::invalid_argument("preview expects consecutive full-width BGR rows");
+            throw std::invalid_argument("preview expects consecutive full-width three-channel rows");
         }
         for (int y = 0; y < rows.rows; ++y)
         {
