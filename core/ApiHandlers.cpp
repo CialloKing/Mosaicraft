@@ -15,7 +15,10 @@
 #include <charconv>
 #include <climits>
 #include <filesystem>
+#include <list>
+#include <mutex>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -278,6 +281,57 @@ ApiResponse browsePreviewLibrary(const ApiRequest &request, JobManager &jobs)
     return {200, apiOkJson("library", {{"images", std::move(images)}, {"offset", offset}, {"more", more}, {"total", total}})};
 }
 
+class PreviewThumbnailCache
+{
+    using Entry = std::pair<std::string, std::string>;
+    std::mutex m_mutex;
+    std::list<Entry> m_recent;
+    std::unordered_map<std::string, std::list<Entry>::iterator> m_entries;
+    size_t m_bytes = 0;
+    static constexpr size_t budget = 32ULL * 1024 * 1024;
+
+  public:
+    std::string get(const std::string &key)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const auto entry = m_entries.find(key);
+        if (entry == m_entries.end())
+        {
+            return {};
+        }
+        m_recent.splice(m_recent.begin(), m_recent, entry->second);
+        return entry->second->second;
+    }
+
+    void put(const std::string &key, const std::string &jpeg)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const size_t bytes = key.size() * 2 + jpeg.size();
+        if (jpeg.empty() || bytes > budget || m_entries.find(key) != m_entries.end())
+        {
+            return;
+        }
+        m_recent.emplace_front(key, jpeg);
+        try
+        {
+            m_entries.emplace(key, m_recent.begin());
+        }
+        catch (...)
+        {
+            m_recent.pop_front();
+            throw;
+        }
+        m_bytes += bytes;
+        while (m_bytes > budget || m_entries.size() > 4096)
+        {
+            const auto &old = m_recent.back();
+            m_bytes -= old.first.size() * 2 + old.second.size();
+            m_entries.erase(old.first);
+            m_recent.pop_back();
+        }
+    }
+};
+
 ApiResponse previewImage(const ApiRequest &request, JobManager &jobs)
 {
     PreviewSnapshot snapshot;
@@ -335,6 +389,14 @@ ApiResponse previewImage(const ApiRequest &request, JobManager &jobs)
     }
     try
     {
+        // 缓存跨预览共享，仍需先通过当前预览的素材访问和版本检查。
+        static PreviewThumbnailCache thumbnails;
+        const std::string cacheKey = asset.path + '\0' + asset.version() + ':' + std::to_string(edge);
+        std::string cached = thumbnails.get(cacheKey);
+        if (!cached.empty())
+        {
+            return {200, apiOkJson(), {}, std::move(cached)};
+        }
         const auto image = imreadUnicode(asset.path, cv::IMREAD_COLOR);
         if (image.empty())
         {
@@ -350,7 +412,13 @@ ApiResponse previewImage(const ApiRequest &request, JobManager &jobs)
                                       std::max(1, cvRound(image.rows * scale))}, 0, 0, cv::INTER_AREA);
         std::vector<unsigned char> jpeg;
         cv::imencode(".jpg", thumbnail, jpeg, {cv::IMWRITE_JPEG_QUALITY, 80});
-        return jpegResponse(jpeg);
+        if (jpeg.empty())
+        {
+            return previewImageNotFound();
+        }
+        std::string bytes(jpeg.begin(), jpeg.end());
+        thumbnails.put(cacheKey, bytes);
+        return {200, apiOkJson(), {}, std::move(bytes)};
     }
     catch (const std::exception &error)
     {

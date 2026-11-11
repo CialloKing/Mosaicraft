@@ -103,6 +103,7 @@ const interactivePreview = (() => {
   let timer = 0;
   let submission = Promise.resolve();
   let frame = 0;
+  let layoutPending = false;
   let pending = false;
   let pendingId = '';
   let plan = null;
@@ -117,7 +118,8 @@ const interactivePreview = (() => {
   let centerX = 0;
   let centerY = 0;
   let lastGeometry = '';
-  let painted = new Map();
+  let previousPaint = null;
+  const painted = new Map();
   let pointer = null;
   const edits = new Map();
   let editRevision = 0;
@@ -194,6 +196,7 @@ const interactivePreview = (() => {
     slotsByAsset.clear();
     dirtyAssets.clear();
     lastGeometry = '';
+    previousPaint = null;
     if (context) {
       context.setTransform(1, 0, 0, 1, 0, 0);
       context.clearRect(0, 0, canvas.width, canvas.height);
@@ -475,7 +478,8 @@ const interactivePreview = (() => {
     requestPaint();
   }
 
-  function requestPaint() {
+  function requestPaint(updateLayout = true) {
+    if (updateLayout) layoutPending = true;
     if (!frame && enabled) frame = requestAnimationFrame(paint);
   }
 
@@ -498,7 +502,7 @@ const interactivePreview = (() => {
     }
   }
 
-  function queueImages() {
+  function queueImages(visible) {
     for (const [key, item] of loading) {
       if (wanted.get(key) !== item.url) {
         item.controller.abort();
@@ -507,13 +511,23 @@ const interactivePreview = (() => {
     }
     pendingLoads = [];
     nextLoad = 0;
+    const cx = (visible.x0 + visible.x1) / 2;
+    const cy = (visible.y0 + visible.y1) / 2;
     for (const [key, url] of wanted) {
       touch(key);
-      if (!cache.has(key) && !loading.has(key) && failed.get(key) !== url) pendingLoads.push([key, url]);
+      if (cache.has(key) || loading.has(key) || failed.get(key) === url) continue;
+      let distance = Infinity;
+      for (const slot of slotsByAsset.get(key) ?? []) {
+        distance = Math.min(distance, (slot.x + slot.w / 2 - cx) ** 2 + (slot.y + slot.h / 2 - cy) ** 2);
+      }
+      pendingLoads.push([key, url, distance]);
     }
+    pendingLoads.sort((a, b) => a[2] - b[2]);
   }
 
   function loadImages() {
+    // 几何变化到下一帧之间，上一份可见清单不能再派发请求。
+    if (layoutPending || !clip()) return;
     while (loading.size < parallelLoads && nextLoad < pendingLoads.length) {
       const [key, url] = pendingLoads[nextLoad++];
       if (cache.has(key) || loading.has(key) || failed.get(key) === url) continue;
@@ -545,7 +559,8 @@ const interactivePreview = (() => {
           if (!controller.signal.aborted && wanted.get(key) === url) failed.set(key, url);
         } finally {
           if (loading.get(key) === load) loading.delete(key);
-          requestPaint();
+          loadImages();
+          requestPaint(false);
         }
       })();
     }
@@ -593,8 +608,35 @@ const interactivePreview = (() => {
     return 16;
   }
 
+  function reusePan(previous, next, sx, sy) {
+    if (!previous || previous.content !== next.content || previous.width !== next.width ||
+        previous.height !== next.height || previous.tw !== next.tw || previous.th !== next.th ||
+        previous.visible !== next.visible || previous.reference !== next.reference) return null;
+    const rawDx = (next.x - previous.x) * sx;
+    const rawDy = (next.y - previous.y) * sy;
+    const dx = Math.round(rawDx);
+    const dy = Math.round(rawDy);
+    if ((!dx && !dy) || Math.abs(rawDx - dx) > 1e-6 || Math.abs(rawDy - dy) > 1e-6) return null;
+    const {left, top, right, bottom} = next;
+    const x0 = Math.max(left, left + dx);
+    const y0 = Math.max(top, top + dy);
+    const x1 = Math.min(right, right + dx);
+    const y1 = Math.min(bottom, bottom + dy);
+    if (x0 >= x1 || y0 >= y1) return null;
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.drawImage(canvas, x0 - dx, y0 - dy, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+    context.fillStyle = '#11131f';
+    context.fillRect(left, top, right - left, y0 - top);
+    context.fillRect(left, y1, right - left, bottom - y1);
+    context.fillRect(left, y0, x0 - left, y1 - y0);
+    context.fillRect(x1, y0, right - x1, y1 - y0);
+    context.setTransform(sx, 0, 0, sy, 0, 0);
+    return {x0, y0, x1, y1};
+  }
+
   function paint() {
     frame = 0;
+    layoutPending = false;
     const visible = clip();
     if (!visible || !plan || !context) {
       cancelImages();
@@ -616,15 +658,24 @@ const interactivePreview = (() => {
     const prefix = endpoint + '/' + plan.id + '/image/';
     const referenceKey = opacity > 0 && count ? 'reference:' + plan.id : '';
     const reference = cache.get(referenceKey);
+    const content = [plan.id, editRevision, size, opacity].join('/');
+    const view = {x: g.x, y: g.y, tw: g.tw, th: g.th, width: pixelW, height: pixelH,
+      left: Math.floor(visible.x0 * sx), top: Math.floor(visible.y0 * sy),
+      right: Math.ceil(visible.x1 * sx), bottom: Math.ceil(visible.y1 * sy), content, reference};
+    view.visible = [view.left, view.top, view.right, view.bottom].join(',');
     const geometryKey = [pixelW, pixelH, g.x, g.y, g.tw, g.th, plan.columns, plan.rows,
-      firstCol, lastCol, firstRow, lastRow].join(',');
+      firstCol, lastCol, firstRow, lastRow, view.visible].join(',');
+    let overlap = null;
     if (geometryKey !== lastGeometry) {
-      if (canvas.width !== pixelW) canvas.width = pixelW;
-      if (canvas.height !== pixelH) canvas.height = pixelH;
-      context.setTransform(sx, 0, 0, sy, 0, 0);
-      context.fillStyle = '#11131f';
-      context.fillRect(0, 0, g.width, g.height);
-      painted.clear();
+      overlap = reusePan(previousPaint, view, sx, sy);
+      if (!overlap) {
+        if (canvas.width !== pixelW) canvas.width = pixelW;
+        if (canvas.height !== pixelH) canvas.height = pixelH;
+        context.setTransform(sx, 0, 0, sy, 0, 0);
+        context.fillStyle = '#11131f';
+        context.fillRect(0, 0, g.width, g.height);
+        painted.clear();
+      }
       lastGeometry = geometryKey;
     }
 
@@ -636,27 +687,52 @@ const interactivePreview = (() => {
       slots = [];
       slotsByAsset = new Map();
       if (referenceKey) wanted.set(referenceKey, prefix + 'reference');
+      const keys = new Map();
+      const xEdges = Array.from({length: lastCol - firstCol + 1}, (_, i) =>
+        Math.round((g.x + (firstCol + i) * g.tw) * sx));
+      const yEdges = Array.from({length: lastRow - firstRow + 1}, (_, i) =>
+        Math.round((g.y + (firstRow + i) * g.th) * sy));
       for (let row = firstRow; row < lastRow; ++row) {
+        const y0 = yEdges[row - firstRow];
+        const y1 = yEdges[row - firstRow + 1];
         for (let col = firstCol; col < lastCol; ++col) {
           const position = row * plan.columns + col;
           const edit = edits.get(position);
           const id = edit?.imageId ?? plan.imageIds[position];
-          const key = id > 0 ? id + ':' + (edit?.version ?? plan.assetVersions[id]) + ':' + size : '';
+          let key = '';
+          if (id > 0) {
+            key = edit ? id + ':' + edit.version + ':' + size : keys.get(id);
+            if (!key) {
+              key = id + ':' + plan.assetVersions[id] + ':' + size;
+              keys.set(id, key);
+            }
+          }
           // 相邻格子共用同一条像素边界，避免缩放时出现缝隙。
-          const x = Math.round((g.x + col * g.tw) * sx) / sx;
-          const y = Math.round((g.y + row * g.th) * sy) / sy;
-          const w = Math.round((g.x + (col + 1) * g.tw) * sx) / sx - x;
-          const h = Math.round((g.y + (row + 1) * g.th) * sy) / sy - y;
-          const slot = {position, key, x, y, w, h, row, col};
+          const x0 = xEdges[col - firstCol];
+          const x1 = xEdges[col - firstCol + 1];
+          if (overlap && (x0 < overlap.x0 || x1 > overlap.x1 || y0 < overlap.y0 || y1 > overlap.y1)) {
+            painted.delete(position);
+          }
+          const slot = {position, key, x: x0 / sx, y: y0 / sy, w: (x1 - x0) / sx, h: (y1 - y0) / sy, row, col};
           slots.push(slot);
           if (key) {
-            wanted.set(key, prefix + id + '-' + size);
-            if (!slotsByAsset.has(key)) slotsByAsset.set(key, []);
+            if (!wanted.has(key)) {
+              wanted.set(key, prefix + id + '-' + size);
+              slotsByAsset.set(key, []);
+            }
             slotsByAsset.get(key).push(slot);
           }
         }
       }
-      queueImages();
+      // 上一帧离开的格子不可保留绘制标记，否则再次进入时会跳过绘制。
+      if (overlap && painted.size > count) {
+        for (const position of painted.keys()) {
+          const row = Math.floor(position / plan.columns);
+          const col = position % plan.columns;
+          if (row < firstRow || row >= lastRow || col < firstCol || col >= lastCol) painted.delete(position);
+        }
+      }
+      queueImages(visible);
     }
 
     function draw({position, key, x, y, w, h, row, col}) {
@@ -687,6 +763,7 @@ const interactivePreview = (() => {
     }
     dirtyAssets.clear();
     paintedOpacity = opacity;
+    previousPaint = view;
     loadImages();
   }
 
