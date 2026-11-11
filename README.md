@@ -1,51 +1,54 @@
 # Mosaicraft
 
-Mosaicraft 是一款本地照片马赛克生成器。它用图库中的照片拼出目标图，支持 CUDA 加速、浏览器实时预览和超大图流式输出。
+Mosaicraft 用图库里的照片拼出一张目标图，可通过本地 Web UI 或命令行运行。生成前可以实时预览并逐格换图，生成时可用 NVIDIA CUDA 加速，并将超大图流式写入文件。
 
-[下载发布包](https://github.com/CialloKing/Mosaicraft/releases/latest) · [快速开始](#快速开始) · [CUDA 模板](#cuda-分辨率模板) · [源码构建](#安装与构建) · [Star 历史](#star-历史)
+[下载最新版](https://github.com/CialloKing/Mosaicraft/releases/latest) · [快速开始](#快速开始) · [使用指南](#使用指南) · [CUDA 模板](#cuda-分辨率模板) · [源码构建](#安装与构建) · [Star 历史](#star-历史)
 
 （本项目纯AI生成，绝无手写代码）
 
 ## 下载与运行
 
-按文件名后缀选择与系统匹配的发布包。
+在 [GitHub Releases](https://github.com/CialloKing/Mosaicraft/releases/latest) 的 **Assets** 中，按平台和文件名后缀选择发布包。使用支持 CUDA 13.5 的 NVIDIA 驱动时可选 CUDA 包，其余情况选 CPU 包。
 
-| 平台 | CPU 包 | CUDA 包 | 系统基线 |
+| 平台 | 系统基线 | CPU 包后缀 | CUDA 包后缀 |
 | --- | --- | --- | --- |
-| Windows x64 | `_windows-x64_cpu-only.zip` | `_windows-x64_cuda.zip` | Windows 10 22H2 |
-| Linux x64 | `_linux-x64_cpu-only.tar.gz` | `_linux-x64_cuda.tar.gz` | Ubuntu 22.04 / glibc 2.35 |
-| macOS ARM64 | `_macos-arm64_cpu-only.tar.gz` | — | macOS 13 |
+| Windows x64 | Windows 10 22H2 | `_windows-x64_cpu-only.zip` | `_windows-x64_cuda.zip` |
+| Linux x64 | Ubuntu 22.04 / glibc 2.35 | `_linux-x64_cpu-only.tar.gz` | `_linux-x64_cuda.tar.gz` |
+| macOS ARM64 | macOS 13 | `_macos-arm64_cpu-only.tar.gz` | — |
 
-CUDA 发布包需要支持 CUDA 13.5 的 NVIDIA 驱动。包内 `BUILD_INFO.txt` 记录构建和 GPU 验收状态。Windows CUDA 发布包已通过实机验收，Linux CUDA 发布包的验收覆盖编译和 CPU 回退。 [发布说明](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.2) · [CUDA 架构与验收](docs/CUDA_ARCHITECTURES.md)
+包内 `BUILD_INFO.txt` 记录构建配置和 GPU 验收状态。v1.15.2 的 Windows CUDA 包已通过实机验收，Linux CUDA 包已验证编译和 CPU 回退，GPU 实机验收待完成。 [v1.15.2 发布说明与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.2)
 
 ## 快速开始
 
+准备一张**目标图**和一个**素材目录**。建库后，Mosaicraft 会从图库中挑选素材，逐格拼出目标图。
+
 ### Web UI
 
-在解压目录双击 `MosaicraftWebUI.exe`，或在 Linux/macOS 运行 `./MosaicraftWebUI`。默认打开浏览器访问 [http://localhost:8080](http://localhost:8080)。
+解压后，Windows 双击 `MosaicraftWebUI.exe`，Linux/macOS 在解压目录运行 `./MosaicraftWebUI`。浏览器默认打开 [http://localhost:8080](http://localhost:8080)。
 
-1. 打开「建库」，选择素材目录和图库输出目录，点击「运行」。
-2. 打开「生成马赛克」，填写目标图片、图库和输出路径。
-3. 可先到「预览」页点击「开启预览」，从画面中心以最大倍率查看选图。可用「适应窗口」查看全图，或开启「手动选图」替换素材。返回生成页点击「运行」后，结果区会给出实际文件路径、格式和尺寸。
+1. **建库。** 在「建库」页填写素材目录和图库输出目录，点击「运行」。完成后点击「使用此图库」，将数据库路径填入生成表单。
+2. **设置输出。** 在「生成马赛克」页填写目标图片和输出文件路径，提前创建输出文件的父目录。使用默认图库尺寸时，初次试跑可将「输出 Tile 尺寸」设为 `18x32`，先生成小图。
+3. **预览与选图（可选）。** 到「预览」页点击「开启预览」。点击「适应窗口」可查看全图，开启「手动选图」可替换单格素材。保持预览开启并等待当前参数的预览完成，正式生成会沿用选图结果。
+4. **生成。** 返回「生成马赛克」点击「运行」，在「任务与结果」查看实际文件路径、格式和尺寸。
 
-相对路径以页面显示的服务工作目录为准。参数说明和更多示例可在顶部「使用帮助」查看。
+相对路径以页面顶部显示的服务工作目录为准。更多参数和示例见「使用帮助」。
 
 ### 命令行
 
-在解压目录运行。以下 `./mosaicraft` 写法也可在 Windows PowerShell 中调用 `mosaicraft.exe`。示例将 `photos` 中的图片建成图库，再用较小的输出 Tile 生成主图及 JPEG 预览。
+在解压目录运行以下命令。`photos` 是素材目录，`target.jpg` 是目标图。示例生成 `result.png` 和便于查看的 `result_preview.jpg`。Windows PowerShell 也可运行 `./mosaicraft.exe`。
 
 ```powershell
 ./mosaicraft build -i photos -o library -r
 ./mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o result.png --output-tile 18x32 --preview
 ```
 
-图库可以反复用于生成其他目标图。完整命令和选项见 `./mosaicraft --help`。
+换一张目标图时可直接复用 `library/mosaicraft.db`。运行 `./mosaicraft --help` 可查看完整命令和选项。
 
 ## 使用指南
 
 ### 建库与追加
 
-建库按指定尺寸等比缩放、中心裁剪，提取特征并按解码像素去重，最后按综合色调对素材重编号。输入与图库使用独立目录时，程序处理素材副本。原图尺寸和格式均符合要求时，直接保留其文件字节。 [同尺寸免重编码](docs/SAME_SIZE_NORMALIZATION.md)
+建库时，素材会按指定尺寸等比缩放、中心裁剪，随后提取特征、按解码像素去重，并按综合色调编号。建议把素材目录和图库目录分开，程序会在图库目录中处理副本。尺寸和格式已符合要求的素材会保留原文件字节。 [同尺寸免重编码](docs/SAME_SIZE_NORMALIZATION.md)
 
 ```powershell
 # 建立 270×480 图库
@@ -55,20 +58,20 @@ CUDA 发布包需要支持 CUDA 13.5 的 NVIDIA 驱动。包内 `BUILD_INFO.txt`
 ./mosaicraft build -i new_photos -o library/270x480 --normalize-size 270x480 --append -r
 ```
 
-- `--normalize-size` 默认 `180x320`，宽高各支持 1～8192。换尺寸时为新图库指定独立输出目录。
-- 追加后素材的数字文件名可能变化，数据库中的素材 ID 和使用统计会保留。
-- 搬移图库时，关闭正在使用图库的程序后复制整个目录，包括 `mosaicraft.db`、素材和 `features/`。 [可搬移图库](docs/PORTABLE_LIBRARIES.md)
-- v1.15.0 以前的图库需在新目录重新建库。当前格式的图库若因建库中断留下 `.color-order.json`，恢复文件访问后，用原参数加 `--append` 继续。 [图库兼容与恢复](docs/BREAKING_1.15.0.md)
+- **换尺寸**时，在新目录建库。`--normalize-size` 默认 `180x320`，每轴支持 1～8192 像素。
+- **追加素材**后，数字文件名可能变化，数据库中的素材 ID 和使用统计会保留。
+- **搬移图库**时，先关闭使用图库的程序，再复制整个图库目录，包括 `mosaicraft.db`、素材和 `features/`。 [可搬移图库](docs/PORTABLE_LIBRARIES.md)
+- **恢复中断的建库**时，若图库留有 `.color-order.json`，恢复文件访问后，用原参数加 `--append` 继续。
 
 ### 匹配尺寸与输出尺寸
 
-| 尺寸 | 参数 | 影响 |
+| 尺寸 | 参数 | 如何选择 |
 | --- | --- | --- |
-| 图库归一化尺寸 | `build --normalize-size WxH` | 统一图库素材规格，决定 CUDA 模板。生成时从图库读取。 |
-| 匹配 Tile | `--tile-w`、`--tile-h` | 决定目标图的分格密度，默认 9×16 像素。格子越小，匹配次数越多。 |
-| 输出 Tile | `--output-tile WxH` | 决定每个格子在成品中占多少像素。默认 180×320，横屏图库采用 320×180。 |
+| 图库归一化尺寸 | `build --normalize-size WxH` | 按素材比例选择，生成时从图库读取。该尺寸也决定 CUDA 模板。 |
+| 匹配 Tile | `--tile-w`、`--tile-h` | 默认 9×16 像素。想用更多素材块拼出轮廓时，缩小匹配 Tile。 |
+| 输出 Tile | `--output-tile WxH` | 默认 180×320，横向图库使用默认值时取 320×180。想缩小成品尺寸时，按比例缩小输出 Tile。 |
 
-例如，90×160 的目标图以 9×16 分格会得到 10×10 个格子。输出 Tile 为 180×320 时，成品为 1800×3200。改用 18×32 时，成品为 180×320，匹配次数仍为 100。`--out-w`、`--out-h` 和 `--upscale` 可在切块前调整目标图尺寸。
+成品宽高由各轴的格数乘以输出 Tile 的对应边长得到。例如，90×160 的目标图按 9×16 分成 10×10 格，输出 Tile 用 180×320 时，成品是 1800×3200。改用 18×32 时，成品是 180×320，仍然匹配 100 格。`--out-w`、`--out-h` 和 `--upscale` 在切块前调整目标图尺寸。
 
 ### 生成与导出
 
@@ -80,24 +83,27 @@ CUDA 发布包需要支持 CUDA 13.5 的 NVIDIA 驱动。包内 `BUILD_INFO.txt`
 ./mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o blended.png --overlay-strength 0.2 --analyze
 ```
 
-| 需求 | 参数 |
-| --- | --- |
-| 调节随机选图 | `--candidates` 控制 ANN 候选数量，默认 150。`--topn-random` 控制精排后的随机池，默认 10。 |
-| 调节重复惩罚 | `--neighbor-window` 控制邻域范围，`--neighbor-penalty` 控制相邻重复的惩罚，`--penalty` 控制素材复用惩罚。 |
-| 保留目标图轮廓 | `--overlay-strength` 取 0～1，默认 0。设为 0.2 会混合 80% 素材和 20% 对应位置的目标图。 |
-| 微调素材亮度 | 启用 `--color-adjust` 后，`--color-strength` 控制亮度扰动，默认 ±4%。 |
-| 查看质量和耗时 | `--analyze` 生成报告和热力图，`--benchmark` 显示分阶段耗时。 |
-| 使用纯 CPU 生成 | `--cpu`。 |
-
-单图格式按 **显式 `--format` → 输出后缀 → 输入后缀 → PNG** 的顺序确定。自定义输出路径时先创建其父目录。
+单图格式按 **`--format` → 输出文件后缀 → 输入文件后缀 → PNG** 的顺序确定。
 
 | 格式 | 选项与超限处理 |
 | --- | --- |
-| JPG、WebP | `--quality` 取 1～100，默认 100。单轴上限分别为 65,500 和 16,383 像素。超限时，自动模式转为等尺寸 PNG，显式选格式则缩小输出 Tile。 |
+| JPG、WebP | `--quality` 取 1～100，默认 100。单轴上限分别为 65,500 和 16,383 像素。超限时，自动推导的格式转为等尺寸 PNG，显式指定的格式尝试缩小输出 Tile。 |
 | PNG | `--png-level 1～9`，默认 1。支持 `--write-mode stream` 降低大图写入时的内存占用。 |
 | TIFF | 支持 BigTIFF 和流式写入，适合超大单图。 |
 
-`--preview` 是单图导出选项，会在实际主图旁保存 `<主图名>_preview.jpg`。Web UI 的「预览」用于生成前检查和更换素材。需要分块或缩放浏览时，可使用 `--tiled` 或 `--deepzoom`。 [输出格式与超限处理](docs/OUTPUT_FORMAT_VERIFICATION.md) · [实时预览和 JPEG 预览](docs/PREVIEW_VERIFICATION.md)
+导出单图时，`--preview` 会在主图旁保存 `<主图名>_preview.jpg`。需要单独保存每个图块时用 `--tiled`，需要分层缩放浏览时用 `--deepzoom`。 [输出格式与超限处理](docs/OUTPUT_FORMAT_VERIFICATION.md) · [实时预览与 JPEG 预览](docs/PREVIEW_VERIFICATION.md)
+
+### 常用生成参数
+
+| 需求 | 参数 |
+| --- | --- |
+| 调节选图多样性 | `--candidates` 控制召回候选数，默认 150。`--topn-random` 控制精排后的随机选图范围，默认 10。 |
+| 找不到候选素材 | 遇到 `no_candidates` 时，可增大 `--l-range`（默认 20），或补充与目标图亮度相近的素材。 |
+| 减少素材重复 | `--neighbor-window` 控制邻域范围，`--neighbor-penalty` 控制相邻重复的惩罚，`--penalty` 控制素材复用惩罚。 |
+| 保留目标图轮廓 | `--overlay-strength` 取 0～1，默认 0。设为 0.2 会混合 80% 素材和 20% 对应位置的目标图。 |
+| 微调素材亮度 | 启用 `--color-adjust` 后，`--color-strength` 控制随机亮度扰动，默认 ±4%。 |
+| 查看质量和耗时 | `--analyze` 生成报告和热力图，`--benchmark` 显示分阶段耗时。 |
+| 强制使用 CPU | `--cpu` |
 
 ### 图库管理
 
@@ -106,23 +112,23 @@ CUDA 发布包需要支持 CUDA 13.5 的 NVIDIA 驱动。包内 `BUILD_INFO.txt`
 | `./mosaicraft db-stats -d library/mosaicraft.db` | 查看图库规模、LAB 分布和亮度覆盖。 |
 | `./mosaicraft db-health -d library/mosaicraft.db` | 检查图库完整性和缺失资源。 |
 | `./mosaicraft db-usage -d library/mosaicraft.db` | 查看素材使用统计，可用 `--export <目录>` 导出使用过的素材。 |
-| `./mosaicraft db-purge -d library/mosaicraft.db` | 确认后清理源图片已缺失的记录及关联特征。 |
+| `./mosaicraft db-purge -d library/mosaicraft.db` | 确认后清理图库中图片文件已缺失的记录及关联特征。 |
 
 ## CUDA 分辨率模板
 
-CUDA 可用时，建库、实时预览和生成按图库归一化尺寸自动选择模板。模板路径使用 CUDA 提取特征和进行候选评分，其他合法尺寸可使用与 CPU 兼容的通用 CUDA 路径。
+CUDA 可用时，建库、实时预览和生成会根据图库的归一化尺寸自动选择模板，用于特征提取和候选评分。其他合法尺寸可走与 CPU 兼容的通用 CUDA 路径。
 
-| 方向 | v1.15.2 发布包中的模板 | 当前源码新增的模板 |
+| 方向 | v1.15.2 发布包 | 当前源码 |
 | --- | --- | --- |
 | 正方形 | — | 256×256、512×512 |
-| 竖屏 9:16 | 180×320、360×640 | 270×480、540×960 |
-| 横屏 16:9 | 320×180、640×360 | 480×270、960×540 |
+| 竖屏 9:16 | 180×320、360×640 | 180×320、270×480、360×640、540×960 |
+| 横屏 16:9 | 320×180、640×360 | 320×180、480×270、640×360、960×540 |
 
-采用当前格式的图库可以直接使用。此前使用通用 CUDA 的尺寸切换到模板评分后，选图可能变化。预检发现 CUDA 不可用时，任务使用 CPU 并记录回退原因。
+预检发现 CUDA 不可用时，任务使用 CPU 并记录原因。 [CUDA 架构与验收](docs/CUDA_ARCHITECTURES.md)
 
 ## 安装与构建
 
-源码构建使用 CMake 4.2+、PowerShell 7 和 Git。Windows 使用 Visual Studio 2026 的 C++ 工具。Linux 和 macOS 使用 Ninja 与系统 C++ 编译器，Linux 还需要 `pkg-config`、`zip`、`unzip` 等基础工具。
+使用仓库的 CMake Preset 构建需要 CMake 4.2+、PowerShell 7 和 Git。Windows 使用 Visual Studio 2026 的 C++ 工具。Linux 和 macOS 使用 Ninja 与系统 C++ 编译器，Linux 还需要 `pkg-config`、`zip`、`unzip` 等基础工具。
 
 ### 安装依赖
 
@@ -146,7 +152,9 @@ $env:VCPKG_ROOT = (Resolve-Path build/tools/vcpkg).Path
 | Linux x64 | `linux-cpu` | `linux-cuda` |
 | macOS ARM64 | `macos-arm64-cpu` | — |
 
-把 `windows-cpu` 替换为对应 Preset。程序位于 `build/<preset>/Release/bin`。
+使用 CUDA Preset 前，先设置 `CUDAToolkit_ROOT` 指向 CUDA Toolkit 13.5.0（nvcc 13.5.37）。Windows 默认安装位置可用 `$env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5'`。 [CUDA 工具链](docs/CUDA_13_5_MIGRATION.md) · [架构与单卡构建](docs/CUDA_ARCHITECTURES.md)
+
+在安装依赖时的 PowerShell 会话中，把示例的 `windows-cpu` 换成所需的 Preset。
 
 ```powershell
 $preset = 'windows-cpu'
@@ -154,20 +162,18 @@ cmake --preset $preset
 cmake --build --preset $preset --target mosaicraft MosaicraftWebUI --parallel
 ```
 
-使用 CUDA Preset 前，设置 `CUDAToolkit_ROOT` 指向 CUDA Toolkit 13.5.0（nvcc 13.5.37）。Windows 示例为 `$env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5'`。 [CUDA 工具链](docs/CUDA_13_5_MIGRATION.md) · [架构与单卡构建](docs/CUDA_ARCHITECTURES.md)
+构建产物位于 `build/<preset>/Release/bin`。
 
 完整 CTest 和 Web UI/API 冒烟测试由发布流程运行。推送 `v*` 版本标签会触发 GitHub Actions 打包，本机 CUDA 发布包使用 `scripts/release.ps1` 验收。 [发布清单](docs/RELEASE_CHECKLIST.md)
 
 ## 开发文档
 
 - 接口文档列出请求字段、异步任务和诊断信息。运行 Web UI 后可通过 `GET /api/info` 查看版本和能力。 [REST API](docs/API.md)
-- 匹配流程使用 AvgLAB、8×8 Grid、TinyImage、边缘密度和 LBP，结合候选召回、评分与邻域去重。 [项目百科](https://github.com/CialloKing/Mosaicraft/blob/main/docs/ENCYCLOPEDIA.md)
+- 匹配流程使用 AvgLAB、8×8 Grid、TinyImage、边缘密度和 LBP，结合候选召回、评分与邻域去重。 [项目百科](docs/ENCYCLOPEDIA.md)
 - 固定样本的预览耗时、流式 PNG 导出和 CPU 建库结果。 [v1.15.2 性能对照](docs/PREVIEW_VERIFICATION.md#v1152-预览性能对照)
 - 原生包构建、GPU 验收和 SHA256 校验流程。 [CI 与打包](docs/CI_PACKAGING.md) · [发布清单](docs/RELEASE_CHECKLIST.md)
 
 ## Star 历史
-
-GitHub Actions 每天北京时间 03:17 将 Star 数量更新到独立的 `star-history` 分支。
 
 <p align="center">
   <a href="https://github.com/CialloKing/Mosaicraft/blob/star-history/stars.csv">
@@ -175,7 +181,7 @@ GitHub Actions 每天北京时间 03:17 将 Star 数量更新到独立的 `star-
   </a>
 </p>
 
-首次运行按当前仍有效的 Star 时间重建历史，后续记录每日实测值。漏跑日期在实测记录中保留为空缺。 [查看 CSV 原始数据](https://github.com/CialloKing/Mosaicraft/blob/star-history/stars.csv)
+GitHub Actions 每天北京时间 03:17 记录 Star 数量。首批历史按采集时仍有效的 Star 时间重建，后续以每日实测为准。 [查看 CSV 原始数据](https://github.com/CialloKing/Mosaicraft/blob/star-history/stars.csv)
 
 ## 许可证
 
