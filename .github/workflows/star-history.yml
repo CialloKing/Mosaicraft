@@ -1,0 +1,55 @@
+name: Star History
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/star-history.yml
+      - scripts/update_star_history.py
+  schedule:
+    - cron: '17 3 * * *'
+      timezone: Asia/Shanghai
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: star-history
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Record and publish Star history
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          history="$RUNNER_TEMP/star-history"
+          if git ls-remote --exit-code origin refs/heads/star-history; then
+            git fetch --depth=1 origin refs/heads/star-history
+            git worktree add --detach "$history" FETCH_HEAD
+          else
+            status=$?
+            if [[ "$status" -ne 2 ]]; then
+              exit "$status"
+            fi
+            git worktree add --orphan -b star-history "$history"
+          fi
+
+          python3 scripts/update_star_history.py "$history"
+          git -C "$history" add -- README.md stars.csv star-history.svg
+          if git -C "$history" diff --cached --quiet; then
+            exit 0
+          fi
+
+          record_date="$(tail -n 1 "$history/stars.csv" | cut -d, -f1)"
+          git -C "$history" -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "记录 ${record_date} Star 数量"
+          git push origin "$(git -C "$history" rev-parse HEAD):refs/heads/star-history"
