@@ -8,8 +8,10 @@ endforeach()
 project(Mosaicraft VERSION ${softwareVersion} LANGUAGES CXX)
 configure_file(cmake/Contracts.h.in generated/MosaicraftContracts.h @ONLY)
 set(previewScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/preview.js")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${previewScript}")
+set(previewPickerScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/preview-picker.js")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${previewScript}" "${previewPickerScript}")
 file(READ "${previewScript}" interactivePreviewScript)
+file(READ "${previewPickerScript}" interactivePreviewPickerScript)
 configure_file(tools/command-builder/index.html generated/index.html @ONLY)
 
 # C++17
@@ -286,12 +288,15 @@ include(cmake/Packaging.cmake)
 target_include_directories(MosaicraftWebUI PRIVATE
     ${CMAKE_SOURCE_DIR}
 )
-# 发布时自动复制 HTML 到 exe 同目录
-add_custom_command(TARGET MosaicraftWebUI POST_BUILD
+# HTML 或脚本单独更新时也要同步到 exe 同目录。
+add_custom_target(mosaicraft_webui_html
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:MosaicraftWebUI>"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_BINARY_DIR}/generated/index.html"
         "$<TARGET_FILE_DIR:MosaicraftWebUI>/index.html"
+    VERBATIM
 )
+add_dependencies(MosaicraftWebUI mosaicraft_webui_html)
 
 # ============================================================
 # 单元测试 (doctest — 单头文件，跨平台)

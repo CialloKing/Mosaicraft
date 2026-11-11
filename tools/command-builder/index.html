@@ -41,25 +41,36 @@ header span { color: var(--warning); font-size: 0.8rem; background: rgba(147,117
 main { max-width: 920px; margin: 28px auto; padding: 0 20px; }
 .panel { display: none; }
 .panel.active { display: block; }
-#panel-mosaic.active { display: grid; min-width: 0; }
-#mosaic-parameters, #interactive-preview { min-width: 0; }
-#interactive-preview { align-self: start; }
+main:has(#panel-preview.active) { max-width: 1660px; }
+.preview-workspace { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+#interactive-preview, .preview-picker { min-width: 0; }
 .preview-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .preview-toolbar .btn { padding: 6px 10px; }
-.preview-surface { position: relative; margin-top: 10px; height: clamp(230px, 43vh, 440px);
+.preview-toolbar .btn[aria-pressed="true"] { background: var(--indigo); color: var(--fg); }
+.preview-surface { position: relative; margin-top: 10px; height: clamp(280px, 62vh, 680px);
   background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .preview-surface canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.preview-surface canvas.editing { cursor: crosshair; }
 .preview-surface canvas:active { cursor: grabbing; }
 .preview-surface canvas:focus-visible { outline-offset: -3px; }
 .preview-placeholder { position: absolute; inset: 0; align-content: center; text-align: center;
   padding: 16px; color: var(--fg2); pointer-events: none; font-size: .85rem; }
+.preview-selection { position: absolute; pointer-events: none; border: 2px solid var(--accent);
+  box-shadow: inset 0 0 0 1px #11131f; }
 #live-preview-status { margin: 8px 0 0; min-height: 1.5em; overflow-wrap: anywhere; }
-@media (min-width: 1120px) {
-  main:has(#panel-mosaic.active) { max-width: 1440px; }
-  #panel-mosaic.active { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); column-gap: 16px; }
-  #interactive-preview { grid-area: 1 / 2; position: sticky; top: 16px; }
-  #mosaic-parameters { grid-area: 1 / 1; }
-  .preview-surface { height: clamp(320px, 55vh, 640px); }
+.preview-picker .preview-toolbar { margin: 8px 0; }
+.preview-picker .field { margin-top: 8px; }
+.preview-picker-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 8px; padding: 4px; max-height: 52vh; overflow: auto; }
+.preview-picker-item { min-width: 0; padding: 6px; background: var(--input-bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: .75rem; }
+.preview-picker-item:hover, .preview-picker-item[aria-pressed="true"] { border-color: var(--accent); }
+.preview-picker-item:disabled { cursor: default; opacity: .6; }
+.preview-picker-item img { display: block; width: 100%; height: 72px; object-fit: contain; }
+.preview-picker-item span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (min-width: 1020px) {
+  .preview-workspace:has(.preview-picker:not([hidden])) { grid-template-columns: minmax(0, 1fr) 340px; }
+  .preview-surface { height: clamp(420px, 68vh, 820px); }
 }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 22px; margin-bottom: 14px; }
 .card h3 { font-size: 0.88rem; color: var(--accent2); margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); font-weight: 600; }
@@ -222,6 +233,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 </header>
 <nav class="tabs" id="tabs" aria-label="功能导航">
   <button class="tab active" data-cmd="mosaic" aria-current="page">🎨 生成马赛克</button>
+  <button class="tab" data-cmd="preview">预览</button>
   <button class="tab" data-cmd="build">📦 建库</button>
   <button class="tab" data-cmd="inspect">🔍 查询</button>
   <button class="tab" data-cmd="dbstats">📊 统计</button>
@@ -235,29 +247,16 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 
 <!-- ============ MOSAIC ============ -->
 <div class="panel active" id="panel-mosaic">
-  <section class="card" id="interactive-preview" aria-labelledby="live-preview-heading">
-    <h3 id="live-preview-heading">实时预览</h3>
-    <div class="preview-toolbar">
-      <button type="button" class="btn btn-secondary" id="live-preview-toggle" disabled>开启预览</button>
-      <button type="button" class="btn btn-secondary" id="live-preview-refresh" hidden>刷新</button>
-      <button type="button" class="btn btn-secondary" id="live-preview-out" aria-label="缩小预览" disabled>−</button>
-      <button type="button" class="btn btn-secondary" id="live-preview-in" aria-label="放大预览" disabled>+</button>
-      <button type="button" class="btn btn-secondary" id="live-preview-fit" disabled>适应窗口</button>
-    </div>
-    <div class="preview-surface">
-      <canvas id="live-preview-canvas" tabindex="0" aria-label="马赛克预览，可拖动或用方向键平移，用加减键缩放"></canvas>
-      <p class="preview-placeholder" id="live-preview-placeholder">选择目标图片后开启预览。</p>
-    </div>
-    <p class="hint" id="live-preview-status" role="status" aria-live="polite"></p>
-    <p class="hint" id="live-preview-color" hidden>随机亮度扰动在正式输出时应用。</p>
-  </section>
-  <div id="mosaic-parameters">
   <div class="card">
     <h3>📂 必需路径（支持绝对路径与相对路径）</h3>
     <div class="row">
       <div class="field field-full"><label>目标图片 -i（必填）</label><input type="text" id="m-input" placeholder="粘贴绝对路径，如 D:\photos\target.jpg"></div>
       <div class="field field-full"><label>数据库 -d（默认情况下不需要填，默认 ./library/mosaicraft.db）</label><input type="text" id="m-db" placeholder="留空使用默认值，或粘贴目录路径如 D:\my_library"></div>
       <div class="field field-full"><label>输出路径 -o（留空保存到 ./output/，文件名为 output，后缀自动确定）</label><input type="text" id="m-output" value="" placeholder="留空使用默认文件名，或粘贴文件路径如 D:\results\mosaic.jpg"><p class="hint">显式选择输出格式时，实际文件后缀以所选格式为准。</p></div>
+    </div>
+    <div class="preview-toolbar">
+      <button type="button" class="btn btn-secondary" data-open-tab="preview">打开预览页</button>
+      <span class="hint" id="live-preview-generation-note"></span>
     </div>
   </div>
   <div class="card">
@@ -322,6 +321,54 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <div class="field"><label>基础图叠加强度 --overlay-strength</label><input type="number" id="m-overlaystr" value="0" min="0" max="1" step="0.05" style="max-width:150px"><div class="hint">0 关闭；0.2 表示 80% 素材 + 20% 基础图。使用缩放、放大和补边后的基础图，强度越高，小图细节越弱。</div></div>
     </div>
   </div>
+</div>
+
+<!-- ============ PREVIEW ============ -->
+<div class="panel" id="panel-preview">
+  <div class="preview-workspace">
+    <section class="card" id="interactive-preview" aria-labelledby="live-preview-heading">
+      <h3 id="live-preview-heading">实时预览</h3>
+      <div class="preview-toolbar">
+        <button type="button" class="btn btn-secondary" id="live-preview-toggle" disabled>开启预览</button>
+        <button type="button" class="btn btn-secondary" id="live-preview-refresh" hidden>刷新</button>
+        <button type="button" class="btn btn-secondary" id="live-preview-out" aria-label="缩小预览" disabled>−</button>
+        <button type="button" class="btn btn-secondary" id="live-preview-in" aria-label="放大预览" disabled>+</button>
+        <button type="button" class="btn btn-secondary" id="live-preview-fit" disabled>适应窗口</button>
+        <button type="button" class="btn btn-secondary" id="live-preview-edit" aria-pressed="false" disabled>手动选图</button>
+        <button type="button" class="btn btn-secondary" data-open-tab="mosaic">返回生成</button>
+      </div>
+      <div class="preview-surface">
+        <canvas id="live-preview-canvas" tabindex="0" aria-label="马赛克预览，方向键平移，加减键缩放，手动模式下回车选择中心格"></canvas>
+        <div id="live-preview-selection" class="preview-selection" aria-hidden="true" hidden></div>
+        <p class="preview-placeholder" id="live-preview-placeholder">在生成页填写目标图片后开启预览。</p>
+      </div>
+      <p class="hint" id="live-preview-status" role="status" aria-live="polite"></p>
+      <p class="hint" id="live-preview-color" hidden>随机亮度扰动在正式输出时应用。</p>
+    </section>
+    <section class="card preview-picker" id="live-preview-picker" aria-labelledby="live-preview-picker-heading" hidden>
+      <h3 id="live-preview-picker-heading">替换素材</h3>
+      <p class="hint" id="live-preview-tile" role="status">点击画布中的格子。</p>
+      <div class="preview-toolbar">
+        <button type="button" class="btn btn-secondary" id="live-preview-undo" disabled>恢复自动选图</button>
+        <button type="button" class="btn btn-secondary" id="live-preview-reset-edits" disabled>清除全部替换</button>
+      </div>
+      <div id="live-preview-picker-options" hidden>
+        <div class="preview-toolbar" role="group" aria-label="素材来源">
+          <button type="button" class="btn btn-secondary" id="live-preview-recommended" aria-pressed="true">推荐候选</button>
+          <button type="button" class="btn btn-secondary" id="live-preview-library" aria-pressed="false">整个图库</button>
+        </div>
+        <div class="field" id="live-preview-search-field" hidden>
+          <label for="live-preview-search">搜索文件名或素材 ID</label>
+          <input type="search" id="live-preview-search" maxlength="80">
+        </div>
+        <p class="hint" id="live-preview-picker-status" role="status"></p>
+        <div class="preview-picker-items" id="live-preview-items"></div>
+        <div class="preview-toolbar" id="live-preview-pages" hidden>
+          <button type="button" class="btn btn-secondary" id="live-preview-prev">上一页</button>
+          <button type="button" class="btn btn-secondary" id="live-preview-next">下一页</button>
+        </div>
+      </div>
+    </section>
   </div>
 </div>
 
@@ -405,7 +452,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <ol class="help-steps">
       <li><strong>准备素材图库。</strong>在“建库”页填写素材所在的图片目录和图库输出目录，点击“运行”。生成会从这些素材中挑选图片，拼成你的目标图片。</li>
       <li><strong>复用建好的图库。</strong>等建库任务完成，在下方结果区点击“使用此图库”，数据库路径会自动填入生成和查询页面。</li>
-      <li><strong>提交生成任务。</strong>在“生成马赛克”页填写目标图片和主图输出路径。点击“开启预览”可查看当前选图，调整参数后自动刷新。预览完成后运行，正式输出将沿用该排列。</li>
+      <li><strong>提交生成任务。</strong>在“生成马赛克”页填写目标图片和主图输出路径，打开“预览”页并点击“开启预览”。用“手动选图”点击格子，可从推荐候选或整个图库替换。返回生成页运行时会沿用预览排列。</li>
       <li><strong>到“任务与结果”查看。</strong>点击任务可查看阶段、警告和结果。完成后复制实际路径或下载主图；已生成的预览图会直接显示在页面中。</li>
     </ol>
     <div class="btns">
@@ -624,9 +671,8 @@ function generateCommand() {
   syncPreviewOption();
   const tab = document.querySelector('.tab.active').dataset.cmd;
   interactivePreview.sync(tab);
-  document.getElementById('command-area').hidden = tab === 'help';
-  if (tab === 'help') {
-    // Help is a local document view and must never generate or submit a command.
+  document.getElementById('command-area').hidden = tab === 'help' || tab === 'preview';
+  if (tab === 'help' || tab === 'preview') {
     formModel = {valid:false, tab, payload:null};
     updateRunButton();
     persistDraft();
@@ -806,7 +852,7 @@ function missingRequiredOperations(endpoints) {
 
 async function runCommand() {
   const tab = document.querySelector('.tab.active').dataset.cmd;
-  if (tab === 'help') return;
+  if (tab === 'help' || tab === 'preview') return;
   const status = document.getElementById('run-status');
   status.style.display = '';
   status.textContent = '正在提交任务...';
@@ -1792,7 +1838,7 @@ function commandFromPayload(tab, payload) {
 function persistDraft() {
   if (restoringDraft) return;
   const fields = {};
-  document.querySelectorAll('.panel input[id], .panel select[id]').forEach(element => {
+  document.querySelectorAll('.panel:not(#panel-preview) input[id], .panel select[id]').forEach(element => {
     fields[element.id] = element.type === 'checkbox' ? element.checked : element.value;
   });
   saveJson('mosaicraft-form-v1', {version:UI_STATE_VERSION, fields, tab:document.querySelector('.tab.active').dataset.cmd});
@@ -1847,7 +1893,7 @@ function initializeFormUi() {
   if (tab) tab.click();
   restoringDraft = false;
   updateRecentLists(); syncPreviewOption();
-  document.querySelectorAll('.panel input, .panel select').forEach(element => {
+  document.querySelectorAll('.panel:not(#panel-preview) input, .panel select').forEach(element => {
     element.addEventListener('input', generateCommand);
     element.addEventListener('change', () => {
       if (PATH_FIELDS[element.id]) { element.value = normalizePath(element.value); rememberPath(element.id); }
@@ -1909,6 +1955,7 @@ document.addEventListener('click', event => {
 });
 
 
+@interactivePreviewPickerScript@
 @interactivePreviewScript@
 
 // Restore form state before generating or submitting any request.
