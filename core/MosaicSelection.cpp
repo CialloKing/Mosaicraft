@@ -90,6 +90,42 @@ PreviewAsset previewAsset(const ImageRecord &record)
     return assetVersion(record.filePath, record.fileHash);
 }
 
+PreviewAsset previewAsset(const PreviewCatalogEntry &entry)
+{
+    return assetVersion(entry.path, entry.hash);
+}
+
+std::string PreviewAsset::version() const
+{
+    return hash + ":" + std::to_string(bytes) + ":" + std::to_string(modified.time_since_epoch().count());
+}
+
+const PreviewCatalogEntry *PreviewCatalog::find(int id) const
+{
+    const auto it = std::lower_bound(entries.begin(), entries.end(), id, [](const auto &entry, int value)
+    {
+        return entry.id < value;
+    });
+    return it != entries.end() && it->id == id ? &*it : nullptr;
+}
+
+std::shared_ptr<const PreviewCatalog> makePreviewCatalog(const std::vector<ImageRecord> &records)
+{
+    auto catalog = std::make_shared<PreviewCatalog>();
+    catalog->entries.reserve(records.size());
+    for (size_t i = 0; i < records.size(); ++i)
+    {
+        const auto &record = records[i];
+        catalog->entries.push_back({record.id, static_cast<int>(i), pathToUtf8(u8path(record.filePath).filename()),
+                                    record.filePath, record.fileHash});
+    }
+    std::sort(catalog->entries.begin(), catalog->entries.end(), [](const auto &left, const auto &right)
+    {
+        return left.id < right.id;
+    });
+    return catalog;
+}
+
 bool PreviewAsset::current() const
 {
     const auto latest = assetVersion(path, hash);

@@ -60,6 +60,135 @@ static void adjustColor(cv::Mat& img, double strength)
     detail::adjustBrightness(img, strength, rng);
 }
 
+namespace
+{
+enum class TileClass { Smooth, Edge, Texture, Normal };
+
+template <typename Grid, typename Lbp>
+TileClass classifyTile(double edge, const Grid &grid, const Lbp &lbp)
+{
+    if (edge > 0.01)
+    {
+        return TileClass::Edge;
+    }
+    if (edge < 0.005)
+    {
+        double sum = 0, squares = 0;
+        for (int cell = 0; cell < 64; ++cell)
+        {
+            const double lightness = grid[cell * 3];
+            sum += lightness;
+            squares += lightness * lightness;
+        }
+        if (squares / 64.0 - (sum / 64.0) * (sum / 64.0) < 100.0)
+        {
+            return TileClass::Smooth;
+        }
+    }
+    double entropy = 0;
+    for (int bin = 0; bin < 256; ++bin)
+    {
+        const float value = lbp[bin];
+        if (value > 0.0f)
+        {
+            entropy -= value * std::log2(value);
+        }
+    }
+    return entropy > 3.0 ? TileClass::Texture : TileClass::Normal;
+}
+
+using MatchWeights = std::array<double, 5>;
+
+MatchWeights adaptiveTileWeights(TileClass type, const MatchWeights &defaults)
+{
+    switch (type)
+    {
+    case TileClass::Smooth: return {0.25, 0.45, 0.20, 0.05, 0.05};
+    case TileClass::Edge: return {0.15, 0.40, 0.25, 0.15, 0.05};
+    case TileClass::Texture: return {0.15, 0.40, 0.20, 0.05, 0.20};
+    case TileClass::Normal: return defaults;
+    }
+    return defaults;
+}
+
+SelectionAnalysis analyzeEditedTiles(const cv::Mat &target, const MosaicEngine::Config &cfg,
+                                     cv::Size featureSize, int columns, const std::string &featureDir,
+                                     const std::vector<ImageRecord> &records, const std::vector<int> &indices,
+                                     RuntimeContext &runtime)
+{
+    SelectionAnalysis result;
+    FeaturePack::Reader reader(featureDir, records, 64ULL * 1024 * 1024, &runtime);
+    WorkerPool workers;
+    const auto sum = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight + cfg.edgeWeight + cfg.lbpWeight;
+    const MatchWeights defaults{cfg.labWeight / sum, cfg.gridWeight / sum, cfg.tinyWeight / sum,
+                                cfg.edgeWeight / sum, cfg.lbpWeight / sum};
+    struct Sample
+    {
+        cv::Scalar lab;
+        std::vector<float> grid, lbp;
+        std::vector<uint8_t> tiny;
+        double edge = 0;
+    };
+    // 报告评估实际输出的选图。特征按批提取，手动选择没有自动候选名次。
+    std::array<Sample, 64> samples;
+    for (size_t first = 0; first < indices.size(); first += samples.size())
+    {
+        const size_t count = std::min(samples.size(), indices.size() - first);
+        workers.run(count, [&](size_t local)
+        {
+            const int position = static_cast<int>(first + local);
+            if (indices[position] < 0)
+            {
+                return;
+            }
+            const cv::Rect rect((position % columns) * cfg.tileW, (position / columns) * cfg.tileH,
+                                cfg.tileW, cfg.tileH);
+            cv::Mat tile, lab, gray;
+            cv::resize(target(rect), tile, featureSize, 0, 0, cv::INTER_LINEAR);
+            cv::cvtColor(tile, lab, cv::COLOR_BGR2Lab);
+            cv::cvtColor(tile, gray, cv::COLOR_BGR2GRAY);
+            auto &sample = samples[local];
+            sample.lab = cv::mean(lab);
+            sample.grid = computeGrid8x8FromLab(lab);
+            sample.tiny = computeTinyImageFromGray(gray);
+            sample.edge = computeEdgeDensityFromGray(gray);
+            sample.lbp = computeLBPHistogramFromGray(gray);
+        });
+        for (size_t local = 0; local < count; ++local)
+        {
+            const int position = static_cast<int>(first + local);
+            const int index = indices[position];
+            if (index < 0)
+            {
+                continue;
+            }
+            const auto &record = records[index];
+            const auto &sample = samples[local];
+            const auto &features = reader.get(index);
+            const auto category = classifyTile(sample.edge, sample.grid, sample.lbp);
+            const auto weights = cfg.adaptiveWeights ? adaptiveTileWeights(category, defaults) : defaults;
+            const double lab = labDistance(sample.lab[0], sample.lab[1], sample.lab[2],
+                                           record.avgL, record.avgA, record.avgB);
+            const double grid = gridDistance8x8(sample.grid, record.gridLab, true);
+            const double edge = std::abs(sample.edge - record.edgeDensity);
+            const double tiny = features.tinyValid ? tinyMSE(sample.tiny, features.tiny) : 1.0;
+            const double lbp = features.lbpValid ? lbpDistance(sample.lbp, features.lbp) : 1.0;
+            const double score = weights[0] * lab + weights[1] * grid + weights[2] * tiny +
+                                 weights[3] * edge + weights[4] * lbp;
+            result.worstTiles.remember(score, static_cast<int>(result.scores.size()), position,
+                                       sample.lab[0], sample.lab[1], sample.lab[2], sample.edge, sample.grid);
+            result.scores.push_back(score);
+            result.imageIds.push_back(record.id);
+            result.lab.push_back(lab);
+            result.grid.push_back(grid);
+            result.edge.push_back(edge);
+            result.categories.push_back(static_cast<int>(category));
+        }
+    }
+    return result;
+}
+} // namespace
+
 // ============================================================
 // 主马赛克生成流程
 // ============================================================
@@ -720,6 +849,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 
     // 每个 tile 的最终选择结果：GPU 路径预分配，CPU 路径后续填充
     std::vector<int> bestLibIdx(totalTiles, -1);
+    if (m_preview)
+    {
+        m_preview->recommendations.resize(totalTiles);
+    }
     std::unique_ptr<detail::SelectionPolicy> selection;
     size_t selectionBytes = 0;
     if (m_selectionOptions.enabled())
@@ -753,11 +886,17 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 
     auto runAnalysis = [&](const std::string &analysisOutputPath)
     {
-        const auto &report = m_renderSelection ? m_renderSelection->analysis : diagnostics;
         if (cfg.analyze)
         {
             runtime.stage("analyzing");
+            if (m_renderSelection && m_renderSelection->manualEdits)
+            {
+                diagnostics = analyzeEditedTiles(target, cfg, {featW, featH}, tilesX, featDirCache,
+                                                 allRecords, bestLibIdx, runtime);
+            }
         }
+        const auto &report = m_renderSelection && !m_renderSelection->manualEdits
+            ? m_renderSelection->analysis : diagnostics;
         const auto usage = detail::writeAnalysisReport(
             detail::AnalysisReportContext{
                 outputConfig, analysisOutputPath, target,        totalTiles,      tilesX,
@@ -817,6 +956,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
         runtime.backends(m_renderSelection->featureBackend, m_renderSelection->scoreBackend);
         runtime.metric("reusedPreviewSelection", 1);
+        runtime.metric("manualPreviewEdits", static_cast<double>(m_renderSelection->manualEdits));
     }
     else
     {
@@ -857,6 +997,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         if (m_previewWorkspace)
         {
             // 196 维索引按图库代际复用；超大图库仍沿用单次匹配的内存模型。
+            if (!m_previewWorkspace->catalog || m_previewWorkspace->libraryPath != db.path() ||
+                m_previewWorkspace->libraryVersion != libraryVersion)
+            {
+                m_previewWorkspace->catalog = makePreviewCatalog(allRecords);
+            }
             m_previewWorkspace->index = dbCount <= 100000 ? annIndex : nullptr;
             m_previewWorkspace->libraryPath = db.path();
             m_previewWorkspace->libraryVersion = libraryVersion;
@@ -1305,61 +1450,20 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             std::fill(tileLbpW.begin(), tileLbpW.end(), nLbpW);
             if (cfg.adaptiveWeights)
             {
+                const MatchWeights defaults{nLabW, nGridW, nTinyW, nEdgeW, nLbpW};
                 for (int ti = 0; ti < count; ++ti)
                 {
-                    double e = allEdge[ti];
-                    double lbpEnt = 0.0;
-                    for (int k = 0; k < 256; ++k)
-                    {
-                        float v = allLBP[ti][k];
-                        if (v > 0.0f)
-                        {
-                            lbpEnt -= v * std::log2(v);
-                        }
-                    }
-                    double lSum = 0, lSq = 0;
-                    for (int k = 0; k < 64; ++k)
-                    {
-                        double lv = allGrid[ti][k * 3];
-                        lSum += lv;
-                        lSq += lv * lv;
-                    }
-                    double lVar = lSq / 64.0 - (lSum / 64.0) * (lSum / 64.0);
-
-                    if (e < 0.005 && lVar < 100.0)
-                    {
-                        // Smooth: 低纹理区域，侧重 LAB 颜色和 Grid 结构匹配
-                        tileLabW[ti] = 0.25;
-                        tileGridW[ti] = 0.45;
-                        tileTinyW[ti] = 0.20;
-                        tileEdgeW[ti] = 0.05;
-                        tileLbpW[ti] = 0.05;
-                        adaptiveSmoothCount++;
-                    }
-                    else if (e > 0.01)
-                    {
-                        // Edge-heavy: 边缘密度 > 0.01，侧重 Grid 和 Tiny 纹理
-                        tileLabW[ti] = 0.15;
-                        tileGridW[ti] = 0.40;
-                        tileTinyW[ti] = 0.25;
-                        tileEdgeW[ti] = 0.15;
-                        tileLbpW[ti] = 0.05;
-                        adaptiveEdgeCount++;
-                    }
-                    else if (lbpEnt > 3.0)
-                    {
-                        // Texture-heavy: LBP 熵 > 3.0，侧重 LBP 纹理特征
-                        tileLabW[ti] = 0.15;
-                        tileGridW[ti] = 0.40;
-                        tileTinyW[ti] = 0.20;
-                        tileEdgeW[ti] = 0.05;
-                        tileLbpW[ti] = 0.20;
-                        adaptiveTextureCount++;
-                    }
-                    else
-                    {
-                        adaptiveNormalCount++;
-                    }
+                    const auto category = classifyTile(allEdge[ti], allGrid[ti], allLBP[ti]);
+                    const auto weights = adaptiveTileWeights(category, defaults);
+                    tileLabW[ti] = weights[0];
+                    tileGridW[ti] = weights[1];
+                    tileTinyW[ti] = weights[2];
+                    tileEdgeW[ti] = weights[3];
+                    tileLbpW[ti] = weights[4];
+                    adaptiveSmoothCount += category == TileClass::Smooth;
+                    adaptiveEdgeCount += category == TileClass::Edge;
+                    adaptiveTextureCount += category == TileClass::Texture;
+                    adaptiveNormalCount += category == TileClass::Normal;
                 }
             }
 
@@ -1791,6 +1895,23 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                             analyzeGridCellSum[ci] += std::sqrt(dl * dl + da * da + db * db);
                         }
                     }
+                    if (m_preview)
+                    {
+                        const int limit = std::min(MosaicSelection::recommendationLimit, validCount);
+                        // 自动选图已结束。独立排序推荐项，避免改变 Top-N 平分顺序。
+                        std::partial_sort(idxs.begin(), idxs.begin() + limit, idxs.end(), [&](int left, int right)
+                        {
+                            if (indices[left] < 0 || indices[right] < 0)
+                            {
+                                return indices[left] >= 0;
+                            }
+                            return std::tie(scores[left], indices[left]) < std::tie(scores[right], indices[right]);
+                        });
+                        for (int rank = 0; rank < limit; ++rank)
+                        {
+                            m_preview->recommendations[ti][rank] = allRecords[indices[idxs[rank]]].id;
+                        }
+                    }
                     neighborhood.recordSelection(chosenLibIdx, ti);
                 }
 
@@ -1901,6 +2022,15 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         analyzeGridD.push_back(wGridD);
                         analyzeEdgeD.push_back(wEdgeD);
                     }
+                    if (m_preview)
+                    {
+                        const auto limit = std::min<size_t>(MosaicSelection::recommendationLimit, scored.size());
+                        std::partial_sort(scored.begin(), scored.begin() + limit, scored.end());
+                        for (size_t rank = 0; rank < limit; ++rank)
+                        {
+                            m_preview->recommendations[ti][rank] = allRecords[scored[rank].second].id;
+                        }
+                    }
                     neighborhood.recordSelection(pickIdx, ti);
                 }
 
@@ -1999,6 +2129,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         m_preview->targetVersion = targetVersion;
         m_preview->libraryVersion = libraryVersion;
         m_preview->dbPath = db.path();
+        m_preview->catalog = m_previewWorkspace->catalog;
+        const auto editIdentity = preparedKey + ":" + std::to_string(cfg.tileW) + ":" +
+                                  std::to_string(cfg.tileH) + ":" + std::to_string(libraryVersion) + ":" + db.path();
+        m_preview->editKey = std::to_string(previewFileVersion({editIdentity.begin(), editIdentity.end()}));
         m_preview->columns = tilesX;
         m_preview->rows = tilesY;
         m_preview->featureWidth = featW;
