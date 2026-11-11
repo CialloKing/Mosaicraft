@@ -14,6 +14,7 @@ class NeighborhoodState
     // 只接收已验证的图库索引，不排序、不取随机数，也不改变选图窗口。
     void applyPenalty(double &score, int libraryIndex, int tile);
     void recordSelection(int libraryIndex, int tile);
+    void replay(const std::vector<int> &indices, int tile);
 
   private:
     const std::vector<ImageRecord> &m_records;

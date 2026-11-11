@@ -69,4 +69,23 @@ void NeighborhoodState::recordSelection(int libraryIndex, int tile)
         }
     }
 }
+
+void NeighborhoodState::replay(const std::vector<int> &indices, int tile)
+{
+    // 频次和相似度窗口按成功选图计数，最小间距按实际格子位置计数。
+    int first = tile;
+    int selected = 0;
+    const int recent = std::max(m_window, gridWindow);
+    while (first > 0 && (selected < recent || tile - first < m_minGap - 1))
+    {
+        selected += indices[--first] >= 0;
+    }
+    for (int position = first; position < tile; ++position)
+    {
+        if (indices[position] >= 0)
+        {
+            recordSelection(indices[position], position);
+        }
+    }
+}
 } // namespace mosaicraft::detail

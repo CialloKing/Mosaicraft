@@ -847,6 +847,42 @@ const FeaturePack::Reader::ReadStats &FeaturePack::Reader::stats() const
     return m_impl->statistics;
 }
 
+std::optional<uint64_t> FeaturePack::sourceVersion(const std::string &directory,
+                                                    const std::vector<ImageRecord> &records)
+{
+    uint64_t version = kHashStart;
+    const auto add = [&](const Stamp &value)
+    {
+        version = hashBytes(&value.path, sizeof(value.path), version);
+        version = hashBytes(&value.size, sizeof(value.size), version);
+        version = hashBytes(&value.time, sizeof(value.time), version);
+    };
+    for (const auto &record : records)
+    {
+        const auto tiny = stamp(record.tinyPath);
+        const auto lbp = stamp(record.lbpPath);
+        if (tiny.size == UINT64_MAX || lbp.size == UINT64_MAX)
+        {
+            return std::nullopt;
+        }
+        add(tiny);
+        add(lbp);
+    }
+    if (!directory.empty())
+    {
+        add(stamp(pathToUtf8(u8path(directory) / "features.pack")));
+        Manifest manifest;
+        if (readManifest(directory, manifest))
+        {
+            for (const char *suffix : {".meta", ".tiny.bin", ".lbp.bin"})
+            {
+                add(stamp(pathToUtf8(generationPath(directory, manifest, suffix))));
+            }
+        }
+    }
+    return version;
+}
+
 bool FeaturePack::load(const std::string &directory, const std::vector<ImageRecord> &records,
                        const std::vector<int> &needed, std::vector<uint8_t> &tiny, std::vector<float> &lbp,
                        std::vector<uint8_t> &tinyValid, std::vector<uint8_t> &lbpValid, Reader::ReadStats *readStats)

@@ -1648,6 +1648,20 @@ TEST_CASE("interactive selection is read-only and pins the exported tiles and an
     CHECK(hot.runtime.metrics.at("previewIndexReused") == 1);
     CHECK(hot.runtime.metrics.at("previewCandidatesReused") == 1);
 
+    different.config.analyze = false;
+    different.config.neighborPenalty = 0.1;
+    MosaicSelection cached, fresh;
+    const auto reused = MosaicService().preview(different, 42, cache, canceled, cached);
+    REQUIRE(reused.ok);
+    CHECK(reused.runtime.metrics.at("previewScoresReused") == 1);
+    PreviewWorkspace freshCache;
+    REQUIRE(MosaicService().preview(different, 42, freshCache, canceled, fresh).ok);
+    CHECK(cached.imageIds == fresh.imageIds);
+    for (size_t position = 0; position < cached.imageIds.size(); ++position)
+    {
+        CHECK(cached.recommendationsAt(position) == fresh.recommendationsAt(position));
+    }
+
     const auto original = readBytesUnicode(request.inputPath);
     requireWriteImage(workspace.targetPath(), cv::Mat(64, 36, CV_8UC3, cv::Scalar(40, 90, 140)));
     CHECK_FALSE(MosaicEngine::selectionCurrent(request.inputPath, request.dbPath, request.config, selection));

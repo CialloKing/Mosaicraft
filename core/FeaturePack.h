@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 
 #include "Database.h"
 #include <array>
@@ -55,6 +56,8 @@ class FeaturePack
                      Reader::ReadStats *readStats = nullptr);
     static bool buildCache(const std::string &directory, const std::vector<ImageRecord> &records,
                            Stats *stats = nullptr);
+    static std::optional<uint64_t> sourceVersion(const std::string &directory,
+                                                  const std::vector<ImageRecord> &records);
     // Only the exclusive build lock may remove generations that another reader could still use.
     static void removeObsolete(const std::string &directory);
 };

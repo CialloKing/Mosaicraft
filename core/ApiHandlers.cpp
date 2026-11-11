@@ -201,12 +201,12 @@ ApiResponse previewRecommendations(const ApiRequest &request, JobManager &jobs)
     }
     size_t position = 0;
     const auto &selection = *snapshot.selection;
-    if (!previewNumber(request.query, "position", position, true) || position >= selection.recommendations.size())
+    if (!previewNumber(request.query, "position", position, true) || position >= selection.indices.size())
     {
         return badRequest("invalid tile position");
     }
     auto images = nlohmann::json::array();
-    for (int id : selection.recommendations[position])
+    for (int id : selection.recommendationsAt(position))
     {
         if (const auto *entry = selection.catalog->find(id))
         {
