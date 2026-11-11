@@ -465,10 +465,6 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     const int tilesX = (target.cols + cfg.tileW - 1) / cfg.tileW;
     const int tilesY = (target.rows + cfg.tileH - 1) / cfg.tileH;
     const auto totalTiles64 = static_cast<int64_t>(tilesX) * tilesY;
-    if (m_preview && totalTiles64 > MosaicSelection::maxTiles)
-    {
-        return runtime.fail("preview_grid_limit", "preview exceeds 160000 tiles; reduce the matching grid", "config");
-    }
     if (totalTiles64 > INT_MAX)
     {
         return runtime.fail("invalid_argument", "too many tiles", "config");

@@ -76,7 +76,6 @@ struct PreviewCatalog
 
 struct MosaicSelection
 {
-    static constexpr int maxTiles = 160000;
     static constexpr int recommendationLimit = 60;
     std::string matchingKey, dbPath, featureBackend, scoreBackend;
     uint64_t targetVersion = 0, libraryVersion = 0;

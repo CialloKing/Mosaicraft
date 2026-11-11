@@ -1691,6 +1691,34 @@ TEST_CASE("interactive selection is read-only and pins the exported tiles and an
     CHECK_FALSE(MosaicEngine::selectionCurrent(request.inputPath, request.dbPath, request.config, selection));
 }
 
+TEST_CASE("interactive preview returns the full selection above 160000 tiles")
+{
+    TempWorkspace workspace;
+    const cv::Scalar color(40, 90, 140);
+    requireWriteImage(workspace.inputDir() / "tile.png", cv::Mat(1, 1, CV_8UC3, color));
+    auto build = makeBuildRequest(workspace);
+    build.normalizeWidth = build.normalizeHeight = 1;
+    REQUIRE(BuildService().run(build).ok);
+
+    constexpr int columns = 401, rows = 400, tileSize = 4;
+    requireWriteImage(workspace.targetPath(), cv::Mat(rows * tileSize, columns * tileSize, CV_8UC3, color));
+    auto request = makeMosaicRequest(workspace);
+    request.config.outW = request.config.outH = 0;
+    request.config.tileW = request.config.tileH = tileSize;
+    request.config.candidates = request.config.neighborWindow = 1;
+
+    PreviewWorkspace cache;
+    std::atomic_bool canceled{false};
+    MosaicSelection selection;
+    const auto result = MosaicService().preview(request, 42, cache, canceled, selection);
+    REQUIRE_MESSAGE(result.ok, result.message);
+    CHECK(selection.columns == columns);
+    CHECK(selection.rows == rows);
+    REQUIRE(selection.imageIds.size() == columns * rows);
+    CHECK(selection.imageIds.back() > 0);
+    CHECK(MosaicEngine::selectionCurrent(request.inputPath, request.dbPath, request.config, selection));
+}
+
 TEST_CASE("preview accumulator bounds dimensions and preserves small images")
 {
     CHECK(PreviewAccumulator::outputSize({37, 19}) == cv::Size(37, 19));
