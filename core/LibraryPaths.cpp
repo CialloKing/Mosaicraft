@@ -30,7 +30,8 @@ bool foreignAbsolute(const std::string &path)
 }
 LibraryPaths::LibraryPaths(const std::string &database) : m_root(u8path(database).parent_path())
 {
-    m_root = std::filesystem::absolute(m_root).lexically_normal();
+    // macOS 的 /var 与 /private/var 等别名必须在缓存库根时统一，避免误判库内资源。
+    m_root = std::filesystem::weakly_canonical(std::filesystem::absolute(m_root));
 }
 bool LibraryPaths::relative(const std::string &value)
 {

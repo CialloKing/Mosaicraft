@@ -34,7 +34,7 @@ class StudyPaths(unittest.TestCase):
             args.match = root / "other-tools/match"
             configure(args)
             result = load(moved / "manifest.json")
-            self.assertEqual(result["snapshot"], str(moved / "snapshot.db"))
+            self.assertEqual(result["snapshot"], str((moved / "snapshot.db").resolve()))
             self.assertEqual(result["executable"]["path"], str(args.match))
             self.assertEqual(result["identity"]["snapshot"], "a" * 64)
 

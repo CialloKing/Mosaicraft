@@ -796,9 +796,11 @@ TEST_CASE("expanded candidates merge by ID and recompute the quality boundary")
 TEST_CASE("library paths are database relative and reject root escape")
 {
     using namespace mosaicraft;
-    const auto root = std::filesystem::temp_directory_path() / std::filesystem::u8path("库 with spaces");
-    LibraryPaths paths((root / "mosaicraft.db").u8string());
+    const auto aliasRoot = std::filesystem::temp_directory_path() / std::filesystem::u8path("库 with spaces");
+    const auto root = std::filesystem::weakly_canonical(aliasRoot);
+    LibraryPaths paths((aliasRoot / "mosaicraft.db").u8string());
     CHECK(paths.store((root / "features" / "a.tiny").u8string()) == "features/a.tiny");
+    CHECK(paths.store((aliasRoot / "features" / "a.tiny").u8string()) == "features/a.tiny");
     CHECK(paths.resolve("features/a.tiny") == (root / "features" / "a.tiny").u8string());
     CHECK(paths.store("features/a.tiny") == "features/a.tiny");
     CHECK(paths.store("").empty());

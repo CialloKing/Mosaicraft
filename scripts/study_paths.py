@@ -64,6 +64,8 @@ def _convert(value, parent, writing, key=""):
     if writing:
         if not absolute(value):
             return value
+        # Both sides of relpath must use the same spelling of symlinked roots.
+        value = str(Path(value).resolve())
         for name, tool in _tools.items():
             if value == tool:
                 return "@tool/" + name
