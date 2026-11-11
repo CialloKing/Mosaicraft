@@ -79,6 +79,9 @@ const interactivePreview = (() => {
   const toggle = byId('toggle');
   const refreshButton = byId('refresh');
   const status = byId('status');
+  const progressBox = byId('progress');
+  const progressFill = byId('progress-fill');
+  const progressLabel = byId('progress-label');
   const densityWarning = byId('density-warning');
   const placeholder = byId('placeholder');
   const zoomOut = byId('out');
@@ -108,6 +111,7 @@ const interactivePreview = (() => {
   let layoutPending = false;
   let pending = false;
   let pendingId = '';
+  let progress = null;
   let plan = null;
   let planKey = '';
   let request = null;
@@ -174,6 +178,7 @@ const interactivePreview = (() => {
     ++serial;
     clearTimeout(timer);
     pending = false;
+    progress = null;
     if (pendingId) void deleteJson(endpoint + '/' + pendingId);
     pendingId = '';
   }
@@ -216,6 +221,53 @@ const interactivePreview = (() => {
     clearPictures();
   }
 
+  const previewStageLabels = {
+    queued: '排队中',
+    validating: '检查参数',
+    reading_library: '读取图库',
+    building_index: '准备索引',
+    matching: '匹配画面',
+    finalizing: '整理预览'
+  };
+
+  function previewStageLabel(stage) {
+    return previewStageLabels[stage] || '准备预览';
+  }
+
+  function renderProgress() {
+    const visible = enabled && pending;
+    progressBox.hidden = !visible;
+    if (!visible) {
+      progressBox.classList.remove('is-indeterminate');
+      progressBox.removeAttribute('aria-valuenow');
+      progressBox.removeAttribute('aria-valuetext');
+      progressBox.removeAttribute('title');
+      progressFill.style.width = '0%';
+      progressLabel.textContent = '';
+      return;
+    }
+    const matching = (progress?.activities ?? []).find(item => item.id === 'matching');
+    const total = Number(matching?.total);
+    const completed = Number(matching?.completed);
+    const determinate = Number.isFinite(total) && total > 0;
+    if (!determinate) {
+      progressBox.classList.add('is-indeterminate');
+      progressBox.removeAttribute('aria-valuenow');
+      progressBox.removeAttribute('aria-valuetext');
+      progressBox.removeAttribute('title');
+      progressFill.style.width = '';
+      progressLabel.textContent = previewStageLabel(progress?.stage) + '…';
+      return;
+    }
+    const percent = Math.max(0, Math.min(100, Math.round((Number.isFinite(completed) ? completed : 0) * 100 / total)));
+    progressBox.classList.remove('is-indeterminate');
+    progressBox.setAttribute('aria-valuenow', String(percent));
+    progressBox.setAttribute('aria-valuetext', '正在匹配预览，' + percent + '%');
+    progressBox.title = completed + ' / ' + total + ' 格';
+    progressFill.style.width = percent + '%';
+    progressLabel.textContent = '匹配 ' + percent + '%';
+  }
+
   function showStatus() {
     const hasPlan = !!plan;
     toggle.disabled = !enabled && !capable();
@@ -228,7 +280,7 @@ const interactivePreview = (() => {
     byId('color').hidden = !enabled || !val('m-coloradj');
     let message = '';
     if (!capable()) message = '实时预览需要支持此功能的本地 Web UI 服务。';
-    else if (enabled && pending) message = '更新中…';
+    else if (enabled && pending) message = previewStageLabel(progress?.stage) + '…';
     else if (enabled && lastError) message = lastError;
     else if (enabled && hasPlan) {
       message = plan.columns + ' × ' + plan.rows + ' 格';
@@ -253,6 +305,7 @@ const interactivePreview = (() => {
     generation.textContent = !enabled ? '' : plan && planKey === requestKey && !pending
       ? (edits.size ? '正式生成将应用 ' + edits.size + ' 格手动选图。' : '正式生成将使用当前预览的选图。')
       : '当前参数需要在预览页刷新后才能沿用选图。';
+    renderProgress();
   }
 
   function editsChanged() {
@@ -264,6 +317,7 @@ const interactivePreview = (() => {
   function schedule(delay = 200) {
     if (!enabled || !request || !capable() || !clip() || pending || planKey === requestKey || lastError) return;
     pending = true;
+    progress = null;
     const version = ++serial;
     // A later POST must reach the queue after any older POST already on the wire.
     timer = setTimeout(() => {
@@ -277,6 +331,7 @@ const interactivePreview = (() => {
     if (version !== serial) return;
     pending = false;
     pendingId = '';
+    progress = null;
     lastError = message;
     showStatus();
     updateRunButton();
@@ -302,6 +357,8 @@ const interactivePreview = (() => {
       return;
     }
     pendingId = id;
+    progress = {stage: 'queued'};
+    showStatus();
     timer = setTimeout(() => poll(version, key, id), 100);
   }
 
@@ -315,7 +372,9 @@ const interactivePreview = (() => {
         data.message || '无法读取预览。');
       return;
     }
+    if (next.progress) progress = next.progress;
     if (next.state === 'queued' || next.state === 'running') {
+      showStatus();
       timer = setTimeout(() => poll(version, key, id), 120);
       return;
     }
@@ -328,6 +387,7 @@ const interactivePreview = (() => {
     const previous = plan;
     pending = false;
     pendingId = '';
+    progress = null;
     plan = next;
     planKey = key;
     if (previous?.editKey !== next.editKey) edits.clear();

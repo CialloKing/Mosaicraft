@@ -52,6 +52,9 @@ public:
                       const MosaicSelection *selection = nullptr) const;
     ServiceResult preview(const MosaicRequest &request, uint32_t seed, PreviewWorkspace &workspace,
                           const std::atomic_bool &canceled, MosaicSelection &selection) const;
+    ServiceResult preview(const MosaicRequest &request, uint32_t seed, PreviewWorkspace &workspace,
+                          const std::atomic_bool &canceled, MosaicSelection &selection,
+                          RuntimeContext &runtime) const;
 };
 
 std::string resolveDbPathForService(const std::string& rawPath);

@@ -149,7 +149,9 @@ ApiResponse getPreview(const std::string &id, JobManager &jobs)
     {
         return previewNotFound();
     }
-    nlohmann::json body{{"id", snapshot.id}, {"state", jobStateName(snapshot.state)}};
+    nlohmann::json body{{"id", snapshot.id},
+                        {"state", jobStateName(snapshot.state)},
+                        {"progress", progressToJson(snapshot.progress)}};
     if (snapshot.state == JobState::Failed)
     {
         body["result"] = serviceResultToJson(snapshot.result);

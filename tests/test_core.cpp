@@ -92,6 +92,22 @@ TEST_CASE("job session history is bounded without removing queued jobs")
     CHECK(response.body["diagnostic"]["field"] == "limit");
 }
 
+TEST_CASE("preview snapshots expose queued progress")
+{
+    using namespace mosaicraft;
+    JobManager jobs(false);
+    const auto id = jobs.submitPreview(MosaicRequest{}, 42);
+    PreviewSnapshot snapshot;
+    REQUIRE(jobs.getPreview(id, snapshot));
+    CHECK(snapshot.state == JobState::Queued);
+    CHECK(snapshot.progress.stage == "queued");
+    const auto response = handleApiRequest(apiJobRequest(ApiOperation::GetPreview, id), jobs);
+    CHECK(response.status == 200);
+    CHECK(response.body["preview"]["state"] == "queued");
+    CHECK(response.body["preview"]["progress"]["stage"] == "queued");
+    CHECK(response.body["preview"]["progress"]["activities"].is_array());
+}
+
 TEST_CASE("output format priority retains request intent and filenames")
 {
     using namespace mosaicraft;
@@ -252,6 +268,12 @@ TEST_CASE("runtime diagnostics bound UTF-8 history and retain terminal errors")
     CHECK(events.truncated);
     CHECK(events.dropped > 0);
     CHECK(events.events.size() <= 100);
+    const auto progress = progressToJson(context.snapshot().progress);
+    CHECK(progress["stage"] == "matching");
+    REQUIRE(progress["activities"].size() == 1);
+    CHECK(progress["activities"][0]["id"] == "tiles");
+    CHECK(progress["activities"][0]["completed"] == 3);
+    CHECK(progress["activities"][0]["total"] == 10);
     CHECK(context.events(events.nextCursor).events.empty());
     CHECK(nlohmann::json(truncateUtf8("中文路径", 8)).dump().size() > 0);
     RequestError error;

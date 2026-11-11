@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "BuildService.h"
 #include "MosaicService.h"
@@ -46,6 +46,7 @@ struct PreviewSnapshot
     std::string id;
     JobState state = JobState::Queued;
     ServiceResult result;
+    ProgressSnapshot progress;
     std::shared_ptr<const MosaicSelection> selection;
 };
 
@@ -89,6 +90,7 @@ private:
         PreviewSnapshot snapshot;
         MosaicRequest request;
         uint32_t seed = 0;
+        std::shared_ptr<RuntimeContext> runtime = std::make_shared<RuntimeContext>(false);
         std::atomic_bool canceled{false};
         bool interrupted = false;
         std::chrono::steady_clock::time_point queuedAt, accessed;

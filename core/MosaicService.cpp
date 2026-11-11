@@ -1,4 +1,4 @@
-﻿#include "MosaicService.h"
+#include "MosaicService.h"
 
 #include "UnicodeIO.h"
 #include "RequestValidation.h"
@@ -105,6 +105,13 @@ ServiceResult MosaicService::preview(const MosaicRequest &request, uint32_t seed
                                      const std::atomic_bool &canceled, MosaicSelection &selection) const
 {
     RuntimeContext runtime(false);
+    return preview(request, seed, workspace, canceled, selection, runtime);
+}
+
+ServiceResult MosaicService::preview(const MosaicRequest &request, uint32_t seed, PreviewWorkspace &workspace,
+                                     const std::atomic_bool &canceled, MosaicSelection &selection,
+                                     RuntimeContext &runtime) const
+{
     try
     {
         std::lock_guard<std::mutex> lock(pipelineMutex());

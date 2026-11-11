@@ -38,16 +38,24 @@ nlohmann::json artifactToJson(const Artifact &item)
             {"mime", item.mime}, {"bytes", item.bytes}, {"directory", item.directory}};
 }
 
-nlohmann::json runtimeSnapshotToJson(const RuntimeSnapshot &value)
+nlohmann::json progressToJson(const ProgressSnapshot &value)
 {
     auto activities = nlohmann::json::array();
-    for (const auto &item : value.progress.activities)
+    for (const auto &item : value.activities)
     {
         activities.push_back({{"id", item.id},
                               {"completed", item.completed},
                               {"total", item.total < 0 ? nlohmann::json(nullptr) : nlohmann::json(item.total)},
                               {"unit", item.unit}});
     }
+    return {{"stage", value.stage},
+            {"startedAt", value.startedAt},
+            {"updatedAt", value.updatedAt},
+            {"activities", activities}};
+}
+
+nlohmann::json runtimeSnapshotToJson(const RuntimeSnapshot &value)
+{
     auto warnings = nlohmann::json::array();
     for (const auto &entry : value.warnings)
     {
@@ -65,9 +73,7 @@ nlohmann::json runtimeSnapshotToJson(const RuntimeSnapshot &value)
             {"warningCount", value.warningCount},
             {"warnings", warnings},
             {"artifacts", artifacts},
-            {"progress",
-             {{"stage", value.progress.stage}, {"startedAt", value.progress.startedAt},
-              {"updatedAt", value.progress.updatedAt}, {"activities", activities}}},
+            {"progress", progressToJson(value.progress)},
             {"runtime",
              {{"featureBackend", value.featureBackend},
               {"scoreBackend", value.scoreBackend},

@@ -1,4 +1,4 @@
-﻿#include "JobManager.h"
+#include "JobManager.h"
 #include "ApiJson.h"
 #include <algorithm>
 #include <random>
@@ -88,6 +88,7 @@ std::string JobManager::submitPreview(MosaicRequest request, uint32_t seed)
     auto job = std::make_shared<PreviewJob>();
     job->request = std::move(request);
     job->seed = seed;
+    job->runtime->stage("queued");
     job->queuedAt = job->accessed = std::chrono::steady_clock::now();
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -120,6 +121,7 @@ bool JobManager::getPreview(const std::string &id, PreviewSnapshot &out)
     }
     it->second->accessed = std::chrono::steady_clock::now();
     out = it->second->snapshot;
+    out.progress = it->second->runtime->snapshot().progress;
     return true;
 }
 
@@ -187,7 +189,8 @@ void JobManager::runPreview(const std::shared_ptr<PreviewJob> &job)
     try
     {
         selection = std::make_shared<MosaicSelection>();
-        result = MosaicService().preview(job->request, job->seed, m_previewWorkspace, job->canceled, *selection);
+        result = MosaicService().preview(job->request, job->seed, m_previewWorkspace, job->canceled, *selection,
+                                         *job->runtime);
     }
     catch (const std::exception &error)
     {
@@ -203,6 +206,7 @@ void JobManager::runPreview(const std::shared_ptr<PreviewJob> &job)
             job->interrupted = false;
             job->canceled = false;
             job->snapshot.state = JobState::Queued;
+            job->runtime->stage("queued");
             job->queuedAt = std::chrono::steady_clock::now();
             m_pendingPreview = job;
         }
