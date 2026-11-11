@@ -1,9 +1,78 @@
+function setupPreviewSizing(surface, handle, resetButton) {
+  const key = 'mosaicraft-preview-size-v1';
+  const saved = storedJson(key, {});
+  const size = {
+    width: Number.isFinite(saved.width) && saved.width > 0 ? saved.width : null,
+    height: Number.isFinite(saved.height) && saved.height > 0 ? saved.height : null
+  };
+  let drag = null;
+
+  function apply() {
+    for (const axis of ['width', 'height']) {
+      const property = '--preview-' + axis;
+      if (size[axis] === null) surface.style.removeProperty(property);
+      else surface.style.setProperty(property, size[axis] + 'px');
+    }
+    resetButton.disabled = size.width === null && size.height === null;
+  }
+
+  function save(widthChanged, heightChanged) {
+    // 记住实际尺寸，避免拖出边界时保存一个不可见的尺寸。
+    if (widthChanged) size.width = surface.offsetWidth;
+    if (heightChanged) size.height = surface.offsetHeight;
+    apply();
+    saveJson(key, size);
+  }
+
+  handle.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || drag) return;
+    event.preventDefault();
+    handle.focus({preventScroll: true});
+    handle.setPointerCapture(event.pointerId);
+    drag = {id: event.pointerId, x: event.clientX, y: event.clientY,
+      width: surface.offsetWidth, height: surface.offsetHeight, before: {...size}};
+  });
+  handle.addEventListener('pointermove', event => {
+    if (drag?.id !== event.pointerId) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    size.width = Math.abs(dx) >= 2 ? Math.max(1, Math.round(drag.width + dx)) : drag.before.width;
+    size.height = Math.abs(dy) >= 2 ? Math.max(1, Math.round(drag.height + dy)) : drag.before.height;
+    apply();
+  });
+  handle.addEventListener('lostpointercapture', event => {
+    if (drag?.id !== event.pointerId) return;
+    const widthChanged = size.width !== drag.before.width;
+    const heightChanged = size.height !== drag.before.height;
+    drag = null;
+    if (widthChanged || heightChanged) save(widthChanged, heightChanged);
+  });
+  handle.addEventListener('keydown', event => {
+    const step = event.shiftKey ? 64 : 24;
+    const offsets = {ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step]};
+    const offset = offsets[event.key];
+    if (!Array.isArray(offset)) return;
+    event.preventDefault();
+    const [dx, dy] = offset;
+    if (dx) size.width = Math.max(1, surface.offsetWidth + dx);
+    if (dy) size.height = Math.max(1, surface.offsetHeight + dy);
+    apply();
+    save(dx !== 0, dy !== 0);
+  });
+  resetButton.addEventListener('click', () => {
+    size.width = size.height = null;
+    save(false, false);
+  });
+  apply();
+}
+
 const interactivePreview = (() => {
   const endpoint = '/api/mosaic/preview';
   const maxVisible = 16000;
   const cacheBudget = 64 * 1024 * 1024;
   const parallelLoads = 8;
   const byId = name => document.getElementById('live-preview-' + name);
+  setupPreviewSizing(byId('surface'), byId('resize'), byId('reset-size'));
   const canvas = byId('canvas');
   const context = canvas.getContext('2d', {alpha: false});
   const toggle = byId('toggle');
@@ -44,6 +113,7 @@ const interactivePreview = (() => {
   let opacity = 0;
   let tileAspect = 9 / 16;
   let scale = 0;
+  let fitted = true;
   let centerX = 0;
   let centerY = 0;
   let lastGeometry = '';
@@ -136,6 +206,7 @@ const interactivePreview = (() => {
     planKey = '';
     edits.clear();
     scale = 0;
+    fitted = true;
     clearPictures();
   }
 
@@ -351,7 +422,13 @@ const interactivePreview = (() => {
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
     const min = minimumScale(width, height);
-    scale = clamp(scale || min, min, Math.max(256, min));
+    if (fitted) {
+      scale = min;
+      centerX = plan.columns / 2;
+      centerY = plan.rows / 2;
+    } else {
+      scale = clamp(scale, min, Math.max(256, min));
+    }
     const tw = scale * tileAspect;
     const th = scale;
     const worldW = tw * plan.columns;
@@ -365,9 +442,7 @@ const interactivePreview = (() => {
 
   function fit() {
     if (!plan) return;
-    scale = 0;
-    centerX = plan.columns / 2;
-    centerY = plan.rows / 2;
+    fitted = true;
     requestPaint();
   }
 
@@ -376,6 +451,8 @@ const interactivePreview = (() => {
     const g = geometry();
     const min = minimumScale(g.width, g.height);
     scale = clamp(g.th * factor, min, Math.max(256, min));
+    if (scale === g.th) return;
+    fitted = false;
     centerX = (anchorX - g.x) / g.tw + (g.width / 2 - anchorX) / (scale * tileAspect);
     centerY = (anchorY - g.y) / g.th + (g.height / 2 - anchorY) / scale;
     requestPaint();
@@ -384,6 +461,8 @@ const interactivePreview = (() => {
   function pan(dx, dy) {
     if (!plan || !clip()) return;
     const g = geometry();
+    if ((!dx || g.tw * plan.columns <= g.width) && (!dy || g.th * plan.rows <= g.height)) return;
+    fitted = false;
     centerX -= dx / g.tw;
     centerY -= dy / g.th;
     requestPaint();

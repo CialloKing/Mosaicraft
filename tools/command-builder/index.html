@@ -47,7 +47,11 @@ main:has(#panel-preview.active) { max-width: 1660px; }
 .preview-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .preview-toolbar .btn { padding: 6px 10px; }
 .preview-toolbar .btn[aria-pressed="true"] { background: var(--indigo); color: var(--fg); }
-.preview-surface { position: relative; margin-top: 10px; height: clamp(280px, 62vh, 680px);
+.preview-surface {
+  --preview-default-height: clamp(280px, 62vh, 680px);
+  position: relative; margin-top: 10px;
+  width: var(--preview-width, 100%); min-width: min(240px, 100%); max-width: 100%;
+  height: var(--preview-height, var(--preview-default-height)); min-height: 160px; max-height: max(160px, 90dvh);
   background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 .preview-surface canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .preview-surface canvas.editing { cursor: crosshair; }
@@ -57,6 +61,14 @@ main:has(#panel-preview.active) { max-width: 1660px; }
   padding: 16px; color: var(--fg2); pointer-events: none; font-size: .85rem; }
 .preview-selection { position: absolute; pointer-events: none; border: 2px solid var(--accent);
   box-shadow: inset 0 0 0 1px #11131f; }
+.preview-resize { position: absolute; right: 0; bottom: 0; display: grid; place-items: center;
+  width: 34px; height: 34px; color: var(--accent2); background: var(--input-bg);
+  border: 1px solid var(--border); border-radius: 6px 0 0 0; cursor: nwse-resize; touch-action: none; }
+.preview-resize::before { content: ''; width: 14px; height: 14px;
+  background: repeating-linear-gradient(135deg, transparent 0 3px, currentColor 3px 4.5px);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%); }
+.preview-resize:hover, .preview-resize:active { background: var(--indigo); }
+.preview-resize:focus-visible { outline-offset: -3px; }
 #live-preview-status { margin: 8px 0 0; min-height: 1.5em; overflow-wrap: anywhere; }
 .preview-picker .preview-toolbar { margin: 8px 0; }
 .preview-picker .field { margin-top: 8px; }
@@ -70,7 +82,7 @@ main:has(#panel-preview.active) { max-width: 1660px; }
 .preview-picker-item span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (min-width: 1020px) {
   .preview-workspace:has(.preview-picker:not([hidden])) { grid-template-columns: minmax(0, 1fr) 340px; }
-  .preview-surface { height: clamp(420px, 68vh, 820px); }
+  .preview-surface { --preview-default-height: clamp(420px, 68vh, 820px); }
 }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 22px; margin-bottom: 14px; }
 .card h3 { font-size: 0.88rem; color: var(--accent2); margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); font-weight: 600; }
@@ -334,13 +346,16 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
         <button type="button" class="btn btn-secondary" id="live-preview-out" aria-label="缩小预览" disabled>−</button>
         <button type="button" class="btn btn-secondary" id="live-preview-in" aria-label="放大预览" disabled>+</button>
         <button type="button" class="btn btn-secondary" id="live-preview-fit" disabled>适应窗口</button>
+        <button type="button" class="btn btn-secondary" id="live-preview-reset-size" disabled>恢复默认大小</button>
         <button type="button" class="btn btn-secondary" id="live-preview-edit" aria-pressed="false" disabled>手动选图</button>
         <button type="button" class="btn btn-secondary" data-open-tab="mosaic">返回生成</button>
       </div>
-      <div class="preview-surface">
+      <div class="preview-surface" id="live-preview-surface">
         <canvas id="live-preview-canvas" tabindex="0" aria-label="马赛克预览，方向键平移，加减键缩放，手动模式下回车选择中心格"></canvas>
         <div id="live-preview-selection" class="preview-selection" aria-hidden="true" hidden></div>
         <p class="preview-placeholder" id="live-preview-placeholder">在生成页填写目标图片后开启预览。</p>
+        <button type="button" class="preview-resize" id="live-preview-resize"
+          title="拖动调整预览窗口大小" aria-label="调整预览窗口大小，左右方向键调宽，上下方向键调高"></button>
       </div>
       <p class="hint" id="live-preview-status" role="status" aria-live="polite"></p>
       <p class="hint" id="live-preview-color" hidden>随机亮度扰动在正式输出时应用。</p>
