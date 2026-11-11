@@ -2,6 +2,7 @@
 #include "FeatureExtractorCuda.h"
 
 #include "DeviceBuffer.cuh"
+#include "TemplateFeatureSizes.h"
 #include "core/FeatureExtractor.h"
 #include "core/FeatureUtils.h"
 #include "core/UnicodeIO.h"
@@ -55,11 +56,7 @@ FeatureWorkspace::~FeatureWorkspace() = default;
 bool FeatureWorkspace::preparePipeline(const FeaturePipelineConfig &config, GpuTimings *timings)
 {
     resetPipeline();
-    const bool supported = (config.width == 180 && config.height == 320) ||
-                           (config.width == 320 && config.height == 180) ||
-                           (config.width == 360 && config.height == 640) ||
-                           (config.width == 640 && config.height == 360);
-    if (!supported || config.maxTiles <= 0 || config.maxTiles > 1024)
+    if (!hasTemplateFeatures(config.width, config.height) || config.maxTiles <= 0 || config.maxTiles > 1024)
     {
         throw std::invalid_argument("invalid CUDA feature pipeline dimensions");
     }
@@ -235,7 +232,8 @@ __global__ void featureKernel(const uint8_t *__restrict__ d_images, float *__res
     }
 
     int tx = threadIdx.x;
-    const uint8_t *img = d_images + imgIdx * IMG_PIX * 3;
+    // 大尺寸的原始批次可能跨越 2 GiB，偏移需在指针宽度下计算。
+    const uint8_t *img = d_images + static_cast<size_t>(imgIdx) * IMG_PIX * 3;
 
     __shared__ float s_gridLab[GRID_CELLS * 3];
     __shared__ float s_grayAcc;
@@ -442,8 +440,6 @@ __global__ void featureKernel(const uint8_t *__restrict__ d_images, float *__res
     }
 }
 
-// 显式实例化：支持的四种分辨率
-
 // ============================================================
 // 主机接口
 // ============================================================
@@ -463,8 +459,7 @@ int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &r
     // 从实际图像读取尺寸
     int imgW = images[0].cols;
     int imgH = images[0].rows;
-    if (!((imgW == 180 && imgH == 320) || (imgW == 320 && imgH == 180) ||
-          (imgW == 360 && imgH == 640) || (imgW == 640 && imgH == 360)))
+    if (!hasTemplateFeatures(imgW, imgH))
     {
         return 0;
     }
@@ -554,31 +549,19 @@ int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &r
     {
         return 0;
     }
-    if (imgW == 180 && imgH == 320)
-    {
-        featureKernel<180, 320><<<N, 180>>>(d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(), d_avgLAB.get(),
-                                            d_bright.get(), d_contrast.get(), d_edge.get(), N);
-    }
-    else if (imgW == 320 && imgH == 180)
-    {
-        featureKernel<320, 180><<<N, 320>>>(d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(), d_avgLAB.get(),
-                                            d_bright.get(), d_contrast.get(), d_edge.get(), N);
-    }
-    else if (imgW == 360 && imgH == 640)
-    {
-        featureKernel<360, 640><<<N, 360>>>(d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(), d_avgLAB.get(),
-                                            d_bright.get(), d_contrast.get(), d_edge.get(), N);
-    }
-    else if (imgW == 640 && imgH == 360)
-    {
-        featureKernel<640, 360><<<N, 640>>>(d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(), d_avgLAB.get(),
-                                            d_bright.get(), d_contrast.get(), d_edge.get(), N);
-    }
+#define LAUNCH_BUILD_FEATURE(W, H)                                                                         \
+    if (imgW == W && imgH == H)                                                                           \
+    {                                                                                                    \
+        featureKernel<W, H><<<N, W>>>(d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(),              \
+                                      d_avgLAB.get(), d_bright.get(), d_contrast.get(), d_edge.get(), N);  \
+    }                                                                                                    \
     else
+    MOSAICRAFT_CUDA_TEMPLATE_SIZES(LAUNCH_BUILD_FEATURE)
     {
         fprintf(stderr, "GPU build: unsupported size %dx%d\n", imgW, imgH);
         return 0;
     }
+#undef LAUNCH_BUILD_FEATURE
     if (cudaGetLastError() != cudaSuccess || cudaDeviceSynchronize() != cudaSuccess)
     {
         fprintf(stderr, "GPU feature error: kernel launch failed\n");
@@ -653,15 +636,6 @@ int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &r
 
     return N;
 }
-
-// ============================================================
-// 调度器宏：根据尺寸选择模板实例
-// ============================================================
-#define LAUNCH_FEATURE(W, H)                                                                                           \
-    if (imgW == W && imgH == H)                                                                                        \
-    {                                                                                                                  \
-        return launchKernel<W, H>(h_images, N, h_avgLAB, h_grid, h_tiny, h_edge, h_lbp, workspace, timings);           \
-    }
 
 namespace
 {
@@ -893,10 +867,7 @@ void FeatureWorkspace::extract(int first, int count, double *lab, float *grid, u
     }
     try
     {
-        EXTRACT_PIPELINE(180, 320)
-        EXTRACT_PIPELINE(320, 180)
-        EXTRACT_PIPELINE(360, 640)
-        EXTRACT_PIPELINE(640, 360)
+        MOSAICRAFT_CUDA_TEMPLATE_SIZES(EXTRACT_PIPELINE)
     }
     catch (...)
     {
@@ -915,10 +886,13 @@ int extractFeaturesRaw(const uint8_t *h_images, int N, int imgW, int imgH, doubl
     {
         return 0;
     }
-    LAUNCH_FEATURE(180, 320);
-    LAUNCH_FEATURE(320, 180);
-    LAUNCH_FEATURE(360, 640);
-    LAUNCH_FEATURE(640, 360);
+#define LAUNCH_FEATURE(W, H)                                                                                 \
+    if (imgW == W && imgH == H)                                                                             \
+    {                                                                                                      \
+        return launchKernel<W, H>(h_images, N, h_avgLAB, h_grid, h_tiny, h_edge, h_lbp, workspace, timings); \
+    }
+    MOSAICRAFT_CUDA_TEMPLATE_SIZES(LAUNCH_FEATURE)
+#undef LAUNCH_FEATURE
     fprintf(stderr, "GPU: unsupported feature size %dx%d, use CPU fallback\n", imgW, imgH);
     return -1;
 }
@@ -932,10 +906,14 @@ int extractFeaturesRaw(const uint8_t *h_images, int N, double *h_avgLAB, float *
 
 bool probeTemplateFeatures(const cudaDeviceProp &device, CudaAvailability &status)
 {
-    return checkKernel(featureKernel<180, 320>, 180, device, status, "featureKernel<180,320>") &&
-        checkKernel(featureKernel<320, 180>, 320, device, status, "featureKernel<320,180>") &&
-        checkKernel(featureKernel<360, 640>, 360, device, status, "featureKernel<360,640>") &&
-        checkKernel(featureKernel<640, 360>, 640, device, status, "featureKernel<640,360>");
+#define CHECK_FEATURE_KERNEL(W, H)                                                                       \
+    if (!checkKernel(featureKernel<W, H>, W, device, status, "featureKernel<" #W "," #H ">"))            \
+    {                                                                                                    \
+        return false;                                                                                    \
+    }
+    MOSAICRAFT_CUDA_TEMPLATE_SIZES(CHECK_FEATURE_KERNEL)
+#undef CHECK_FEATURE_KERNEL
+    return true;
 }
 
 } // namespace cuda

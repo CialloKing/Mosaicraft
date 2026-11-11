@@ -20,6 +20,7 @@
 #include "UnicodeIO.h"
 #include "compute/CudaBackend.h"
 #include "compute/CompatibleFeatures.h"
+#include "compute/TemplateFeatureSizes.h"
 #include <numeric>
 #include <locale>
 

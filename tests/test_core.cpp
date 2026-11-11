@@ -1,6 +1,7 @@
 #include "../core/FeatureIndex.h"
 #include "../compute/CudaBackend.h"
 #include "../compute/CompatibleFeatures.h"
+#include "../compute/TemplateFeatureSizes.h"
 #include "../core/FeatureExtractor.h"
 // ============================================================
 // Mosaicraft 核心单元测试 (doctest)
@@ -1937,14 +1938,16 @@ TEST_CASE("CUDA pipeline preserves features and drains failed work")
     {
         return;
     }
-    for (auto size : {cv::Size(180, 320), cv::Size(320, 180), cv::Size(360, 640), cv::Size(640, 360)})
+    for (const auto &size : templateFeatureSizes)
     {
+        CAPTURE(size.width);
+        CAPTURE(size.height);
         FeatureWorkspace legacy, pipeline;
         FeaturePipelineConfig config;
         config.maxTiles = 3;
         config.width = size.width;
         config.height = size.height;
-        const size_t bytes = static_cast<size_t>(size.area()) * 3 * config.maxTiles;
+        const size_t bytes = static_cast<size_t>(size.width) * size.height * 3 * config.maxTiles;
         std::vector<uint8_t> images(bytes), tiny(3 * 256), expectedTiny(3 * 256);
         for (size_t i = 0; i < bytes; ++i)
         {

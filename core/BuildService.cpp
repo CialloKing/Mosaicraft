@@ -11,6 +11,7 @@
 #include "WorkerPool.h"
 #include "compute/CudaBackend.h"
 #include "compute/CompatibleFeatures.h"
+#include "compute/TemplateFeatureSizes.h"
 #ifdef MOSAICRAFT_CUDA
 #include "compute/FeatureExtractorCuda.h"
 #endif

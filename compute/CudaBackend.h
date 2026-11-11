@@ -177,7 +177,7 @@ int extractTileFeatures(const std::uint8_t *h_tiles180, int N, double *h_avgLAB,
 int extractFeaturesRaw(const std::uint8_t *h_images, int N, double *h_avgLAB, float *h_grid, std::uint8_t *h_tiny,
                        double *h_edge, float *h_lbp);
 
-// 带特征尺寸的版本（支持 180x320 / 320x180 / 360x640 / 640x360）
+// 带特征尺寸的版本，支持 TemplateFeatureSizes.h 中的固定尺寸。
 int extractFeaturesRaw(const std::uint8_t *h_images, int N, int imgW, int imgH, double *h_avgLAB, float *h_grid,
                        std::uint8_t *h_tiny, double *h_edge, float *h_lbp, FeatureWorkspace *workspace = nullptr,
                        GpuTimings *timings = nullptr);

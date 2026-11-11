@@ -10,12 +10,6 @@ namespace mosaicraft
 {
 namespace cuda
 {
-inline bool hasTemplateFeatures(int width, int height)
-{
-    return (width == 180 && height == 320) || (width == 320 && height == 180) ||
-           (width == 360 && height == 640) || (width == 640 && height == 360);
-}
-
 struct CompatibleFeature
 {
     std::array<double, 3> lab{};
