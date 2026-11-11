@@ -61,7 +61,8 @@ def main():
             assert all(not Path(p).is_absolute() for row in connection.execute('SELECT file_path,tiny_path,lbp_path FROM images') for p in row)
         finally:
             connection.close()
-        moved = root / '图库 B'
+        # Include a character that cannot be represented by a Windows legacy code page.
+        moved = root / '图库 𠮷 B'
         library.rename(moved)
         run(['db-stats', '-d', str(moved / 'mosaicraft.db')])
         run(['db-health', '-d', str(moved / 'mosaicraft.db')])

@@ -1067,13 +1067,6 @@ static int runMain(int argc, char* argv[])
         }
     } autoPause;
 
-    // Windows: argv 使用系统 ANSI 编码（中文系统为 GBK），转为 UTF-8 原样替换
-    std::vector<std::string> utf8Args(argc);
-    for (int i = 0; i < argc; ++i)
-    {
-        utf8Args[i] = localToUtf8(argv[i]);
-        argv[i] = &utf8Args[i][0];
-    }
     if (argc < 2)
     {
         printHelp();
@@ -1128,11 +1121,27 @@ static int runMain(int argc, char* argv[])
     }
 }
 
-int main(int argc, char* argv[])
+#ifdef _WIN32
+int wmain(int argc, wchar_t *wideArgv[])
+#else
+int main(int argc, char *argv[])
+#endif
 {
     try
     {
+#ifdef _WIN32
+        // 窄字符入口会在解析前丢失系统代码页无法表示的文件名。
+        std::vector<std::string> utf8Args(argc);
+        std::vector<char *> argv(argc + 1, nullptr);
+        for (int i = 0; i < argc; ++i)
+        {
+            utf8Args[i] = mosaicraft::pathToUtf8(std::filesystem::path(wideArgv[i]));
+            argv[i] = utf8Args[i].data();
+        }
+        return runMain(argc, argv.data());
+#else
         return runMain(argc, argv);
+#endif
     }
     catch (const std::bad_alloc&)
     {
