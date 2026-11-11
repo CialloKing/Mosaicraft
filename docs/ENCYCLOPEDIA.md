@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-11-11 | 版本 / Version：v1.15.2
+> 最后更新 / Last updated：2026-11-12 | 版本 / Version：v1.15.3
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -370,6 +370,7 @@ SQLite `INSERT OR IGNORE` 消耗自增 ID 导致间隙，FeaturePack v1 假设 I
 | 1.14.10 | Web UI 离线使用帮助、参数说明、明确预览默认状态与窄屏排版 | 见对应更新记录 |
 | **1.14.11** | 按来源选择输出格式、超限转 PNG 或缩小 Tile、API 2.2 输出计划与实际产物 | 见本版更新记录 |
 | **1.15.0** | 内部版本重置、严格新版图库与 API 1.0、删除旧库自动升级和命令接口 | 见不兼容更新验收 |
+| **1.15.3** | 十种 CUDA 分辨率模板、预览取消总格数上限、默认放大与进度日志、GPL-3.0 | 见本版更新记录 |
 | **1.15.2** | 预览热调参、按需推荐、高密度平移、流式 PNG 与 CPU 建库 | 见预览验收 |
 | **1.15.1** | 独立实时预览页、整库手动选图、窗口调节及 API 1.2 | 见预览验收 |
 | **2.0.0** | **Avalonia GUI** 首发 (CLI→GUI) | 计划中 |
@@ -790,6 +791,14 @@ Web UI 的预览提示改为“生成结果预览默认关闭，勾选后额外�
 功能修改已通过真实浏览器检查：预览说明、帮助直达、参数保留、刷新恢复、帮助页任务跟踪、键盘展开、窄屏排版与服务断开后的阅读均正常；JavaScript 语法与帮助锚点检查通过。发布继续按清单执行同提交的原生打包、本机 GPU Required 和真实附件验收。CLI、REST API 2.1、特征 v6、图库格式及评分算法保持兼容。
 
 > **EN**: Version 1.14.10 adds a self-contained Web UI help page covering setup, paths, options, task diagnostics and results. Preview wording explicitly names the option and explains its purpose. Context links open the relevant help section; form state and task tracking survive navigation, while help never generates or submits a command. Narrow screens use stacked option descriptions. API 2.1, feature v6, library formats and engine behavior remain unchanged.
+
+### v1.15.3: 十种 CUDA 模板与预览网格 (2026-11-12)
+
+CUDA 模板从四种扩展到十种：正方形 256×256、512×512，竖屏 180×320、270×480、360×640、540×960，横屏 320×180、480×270、640×360、960×540。尺寸表同时驱动内核实例化、特征提取分派、GPU 预检以及 CLI 和使用帮助；其余合法尺寸继续使用通用 CUDA 路径。新增尺寸沿用原有模板算术，特征编号、图库格式和 API 1.2 不变。
+
+实时预览取消 160,000 格总上限，后端返回完整匹配网格。前端按可见区域请求缩略图，视口超过 16,000 格时提示可能卡顿；新预览从画面中心以最大单格高度打开，仍可缩放、平移和适应窗口。预览匹配按秒输出控制台进度，并补充排队、缓存复用、ANN 准备和收尾日志。README 重写下载、快速开始、参数与模板说明，项目许可证改为 GPL-3.0-only；日常 CI 只编译产品，完整测试由版本标签触发的打包流程执行。
+
+> **EN**: Version 1.15.3 expands template CUDA to ten resolutions (square 256/512, portrait 180/270/360/540 widths and landscape 320/480/640/960 widths), removes the 160,000-tile preview total cap while warning above 16,000 visible tiles, opens previews at the maximum tile height, and logs throttled preview progress. Licensing moves to GPL-3.0-only. Feature version 1, library format and API 1.2 remain compatible.
 
 ### v1.15.2 性能与预览体验 (2026-11-11)
 

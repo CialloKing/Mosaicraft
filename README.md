@@ -16,7 +16,7 @@ Mosaicraft 用图库里的照片拼出一张目标图，可通过本地 Web UI �
 | Linux x64 | Ubuntu 22.04 / glibc 2.35 | `_linux-x64_cpu-only.tar.gz` | `_linux-x64_cuda.tar.gz` |
 | macOS ARM64 | macOS 13 | `_macos-arm64_cpu-only.tar.gz` | — |
 
-包内 `BUILD_INFO.txt` 记录构建配置和 GPU 验收状态。v1.15.2 的 Windows CUDA 包已通过实机验收，Linux CUDA 包已验证编译和 CPU 回退，GPU 实机验收待完成。 [v1.15.2 发布说明与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.2)
+包内 `BUILD_INFO.txt` 记录构建配置和 GPU 验收状态。v1.15.3 的 Windows CUDA 包已通过实机验收，Linux CUDA 包已验证编译和 CPU 回退，GPU 实机验收待完成。 [v1.15.3 发布说明与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.3)
 
 ## 快速开始
 
@@ -118,7 +118,7 @@ Mosaicraft 用图库里的照片拼出一张目标图，可通过本地 Web UI �
 
 CUDA 可用时，建库、实时预览和生成会根据图库的归一化尺寸自动选择模板，用于特征提取和候选评分。其他合法尺寸可走与 CPU 兼容的通用 CUDA 路径。
 
-| 方向 | v1.15.2 发布包 | 当前源码 |
+| 方向 | v1.15.2 发布包 | v1.15.3 发布包 |
 | --- | --- | --- |
 | 正方形 | — | 256×256、512×512 |
 | 竖屏 9:16 | 180×320、360×640 | 180×320、270×480、360×640、540×960 |
@@ -170,7 +170,7 @@ cmake --build --preset $preset --target mosaicraft MosaicraftWebUI --parallel
 
 - 接口文档列出请求字段、异步任务和诊断信息。运行 Web UI 后可通过 `GET /api/info` 查看版本和能力。 [REST API](docs/API.md)
 - 匹配流程使用 AvgLAB、8×8 Grid、TinyImage、边缘密度和 LBP，结合候选召回、评分与邻域去重。 [项目百科](docs/ENCYCLOPEDIA.md)
-- 固定样本的预览耗时、流式 PNG 导出和 CPU 建库结果。 [v1.15.2 性能对照](docs/PREVIEW_VERIFICATION.md#v1152-预览性能对照)
+- 固定样本的预览耗时、流式 PNG 导出和 CPU 建库结果。 [v1.15.2 预览性能对照](docs/PREVIEW_VERIFICATION.md#v1152-预览性能对照)
 - 原生包构建、GPU 验收和 SHA256 校验流程。 [CI 与打包](docs/CI_PACKAGING.md) · [发布清单](docs/RELEASE_CHECKLIST.md)
 
 ## Star 历史
