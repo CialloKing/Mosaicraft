@@ -1672,6 +1672,8 @@ TEST_CASE("interactive selection is read-only and pins the exported tiles and an
         REQUIRE(image.size() == region.size());
         CHECK(cv::norm(output(region), image, cv::NORM_INF) == 0);
     }
+    // 分析报告写入独立的使用统计表，直接修改参与评分的记录来验证图库代际。
+    REQUIRE(fixtureSql(workspace.dbPath(), "UPDATE images SET use_count = use_count + 1") == SQLITE_OK);
     CHECK_FALSE(MosaicEngine::selectionCurrent(request.inputPath, request.dbPath, request.config, selection));
 }
 

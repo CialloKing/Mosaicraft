@@ -7,6 +7,9 @@ foreach(key IN ITEMS softwareVersion libraryVersion featureVersion apiVersion ap
 endforeach()
 project(Mosaicraft VERSION ${softwareVersion} LANGUAGES CXX)
 configure_file(cmake/Contracts.h.in generated/MosaicraftContracts.h @ONLY)
+set(previewScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/preview.js")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${previewScript}")
+file(READ "${previewScript}" interactivePreviewScript)
 configure_file(tools/command-builder/index.html generated/index.html @ONLY)
 
 # C++17

@@ -41,6 +41,26 @@ header span { color: var(--warning); font-size: 0.8rem; background: rgba(147,117
 main { max-width: 920px; margin: 28px auto; padding: 0 20px; }
 .panel { display: none; }
 .panel.active { display: block; }
+#panel-mosaic.active { display: grid; min-width: 0; }
+#mosaic-parameters, #interactive-preview { min-width: 0; }
+#interactive-preview { align-self: start; }
+.preview-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.preview-toolbar .btn { padding: 6px 10px; }
+.preview-surface { position: relative; margin-top: 10px; height: clamp(230px, 43vh, 440px);
+  background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.preview-surface canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.preview-surface canvas:active { cursor: grabbing; }
+.preview-surface canvas:focus-visible { outline-offset: -3px; }
+.preview-placeholder { position: absolute; inset: 0; align-content: center; text-align: center;
+  padding: 16px; color: var(--fg2); pointer-events: none; font-size: .85rem; }
+#live-preview-status { margin: 8px 0 0; min-height: 1.5em; overflow-wrap: anywhere; }
+@media (min-width: 1120px) {
+  main:has(#panel-mosaic.active) { max-width: 1440px; }
+  #panel-mosaic.active { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); column-gap: 16px; }
+  #interactive-preview { grid-area: 1 / 2; position: sticky; top: 16px; }
+  #mosaic-parameters { grid-area: 1 / 1; }
+  .preview-surface { height: clamp(320px, 55vh, 640px); }
+}
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 22px; margin-bottom: 14px; }
 .card h3 { font-size: 0.88rem; color: var(--accent2); margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); font-weight: 600; }
 .row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
@@ -215,6 +235,23 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 
 <!-- ============ MOSAIC ============ -->
 <div class="panel active" id="panel-mosaic">
+  <section class="card" id="interactive-preview" aria-labelledby="live-preview-heading">
+    <h3 id="live-preview-heading">实时预览</h3>
+    <div class="preview-toolbar">
+      <button type="button" class="btn btn-secondary" id="live-preview-toggle" disabled>开启预览</button>
+      <button type="button" class="btn btn-secondary" id="live-preview-refresh" hidden>刷新</button>
+      <button type="button" class="btn btn-secondary" id="live-preview-out" aria-label="缩小预览" disabled>−</button>
+      <button type="button" class="btn btn-secondary" id="live-preview-in" aria-label="放大预览" disabled>+</button>
+      <button type="button" class="btn btn-secondary" id="live-preview-fit" disabled>适应窗口</button>
+    </div>
+    <div class="preview-surface">
+      <canvas id="live-preview-canvas" tabindex="0" aria-label="马赛克预览，可拖动或用方向键平移，用加减键缩放"></canvas>
+      <p class="preview-placeholder" id="live-preview-placeholder">选择目标图片后开启预览。</p>
+    </div>
+    <p class="hint" id="live-preview-status" role="status" aria-live="polite"></p>
+    <p class="hint" id="live-preview-color" hidden>随机亮度扰动在正式输出时应用。</p>
+  </section>
+  <div id="mosaic-parameters">
   <div class="card">
     <h3>📂 必需路径（支持绝对路径与相对路径）</h3>
     <div class="row">
@@ -284,6 +321,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <div class="field"><label>亮度扰动幅度 --color-strength</label><input type="number" id="m-colorstr" value="0.04" min="0" max="0.5" step="0.01" style="max-width:150px"><div class="hint">0.04 表示 L 通道最多 ±4%；单独设置幅度不会启用。幅度为 0 时保持原像素。</div></div>
       <div class="field"><label>基础图叠加强度 --overlay-strength</label><input type="number" id="m-overlaystr" value="0" min="0" max="1" step="0.05" style="max-width:150px"><div class="hint">0 关闭；0.2 表示 80% 素材 + 20% 基础图。使用缩放、放大和补边后的基础图，强度越高，小图细节越弱。</div></div>
     </div>
+  </div>
   </div>
 </div>
 
@@ -367,7 +405,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <ol class="help-steps">
       <li><strong>准备素材图库。</strong>在“建库”页填写素材所在的图片目录和图库输出目录，点击“运行”。生成会从这些素材中挑选图片，拼成你的目标图片。</li>
       <li><strong>复用建好的图库。</strong>等建库任务完成，在下方结果区点击“使用此图库”，数据库路径会自动填入生成和查询页面。</li>
-      <li><strong>提交生成任务。</strong>在“生成马赛克”页填写目标图片和主图输出路径。首次使用可先减小“输出 Tile 尺寸”，例如 <code>18x32</code>，并勾选“生成结果预览”方便查看。</li>
+      <li><strong>提交生成任务。</strong>在“生成马赛克”页填写目标图片和主图输出路径。点击“开启预览”可查看当前选图，调整参数后自动刷新。预览完成后运行，正式输出将沿用该排列。</li>
       <li><strong>到“任务与结果”查看。</strong>点击任务可查看阶段、警告和结果。完成后复制实际路径或下载主图；已生成的预览图会直接显示在页面中。</li>
     </ol>
     <div class="btns">
@@ -430,6 +468,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     </details>
     <details id="help-switches">
       <summary>开关与预览：勾选后会发生什么</summary>
+      <p>实时预览支持拖动和缩放，按需加载窗口内的图库图片。勾选“生成结果预览”则会在正式生成时额外保存 JPEG。</p>
       <div class="help-table-wrap"><table class="help-table">
         <thead><tr><th scope="col">选项</th><th scope="col">勾选后的行为</th></tr></thead>
         <tbody>
@@ -584,6 +623,7 @@ function generateCommand() {
   clearFieldErrors();
   syncPreviewOption();
   const tab = document.querySelector('.tab.active').dataset.cmd;
+  interactivePreview.sync(tab);
   document.getElementById('command-area').hidden = tab === 'help';
   if (tab === 'help') {
     // Help is a local document view and must never generate or submit a command.
@@ -780,8 +820,10 @@ async function runCommand() {
     const payload = readFormPayload(tab);
     for (const id of Object.keys(PATH_FIELDS)) rememberPath(id);
     if (tab === 'mosaic') {
+      interactivePreview.bind(payload);
       const data = await postJson('/api/jobs/mosaic', payload);
       if (!data.ok || !data.job) {
+        if (data.diagnostic?.code === 'preview_stale') interactivePreview.refresh();
         if (data.status === 0) data.message = '提交结果未知，请先查看任务列表，避免重复提交。' + data.message;
         renderFailure(status, data);
         return;
@@ -1241,13 +1283,10 @@ function setIfChecked(payload, key, id) {
   if (val(id)) payload[key] = true;
 }
 
-function buildMosaicPayload() {
+function buildMosaicPayload(previewOnly = false) {
   const payload = {};
   payload.inputPath = requireValue('m-input', '目标图片');
   setIfValue(payload, 'dbPath', 'm-db');
-  setIfValue(payload, 'outputPath', 'm-output');
-  setIfValue(payload, 'format', 'm-format');
-  setIfValue(payload, 'writeMode', 'm-writemode');
   setIfNumber(payload, 'tileW', 'm-tilew', 'Tile 宽度', { integer: true, min: 4 });
   setIfNumber(payload, 'tileH', 'm-tileh', 'Tile 高度', { integer: true, min: 4 });
   setIfNumber(payload, 'candidates', 'm-candidates', '候选数', { integer: true, min: 10, max:10000 });
@@ -1265,17 +1304,22 @@ function buildMosaicPayload() {
   setIfNumber(payload, 'edgeWeight', 'm-edgew', 'Edge 权重', {min:0});
   setIfNumber(payload, 'lbpWeight', 'm-lbpw', 'LBP 权重', {min:0});
   setIfNumber(payload, 'usePenalty', 'm-penalty', '复用惩罚', {min:0});
-  setIfNumber(payload, 'quality', 'm-quality', 'JPEG/WebP 质量', { integer: true, min: 1, max: 100 });
-  setIfNumber(payload, 'pngLevel', 'm-pnglevel', 'PNG 压缩级别', { integer: true, min: 1, max: 9 });
-  setIfNumber(payload, 'colorStrength', 'm-colorstr', '亮度扰动幅度', { min: 0, max: 0.5 });
-  setIfNumber(payload, 'overlayStrength', 'm-overlaystr', '基础图叠加强度', { min: 0, max: 1 });
-  setIfChecked(payload, 'tiled', 'm-tiled');
-  setIfChecked(payload, 'deepZoom', 'm-deepzoom');
   setIfChecked(payload, 'analyze', 'm-analyze');
   setIfChecked(payload, 'adaptiveWeights', 'm-adaptive');
-  setIfChecked(payload, 'benchmark', 'm-benchmark');
-  setIfChecked(payload, 'colorAdjust', 'm-coloradj');
-  setIfChecked(payload, 'generatePreview', 'm-preview');
+  if (!previewOnly) {
+    setIfValue(payload, 'outputPath', 'm-output');
+    setIfValue(payload, 'format', 'm-format');
+    setIfValue(payload, 'writeMode', 'm-writemode');
+    setIfNumber(payload, 'quality', 'm-quality', 'JPEG/WebP 质量', { integer: true, min: 1, max: 100 });
+    setIfNumber(payload, 'pngLevel', 'm-pnglevel', 'PNG 压缩级别', { integer: true, min: 1, max: 9 });
+    setIfNumber(payload, 'colorStrength', 'm-colorstr', '亮度扰动幅度', { min: 0, max: 0.5 });
+    setIfNumber(payload, 'overlayStrength', 'm-overlaystr', '基础图叠加强度', { min: 0, max: 1 });
+    setIfChecked(payload, 'tiled', 'm-tiled');
+    setIfChecked(payload, 'deepZoom', 'm-deepzoom');
+    setIfChecked(payload, 'benchmark', 'm-benchmark');
+    setIfChecked(payload, 'colorAdjust', 'm-coloradj');
+    setIfChecked(payload, 'generatePreview', 'm-preview');
+  }
   if (val('m-cpu')) payload.useGpu = false;
 
   const weights = ['labWeight','gridWeight','tinyWeight','edgeWeight','lbpWeight'];
@@ -1341,7 +1385,7 @@ function hasFeature(name) {
 }
 function updateRunButton() {
   const button = document.getElementById('btn-run');
-  button.disabled = submitting || !serverAvailable || (typeof formModel !== 'undefined' && !formModel.valid);
+  button.disabled = submitting || !serverAvailable || !formModel.valid || interactivePreview.blocksRun(formModel.tab);
   button.textContent = submitting ? '提交中…' : '▶ 运行';
 }
 function setCurrentJob(id) {
@@ -1396,7 +1440,9 @@ async function refreshTasks() {
   try {
     const list = await getJson('/api/jobs');
     if (!list.ok || !Array.isArray(list.jobs)) throw new Error(list.message || '任务列表不可用');
-    if (list.sessionId && taskStore.sessionId !== list.sessionId) {
+    const restarted = list.sessionId && taskStore.sessionId !== list.sessionId;
+    const reconnected = !serverAvailable;
+    if (restarted) {
       const discovery = await getJson('/api/info');
       if (!discovery.ok) throw new Error(discovery.message || '服务信息不可用');
       serviceInfo = discovery.info;
@@ -1405,6 +1451,7 @@ async function refreshTasks() {
       document.getElementById('working-directory').textContent = '相对路径以服务工作目录为准：' + (cwd || '未知');
     }
     serverAvailable = true;
+    if (restarted || reconnected) interactivePreview.sync(formModel.tab);
     taskStore.failures = 0;
     taskStore.jobs = list.jobs;
     if (taskStore.selectedId && !list.jobs.some(job => job.id === taskStore.selectedId)) {
@@ -1444,7 +1491,9 @@ async function refreshTasks() {
     document.getElementById('task-connection').textContent = '已连接 · 任务和诊断限当前服务会话，保留最近 50 个完成任务。';
     updateRunButton();
   } catch (error) {
+    const disconnected = serverAvailable;
     serverAvailable = false;
+    if (disconnected) interactivePreview.sync(formModel.tab);
     taskStore.failures++;
     delay = [2000, 5000, 10000][Math.min(taskStore.failures - 1, 2)];
     document.getElementById('task-connection').textContent = '服务连接异常，保留上次状态；' + (delay / 1000) + ' 秒后重试。' + (error.message || '');
@@ -1488,6 +1537,7 @@ const DIAGNOSTIC_HINTS = {
   cuda_unavailable: 'CUDA 不可用，本次已在计算开始前使用 CPU。', cuda_resource_fallback: 'CUDA 资源不足，相关阶段已使用 CPU。',
   cuda_execution_failed: 'CUDA 执行失败。保留诊断信息，检查显卡状态后重试。', out_of_memory: '内存不足，可降低输出尺寸或使用流式写入。',
   output_write_failed: '检查输出位置、磁盘空间和访问权限。', preview_write_failed: '预览写入失败；若主图已保存，可从下方结果中下载。',
+  preview_stale: '目标、图库或参数已变化，请在实时预览窗口刷新后重新生成。',
   analysis_write_failed: '分析报告未完整写出，请检查报告目录和访问权限。', usage_commit_failed: '使用统计未提交；已保存的主图仍可使用。',
   source_skipped: '部分素材无法处理，已按原规则跳过。', output_tile_missing: '部分素材无法贴入，相关位置保留背景。',
   feature_missing: '部分素材特征缺失，匹配继续沿用缺失特征惩罚。请通过建库刷新图库。',
@@ -1858,6 +1908,8 @@ document.addEventListener('click', event => {
   if (button) downloadArtifact(button.dataset.artifactId);
 });
 
+
+@interactivePreviewScript@
 
 // Restore form state before generating or submitting any request.
 initializeFormUi();
