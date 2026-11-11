@@ -7,6 +7,7 @@
 #include "core/UnicodeIO.h"
 #include "core/Version.h"
 #include "core/ConsoleGuard.h"
+#include "compute/TemplateFeatureSizes.h"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/core.hpp>
@@ -138,6 +139,16 @@ Build options:
       --normalize-only   Only normalize images, don't build database
   Build orders whole-image color and renumbers files from 000000.
   Appends and same-directory builds may change existing numeric filenames.
+
+CUDA template sizes (WxH):)";
+    for (const auto &size : mosaicraft::cuda::templateFeatureSizes)
+    {
+        std::cout << ' ' << size.width << 'x' << size.height;
+    }
+    std::cout << R"(
+  Set the library size with build --normalize-size. When CUDA is available,
+  builds and mosaics select a template automatically from the library size.
+  Other valid sizes can use CPU-compatible CUDA.
 
 Mosaic options:
   -i, --input  <path>    Target image to mosaicify (required)

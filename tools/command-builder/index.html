@@ -215,6 +215,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 .help-contents { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 16px; }
 .help-steps { padding-left: 22px; }
 .help-steps li { padding: 7px 0; }
+.help-template-sizes { margin: 8px 0; padding-left: 22px; }
 .help-page code { font-size: .83em; color: var(--accent2); overflow-wrap: anywhere; }
 .help-page details { border-top: 1px solid var(--border); padding: 12px 0; }
 .help-page details:last-child { padding-bottom: 0; }
@@ -407,7 +408,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>⚙️ 选项</h3>
     <div class="row">
-      <div class="field"><label>归一化尺寸 --normalize-size</label><input type="text" id="b-normsize" value="180x320" placeholder="180x320"><span class="hint">宽高各 1～8192；四种常用尺寸沿用模板加速，其他尺寸支持与 CPU 结果一致的 CUDA 特征提取及评分，两项分别在资源不足时自动使用 CPU。</span></div>
+      <div class="field"><label>归一化尺寸 --normalize-size</label><input type="text" id="b-normsize" value="180x320" placeholder="180x320"><span class="hint">按宽x高填写，单轴 1～8192。</span><a class="help-link" href="#help-cuda-templates" data-open-help="help-cuda-templates">查看 CUDA 模板尺寸</a></div>
       <div class="field"><label>线程数 -t</label><input type="number" id="b-threads" placeholder="auto"></div>
     </div>
     <div class="chk-row">
@@ -590,6 +591,14 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
         <tr><td>跳过已有图库确认<br><code>-y</code></td><td>允许对已有记录的图库继续普通建库；新增素材通常可用增量模式。普通和增量建库都可能改变全库数字文件名；输入与输出为同一目录时，已索引原图也会被重新编号。使用前确认图库路径。</td></tr>
       </tbody>
     </table></div>
+    <h4 id="help-cuda-templates">CUDA 分辨率模板</h4>
+    <p>CUDA 可用时，程序按图库的归一化尺寸自动选择模板提取和评分。建库时填写对应的 <code>--normalize-size</code>，生成和实时预览时直接读取图库尺寸。匹配 Tile 和输出 Tile 的尺寸可分别设置。</p>
+    <ul class="help-template-sizes">
+      <li>正方形：<code>256x256</code>、<code>512x512</code></li>
+      <li>竖屏（9:16）：<code>180x320</code>、<code>270x480</code>、<code>360x640</code>、<code>540x960</code></li>
+      <li>横屏（16:9）：<code>320x180</code>、<code>480x270</code>、<code>640x360</code>、<code>960x540</code></li>
+    </ul>
+    <p>其他合法尺寸可使用与 CPU 结果一致的通用 CUDA 提取和评分。CUDA 不可用时使用 CPU。</p>
     <p>旧版图库结构不兼容时，请在新目录正常重建；不要只修改版本标记。建库中断并留下颜色排序恢复清单时，恢复文件访问后使用原建库参数并勾选增量模式继续，让程序完成恢复。</p>
   </section>
 

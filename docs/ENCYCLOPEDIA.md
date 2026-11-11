@@ -28,7 +28,7 @@
 
 Mosaicraft 是一个 GPU 加速的照片马赛克拼贴生成器。将数千张图库图片建立索引，目标图分割为小格后逐格匹配最相似图片，拼接输出超大分辨率马赛克。
 
-当前四种固定尺寸 180×320、320×180、360×640、640×360 使用模板 CUDA 提取和评分；其他合法尺寸（宽高各 1～8192）使用与原 CPU 精确兼容的通用 CUDA 特征统计和候选评分，保留 CPU 的邻域处理、排序、选图及分析。提取与评分独立准备资源，计算前资源不足只回退相应能力。1.15.0 的特征编号为 1，数学定义沿用原 v6，旧库须重新建库。历史后端验证见 [动态尺寸特征验证](DYNAMIC_CUDA_FEATURES.md)及 [独立 CUDA 评分验证](INDEPENDENT_CUDA_SCORING.md)。
+CUDA 可用时，按图库归一化尺寸自动选择模板提取和评分。固定尺寸包括正方形 256×256、512×512，竖屏 180×320、270×480、360×640、540×960，以及横屏 320×180、480×270、640×360、960×540。其他合法尺寸（宽高各 1～8192）使用与原 CPU 精确兼容的通用 CUDA 特征统计和候选评分，保留 CPU 的邻域处理、排序、选图及分析。通用提取与评分独立准备资源，计算前资源不足只回退相应能力。1.15.0 的特征编号为 1，数学定义沿用原 v6，早于 1.15.0 的图库须重新建库。历史后端验证见 [动态尺寸特征验证](DYNAMIC_CUDA_FEATURES.md)及 [独立 CUDA 评分验证](INDEPENDENT_CUDA_SCORING.md)。
 
 > **EN**: Fixed sizes retain template CUDA extraction and scoring. Other valid dimensions (1–8192 per axis) use CPU-compatible generic CUDA statistics and scoring. Resource preparation remains independent. Version 1.15.0 resets the feature version to 1 with the former v6 mathematics; old libraries must be rebuilt.
 
