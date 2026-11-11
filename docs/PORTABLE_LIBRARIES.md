@@ -39,4 +39,4 @@ my-library/
 python scripts/selection_study.py --match build/windows-cpu/Release/bin/mosaicraft_match_benchmark.exe --quality build/windows-cpu/Release/bin/mosaicraft_quality_benchmark.exe --cli build/windows-cpu/Release/bin/mosaicraft.exe --phase synthetic --backends cpu --output-dir build/team-smoke
 ~~~
 
-构建后用 CTest 和现有 Web UI smoke 验证。Windows/Linux CPU CI 包含旧库拒绝、WAL 数据保护、并发读取、搬移和脚本检查。实际执行结果见 [1.15.0 验收数据](performance/reset-1.15.0.json)；测试已注册不代表对应平台已经执行。
+发布流程通过 CTest 和 Web UI smoke 验收，覆盖旧库拒绝、WAL 数据保护、并发读取、搬移和脚本检查。 [1.15.0 验收数据](performance/reset-1.15.0.json)

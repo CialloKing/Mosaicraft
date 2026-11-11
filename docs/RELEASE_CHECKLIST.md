@@ -48,20 +48,21 @@
 
 记录发布包路径、大小和 SHA256。正式 release 附件必须使用脚本生成的 ZIP/tar.gz。
 
-## 4. 远端 CPU-only CI 门禁
+## 4. 远端编译与发布包验收
 
-推送后检查 GitHub Actions：
+推送发布提交后，确认 `CI` 的 Windows/Linux CPU 编译通过。创建指向同一提交的版本标签并推送，触发 `Native packages` 的完整测试和打包。
 
 ```powershell
-gh run list --branch main --limit 5
+git tag v<version>
+git push origin v<version>
+gh run list --workflow packages.yml --limit 5
 gh run view <run-id> --json status,conclusion,url,jobs
 ```
 
 要求：
 
-- 最新 `CI` workflow 必须通过
-- Windows/Linux CPU 日常构建、CTest 和 Web UI/API smoke 必须通过
-- 手动触发同一提交的 `Native packages`，三平台 CPU 构建、打包和独立附件验收必须全部通过
+- 发布提交的 Windows/Linux CPU 日常编译必须通过
+- 版本标签的 `Native packages` 必须通过三平台 CPU 构建、完整 CTest、Web UI/API smoke、打包和独立附件验收
 - 保存 CPU 包、Linux CUDA 包、SHA256 及工作流链接；Windows ZIP、Linux/macOS tar.gz
 - Linux CUDA 使用 BuildOnly + AllowUnvalidatedCudaRelease，文件名不带 candidate，GpuValidation 仍为 not-run；通过编译、完整回归和独立包验收后才纳入 Release
 
@@ -69,7 +70,7 @@ gh run view <run-id> --json status,conclusion,url,jobs
 
 - 首次或依赖变更后的 vcpkg install 可能较慢
 - workflow 已启用 vcpkg binary cache，后续运行应复用缓存
-- CPU-only CI 验证核心服务、API、Web UI、发布脚本和无 CUDA fallback
+- 发布包工作流验证核心服务、API、Web UI、发布脚本和无 CUDA fallback
 
 ## 5. 创建 GitHub Release
 
@@ -78,6 +79,7 @@ gh run view <run-id> --json status,conclusion,url,jobs
 ```powershell
 gh release create v<version> `
   .\Mosaicraft_v<version>_windows-x64_cuda.zip `
+  --verify-tag `
   --title "Mosaicraft v<version>" `
   --notes-file <concise-release-page-notes.md>
 ```

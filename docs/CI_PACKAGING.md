@@ -1,6 +1,6 @@
 # CI 与原生发布包
 
-日常 `CI` 在 Windows x64 和 Linux x64 上执行 CPU Release 构建、完整 CTest 和 Web UI/API smoke。`Native packages` 在版本标签或手动触发时运行；它只上传 Actions artifacts，不创建 Release，也不替换已经发布的附件。
+日常 `CI` 在 Windows x64 和 Linux x64 上编译 CPU 版 CLI 与 Web UI。推送 `v*` 版本标签会触发 `Native packages`，执行完整 CTest、Web UI/API smoke、打包和独立包验收。维护者使用通过验收的 Actions artifacts 创建 GitHub Release。
 
 | 平台 | runner | CPU 包 | 云端 CUDA 包 |
 | --- | --- | --- | --- |

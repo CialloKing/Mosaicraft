@@ -39,18 +39,12 @@ jobs:
           cache-namespace: ${{ inputs.cache-namespace || 'deps-v1' }}
       - name: Configure CPU Release
         run: cmake --preset '${{ matrix.preset }}'
-      - name: Build
-        run: cmake --build --preset '${{ matrix.preset }}' --target mosaicraft MosaicraftWebUI mosaicraft_tests mosaicraft_regression_tests --parallel
-      - name: CTest
-        run: ctest --preset '${{ matrix.preset }}'
-      - name: Web UI/API smoke
-        run: cmake --build --preset '${{ matrix.preset }}' --target mosaicraft_webui_smoke
+      - name: Build CLI and Web UI
+        run: cmake --build --preset '${{ matrix.preset }}' --target mosaicraft MosaicraftWebUI --parallel
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-${{ matrix.platform }}-${{ github.sha }}
-          path: |
-            build/dependency-state/
-            build/${{ matrix.preset }}/Testing/Temporary/
+          path: build/dependency-state/
           if-no-files-found: ignore

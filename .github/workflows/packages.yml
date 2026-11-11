@@ -2,11 +2,6 @@ name: Native packages
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
-    inputs:
-      cache-namespace:
-        description: Dependency cache namespace
-        default: deps-v1
 permissions:
   contents: read
 jobs:
@@ -36,7 +31,6 @@ jobs:
       - uses: ./.github/actions/dependencies
         with:
           triplet: ${{ matrix.triplet }}
-          cache-namespace: ${{ inputs.cache-namespace || 'deps-v1' }}
       - name: Install packaging tool
         if: runner.os == 'Linux'
         run: |
@@ -115,7 +109,6 @@ jobs:
       - uses: ./.github/actions/dependencies
         with:
           triplet: ${{ matrix.triplet }}
-          cache-namespace: ${{ inputs.cache-namespace || 'deps-v1' }}
       - name: Install hash-locked CUDA 13.5.37 compiler and runtime
         run: ./scripts/setup-cuda.ps1
       - name: Install packaging tool

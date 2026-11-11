@@ -146,17 +146,17 @@ $env:VCPKG_ROOT = (Resolve-Path build/tools/vcpkg).Path
 | Linux x64 | `linux-cpu` | `linux-cuda` |
 | macOS ARM64 | `macos-arm64-cpu` | — |
 
-把 `windows-cpu` 替换为对应 Preset。测试目标显式列出，程序位于 `build/<preset>/Release/bin`。
+把 `windows-cpu` 替换为对应 Preset。程序位于 `build/<preset>/Release/bin`。
 
 ```powershell
 $preset = 'windows-cpu'
 cmake --preset $preset
-cmake --build --preset $preset --target mosaicraft MosaicraftWebUI mosaicraft_tests mosaicraft_regression_tests --parallel
-ctest --preset $preset
-cmake --build --preset $preset --target mosaicraft_webui_smoke
+cmake --build --preset $preset --target mosaicraft MosaicraftWebUI --parallel
 ```
 
-使用 CUDA Preset 前，设置 `CUDAToolkit_ROOT` 指向 CUDA Toolkit 13.5.0（nvcc 13.5.37）。Windows 示例为 `$env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5'`。要求 CTest 在实卡上运行时，先设置 `$env:MOSAICRAFT_REQUIRE_CUDA = '1'`。 [CUDA 工具链](docs/CUDA_13_5_MIGRATION.md) · [架构与单卡构建](docs/CUDA_ARCHITECTURES.md)
+使用 CUDA Preset 前，设置 `CUDAToolkit_ROOT` 指向 CUDA Toolkit 13.5.0（nvcc 13.5.37）。Windows 示例为 `$env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5'`。 [CUDA 工具链](docs/CUDA_13_5_MIGRATION.md) · [架构与单卡构建](docs/CUDA_ARCHITECTURES.md)
+
+完整 CTest 和 Web UI/API 冒烟测试由发布流程运行。推送 `v*` 版本标签会触发 GitHub Actions 打包，本机 CUDA 发布包使用 `scripts/release.ps1` 验收。 [发布清单](docs/RELEASE_CHECKLIST.md)
 
 ## 开发文档
 
