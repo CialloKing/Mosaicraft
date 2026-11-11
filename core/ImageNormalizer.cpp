@@ -75,14 +75,15 @@ bool ImageNormalizer::process(const std::string& inputPath, const std::string& o
         // 不再需要原编码数据，避免它与缩放、编码的临时缓冲同时存活。
         std::vector<uint8_t>().swap(encoded);
         const cv::Mat normalized = normalize(src);
-        if (!imwriteUnicode(outputPath, normalized, writeParams))
+        const auto extension = u8path(outputPath).extension().string();
+        if (!cv::imencode(extension, normalized, encoded, writeParams) || !writeBytesUnicode(outputPath, encoded))
         {
             throw std::runtime_error("cannot save normalized image");
         }
         if (storedPixels)
         {
-            // 有损重编码会改变像素；这里仍以实际落盘图片为特征来源。
-            cv::Mat saved = imreadUnicode(outputPath, cv::IMREAD_COLOR);
+            // PNG 对三通道八位像素无损；其他格式解码实际写出的同一份字节。
+            cv::Mat saved = imageFormat(outputPath) == ".png" ? normalized : cv::imdecode(encoded, cv::IMREAD_COLOR);
             if (saved.empty())
             {
                 throw std::runtime_error("cannot decode saved image");

@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <iomanip>
+#include <memory>
 #include <sstream>
 #include <iostream>
 #include <mutex>
@@ -239,6 +240,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
     std::chrono::steady_clock::time_point tGpuStart = tBuildStart;
     std::chrono::steady_clock::time_point tCacheStart = tBuildStart;
     std::chrono::steady_clock::time_point tNormEnd = tBuildStart;
+    std::chrono::steady_clock::duration batchNormalization{};
     ImageNormalizer normalizer(request.normalizeWidth, request.normalizeHeight);
     std::vector<std::string> outPaths(files.size());
     std::vector<uint8_t> okFlags(files.size(), 0);
@@ -276,6 +278,52 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
         ? std::max(1, request.threads)
         : static_cast<int>(std::thread::hardware_concurrency());
     if (request.threads <= 0 && normThreads < 2) normThreads = 2;
+
+    const auto normalizeOne = [&](size_t index, cv::Mat *pixels)
+    {
+        const auto &input = files[index];
+        const auto &output = outPaths[index];
+        bool saved = false;
+        try
+        {
+            auto extension = pathToUtf8(u8path(output).extension());
+            // 扫描支持大小写后缀，编码参数也应按同一种格式统一选择。
+            std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c)
+            {
+                return static_cast<char>(std::tolower(c));
+            });
+            std::vector<int> writeParams;
+            if (extension == ".jpg" || extension == ".jpeg")
+            {
+                writeParams = {cv::IMWRITE_JPEG_QUALITY, 100};
+            }
+            else if (extension == ".png")
+            {
+                writeParams = {cv::IMWRITE_PNG_COMPRESSION, 9};
+            }
+            saved = normalizer.process(input, output, writeParams, pixels);
+            if (!saved)
+            {
+                runtime.emit("warning", "source_skipped", "normalization failed", "inputDir", input);
+            }
+        }
+        catch (const std::exception &error)
+        {
+            runtime.emit("warning", "source_skipped", error.what(), "inputDir", input);
+        }
+        if (saved)
+        {
+            ++normDone;
+            okFlags[index] = true;
+        }
+        const int processed = ++normalizationProcessed;
+        runtime.advance("normalization", processed, files.size(), "images", processed == files.size());
+        if (processed % 200 == 0 || processed == static_cast<int>(files.size()))
+        {
+            std::cout << "\r  normalize " << processed << "/" << files.size() << "                    " << std::flush;
+        }
+        return saved;
+    };
 
     if (request.normalizeOnly)
     {
@@ -486,7 +534,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
             });
     }
 
-    if (!inputIsOutput)
+    if (!inputIsOutput && (gpuOk || request.normalizeOnly))
     {
         if (!gpuOk || request.normalizeOnly)
         {
@@ -505,42 +553,14 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
                     {
                         break;
                     }
-                    const std::string& inPath = files[fi];
-                    fs::path outPath = u8path(outPaths[fi]);
-                    try
+                    cv::Mat result;
+                    const bool needPixels = gpuOk && !request.normalizeOnly;
+                    if (normalizeOne(fi, needPixels ? &result : nullptr) && needPixels)
                     {
-                        std::string outExt = pathToUtf8(outPath.extension());
-                        // 扫描支持大小写后缀，编码参数也应按同一种格式统一选择。
-                        std::transform(outExt.begin(), outExt.end(), outExt.begin(),
-                                       [](unsigned char c)
-                                       {
-                                           return static_cast<char>(std::tolower(c));
-                                       });
-                        std::vector<int> writeParams;
-                        if (outExt == ".jpg" || outExt == ".jpeg")
+                        try
                         {
-                            writeParams = {cv::IMWRITE_JPEG_QUALITY, 100};
-                        }
-                        else if (outExt == ".png")
-                        {
-                            writeParams = {cv::IMWRITE_PNG_COMPRESSION, 9};
-                        }
-                        cv::Mat result;
-                        const bool needPixels = gpuOk && !request.normalizeOnly;
-                        if (!normalizer.process(inPath, pathToUtf8(outPath), writeParams, needPixels ? &result : nullptr))
-                        {
-                            runtime.emit("warning", "source_skipped", "normalization failed", "inputDir", inPath);
-                            const int processed = ++normalizationProcessed;
-                            runtime.advance("normalization", processed, files.size(), "images",
-                                            processed == files.size());
-                            continue;
-                        }
-                        okFlags[fi] = true;
-                        if (needPixels)
-                        {
-                            // 归一化入口提供实际保存的像素；原字节快路径不再重复读盘解码。
-                            std::unique_lock<std::mutex> lk(queueMtx);
-                            queueFullCV.wait(lk, [&]
+                            std::unique_lock<std::mutex> lock(queueMtx);
+                            queueFullCV.wait(lock, [&]
                             {
                                 return normQueue.size() < MAX_QUEUE || normPhaseDone.load();
                             });
@@ -548,26 +568,14 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
                             {
                                 break;
                             }
-                            normQueue.push({std::move(result), pathToUtf8(outPath)});
-                            lk.unlock();
+                            normQueue.push({std::move(result), outPaths[fi]});
+                            lock.unlock();
                             queueCV.notify_one();
                         }
-                    }
-                    catch (const std::exception& error)
-                    {
+                        catch (const std::exception &error)
                         {
-                            std::ostringstream detail;
-                            detail << "normalization skipped " << inPath << ": " << error.what();
-                            runtime.emit("warning", "source_skipped", detail.str());
+                            runtime.emit("warning", "source_skipped", error.what(), "inputDir", files[fi]);
                         }
-                    }
-                    int d = ++normDone;
-                    const int processed = ++normalizationProcessed;
-                    runtime.advance("normalization", processed, files.size(), "images", processed == files.size());
-                    if (d % 200 == 0 || d == (int)files.size())
-                    {
-                        std::cout << "\r  normalize " << d << "/" << files.size()
-                                  << "                    " << std::flush;
                     }
                 }
             });
@@ -579,7 +587,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
         tNormEnd = std::chrono::steady_clock::now();
         std::cout << std::endl;
     }
-    else
+    else if (inputIsOutput)
     {
         outPaths = files;
         normDone = static_cast<int>(files.size());
@@ -645,6 +653,11 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
         size_t batchLimit =
             inputIsOutput ? 1 : std::min<size_t>(256, std::max<size_t>(1, pixelBudget / pixelsPerImage));
         WorkerPool workers(request.threads > 0 ? static_cast<unsigned>(request.threads) : 0);
+        std::unique_ptr<WorkerPool> normalizers;
+        if (!inputIsOutput)
+        {
+            normalizers = std::make_unique<WorkerPool>(static_cast<unsigned>(normThreads));
+        }
         cuda::CompatibleFeatureWorkspace compatible;
         cuda::CompatibleTimings compatibleTimings;
         const bool compatibleRequested = preflight.available &&
@@ -672,9 +685,19 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
             std::vector<ImageRecord> records(count);
             std::vector<uint8_t> ready(count, 0);
             std::vector<std::string> errors(count);
-            workers.run(
-                count,
-                [&](size_t i)
+            if (normalizers)
+            {
+                // 只保留当前有界批次的落盘像素，让顺序去重和提交继续使用原路径。
+                const auto started = std::chrono::steady_clock::now();
+                normalizers->run(count, [&](size_t i)
+                {
+                    normalizeOne(first + i, &images[i]);
+                });
+                batchNormalization += std::chrono::steady_clock::now() - started;
+            }
+            else
+            {
+                workers.run(count, [&](size_t i)
                 {
                     if (!okFlags[first + i])
                     {
@@ -687,11 +710,6 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
                         {
                             throw std::runtime_error("cannot decode saved image");
                         }
-                        if (!inputIsOutput &&
-                            (images[i].cols != request.normalizeWidth || images[i].rows != request.normalizeHeight))
-                        {
-                            throw std::runtime_error("normalized image dimensions changed before feature extraction");
-                        }
                     }
                     catch (const std::exception &error)
                     {
@@ -700,6 +718,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
                         images[i].release();
                     }
                 });
+            }
             std::set<std::string> pendingHashes;
             for (size_t i = 0; i < count; ++i)
             {
@@ -912,9 +931,14 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
               << db.totalCount() << " total in database." << std::endl;
 
     using Ms = std::chrono::milliseconds;
-    auto normMs = inputIsOutput || files.empty() ? 0 : std::chrono::duration_cast<Ms>(tNormEnd - tNormStart).count();
+    auto normMs = std::chrono::duration_cast<Ms>(tNormEnd - tNormStart + batchNormalization).count();
     // 重排和特征提取分别计时，不能把大量文件重命名算作 GPU 特征耗时。
-    auto gpuMs = gpuOk && gpuDone.load() == 0 ? 0 : std::chrono::duration_cast<Ms>(tColorStart - tGpuStart).count();
+    auto gpuMs = gpuOk && gpuDone.load() == 0 ? 0 :
+        std::chrono::duration_cast<Ms>(tColorStart - tGpuStart - batchNormalization).count();
+    if (!gpuOk && !inputIsOutput)
+    {
+        runtime.metric("normalizedPixelsReused", normDone.load());
+    }
 
     std::cout << "  Phase timing: normalize " << std::fixed << std::setprecision(1) << normMs / 1000.0
               << "s | " << (gpuOk ? "template CUDA" : usedCompatibleFeatures ? "generic CUDA" : "CPU")
