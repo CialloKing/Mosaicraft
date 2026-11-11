@@ -362,6 +362,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
           title="拖动调整预览窗口大小" aria-label="调整预览窗口大小，左右方向键调宽，上下方向键调高"></button>
       </div>
       <p class="hint" id="live-preview-status" role="status" aria-live="polite"></p>
+      <p class="hint" id="live-preview-density-warning" role="status" hidden>当前视口中的格子较多，可能卡顿。放大可减少同时显示的格子。</p>
       <p class="hint" id="live-preview-color" hidden>随机亮度扰动在正式输出时应用。</p>
     </section>
     <section class="card preview-picker" id="live-preview-picker" aria-labelledby="live-preview-picker-heading" hidden>
@@ -565,14 +566,14 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <thead><tr><th scope="col">操作</th><th scope="col">作用与使用方式</th></tr></thead><tbody>
         <tr><td>开启 / 关闭预览</td><td>开启后计算当前参数的选图；调整相关参数后等待预览更新。关闭会释放当前预览和手动选图；不需要沿用预览时可关闭后直接生成。</td></tr>
         <tr><td>刷新</td><td>预览过期或提示素材变更时刷新，重新计算当前预览。生成页提示正在更新时，等待完成或关闭预览后再运行。</td></tr>
-        <tr><td>缩放、平移与适应窗口</td><td>使用加减按钮或鼠标滚轮缩放，拖动画布平移；“适应窗口”显示完整画面。画布获得焦点时可用方向键平移、<code>+</code>/<code>-</code> 缩放、<code>0</code> 适应窗口。</td></tr>
+        <tr><td>缩放、平移与适应窗口</td><td>预览从画面中心以最大倍率打开。使用加减按钮或鼠标滚轮缩放，拖动画布平移。“适应窗口”显示完整画面。画布获得焦点时可用方向键平移、<code>+</code>/<code>-</code> 缩放、<code>0</code> 适应窗口。</td></tr>
         <tr><td>调整预览窗口大小</td><td>拖动画布右下角手柄改变窗口大小；手柄获得焦点后可用方向键调整，按住 Shift 加大步长。“恢复默认大小”恢复窗口尺寸，不改变生成图片尺寸。</td></tr>
         <tr><td>手动选图 / 替换素材</td><td>点击“手动选图”后选择画布格子，再从“推荐候选”或“整个图库”点选可用素材。也可让画布获得焦点并按回车选择中心格。灰色素材不可选；手动选图适合修正局部重复或不合适的画面。</td></tr>
         <tr><td>整个图库 / 搜索 / 页码</td><td>可按文件名包含内容或素材 ID 搜索；每页 24 张，使用上一页、下一页，或输入页码后按回车 / 点击“跳转”。搜索结果重新从第一页开始，总页数随筛选变化。</td></tr>
         <tr><td>恢复自动选图 / 清除全部替换</td><td>前者撤销当前格的手动替换，后者撤销所有手动替换。预览可用且参数未过期时，返回生成页运行会沿用当前选图及手动替换；目标、图库或影响网格的参数变化后，应按提示更新预览。</td></tr>
       </tbody>
     </table></div>
-    <p>实时预览最多支持 160,000 格；超过时可减小目标缩放尺寸、降低上采样或增大匹配 Tile。随机亮度扰动在正式输出时应用，实时预览不能完整呈现其最终效果。</p>
+    <p>实时预览会先匹配整张图，再按可见区域加载缩略图。视口内超过 16,000 格时会提示可能卡顿。随机亮度扰动在正式输出时应用。</p>
   </section>
 
   <section class="card" id="help-build" aria-labelledby="help-build-title">

@@ -68,7 +68,8 @@ function setupPreviewSizing(surface, handle, resetButton) {
 
 const interactivePreview = (() => {
   const endpoint = '/api/mosaic/preview';
-  const maxVisible = 16000;
+  const visibleTileWarning = 16000;
+  const maxTileHeight = 256;
   const cacheBudget = 64 * 1024 * 1024;
   const parallelLoads = 8;
   const byId = name => document.getElementById('live-preview-' + name);
@@ -78,6 +79,7 @@ const interactivePreview = (() => {
   const toggle = byId('toggle');
   const refreshButton = byId('refresh');
   const status = byId('status');
+  const densityWarning = byId('density-warning');
   const placeholder = byId('placeholder');
   const zoomOut = byId('out');
   const zoomIn = byId('in');
@@ -187,6 +189,7 @@ const interactivePreview = (() => {
 
   function clearPictures() {
     cancelImages();
+    densityWarning.hidden = true;
     for (const bitmap of cache.values()) bitmap.close();
     cache.clear();
     failed.clear();
@@ -239,7 +242,6 @@ const interactivePreview = (() => {
         if (plan.imageIds[position] < 0) --missing;
       }
       if (missing) message += ' · ' + missing + ' 格无匹配素材';
-      if (plan.columns * plan.rows > maxVisible) message += ' · 可平移查看其余区域';
       if (edits.size) message += ' · ' + edits.size + ' 格已手动选图';
       if (planKey !== requestKey) message += ' · 回到预览窗口后更新';
     }
@@ -319,9 +321,7 @@ const interactivePreview = (() => {
     }
     if (next.state !== 'succeeded') {
       void deleteJson(endpoint + '/' + id);
-      const error = next.result?.diagnostic;
-      fail(version, error?.code === 'preview_grid_limit' ? '预览最多支持 160,000 格，请缩小匹配网格。' :
-        next.result?.message || '预览已取消，请刷新。');
+      fail(version, next.result?.message || '预览已取消，请刷新。');
       return;
     }
 
@@ -333,7 +333,12 @@ const interactivePreview = (() => {
     if (previous?.editKey !== next.editKey) edits.clear();
     failed.clear();
     updateAspect();
-    if (!previous || previous.columns !== next.columns || previous.rows !== next.rows) fit();
+    if (!previous || previous.columns !== next.columns || previous.rows !== next.rows) {
+      scale = maxTileHeight;
+      fitted = false;
+      centerX = next.columns / 2;
+      centerY = next.rows / 2;
+    }
     if (previous) void deleteJson(endpoint + '/' + previous.id);
     showStatus();
     updateRunButton();
@@ -397,6 +402,7 @@ const interactivePreview = (() => {
   function visibilityChanged() {
     if (!clip()) {
       cancelImages();
+      densityWarning.hidden = true;
       if (pending) {
         cancelPending();
         showStatus();
@@ -412,20 +418,7 @@ const interactivePreview = (() => {
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
   function minimumScale(width, height) {
-    const fitScale = Math.min(width / (plan.columns * tileAspect), height / plan.rows);
-    if (plan.columns * plan.rows <= maxVisible) return fitScale;
-    // 跨过半个格子时可能多露出一列和一行，缩放下限预留这两个边界。
-    const capacity = h => Math.min(plan.columns, Math.ceil(width / (h * tileAspect)) + 1) *
-      Math.min(plan.rows, Math.ceil(height / h) + 1);
-    if (capacity(fitScale) <= maxVisible) return fitScale;
-    let low = fitScale;
-    let high = Math.max(width / tileAspect, height);
-    for (let i = 0; i < 24; ++i) {
-      const mid = (low + high) / 2;
-      if (capacity(mid) <= maxVisible) high = mid;
-      else low = mid;
-    }
-    return high;
+    return Math.min(width / (plan.columns * tileAspect), height / plan.rows);
   }
 
   function geometry() {
@@ -437,7 +430,7 @@ const interactivePreview = (() => {
       centerX = plan.columns / 2;
       centerY = plan.rows / 2;
     } else {
-      scale = clamp(scale, min, Math.max(256, min));
+      scale = clamp(scale, min, Math.max(maxTileHeight, min));
     }
     const tw = scale * tileAspect;
     const th = scale;
@@ -460,7 +453,7 @@ const interactivePreview = (() => {
     if (!plan || !clip()) return;
     const g = geometry();
     const min = minimumScale(g.width, g.height);
-    scale = clamp(g.th * factor, min, Math.max(256, min));
+    scale = clamp(g.th * factor, min, Math.max(maxTileHeight, min));
     if (scale === g.th) return;
     fitted = false;
     centerX = (anchorX - g.x) / g.tw + (g.width / 2 - anchorX) / (scale * tileAspect);
@@ -494,7 +487,7 @@ const interactivePreview = (() => {
     cache.set(key, bitmap);
     cacheBytes += bitmap.width * bitmap.height * 4;
     for (const [oldKey, old] of cache) {
-      if (cacheBytes <= cacheBudget && cache.size <= maxVisible + 1000) break;
+      if (cacheBytes <= cacheBudget) break;
       if (wanted.has(oldKey)) continue;
       cache.delete(oldKey);
       cacheBytes -= old.width * old.height * 4;
@@ -634,12 +627,25 @@ const interactivePreview = (() => {
     return {x0, y0, x1, y1};
   }
 
+  function pixelBands(first, last, origin, step, ratio) {
+    const bands = [];
+    let start = Math.round((origin + first * step) * ratio);
+    for (let index = first; index < last; ++index) {
+      const end = Math.round((origin + (index + 1) * step) * ratio);
+      // 相邻格子共用边界，缩成零像素的格子无需请求缩略图。
+      if (end > start) bands.push({index, start, end});
+      start = end;
+    }
+    return bands;
+  }
+
   function paint() {
     frame = 0;
     layoutPending = false;
     const visible = clip();
     if (!visible || !plan || !context) {
       cancelImages();
+      densityWarning.hidden = true;
       return;
     }
     const g = geometry();
@@ -654,6 +660,7 @@ const interactivePreview = (() => {
     const firstRow = clamp(Math.floor((visible.y0 - g.y) / g.th), 0, plan.rows);
     const lastRow = clamp(Math.ceil((visible.y1 - g.y) / g.th), 0, plan.rows);
     const count = (lastRow - firstRow) * (lastCol - firstCol);
+    densityWarning.hidden = count <= visibleTileWarning;
     const size = thumbnailSize(Math.max(g.tw * sx, g.th * sy), count);
     const prefix = endpoint + '/' + plan.id + '/image/';
     const referenceKey = opacity > 0 && count ? 'reference:' + plan.id : '';
@@ -688,14 +695,10 @@ const interactivePreview = (() => {
       slotsByAsset = new Map();
       if (referenceKey) wanted.set(referenceKey, prefix + 'reference');
       const keys = new Map();
-      const xEdges = Array.from({length: lastCol - firstCol + 1}, (_, i) =>
-        Math.round((g.x + (firstCol + i) * g.tw) * sx));
-      const yEdges = Array.from({length: lastRow - firstRow + 1}, (_, i) =>
-        Math.round((g.y + (firstRow + i) * g.th) * sy));
-      for (let row = firstRow; row < lastRow; ++row) {
-        const y0 = yEdges[row - firstRow];
-        const y1 = yEdges[row - firstRow + 1];
-        for (let col = firstCol; col < lastCol; ++col) {
+      const columns = pixelBands(firstCol, lastCol, g.x, g.tw, sx);
+      const rows = pixelBands(firstRow, lastRow, g.y, g.th, sy);
+      for (const {index: row, start: y0, end: y1} of rows) {
+        for (const {index: col, start: x0, end: x1} of columns) {
           const position = row * plan.columns + col;
           const edit = edits.get(position);
           const id = edit?.imageId ?? plan.imageIds[position];
@@ -707,9 +710,6 @@ const interactivePreview = (() => {
               keys.set(id, key);
             }
           }
-          // 相邻格子共用同一条像素边界，避免缩放时出现缝隙。
-          const x0 = xEdges[col - firstCol];
-          const x1 = xEdges[col - firstCol + 1];
           if (overlap && (x0 < overlap.x0 || x1 > overlap.x1 || y0 < overlap.y0 || y1 > overlap.y1)) {
             painted.delete(position);
           }
@@ -725,7 +725,7 @@ const interactivePreview = (() => {
         }
       }
       // 上一帧离开的格子不可保留绘制标记，否则再次进入时会跳过绘制。
-      if (overlap && painted.size > count) {
+      if (overlap && painted.size > rows.length * columns.length) {
         for (const position of painted.keys()) {
           const row = Math.floor(position / plan.columns);
           const col = position % plan.columns;
