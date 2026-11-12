@@ -13,8 +13,31 @@ enum class OutputMode
 };
 enum class BackendPolicy
 {
-    Auto, Cpu, Cuda
+    Auto, Cpu, Cuda, Vulkan, Metal
 };
+
+enum class ScoreMode
+{
+    Compatible, Fast
+};
+
+inline ScoreMode parseScoreMode(const std::string &value)
+{
+    if (value == "compatible")
+    {
+        return ScoreMode::Compatible;
+    }
+    if (value == "fast")
+    {
+        return ScoreMode::Fast;
+    }
+    throw std::invalid_argument("scoreMode must be compatible or fast");
+}
+
+inline const char *scoreModeName(ScoreMode mode)
+{
+    return mode == ScoreMode::Fast ? "fast" : "compatible";
+}
 
 inline std::string outputModeName(OutputMode mode)
 {
@@ -62,11 +85,26 @@ inline BackendPolicy parseBackend(const std::string &value)
     {
         return BackendPolicy::Cuda;
     }
-    throw std::invalid_argument("backend must be auto, cpu or cuda");
+    if (value == "vulkan")
+    {
+        return BackendPolicy::Vulkan;
+    }
+    if (value == "metal")
+    {
+        return BackendPolicy::Metal;
+    }
+    throw std::invalid_argument("backend must be auto, cpu, cuda, vulkan or metal");
 }
 
 inline std::string backendName(BackendPolicy policy)
 {
-    return policy == BackendPolicy::Cpu ? "cpu" : policy == BackendPolicy::Cuda ? "cuda" : "auto";
+    switch (policy)
+    {
+    case BackendPolicy::Cpu: return "cpu";
+    case BackendPolicy::Cuda: return "cuda";
+    case BackendPolicy::Vulkan: return "vulkan";
+    case BackendPolicy::Metal: return "metal";
+    default: return "auto";
+    }
 }
 }
