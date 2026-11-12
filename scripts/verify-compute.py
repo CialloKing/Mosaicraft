@@ -40,6 +40,8 @@ def main():
     parser.add_argument("--performance-case", help="case id for end-to-end timing; defaults to the first case")
     parser.add_argument("--baseline-benchmark", type=Path, help="original CUDA benchmark for the 5%% regression gate")
     options = parser.parse_args()
+    if (options.baseline_benchmark or options.performance_case) and not options.performance:
+        parser.error("performance options require --performance")
     specification = json.loads(options.manifest.read_text(encoding="utf-8"))
     root = options.output.resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -106,7 +108,8 @@ def main():
                         limit = len(reference) // 100 if mode == "fast" else 0
                         report["gates"].append(dict(id=tag, reference=reference_tag, mode=mode, device=device,
                             tiles=len(reference), different=len(changed), allowed=limit, positions=changed,
-                            selection_passed=len(changed) <= limit, metrics=summary["metrics"]))
+                            selection_passed=len(changed) <= limit, metrics=summary["metrics"],
+                            resources=summary.get("resources", {})))
                         study["runs"].append(dict(id=tag, case=case["id"], selection=str(path),
                                                   selection_sha256=hashlib.sha256(path.read_bytes()).hexdigest()))
                         print(tag, f"{len(changed)}/{len(reference)}", flush=True)
@@ -135,10 +138,11 @@ def main():
                 for backend in order:
                     tag = f"perf-{device.replace(':', '-')}-{iteration}-{backend.replace(':', '-')}"
                     summary, _, _ = match(case, backend, "fast" if backend != "cpu" else "compatible", 42, 10, tag, True)
+                    measurement = dict(summary["metrics"], resources=summary.get("resources", {}))
                     if iteration == 0:
-                        cold[backend] = summary["metrics"]
+                        cold[backend] = measurement
                     elif iteration > 1:
-                        samples[backend].append(summary["metrics"])
+                        samples[backend].append(measurement)
             medians = {key: {metric: statistics.median(row[metric] for row in rows)
                             for metric in ("matchingMs", "totalMs")} for key, rows in samples.items()}
             report["performance"].append(dict(device=device, case=case["id"], cold=cold, samples=samples, medians=medians,
@@ -153,10 +157,11 @@ def main():
                     summary, _, _ = match(case, "cuda:0", "compatible", 42, 10,
                         f"cuda-{iteration}-{variant}", True,
                         options.baseline_benchmark if variant == "baseline" else None)
+                    measurement = dict(summary["metrics"], resources=summary.get("resources", {}))
                     if iteration == 0:
-                        cold[variant] = summary["metrics"]
+                        cold[variant] = measurement
                     elif iteration > 1:
-                        samples[variant].append(summary["metrics"])
+                        samples[variant].append(measurement)
             medians = {key: {metric: statistics.median(row[metric] for row in rows)
                             for metric in ("matchingMs", "totalMs")} for key, rows in samples.items()}
             report["cuda_regression"] = dict(case=case["id"], cold=cold, samples=samples, medians=medians,
