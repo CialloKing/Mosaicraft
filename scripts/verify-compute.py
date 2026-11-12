@@ -59,12 +59,12 @@ def main():
               "benchmark_sha256": hashlib.sha256(options.benchmark.read_bytes()).hexdigest(),
               "quality_sha256": hashlib.sha256(options.quality.read_bytes()).hexdigest()}
 
-    def match(case, device, mode, seed, top, tag, full=False, benchmark=None):
+    def match(case, device, mode, seed, top, tag, full=False, benchmark=None, monitor=True):
         request = dict(inputPath=str(Path(case["input"]).resolve()), dbPath=str(snapshot),
                        outputPath=str(root / (tag + ".png")), backend=device.split(":")[0],
                        device=device, scoreMode=mode, tileW=9, tileH=16, outW=case["width"], outH=case["height"],
                        nativeTileW=9, nativeTileH=16, lRange=255, candidates=150, threads=8,
-                       topNRandom=top, seed=seed, format="png", overwrite=True, resourceMonitor=True)
+                       topNRandom=top, seed=seed, format="png", overwrite=True, resourceMonitor=monitor)
         if benchmark is not None:
             # API 1.5 以前的基线不认识设备和评分模式字段，计算参数仍保持相同。
             request.pop("device")
@@ -126,6 +126,8 @@ def main():
         gate["passed"] = gate["selection_passed"] and gate["quality_passed"] and current["missing"] == baseline["missing"] == 0
     save(root / "acceptance.json", report)
     if options.performance:
+        # 原版 benchmark 未启动资源监控。耗时对照统一关闭监控；内存单独从质量阶段采样。
+        report["performance_resource_monitor"] = False
         case = next((item for item in specification["cases"] if item["id"] == options.performance_case),
                     specification["cases"][0] if options.performance_case is None else None)
         if case is None:
@@ -137,7 +139,8 @@ def main():
                 order = ["cpu", device] if iteration % 2 == 0 else [device, "cpu"]
                 for backend in order:
                     tag = f"perf-{device.replace(':', '-')}-{iteration}-{backend.replace(':', '-')}"
-                    summary, _, _ = match(case, backend, "fast" if backend != "cpu" else "compatible", 42, 10, tag, True)
+                    summary, _, _ = match(case, backend, "fast" if backend != "cpu" else "compatible", 42, 10,
+                                          tag, True, monitor=False)
                     measurement = dict(summary["metrics"], resources=summary.get("resources", {}))
                     if iteration == 0:
                         cold[backend] = measurement
@@ -156,7 +159,7 @@ def main():
                 for variant in (["baseline", "current"] if iteration % 2 == 0 else ["current", "baseline"]):
                     summary, _, _ = match(case, "cuda:0", "compatible", 42, 10,
                         f"cuda-{iteration}-{variant}", True,
-                        options.baseline_benchmark if variant == "baseline" else None)
+                        options.baseline_benchmark if variant == "baseline" else None, monitor=False)
                     measurement = dict(summary["metrics"], resources=summary.get("resources", {}))
                     if iteration == 0:
                         cold[variant] = measurement
