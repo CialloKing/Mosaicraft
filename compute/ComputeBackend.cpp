@@ -29,8 +29,8 @@ std::vector<Device> devices()
 {
     std::vector<Device> result{{BackendPolicy::Cpu, "cpu", "CPU", "", true, false, true}};
     const auto cuda = cuda::queryCudaAvailability();
-    result.push_back({BackendPolicy::Cuda, "cuda:" + std::to_string(cuda.device), cuda.deviceName,
-                      cuda.reason, cuda.available, false, cuda.available});
+    result.push_back({BackendPolicy::Cuda, "cuda:" + std::to_string(cuda.device), cuda.deviceName, cuda.reason,
+                      cuda.available, false, cuda.available});
     for (auto &device : vulkanDevices())
     {
         result.push_back(std::move(device));
@@ -80,4 +80,4 @@ std::unique_ptr<Session> open(const Device &device)
     }
     throw std::invalid_argument("portable compute session requires Vulkan or Metal");
 }
-}
+} // namespace mosaicraft::compute

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CudaBackend.h"
+#include "ComputeFeatures.h"
 #include "core/Database.h"
 #include "core/WorkerPool.h"
 #include <opencv2/core.hpp>
@@ -10,14 +11,7 @@ namespace mosaicraft
 {
 namespace cuda
 {
-struct CompatibleFeature
-{
-    std::array<double, 3> lab{};
-    std::array<float, 192> grid{};
-    std::array<uint8_t, 256> tiny{};
-    std::array<float, 256> lbp{};
-    double edge = 0;
-};
+using CompatibleFeature = compute::Feature;
 
 struct CompatibleTimings
 {

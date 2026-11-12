@@ -1,0 +1,55 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 128) in;
+layout(std430, binding = 0) readonly buffer Library { uint library[]; };
+layout(std430, binding = 1) readonly buffer Tiles { uint tiles[]; };
+layout(std430, binding = 2) readonly buffer Indices { int indices[]; };
+layout(std430, binding = 3) writeonly buffer Distances { float distances[]; };
+layout(push_constant) uniform Parameters { uint count; uint candidates; uint libraryCount; uint unused; } p;
+const float weights[64] = float[64](
+#include "GridWeights.inc"
+);
+void main()
+{
+    uint position = gl_GlobalInvocationID.x;
+    if (position >= p.count * p.candidates)
+    {
+        return;
+    }
+    int index = indices[position];
+    if (index < 0 || uint(index) >= p.libraryCount)
+    {
+        for (uint i = 0; i < 5; ++i)
+        {
+            distances[position * 5 + i] = 0;
+        }
+        return;
+    }
+    uint a = (position / p.candidates) * 518, b = uint(index) * 518;
+    precise float dl = uintBitsToFloat(tiles[a]) - uintBitsToFloat(library[b]);
+    precise float da = uintBitsToFloat(tiles[a + 1]) - uintBitsToFloat(library[b + 1]);
+    precise float db = uintBitsToFloat(tiles[a + 2]) - uintBitsToFloat(library[b + 2]);
+    precise float lab = sqrt(dl * dl + da * da + db * db) / 100.0;
+    precise float grid = 0, tiny = 0, lbp = 0;
+    for (uint cell = 0; cell < 64; ++cell)
+    {
+        uint off = 4 + cell * 3;
+        dl = uintBitsToFloat(tiles[a + off]) - uintBitsToFloat(library[b + off]);
+        da = uintBitsToFloat(tiles[a + off + 1]) - uintBitsToFloat(library[b + off + 1]);
+        db = uintBitsToFloat(tiles[a + off + 2]) - uintBitsToFloat(library[b + off + 2]);
+        grid += sqrt(dl * dl + da * da + db * db) * weights[cell];
+    }
+    for (uint bin = 0; bin < 256; ++bin)
+    {
+        uint shift = (bin % 4) * 8;
+        float diff = float((tiles[a + 196 + bin / 4] >> shift) & 255) -
+                     float((library[b + 196 + bin / 4] >> shift) & 255);
+        tiny += diff * diff;
+        lbp += abs(uintBitsToFloat(tiles[a + 260 + bin]) - uintBitsToFloat(library[b + 260 + bin]));
+    }
+    distances[position * 5] = lab;
+    distances[position * 5 + 1] = grid / 64.0 / 100.0;
+    distances[position * 5 + 2] = library[b + 516] != 0 ? tiny / (256.0 * 255.0 * 255.0) : 1.0;
+    distances[position * 5 + 3] = abs(uintBitsToFloat(tiles[a + 3]) - uintBitsToFloat(library[b + 3]));
+    distances[position * 5 + 4] = library[b + 517] != 0 ? lbp / 2.0 : 1.0;
+}

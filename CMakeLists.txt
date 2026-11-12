@@ -247,6 +247,7 @@ add_library(mosaicraft_core STATIC
 if (NOT MOSAICRAFT_CUDA)
     target_sources(mosaicraft_core PRIVATE core/CudaStubs.cpp)
 endif()
+include(cmake/PortableCompute.cmake)
 
 target_compile_definitions(mosaicraft_core PRIVATE
     $<$<BOOL:${MOSAICRAFT_CUDA}>:MOSAICRAFT_CUDA>

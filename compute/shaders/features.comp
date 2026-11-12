@@ -1,0 +1,53 @@
+#version 450
+layout(local_size_x = 128) in;
+layout(std430, binding = 0) readonly buffer Pixels { uint pixels[]; };
+layout(std430, binding = 1) writeonly buffer Output { uint partials[]; };
+layout(push_constant) uniform Parameters { uint width; uint height; uint blocks; uint count; } p;
+shared uint sums[451];
+void main()
+{
+    uint tid = gl_LocalInvocationID.x;
+    for (uint i = tid; i < 451; i += 128)
+    {
+        sums[i] = 0;
+    }
+    barrier();
+    uint size = p.width * p.height;
+    uint base = gl_WorkGroupID.y * size;
+    uint end = min((gl_WorkGroupID.x + 1) * 4096, size);
+    uint cellW = (p.width + 7) / 8, cellH = (p.height + 7) / 8;
+    for (uint i = gl_WorkGroupID.x * 4096 + tid; i < end; i += 128)
+    {
+        uint v = pixels[base + i];
+        atomicAdd(sums[0], v & 255);
+        atomicAdd(sums[1], (v >> 8) & 255);
+        atomicAdd(sums[2], (v >> 16) & 255);
+        uint x = i % p.width, y = i / p.width;
+        if (p.width >= 8 && p.height >= 8)
+        {
+            uint cell = (y / cellH * 8 + x / cellW) * 3 + 3;
+            atomicAdd(sums[cell], v & 255);
+            atomicAdd(sums[cell + 1], (v >> 8) & 255);
+            atomicAdd(sums[cell + 2], (v >> 16) & 255);
+        }
+        if (x > 0 && y > 0 && x + 1 < p.width && y + 1 < p.height)
+        {
+            uint c = v >> 24, code = 0;
+            code |= uint((pixels[base + i - p.width - 1] >> 24) >= c);
+            code |= uint((pixels[base + i - p.width] >> 24) >= c) << 1;
+            code |= uint((pixels[base + i - p.width + 1] >> 24) >= c) << 2;
+            code |= uint((pixels[base + i + 1] >> 24) >= c) << 3;
+            code |= uint((pixels[base + i + p.width + 1] >> 24) >= c) << 4;
+            code |= uint((pixels[base + i + p.width] >> 24) >= c) << 5;
+            code |= uint((pixels[base + i + p.width - 1] >> 24) >= c) << 6;
+            code |= uint((pixels[base + i - 1] >> 24) >= c) << 7;
+            atomicAdd(sums[195 + code], 1);
+        }
+    }
+    barrier();
+    uint outBase = (gl_WorkGroupID.y * p.blocks + gl_WorkGroupID.x) * 451;
+    for (uint i = tid; i < 451; i += 128)
+    {
+        partials[outBase + i] = sums[i];
+    }
+}
