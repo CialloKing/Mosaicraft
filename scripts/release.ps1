@@ -29,6 +29,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 . (Join-Path $PSScriptRoot 'Archive.ps1')
+. (Join-Path $PSScriptRoot 'ReleaseDocumentation.ps1')
 . (Join-Path $PSScriptRoot 'Assert-CudaBuildInfo.ps1')
 $cudaBuildInfo = @{}
 $gpuProbeInfo = @{}
@@ -265,45 +266,6 @@ function Assert-InspectCommand {
     throw "Missing command: $Name"
 }
 
-function Assert-EncyclopediaVersionEntry {
-    param([string]$VersionText)
-
-    $encyclopedia = Join-Path $RepoRoot "docs\ENCYCLOPEDIA.md"
-    $content = Get-Content -LiteralPath $encyclopedia -Raw
-    $escapedVersion = [regex]::Escape($VersionText)
-    if ($content -match "(^|[^0-9])v?$escapedVersion([^0-9]|$)") {
-        Write-InspectLine -Status "OK" -Message "encyclopedia version entry: v$VersionText"
-        return
-    }
-    throw "Missing encyclopedia version entry: v$VersionText"
-}
-
-function Assert-ArchiveDocumentationPolicy {
-    param([string]$ExtractRoot)
-
-    foreach ($required in @(
-        "README.md",
-        "API.md",
-        "ENCYCLOPEDIA.md",
-        "BUILD_INFO.txt",
-        "contracts.json",
-        "docs/PORTABLE_GPU.md",
-        "docs/performance/portable-gpu-20261113.json",
-        "LICENSE",
-        "third_party_versions.txt"
-    )) {
-        Assert-FileExists -Path (Join-Path $ExtractRoot $required)
-    }
-
-    $blockedDocs = Get-ChildItem -LiteralPath $ExtractRoot -Recurse -File |
-        Where-Object { $_.Name -eq "CHANGELOG.md" -or $_.Name -like "RELEASE_NOTES_*.md" }
-
-    if ($blockedDocs) {
-        $names = ($blockedDocs | ForEach-Object { $_.Name } | Sort-Object -Unique) -join ", "
-        throw "Unexpected standalone release documentation in archive: $names"
-    }
-}
-
 function Write-BuildInfo
 {
     param(
@@ -442,17 +404,20 @@ function Invoke-ReleaseInspection {
         foreach ($required in @(
             "CMakeLists.txt",
             "README.md",
-            "docs\API.md",
-            "docs\PORTABLE_GPU.md",
+            "docs\README.md",
+            "scripts\ReleaseDocumentation.ps1",
+            "docs\reference\api.md",
+            "docs\development\portable-gpu.md",
             "docs\performance\portable-gpu-20261113.json",
-            "docs\ENCYCLOPEDIA.md",
+            "docs\releases.md",
             "LICENSE",
             "third_party_versions.txt",
             "tests\webui_smoke.ps1"
         )) {
             Assert-InspectPath -Label $required -Path (Join-Path $RepoRoot $required)
         }
-        Assert-EncyclopediaVersionEntry -VersionText $VersionText
+        Assert-ReleaseVersionSummary -RepoRoot $RepoRoot -VersionText $VersionText
+        Write-InspectLine -Status "OK" -Message "version summary: v$VersionText"
 
         if (-not $NoCuda -and -not $env:CUDAToolkit_ROOT) {
             Write-InspectLine -Status "WARN" -Message "Set CUDAToolkit_ROOT explicitly to CUDA 13.5 before configuring"
@@ -477,6 +442,7 @@ function Invoke-ReleaseInspection {
 }
 
 $versionText = Get-ProjectVersion
+Assert-ReleaseVersionSummary -RepoRoot $RepoRoot -VersionText $versionText
 $outputPath = if ($OutputDir) { Resolve-RepoPath $OutputDir } else { $RepoRoot }
 $packagePlatform = Normalize-PackageToken -Value $PackagePlatform -Fallback (Get-DefaultPackagePlatform) -Label "platform"
 $packageArch = Normalize-PackageToken -Value $PackageArch -Fallback (Get-DefaultPackageArch) -Label "arch"
@@ -546,7 +512,6 @@ if (($Vulkan -or $Metal) -and -not $packageName.EndsWith('_candidate')) { $packa
 if ($ArchiveFormat -eq 'auto') { $ArchiveFormat = if (Test-IsWindows) { 'zip' } else { 'tar.gz' } }
 $archiveName = "$packageName.$ArchiveFormat"
 $archivePath = Join-Path $outputPath $archiveName
-$performanceReport = Join-Path $RepoRoot "docs\PERFORMANCE_v$versionText.md"
 $tempRoot = [System.IO.Path]::GetTempPath()
 $packageRoot = Join-Path $tempRoot ("${packageName}_pkg_" + [System.Guid]::NewGuid().ToString("N"))
 $extractRoot = Join-Path $tempRoot ("${packageName}_extract_" + [System.Guid]::NewGuid().ToString("N"))
@@ -696,48 +661,7 @@ try {
 
         Copy-RequiredFile -Source (Join-Path $RepoRoot "README.md") -Destination $packageRoot
         Copy-RequiredFile -Source (Join-Path $RepoRoot "CMakeUserPresets.example.json") -Destination $packageRoot
-        Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\API.md") -Destination (Join-Path $packageRoot "API.md")
-        Copy-RequiredFile -Source (Join-Path $RepoRoot "docs\ENCYCLOPEDIA.md") -Destination (Join-Path $packageRoot "ENCYCLOPEDIA.md")
-        # README 的本版验证链接在解压后也应可读，保留文档与原始采样的相对路径。
-        foreach ($document in @(
-            "docs\API.md",
-            "docs\ENGINE_REFACTOR_VERIFICATION.md",
-            "docs\RUNTIME_DIAGNOSTICS_VERIFICATION.md",
-            "docs\OUTPUT_FORMAT_VERIFICATION.md",
-            "docs\PREVIEW_VERIFICATION.md",
-            "docs\SAME_SIZE_NORMALIZATION.md",
-            "docs\CI_PACKAGING.md",
-            "docs\CUDA_ARCHITECTURES.md",
-            "docs\CUDA_13_5_MIGRATION.md",
-            "docs\RELEASE_CHECKLIST.md",
-            "docs\BREAKING_1.15.0.md",
-            "docs\PORTABLE_LIBRARIES.md",
-            "docs\PORTABLE_GPU.md",
-            "docs\performance\portable-gpu-20261113.json",
-            "docs\performance\reset-1.15.0.json",
-            "docs\performance\preview.json",
-            "docs\performance\same-size-normalization.json",
-            "docs\performance\ci-packaging.json",
-            "docs\performance\cuda-architectures.json",
-            "docs\performance\cuda-seven-architectures.json",
-            "docs\performance\cuda-13.5-migration.json"
-        ))
-        {
-            $destination = Join-Path $packageRoot $document
-            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
-            Copy-RequiredFile -Source (Join-Path $RepoRoot $document) -Destination $destination
-        }
-        if (Test-Path -LiteralPath $performanceReport) {
-            $performanceDir = Join-Path $packageRoot "docs"
-            New-Item -ItemType Directory -Force -Path $performanceDir | Out-Null
-            Copy-RequiredFile -Source $performanceReport -Destination $performanceDir
-            $performanceData = Join-Path $RepoRoot "docs\performance\v$versionText.json"
-            if (Test-Path -LiteralPath $performanceData) {
-                $dataDir = Join-Path $performanceDir "performance"
-                New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
-                Copy-RequiredFile -Source $performanceData -Destination $dataDir
-            }
-        }
+        Copy-ReleaseDocumentation -RepoRoot $RepoRoot -Destination $packageRoot
         Copy-RequiredFile -Source (Join-Path $RepoRoot "LICENSE") -Destination $packageRoot
         Copy-RequiredFile -Source (Join-Path $RepoRoot "third_party_versions.txt") -Destination $packageRoot
         foreach ($dependency in @('miniz','picosha2')) {
@@ -773,17 +697,8 @@ try {
             $webUiPath = Join-Path $extractRoot $webUiName
             Assert-FileExists -Path $cliPath
             Assert-FileExists -Path $webUiPath
-            Assert-ArchiveDocumentationPolicy -ExtractRoot $extractRoot
+            Assert-ReleaseDocumentation -Root $extractRoot -SourceRoot $RepoRoot
             Assert-BuildInfo -ExtractRoot $extractRoot -VersionText $versionText -PackageName $archiveName -CommitHash $gitCommit
-            if (Test-Path -LiteralPath $performanceReport) {
-                $archivedReport = Join-Path $extractRoot "docs\PERFORMANCE_v$versionText.md"
-                Assert-FileExists -Path $archivedReport
-                if ((Get-FileHash -LiteralPath $performanceReport).Hash -ne (Get-FileHash -LiteralPath $archivedReport).Hash) {
-                    throw "Performance report differs from the source report"
-                }
-            }
-
-
             $versionOutput = (& $cliPath --version).Trim()
             if ($versionOutput -ne "Mosaicraft $versionText") {
                 throw "Unexpected CLI version output: $versionOutput"

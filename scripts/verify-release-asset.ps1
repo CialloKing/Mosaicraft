@@ -20,6 +20,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 . (Join-Path $PSScriptRoot 'Archive.ps1')
+. (Join-Path $PSScriptRoot 'ReleaseDocumentation.ps1')
 . (Join-Path $PSScriptRoot 'Assert-CudaBuildInfo.ps1')
 . (Join-Path $PSScriptRoot 'Assert-PackageRuntime.ps1')
 $originalPath = $env:PATH
@@ -324,39 +325,6 @@ function Assert-FileExists
     }
 }
 
-function Assert-ArchiveDocumentationPolicy
-{
-    param([string]$Root)
-
-    foreach ($required in @(
-        "README.md",
-        "API.md",
-        "ENCYCLOPEDIA.md",
-        "BUILD_INFO.txt",
-        "contracts.json",
-        "LICENSE",
-        "third_party_versions.txt"
-    ))
-    {
-        Assert-FileExists -Path (Join-Path $Root $required)
-    }
-
-    $blockedNames = @()
-    foreach ($file in Get-ChildItem -LiteralPath $Root -Recurse -File)
-    {
-        if ($file.Name -eq "CHANGELOG.md" -or $file.Name -like "RELEASE_NOTES_*.md")
-        {
-            $blockedNames += $file.Name
-        }
-    }
-
-    if ($blockedNames.Count -gt 0)
-    {
-        $names = ($blockedNames | Sort-Object -Unique) -join ", "
-        throw "Unexpected standalone release documentation in archive: $names"
-    }
-}
-
 function Read-BuildInfo
 {
     param([string]$Path)
@@ -399,7 +367,12 @@ function Assert-BuildInfo
     if ($info['Runtime'] -in @('vulkan', 'cuda-vulkan', 'metal'))
     {
         # 候选包必须携带机器可读门槛和未实机验收范围，不能只保留源码中的链接。
-        foreach ($document in @('docs/PORTABLE_GPU.md', 'docs/performance/portable-gpu-20261113.json'))
+        $gpuGuide = if (Test-Path -LiteralPath (Join-Path $Root 'docs/README.md')) {
+            'docs/development/portable-gpu.md'
+        } else {
+            'docs/PORTABLE_GPU.md'
+        }
+        foreach ($document in @($gpuGuide, 'docs/performance/portable-gpu-20261113.json'))
         {
             Assert-FileExists -Path (Join-Path $Root $document)
         }
@@ -636,8 +609,8 @@ try
         Assert-FileExists -Path $webUiPath
         Assert-FileExists -Path (Join-Path $extractRoot "index.html")
 
-        # Single-version release notes should live in ENCYCLOPEDIA.md to keep every zip compact and predictable.
-        Assert-ArchiveDocumentationPolicy -Root $extractRoot
+        # Validate the new documentation tree while retaining historical asset layout support.
+        Assert-ReleaseDocumentation -Root $extractRoot -AllowLegacy
         Assert-BuildInfo -Root $extractRoot -VersionText $ExpectedVersion -PackageName (Split-Path -Leaf $zip) -TagCommitHash $tagCommitHash
         if ($RequireStandalone)
         {
