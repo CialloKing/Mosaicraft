@@ -2327,3 +2327,4 @@ TEST_CASE("ZIP64 counts and large offsets use a bounded counting sink")
         REQUIRE(mz_zip_writer_end(&archive));
     }
 }
+#include "test_portable.inc"

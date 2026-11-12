@@ -42,7 +42,7 @@ if(MOSAICRAFT_METAL)
     set_target_properties(mosaicraft_core PROPERTIES OBJCXX_STANDARD 17 OBJCXX_STANDARD_REQUIRED ON)
     find_program(MOSAICRAFT_XCRUN xcrun REQUIRED)
     add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/PortableMetal.h"
-        COMMAND "${MOSAICRAFT_XCRUN}" -sdk macosx metal -std=metal3.0 -fno-fast-math
+        COMMAND "${MOSAICRAFT_XCRUN}" -sdk macosx metal -std=metal3.0 -fno-fast-math -ffp-contract=off
             "-I${CMAKE_CURRENT_SOURCE_DIR}/core" -c "${CMAKE_CURRENT_SOURCE_DIR}/compute/shaders/portable.metal"
             -o "${CMAKE_CURRENT_BINARY_DIR}/generated/portable.air"
         COMMAND "${MOSAICRAFT_XCRUN}" -sdk macosx metallib "${CMAKE_CURRENT_BINARY_DIR}/generated/portable.air"

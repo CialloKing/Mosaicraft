@@ -180,6 +180,7 @@ int main(int argc, char **argv)
                 {"seed", fixedSeed ? nlohmann::json(seed) : nlohmann::json(nullptr)},
                 {"selected_count", selected.size()}, {"feature_backend", state.featureBackend},
                 {"score_backend", state.scoreBackend}, {"width", state.width}, {"height", state.height},
+                {"device", state.computeDevice}, {"score_mode", state.scoreMode}, {"kernel", state.kernelVersion},
                 {"matched", state.matched}, {"failed", state.failed}, {"warnings", state.warningCount},
                 {"metrics", state.metrics}, {"opencv_version", CV_VERSION}, {"match_only", matchOnly},
                 {"strategy", strategy}, {"epsilon", selectionOptions.relative}

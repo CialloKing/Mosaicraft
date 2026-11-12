@@ -323,8 +323,11 @@ int main(int argc, char **argv)
             const auto name = item.at("id").get<std::string>();
             std::cout << "Evaluating " << name << std::endl;
             const auto target = prepare(item, std::stoi(db.getMeta("feature_w")), std::stoi(db.getMeta("feature_h")));
-            output["cases"][name] = {{"columns", target.columns}, {"rows", target.rows},
-                                      {"oracle", oracle(target, records, payloads, index)}};
+            output["cases"][name] = {{"columns", target.columns}, {"rows", target.rows}};
+            if (study.value("oracle", true))
+            {
+                output["cases"][name]["oracle"] = oracle(target, records, payloads, index);
+            }
             std::map<std::string, Json> cache;
             for (const auto &run : study.at("runs"))
             {
