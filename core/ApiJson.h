@@ -11,6 +11,7 @@
 
 namespace mosaicraft
 {
+nlohmann::json colorDistributionToJson(const ColorDistribution &distribution);
 
 nlohmann::json diagnosticToJson(const Diagnostic &diagnostic);
 nlohmann::json artifactToJson(const Artifact &artifact);

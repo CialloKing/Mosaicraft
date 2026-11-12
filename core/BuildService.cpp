@@ -120,6 +120,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
     }
 
     Database db(resolveDbPathForService(dbPath), Database::OpenMode::Build);
+    BuildVisuals visuals;
     if (!db.isOpen())
     {
         return runtimeFailure(runtime, EXIT_ERR_DB, "cannot open database: " + dbPath + "; " + db.error(),
@@ -362,6 +363,11 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
                                            : "cpu",
                      "none", preflight.available ? "" : preflight.reason);
     constexpr int GPU_BATCH = 256;
+    if (request.appendMode && !request.normalizeOnly)
+    {
+        visuals.before = summarizeColors(db.averageColors());
+    }
+    visuals.scanned = files.size();
     int inserted = 0;
     int skipped = 0;
 
@@ -482,6 +488,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
                         std::string hash = hashMatForBuild(item.img);
                         if (db.existsByHash(hash) || !pendingHashes.insert(hash).second)
                         {
+                            ++visuals.duplicates;
                             if (!inputIsOutput)
                             {
                                 std::error_code removeEc;
@@ -732,6 +739,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
                 const auto hash = hashMatForBuild(images[i]);
                 if (db.existsByHash(hash) || !pendingHashes.insert(hash).second)
                 {
+                    ++visuals.duplicates;
                     if (!inputIsOutput)
                     {
                         std::error_code removeError;
@@ -897,6 +905,8 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
 
     if (request.normalizeOnly)
     {
+        visuals.normalized = normDone.load();
+        runtime.buildVisuals(std::move(visuals));
         std::cout << "Normalize only: " << normDone.load()
                   << " images written to " << outputDir << std::endl;
         runtime.stage("finalizing");
@@ -982,6 +992,18 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
     }
 
     runtime.stage("finalizing");
+    visuals.normalized = normDone.load();
+    visuals.inserted = inserted;
+    try
+    {
+        visuals.after = summarizeColors(db.averageColors());
+        visuals.hasColors = true;
+    }
+    catch (const std::exception &error)
+    {
+        runtime.emit("warning", "analysis_write_failed", error.what());
+    }
+    runtime.buildVisuals(std::move(visuals));
     runtime.artifact("library", "database", resolveDbPathForService(dbPath), "application/vnd.sqlite3");
     runtime.artifact("library-directory", "directory", outputDir);
     return ServiceResult::success("build completed");

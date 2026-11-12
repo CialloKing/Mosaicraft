@@ -71,6 +71,7 @@ const outputPlanning = (() => {
       return;
     }
     requestKey = key;
+    libraryVisuals.clearCoverage();
     ready = false;
     clearTimeout(timer);
     cancelSample();

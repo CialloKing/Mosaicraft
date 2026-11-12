@@ -20,6 +20,14 @@ std::vector<std::string> endpointMethods(const std::string& method)
 
 std::string endpointHttpPattern(const std::string& path)
 {
+    if (path == "/api/db/catalog/{id}")
+    {
+        return R"(/api/db/catalog/([A-Za-z0-9_-]+))";
+    }
+    if (path == "/api/db/catalog/{id}/image/{asset}")
+    {
+        return R"(/api/db/catalog/([A-Za-z0-9_-]+)/image/([A-Za-z0-9_-]+))";
+    }
     if (path == "/api/jobs/{id}/events")
     {
         return R"(/api/jobs/([A-Za-z0-9_-]+)/events)";
@@ -54,6 +62,8 @@ std::vector<std::string> endpointQueryKeys(ApiOperation operation)
 {
     switch (operation)
     {
+    case ApiOperation::GetCatalog:
+        return {"offset"};
     case ApiOperation::GetJobEvents:
         return {"after", "limit"};
     case ApiOperation::GetPreviewRecommendations:
@@ -75,6 +85,9 @@ std::vector<std::string> endpointQueryKeys(ApiOperation operation)
     case ApiOperation::Info:
     case ApiOperation::Ping:
     case ApiOperation::Mosaic:
+    case ApiOperation::MosaicCoverage:
+    case ApiOperation::OpenCatalog:
+    case ApiOperation::GetCatalogImage:
     case ApiOperation::PlanMosaic:
     case ApiOperation::SubmitMosaicSample:
     case ApiOperation::SubmitPreview:
@@ -127,6 +140,10 @@ int endpointSuccessStatus(ApiOperation operation)
     case ApiOperation::Info:
     case ApiOperation::Ping:
     case ApiOperation::Mosaic:
+    case ApiOperation::MosaicCoverage:
+    case ApiOperation::OpenCatalog:
+    case ApiOperation::GetCatalog:
+    case ApiOperation::GetCatalogImage:
     case ApiOperation::PlanMosaic:
     case ApiOperation::GetPreview:
     case ApiOperation::ClosePreview:
@@ -173,6 +190,10 @@ std::string endpointResponseKey(ApiOperation operation)
     case ApiOperation::Info: return "info";
     case ApiOperation::Ping: return "message";
     case ApiOperation::PlanMosaic: return "plan";
+    case ApiOperation::MosaicCoverage: return "coverage";
+    case ApiOperation::OpenCatalog:
+    case ApiOperation::GetCatalog: return "catalog";
+    case ApiOperation::GetCatalogImage: return "";
     case ApiOperation::SubmitMosaicJob:
     case ApiOperation::SubmitBuildJob:
     case ApiOperation::GetJob:
@@ -226,6 +247,8 @@ void populateEndpointErrors(ApiEndpointMetadata& info)
     case ApiOperation::ClosePreview:
         addErrorContract(info, 404, "serviceResult");
         break;
+    case ApiOperation::GetCatalog:
+    case ApiOperation::GetCatalogImage:
     case ApiOperation::GetPreviewImage:
         addErrorContract(info, 400, "serviceResult");
         addErrorContract(info, 404, "serviceResult");
@@ -253,6 +276,8 @@ void populateEndpointErrors(ApiEndpointMetadata& info)
         addErrorContract(info, 500, "serviceResult");
         break;
     case ApiOperation::Mosaic:
+    case ApiOperation::MosaicCoverage:
+    case ApiOperation::OpenCatalog:
     case ApiOperation::PlanMosaic:
     case ApiOperation::SubmitBuildJob:
         addErrorContract(info, 400, "serviceResult");
@@ -343,6 +368,10 @@ const char* apiOperationName(ApiOperation operation)
     case ApiOperation::Ping: return "ping";
     case ApiOperation::Mosaic: return "mosaic";
     case ApiOperation::PlanMosaic: return "planMosaic";
+    case ApiOperation::MosaicCoverage: return "mosaicCoverage";
+    case ApiOperation::OpenCatalog: return "openCatalog";
+    case ApiOperation::GetCatalog: return "getCatalog";
+    case ApiOperation::GetCatalogImage: return "getCatalogImage";
     case ApiOperation::SubmitMosaicSample: return "submitMosaicSample";
     case ApiOperation::SubmitPreview: return "submitPreview";
     case ApiOperation::GetPreview: return "getPreview";
@@ -432,6 +461,14 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata()
         endpoint("POST", "/api/mosaic/plan", "resolve the mosaic geometry and estimate resources", "mosaic",
                  ApiOperation::PlanMosaic, ApiRequestShape::Body, mosaicFields, {"inputPath"}),
         std::move(sample),
+        endpoint("POST", "/api/mosaic/coverage", "measure target and library color coverage", "mosaic",
+                 ApiOperation::MosaicCoverage, ApiRequestShape::Body, mosaicFields, {"inputPath"}),
+        endpoint("POST", "/api/db/catalog", "open an ordered library catalog", "database",
+                 ApiOperation::OpenCatalog, ApiRequestShape::Body, {"dbPath", "sort", "anchor"}, {"dbPath", "sort"}),
+        endpoint("GET", "/api/db/catalog/{id}", "read a catalog page", "database",
+                 ApiOperation::GetCatalog, ApiRequestShape::JobQuery, {"id", "offset"}, {"id"}),
+        endpoint("GET", "/api/db/catalog/{id}/image/{asset}", "read a catalog thumbnail", "database",
+                 ApiOperation::GetCatalogImage, ApiRequestShape::JobArtifact, {"id", "asset"}, {"id", "asset"}),
         endpoint("POST", "/api/mosaic/preview", "queue the latest interactive selection", "preview",
                  ApiOperation::SubmitPreview, ApiRequestShape::Body, {"request", "seed"}, {"request", "seed"},
                  true, true),
@@ -609,7 +646,7 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
 
 std::vector<std::string> apiFeatureList()
 {
-    return {"mosaic-plan", "mosaic-size-sample", "mosaic-jobs", "build-jobs", "job-management", "job-diagnostics",
+    return {"library-visuals", "mosaic-plan", "mosaic-size-sample", "mosaic-jobs", "build-jobs", "job-management", "job-diagnostics",
             "job-progress",   "job-artifacts",   "result-preview", "interactive-preview", "preview-editing", "inspect",
             "database-stats", "database-health", "database-usage", "database-maintenance", "output-format-policy"};
 }

@@ -25,7 +25,7 @@ DatabaseStatsResult DatabaseService::stats(const DatabaseRequest& request) const
         return out;
     }
 
-    auto all = db.allRecords();
+    const auto all = db.averageColors();
     out.stats.total = static_cast<int>(all.size());
     out.stats.empty = out.stats.total == 0;
     if (out.stats.empty)
@@ -36,33 +36,36 @@ DatabaseStatsResult DatabaseService::stats(const DatabaseRequest& request) const
 
     out.stats.featureWidth = db.getMeta("feature_w");
     out.stats.featureHeight = db.getMeta("feature_h");
-    out.stats.gridDim = static_cast<int>(all[0].gridLab.size());
+    out.stats.gridDim = 8 * 8 * 3;
 
     double sumL = 0.0, sumA = 0.0, sumB = 0.0;
     out.stats.minL = out.stats.minA = out.stats.minB = 255.0;
     out.stats.maxL = out.stats.maxA = out.stats.maxB = 0.0;
 
-    int hist[8] = {0};
-    for (const auto& r : all)
+    out.stats.colors = summarizeColors(all);
+    for (const auto &[l, a, b] : all)
     {
-        out.stats.minL = std::min(out.stats.minL, r.avgL);
-        out.stats.maxL = std::max(out.stats.maxL, r.avgL);
-        out.stats.minA = std::min(out.stats.minA, r.avgA);
-        out.stats.maxA = std::max(out.stats.maxA, r.avgA);
-        out.stats.minB = std::min(out.stats.minB, r.avgB);
-        out.stats.maxB = std::max(out.stats.maxB, r.avgB);
-        sumL += r.avgL;
-        sumA += r.avgA;
-        sumB += r.avgB;
-
-        if (r.avgL < 30) out.stats.dark++;
-        else if (r.avgL < 70) out.stats.mid++;
-        else out.stats.bright++;
-
-        int b = static_cast<int>(r.avgL) / 32;
-        if (b < 0) b = 0;
-        if (b > 7) b = 7;
-        hist[b]++;
+        out.stats.minL = std::min(out.stats.minL, l);
+        out.stats.maxL = std::max(out.stats.maxL, l);
+        out.stats.minA = std::min(out.stats.minA, a);
+        out.stats.maxA = std::max(out.stats.maxA, a);
+        out.stats.minB = std::min(out.stats.minB, b);
+        out.stats.maxB = std::max(out.stats.maxB, b);
+        sumL += l;
+        sumA += a;
+        sumB += b;
+        if (l < 30)
+        {
+            ++out.stats.dark;
+        }
+        else if (l < 70)
+        {
+            ++out.stats.mid;
+        }
+        else
+        {
+            ++out.stats.bright;
+        }
     }
 
     out.stats.avgL = sumL / out.stats.total;
@@ -71,7 +74,8 @@ DatabaseStatsResult DatabaseService::stats(const DatabaseRequest& request) const
 
     for (int i = 0; i < 8; ++i)
     {
-        out.stats.lHistogram.push_back({i * 32, i == 7 ? 255 : (i + 1) * 32 - 1, hist[i]});
+        out.stats.lHistogram.push_back({i * 32, i == 7 ? 255 : (i + 1) * 32 - 1,
+                                        static_cast<int>(out.stats.colors.lightness[i])});
     }
 
     if (out.stats.dark + out.stats.mid < out.stats.total / 100) out.stats.coverageGaps.push_back("dark");

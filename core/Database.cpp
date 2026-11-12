@@ -748,6 +748,23 @@ bool Database::initUsageStats()
     return m_db != nullptr;
 }
 
+std::vector<std::array<double, 3>> Database::averageColors()
+{
+    sqlite3_stmt *statement = nullptr;
+    if (!m_db || sqlite3_prepare_v2(m_db, "SELECT avg_l, avg_a, avg_b FROM images", -1, &statement, nullptr) != SQLITE_OK)
+    {
+        return {};
+    }
+    const std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> cleanup(statement, sqlite3_finalize);
+    std::vector<std::array<double, 3>> result;
+    while (sqlite3_step(statement) == SQLITE_ROW)
+    {
+        result.push_back({sqlite3_column_double(statement, 0), sqlite3_column_double(statement, 1),
+                          sqlite3_column_double(statement, 2)});
+    }
+    return result;
+}
+
 bool Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
                               const std::string& targetHash,
                               const std::string& targetPath)

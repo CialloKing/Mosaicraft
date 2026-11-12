@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 #include <memory>
 #include <limits>
 #include <string>
@@ -152,6 +153,7 @@ public:
 
     // 获取图库总数
     int totalCount();
+    std::vector<std::array<double, 3>> averageColors();
 
     // ——— 元数据 ———
     // 设置全局配置项（如 feature_w=180）；value 为任意字符串

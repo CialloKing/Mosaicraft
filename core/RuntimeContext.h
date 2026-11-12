@@ -1,4 +1,6 @@
 #pragma once
+#include "ColorDistribution.h"
+#include <memory>
 #include <chrono>
 #include "OutputPlan.h"
 #include <cstdint>
@@ -60,6 +62,7 @@ struct RuntimeSnapshot
     std::map<std::string, double> metrics;
     std::vector<Artifact> artifacts;
     std::optional<detail::OutputPlan> outputPlan;
+    std::shared_ptr<const BuildVisuals> buildVisuals;
 };
 
 struct EventPage
@@ -85,6 +88,7 @@ class RuntimeContext
     void output(int width, int height, const std::string &format, int matched, int failed) noexcept;
     void planOutput(const detail::OutputPlan &plan, const std::string &requestedPath) noexcept;
     void metric(const std::string &name, double value) noexcept;
+    void buildVisuals(BuildVisuals data) noexcept;
     void artifact(const std::string &id, const std::string &kind, const std::string &path,
                   const std::string &mime = "application/octet-stream") noexcept;
     RuntimeSnapshot snapshot() const;

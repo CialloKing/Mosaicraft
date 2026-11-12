@@ -11,11 +11,13 @@ set(previewScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/preview.js"
 set(previewPickerScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/preview-picker.js")
 set(resultAnalysisScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/result-analysis.js")
 set(outputPlanningScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/output-planning.js")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${previewScript}" "${previewPickerScript}" "${resultAnalysisScript}" "${outputPlanningScript}")
+set(libraryVisualsScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/library-visuals.js")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${previewScript}" "${previewPickerScript}" "${resultAnalysisScript}" "${outputPlanningScript}" "${libraryVisualsScript}")
 file(READ "${previewScript}" interactivePreviewScript)
 file(READ "${previewPickerScript}" interactivePreviewPickerScript)
 file(READ "${resultAnalysisScript}" taskResultAnalysisScript)
 file(READ "${outputPlanningScript}" mosaicOutputPlanningScript)
+file(READ "${libraryVisualsScript}" libraryVisualsUiScript)
 configure_file(tools/command-builder/index.html generated/index.html @ONLY)
 
 # C++17
@@ -209,6 +211,7 @@ add_library(mosaicraft_core STATIC
     core/OutputPlan.cpp
     core/MosaicPlanning.cpp
     core/MosaicSampling.cpp
+    core/LibraryVisuals.cpp
     core/MosaicMetrics.cpp
     core/NeighborhoodState.cpp
     core/MosaicEngine.cpp

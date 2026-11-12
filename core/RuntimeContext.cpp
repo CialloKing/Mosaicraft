@@ -246,6 +246,20 @@ void RuntimeContext::planOutput(const detail::OutputPlan &plan, const std::strin
     }
 }
 
+void RuntimeContext::buildVisuals(BuildVisuals data) noexcept
+{
+    try
+    {
+        auto report = std::make_shared<const BuildVisuals>(std::move(data));
+        const std::lock_guard<std::mutex> lock(m_mutex);
+        m_snapshot.buildVisuals = std::move(report);
+    }
+    catch (...)
+    {
+        // 展示数据失败不能改变已提交的图库结果。
+    }
+}
+
 void RuntimeContext::artifact(const std::string &id, const std::string &kind, const std::string &path,
                               const std::string &mime) noexcept
 {

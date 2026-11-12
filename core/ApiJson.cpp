@@ -8,6 +8,11 @@
 
 namespace mosaicraft
 {
+nlohmann::json colorDistributionToJson(const ColorDistribution &distribution)
+{
+    return {{"axes", ColorDistribution::axes}, {"ab", distribution.ab}, {"hue", distribution.hue},
+            {"lightness", distribution.lightness}, {"gray", distribution.gray}, {"total", distribution.total}};
+}
 
 namespace
 {
@@ -94,6 +99,18 @@ nlohmann::json runtimeSnapshotToJson(const RuntimeSnapshot &value)
             {"format", plan.format}, {"path", plan.path}, {"width", plan.width}, {"height", plan.height},
             {"tileWidth", plan.tileWidth}, {"tileHeight", plan.tileHeight},
             {"scaled", plan.scaled}, {"formatChanged", plan.formatChanged}};
+    }
+    if (value.buildVisuals)
+    {
+        const auto &build = *value.buildVisuals;
+        auto &report = result["runtime"]["build"];
+        report = {{"scanned", build.scanned}, {"normalized", build.normalized},
+                  {"duplicates", build.duplicates}, {"inserted", build.inserted}};
+        if (build.hasColors)
+        {
+            report["before"] = colorDistributionToJson(build.before);
+            report["after"] = colorDistributionToJson(build.after);
+        }
     }
     return result;
 }
@@ -239,6 +256,7 @@ nlohmann::json databaseStatsToJson(const DatabaseStats& stats)
         }},
         {"brightness", {{"dark", stats.dark}, {"mid", stats.mid}, {"bright", stats.bright}}},
         {"lHistogram", histogram},
+        {"colors", colorDistributionToJson(stats.colors)},
         {"coverageGaps", stats.coverageGaps}
     };
 }

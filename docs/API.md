@@ -334,6 +334,12 @@ Returns database size, LAB ranges, brightness buckets, and coverage gaps.
 
 `lHistogram` 在非空图库中返回 8 档 `{lo, hi, count}`，覆盖保存的 LAB L 值 0～255。`coverageGaps` 为覆盖缺口代码。
 
+`colors` 包含 `ab`（32×32，行按 b，列按 a）、`hue`（24 档 LAB 色相角）、`lightness`（8 档）、`gray` 和 `total`。建库任务详情 `runtime.build` 提供 `scanned/normalized/duplicates/inserted`，完成索引的任务还包含 `before/after` 色彩汇总。
+
+`POST /api/mosaic/coverage` 接受标准生成参数。`coverage.target/library` 使用同一分桶。按补边后的目标工作图块平均 LAB L 和请求的 `lRange` 统计亮度候选。`minimumCandidates` 是每个区域的最小候选数，区域网格最多 256×256。
+
+`POST /api/db/catalog` 接受 `dbPath`、`sort`（`color`、`usage` 或 `similarity`）和相似度参照 `anchor`（素材 ID）。使用 `GET /api/db/catalog/{id}?offset=24` 翻页。缩略图通过 `GET /api/db/catalog/{id}/image/{asset}` 读取，`asset` 为素材 ID、连字符和把冒号换为连字符的 `version`。
+
 ### `GET|POST /api/db/health`
 
 返回健康警告和建议 / Returns health warnings and recommendations.

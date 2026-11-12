@@ -20,6 +20,10 @@ enum class ApiOperation
 
     Mosaic,
     PlanMosaic,
+    MosaicCoverage,
+    OpenCatalog,
+    GetCatalog,
+    GetCatalogImage,
     SubmitMosaicSample,
     SubmitPreview,
     GetPreview,

@@ -245,6 +245,13 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 .db-result-table th, .db-result-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
 .db-rank-track { display: block; height: .55rem; min-width: 1rem; background: var(--bg); }
 .db-rank-fill { display: block; height: 100%; }
+.color-charts { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,14rem),1fr)); gap: 12px; }
+.color-map { display: block; width: min(100%, 16rem); background: var(--bg); image-rendering: pixelated; }
+.color-hue-bars { display: flex; gap: 2px; height: 4rem; align-items: end; margin: 6px 0; }
+.color-hue-bars span { flex: 1; min-width: 0; }
+.catalog-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(96px,1fr)); gap: 8px; }
+.catalog-grid .btn { padding: 5px; overflow-wrap: anywhere; }
+.catalog-grid img { width: 100%; height: 90px; object-fit: contain; display: block; }
 [hidden] { display: none !important; }
 .saved-main { color: var(--success); margin-bottom: 10px; }
 .help-page { font-size: .88rem; line-height: 1.8; }
@@ -387,6 +394,8 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <button type="button" class="btn btn-secondary" id="m-plan-cancel" hidden>取消采样</button>
     </div>
     <p class="hint" id="m-plan-sample-status" role="status"></p>
+    <button type="button" class="btn btn-secondary" id="m-coverage-run">比较目标与图库覆盖</button>
+    <div id="m-coverage-result" aria-live="polite"></div>
   </section>
 </div>
 
@@ -1038,6 +1047,8 @@ async function runCommand() {
         return;
       }
       status.innerHTML = '<span style="color:var(--success)">✅ Done</span>' + renderDbStats(data.stats);
+      libraryVisuals.paint(status);
+      libraryVisuals.mountCatalog(status, payload.dbPath);
       return;
     }
     if (tab === 'dbhealth') {
@@ -1071,6 +1082,7 @@ async function runCommand() {
         return;
       }
       status.innerHTML = '<span style="color:var(--success)">✅ Done</span>' + (exportDir ? renderDbUsageExport(data.export) : renderDbUsage(data.usage));
+      if (!exportDir) libraryVisuals.mountCatalog(status, payload.dbPath, 'usage');
       return;
     }
     if (tab === 'dbpurge') {
@@ -1331,6 +1343,7 @@ function renderDbStats(stats) {
     <p>亮度 ${Number(lab.minL || 0).toFixed(1)}–${Number(lab.maxL || 0).toFixed(1)} · 平均 ${Number(lab.avgL || 0).toFixed(1)} · 暗 ${escapeHtml(brightness.dark || 0)} / 中 ${escapeHtml(brightness.mid || 0)} / 亮 ${escapeHtml(brightness.bright || 0)}</p>
     ${histogram ? `<figure><figcaption>素材亮度分布（LAB L）</figcaption><ul class="db-histogram">${histogram}</ul></figure>` : ''}
     <p>覆盖缺口 · ${gaps.length ? gaps.map(escapeHtml).join('、') : '未发现明显缺口'}</p>
+    ${libraryVisuals.colorCharts(stats.colors)}
   </section>`;
 }
 
@@ -1794,6 +1807,7 @@ function renderTaskDiagnostic(job) {
   if (job.runtime) {
     const runtime = job.runtime;
     html += '<p>特征提取：' + escapeHtml(matchingBackendName(runtime.featureBackend)) + ' · 评分：' + escapeHtml(matchingBackendName(runtime.scoreBackend)) + '</p>';
+    html += libraryVisuals.buildSummary(runtime.build);
     if (Object.keys(runtime.metrics || {}).length) html += '<details data-section="metrics"><summary>性能详情（并行阶段不可相加）</summary><pre>' + escapeHtml(JSON.stringify(runtime.metrics, null, 2)) + '</pre></details>';
   }
   if (hasFeature('job-diagnostics')) {
@@ -1823,6 +1837,7 @@ function renderTaskArea() {
     const top = log && log.scrollTop;
     const oldPreview = detail.querySelector('img[data-preview]');
     detail.innerHTML = html;
+    libraryVisuals.paint(detail);
     const newPreview = detail.querySelector('img[data-preview]');
     if (oldPreview && newPreview && oldPreview.src === newPreview.src) newPreview.replaceWith(oldPreview);
     for (const item of detail.querySelectorAll('details')) if (opened.includes(item.dataset.section)) item.open = true;
@@ -2107,6 +2122,7 @@ document.addEventListener('click', event => {
 @interactivePreviewScript@
 @taskResultAnalysisScript@
 @mosaicOutputPlanningScript@
+@libraryVisualsUiScript@
 
 // Restore form state before generating or submitting any request.
 initializeFormUi();

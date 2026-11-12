@@ -2,6 +2,7 @@
 
 #include "ApiJson.h"
 #include "MosaicPlanning.h"
+#include "LibraryVisuals.h"
 #include "UnicodeIO.h"
 
 #include <opencv2/imgproc.hpp>
@@ -64,6 +65,35 @@ ApiResponse mosaicPlanResponse(const std::string &body)
          {"matchingRam", byteRangeJson(plan.matchingRam)}, {"writingRam", byteRangeJson(plan.writingRam)},
          {"matchingVram", plan.matchingVram ? byteRangeJson(*plan.matchingVram) : nlohmann::json(nullptr)},
          {"fileBytes", byteRangeJson(plan.fileBytes)}, {"warnings", plan.warnings}})};
+}
+
+ApiResponse mosaicCoverageResponse(const std::string &body)
+{
+    MosaicRequest request;
+    RequestError error;
+    if (!parseMosaicRequestJson(body, request, error))
+    {
+        return resultResponse(400, ServiceResult::failure(1, error.message, "invalid_argument", error.field));
+    }
+    // 同一服务只计算一张覆盖图，快速切换表单不会重复占用工作图内存。
+    static std::mutex mutex;
+    const std::unique_lock<std::mutex> lock(mutex, std::try_to_lock);
+    if (!lock.owns_lock())
+    {
+        return resultResponse(400, ServiceResult::failure(1, "another coverage check is running", "library_busy"));
+    }
+    MosaicCoverage coverage;
+    const auto result = measureMosaicCoverage(request, coverage);
+    if (!result.ok)
+    {
+        return resultResponse(400, result);
+    }
+    return {200, apiOkJson("coverage",
+        {{"target", colorDistributionToJson(coverage.target)}, {"library", colorDistributionToJson(coverage.library)},
+         {"columns", coverage.columns}, {"rows", coverage.rows}, {"mapColumns", coverage.mapColumns},
+         {"mapRows", coverage.mapRows}, {"minimumCandidates", coverage.minimumCandidates},
+         {"noCandidates", coverage.noCandidates}, {"fewCandidates", coverage.fewCandidates},
+         {"threshold", coverage.threshold}, {"lRange", request.config.lRange}})};
 }
 
 ApiResponse badRequest(const std::string& error)
@@ -372,6 +402,55 @@ class PreviewThumbnailCache
     }
 };
 
+ApiResponse thumbnailResponse(const PreviewAsset &asset, int edge)
+{
+    if (!asset.available)
+    {
+        return previewImageNotFound();
+    }
+    if (!asset.current())
+    {
+        return previewConflict("selected image changed; refresh the preview");
+    }
+    try
+    {
+        // 缓存跨预览共享，仍需先通过当前预览的素材访问和版本检查。
+        static PreviewThumbnailCache thumbnails;
+        const std::string cacheKey = asset.path + '\0' + asset.version() + ':' + std::to_string(edge);
+        std::string cached = thumbnails.get(cacheKey);
+        if (!cached.empty())
+        {
+            return {200, apiOkJson(), {}, std::move(cached)};
+        }
+        const auto image = imreadUnicode(asset.path, cv::IMREAD_COLOR);
+        if (image.empty())
+        {
+            return previewImageNotFound();
+        }
+        if (!asset.current())
+        {
+            return previewConflict("selected image changed; refresh the preview");
+        }
+        const double scale = std::min(1.0, static_cast<double>(edge) / std::max(image.cols, image.rows));
+        cv::Mat thumbnail;
+        cv::resize(image, thumbnail, {std::max(1, cvRound(image.cols * scale)),
+                                      std::max(1, cvRound(image.rows * scale))}, 0, 0, cv::INTER_AREA);
+        std::vector<unsigned char> jpeg;
+        cv::imencode(".jpg", thumbnail, jpeg, {cv::IMWRITE_JPEG_QUALITY, 80});
+        if (jpeg.empty())
+        {
+            return previewImageNotFound();
+        }
+        std::string bytes(jpeg.begin(), jpeg.end());
+        thumbnails.put(cacheKey, bytes);
+        return {200, apiOkJson(), {}, std::move(bytes)};
+    }
+    catch (const std::exception &error)
+    {
+        return internalError(error.what());
+    }
+}
+
 ApiResponse previewImage(const ApiRequest &request, JobManager &jobs)
 {
     PreviewSnapshot snapshot;
@@ -419,51 +498,146 @@ ApiResponse previewImage(const ApiRequest &request, JobManager &jobs)
             asset = previewAsset(*entry);
         }
     }
-    if (!asset.available)
+    return thumbnailResponse(asset, edge);
+}
+
+struct BrowserStore
+{
+    using Clock = std::chrono::steady_clock;
+    std::mutex mutex;
+    uint64_t next = 1;
+    std::list<std::pair<Clock::time_point, std::shared_ptr<LibraryBrowser>>> recent;
+
+    std::shared_ptr<const LibraryBrowser> get(const std::string &id)
+    {
+        const std::lock_guard<std::mutex> lock(mutex);
+        const auto now = Clock::now();
+        recent.remove_if([&](const auto &item) { return now - item.first > std::chrono::minutes(10); });
+        const auto found = std::find_if(recent.begin(), recent.end(), [&](const auto &item) { return item.second->id == id; });
+        if (found == recent.end())
+        {
+            return {};
+        }
+        found->first = now;
+        recent.splice(recent.begin(), recent, found);
+        return found->second;
+    }
+
+    void add(const std::shared_ptr<LibraryBrowser> &browser)
+    {
+        const std::lock_guard<std::mutex> lock(mutex);
+        browser->id = "catalog-" + std::to_string(next++);
+        recent.emplace_front(Clock::now(), browser);
+        if (recent.size() > 4)
+        {
+            recent.pop_back();
+        }
+    }
+};
+
+BrowserStore &browserStore()
+{
+    static BrowserStore store;
+    return store;
+}
+
+ApiResponse catalogPage(const LibraryBrowser &browser, size_t offset)
+{
+    auto items = nlohmann::json::array();
+    const auto total = browser.ordered.size();
+    const auto count = offset < total ? std::min<size_t>(24, total - offset) : 0;
+    for (size_t i = 0; i < count; ++i)
+    {
+        const auto &entry = browser.ordered[offset + i];
+        auto item = previewCatalogItem(entry);
+        const auto tiles = browser.tiles.find(entry.id);
+        const auto distance = browser.distances.find(entry.id);
+        if (tiles != browser.tiles.end())
+        {
+            item["tiles"] = tiles->second;
+        }
+        if (distance != browser.distances.end())
+        {
+            item["distance"] = distance->second;
+        }
+        items.push_back(std::move(item));
+    }
+    return {200, apiOkJson("catalog", {{"id", browser.id}, {"version", std::to_string(browser.version)},
+                                      {"total", total}, {"offset", offset}, {"items", std::move(items)}})};
+}
+
+ApiResponse openCatalog(const std::string &body)
+{
+    const auto payload = nlohmann::json::parse(body, nullptr, false);
+    if (!payload.is_object() || !payload.contains("dbPath") || !payload["dbPath"].is_string() ||
+        !payload.contains("sort") || !payload["sort"].is_string() ||
+        (payload.contains("anchor") && (!payload["anchor"].is_number_integer() ||
+                                        payload["anchor"] <= 0 || payload["anchor"] > INT_MAX)))
+    {
+        return badRequest("catalog requires dbPath, sort and an optional positive anchor ID");
+    }
+    const auto sort = payload["sort"].get<std::string>();
+    if (sort != "color" && sort != "usage" && sort != "similarity")
+    {
+        return badRequest("unknown catalog sort");
+    }
+    static std::mutex buildMutex;
+    const std::unique_lock<std::mutex> lock(buildMutex, std::try_to_lock);
+    if (!lock.owns_lock())
+    {
+        return resultResponse(400, ServiceResult::failure(1, "another catalog is being prepared", "library_busy"));
+    }
+    auto browser = std::make_shared<LibraryBrowser>();
+    const auto result = browseLibrary(payload["dbPath"].get<std::string>(), sort, payload.value("anchor", 0), *browser);
+    if (!result.ok)
+    {
+        return resultResponse(400, result);
+    }
+    browserStore().add(browser);
+    return catalogPage(*browser, 0);
+}
+
+ApiResponse readCatalog(const ApiRequest &request)
+{
+    const auto browser = browserStore().get(request.id);
+    if (!browser)
+    {
+        return resultResponse(404, ServiceResult::failure(1, "catalog has expired", "catalog_expired"));
+    }
+    if (request.operation == ApiOperation::GetCatalog)
+    {
+        size_t offset = 0;
+        if (!previewNumber(request.query, "offset", offset, false))
+        {
+            return badRequest("invalid catalog offset");
+        }
+        return catalogPage(*browser, offset);
+    }
+    int id = 0;
+    const auto &key = request.artifactId;
+    const auto dash = key.find('-');
+    if (dash == std::string::npos)
+    {
+        return badRequest("catalog image requires an ID and version");
+    }
+    const auto result = std::from_chars(key.data(), key.data() + dash, id);
+    if (result.ec != std::errc{} || result.ptr != key.data() + dash)
+    {
+        return badRequest("invalid catalog image ID");
+    }
+    const auto found = browser->positions.find(id);
+    if (found == browser->positions.end())
     {
         return previewImageNotFound();
     }
-    if (!asset.current())
+    const auto asset = previewAsset(browser->ordered[found->second]);
+    auto version = asset.version();
+    std::replace(version.begin(), version.end(), ':', '-');
+    if (key.substr(dash + 1) != version)
     {
-        return previewConflict("selected image changed; refresh the preview");
+        return previewConflict("catalog image changed; refresh the catalog");
     }
-    try
-    {
-        // 缓存跨预览共享，仍需先通过当前预览的素材访问和版本检查。
-        static PreviewThumbnailCache thumbnails;
-        const std::string cacheKey = asset.path + '\0' + asset.version() + ':' + std::to_string(edge);
-        std::string cached = thumbnails.get(cacheKey);
-        if (!cached.empty())
-        {
-            return {200, apiOkJson(), {}, std::move(cached)};
-        }
-        const auto image = imreadUnicode(asset.path, cv::IMREAD_COLOR);
-        if (image.empty())
-        {
-            return previewImageNotFound();
-        }
-        if (!asset.current())
-        {
-            return previewConflict("selected image changed; refresh the preview");
-        }
-        const double scale = std::min(1.0, static_cast<double>(edge) / std::max(image.cols, image.rows));
-        cv::Mat thumbnail;
-        cv::resize(image, thumbnail, {std::max(1, cvRound(image.cols * scale)),
-                                      std::max(1, cvRound(image.rows * scale))}, 0, 0, cv::INTER_AREA);
-        std::vector<unsigned char> jpeg;
-        cv::imencode(".jpg", thumbnail, jpeg, {cv::IMWRITE_JPEG_QUALITY, 80});
-        if (jpeg.empty())
-        {
-            return previewImageNotFound();
-        }
-        std::string bytes(jpeg.begin(), jpeg.end());
-        thumbnails.put(cacheKey, bytes);
-        return {200, apiOkJson(), {}, std::move(bytes)};
-    }
-    catch (const std::exception &error)
-    {
-        return internalError(error.what());
-    }
+    return thumbnailResponse(asset, 128);
 }
 
 std::optional<ApiResponse> applyPreviewEdits(const nlohmann::json &edits,
@@ -622,6 +796,13 @@ ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
         return apiMosaic(request.body, jobs);
     case ApiOperation::PlanMosaic:
         return mosaicPlanResponse(request.body);
+    case ApiOperation::MosaicCoverage:
+        return mosaicCoverageResponse(request.body);
+    case ApiOperation::OpenCatalog:
+        return openCatalog(request.body);
+    case ApiOperation::GetCatalog:
+    case ApiOperation::GetCatalogImage:
+        return readCatalog(request);
     case ApiOperation::SubmitMosaicSample:
         return apiSubmitMosaicJob(request.body, jobs, true);
     case ApiOperation::SubmitPreview:

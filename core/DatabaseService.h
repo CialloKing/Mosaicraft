@@ -1,4 +1,5 @@
 #pragma once
+#include "ColorDistribution.h"
 
 #include "MosaicService.h"
 
@@ -44,6 +45,7 @@ struct HistogramBin
 
 struct DatabaseStats
 {
+    ColorDistribution colors;
     bool empty = true;
     int total = 0;
     std::string featureWidth;
