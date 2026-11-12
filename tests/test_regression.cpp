@@ -885,7 +885,7 @@ TEST_CASE("job artifacts preserve requested paths and reject changed files")
     CHECK(handleApiRequest(artifactRequest, jobs).status == 404);
 }
 
-TEST_CASE("analysis preserves usage commit boundaries after saving the mosaic")
+TEST_CASE("successful output records usage independently of analysis")
 {
     TempWorkspace workspace;
     writeLibraryImages(workspace.inputDir());
@@ -902,18 +902,15 @@ TEST_CASE("analysis preserves usage commit boundaries after saving the mosaic")
     SUBCASE("analysis disabled")
     {
         request.config.analyze = false;
-        commits = false;
     }
     SUBCASE("report directory blocked")
     {
         std::ofstream(reportDir).put('x');
-        commits = false;
     }
     SUBCASE("frequency directory blocked")
     {
         fs::create_directories(reportDir);
         std::ofstream(reportDir / "freq_rank").put('x');
-        commits = false;
     }
     SUBCASE("HTML cannot open but usage still commits")
     {
@@ -1028,13 +1025,17 @@ TEST_CASE("database maintenance rejects missing files and preserves usage integr
     CHECK_FALSE(fs::exists(u8path(missing)));
     writeLibraryImages(workspace.inputDir());
     REQUIRE(BuildService().run(makeBuildRequest(workspace)).ok);
-    Database database(utf8(workspace.dbPath()));
-    auto records = database.allRecords();
-    REQUIRE(database.recordRunUsage({{records[0].id, 1}}, "one", "target"));
+    std::vector<ImageRecord> records;
+    {
+        Database database(utf8(workspace.dbPath()));
+        records = database.allRecords();
+        REQUIRE(database.recordRunUsage({{records[0].id, 1}}, "one", "target"));
+    }
     fs::remove(u8path(records[0].filePath));
     auto health = DatabaseService().health({utf8(workspace.dbPath())});
     CHECK(health.health.missingFiles == 1);
     REQUIRE(DatabaseService().purge({utf8(workspace.dbPath()), false, true}).status.ok);
+    Database database(utf8(workspace.dbPath()));
     CHECK(database.topUsedImages().empty());
     CHECK(DatabaseService().health({utf8(workspace.dbPath())}).health.usedPct == 0);
 
@@ -1387,8 +1388,7 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
             }
         }
         CHECK(outputs == 4);
-        Database emptyDatabase(normalizeOnly.dbPath);
-        CHECK(emptyDatabase.totalCount() == 0);
+        CHECK_FALSE(fs::exists(u8path(normalizeOnly.dbPath)));
     }
 }
 
@@ -1481,9 +1481,7 @@ TEST_CASE("default color build and append keep bytes IDs usage and feature refer
     normalized.dbPath = utf8(u8path(normalized.outputDir) / "mosaicraft.db");
     normalized.normalizeOnly = true;
     REQUIRE(BuildService().run(normalized).ok);
-    Database normalizedDatabase(normalized.dbPath);
-    CHECK(normalizedDatabase.totalCount() == 0);
-    CHECK(normalizedDatabase.imageColorOrders().empty());
+    CHECK_FALSE(fs::exists(u8path(normalized.dbPath)));
 }
 
 TEST_CASE("mosaic validates dimensions formats and legacy grids before processing")
@@ -1864,8 +1862,8 @@ TEST_CASE("preview write failures preserve the closed main image")
     for (bool deepZoom : {false, true})
     {
         config.generatePreview = true;
-        config.tiledOutput = !deepZoom;
-        config.deepZoom = deepZoom;
+        config.outputMode = deepZoom ? OutputMode::DeepZoom : OutputMode::Tiles;
+        config.outputMode = deepZoom ? OutputMode::DeepZoom : OutputMode::Tiles;
         CHECK_FALSE(writeIndexedMosaicOutput(config, path, 1, 1, 6, 4, {record}, {0}, {}, stats));
     }
 }
@@ -2062,7 +2060,7 @@ TEST_CASE("overlay preserves cache pixels adjustment order and all output paths"
                                         {record}, selected, adjust, stats));
     selected.assign(4, 0);
     config.colorAdjust = false;
-    config.tiledOutput = true;
+    config.outputMode = OutputMode::Tiles;
     auto jpeg = [&](const cv::Mat &image)
     {
         std::vector<uchar> bytes;
@@ -2077,7 +2075,7 @@ TEST_CASE("overlay preserves cache pixels adjustment order and all output paths"
     }
     for (bool deepZoom : {false, true})
     {
-        config.deepZoom = deepZoom;
+        config.outputMode = deepZoom ? OutputMode::DeepZoom : OutputMode::Tiles;
         const auto path = utf8(workspace.outputDir() / (deepZoom ? "zoom" : "tiles"));
         REQUIRE(writeIndexedMosaicOutput(config, path, 2, 2, 6, 4, {record}, selected, {}, stats, target));
         CHECK(stats.failed == 0);
@@ -2450,7 +2448,7 @@ TEST_CASE("output reports incomplete PNG and DeepZoom while empty tiles remain l
     auto prefix = utf8(workspace.outputDir() / "pyramid");
     fs::create_directories(u8path(prefix + ".dzi"));
     MosaicEngine::Config config;
-    config.deepZoom = config.tiledOutput = true;
+    config.outputMode = OutputMode::DeepZoom;
     OutputStats stats;
     CHECK_FALSE(writeMosaicOutput(config, prefix, 1, 1, 18, 32, {record}, {0}, {}, stats));
     CHECK(fs::exists(u8path(prefix + "_files/_source_tiles/0_0.jpg")));

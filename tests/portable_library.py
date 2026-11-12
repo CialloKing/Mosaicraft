@@ -39,7 +39,7 @@ def main():
                 assert b'library_incompatible' in result.stdout
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as workers:
-            list(workers.map(lambda _: run(['db-stats', '-d', str(old)], False), range(4)))
+            list(workers.map(lambda _: run(['library', 'report', str(old), '--json'], False), range(4)))
         assert before == {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (old, Path(str(old) + '-wal'))}
         assert writer.execute('PRAGMA user_version').fetchone()[0] == 0
         assert writer.execute('SELECT use_count FROM images').fetchone()[0] == 9
@@ -52,9 +52,9 @@ def main():
             png(source / f'{number}.png', color)
         library = root / 'library A'
         database = library / 'mosaicraft.db'
-        run(['build', '-i', str(source), '-o', str(library), '-d', str(database), '-t', '1', '--yes'])
+        run(['library', 'build', str(source), '-o', str(library), '--threads', '1', '--backend', 'cpu'])
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as workers:
-            list(workers.map(lambda _: run(['db-stats', '-d', str(database)]), range(4)))
+            list(workers.map(lambda _: run(['library', 'report', str(database)]), range(4)))
         connection = sqlite3.connect(database)
         try:
             assert connection.execute('PRAGMA user_version').fetchone()[0] == 1
@@ -64,8 +64,8 @@ def main():
         # Include a character that cannot be represented by a Windows legacy code page.
         moved = root / '图库 𠮷 B'
         library.rename(moved)
-        run(['db-stats', '-d', str(moved / 'mosaicraft.db')])
-        run(['db-health', '-d', str(moved / 'mosaicraft.db')])
+        run(['library', 'report', str(moved)])
+        run(['library', 'report', str(moved), '--check'])
         assert not (moved / '.mosaicraft-backups').exists()
         print('four readers reject old WAL library unchanged; new library concurrency and relocation: passed')
 

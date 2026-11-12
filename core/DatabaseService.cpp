@@ -3,8 +3,10 @@
 #include "Database.h"
 #include "FeatureIO.h"
 #include "FeaturePack.h"
+#include "LibraryInspection.h"
 #include "LibraryVisuals.h"
 #include "MosaicService.h"
+#include "OutputPublication.h"
 #include "UnicodeIO.h"
 
 #include <algorithm>
@@ -56,11 +58,11 @@ DatabaseStatsResult DatabaseService::stats(const DatabaseRequest& request) const
         sumL += l;
         sumA += a;
         sumB += b;
-        if (l < 50)
+        if (lightnessBand(l) == 0)
         {
             ++out.stats.dark;
         }
-        else if (l < 150)
+        else if (lightnessBand(l) == 1)
         {
             ++out.stats.mid;
         }
@@ -80,11 +82,22 @@ DatabaseStatsResult DatabaseService::stats(const DatabaseRequest& request) const
                                         static_cast<int>(out.stats.colors.lightness[i])});
     }
 
-    if (out.stats.dark + out.stats.mid < out.stats.total / 100) out.stats.coverageGaps.push_back("dark");
-    if (out.stats.minA > 110.0) out.stats.coverageGaps.push_back("green-biased");
-    if (out.stats.maxA < 145.0) out.stats.coverageGaps.push_back("red-deficient");
-    if (out.stats.minB > 110.0) out.stats.coverageGaps.push_back("blue-biased");
-    if (out.stats.maxB < 145.0) out.stats.coverageGaps.push_back("yellow-deficient");
+    const auto coverage =
+        libraryCoverage(100.0 * out.stats.dark / out.stats.total, 100.0 * out.stats.mid / out.stats.total,
+                        out.stats.minA, out.stats.maxA, out.stats.minB, out.stats.maxB);
+    for (const auto &[missing, name] :
+         std::vector<std::pair<bool, const char *>>{{coverage.dark, "dark"},
+                                                    {coverage.mid, "mid"},
+                                                    {coverage.green, "green-deficient"},
+                                                    {coverage.red, "red-deficient"},
+                                                    {coverage.blue, "blue-deficient"},
+                                                    {coverage.yellow, "yellow-deficient"}})
+    {
+        if (missing)
+        {
+            out.stats.coverageGaps.push_back(name);
+        }
+    }
 
     out.status = ServiceResult::success("database stats generated");
     return out;
@@ -112,13 +125,12 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
     out.health.maxA = out.health.maxB = 0.0;
     for (const auto& r : all)
     {
-        std::error_code error;
-        const auto status = std::filesystem::status(u8path(r.filePath), error);
-        if (status.type() == std::filesystem::file_type::not_found)
+        const auto status = inspectLibraryFile(r.filePath);
+        if (status == LibraryFileState::Missing)
         {
             ++out.health.missingFiles;
         }
-        else if (error || !std::filesystem::is_regular_file(status))
+        else if (status == LibraryFileState::Unreadable)
         {
             ++out.health.unreadableFiles;
         }
@@ -130,7 +142,7 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
         {
             ++out.health.invalidFeatures;
         }
-        if (request.deep && std::filesystem::is_regular_file(status))
+        if (request.deep && status == LibraryFileState::Available)
         {
             const auto image = imreadUnicode(r.filePath);
             uint64_t hash = 14695981039346656037ULL;
@@ -146,9 +158,18 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
                 ++out.health.corruptImages;
             }
         }
-        if (r.avgL < 50) out.health.dark++;
-        else if (r.avgL < 150) out.health.mid++;
-        else out.health.bright++;
+        if (lightnessBand(r.avgL) == 0)
+        {
+            out.health.dark++;
+        }
+        else if (lightnessBand(r.avgL) == 1)
+        {
+            out.health.mid++;
+        }
+        else
+        {
+            out.health.bright++;
+        }
         out.health.minA = std::min(out.health.minA, r.avgA);
         out.health.maxA = std::max(out.health.maxA, r.avgA);
         out.health.minB = std::min(out.health.minB, r.avgB);
@@ -164,12 +185,21 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
     out.health.midPct = 100.0 * out.health.mid / out.health.total;
     out.health.brightPct = 100.0 * out.health.bright / out.health.total;
 
-    if (out.health.darkPct < 5.0) out.health.warnings.push_back("Dark images severely underrepresented");
-    if (out.health.midPct < 15.0) out.health.warnings.push_back("Mid-tone images underrepresented");
-    if (out.health.minA > 115) out.health.warnings.push_back("Lacking green-toned images");
-    if (out.health.maxA < 140) out.health.warnings.push_back("Lacking red/warm-toned images");
-    if (out.health.minB > 115) out.health.warnings.push_back("Lacking blue/cool-toned images");
-    if (out.health.maxB < 140) out.health.warnings.push_back("Lacking yellow-toned images");
+    const auto coverage = libraryCoverage(out.health.darkPct, out.health.midPct, out.health.minA, out.health.maxA,
+                                          out.health.minB, out.health.maxB);
+    for (const auto &[missing, message] :
+         std::vector<std::pair<bool, const char *>>{{coverage.dark, "Dark images severely underrepresented"},
+                                                    {coverage.mid, "Mid-tone images underrepresented"},
+                                                    {coverage.green, "Lacking green-toned images"},
+                                                    {coverage.red, "Lacking red/warm-toned images"},
+                                                    {coverage.blue, "Lacking blue/cool-toned images"},
+                                                    {coverage.yellow, "Lacking yellow-toned images"}})
+    {
+        if (missing)
+        {
+            out.health.warnings.push_back(message);
+        }
+    }
 
     auto used = db.topUsedImages(0, true);
     out.health.usedCount = static_cast<int>(used.size());
@@ -193,12 +223,22 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
             out.health.warnings.push_back("Small subset dominates matching");
     }
 
-    if (out.health.darkPct < 5.0) out.health.recommendations.push_back("Add night / indoor / low-light photos");
-    if (out.health.midPct < 15.0) out.health.recommendations.push_back("Add overcast / shadow / twilight scenes");
-    if (out.health.minA > 115 || out.health.maxA < 140)
+    if (coverage.dark)
+    {
+        out.health.recommendations.push_back("Add night / indoor / low-light photos");
+    }
+    if (coverage.mid)
+    {
+        out.health.recommendations.push_back("Add overcast / shadow / twilight scenes");
+    }
+    if (coverage.green || coverage.red)
+    {
         out.health.recommendations.push_back("Diversify green-red color range");
-    if (out.health.minB > 115 || out.health.maxB < 140)
+    }
+    if (coverage.blue || coverage.yellow)
+    {
         out.health.recommendations.push_back("Diversify blue-yellow color range");
+    }
     if (out.health.unusedCount > out.health.total / 2)
         out.health.recommendations.push_back("Use library usage to inspect recorded targets and tile counts");
 
@@ -309,6 +349,7 @@ DatabaseUsageExportResult DatabaseService::exportUsage(const DatabaseUsageExport
 
     try
     {
+        protectOutput(request.outputDir, {pathToUtf8(u8path(db.path()).parent_path())});
         std::filesystem::create_directories(u8path(request.outputDir));
     }
     catch (const std::exception& e)
@@ -394,9 +435,7 @@ DatabasePurgeResult DatabaseService::purge(const DatabasePurgeRequest& request) 
     std::vector<OrphanRecord> orphans;
     for (const auto& rec : all)
     {
-        std::error_code error;
-        const auto status = std::filesystem::status(u8path(rec.filePath), error);
-        if (!rec.filePath.empty() && status.type() == std::filesystem::file_type::not_found)
+        if (inspectLibraryFile(rec.filePath) == LibraryFileState::Missing)
         {
             orphans.push_back({rec.id, rec.filePath, rec.tinyPath, rec.lbpPath});
         }

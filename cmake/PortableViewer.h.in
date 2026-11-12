@@ -1,0 +1,17 @@
+#pragma once
+namespace mosaicraft
+{
+inline constexpr const char *portableViewerHead = R"MCVIEW(<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' file: data:; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<title>Mosaicraft 便携作品</title>
+<style>html,body{margin:0;height:100%;background:#17191d;color:#eee;font:14px system-ui}body{display:flex;flex-direction:column}header{padding:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}button{background:#30343d;color:inherit;border:1px solid #555;border-radius:5px;padding:7px 12px;cursor:pointer}button:focus-visible{outline:2px solid #6cf}#status{color:#b9c4d4}#view{flex:1;min-height:0;width:100%;touch-action:none}dialog{background:#17191d;color:inherit;border:1px solid #777;max-width:90vw}dialog::backdrop{background:#000b}dialog img{display:block;max-width:85vw;max-height:80vh;margin:10px auto}</style>
+<header><b>Mosaicraft · 只读作品</b><button id="fit">适应窗口</button><button id="out" aria-label="缩小">−</button><button id="in" aria-label="放大">＋</button><button id="reference" aria-pressed="false">目标参考</button><button id="fullscreen">全屏</button><span id="status">加载中…</span></header>
+<canvas id="view" aria-label="作品浏览，滚轮缩放、拖动平移、双击查看素材"></canvas>
+<dialog id="material"><span id="material-label"></span><button id="close">关闭</button><img id="material-image" alt="所选素材"></dialog>
+<script id="mosaicraft-snapshot" type="application/json">)MCVIEW";
+inline constexpr const char *portableViewerTail = R"MCVIEW(</script><script>
+@mosaicViewportScript@
+@portableViewerScript@
+</script></html>)MCVIEW";
+}

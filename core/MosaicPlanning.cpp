@@ -215,7 +215,7 @@ ServiceResult planMosaic(MosaicRequest request, MosaicPlan &plan)
         return ServiceResult::failure(1, error, "invalid_argument", field);
     }
     std::error_code pathError;
-    if (std::filesystem::is_directory(u8path(request.outputPath), pathError))
+    if (!request.directoryOutput && std::filesystem::is_directory(u8path(request.outputPath), pathError))
     {
         return ServiceResult::failure(1, "outputPath is a directory", "invalid_argument", "outputPath");
     }
@@ -246,7 +246,7 @@ ServiceResult planMosaic(MosaicRequest request, MosaicPlan &plan)
         return ServiceResult::failure(2, "database is empty", "library_unavailable", "dbPath");
     }
     orientOutputTile(config, plan.libraryWidth, plan.libraryHeight);
-    const bool single = !config.tiledOutput && !config.deepZoom;
+    const bool single = config.outputMode == OutputMode::Image;
     detail::OutputFormat format;
     if (!detail::resolveOutputFormat(request.inputPath, request.outputPath, config.outputFormat, config.formatExplicit,
                                      single, format, error, &field) ||
@@ -255,11 +255,14 @@ ServiceResult planMosaic(MosaicRequest request, MosaicPlan &plan)
     {
         return ServiceResult::failure(1, error, "invalid_argument", field.empty() ? "format" : field);
     }
-    plan.mode = config.deepZoom ? "deepzoom" : config.tiledOutput ? "tiled" : "single";
-    if (!single)
+    plan.mode = config.outputMode == OutputMode::Html       ? "html"
+                : config.outputMode == OutputMode::DeepZoom ? "deepzoom"
+                : config.outputMode == OutputMode::Tiles    ? "tiled"
+                                                            : "single";
+    if (!single && config.outputMode != OutputMode::Html)
     {
         plan.output.format = "jpg"; // 分块与 DeepZoom 的实际编码器固定为 JPEG。
-        plan.output.path += config.deepZoom ? ".dzi" : "_files/0";
+        plan.output.path += (config.outputMode == OutputMode::DeepZoom) ? ".dzi" : "_files/0";
     }
     if (plan.output.scaled)
     {
@@ -287,6 +290,40 @@ ServiceResult planMosaic(MosaicRequest request, MosaicPlan &plan)
                                                                   candidates, plan.libraryCount, false));
     const uint64_t basicMatching = targetBytes + count * sizeof(int) + cpuMatchingBufferBytes(rows, candidates);
     plan.matchingRam = {basicMatching, basicMatching + 256 * MiB + uint64_t(plan.libraryCount) * 1536};
+    if (config.outputMode == OutputMode::Html)
+    {
+        // 未完成匹配时只能给唯一素材数量的范围；不用整幅图片压缩率估算工程。
+        std::vector<uint64_t> sizes;
+        for (const auto &record : database.allRecords())
+        {
+            std::error_code error;
+            const auto bytes = std::filesystem::file_size(u8path(record.filePath), error);
+            if (!error)
+            {
+                sizes.push_back(bytes);
+            }
+        }
+        std::sort(sizes.begin(), sizes.end(), std::greater<uint64_t>());
+        const size_t unique = std::min<uint64_t>(count, sizes.size());
+        uint64_t originals = 0;
+        for (size_t i = 0; i < unique; ++i)
+        {
+            originals += sizes[i];
+        }
+        const uint64_t pixels = uint64_t(plan.libraryWidth) * plan.libraryHeight;
+        plan.files = 5 + unique * 4;
+        plan.fileBytes = {
+            sizes.empty() ? 0 : sizes.back(),
+            boundedBytes(originals +
+                         static_cast<long double>(unique) * (pixels * 3 + (32 * 32 + 128 * 128) * 3 + 2048) +
+                         targetBytes * 1.1L + count * 24.0L + 16 * MiB)};
+        plan.output.format = "html";
+        plan.output.path = request.outputPath;
+        plan.rawBytes = uint64_t(plan.output.width) * plan.output.height * 3;
+        plan.writeMode = "project";
+        plan.writingRam = {targetBytes + 16 * MiB, targetBytes + 64 * MiB + pixels * 6};
+        return ServiceResult::success();
+    }
 #ifdef MOSAICRAFT_CUDA
     if (config.useGpu)
     {

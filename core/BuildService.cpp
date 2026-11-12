@@ -93,7 +93,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
 static ServiceResult runBuild(const BuildRequest &original, RuntimeContext &runtime)
 {
     BuildRequest request = original;
-    if (request.appendMode)
+    if (request.appendMode && !request.normalizeOnly)
     {
         auto path = request.dbPath == "mosaicraft.db" ? request.outputDir + "/mosaicraft.db" : resolveDbPathForService(request.dbPath);
         Database existing(path, Database::OpenMode::ReadOnly);
@@ -309,8 +309,14 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
         : static_cast<int>(std::thread::hardware_concurrency());
     if (request.threads <= 0 && normThreads < 2) normThreads = 2;
 
+    std::mutex singleWorkerBudget;
     const auto normalizeOne = [&](size_t index, cv::Mat *pixels)
     {
+        std::unique_lock<std::mutex> budget(singleWorkerBudget, std::defer_lock);
+        if (request.threads == 1)
+        {
+            budget.lock();
+        }
         const auto &input = files[index];
         const auto &output = outPaths[index];
         bool saved = false;
@@ -396,6 +402,11 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
 #ifdef MOSAICRAFT_CUDA
     gpuOk = preflight.available && cuda::hasTemplateFeatures(request.normalizeWidth, request.normalizeHeight);
 #endif
+    if (gpuOk && request.threads > 1)
+    {
+        // CUDA 管线的消费者也执行哈希和提交，给它保留一个 CPU 工作名额。
+        normThreads = request.threads - 1;
+    }
     runtime.backends(request.normalizeOnly ? "none"
                      : gpuOk               ? "template_cuda"
                                            : "cpu",
@@ -444,6 +455,16 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
 #else
                         int done = 0;
 #endif
+                        if (done != static_cast<int>(imgs.size()))
+                        {
+                            if (request.backend == BackendPolicy::Cuda)
+                            {
+                                throw std::runtime_error("required CUDA feature extraction did not complete");
+                            }
+                            runtime.emit("warning", "cuda_features_fallback",
+                                         "CUDA extraction incomplete; completing features on CPU");
+                            runtime.backends("cpu", "none", "CUDA extraction incomplete");
+                        }
                         if (done <= 0)
                         {
                             for (size_t bi = 0; bi < imgs.size(); ++bi)
@@ -507,6 +528,11 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                                          });
                             if (normQueue.empty() && normPhaseDone.load())
                             {
+                                std::unique_lock<std::mutex> budget(singleWorkerBudget, std::defer_lock);
+                                if (request.threads == 1)
+                                {
+                                    budget.lock();
+                                }
                                 flush();
                                 break;
                             }
@@ -522,6 +548,11 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                         if (item.img.empty())
                         {
                             continue;
+                        }
+                        std::unique_lock<std::mutex> budget(singleWorkerBudget, std::defer_lock);
+                        if (request.threads == 1)
+                        {
+                            budget.lock();
                         }
                         std::string hash = hashMatForBuild(item.img);
                         if (db.existsByHash(hash) || !pendingHashes.insert(hash).second)
@@ -642,7 +673,15 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
         {
             if (gpuOk && !request.normalizeOnly)
             {
-                auto image = imreadUnicode(files[i], cv::IMREAD_COLOR);
+                cv::Mat image;
+                {
+                    std::unique_lock<std::mutex> budget(singleWorkerBudget, std::defer_lock);
+                    if (request.threads == 1)
+                    {
+                        budget.lock();
+                    }
+                    image = imreadUnicode(files[i], cv::IMREAD_COLOR);
+                }
                 if (image.empty())
                 {
                     {
@@ -683,7 +722,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
             }
             catch (const std::exception& error)
             {
-                return runtimeFailure(runtime, 1, error.what(), "cuda_execution_failed", "");
+                return runtimeFailure(runtime, 4, error.what(), "cuda_execution_failed", "");
             }
         }
         std::cout << "  GPU done: " << gpuDone.load() << std::endl;

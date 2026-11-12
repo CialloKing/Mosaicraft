@@ -1,15 +1,20 @@
-﻿#pragma once
+#pragma once
 
+#include "ApiMetadata.h"
 #include "BuildService.h"
 #include "DatabaseService.h"
 #include "InspectService.h"
 #include "MosaicService.h"
+#include "ProjectService.h"
 
 #include <string>
 #include <unordered_map>
 
 namespace mosaicraft
 {
+
+bool parseProjectRequestJson(const std::string &body, ApiOperation operation, ProjectRequest &request,
+                             RequestError &error);
 
 using ApiQueryParams = std::unordered_map<std::string, std::string>;
 

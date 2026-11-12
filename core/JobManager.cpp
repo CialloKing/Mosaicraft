@@ -1,5 +1,6 @@
 #include "JobManager.h"
 #include "ApiJson.h"
+#include "ApiMetadata.h"
 #include "HistoryStore.h"
 #include <algorithm>
 #include <random>
@@ -355,6 +356,82 @@ std::string JobManager::submitBuild(BuildRequest request)
     return record->snapshot.id;
 }
 
+std::string JobManager::submitProject(const std::string &type, ProjectRequest request)
+{
+    if (type != "render" && type != "project-check" && type != "project-pack")
+    {
+        throw std::invalid_argument("unsupported project task");
+    }
+    auto record = std::make_shared<JobRecord>();
+    record->projectRequest = std::move(request);
+    record->snapshot.id = nextId();
+    record->snapshot.type = type;
+    auto fields = projectRequestToJson(record->projectRequest);
+    const auto operation = type == "render"          ? ApiOperation::SubmitRenderJob
+                           : type == "project-check" ? ApiOperation::SubmitProjectCheckJob
+                                                     : ApiOperation::SubmitProjectPackJob;
+    for (const auto &endpoint : apiEndpointMetadata())
+    {
+        if (endpoint.operation == operation)
+        {
+            for (auto it = fields.begin(); it != fields.end();)
+            {
+                if (std::find(endpoint.requestFields.begin(), endpoint.requestFields.end(), it.key()) ==
+                    endpoint.requestFields.end())
+                {
+                    it = fields.erase(it);
+                }
+                else
+                {
+                    ++it;
+                }
+            }
+        }
+    }
+    record->snapshot.requestJson = fields.dump();
+    record->snapshot.inputPath = record->projectRequest.projectPath;
+    record->snapshot.outputPath = record->projectRequest.outputPath;
+    record->snapshot.createdAt = std::chrono::system_clock::now();
+    record->runtime->stage("queued");
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_jobs.emplace(record->snapshot.id, record);
+        m_queue.push_back(record->snapshot.id);
+        interruptPreview();
+    }
+    m_cv.notify_one();
+    return record->snapshot.id;
+}
+
+void JobManager::runProjectJob(const std::string &id)
+{
+    std::shared_ptr<JobRecord> record;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const auto it = m_jobs.find(id);
+        if (it == m_jobs.end())
+        {
+            return;
+        }
+        record = it->second;
+    }
+    ServiceResult result;
+    try
+    {
+        auto &runtime = *record->runtime;
+        TaskResourceMonitor monitor(runtime, record->projectRequest.resourceMonitor);
+        ProjectService service;
+        result = record->snapshot.type == "render"          ? service.render(record->projectRequest, runtime)
+                 : record->snapshot.type == "project-check" ? service.check(record->projectRequest, runtime)
+                                                            : service.pack(record->projectRequest, runtime);
+    }
+    catch (const std::exception &error)
+    {
+        result = ServiceResult::failure(1, error.what());
+    }
+    finishJob(id, runtimeResult(std::move(result), *record->runtime));
+}
+
 bool JobManager::getJob(const std::string &id, JobSnapshot &out) const
 {
     std::shared_ptr<RuntimeContext> runtime;
@@ -581,7 +658,12 @@ void JobManager::workerLoop()
             if (it != m_jobs.end()) type = it->second->snapshot.type;
         }
 
-        if (type == "build") {
+        if (type == "render" || type == "project-check" || type == "project-pack")
+        {
+            runProjectJob(id);
+        }
+        else if (type == "build")
+        {
             ConsoleQuickEditGuard guard;
             runBuildJob(id);
         }

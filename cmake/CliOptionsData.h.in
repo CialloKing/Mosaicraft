@@ -1,0 +1,5 @@
+#pragma once
+namespace mosaicraft
+{
+inline constexpr const char *mosaicCliOptionsJson = R"MCCLI(@mosaicCliOptionsJson@)MCCLI";
+}

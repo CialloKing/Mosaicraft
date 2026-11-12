@@ -13,31 +13,32 @@
 #include "doctest.h"
 
 #include "../core/ApiHandlers.h"
-#include "../core/OutputPlan.h"
 #include "../core/ApiJson.h"
 #include "../core/ApiMetadata.h"
 #include "../core/ApiRequestParser.h"
-#include "../core/RequestValidation.h"
 #include "../core/BrightnessAdjustment.h"
-#include "../core/FeatureUtils.h"
-#include "../core/NeighborhoodState.h"
-#include "../core/SelectionPolicy.h"
-#include "../core/LibraryPaths.h"
-#include "../core/JobManager.h"
-#include "../core/Version.h"
-#include "../core/ExecutablePath.h"
 #include "../core/ColorOrder.h"
+#include "../core/ExecutablePath.h"
+#include "../core/FeatureUtils.h"
+#include "../core/JobManager.h"
+#include "../core/LibraryPaths.h"
+#include "../core/NeighborhoodState.h"
+#include "../core/OutputPlan.h"
+#include "../core/RequestValidation.h"
+#include "../core/SelectionPolicy.h"
+#include "../core/Version.h"
+#include "../third_party/miniz/miniz.h"
+#include <algorithm>
+#include <chrono>
+#include <climits>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <opencv2/imgproc.hpp>
 #include <stdexcept>
-#include <vector>
-#include <cmath>
-#include <chrono>
-#include <cstdint>
-#include <climits>
-#include <cstring>
 #include <string>
-#include <algorithm>
-#include <cstdlib>
+#include <vector>
 
 int main(int argc, char** argv)
 {
@@ -168,7 +169,7 @@ TEST_CASE("output format priority retains request intent and filenames")
     CHECK(field == "format");
     invalid.config.outputFormat = "jpg";
     invalid.config.formatExplicit = false;
-    invalid.config.tiledOutput = true;
+    invalid.config.outputMode = OutputMode::Tiles;
     REQUIRE(validateMosaicRequest(invalid, error, &field));
     CHECK(invalid.config.outputFormat == "jpg");
     CHECK(MosaicRequest{}.outputPath == "output/output");
@@ -532,10 +533,10 @@ TEST_CASE("preview remains opt in and rejects tiled output before generation")
     CHECK(validateMosaicRequest(request, error));
     for (bool deepZoom : {false, true})
     {
-        request.config.tiledOutput = !deepZoom;
-        request.config.deepZoom = deepZoom;
+        request.config.outputMode = deepZoom ? OutputMode::DeepZoom : OutputMode::Tiles;
+
         CHECK_FALSE(validateMosaicRequest(request, error));
-        CHECK(error.find("--preview requires single-image output") != std::string::npos);
+        CHECK(error.find("--thumbnail requires image mode") != std::string::npos);
     }
 }
 
@@ -1085,7 +1086,7 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(dbStats->method == "GET|POST");
     CHECK(dbStats->methods == std::vector<std::string>{"GET", "POST"});
     CHECK(dbStats->httpPattern == "/api/db/stats");
-    CHECK(dbStats->queryKeys == std::vector<std::string>{"dbPath"});
+    CHECK(dbStats->queryKeys == std::vector<std::string>{"dbPath", "deep"});
     CHECK(std::find(dbStats->acceptedQueryKeys.begin(), dbStats->acceptedQueryKeys.end(),
         "dbPath") != dbStats->acceptedQueryKeys.end());
     CHECK(dbStats->successStatus == 200);
@@ -1257,8 +1258,8 @@ TEST_CASE("API request parser builds mosaic requests")
     CHECK(request.outputPath == "out.png");
     CHECK(request.config.jpegQuality == 95);
     CHECK(request.config.writeMode == "stream");
-    CHECK(request.config.deepZoom);
-    CHECK(request.config.tiledOutput);
+    CHECK(request.config.outputMode == OutputMode::DeepZoom);
+    CHECK(request.config.outputMode != OutputMode::Image);
     CHECK_FALSE(request.config.useGpu);
     CHECK(request.config.nativeTileW == 90);
     CHECK(request.config.nativeTileH == 160);
@@ -1339,8 +1340,8 @@ TEST_CASE("API request parser applies database and inspect requests")
     CHECK(usage.showUnused);
 
     error.clear();
-    CHECK_FALSE(applyDatabaseUsageRequestJson(R"({"limit":0})", usage, error));
-    CHECK(error == "limit must be at least 1");
+    CHECK_FALSE(applyDatabaseUsageRequestJson(R"({"limit":-1})", usage, error));
+    CHECK(error == "limit must be at least 0");
 
     error.clear();
     InspectRequest inspect;
@@ -1411,12 +1412,8 @@ TEST_CASE("API request parser rejects invalid query values")
     CHECK(error == "limit must be a number");
 
     error.clear();
-    CHECK_FALSE(parseDatabaseUsageRequestApi(
-        {{"dbPath", "usage.db"}, {"limit", "0"}},
-        "",
-        usage,
-        error));
-    CHECK(error == "limit must be at least 1");
+    CHECK_FALSE(parseDatabaseUsageRequestApi({{"dbPath", "usage.db"}, {"limit", "-1"}}, "", usage, error));
+    CHECK(error == "limit must be at least 0");
 
     error.clear();
     CHECK_FALSE(parseDatabaseUsageRequestApi(
@@ -1569,7 +1566,7 @@ TEST_CASE("API endpoint request factory applies endpoint context")
 TEST_CASE("API operation query keys are centralized")
 {
     auto usageKeyList = apiQueryKeyList(ApiOperation::DatabaseUsage);
-    CHECK(usageKeyList == std::vector<std::string>{"dbPath", "limit", "showUnused"});
+    CHECK(usageKeyList == std::vector<std::string>{"dbPath", "limit", "showUnused", "sort"});
 
     auto usageKeys = apiQueryKeys(ApiOperation::DatabaseUsage);
     CHECK(std::find(usageKeys.begin(), usageKeys.end(), std::string("dbPath")) != usageKeys.end());
@@ -2253,4 +2250,80 @@ TEST_CASE("CUDA reuses feature workspace and scoring batches preserve scores")
                           nullptr, valid, valid));
     REQUIRE(score(batched, 256 * 1024 * 1024));
     CHECK(batched[0] == doctest::Approx(0.41));
+}
+
+TEST_CASE("portable render request preserves appearance overrides and rejects matching options")
+{
+    ProjectRequest request;
+    RequestError error;
+    REQUIRE(parseProjectRequestJson(R"({"projectPath":"artwork/index.html","outputPath":"result.PNG",
+        "brightnessJitter":0.04,"overlayStrength":0.2,"seed":42,"threads":1,"benchmark":true})",
+                                    ApiOperation::SubmitRenderJob, request, error));
+    CHECK(request.config.outputMode == OutputMode::Image);
+    CHECK(request.config.colorAdjust);
+    CHECK(request.jitterExplicit);
+    CHECK(request.blendExplicit);
+    CHECK_FALSE(request.outputTileExplicit);
+    CHECK(projectRequestToJson(request).at("benchmark") == true);
+    for (auto mode : {OutputMode::Image, OutputMode::Html, OutputMode::DeepZoom, OutputMode::Tiles})
+    {
+        ProjectRequest saved;
+        saved.projectPath = "artwork";
+        saved.outputPath = "result";
+        saved.config.outputMode = mode;
+        ProjectRequest restored;
+        auto fields = projectRequestToJson(saved);
+        fields.erase("deep");
+        CHECK(parseProjectRequestJson(fields.dump(), ApiOperation::SubmitRenderJob, restored, error));
+    }
+    for (const auto *body :
+         {R"({"projectPath":"artwork","outputPath":"result.png","tileW":9})",
+          R"({"projectPath":"artwork","outputPath":"result.png","backend":"cuda"})",
+          R"({"projectPath":"artwork","outputPath":"result.png","nativeTileW":180})",
+          R"({"projectPath":"artwork","outputPath":"folder"})",
+          R"({"projectPath":"artwork","outputPath":"folder","outputMode":"html","brightnessJitter":0.1})",
+          R"({"projectPath":"artwork","outputPath":"folder","outputMode":"html","quality":90})"})
+    {
+        ProjectRequest invalid;
+        CHECK_FALSE(parseProjectRequestJson(body, ApiOperation::SubmitRenderJob, invalid, error));
+    }
+}
+
+TEST_CASE("ZIP64 counts and large offsets use a bounded counting sink")
+{
+    struct Sink
+    {
+        uint64_t end = 0;
+        bool zip64 = false;
+    };
+    for (const uint64_t initial : {uint64_t(0), uint64_t(1) << 32})
+    {
+        Sink sink;
+        mz_zip_archive archive{};
+        archive.m_pIO_opaque = &sink;
+        archive.m_pWrite = [](void *opaque, mz_uint64 offset, const void *data, size_t size) -> size_t
+        {
+            auto &sink = *static_cast<Sink *>(opaque);
+            sink.end = std::max(sink.end, offset + size);
+            if (size >= 4)
+            {
+                const auto *bytes = static_cast<const unsigned char *>(data);
+                sink.zip64 = sink.zip64 || (bytes[0] == 0x50 && bytes[1] == 0x4b && bytes[2] == 6 && bytes[3] == 6);
+            }
+            return size;
+        };
+        REQUIRE(mz_zip_writer_init_v2(&archive, initial, MZ_ZIP_FLAG_WRITE_ZIP64));
+        const int entries = initial ? 1 : 65536;
+        for (int index = 0; index < entries; ++index)
+        {
+            const auto name = "project/" + std::to_string(index);
+            REQUIRE(mz_zip_writer_add_mem(&archive, name.c_str(), nullptr, 0, MZ_NO_COMPRESSION));
+        }
+        REQUIRE(mz_zip_writer_finalize_archive(&archive));
+        CHECK(archive.m_total_files == entries);
+        CHECK(sink.zip64);
+        CHECK(sink.end > initial);
+        CHECK(sink.end - initial < 16 * 1024 * 1024);
+        REQUIRE(mz_zip_writer_end(&archive));
+    }
 }

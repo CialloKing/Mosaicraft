@@ -1,5 +1,6 @@
 #include "InspectService.h"
 
+#include "ColorDistribution.h"
 #include "Database.h"
 #include "FeatureUtils.h"
 #include "MosaicService.h"
@@ -71,9 +72,18 @@ InspectResult InspectService::inspect(const InspectRequest& request) const
                 out.libraryMinL = std::min(out.libraryMinL, r.avgL);
                 out.libraryMaxL = std::max(out.libraryMaxL, r.avgL);
                 sumL += r.avgL;
-                if (r.avgL < 30) out.libraryDark++;
-                else if (r.avgL < 70) out.libraryMid++;
-                else out.libraryBright++;
+                if (lightnessBand(r.avgL) == 0)
+                {
+                    out.libraryDark++;
+                }
+                else if (lightnessBand(r.avgL) == 1)
+                {
+                    out.libraryMid++;
+                }
+                else
+                {
+                    out.libraryBright++;
+                }
             }
             out.libraryAvgL = sumL / all.size();
         }

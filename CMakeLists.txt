@@ -5,7 +5,7 @@ foreach(key IN ITEMS softwareVersion libraryVersion featureVersion apiVersion ap
         featurePackVersion colorOrderVersion journalVersion studySchemaVersion checkpointPathsVersion uiStateVersion)
     string(JSON ${key} GET "${MOSAICRAFT_CONTRACTS_JSON}" ${key})
 endforeach()
-project(Mosaicraft VERSION ${softwareVersion} LANGUAGES CXX)
+project(Mosaicraft VERSION ${softwareVersion} LANGUAGES C CXX)
 configure_file(cmake/Contracts.h.in generated/MosaicraftContracts.h @ONLY)
 set(previewScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/preview.js")
 set(previewPickerScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/preview-picker.js")
@@ -24,6 +24,15 @@ file(READ "${libraryVisualsScript}" libraryVisualsUiScript)
 file(READ "${previewInsightsScript}" mosaicPreviewInsightsScript)
 file(READ "${taskMetricsScript}" taskMetricsUiScript)
 file(READ "${comparisonScript}" comparisonUiScript)
+set(viewportScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/viewer-core.js")
+set(portableScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/portable-viewer.js")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${viewportScript}" "${portableScript}")
+file(READ "${viewportScript}" mosaicViewportScript)
+file(READ "${portableScript}" portableViewerScript)
+configure_file(cmake/PortableViewer.h.in generated/PortableViewer.h @ONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/cli-options.json")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/cli-options.json" mosaicCliOptionsJson)
+configure_file(cmake/CliOptionsData.h.in generated/CliOptionsData.h @ONLY)
 configure_file(tools/command-builder/index.html generated/index.html @ONLY)
 
 # C++17
@@ -191,7 +200,14 @@ endif()  # MOSAICRAFT_CUDA
 # ============================================================
 # 核心静态库（CPU）
 # ============================================================
+add_library(mosaicraft_archive STATIC third_party/miniz/miniz.c third_party/miniz/miniz_zip.c
+    third_party/miniz/miniz_tdef.c third_party/miniz/miniz_tinfl.c)
+target_include_directories(mosaicraft_archive PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/miniz)
+target_compile_definitions(mosaicraft_archive PRIVATE MINIZ_NO_ZLIB_COMPATIBLE_NAMES)
+
 add_library(mosaicraft_core STATIC
+    core/OutputPublication.cpp
+    core/ProjectService.cpp
     core/RuntimeContext.cpp
     core/TaskResources.cpp
     core/HistoryStore.cpp
@@ -243,6 +259,7 @@ target_include_directories(mosaicraft_core PUBLIC
 )
 
 target_link_libraries(mosaicraft_core PUBLIC
+    mosaicraft_archive
     ${OpenCV_LIBS}
     ${TIFF_LIBRARIES}
     PNG::PNG
@@ -366,6 +383,9 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME portable_library COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/portable_library.py"
         --cli "$<TARGET_FILE:mosaicraft>")
     set_tests_properties(portable_library PROPERTIES TIMEOUT 120)
+    add_test(NAME portable_project COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/portable_project.py"
+        --cli "$<TARGET_FILE:mosaicraft>")
+    set_tests_properties(portable_project PROPERTIES TIMEOUT 180)
     add_test(NAME study_paths COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/test_study_paths.py")
 endif()
 

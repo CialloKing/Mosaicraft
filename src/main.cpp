@@ -1,1167 +1,611 @@
-#include "core/Database.h"
-#include "core/BuildService.h"
-#include "core/DatabaseService.h"
-#include "core/InspectService.h"
-#include "core/MosaicEngine.h"
-#include "core/MosaicService.h"
+#include "core/ApiJson.h"
+#include "core/ApiRequestParser.h"
+#include "core/CliOptions.h"
+#include "core/ConsoleGuard.h"
+#include "core/LibraryVisuals.h"
+#include "core/NumericParsing.h"
+#include "core/ProjectService.h"
+#include "core/RequestValidation.h"
 #include "core/UnicodeIO.h"
 #include "core/Version.h"
-#include "core/ConsoleGuard.h"
-#include "compute/TemplateFeatureSizes.h"
-
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/core.hpp>
-
-#include <ctime>
-#include <cmath>
-
 #include <algorithm>
-#include <cctype>
-#include <climits>
-#include <cerrno>
-#ifdef _WIN32
-#include <conio.h>
-#include <io.h>
-#else
-#include <unistd.h>
-#endif
-#include <cstdint>
-#include <cstdio>
-#include <filesystem>
+#include <cmath>
+#include <iomanip>
 #include <iostream>
-#include <sstream>
-#include <string>
-#include <vector>
-
-// 退出码
-#define EXIT_OK          0
-#define EXIT_ERR_GENERAL 1
-#define EXIT_ERR_DB      2
-#define EXIT_ERR_MEMORY  3
-#define EXIT_ERR_GPU     4
-
-static bool isKnownOptionToken(const std::string& token)
-{
-    static const char* kOptions[] =
-    {
-        "-i", "--input", "-o", "--output", "-d", "--db", "-t", "--threads",
-        "--append", "-r", "--recursive", "--normalize-size", "--normalize-only",
-        "-y", "--yes", "--force", "-h", "--help",
-        "--tile-w", "--tile-h", "-W", "--out-w", "-H", "--out-h",
-        "--lab-weight", "--grid-weight", "--tiny-weight", "--edge-weight",
-        "--lbp-weight", "--penalty", "--l-range", "--candidates",
-        "--topn-random", "-f", "--format", "--cpu", "-q", "--quality",
-        "--png-level", "--write-mode", "--tiled", "--deepzoom",
-        "--neighbor-window", "--neighbor-penalty", "-U", "--upscale",
-        "--output-tile", "--color-adjust", "--adaptive-weights", "--analyze",
-        "--color-strength", "--overlay-strength", "--benchmark", "-n", "--unused", "--export"
-    };
-    for (const char* option : kOptions)
-    {
-        if (token == option)
-            return true;
-    }
-    return false;
-}
-
-static bool readOptionValue(int argc, char* argv[], int& i, const std::string& option, const char*& value)
-{
-    if (i + 1 >= argc || isKnownOptionToken(argv[i + 1]))
-    {
-        std::cerr << "ERROR: [invalid_argument] " << option << " requires a value." << std::endl;
-        return false;
-    }
-    value = argv[++i];
-    return true;
-}
-
-// 带数值校验的版本 — 检测 "abc" 或 "12abc" 等非法输入
-static bool readOptionInt(int argc, char* argv[], int& i, const std::string& option, int& out)
-{
-    const char* raw = nullptr;
-    if (!readOptionValue(argc, argv, i, option, raw)) return false;
-    errno = 0;
-    char* end = nullptr;
-    long v = std::strtol(raw, &end, 10);
-    if (errno == ERANGE || end == raw || *end != '\0' || v < INT_MIN || v > INT_MAX) {
-        std::cerr << "ERROR: [invalid_argument] " << option << " expects an integer, got: " << raw << std::endl;
-        return false;
-    }
-    out = static_cast<int>(v);
-    return true;
-}
-
-static bool readOptionDouble(int argc, char* argv[], int& i, const std::string& option, double& out)
-{
-    const char* raw = nullptr;
-    if (!readOptionValue(argc, argv, i, option, raw)) return false;
-    errno = 0;
-    char* end = nullptr;
-    double v = std::strtod(raw, &end);
-    if (errno == ERANGE || end == raw || *end != '\0' || !std::isfinite(v))
-    {
-        std::cerr << "ERROR: [invalid_argument] " << option << " expects a number, got: " << raw << std::endl;
-        return false;
-    }
-    out = v;
-    return true;
-}
-
-namespace fs = std::filesystem;
+#include <map>
+#include <set>
 
 using namespace mosaicraft;
-
-// ============================================================
-// 工具
-// ============================================================
-
-static void printHelp()
+using json = nlohmann::json;
+namespace
 {
-    std::cout << R"(Mosaicraft — Image mosaic generator
-
-Usage:
-  mosaicraft build    [options]    Build and HSV-order image database
-  mosaicraft mosaic   [options]    Create mosaic from target image
-  mosaicraft inspect  [options]    Inspect image features
-  mosaicraft db-stats [options]    Show database statistics
-  mosaicraft db-purge [options]    Remove orphan records
-  mosaicraft db-health [options]   Database health diagnostics
-  mosaicraft db-usage [options]    Image usage statistics
-
-Build options:
-  -i, --input  <dir>     Source image directory (required)
-  -o, --output <dir>     Output directory (default: library, DB stored inside)
-  -d, --db     <path>    Database path (default: mosaicraft.db)
-  -t, --threads <n>      Worker threads (default: auto)
-      --normalize-size <WxH>  Normalized image size (default: 180x320)
-      --append           Add new images, then renumber the entire library by mean color
-  -r, --recursive        Scan subdirectories for source images
-      --normalize-only   Only normalize images, don't build database
-  Build orders whole-image color and renumbers files from 000000.
-  Appends and same-directory builds may change existing numeric filenames.
-
-CUDA template sizes (WxH):)";
-    for (const auto &size : mosaicraft::cuda::templateFeatureSizes)
+struct Arguments
+{
+    std::string group, command, input;
+    std::map<std::string, std::string> values;
+    bool has(const std::string &name) const
     {
-        std::cout << ' ' << size.width << 'x' << size.height;
+        return values.count(name) != 0;
     }
-    std::cout << R"(
-  Set the library size with build --normalize-size. When CUDA is available,
-  builds and mosaics select a template automatically from the library size.
-  Other valid sizes can use CPU-compatible CUDA.
+    std::string get(const std::string &name, const std::string &fallback = {}) const
+    {
+        const auto found = values.find(name);
+        return found == values.end() ? fallback : found->second;
+    }
+};
 
-Mosaic options:
-  -i, --input  <path>    Target image to mosaicify (required)
-  -d, --db     <path>    Database path (default: library/mosaicraft.db)
-  -o, --output <path>    Output file or tile prefix (default: output/output.<format>)
-      --tile-w     <n>   Tile width in pixels (default: 9)
-      --tile-h     <n>   Tile height in pixels (default: 16)
-      --candidates <n>   ANN query candidates (default: 150)
-      --format     <ext> jpg, png, webp, tiff (auto: output suffix, input suffix, then PNG)
-      --quality    <n>   JPEG/WebP quality 1-100 (default: 100)
-      --png-level  <n>   PNG compression 1-9 (default: 1=fastest)
-      --write-mode <m>   Write mode: auto/stream/batch (default: auto)
-      --out-w      <n>   Target output width in pixels
-      --out-h      <n>   Target output height in pixels
-      --upscale    <n>   Upscale target nX before tiling
-      --output-tile <WxH>  Output tile pixel size (default: 180x320)
-      --l-range     <f>  L brightness search range (default: 20)
-      --topn-random <n>  Top-N random selection (default: 10)
-      --neighbor-window <n>  Neighborhood window (default: 0=auto)
-      --neighbor-penalty <f> Base penalty value (default: 100)
-      --tiled            Output tiles as separate files
-      --deepzoom         Generate Deep Zoom pyramid + HTML viewer
-      --color-adjust     Enable symmetric per-tile LAB L jitter (off by default)
-      --color-strength <v>  Max relative L jitter, 0..0.5 (default: 0.04 = +/-4%; requires --color-adjust)
-      --overlay-strength <v>  Blend processed target over tiles, 0..1 (default: 0 = off)
-      --adaptive-weights  Enable adaptive feature weights
-      --lab-weight   <w> LAB distance weight (default: 0.20)
-      --grid-weight  <w> Grid 8x8 distance weight (default: 0.45)
-      --tiny-weight  <w> Tiny feature weight (default: 0.25)
-      --edge-weight  <w> Edge density weight (default: 0.05)
-      --lbp-weight   <w> LBP histogram weight (default: 0.05)
-      --penalty      <w> Reuse penalty per use (default: 0.01)
-      --analyze          Generate quality analysis report
-      --preview          Save an area-averaged JPEG preview (single image only; off by default)
-      --benchmark        Show phase timing
-      --cpu              Force CPU, no GPU acceleration
-
-Output modes:
-  -o, --output <path>   Single image output (default, can coexist with --tiled/--deepzoom as prefix)
-      --tiled            Tile set output (one file per tile)
-      --deepzoom         Deep Zoom pyramid + HTML viewer
-
-Common options:
-  -h, --help             Show this help
-
-Inspect options:
-  -i, --input  <path>    Image to inspect (required)
-  -d, --db     <path>    Database path (default: library/mosaicraft.db)
-
-Exit status:
-  0  success
-  1  general error (bad path, invalid arguments)
-  2  database error (locked, corrupt, or missing)
-  3  memory / allocation failure
-  4  GPU / CUDA error
-)";
+void help(const std::string &group, const std::string &command, bool all)
+{
+    std::cout << "Mosaicraft " << kVersion << "\n";
+    if (command.empty())
+    {
+        std::cout << "Usage: mosaicraft <command> [options]\n"
+                     "  create <target>            Match a target and create an output\n"
+                     "  render <project>           Render a saved project without matching\n"
+                     "  library build <source>     Create a new library\n"
+                     "  library add <source>       Append using the library's existing size\n"
+                     "  library report <library>   Statistics; --check / --deep for integrity\n"
+                     "  library usage <library>    Recorded targets and cumulative tile counts\n"
+                     "  library export <library>   Copy used, unused or all images\n"
+                     "  library purge <library>    Report missing records; --apply removes them\n"
+                     "  library normalize <source> Normalize and copy images without a database\n"
+                     "  project info <project>     Read project metadata\n"
+                     "  project check <project>    Verify resources and browse snapshot\n"
+                     "  project pack <project>     Store a complete project as ZIP64\n"
+                     "  inspect <target>           Image features and grid coverage\n"
+                     "Use '<command> --help' or '--help-all'. Web UI: MosaicraftWebUI.\n";
+        return;
+    }
+    std::cout << "Usage: mosaicraft " << (group.empty() ? "" : group + " ") << command << " <input> [options]\n";
+    if (command == "render" || group == "project")
+    {
+        std::cout << "Project input: directory, project.json or index.html. Unpack ZIP before loading.\n";
+    }
+    for (const auto &option : cliOptions())
+    {
+        if (cliOptionSupports(option, command) && (all || !option.advanced))
+        {
+            std::string name = "  --" + std::string(option.name);
+            if (*option.shortName)
+            {
+                name += ", -" + std::string(option.shortName);
+            }
+            if (std::string(option.type) != "bool")
+            {
+                name += " <value>";
+            }
+            std::cout << std::left << std::setw(31) << name << option.help << '\n';
+        }
+    }
+    if (!all)
+    {
+        std::cout << "Use --help-all for advanced options.\n";
+    }
+    std::cout << "Exit codes: 0 success; 1 arguments/I/O; 2 library; 3 memory; 4 CUDA.\n";
 }
 
-// ============================================================
-// build 子命令
-// ============================================================
-static int cmdBuild(int argc, char* argv[])
+Arguments parse(const std::vector<std::string> &argv)
 {
-    std::string inputDir;
-    std::string outputDir = "library";
-    std::string dbPath = "mosaicraft.db";
-    int threads = 0;
-    bool appendMode = false;
-    bool normOnly = false;
-    bool forceMode = false;
-    bool recursive = false;
-    int normW = 180;
-    int normH = 320;
-
-    // 解析参数
-    for (int i = 2; i < argc; ++i)
+    Arguments args;
+    size_t i = 1;
+    if (i >= argv.size())
     {
-        std::string arg = argv[i];
-        if (arg == "-i" || arg == "--input")
+        return args;
+    }
+    if (argv[i] == "--help" || argv[i] == "-h" || argv[i] == "--help-all")
+    {
+        args.values[argv[i] == "--help-all" ? "help-all" : "help"] = "true";
+        return args;
+    }
+    args.command = argv[i++];
+    if (args.command == "library" || args.command == "project")
+    {
+        args.group = args.command;
+        args.command.clear();
+        if (i == argv.size() || argv[i] == "--help" || argv[i] == "--help-all" || argv[i] == "-h")
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            inputDir = value;
+            args.values["help"] = "true";
+            return args;
         }
-        else if (arg == "-o" || arg == "--output")
+        args.command = argv[i++];
+    }
+    const std::string commands = args.group == "library"   ? " build add report usage export purge normalize "
+                                 : args.group == "project" ? " info check pack "
+                                                           : " create render inspect ";
+    if (commands.find(" " + args.command + " ") == std::string::npos)
+    {
+        throw std::invalid_argument("unknown command: " + args.command);
+    }
+    bool positional = false;
+    for (; i < argv.size(); ++i)
+    {
+        auto token = argv[i];
+        if (token == "--" && !positional)
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            outputDir = value;
+            positional = true;
+            continue;
         }
-        else if (arg == "-d" || arg == "--db")
+        if (positional || token.empty() || token.front() != '-')
         {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            dbPath = value;
-        }
-        else if (arg == "-t" || arg == "--threads")
-        {
-            int _v = 0;
-            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            threads = _v;
-            if (threads < 0)
+            if (!args.input.empty())
             {
-                threads = 0;
+                throw std::invalid_argument("unexpected positional argument: " + token);
+            }
+            args.input = token;
+            continue;
+        }
+        auto equal = token.find('=');
+        const auto key = token.substr(0, equal);
+        const CliOption *definition = nullptr;
+        for (const auto &option : cliOptions())
+        {
+            if (key == "--" + std::string(option.name) ||
+                (*option.shortName && key == "-" + std::string(option.shortName)))
+            {
+                definition = &option;
+                break;
             }
         }
-        else if (arg == "--append")
+        if (!definition || !cliOptionSupports(*definition, args.command))
         {
-            appendMode = true;
+            throw std::invalid_argument("unknown or inapplicable option for " + args.command + ": " + key);
         }
-        else if (arg == "-r" || arg == "--recursive")
+        std::string value = "true";
+        if (std::string(definition->type) != "bool")
         {
-            recursive = true;
-        }
-        else if (arg == "--normalize-size")
-        {
-            const char* val = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, val)) return 1;
-            const char* sep = strchr(val, 'x');
-            if (sep && sep != val && *(sep+1) != '\0' && !strchr(sep+1, 'x')) {
-                errno = 0;
-                char* endW = nullptr;
-                char* endH = nullptr;
-                long w = std::strtol(val, &endW, 10);
-                long h = std::strtol(sep + 1, &endH, 10);
-                if (errno == ERANGE || endW == val || *endW != 'x' ||
-                    endH == sep + 1 || *endH != '\0' ||
-                    w <= 0 || h <= 0 || w > INT_MAX || h > INT_MAX) {
-                    std::cerr << "ERROR: [invalid_argument] --normalize-size expected WxH format (e.g. 180x320), got: " << val << std::endl;
-                    return 1;
-                }
-                normW = static_cast<int>(std::max<long>(1, w));
-                normH = static_cast<int>(std::max<long>(1, h));
-            } else {
-                std::cerr << "ERROR: [invalid_argument] --normalize-size expected WxH format (e.g. 180x320), got: " << val << std::endl;
-                return 1;
+            if (equal != std::string::npos)
+            {
+                value = token.substr(equal + 1);
+            }
+            else if (i + 1 < argv.size() && argv[i + 1].rfind("--", 0) != 0)
+            {
+                value = argv[++i];
+            }
+            else
+            {
+                throw std::invalid_argument("missing value for " + key);
+            }
+            if (value.empty())
+            {
+                throw std::invalid_argument("empty value for " + key);
             }
         }
-        else if (arg == "--normalize-only")
+        else if (equal != std::string::npos)
         {
-            normOnly = true;
+            throw std::invalid_argument("flag does not accept a value: " + key);
         }
-        else if (arg == "-y" || arg == "--yes" || arg == "--force")
+        if (!args.values.emplace(definition->name, value).second)
         {
-            forceMode = true;
+            throw std::invalid_argument("repeated option: " + key);
         }
-        else if (arg == "-h" || arg == "--help")
+    }
+    return args;
+}
+
+int integer(const std::string &value)
+{
+    int number;
+    if (!parseStrictInt(value, number))
+    {
+        throw std::invalid_argument("invalid integer: " + value);
+    }
+    return number;
+}
+
+json requestFields(const Arguments &args)
+{
+    json fields = json::object();
+    for (const auto &option : cliOptions())
+    {
+        if (!args.has(option.name) || !*option.field)
         {
-            std::cout << "Usage: mosaicraft build -i <dir> [-o <dir>] [-d <db>] [-t <n>] [--append] [-r] [--normalize-only]" << std::endl;
+            continue;
+        }
+        const auto value = args.get(option.name);
+        const std::string type = option.type;
+        if (type == "bool")
+        {
+            fields[option.field] = true;
+        }
+        else if (type == "int")
+        {
+            fields[option.field] = integer(value);
+        }
+        else if (type == "double")
+        {
+            char *end = nullptr;
+            errno = 0;
+            const auto number = std::strtod(value.c_str(), &end);
+            if (errno || end == value.c_str() || *end || !std::isfinite(number))
+            {
+                throw std::invalid_argument("invalid number: " + value);
+            }
+            fields[option.field] = number;
+        }
+        else if (type == "seed")
+        {
+            if (value.find_first_not_of("0123456789") != std::string::npos)
+            {
+                throw std::invalid_argument("seed must be an unsigned 32-bit integer");
+            }
+            const auto seed = std::stoull(value);
+            if (seed > UINT32_MAX)
+            {
+                throw std::invalid_argument("seed exceeds unsigned 32-bit range");
+            }
+            fields[option.field] = seed;
+        }
+        else
+        {
+            fields[option.field] = value;
+        }
+    }
+    for (const auto &name : {"match-tile", "output-tile", "target-size"})
+    {
+        if (!args.has(name))
+        {
+            continue;
+        }
+        auto value = args.get(name);
+        int width = 0, height = 0;
+        const bool target = std::string(name) == "target-size";
+        const auto split = value.find_first_of("xX");
+        if (target && split != std::string::npos)
+        {
+            const auto w = value.substr(0, split), h = value.substr(split + 1);
+            width = w == "auto" ? 0 : integer(w);
+            height = h == "auto" ? 0 : integer(h);
+            if ((width == 0 && w != "auto") || (height == 0 && h != "auto") || (!width && !height) || width < 0 ||
+                height < 0)
+            {
+                throw std::invalid_argument("target-size requires positive WxH with at most one auto axis");
+            }
+        }
+        else if (!parseSize(value, width, height))
+        {
+            throw std::invalid_argument(std::string(name) + " requires positive WxH");
+        }
+        fields[target ? "outW" : std::string(name) == "match-tile" ? "tileW" : "nativeTileW"] = width;
+        fields[target ? "outH" : std::string(name) == "match-tile" ? "tileH" : "nativeTileH"] = height;
+    }
+    if (args.has("brightness-jitter"))
+    {
+        fields["colorAdjust"] = fields["colorStrength"].get<double>() != 0;
+    }
+    return fields;
+}
+
+OutputMode modeFor(const Arguments &args)
+{
+    if (args.has("mode"))
+    {
+        return parseOutputMode(args.get("mode"));
+    }
+    auto extension = pathToUtf8(u8path(args.get("output")).extension());
+    if (!extension.empty())
+    {
+        extension.erase(0, 1);
+    }
+    extension = detail::normalizeOutputFormat(extension);
+    if (extension == "jpg" || extension == "png" || extension == "webp" || extension == "tiff")
+    {
+        return OutputMode::Image;
+    }
+    throw std::invalid_argument("--mode is required when output has no recognized image suffix");
+}
+
+void validateEncodingOptions(const Arguments &args, OutputMode mode)
+{
+    if (mode == OutputMode::Html)
+    {
+        for (const auto &name : {"format", "quality", "png-compression", "write-mode", "thumbnail"})
+        {
+            if (args.has(name))
+            {
+                throw std::invalid_argument("HTML is incompatible with --" + std::string(name));
+            }
+        }
+    }
+    if (mode == OutputMode::Tiles || mode == OutputMode::DeepZoom)
+    {
+        if ((args.has("format") && detail::normalizeOutputFormat(args.get("format")) != "jpg") ||
+            args.has("png-compression") || args.has("write-mode") || args.has("thumbnail"))
+        {
+            throw std::invalid_argument(
+                "tiles/deepzoom currently encode JPEG and do not support the selected encoding options");
+        }
+    }
+}
+
+// 核心旧输出仍有回车式进度；命令入口统一为无控制字符的诊断流。
+class DiagnosticBuffer : public std::streambuf
+{
+  public:
+    explicit DiagnosticBuffer(bool quiet) : quiet(quiet) {}
+
+  protected:
+    int overflow(int value) override
+    {
+        if (value == traits_type::eof())
+        {
+            return traits_type::not_eof(value);
+        }
+        const char c = static_cast<char>(value);
+        if (!quiet && (c == '\n' || c == '\t' || static_cast<unsigned char>(c) >= 32))
+        {
+            std::cerr.rdbuf()->sputc(c);
+        }
+        return value;
+    }
+    int sync() override
+    {
+        std::cerr.rdbuf()->pubsync();
+        return 0;
+    }
+
+  private:
+    bool quiet;
+};
+
+ServiceResult execute(const Arguments &args, json &data, RuntimeContext &runtime)
+{
+    const auto &cmd = args.command;
+    if (args.input.empty())
+    {
+        throw std::invalid_argument("a positional input is required; use --help");
+    }
+    if (cmd == "create" || cmd == "render")
+    {
+        if (!args.has("output"))
+        {
+            throw std::invalid_argument("--output is required");
+        }
+        const auto mode = modeFor(args);
+        validateEncodingOptions(args, mode);
+        auto fields = requestFields(args);
+        fields["inputPath"] = cmd == "render" ? "target.png" : args.input;
+        fields["outputMode"] = outputModeName(mode);
+        MosaicRequest request;
+        RequestError error;
+        if (!parseMosaicRequestJson(fields.dump(), request, error))
+        {
+            throw std::invalid_argument(error.message);
+        }
+        if (cmd == "create")
+        {
+            return MosaicService().run(request, runtime);
+        }
+        ProjectRequest project;
+        project.projectPath = args.input;
+        project.outputPath = request.outputPath;
+        project.config = request.config;
+        project.overwrite = args.has("overwrite");
+        project.outputTileExplicit = args.has("output-tile");
+        project.blendExplicit = args.has("target-blend");
+        project.jitterExplicit = args.has("brightness-jitter");
+        return ProjectService().render(project, runtime);
+    }
+    if (args.group == "project")
+    {
+        ProjectRequest request;
+        request.projectPath = args.input;
+        request.outputPath = args.get("output");
+        request.overwrite = args.has("overwrite");
+        request.deep = args.has("deep");
+        ProjectService service;
+        if (cmd == "info")
+        {
+            data = service.info(args.input);
+            return ServiceResult::success("project metadata loaded");
+        }
+        if (cmd == "check")
+        {
+            return service.check(request, runtime);
+        }
+        if (request.outputPath.empty())
+        {
+            throw std::invalid_argument("--output is required for project pack");
+        }
+        return service.pack(request, runtime);
+    }
+    if (cmd == "build" || cmd == "add" || cmd == "normalize")
+    {
+        BuildRequest request;
+        request.inputDir = args.input;
+        request.outputDir = args.get("output", "library");
+        request.appendMode = cmd == "add";
+        request.normalizeOnly = cmd == "normalize";
+        request.recursive = args.has("recursive");
+        request.resourceMonitor = args.has("resource-monitor");
+        request.threads = integer(args.get("threads", "0"));
+        request.backend = parseBackend(args.get("backend", "auto"));
+        if (request.appendMode)
+        {
+            request.dbPath = resolveDbPathForService(args.get("library", "library"));
+            request.outputDir = pathToUtf8(u8path(request.dbPath).parent_path());
+        }
+        else if (args.has("size") && !parseSize(args.get("size"), request.normalizeWidth, request.normalizeHeight))
+        {
+            throw std::invalid_argument("--size requires positive WxH");
+        }
+        if (cmd == "build" && std::filesystem::exists(u8path(request.outputDir) / "mosaicraft.db"))
+        {
+            throw std::invalid_argument("library already exists; use library add or choose a new directory");
+        }
+        return BuildService().run(request, runtime);
+    }
+    if (args.group == "library")
+    {
+        DatabaseService service;
+        if (cmd == "report")
+        {
+            DatabaseRequest request;
+            request.dbPath = args.input;
+            request.deep = args.has("deep");
+            const auto result = service.stats(request);
+            data["stats"] = databaseStatsToJson(result.stats);
+            if (result.status.ok && (args.has("check") || request.deep))
+            {
+                const auto health = service.health(request);
+                data["health"] = databaseHealthToJson(health.health);
+                return health.status;
+            }
+            return result.status;
+        }
+        if (cmd == "usage")
+        {
+            DatabaseUsageRequest request;
+            request.dbPath = args.input;
+            request.limit = integer(args.get("limit", "50"));
+            const auto sort = args.get("sort", "targets");
+            if (request.limit < 0 || (sort != "targets" && sort != "tiles"))
+            {
+                throw std::invalid_argument("usage requires --limit >=0 and --sort targets|tiles");
+            }
+            request.sortByTiles = sort == "tiles";
+            request.showUnused = args.has("unused");
+            const auto result = service.usage(request);
+            data = databaseUsageToJson(result.usage);
+            data["meaning"] = "runs counts distinct recorded targets; unused means absent from recorded history";
+            return result.status;
+        }
+        if (cmd == "export")
+        {
+            DatabaseUsageExportRequest request;
+            request.dbPath = args.input;
+            request.outputDir = args.get("output");
+            request.selection = args.get("selection", "used");
+            request.confirm = true;
+            const auto result = service.exportUsage(request);
+            data = databaseUsageExportToJson(result.exportInfo);
+            return result.status;
+        }
+        DatabasePurgeRequest request;
+        request.dbPath = args.input;
+        request.dryRun = !args.has("apply");
+        request.confirm = args.has("apply");
+        const auto result = service.purge(request);
+        data = databasePurgeToJson(result.purge);
+        return result.status;
+    }
+    InspectRequest request;
+    request.imagePath = args.input;
+    request.dbPath = args.get("library", "library/mosaicraft.db");
+    const auto result = InspectService().inspect(request);
+    data["imageFeatures"] = inspectResultToJson(result);
+    if (result.status.ok && result.databaseAvailable)
+    {
+        auto fields = requestFields(args);
+        fields["inputPath"] = args.input;
+        MosaicRequest coverageRequest;
+        RequestError error;
+        if (!parseMosaicRequestJson(fields.dump(), coverageRequest, error))
+        {
+            throw std::invalid_argument(error.message);
+        }
+        MosaicCoverage coverage;
+        const auto status = measureMosaicCoverage(coverageRequest, coverage);
+        data["gridCoverage"] = {{"columns", coverage.columns},
+                                {"rows", coverage.rows},
+                                {"minimumCandidates", coverage.minimumCandidates},
+                                {"noCandidates", coverage.noCandidates},
+                                {"fewCandidates", coverage.fewCandidates},
+                                {"threshold", coverage.threshold}};
+        return status;
+    }
+    return result.status;
+}
+
+int runMain(const std::vector<std::string> &argv)
+{
+    bool asJson = std::find(argv.begin(), argv.end(), "--json") != argv.end();
+    bool quiet = std::find(argv.begin(), argv.end(), "--quiet") != argv.end();
+    ServiceResult result;
+    json data;
+    Arguments args;
+    RuntimeContext runtime(false);
+    try
+    {
+        if (argv.size() == 2 && (argv[1] == "--version" || argv[1] == "-V"))
+        {
+            std::cout << "Mosaicraft " << kVersion << '\n';
             return 0;
         }
-        else
+        args = parse(argv);
+        if (args.command.empty() || args.has("help") || args.has("help-all"))
         {
-            std::cerr << "Unknown option: " << arg << std::endl;
-            return 1;
-        }
-    }
-
-    if (inputDir.empty())
-    {
-        std::cerr << "ERROR: [invalid_argument] --input is required for build." << std::endl;
-        return 1;
-    }
-
-    BuildRequest request;
-    request.inputDir = inputDir;
-    request.outputDir = outputDir;
-    request.dbPath = dbPath;
-    request.threads = threads;
-    request.appendMode = appendMode;
-    request.normalizeOnly = normOnly;
-    request.forceMode = forceMode;
-    request.recursive = recursive;
-    request.allowPrompt = true;
-    request.normalizeWidth = normW;
-    request.normalizeHeight = normH;
-
-    BuildService service;
-    ServiceResult result = service.run(request);
-    return result.exitCode;
-}
-
-// ============================================================
-// mosaic 子命令
-// ============================================================
-static int cmdMosaic(int argc, char* argv[])
-{
-    std::string inputPath;
-    std::string dbPath = "library/mosaicraft.db";
-    std::string outputPath = "output/output";
-    MosaicEngine::Config cfg;
-
-    for (int i = 2; i < argc; ++i)
-    {
-        std::string arg = argv[i];
-        if (arg == "-i" || arg == "--input")
-        {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            inputPath = value;
-        }
-        else if (arg == "-d" || arg == "--db")
-        {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            dbPath = value;
-        }
-        else if (arg == "-o" || arg == "--output")
-        {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            outputPath = value;
-        }
-        else if (arg == "--tile-w")
-        {
-            int _v = 0;
-            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.tileW = _v;
-        }
-        else if (arg == "--tile-h")
-        {
-            int _v = 0;
-            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.tileH = _v;
-        }
-        else if (arg == "-W" || arg == "--out-w")
-        {
-            int _v = 0;
-            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.outW = _v;
-        }
-        else if (arg == "-H" || arg == "--out-h")
-        {
-            int _v = 0;
-            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.outH = _v;
-        }
-        else if (arg == "--lab-weight")
-        {
-            double _v = 0.0;
-            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
-            cfg.labWeight = _v;
-        }
-        else if (arg == "--grid-weight")
-        {
-            double _v = 0.0;
-            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
-            cfg.gridWeight = _v;
-        }
-        else if (arg == "--tiny-weight")
-        {
-            double _v = 0.0;
-            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
-            cfg.tinyWeight = _v;
-        }
-        else if (arg == "--edge-weight")
-        {
-            double _v = 0.0;
-            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
-            cfg.edgeWeight = _v;
-        }
-        else if (arg == "--lbp-weight")
-        {
-            double _v = 0.0;
-            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
-            cfg.lbpWeight = _v;
-        }
-        else if (arg == "--penalty")
-        {
-            double _v = 0.0;
-            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
-            cfg.usePenalty = _v;
-        }
-        else if (arg == "--l-range")
-        {
-            double _v = 0.0;
-            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
-            cfg.lRange = _v;
-        }
-        else if (arg == "--candidates")
-        {
-            int _v = 0;
-            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.candidates = _v;
-        }
-        else if (arg == "--topn-random")
-        {
-            int _v = 0;
-            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.topNRandom = _v;
-        }
-        else if (arg == "-f" || arg == "--format")
-        {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            cfg.outputFormat = value;
-            // 规范化: jpeg → jpg, tif → tiff
-            if (cfg.outputFormat == "jpeg") cfg.outputFormat = "jpg";
-            else if (cfg.outputFormat == "tif") cfg.outputFormat = "tiff";
-            cfg.formatExplicit = true;
-        }
-        else if (arg == "--cpu")
-        {
-            cfg.useGpu = false;
-        }
-        else if (arg == "-q" || arg == "--quality")
-        {
-            int _v = 0;
-            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.jpegQuality = _v;
-        }
-        else if (arg == "--png-level")
-        {
-            int _v = 0;
-            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.pngCompressionLevel = _v;
-        }
-        else if (arg == "--write-mode")
-        {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            std::string mode = value;
-            if (mode == "auto" || mode == "stream" || mode == "batch")
-                cfg.writeMode = mode;
-            else {
-                std::cerr << "ERROR: [invalid_argument] --write-mode must be auto|stream|batch, got: " << mode << std::endl;
-                return 1;
-            }
-        }
-        else if (arg == "--tiled")
-        {
-            cfg.tiledOutput = true;
-        }
-        else if (arg == "--deepzoom")
-        {
-            cfg.tiledOutput = true;   // deepzoom 隐含 tiled
-            cfg.deepZoom = true;
-        }
-        else if (arg == "--neighbor-window")
-        {
-            int _v = 0;
-            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.neighborWindow = _v;
-        }
-        else if (arg == "--neighbor-penalty")
-        {
-            double _v = 0.0;
-            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
-            cfg.neighborPenalty = _v;
-        }
-        else if (arg == "-U" || arg == "--upscale")
-        {
-            int _v = 0;
-            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            cfg.upscale = _v;
-        }
-        else if (arg == "--output-tile")
-        {
-            // 格式: 180x320
-            const char* val = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, val)) return 1;
-            const char* sep = strchr(val, 'x');
-            if (sep && sep != val && *(sep+1) != '\0' && !strchr(sep+1, 'x')) {
-                errno = 0;
-                char* endW = nullptr;
-                char* endH = nullptr;
-                long w = std::strtol(val, &endW, 10);
-                long h = std::strtol(sep + 1, &endH, 10);
-                if (errno == ERANGE || endW != sep || endH == sep + 1 || *endH != '\0' ||
-                    w < 1 || w > INT_MAX || h < 1 || h > INT_MAX) {
-                    std::cerr << "ERROR: [invalid_argument] --output-tile expected WxH format (e.g. 180x320), got: " << val << std::endl;
-                    return 1;
-                }
-                cfg.nativeTileW = static_cast<int>(w);
-                cfg.nativeTileH = static_cast<int>(h);
-            } else {
-                std::cerr << "ERROR: [invalid_argument] --output-tile expected WxH format (e.g. 180x320), got: " << val << std::endl;
-                return 1;
-            }
-        }
-        else if (arg == "--color-adjust")
-        {
-            cfg.colorAdjust = true;
-        }
-        else if (arg == "--adaptive-weights")
-        {
-            cfg.adaptiveWeights = true;
-        }
-        else if (arg == "--analyze")
-        {
-            cfg.analyze = true;
-        }
-        else if (arg == "--preview")
-        {
-            cfg.generatePreview = true;
-        }
-        else if (arg == "--color-strength")
-        {
-            double _v = 0.0;
-            if (!readOptionDouble(argc, argv, i, arg, _v)) return 1;
-            cfg.colorStrength = _v;
-        }
-        else if (arg == "--benchmark")
-        {
-            cfg.benchmark = true;
-        }
-        else if (arg == "--overlay-strength")
-        {
-            double strength = 0.0;
-            if (!readOptionDouble(argc, argv, i, arg, strength))
-            {
-                return 1;
-            }
-            cfg.overlayStrength = strength;
-        }
-        else if (arg == "-h" || arg == "--help")
-        {
-            std::cout << "Usage: mosaicraft mosaic -i <image> -d <db> [options]" << std::endl;
-            std::cout << "  -i, --input <path>    Target image (required)" << std::endl;
-            std::cout << "  -d, --db <path>       Database (default: <output>/mosaicraft.db)" << std::endl;
-            std::cout << "  -o, --output <path>   Output path (default: output/output.<format>)" << std::endl;
-            std::cout << "  --tile-w <n>          Tile width (default: 9, min: 4)" << std::endl;
-            std::cout << "  --tile-h <n>          Tile height (default: 16, min: 4)" << std::endl;
-            std::cout << "  --candidates <n>      ANN query candidates (default: 150)" << std::endl;
-            std::cout << "  --format <ext>        jpg / png / webp / tiff (auto: output suffix, input suffix, then PNG)" << std::endl;
-            std::cout << "  --quality <n>         JPEG/WebP quality 1-100 (default: 100)" << std::endl;
-            std::cout << "  --png-level <n>       PNG compression 1-9 (default: 1=fastest)" << std::endl;
-            std::cout << "  --write-mode <m>      auto / stream / batch (default: auto)" << std::endl;
-            std::cout << "  --out-w <n>           Target output width (0=auto)" << std::endl;
-            std::cout << "  --out-h <n>           Target output height (0=auto)" << std::endl;
-            std::cout << "  --upscale <n>         Upscale target nX before tiling" << std::endl;
-            std::cout << "  --output-tile <WxH>   Output tile pixel size (default: 180x320)" << std::endl;
-            std::cout << "  --l-range <f>         L brightness search range (default: 20)" << std::endl;
-            std::cout << "  --topn-random <n>     Pick from top-N for variety (default: 10)" << std::endl;
-            std::cout << "  --neighbor-window <n> Neighborhood window (default: 0=auto)" << std::endl;
-            std::cout << "  --neighbor-penalty <f> Base penalty value (default: 100)" << std::endl;
-            std::cout << "  --lab-weight <f>      LAB weight (default: 0.20)" << std::endl;
-            std::cout << "  --grid-weight <f>     Grid weight (default: 0.45)" << std::endl;
-            std::cout << "  --tiny-weight <f>     TinyImage weight (default: 0.25)" << std::endl;
-            std::cout << "  --edge-weight <f>     Edge density weight (default: 0.05)" << std::endl;
-            std::cout << "  --lbp-weight <f>      LBP histogram weight (default: 0.05)" << std::endl;
-            std::cout << "  --penalty <f>         Use-count penalty (default: 0.01)" << std::endl;
-            std::cout << "  --adaptive-weights    Enable adaptive feature weights" << std::endl;
-            std::cout << "  --color-adjust        Enable symmetric per-tile LAB L jitter (off by default)" << std::endl;
-            std::cout << "  --color-strength <f>  Max relative L jitter, 0..0.5 (default: 0.04 = +/-4%; requires --color-adjust)" << std::endl;
-            std::cout << "  --overlay-strength <f>  Blend processed target over tiles, 0..1 (default: 0 = off)" << std::endl;
-            std::cout << "  --analyze             Generate quality report + heatmap + worst tiles" << std::endl;
-            std::cout << "  --preview             Save <output-stem>_preview.jpg (width <=1400, JPEG quality 92)" << std::endl;
-            std::cout << "  --benchmark           Print per-phase timing breakdown" << std::endl;
-            std::cout << "  --cpu                 Force CPU (no GPU)" << std::endl;
-            std::cout << "  --tiled               Output tiles as separate files" << std::endl;
-            std::cout << "  --deepzoom            Generate Deep Zoom pyramid + HTML viewer" << std::endl;
-            std::cout << std::endl;
-            std::cout << "  Output modes (choose one): -o (single), --tiled, --deepzoom" << std::endl;
-            std::cout << "  Exit status: 0=success 1=param/IO 2=database 3=memory 4=GPU" << std::endl;
+            help(args.group, args.command, args.has("help-all"));
             return 0;
         }
-        else
+        DiagnosticBuffer buffer(quiet);
+        struct StreamGuard
         {
-            std::cerr << "Unknown option: " << arg << std::endl;
-            return 1;
-        }
-    }
-
-    if (inputPath.empty())
-    {
-        std::cerr << "ERROR: [invalid_argument] --input is required for mosaic." << std::endl;
-        return 1;
-    }
-
-    // 输出模式互斥检测：单图输出不能同时指定分块/金字塔
-    if (cfg.tiledOutput || cfg.deepZoom)
-    {
-        // 分块模式可以指定 -o 作为输出目录前缀
-        // 不报错，但提醒用户
-        if (!outputPath.empty() && outputPath.find('_') == std::string::npos)
-            std::cout << "  Note: --tiled/--deepzoom outputs to " << outputPath << "_files/" << std::endl;
-    }
-
-    // 输出路径校验：拒绝已存在的目录，提示应为文件路径
-    std::error_code ec;
-    if (!outputPath.empty() && fs::is_directory(u8path(outputPath), ec)) {
-        std::cerr << "ERROR: [invalid_argument] -o is a directory, not a file path: " << outputPath << std::endl;
-        std::cerr << "  Hint: append a filename, e.g. " << outputPath << "/output.jpg" << std::endl;
-        std::cerr << "  Note: --format overrides the file extension from -o" << std::endl;
-        return 1;
-    }
-
-    MosaicRequest request;
-    request.inputPath = inputPath;
-    request.dbPath = dbPath;
-    request.outputPath = outputPath;
-    request.config = cfg;
-
-    MosaicService service;
-    ServiceResult result = service.run(request);
-    return result.exitCode;
-}
-
-// ============================================================
-// inspect 子命令：特征诊断
-// ============================================================
-static int cmdInspect(int argc, char* argv[])
-{
-    std::string imagePath;
-    std::string dbPath = "library/mosaicraft.db";
-
-    for (int i = 2; i < argc; ++i)
-    {
-        std::string arg = argv[i];
-        if (arg == "-i" || arg == "--input")
-        {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            imagePath = value;
-        }
-        else if (arg == "-d" || arg == "--db")
-        {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            dbPath = value;
-        }
-        else
-        {
-            std::cerr << "Unknown option: " << arg << std::endl;
-            return 1;
-        }
-    }
-
-    if (imagePath.empty())
-    {
-        std::cerr << "Usage: mosaicraft inspect -i <image> [-d <db>]" << std::endl;
-        return 1;
-    }
-
-    InspectService service;
-    auto result = service.inspect({imagePath, dbPath});
-    if (!result.status.ok)
-    {
-        std::cerr << "ERROR: " << result.status.message << std::endl;
-        return result.status.exitCode;
-    }
-    const auto& info = result;
-    std::cout << "Image: " << info.imagePath << " (" << info.width << "x" << info.height << ")" << std::endl;
-
-    std::cout << "\nAvgLAB:  L=" << std::fixed << std::setprecision(1) << info.avgL
-              << "  A=" << info.avgA << "  B=" << info.avgB << std::endl;
-    std::cout << "Edge density: " << std::setprecision(4) << info.edgeDensity << std::endl;
-    std::cout << "LBP entropy:  " << std::setprecision(4) << info.lbpEntropy << std::endl;
-
-    if (info.databaseAvailable)
-    {
-        std::cout << "\nDatabase: " << info.databaseTotal << " images" << std::endl;
-        std::cout << "L-range [" << info.candidateMinL << ", " << info.candidateMaxL << "]: "
-                  << info.candidateCount << " candidates"
-                  << (info.databaseTotal > 0 ? " (" + std::to_string(100 * info.candidateCount / info.databaseTotal) + "%)" : "")
-                  << std::endl;
-        std::cout << "Library L range: [" << std::setprecision(1) << info.libraryMinL
-                  << ", " << info.libraryMaxL << "]  avg=" << info.libraryAvgL << std::endl;
-        std::cout << "Distribution: dark=" << info.libraryDark << " (" << (info.databaseTotal > 0 ? 100.0*info.libraryDark/info.databaseTotal : 0)
-                  << "%)  mid=" << info.libraryMid << " (" << (info.databaseTotal > 0 ? 100.0*info.libraryMid/info.databaseTotal : 0)
-                  << "%)  bright=" << info.libraryBright << " (" << (info.databaseTotal > 0 ? 100.0*info.libraryBright/info.databaseTotal : 0) << "%)" << std::endl;
-    }
-
-    return 0;
-}
-
-// ============================================================
-// db-stats 子命令：输出图库统计信息
-// ============================================================
-static int cmdDbStats(int argc, char* argv[])
-{
-    std::string dbPath = "library/mosaicraft.db";
-
-    for (int i = 2; i < argc; ++i)
-    {
-        std::string arg = argv[i];
-        if (arg == "-d" || arg == "--db")
-        {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            dbPath = value;
-        }
-        else
-        {
-            std::cerr << "Unknown option: " << arg << std::endl;
-            return 1;
-        }
-    }
-
-    DatabaseService service;
-    auto result = service.stats({dbPath});
-    if (!result.status.ok)
-    {
-        std::cerr << "ERROR: " << result.status.message << std::endl;
-        return result.status.exitCode;
-    }
-
-    const auto& stats = result.stats;
-    int total = stats.total;
-    if (stats.empty)
-    {
-        std::cout << "Database is empty." << std::endl;
-        return 0;
-    }
-
-    if (!stats.featureWidth.empty() && !stats.featureHeight.empty())
-        std::cout << "Normalized size: " << stats.featureWidth << "x" << stats.featureHeight << std::endl;
-
-    std::cout << "=== Database Statistics ===\n";
-    std::cout << "  Images: " << total << "\n";
-    std::cout << "  Grid dim: " << stats.gridDim << " (" << (stats.gridDim/3) << " cells)\n";
-    std::cout << "  LAB: L[" << std::fixed << std::setprecision(1) << stats.minL
-              << "," << stats.maxL << "] avg=" << stats.avgL
-              << "  A[" << stats.minA << "," << stats.maxA << "] avg=" << stats.avgA
-              << "  B[" << stats.minB << "," << stats.maxB << "] avg=" << stats.avgB << "\n";
-    std::cout << "  Brightness: dark=" << stats.dark << " (" << (100.0*stats.dark/total)
-              << "%) mid=" << stats.mid << " (" << (100.0*stats.mid/total)
-              << "%) bright=" << stats.bright << " (" << (100.0*stats.bright/total) << "%)\n";
-
-    std::cout << "  L-histogram:\n";
-    for (const auto& bin : stats.lHistogram)
-    {
-        std::string bar(static_cast<size_t>(bin.count) * 50 / static_cast<size_t>(total), '#');
-        std::cout << "    " << std::setw(3) << bin.lo << "-" << std::setw(3) << bin.hi
-                  << " | " << bar << " " << bin.count << "\n";
-    }
-
-    std::cout << "  Coverage gaps:";
-    if (stats.coverageGaps.empty()) {
-        std::cout << " none significant";
-    } else {
-        for (const auto& gap : stats.coverageGaps) std::cout << " " << gap;
-    }
-    std::cout << "\n";
-
-    return 0;
-}
-
-// ============================================================
-// db-purge 子命令：清除归一化目录中不存在的孤儿记录
-static int cmdDbPurge(int argc, char* argv[])
-{
-    std::string dbPath = "library/mosaicraft.db";
-    bool forceMode = false;
-
-    for (int i = 2; i < argc; ++i)
-    {
-        std::string arg = argv[i];
-        if (arg == "-d" || arg == "--db")
-        {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            dbPath = value;
-        }
-        else if (arg == "-y" || arg == "--yes" || arg == "--force")
-            forceMode = true;
-        else
-        {
-            std::cerr << "Unknown option: " << arg << std::endl;
-            return 1;
-        }
-    }
-
-    DatabaseService service;
-    auto preview = service.purge({dbPath, true, false});
-    if (!preview.status.ok)
-    {
-        std::cerr << "ERROR: " << preview.status.message << std::endl;
-        return preview.status.exitCode;
-    }
-
-    if (preview.purge.orphanCount == 0)
-    {
-        std::cout << "No orphan records found." << std::endl;
-        return 0;
-    }
-
-    if (!forceMode)
-    {
-#ifdef _WIN32
-        bool isTTY = _isatty(_fileno(stdin));
-#else
-        bool isTTY = isatty(fileno(stdin));
-#endif
-        if (!isTTY)
-        {
-            std::cerr << "ERROR: " << preview.purge.orphanCount << " orphan records. Use -y to purge." << std::endl;
-            return 1;
-        }
-        std::cout << "Found " << preview.purge.orphanCount << " orphan records. Purge? [y/N] " << std::flush;
-        char answer = static_cast<char>(std::getchar());
-        if (answer != 'y' && answer != 'Y') { std::cout << "Aborted." << std::endl; return 0; }
-    }
-
-    auto result = service.purge({dbPath, false, true});
-    if (!result.status.ok && result.purge.failedCount == 0)
-    {
-        std::cerr << "ERROR: " << result.status.message << std::endl;
-        return result.status.exitCode;
-    }
-
-    std::cout << "Purged " << result.purge.removedCount << " / " << result.purge.total << " orphan records." << std::endl;
-    for (const auto& recommendation : result.purge.recommendations)
-        std::cout << "  Note: " << recommendation << std::endl;
-    for (const auto& error : result.purge.errors)
-        std::cerr << "  ERROR: " << error << std::endl;
-    return result.status.ok ? 0 : result.status.exitCode;
-}
-
-// ============================================================
-// db-usage 子命令：查看图片使用统计
-// ============================================================
-static int cmdDbUsage(int argc, char* argv[])
-{
-    std::string dbPath = "library/mosaicraft.db";
-    int limit = 50;
-    std::string exportDir;
-    bool showUnused = false;
-
-    for (int i = 2; i < argc; ++i)
-    {
-        std::string arg = argv[i];
-        if (arg == "-d" || arg == "--db")
-        {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            dbPath = value;
-        }
-        else if (arg == "-n")
-        {
-            int _v = 0;
-            if (!readOptionInt(argc, argv, i, arg, _v)) return 1;
-            limit = _v;
-        }
-        else if (arg == "--unused")
-            showUnused = true;
-        else if (arg == "--export" || arg == "-o")
-        {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            exportDir = value;
-        }
-        else
-        {
-            std::cerr << "Unknown option: " << arg << std::endl;
-            return 1;
-        }
-    }
-
-    DatabaseService usageService;
-    auto usageResult = usageService.usage({dbPath, limit, showUnused});
-    if (!usageResult.status.ok)
-    {
-        std::cerr << "ERROR: " << usageResult.status.message << std::endl;
-        return usageResult.status.exitCode;
-    }
-
-    const auto& usage = usageResult.usage;
-    if (usage.top.empty())
-    {
-        std::cout << "No usage data yet. Run a mosaic with --analyze to start tracking." << std::endl;
-        return 0;
-    }
-
-    std::cout << "Top " << usage.top.size() << " most used images (by mosaic runs):\n";
-    std::cout << "  Rank  Image ID    Runs    Tiles\n";
-    for (size_t i = 0; i < usage.top.size(); ++i)
-    {
-        const auto& item = usage.top[i];
-        std::cout << "  " << std::setw(4) << (i+1) << "  "
-                  << std::setw(8) << item.id << "  "
-                  << std::setw(6) << item.runs << "  "
-                  << std::setw(8) << item.tiles << "\n";
-    }
-
-    // --unused: 列出所有未使用的图片
-    if (showUnused)
-    {
-        for (const auto& item : usage.unusedPreview)
-        {
-            std::cout << "  unused: id=" << item.id << "  " << item.filePath << "\n";
-        }
-        std::cout << "\n  Total unused: " << usage.unusedCount << " / " << usage.total
-                  << " (" << std::fixed << std::setprecision(1) << (usage.total > 0 ? 100.0*usage.unusedCount/usage.total : 0) << "%)\n";
-        if (usage.unusedCount > 0 && exportDir.empty())
-            std::cout << "  Tip: use --export <dir> to export used images\n";
-    }
-
-    // 导出：按全部 tile 使用次数排序，复制到统一图片输出目录
-    if (!exportDir.empty())
-    {
-        auto exportResult = usageService.exportUsage({dbPath, exportDir, true});
-        if (!exportResult.status.ok && exportResult.exportInfo.failedCount == 0)
-        {
-            std::cerr << "ERROR: " << exportResult.status.message << std::endl;
-            return exportResult.status.exitCode;
-        }
-        for (const auto& error : exportResult.exportInfo.errors)
-            std::cerr << "  WARN: " << error << "\n";
-        std::cout << "\n  Exported " << exportResult.exportInfo.exportedCount << " images to " << exportDir << "\n";
-        if (exportResult.exportInfo.skippedCount > 0 || exportResult.exportInfo.failedCount > 0)
-            std::cout << "  Skipped " << exportResult.exportInfo.skippedCount
-                      << ", failed " << exportResult.exportInfo.failedCount << "\n";
-        if (!exportResult.status.ok)
-            return exportResult.status.exitCode;
-    }
-    return 0;
-}
-
-// ============================================================
-// db-health 子命令：图库健康检查
-// ============================================================
-static int cmdDbHealth(int argc, char* argv[])
-{
-    std::string dbPath = "library/mosaicraft.db";
-    for (int i = 2; i < argc; ++i)
-    {
-        std::string arg = argv[i];
-        if (arg == "-d" || arg == "--db")
-        {
-            const char* value = nullptr;
-            if (!readOptionValue(argc, argv, i, arg, value)) return 1;
-            dbPath = value;
-        }
-        else
-        {
-            std::cerr << "Unknown option: " << arg << std::endl;
-            return 1;
-        }
-    }
-
-    DatabaseService service;
-    auto result = service.health({dbPath});
-    if (!result.status.ok)
-    {
-        std::cerr << "ERROR: " << result.status.message << std::endl;
-        return result.status.exitCode;
-    }
-
-    const auto& health = result.health;
-    int total = health.total;
-    if (health.empty) { std::cout << "Database is empty.\n"; return 0; }
-
-    std::cout << "=== Database Health ===\n\n";
-    std::cout << "Images: " << total << "\n";
-    if (health.missingFiles > 0)
-    {
-        std::cout << "  WARN: Missing image files: " << health.missingFiles << "\n";
-    }
-
-    std::cout << "\n--- Brightness Coverage ---\n";
-    std::cout << "  Dark  (<50L):  " << std::fixed << std::setprecision(1) << health.darkPct << "% (" << health.dark << ")\n";
-    std::cout << "  Mid   (50-150L): " << health.midPct << "% (" << health.mid << ")\n";
-    std::cout << "  Bright(>150L): " << health.brightPct << "% (" << health.bright << ")\n";
-    for (const auto& warning : health.warnings)
-    {
-        if (warning.find("Dark") != std::string::npos || warning.find("Mid") != std::string::npos)
-            std::cout << "  WARN: " << warning << "\n";
-    }
-
-    std::cout << "\n--- Color Gamut ---\n";
-    std::cout << "  A (green-red): " << std::setprecision(0) << health.minA << "-" << health.maxA << "\n";
-    std::cout << "  B (blue-yellow): " << std::setprecision(0) << health.minB << "-" << health.maxB << "\n";
-    for (const auto& warning : health.warnings)
-    {
-        if (warning.find("Lacking") != std::string::npos)
-            std::cout << "  WARN: " << warning << "\n";
-    }
-
-    std::cout << "\n--- Usage ---\n";
-    std::cout << "  Used:   " << health.usedCount << " (" << std::setprecision(1) << health.usedPct << "%)\n";
-    std::cout << "  Unused: " << health.unusedCount << " (" << health.unusedPct << "%)\n";
-    for (const auto& warning : health.warnings)
-    {
-        if (warning.find("never used") != std::string::npos)
-            std::cout << "  WARN: " << warning << "\n";
-    }
-
-    if (health.topHotspotCount > 0) {
-        std::cout << "\n--- Hotspot Concentration ---\n";
-        std::cout << "  Top 1% (" << health.topHotspotCount << " images): " << std::setprecision(1)
-                  << health.topHotspotTilePct << "% of all tiles\n";
-        for (const auto& warning : health.warnings)
-        {
-            if (warning.find("dominates") != std::string::npos)
-                std::cout << "  WARN: " << warning << "\n";
-        }
-    }
-
-    std::cout << "\n--- Recommendations ---\n";
-    if (health.recommendations.empty()) {
-        std::cout << "  Database looks well-balanced!\n";
-    } else {
-        for (const auto& rec : health.recommendations) std::cout << "  + " << rec << "\n";
-    }
-
-    return 0;
-}
-
-// ============================================================
-// main
-// ============================================================
-static int runMain(int argc, char* argv[])
-{
-    srand(static_cast<unsigned>(time(nullptr)) ^ static_cast<unsigned>(reinterpret_cast<uintptr_t>(&argc)));
-
-    // Windows: 禁用控制台快速选择模式，防止鼠标误触导致程序挂起
-    // Guard 析构时自动恢复原模式
-    ConsoleQuickEditGuard quickEditGuard;
-
-    // 交互式终端退出前暂停，双击exe时不闪退
-    // 注意：仅当stdin和stdout都是TTY时才暂停（popen管道不会触发）
-    struct AutoPause {
-        ~AutoPause() {
-#ifdef _WIN32
-            if (_isatty(_fileno(stdin)) && _isatty(_fileno(stdout))) {
-                std::cout << std::endl << "Press any key to exit..." << std::flush;
-                _getch();
+            std::streambuf *previous;
+            ~StreamGuard()
+            {
+                std::cout.rdbuf(previous);
             }
-#else
-            if (isatty(fileno(stdin)) && isatty(fileno(stdout))) {
-                std::cout << std::endl << "Press any key to exit..." << std::flush;
-                getchar();
-            }
-#endif
-        }
-    } autoPause;
-
-    if (argc < 2)
-    {
-        printHelp();
-        return 0;
+        } guard{std::cout.rdbuf(&buffer)};
+        ConsoleQuickEditGuard console;
+        TaskResourceMonitor resources(runtime, args.has("resource-monitor"));
+        result = execute(args, data, runtime);
     }
-
-    std::string cmd = argv[1];
-
-    if (cmd == "-V" || cmd == "--version")
+    catch (const std::bad_alloc &)
     {
-        std::cout << "Mosaicraft " << mosaicraft::kVersion << "\n";
-        return 0;
+        result = ServiceResult::failure(3, "not enough memory", "out_of_memory");
     }
-    if (cmd == "build")
+    catch (const std::exception &error)
     {
-        return cmdBuild(argc, argv);
+        result = ServiceResult::failure(1, error.what(), "invalid_argument");
     }
-    else if (cmd == "mosaic")
+    if (!runtime.snapshot().diagnostic.code.empty() || !runtime.snapshot().artifacts.empty())
     {
-        return cmdMosaic(argc, argv);
+        result.runtime = runtime.snapshot();
     }
-    else if (cmd == "inspect")
+    if (!result.ok)
     {
-        return cmdInspect(argc, argv);
+        std::cerr << "ERROR: " << result.message << '\n';
     }
-    else if (cmd == "db-stats")
+    auto output = serviceResultToJson(result);
+    output["command"] = args.group.empty() ? args.command : args.group + " " + args.command;
+    if (!data.is_null())
     {
-        return cmdDbStats(argc, argv);
+        output["data"] = std::move(data);
     }
-    else if (cmd == "db-purge")
+    if (asJson || quiet)
     {
-        return cmdDbPurge(argc, argv);
-    }
-    else if (cmd == "db-usage")
-    {
-        return cmdDbUsage(argc, argv);
-    }
-    else if (cmd == "db-health")
-    {
-        return cmdDbHealth(argc, argv);
-    }
-    else if (cmd == "-h" || cmd == "--help")
-    {
-        printHelp();
-        return 0;
+        std::cout << output.dump() << '\n';
     }
     else
     {
-        std::cerr << "Unknown command: " << cmd << std::endl;
-        std::cerr << "Use 'mosaicraft --help' for usage." << std::endl;
-        return 1;
+        std::cout << result.message << '\n';
+        for (const auto &artifact : result.runtime.artifacts)
+        {
+            std::cout << artifact.id << ": " << artifact.path << '\n';
+        }
+        if (output.contains("data"))
+        {
+            std::cout << output["data"].dump(2) << '\n';
+        }
     }
+    return result.exitCode;
 }
+} // namespace
 
 #ifdef _WIN32
-int wmain(int argc, wchar_t *wideArgv[])
+int wmain(int argc, wchar_t *argv[])
 #else
 int main(int argc, char *argv[])
 #endif
 {
-    try
+    std::vector<std::string> arguments;
+    for (int i = 0; i < argc; ++i)
     {
 #ifdef _WIN32
-        // 窄字符入口会在解析前丢失系统代码页无法表示的文件名。
-        std::vector<std::string> utf8Args(argc);
-        std::vector<char *> argv(argc + 1, nullptr);
-        for (int i = 0; i < argc; ++i)
-        {
-            utf8Args[i] = mosaicraft::pathToUtf8(std::filesystem::path(wideArgv[i]));
-            argv[i] = utf8Args[i].data();
-        }
-        return runMain(argc, argv.data());
+        arguments.push_back(pathToUtf8(std::filesystem::path(argv[i])));
 #else
-        return runMain(argc, argv);
+        arguments.push_back(argv[i]);
 #endif
     }
-    catch (const std::bad_alloc&)
-    {
-        std::cerr << "ERROR: not enough memory" << std::endl;
-        return EXIT_ERR_MEMORY;
-    }
-    catch (const std::exception& error)
-    {
-        std::cerr << "ERROR: " << error.what() << std::endl;
-        return EXIT_ERR_GENERAL;
-    }
+    return runMain(arguments);
 }

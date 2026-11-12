@@ -1,10 +1,11 @@
 #pragma once
 
 #include "BuildService.h"
-#include "MosaicService.h"
-#include "MosaicSelection.h"
 #include "MosaicPlanning.h"
+#include "MosaicSelection.h"
+#include "MosaicService.h"
 #include "PreviewEvaluation.h"
+#include "ProjectService.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -68,6 +69,7 @@ public:
 
     std::string submitMosaic(MosaicRequest request, std::shared_ptr<const MosaicSelection> selection = {});
     std::string submitBuild(BuildRequest request);
+    std::string submitProject(const std::string &type, ProjectRequest request);
     std::string submitPreview(MosaicRequest request, uint32_t seed,
                               std::shared_ptr<const MosaicSelection> source = {},
                               std::shared_ptr<const MosaicSelection> compareRight = {});
@@ -93,6 +95,7 @@ private:
         std::shared_ptr<RuntimeContext> runtime = std::make_shared<RuntimeContext>();
         MosaicRequest request;
         BuildRequest buildRequest;
+        ProjectRequest projectRequest;
         std::shared_ptr<const MosaicSelection> selection;
     };
 
@@ -111,6 +114,7 @@ private:
     void workerLoop();
     void runMosaicJob(const std::string& id);
     void runBuildJob(const std::string& id);
+    void runProjectJob(const std::string &id);
     void runPreview(const std::shared_ptr<PreviewJob> &job);
     void interruptPreview();
     void trimPreviews();

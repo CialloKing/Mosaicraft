@@ -37,13 +37,13 @@ inline bool validateBuildRequest(const BuildRequest &request, std::string &error
 inline bool validateMosaicRequest(MosaicRequest &request, std::string &error, std::string *field = nullptr)
 {
     auto &cfg = request.config;
-    if (cfg.generatePreview && (cfg.tiledOutput || cfg.deepZoom))
+    if (cfg.generatePreview && (cfg.outputMode != OutputMode::Image))
     {
         if (field)
         {
             *field = "generatePreview";
         }
-        error = "--preview requires single-image output; incompatible with --tiled/--deepzoom";
+        error = "--thumbnail requires image mode; incompatible with html/tiles/deepzoom";
         return false;
     }
     if (!std::isfinite(cfg.overlayStrength) || cfg.overlayStrength < 0 || cfg.overlayStrength > 1)
@@ -103,9 +103,23 @@ inline bool validateMosaicRequest(MosaicRequest &request, std::string &error, st
         error = "writeMode must be auto, batch or stream";
         return false;
     }
+    if (cfg.outputMode == OutputMode::Html)
+    {
+        if (cfg.formatExplicit || (cfg.colorAdjust && cfg.colorStrength != 0) || cfg.generatePreview ||
+            cfg.writeMode != "auto")
+        {
+            error = "HTML is incompatible with image encoding options, thumbnail output and nonzero brightness jitter";
+            if (field)
+            {
+                *field = "outputMode";
+            }
+            return false;
+        }
+        return true;
+    }
     detail::OutputFormat format;
     if (!detail::resolveOutputFormat(request.inputPath, request.outputPath, cfg.outputFormat, cfg.formatExplicit,
-                                     !cfg.tiledOutput && !cfg.deepZoom, format, error, field))
+                                     cfg.outputMode == OutputMode::Image, format, error, field))
     {
         return false;
     }

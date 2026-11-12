@@ -8,6 +8,22 @@
 
 namespace mosaicraft
 {
+inline int lightnessBand(double value)
+{
+    return value < 50 ? 0 : value < 150 ? 1 : 2;
+}
+
+struct LibraryCoverage
+{
+    bool dark, mid, green, red, blue, yellow;
+};
+
+inline LibraryCoverage libraryCoverage(double darkPct, double midPct, double minA, double maxA, double minB,
+                                       double maxB)
+{
+    return {darkPct < 5, midPct < 15, minA > 115, maxA < 140, minB > 115, maxB < 140};
+}
+
 struct ColorDistribution
 {
     static constexpr int axes = 32;

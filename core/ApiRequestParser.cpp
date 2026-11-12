@@ -1,4 +1,5 @@
 #include "ApiRequestParser.h"
+#include "NumericParsing.h"
 
 #include "ApiMetadata.h"
 #include "json.hpp"
@@ -61,34 +62,6 @@ bool validateFields(const json &body, ApiOperation operation, RequestError &erro
     return false;
 }
 
-bool parseStrictInt(const std::string &text, int &out)
-{
-    if (text.empty())
-    {
-        return false;
-    }
-    errno = 0;
-    char *end = nullptr;
-    long value = std::strtol(text.c_str(), &end, 10);
-    if (errno == ERANGE || end == text.c_str() || *end != '\0' || value < INT_MIN || value > INT_MAX)
-    {
-        return false;
-    }
-    out = static_cast<int>(value);
-    return true;
-}
-
-bool parsePositiveInt(const std::string &text, int &out)
-{
-    int value = 0;
-    if (!parseStrictInt(text, value) || value <= 0)
-    {
-        return false;
-    }
-    out = value;
-    return true;
-}
-
 bool requireIntAtLeast(const std::string &field, int value, int minimum, RequestError &error)
 {
     if (value >= minimum)
@@ -131,28 +104,6 @@ bool requireDoubleBetween(const std::string &field, double value, double minimum
     error.field = field;
     error = field + " must be between " + std::to_string(minimum) + " and " + std::to_string(maximum);
     return false;
-}
-
-bool parseSize(const std::string &text, int &w, int &h)
-{
-    size_t sep = text.find_first_of("xX");
-    if (sep == std::string::npos || sep == 0 || sep + 1 >= text.size())
-    {
-        return false;
-    }
-    if (text.find_first_of("xX", sep + 1) != std::string::npos)
-    {
-        return false;
-    }
-    int parsedW = 0;
-    int parsedH = 0;
-    if (!parsePositiveInt(text.substr(0, sep), parsedW) || !parsePositiveInt(text.substr(sep + 1), parsedH))
-    {
-        return false;
-    }
-    w = parsedW;
-    h = parsedH;
-    return true;
 }
 
 bool parseJsonObject(const std::string &body, json &values, RequestError &error)
@@ -420,6 +371,101 @@ bool getQueryInt(const ApiQueryParams &query, const std::string &field, int &out
 
 } // namespace
 
+bool parseProjectRequestJson(const std::string &body, ApiOperation operation, ProjectRequest &request,
+                             RequestError &error)
+{
+    json fields;
+    if (!parseJsonObject(body, fields, error) || !validateFields(fields, operation, error))
+    {
+        return false;
+    }
+    try
+    {
+        if (!fields.contains("projectPath") || !fields["projectPath"].is_string() ||
+            fields["projectPath"].get<std::string>().empty())
+        {
+            throw std::invalid_argument("projectPath is required");
+        }
+        request.projectPath = fields["projectPath"];
+        for (const auto &flag : {"deep", "overwrite", "resourceMonitor"})
+        {
+            if (fields.contains(flag) && !fields[flag].is_boolean())
+            {
+                throw std::invalid_argument(std::string(flag) + " must be a boolean");
+            }
+        }
+        request.deep = fields.value("deep", false);
+        request.overwrite = fields.value("overwrite", false);
+        request.resourceMonitor = fields.value("resourceMonitor", false);
+        if (fields.contains("outputPath"))
+        {
+            request.outputPath = fields["outputPath"].get<std::string>();
+        }
+        if ((operation == ApiOperation::SubmitRenderJob || operation == ApiOperation::SubmitProjectPackJob) &&
+            request.outputPath.empty())
+        {
+            throw std::invalid_argument("outputPath is required");
+        }
+        if (operation != ApiOperation::SubmitRenderJob)
+        {
+            return true;
+        }
+        json config = fields;
+        config.erase("projectPath");
+        config.erase("deep");
+        config["inputPath"] = "target.png";
+        if (!config.contains("outputMode"))
+        {
+            const auto suffix = std::filesystem::u8path(request.outputPath).extension().u8string();
+            const auto extension = detail::normalizeOutputFormat(suffix.empty() ? "" : suffix.substr(1));
+            if (extension != "png" && extension != "jpg" && extension != "webp" && extension != "tiff")
+            {
+                throw std::invalid_argument("outputMode is required without a recognized image suffix");
+            }
+            config["outputMode"] = "image";
+        }
+        if (config.contains("brightnessJitter"))
+        {
+            config["colorStrength"] = config["brightnessJitter"];
+            if (!config["brightnessJitter"].is_number())
+            {
+                throw std::invalid_argument("brightnessJitter must be a number");
+            }
+            config["colorAdjust"] = config["brightnessJitter"].get<double>() != 0;
+            config.erase("brightnessJitter");
+        }
+        MosaicRequest parsed;
+        if (!parseMosaicRequestJson(config.dump(), parsed, error))
+        {
+            return false;
+        }
+        request.config = parsed.config;
+        request.outputTileExplicit = fields.contains("nativeTileW") || fields.contains("nativeTileH");
+        if (request.outputTileExplicit && (!fields.contains("nativeTileW") || !fields.contains("nativeTileH")))
+        {
+            throw std::invalid_argument("nativeTileW and nativeTileH must be provided together");
+        }
+        request.blendExplicit = fields.contains("overlayStrength");
+        request.jitterExplicit = fields.contains("brightnessJitter");
+        if (request.config.outputMode == OutputMode::Html)
+        {
+            for (const auto &key : {"quality", "pngLevel", "format", "writeMode", "generatePreview"})
+            {
+                if (fields.contains(key))
+                {
+                    throw std::invalid_argument(std::string(key) + " is incompatible with HTML");
+                }
+            }
+        }
+        return true;
+    }
+    catch (const std::exception &exception)
+    {
+        error = exception.what();
+        return false;
+    }
+}
+
 bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, RequestError &error)
 {
     json values;
@@ -640,15 +686,59 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
 
     if (getBoolField(values, keysFor("tiled"), boolValue, error))
     {
-        cfg.tiledOutput = boolValue;
+        cfg.outputMode = boolValue ? OutputMode::Tiles : OutputMode::Image;
     }
     if (getBoolField(values, keysFor("deepZoom"), boolValue, error))
     {
-        cfg.deepZoom = boolValue;
         if (boolValue)
         {
-            cfg.tiledOutput = true;
+            cfg.outputMode = OutputMode::DeepZoom;
         }
+    }
+    try
+    {
+        if (getStringField(values, {"outputMode"}, text, error))
+        {
+            cfg.outputMode = parseOutputMode(text);
+            if ((values.value("tiled", false) && cfg.outputMode != OutputMode::Tiles &&
+                 cfg.outputMode != OutputMode::DeepZoom) ||
+                (values.value("deepZoom", false) && cfg.outputMode != OutputMode::DeepZoom))
+            {
+                throw std::invalid_argument("outputMode conflicts with legacy tiled/deepZoom flags");
+            }
+            request.directoryOutput = cfg.outputMode != OutputMode::Image;
+            request.atomicOutput = true;
+        }
+        if (getStringField(values, {"backend"}, text, error))
+        {
+            cfg.backend = parseBackend(text);
+            if (cfg.backend == BackendPolicy::Cuda && !cfg.useGpu)
+            {
+                throw std::invalid_argument("backend cuda conflicts with useGpu false");
+            }
+        }
+        if (getIntField(values, {"threads"}, intValue, error))
+        {
+            cfg.threads = intValue;
+        }
+        if (values.contains("seed"))
+        {
+            if ((!values["seed"].is_number_unsigned() && !values["seed"].is_number_integer()) ||
+                values["seed"].get<double>() < 0 || values["seed"].get<double>() > 4294967295.0)
+            {
+                throw std::invalid_argument("seed must be an unsigned 32-bit integer");
+            }
+            cfg.seed = values["seed"].get<uint32_t>();
+        }
+        if (getBoolField(values, {"overwrite"}, boolValue, error))
+        {
+            request.overwrite = boolValue;
+        }
+    }
+    catch (const std::exception &exception)
+    {
+        error = exception.what();
+        return false;
     }
     if (getBoolField(values, keysFor("colorAdjust"), boolValue, error))
     {
@@ -669,6 +759,26 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
     if (getBoolField(values, keysFor("resourceMonitor"), boolValue, error))
     {
         request.resourceMonitor = boolValue;
+    }
+    if (values.contains("outputMode") && cfg.outputMode == OutputMode::Html)
+    {
+        for (const auto &key : {"quality", "pngLevel", "format", "writeMode", "generatePreview"})
+        {
+            if (values.contains(key))
+            {
+                error = std::string(key) + " is incompatible with HTML";
+                return false;
+            }
+        }
+    }
+    if (values.contains("outputMode") && (cfg.outputMode == OutputMode::Tiles || cfg.outputMode == OutputMode::DeepZoom))
+    {
+        if ((cfg.formatExplicit && detail::normalizeOutputFormat(cfg.outputFormat) != "jpg") ||
+            values.contains("pngLevel") || values.contains("writeMode") || values.contains("generatePreview"))
+        {
+            error = "tiles/deepzoom encode JPEG and do not support the selected encoding options";
+            return false;
+        }
     }
     return error.empty() && validateMosaicRequest(request, error.message, &error.field);
 }
@@ -749,6 +859,18 @@ bool parseBuildRequestJson(const std::string &body, BuildRequest &request, Reque
     }
 
     request.allowPrompt = false;
+    if (getStringField(values, {"backend"}, text, error))
+    {
+        try
+        {
+            request.backend = parseBackend(text);
+        }
+        catch (const std::exception &exception)
+        {
+            error = exception.what();
+            return false;
+        }
+    }
     return error.empty() && validateBuildRequest(request, error.message, &error.field);
 }
 
@@ -768,6 +890,11 @@ bool applyDatabaseRequestJson(const std::string &body, DatabaseRequest &request,
     if (getStringField(values, keysFor("dbPath"), text, error))
     {
         request.dbPath = text;
+    }
+    bool deep = false;
+    if (getBoolField(values, {"deep"}, deep, error))
+    {
+        request.deep = deep;
     }
     return error.empty();
 }
@@ -793,7 +920,7 @@ bool applyDatabaseUsageRequestJson(const std::string &body, DatabaseUsageRequest
     }
     if (getIntField(values, keysFor("limit"), intValue, error))
     {
-        if (!requireIntAtLeast("limit", intValue, 1, error))
+        if (!requireIntAtLeast("limit", intValue, 0, error))
         {
             return false;
         }
@@ -802,6 +929,15 @@ bool applyDatabaseUsageRequestJson(const std::string &body, DatabaseUsageRequest
     if (getBoolField(values, keysFor("showUnused"), boolValue, error))
     {
         request.showUnused = boolValue;
+    }
+    if (getStringField(values, {"sort"}, text, error))
+    {
+        if (text != "targets" && text != "tiles")
+        {
+            error = "sort must be targets or tiles";
+            return false;
+        }
+        request.sortByTiles = text == "tiles";
     }
     return error.empty();
 }
@@ -832,6 +968,15 @@ bool applyDatabaseUsageExportRequestJson(const std::string &body, DatabaseUsageE
     if (getBoolField(values, keysFor("confirm"), boolValue, error))
     {
         request.confirm = boolValue;
+    }
+    if (getStringField(values, {"selection"}, text, error))
+    {
+        if (text != "used" && text != "unused" && text != "all")
+        {
+            error = "selection must be used, unused or all";
+            return false;
+        }
+        request.selection = text;
     }
     return error.empty();
 }
@@ -901,6 +1046,11 @@ bool parseDatabaseRequestApi(const ApiQueryParams &query, const std::string &bod
     {
         request.dbPath = text;
     }
+    bool deep = false;
+    if (getQueryBool(query, "deep", false, deep, error))
+    {
+        request.deep = deep;
+    }
     return applyDatabaseRequestJson(body, request, error);
 }
 
@@ -920,7 +1070,7 @@ bool parseDatabaseUsageRequestApi(const ApiQueryParams &query, const std::string
     }
     if (getQueryInt(query, "limit", intValue, error))
     {
-        if (!requireIntAtLeast("limit", intValue, 1, error))
+        if (!requireIntAtLeast("limit", intValue, 0, error))
         {
             return false;
         }
@@ -937,6 +1087,15 @@ bool parseDatabaseUsageRequestApi(const ApiQueryParams &query, const std::string
     if (!error.empty())
     {
         return false;
+    }
+    if (getQueryField(query, "sort", text))
+    {
+        if (text != "targets" && text != "tiles")
+        {
+            error = "sort must be targets or tiles";
+            return false;
+        }
+        request.sortByTiles = text == "tiles";
     }
     return applyDatabaseUsageRequestJson(body, request, error);
 }
@@ -965,6 +1124,15 @@ bool parseDatabaseUsageExportRequestApi(const ApiQueryParams &query, const std::
     if (!error.empty())
     {
         return false;
+    }
+    if (getQueryField(query, "selection", text))
+    {
+        if (text != "used" && text != "unused" && text != "all")
+        {
+            error = "selection must be used, unused or all";
+            return false;
+        }
+        request.selection = text;
     }
     return applyDatabaseUsageExportRequestJson(body, request, error);
 }

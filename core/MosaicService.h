@@ -19,6 +19,9 @@ struct MosaicRequest
     std::string outputPath = "output/output";
     MosaicEngine::Config config;
     bool resourceMonitor = false;
+    bool directoryOutput = false;
+    bool atomicOutput = false;
+    bool overwrite = false;
 };
 
 struct ServiceResult

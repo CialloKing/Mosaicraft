@@ -1,0 +1,416 @@
+[
+  {
+    "name": "output",
+    "short": "o",
+    "type": "string",
+    "field": "outputPath",
+    "commands": "create render build normalize export pack",
+    "help": "Output file or complete output directory",
+    "advanced": false
+  },
+  {
+    "name": "library",
+    "short": "l",
+    "type": "string",
+    "field": "dbPath",
+    "commands": "create add inspect",
+    "help": "Library directory or database",
+    "advanced": false
+  },
+  {
+    "name": "mode",
+    "short": "",
+    "type": "string",
+    "field": "outputMode",
+    "commands": "create render",
+    "help": "image | html | deepzoom | tiles; required without image suffix",
+    "advanced": false
+  },
+  {
+    "name": "format",
+    "short": "",
+    "type": "string",
+    "field": "format",
+    "commands": "create render",
+    "help": "jpg | png | webp | tiff; image encoding only",
+    "advanced": false
+  },
+  {
+    "name": "match-tile",
+    "short": "",
+    "type": "size",
+    "field": "",
+    "commands": "create inspect",
+    "help": "Target pixels per matched cell (default 9x16)",
+    "advanced": false
+  },
+  {
+    "name": "output-tile",
+    "short": "",
+    "type": "size",
+    "field": "",
+    "commands": "create render",
+    "help": "Output pixels per cell (default 180x320); enlarging resamples bundled images",
+    "advanced": false
+  },
+  {
+    "name": "target-size",
+    "short": "",
+    "type": "size",
+    "field": "",
+    "commands": "create inspect",
+    "help": "Resize target WxH; one axis may be auto",
+    "advanced": false
+  },
+  {
+    "name": "target-upscale",
+    "short": "",
+    "type": "int",
+    "field": "upscale",
+    "commands": "create inspect",
+    "help": "Upscale after target resize (1..64)",
+    "advanced": true
+  },
+  {
+    "name": "brightness-jitter",
+    "short": "",
+    "type": "double",
+    "field": "colorStrength",
+    "commands": "create render",
+    "help": "Symmetric LAB brightness jitter 0..0.5 (default 0); HTML requires 0",
+    "advanced": false
+  },
+  {
+    "name": "target-blend",
+    "short": "",
+    "type": "double",
+    "field": "overlayStrength",
+    "commands": "create render",
+    "help": "Prepared target overlay 0..1 (default 0)",
+    "advanced": false
+  },
+  {
+    "name": "seed",
+    "short": "",
+    "type": "seed",
+    "field": "seed",
+    "commands": "create render",
+    "help": "Unsigned 32-bit seed; render changes appearance only",
+    "advanced": true
+  },
+  {
+    "name": "backend",
+    "short": "",
+    "type": "string",
+    "field": "backend",
+    "commands": "create build add",
+    "help": "auto | cpu | cuda; explicit cuda requires acceleration",
+    "advanced": false
+  },
+  {
+    "name": "threads",
+    "short": "j",
+    "type": "int",
+    "field": "threads",
+    "commands": "create render build add normalize",
+    "help": "Application CPU worker limit 0..256; 0 is automatic",
+    "advanced": false
+  },
+  {
+    "name": "size",
+    "short": "",
+    "type": "size",
+    "field": "",
+    "commands": "build normalize",
+    "help": "Normalized library size (default 180x320)",
+    "advanced": false
+  },
+  {
+    "name": "recursive",
+    "short": "r",
+    "type": "bool",
+    "field": "recursive",
+    "commands": "build add normalize",
+    "help": "Scan source subdirectories",
+    "advanced": false
+  },
+  {
+    "name": "quality",
+    "short": "",
+    "type": "int",
+    "field": "quality",
+    "commands": "create render",
+    "help": "JPEG/WebP quality 1..100 (default 100)",
+    "advanced": true
+  },
+  {
+    "name": "png-compression",
+    "short": "",
+    "type": "int",
+    "field": "pngLevel",
+    "commands": "create render",
+    "help": "PNG compression 1..9 (default 1)",
+    "advanced": true
+  },
+  {
+    "name": "write-mode",
+    "short": "",
+    "type": "string",
+    "field": "writeMode",
+    "commands": "create render",
+    "help": "auto | stream | batch (existing encoder policy)",
+    "advanced": true
+  },
+  {
+    "name": "thumbnail",
+    "short": "",
+    "type": "bool",
+    "field": "generatePreview",
+    "commands": "create render",
+    "help": "Also save an area-averaged JPEG (image mode only)",
+    "advanced": false
+  },
+  {
+    "name": "random-top",
+    "short": "",
+    "type": "int",
+    "field": "topNRandom",
+    "commands": "create",
+    "help": "Random choice among top candidates (default 10)",
+    "advanced": true
+  },
+  {
+    "name": "reuse-penalty",
+    "short": "",
+    "type": "double",
+    "field": "usePenalty",
+    "commands": "create",
+    "help": "Reuse penalty (default 0.01)",
+    "advanced": true
+  },
+  {
+    "name": "candidates",
+    "short": "",
+    "type": "int",
+    "field": "candidates",
+    "commands": "create",
+    "help": "ANN candidates 10..10000 (default 150)",
+    "advanced": true
+  },
+  {
+    "name": "l-range",
+    "short": "",
+    "type": "double",
+    "field": "lRange",
+    "commands": "create inspect",
+    "help": "LAB8 lightness range 0..255 (default 20)",
+    "advanced": true
+  },
+  {
+    "name": "neighbor-window",
+    "short": "",
+    "type": "int",
+    "field": "neighborWindow",
+    "commands": "create",
+    "help": "Neighbor window; 0 is automatic",
+    "advanced": true
+  },
+  {
+    "name": "neighbor-penalty",
+    "short": "",
+    "type": "double",
+    "field": "neighborPenalty",
+    "commands": "create",
+    "help": "Neighbor penalty (default 100)",
+    "advanced": true
+  },
+  {
+    "name": "lab-weight",
+    "short": "",
+    "type": "double",
+    "field": "labWeight",
+    "commands": "create",
+    "help": "LAB weight (default 0.20)",
+    "advanced": true
+  },
+  {
+    "name": "grid-weight",
+    "short": "",
+    "type": "double",
+    "field": "gridWeight",
+    "commands": "create",
+    "help": "Grid weight (default 0.45)",
+    "advanced": true
+  },
+  {
+    "name": "tiny-weight",
+    "short": "",
+    "type": "double",
+    "field": "tinyWeight",
+    "commands": "create",
+    "help": "Tiny weight (default 0.25)",
+    "advanced": true
+  },
+  {
+    "name": "edge-weight",
+    "short": "",
+    "type": "double",
+    "field": "edgeWeight",
+    "commands": "create",
+    "help": "Edge weight (default 0.05)",
+    "advanced": true
+  },
+  {
+    "name": "lbp-weight",
+    "short": "",
+    "type": "double",
+    "field": "lbpWeight",
+    "commands": "create",
+    "help": "LBP weight (default 0.05)",
+    "advanced": true
+  },
+  {
+    "name": "adaptive-weights",
+    "short": "",
+    "type": "bool",
+    "field": "adaptiveWeights",
+    "commands": "create",
+    "help": "Use existing adaptive feature weights",
+    "advanced": true
+  },
+  {
+    "name": "analyze",
+    "short": "",
+    "type": "bool",
+    "field": "analyze",
+    "commands": "create",
+    "help": "Optional quality report; usage is always recorded",
+    "advanced": true
+  },
+  {
+    "name": "benchmark",
+    "short": "",
+    "type": "bool",
+    "field": "benchmark",
+    "commands": "create render",
+    "help": "Record phase timings",
+    "advanced": true
+  },
+  {
+    "name": "resource-monitor",
+    "short": "",
+    "type": "bool",
+    "field": "resourceMonitor",
+    "commands": "create build add",
+    "help": "Collect resource samples",
+    "advanced": true
+  },
+  {
+    "name": "overwrite",
+    "short": "",
+    "type": "bool",
+    "field": "overwrite",
+    "commands": "create render pack",
+    "help": "Replace a compatible owned output with rollback",
+    "advanced": false
+  },
+  {
+    "name": "check",
+    "short": "",
+    "type": "bool",
+    "field": "",
+    "commands": "report",
+    "help": "Check resource and feature integrity",
+    "advanced": false
+  },
+  {
+    "name": "deep",
+    "short": "",
+    "type": "bool",
+    "field": "",
+    "commands": "report check",
+    "help": "Also decode images and verify pixel hashes/dimensions",
+    "advanced": false
+  },
+  {
+    "name": "sort",
+    "short": "",
+    "type": "string",
+    "field": "",
+    "commands": "usage",
+    "help": "targets | tiles (default targets)",
+    "advanced": false
+  },
+  {
+    "name": "limit",
+    "short": "",
+    "type": "int",
+    "field": "",
+    "commands": "usage",
+    "help": "Ranking limit; 0 means all (default 50)",
+    "advanced": false
+  },
+  {
+    "name": "unused",
+    "short": "",
+    "type": "bool",
+    "field": "",
+    "commands": "usage",
+    "help": "List images absent from recorded usage",
+    "advanced": false
+  },
+  {
+    "name": "selection",
+    "short": "",
+    "type": "string",
+    "field": "",
+    "commands": "export",
+    "help": "used | unused | all (default used)",
+    "advanced": false
+  },
+  {
+    "name": "apply",
+    "short": "",
+    "type": "bool",
+    "field": "",
+    "commands": "purge",
+    "help": "Remove only confirmed missing records; default is dry run",
+    "advanced": false
+  },
+  {
+    "name": "json",
+    "short": "",
+    "type": "bool",
+    "field": "",
+    "commands": "*",
+    "help": "One JSON result on stdout; progress and diagnostics on stderr",
+    "advanced": false
+  },
+  {
+    "name": "quiet",
+    "short": "",
+    "type": "bool",
+    "field": "",
+    "commands": "*",
+    "help": "Hide progress and normal explanations; retain final result and errors",
+    "advanced": false
+  },
+  {
+    "name": "help",
+    "short": "h",
+    "type": "bool",
+    "field": "",
+    "commands": "*",
+    "help": "Show common options",
+    "advanced": false
+  },
+  {
+    "name": "help-all",
+    "short": "",
+    "type": "bool",
+    "field": "",
+    "commands": "*",
+    "help": "Show every option",
+    "advanced": false
+  }
+]

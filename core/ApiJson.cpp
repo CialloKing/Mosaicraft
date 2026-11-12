@@ -1,4 +1,5 @@
 #include "ApiJson.h"
+#include "CliOptions.h"
 
 #include "Version.h"
 
@@ -229,7 +230,18 @@ nlohmann::json mosaicRequestToJson(const MosaicRequest &request)
     value["neighborPenalty"] = cfg.neighborPenalty;
     value["topNRandom"] = cfg.topNRandom;
     value["useGpu"] = cfg.useGpu;
-    value["deepZoom"] = cfg.deepZoom;
+    value["backend"] = backendName(cfg.backend);
+    value["threads"] = cfg.threads;
+    if (request.atomicOutput)
+    {
+        value["outputMode"] = outputModeName(cfg.outputMode);
+        value["overwrite"] = request.overwrite;
+    }
+    if (cfg.seed)
+    {
+        value["seed"] = *cfg.seed;
+    }
+    value["deepZoom"] = cfg.outputMode == OutputMode::DeepZoom;
     value["generatePreview"] = cfg.generatePreview;
     value["colorAdjust"] = cfg.colorAdjust;
     value["colorStrength"] = cfg.colorStrength;
@@ -241,7 +253,7 @@ nlohmann::json mosaicRequestToJson(const MosaicRequest &request)
     value["pngLevel"] = cfg.pngCompressionLevel;
     value["writeMode"] = cfg.writeMode;
     value["quality"] = cfg.jpegQuality;
-    value["tiled"] = cfg.tiledOutput;
+    value["tiled"] = cfg.outputMode == OutputMode::Tiles || cfg.outputMode == OutputMode::DeepZoom;
     if (cfg.formatExplicit)
     {
         value["format"] = cfg.outputFormat;
@@ -249,6 +261,65 @@ nlohmann::json mosaicRequestToJson(const MosaicRequest &request)
     if (cfg.upscale > 0)
     {
         value["upscale"] = cfg.upscale;
+    }
+    if (cfg.outputMode == OutputMode::Html)
+    {
+        for (const auto &key : {"quality", "pngLevel", "writeMode", "generatePreview"})
+        {
+            value.erase(key);
+        }
+    }
+    else if (request.atomicOutput && cfg.outputMode != OutputMode::Image)
+    {
+        for (const auto &key : {"pngLevel", "writeMode", "generatePreview"})
+        {
+            value.erase(key);
+        }
+    }
+    return value;
+}
+
+nlohmann::json projectRequestToJson(const ProjectRequest &request)
+{
+    const auto &cfg = request.config;
+    nlohmann::json value{{"projectPath", request.projectPath},
+                         {"outputPath", request.outputPath},
+                         {"outputMode", outputModeName(cfg.outputMode)},
+                         {"threads", cfg.threads},
+                         {"deep", request.deep},
+                         {"overwrite", request.overwrite},
+                         {"resourceMonitor", request.resourceMonitor},
+                         {"benchmark", cfg.benchmark}};
+    if (cfg.seed)
+    {
+        value["seed"] = *cfg.seed;
+    }
+    if (request.outputTileExplicit)
+    {
+        value["nativeTileW"] = cfg.nativeTileW;
+        value["nativeTileH"] = cfg.nativeTileH;
+    }
+    if (request.blendExplicit)
+    {
+        value["overlayStrength"] = cfg.overlayStrength;
+    }
+    if (request.jitterExplicit)
+    {
+        value["brightnessJitter"] = cfg.colorAdjust ? cfg.colorStrength : 0;
+    }
+    if (cfg.outputMode != OutputMode::Html)
+    {
+        value["quality"] = cfg.jpegQuality;
+        if (cfg.formatExplicit)
+        {
+            value["format"] = cfg.outputFormat;
+        }
+        if (cfg.outputMode == OutputMode::Image)
+        {
+            value["pngLevel"] = cfg.pngCompressionLevel;
+            value["writeMode"] = cfg.writeMode;
+            value["generatePreview"] = cfg.generatePreview;
+        }
     }
     return value;
 }
@@ -259,6 +330,7 @@ nlohmann::json buildRequestToJson(const BuildRequest &request)
             {"outputDir", request.outputDir},
             {"dbPath", request.dbPath},
             {"threads", request.threads},
+            {"backend", backendName(request.backend)},
             {"appendMode", request.appendMode},
             {"normalizeOnly", request.normalizeOnly},
             {"forceMode", request.forceMode},
@@ -296,27 +368,27 @@ nlohmann::json databaseHealthToJson(const DatabaseHealth& health)
 {
     return {
         {"missingFiles", health.missingFiles},
+        {"unreadableFiles", health.unreadableFiles},
+        {"invalidFeatures", health.invalidFeatures},
+        {"corruptImages", health.corruptImages},
         {"empty", health.empty},
         {"total", health.total},
-        {"brightness", {
-            {"dark", health.dark}, {"mid", health.mid}, {"bright", health.bright},
-            {"darkPct", health.darkPct}, {"midPct", health.midPct}, {"brightPct", health.brightPct}
-        }},
-        {"colorGamut", {
-            {"minA", health.minA}, {"maxA", health.maxA},
-            {"minB", health.minB}, {"maxB", health.maxB}
-        }},
-        {"usage", {
-            {"usedCount", health.usedCount}, {"unusedCount", health.unusedCount},
-            {"usedPct", health.usedPct}, {"unusedPct", health.unusedPct}
-        }},
-        {"hotspot", {
-            {"topHotspotCount", health.topHotspotCount},
-            {"topHotspotTilePct", health.topHotspotTilePct}
-        }},
+        {"brightness",
+         {{"dark", health.dark},
+          {"mid", health.mid},
+          {"bright", health.bright},
+          {"darkPct", health.darkPct},
+          {"midPct", health.midPct},
+          {"brightPct", health.brightPct}}},
+        {"colorGamut", {{"minA", health.minA}, {"maxA", health.maxA}, {"minB", health.minB}, {"maxB", health.maxB}}},
+        {"usage",
+         {{"usedCount", health.usedCount},
+          {"unusedCount", health.unusedCount},
+          {"usedPct", health.usedPct},
+          {"unusedPct", health.unusedPct}}},
+        {"hotspot", {{"topHotspotCount", health.topHotspotCount}, {"topHotspotTilePct", health.topHotspotTilePct}}},
         {"warnings", health.warnings},
-        {"recommendations", health.recommendations}
-    };
+        {"recommendations", health.recommendations}};
 }
 
 nlohmann::json databaseUsageToJson(const DatabaseUsage& usage)
@@ -473,28 +545,32 @@ nlohmann::json apiInfoToJson(const char* entryName)
         });
     }
 
-    return {
-        {"name", "Mosaicraft"},
-        {"version", kVersion},
-        {"entry", entryName},
-        {"entryPoints", entryPoints},
-        {"versions", {{"library", kLibraryVersion}, {"feature", kFeatureVersion},
-                      {"ann", kAnnVersion}, {"featurePack", kFeaturePackVersion},
-                      {"colorOrder", kColorOrderVersion}, {"journal", kJournalVersion},
-                      {"studySchema", kStudySchemaVersion}, {"checkpointPaths", kCheckpointPathsVersion}}},
-        {"api", {
-            {"structured", true},
-            {"contractVersion", apiContractVersion()},
-            {"contractMajorVersion", apiContractMajorVersion()},
-            {"compatibility", apiCompatibilityLevel()},
-            {"stable", apiContractStable()},
-            {"endpointCount", static_cast<int>(endpoints.size())},
-            {"enabledEndpointCount", enabledCount},
-            {"metadataValid", metadataErrors.empty()},
-            {"metadataErrors", metadataErrors}
-        }},
-        {"features", apiFeatureList()}
-    };
+    return {{"name", "Mosaicraft"},
+            {"version", kVersion},
+            {"entry", entryName},
+            {"entryPoints", entryPoints},
+            {"versions",
+             {{"library", kLibraryVersion},
+              {"feature", kFeatureVersion},
+              {"ann", kAnnVersion},
+              {"featurePack", kFeaturePackVersion},
+              {"colorOrder", kColorOrderVersion},
+              {"journal", kJournalVersion},
+              {"studySchema", kStudySchemaVersion},
+              {"checkpointPaths", kCheckpointPathsVersion}}},
+            {"api",
+             {{"structured", true},
+              {"contractVersion", apiContractVersion()},
+              {"contractMajorVersion", apiContractMajorVersion()},
+              {"compatibility", apiCompatibilityLevel()},
+              {"stable", apiContractStable()},
+              {"endpointCount", static_cast<int>(endpoints.size())},
+              {"enabledEndpointCount", enabledCount},
+              {"metadataValid", metadataErrors.empty()},
+              {"metadataErrors", metadataErrors}}},
+            {"cliOptions", cliOptionsToJson()},
+            {"projectFormatVersion", 1},
+            {"features", apiFeatureList()}};
 }
 
 nlohmann::json apiOkJson()

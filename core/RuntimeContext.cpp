@@ -1,4 +1,5 @@
 #include "RuntimeContext.h"
+#include "Database.h"
 #include "UnicodeIO.h"
 #include <algorithm>
 #include <iostream>
@@ -171,7 +172,7 @@ void RuntimeContext::backends(const std::string &features, const std::string &sc
     }
 }
 
-void RuntimeContext::output(int width, int height, const std::string &format, int matched, int failed) noexcept
+void RuntimeContext::output(int64_t width, int64_t height, const std::string &format, int matched, int failed) noexcept
 {
     try
     {
@@ -374,4 +375,52 @@ EventPage RuntimeContext::events(uint64_t after, size_t limit) const
     }
     return page;
 }
+void RuntimeContext::relocateArtifacts(const std::string &from, const std::string &to)
+{
+    const auto relocate = [&](const std::string &value)
+    {
+        const auto relative = u8path(value).lexically_relative(u8path(from));
+        return !relative.empty() && *relative.begin() != ".." ? pathToUtf8(u8path(to) / relative) : value;
+    };
+    std::lock_guard<std::mutex> lock(m_mutex);
+    for (auto &artifact : m_snapshot.artifacts)
+    {
+        artifact.path = relocate(artifact.path);
+    }
+    if (m_snapshot.outputPlan)
+    {
+        m_snapshot.outputPlan->path = relocate(m_snapshot.outputPlan->path);
+    }
+}
+
+void RuntimeContext::discardArtifacts()
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_snapshot.artifacts.clear();
+}
+
+void RuntimeContext::queueUsage(const std::string &path, std::unordered_map<int, int> usage, const std::string &hash,
+                                const std::string &target)
+{
+    m_usageDb = path;
+    m_usageHash = hash;
+    m_usageTarget = target;
+    m_pendingUsage = std::move(usage);
+}
+
+void RuntimeContext::commitUsage()
+{
+    if (m_pendingUsage.empty())
+    {
+        return;
+    }
+    Database database(m_usageDb, Database::OpenMode::Existing);
+    if (!database.isOpen() || !database.recordRunUsage(m_pendingUsage, m_usageHash, m_usageTarget))
+    {
+        fail("usage_commit_failed", "cannot commit final library usage", "dbPath", m_usageDb);
+        throw std::runtime_error("cannot commit final library usage");
+    }
+    m_pendingUsage.clear();
+}
+
 } // namespace mosaicraft

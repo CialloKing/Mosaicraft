@@ -1,16 +1,17 @@
 #pragma once
 #include "ColorDistribution.h"
-#include "TaskResources.h"
-#include <memory>
-#include <chrono>
 #include "OutputPlan.h"
+#include "TaskResources.h"
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace mosaicraft
@@ -65,7 +66,8 @@ struct RuntimeSnapshot
     uint64_t warningCount = 0;
     std::map<std::string, WarningSummary> warnings;
     std::string featureBackend, scoreBackend, fallbackReason, format;
-    int width = 0, height = 0, matched = 0, failed = 0;
+    int64_t width = 0, height = 0;
+    int matched = 0, failed = 0;
     std::map<std::string, double> metrics;
     std::vector<Artifact> artifacts;
     std::optional<detail::OutputPlan> outputPlan;
@@ -95,7 +97,7 @@ class RuntimeContext
     bool fail(const std::string &code, const std::string &message, const std::string &field = {},
               const std::string &path = {}) noexcept;
     void backends(const std::string &features, const std::string &scoring, const std::string &reason = {}) noexcept;
-    void output(int width, int height, const std::string &format, int matched, int failed) noexcept;
+    void output(int64_t width, int64_t height, const std::string &format, int matched, int failed) noexcept;
     void planOutput(const detail::OutputPlan &plan, const std::string &requestedPath) noexcept;
     void metric(const std::string &name, double value) noexcept;
     void buildVisuals(BuildVisuals data) noexcept;
@@ -106,10 +108,17 @@ class RuntimeContext
     void artifact(const std::string &id, const std::string &kind, const std::string &path,
                   const std::string &mime = "application/octet-stream") noexcept;
     RuntimeSnapshot snapshot() const;
+    void relocateArtifacts(const std::string &from, const std::string &to);
+    void discardArtifacts();
+    void queueUsage(const std::string &dbPath, std::unordered_map<int, int> usage, const std::string &hash,
+                    const std::string &target);
+    void commitUsage();
     EventPage events(uint64_t after, size_t limit = 100) const;
 
   private:
     bool m_console;
+    std::string m_usageDb, m_usageHash, m_usageTarget;
+    std::unordered_map<int, int> m_pendingUsage;
     mutable std::mutex m_mutex;
     RuntimeSnapshot m_snapshot;
     std::string m_gpuDevice;

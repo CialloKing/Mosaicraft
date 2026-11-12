@@ -12,6 +12,11 @@ namespace mosaicraft
 ServiceResult sampleMosaicSize(const MosaicRequest &request, const MosaicSelection &selection,
                                const std::atomic_bool &canceled, FileSizeSample &sample)
 {
+    if (request.config.outputMode == OutputMode::Html)
+    {
+        return ServiceResult::failure(1, "HTML size is estimated from unique assets, not image compression samples",
+                                      "sample_unavailable");
+    }
     const std::unique_lock<std::mutex> pipeline(pipelineMutex(), std::try_to_lock);
     if (!pipeline.owns_lock())
     {

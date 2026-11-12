@@ -22,6 +22,7 @@ public:
         BackendPolicy backend = BackendPolicy::Auto;
         std::optional<uint32_t> seed;
         int threads = 0;
+        bool deferUsage = false; // 原子发布成功后才提交最终排列的使用统计。
         int tileW = 9;          // 默认 9×16（图库 180×320 的等比缩小），最大化 tile 数量
         int tileH = 16;
         int candidates = 150;  // 105K图库 sweep: 150≈200≈300, 最佳平衡点
@@ -51,8 +52,6 @@ public:
         int topNRandom = 10;        // 随机选取池大小：增加多样性
 
         bool useGpu = true;
-        bool tiledOutput = false;   // 分块输出：每 tile 独立文件，消除输出尺寸限制
-        bool deepZoom    = false;   // 生成 Deep Zoom 金字塔（含多级缩放 + .dzi 清单）
         bool generatePreview = false; // 单图输出时同步生成面积平均 JPEG 预览，默认关闭。
         int  jpegQuality = 100;      // JPEG 质量（1-100）
         std::string outputFormat = "jpg";  // 输出格式：jpg / png / webp / tiff
@@ -92,8 +91,7 @@ public:
                 std::cout << "/" << writeMode;
             if (outputFormat == "png")
                 std::cout << ")";
-            std::cout << (tiledOutput ? (deepZoom ? "  output: deepzoom" : "  output: tiled") : "")
-                      << (generatePreview ? "  preview: on" : "")
+            std::cout << ("  output: " + outputModeName(outputMode)) << (generatePreview ? "  preview: on" : "")
                       << std::endl;
             std::cout << "  weights: LAB=" << labWeight
                       << " Grid=" << gridWeight

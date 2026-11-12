@@ -1,7 +1,9 @@
 #include "MosaicService.h"
 
-#include "UnicodeIO.h"
+#include "ExecutionScope.h"
+#include "OutputPublication.h"
 #include "RequestValidation.h"
+#include "UnicodeIO.h"
 
 #include <filesystem>
 
@@ -43,7 +45,7 @@ static ServiceResult runMosaic(const MosaicRequest &request, RuntimeContext &run
     }
 
     std::error_code ec;
-    if (std::filesystem::is_directory(u8path(request.outputPath), ec))
+    if (!request.directoryOutput && std::filesystem::is_directory(u8path(request.outputPath), ec))
     {
         return runtimeFailure(runtime, 1, "outputPath is a directory, expected a file path", "invalid_argument",
                               "outputPath");
@@ -58,23 +60,60 @@ static ServiceResult runMosaic(const MosaicRequest &request, RuntimeContext &run
     try
     {
         std::lock_guard<std::mutex> lock(pipelineMutex());
+        ExecutionScope scope;
         MosaicEngine engine;
         const auto dbPath = resolveDbPathForService(request.dbPath);
-        const bool ok = selection
-            ? engine.renderSelection(request.inputPath, dbPath, request.outputPath, validated.config, *selection, runtime)
-            : engine.generate(request.inputPath, dbPath, request.outputPath, validated.config, runtime);
+        protectOutput(request.outputPath, {request.inputPath, pathToUtf8(u8path(dbPath).parent_path())});
+        std::unique_ptr<OutputPublication> publication;
+        auto path = request.outputPath;
+        if (request.atomicOutput)
+        {
+            publication = std::make_unique<OutputPublication>(
+                path, request.directoryOutput, request.overwrite,
+                std::vector<std::string>{request.inputPath, pathToUtf8(u8path(dbPath).parent_path())});
+            path = publication->workPath();
+            if (request.directoryOutput && validated.config.outputMode != OutputMode::Html)
+            {
+                path += "/index";
+            }
+            validated.config.deferUsage = true;
+        }
+        const bool ok =
+            selection ? engine.renderSelection(request.inputPath, dbPath, path, validated.config, *selection, runtime)
+                      : engine.generate(request.inputPath, dbPath, path, validated.config, runtime);
 
+        if (publication)
+        {
+            if (ok)
+            {
+                publication->commit(runtime,
+                                    [&]()
+                                    {
+                                        runtime.commitUsage();
+                                    });
+            }
+            else
+            {
+                runtime.discardArtifacts();
+            }
+        }
+        const auto diagnostic = runtime.snapshot().diagnostic;
+        const int code = diagnostic.code.rfind("cuda_", 0) == 0 ? 4 : diagnostic.code.rfind("library_", 0) == 0 ? 2 : 1;
         return ok ? ServiceResult::success("mosaic generated")
-                  : ServiceResult::failure(1, runtime.snapshot().diagnostic.message.empty()
-                                                  ? "mosaic generation failed"
-                                                  : runtime.snapshot().diagnostic.message);
+                  : ServiceResult::failure(code, diagnostic.message.empty() ? "mosaic generation failed"
+                                                                            : diagnostic.message);
     }
     catch (const std::bad_alloc&)
     {
+        runtime.discardArtifacts();
         return runtimeFailure(runtime, 3, "not enough memory to generate mosaic", "out_of_memory");
     }
     catch (const std::exception& exception)
     {
+        if (request.atomicOutput)
+        {
+            runtime.discardArtifacts();
+        }
         if (runtime.snapshot().diagnostic.code.empty())
         {
             const auto snapshot = runtime.snapshot();
@@ -85,7 +124,8 @@ static ServiceResult runMosaic(const MosaicRequest &request, RuntimeContext &run
                          : snapshot.progress.stage == "analyzing" ? "analysis_write_failed" : "internal_error",
                          exception.what());
         }
-        return ServiceResult::failure(1, exception.what());
+        return ServiceResult::failure(runtime.snapshot().diagnostic.code.rfind("cuda_", 0) == 0 ? 4 : 1,
+                                      exception.what());
     }
 }
 
@@ -115,6 +155,7 @@ ServiceResult MosaicService::preview(const MosaicRequest &request, uint32_t seed
     try
     {
         std::lock_guard<std::mutex> lock(pipelineMutex());
+        ExecutionScope scope;
         const bool ok = MosaicEngine().preview(request.inputPath, resolveDbPathForService(request.dbPath),
                                                request.config, seed, workspace, canceled, selection, runtime);
         return runtimeResult(ok ? ServiceResult::success() :

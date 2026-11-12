@@ -12,8 +12,8 @@ namespace mosaicraft
 
 struct DatabaseRequest
 {
-    bool deep = false;
     std::string dbPath = "library/mosaicraft.db";
+    bool deep = false;
 };
 
 struct DatabaseUsageRequest

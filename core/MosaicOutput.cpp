@@ -1,13 +1,13 @@
-﻿#include "MosaicOutput.h"
-#include "RuntimeContext.h"
-#include "BrightnessAdjustment.h"
-#include "OutputPlan.h"
+#include "MosaicOutput.h"
 #include "BigTiffWriter.h"
+#include "BrightnessAdjustment.h"
 #include "DeepZoomWriter.h"
 #include "ImageCache.h"
 #include "JpgStreamWriter.h"
+#include "OutputPlan.h"
 #include "PngStreamWriter.h"
 #include "PreviewAccumulator.h"
+#include "RuntimeContext.h"
 #include "TileCompositor.h"
 #include "WorkerPool.h"
 #include <array>
@@ -91,9 +91,9 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         {
             runtime->stage("writing_output");
         }
-        if (config.generatePreview && (config.tiledOutput || config.deepZoom))
+        if (config.generatePreview && (config.outputMode != OutputMode::Image))
         {
-            throw std::invalid_argument("--preview requires single-image output; incompatible with --tiled/--deepzoom");
+            throw std::invalid_argument("--thumbnail requires image mode; incompatible with html/tiles/deepzoom");
         }
         detail::OutputPlan local;
         if (!prepared)
@@ -102,7 +102,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
             const detail::OutputFormat format{detail::normalizeOutputFormat(config.outputFormat),
                                                config.formatExplicit ? "explicit" : "fallback"};
             if (!detail::makeOutputPlan(format, requestedPath, tilesX, tilesY, requestedTileW, requestedTileH,
-                                        !config.tiledOutput && !config.deepZoom, local, error))
+                                        config.outputMode == OutputMode::Image, local, error))
             {
                 throw std::invalid_argument(error);
             }
@@ -208,7 +208,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
             return image;
         };
         stats.path = path;
-        if (config.tiledOutput)
+        if ((config.outputMode == OutputMode::Tiles || config.outputMode == OutputMode::DeepZoom))
         {
             const auto start = now();
             std::atomic<size_t> completed{0};
@@ -237,7 +237,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
             {
                 runtime->advance("tiles", count, count, "tiles", true);
             }
-            if (config.deepZoom)
+            if ((config.outputMode == OutputMode::DeepZoom))
             {
                 if (runtime)
                 {
@@ -259,7 +259,8 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
             finishOverlayStats();
             if (runtime)
             {
-                runtime->output(width, height, config.deepZoom ? "deepzoom" : "tiled", stats.matched, stats.failed);
+                runtime->output(width, height, (config.outputMode == OutputMode::DeepZoom) ? "deepzoom" : "tiled",
+                                stats.matched, stats.failed);
                 runtime->artifact("tiles", "directory", path + "_files");
             }
             return true;
@@ -383,7 +384,19 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
                 }
             }
         };
-        if (stream)
+        if (stream && config.threads > 0)
+        {
+            // 显式线程预算下分阶段合成和编码，编码器不额外占用一个并行工作线程。
+            openWriter();
+            cv::Mat rows(tileH, width, CV_8UC3);
+            for (int y = 0; y < tilesY; ++y)
+            {
+                fill(rows, y);
+                writeRows(rows, y * tileH);
+                previewRows(rows, y * tileH);
+            }
+        }
+        else if (stream)
         {
             openWriter();
             std::array<cv::Mat, 2> rows{cv::Mat(tileH, width, CV_8UC3), cv::Mat(tileH, width, CV_8UC3)};

@@ -991,6 +991,36 @@ ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
         return browsePreviewLibrary(request, jobs);
     case ApiOperation::SubmitMosaicJob:
         return apiSubmitMosaicJob(request.body, jobs);
+    case ApiOperation::ProjectInfo:
+    case ApiOperation::SubmitRenderJob:
+    case ApiOperation::SubmitProjectCheckJob:
+    case ApiOperation::SubmitProjectPackJob:
+    {
+        ProjectRequest project;
+        RequestError error;
+        if (!parseProjectRequestJson(request.body, request.operation, project, error))
+        {
+            return badRequest(error);
+        }
+        try
+        {
+            if (request.operation == ApiOperation::ProjectInfo)
+            {
+                return {200, apiOkJson("project", ProjectService().info(project.projectPath))};
+            }
+            const auto type = request.operation == ApiOperation::SubmitRenderJob         ? "render"
+                              : request.operation == ApiOperation::SubmitProjectCheckJob ? "project-check"
+                                                                                         : "project-pack";
+            const auto id = jobs.submitProject(type, std::move(project));
+            JobSnapshot snapshot;
+            jobs.getJob(id, snapshot);
+            return {202, apiJobJson(snapshot)};
+        }
+        catch (const std::exception &exception)
+        {
+            return badRequest(exception.what());
+        }
+    }
     case ApiOperation::SubmitBuildJob:
         return apiSubmitBuildJob(request.body, jobs);
     case ApiOperation::ListJobs:
@@ -1287,6 +1317,11 @@ ApiResponse apiGetJobArtifact(const ApiRequest &request, const JobManager &jobs)
         if (item.id != request.artifactId || item.directory)
         {
             continue;
+        }
+        if (item.kind == "project-entry" || item.kind == "project-manifest")
+        {
+            return {409,
+                    apiErrorJson("pack the complete project before downloading; the HTML entry alone is incomplete")};
         }
         try
         {

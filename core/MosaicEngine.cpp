@@ -1,9 +1,4 @@
-#include "compute/CompatibleScoring.h"
-#include "MatchingScore.h"
-#include "MatchInspection.h"
 #include "MosaicEngine.h"
-#include "MosaicSelection.h"
-#include "RuntimeContext.h"
 #include "AnalysisReport.h"
 #include "BenchmarkTimer.h"
 #include "BrightnessAdjustment.h"
@@ -14,17 +9,23 @@
 #include "FeatureMatrix.h"
 #include "FeaturePack.h"
 #include "FeatureUtils.h"
-#include "NeighborhoodState.h"
+#include "MatchInspection.h"
+#include "MatchingScore.h"
+#include "MosaicMetrics.h"
 #include "MosaicOutput.h"
 #include "MosaicPlanning.h"
-#include "MosaicMetrics.h"
+#include "MosaicSelection.h"
+#include "NeighborhoodState.h"
+#include "ProjectService.h"
 #include "RequestValidation.h"
+#include "RuntimeContext.h"
 #include "UnicodeIO.h"
-#include "compute/CudaBackend.h"
 #include "compute/CompatibleFeatures.h"
+#include "compute/CompatibleScoring.h"
+#include "compute/CudaBackend.h"
 #include "compute/TemplateFeatureSizes.h"
-#include <numeric>
 #include <locale>
+#include <numeric>
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -72,7 +73,7 @@ SelectionAnalysis analyzeEditedTiles(const cv::Mat &target, const MosaicEngine::
 {
     SelectionAnalysis result;
     FeaturePack::Reader reader(featureDir, records, 64ULL * 1024 * 1024, &runtime);
-    WorkerPool workers;
+    WorkerPool workers(cfg.threads > 0 ? static_cast<unsigned>(cfg.threads) : 0);
     const auto sum = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight + cfg.edgeWeight + cfg.lbpWeight;
     const MatchWeights defaults{cfg.labWeight / sum, cfg.gridWeight / sum, cfg.tinyWeight / sum,
                                 cfg.edgeWeight / sum, cfg.lbpWeight / sum};
@@ -207,7 +208,8 @@ bool MosaicEngine::preview(const std::string &targetPath, const std::string &dbP
     engine.m_fixedSeed = true;
     engine.m_seed = seed;
     Config matching = config;
-    matching.generatePreview = matching.tiledOutput = matching.deepZoom = false;
+    matching.generatePreview = false;
+    matching.outputMode = OutputMode::Image;
     matching.formatExplicit = false;
     matching.outputFormat = "png";
     return engine.generate(targetPath, dbPath, "preview.png", matching, runtime);
@@ -281,7 +283,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     const bool useGpu = cfg.useGpu && cfg.backend != BackendPolicy::Cpu && !m_renderSelection;
     const auto preflight = useGpu ? cuda::queryCudaAvailability() : cuda::CudaAvailability{};
     const bool cudaEnabled = useGpu && preflight.available;
-    if (cfg.backend == BackendPolicy::Cuda && !cudaEnabled)
+    if (cfg.backend == BackendPolicy::Cuda && !cudaEnabled && !m_renderSelection)
     {
         return runtime.fail("cuda_required", "CUDA was explicitly requested but is unavailable: " + preflight.reason,
                             "backend");
@@ -648,7 +650,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     detail::OutputFormat outputFormat;
     detail::OutputPlan outputPlan;
     std::string outputError;
-    const bool singleImage = !cfg.tiledOutput && !cfg.deepZoom;
+    const bool singleImage = cfg.outputMode == OutputMode::Image;
     if (m_preview)
     {
         // 预览的网格与编码器的输出尺寸上限无关。
@@ -656,6 +658,14 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         outputPlan.tileHeight = cfg.nativeTileH;
         outputPlan.width = tilesX;
         outputPlan.height = tilesY;
+    }
+    else if (cfg.outputMode == OutputMode::Html)
+    {
+        if (!detail::makeOutputPlan({"png", "html"}, outputPath, tilesX, tilesY, cfg.nativeTileW, cfg.nativeTileH,
+                                    false, outputPlan, outputError))
+        {
+            return runtime.fail("invalid_argument", outputError, "outputMode");
+        }
     }
     else if (!detail::resolveOutputFormat(targetPath, outputPath, cfg.outputFormat, cfg.formatExplicit,
                                      singleImage, outputFormat, outputError) ||
@@ -876,9 +886,16 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         std::unordered_map<int, int> usage;
         for (int index : bestLibIdx)
         {
-            if (index >= 0) { ++usage[allRecords.at(index).id]; }
+            if (index >= 0)
+            {
+                ++usage[allRecords.at(index).id];
+            }
         }
-        if (db.isOpen() && !usage.empty() && !db.recordRunUsage(usage, targetHash, targetPath))
+        if (cfg.deferUsage)
+        {
+            runtime.queueUsage(dbPath, std::move(usage), targetHash, targetPath);
+        }
+        else if (db.isOpen() && !usage.empty() && !db.recordRunUsage(usage, targetHash, targetPath))
         {
             runtime.fail("usage_commit_failed", "mosaic output saved, but usage statistics could not be committed",
                          "dbPath", dbPath);
@@ -1127,6 +1144,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             if (!compatibleFeatures)
             {
+                if (cfg.backend == BackendPolicy::Cuda)
+                {
+                    return runtime.fail("cuda_required", "required CUDA feature resources unavailable");
+                }
                 runtime.emit("warning", "cuda_resource_fallback",
                              "Generic CUDA resources unavailable; using CPU before extraction.");
                 std::cout << "  Generic CUDA resources unavailable; using CPU before extraction." << std::endl;
@@ -1270,6 +1291,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             else
             {
+                if (cfg.backend == BackendPolicy::Cuda)
+                {
+                    return runtime.fail("cuda_required", "required CUDA scoring resources unavailable");
+                }
                 backends.scoring = ScoreBackend::Cpu;
                 runtime.emit("warning", "cuda_resource_fallback", compatibleScore.preparationFailure());
                 // 评分准备失败不牺牲已经可用的提取能力。
@@ -1620,10 +1645,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             return true;
         };
         // 扩搜会再次读取当前设备特征；下一批预取不能提前覆盖同一个工作区。
-        const bool prefetch =
-            templateCuda && !m_selectionOptions.expand && totalTiles > batchRows && hostBudget >= scratch + pinnedBytes &&
-            gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, pipeline) <=
-                (hostBudget - scratch - pinnedBytes) / 2;
+        const bool prefetch = templateCuda && cfg.threads == 0 && !m_selectionOptions.expand &&
+                              totalTiles > batchRows && hostBudget >= scratch + pinnedBytes &&
+                              gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, pipeline) <=
+                                  (hostBudget - scratch - pinnedBytes) / 2;
         metrics.matchingPrefetch = prefetch;
         bool preparedNext = false;
         // 池必须在缓冲/prepare 之后创建，错误退出也会先等待预取线程，再销毁它引用的数据。
@@ -2397,14 +2422,18 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         runtime.emit("warning", "no_candidates", "some tiles had no candidates and retained the existing background",
                      "lRange", {}, noCandidateCount);
     }
-    if (!cfg.analyze && cfg.overlayStrength == 0)
+    if (!cfg.analyze && cfg.overlayStrength == 0 && cfg.outputMode != OutputMode::Html)
     {
         target.release();
     }
 
     releaseGpuLib();
-    if (!writeIndexedMosaicOutput(outputConfig, outputPlan, allRecords, bestLibIdx,
-                                  adjustColor, metrics.outputStats, target, &runtime))
+    const bool outputOk = cfg.outputMode == OutputMode::Html
+                              ? writeHtmlProject(cfg, outputPath, tilesX, tilesY, allRecords, bestLibIdx, target,
+                                                 metrics.outputStats, runtime)
+                              : writeIndexedMosaicOutput(outputConfig, outputPlan, allRecords, bestLibIdx, adjustColor,
+                                                         metrics.outputStats, target, &runtime);
+    if (!outputOk)
     {
         return false;
     }
@@ -2454,6 +2483,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     {
         BenchmarkTimer analysisTimer(cfg.benchmark, metrics.msAnalysis);
         runAnalysis(metrics.outputStats.path);
+        if (cfg.outputMode == OutputMode::Html)
+        {
+            finalizeHtmlProject(outputPath, runtime);
+        }
     }
 
     releaseGpuLib();

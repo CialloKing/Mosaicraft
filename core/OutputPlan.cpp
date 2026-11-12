@@ -117,7 +117,7 @@ bool makeOutputPlan(const OutputFormat &format, const std::string &path, int til
             if (tilesX > limit || tilesY > limit)
             {
                 error = "output grid exceeds " + format.format + " dimension limit " + std::to_string(limit) +
-                        "; tiles cannot shrink below one pixel. Choose --format png/tiff or --tiled.";
+                        "; tiles cannot shrink below one pixel. Choose --format png/tiff or --mode tiles.";
                 return false;
             }
             // 同一缩放比例用整数计算，避免浮点临界值使向下取整出现一像素误差。

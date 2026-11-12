@@ -72,15 +72,17 @@ std::vector<std::string> endpointQueryKeys(ApiOperation operation)
         return {"q", "offset"};
     case ApiOperation::DatabaseStats:
     case ApiOperation::DatabaseHealth:
-        return {"dbPath"};
+        return {"dbPath", "deep"};
     case ApiOperation::DatabaseUsage:
-        return {"dbPath", "limit", "showUnused"};
+        return {"dbPath", "limit", "showUnused", "sort"};
     case ApiOperation::DatabaseUsageExport:
-        return {"dbPath", "outputDir", "confirm"};
+        return {"dbPath", "outputDir", "confirm", "selection"};
     case ApiOperation::DatabasePurge:
         return {"dbPath", "dryRun", "confirm"};
     case ApiOperation::Inspect:
         return {"imagePath", "dbPath"};
+    case ApiOperation::ProjectInfo:
+        return {};
     case ApiOperation::Endpoints:
     case ApiOperation::Info:
     case ApiOperation::Ping:
@@ -101,6 +103,9 @@ std::vector<std::string> endpointQueryKeys(ApiOperation operation)
     case ApiOperation::GetPreviewImage:
     case ApiOperation::SubmitMosaicJob:
     case ApiOperation::SubmitBuildJob:
+    case ApiOperation::SubmitRenderJob:
+    case ApiOperation::SubmitProjectCheckJob:
+    case ApiOperation::SubmitProjectPackJob:
     case ApiOperation::ListJobs:
     case ApiOperation::ClearFinishedJobs:
     case ApiOperation::GetJobArtifact:
@@ -141,6 +146,9 @@ int endpointSuccessStatus(ApiOperation operation)
     case ApiOperation::SubmitMosaicSample:
     case ApiOperation::SubmitMosaicJob:
     case ApiOperation::SubmitBuildJob:
+    case ApiOperation::SubmitRenderJob:
+    case ApiOperation::SubmitProjectCheckJob:
+    case ApiOperation::SubmitProjectPackJob:
         return 202;
     case ApiOperation::Endpoints:
     case ApiOperation::Info:
@@ -171,6 +179,7 @@ int endpointSuccessStatus(ApiOperation operation)
     case ApiOperation::DatabaseUsage:
     case ApiOperation::DatabaseUsageExport:
     case ApiOperation::DatabasePurge:
+    case ApiOperation::ProjectInfo:
     case ApiOperation::Inspect:
         return 200;
     }
@@ -211,6 +220,9 @@ std::string endpointResponseKey(ApiOperation operation)
     case ApiOperation::GetCatalogImage: return "";
     case ApiOperation::SubmitMosaicJob:
     case ApiOperation::SubmitBuildJob:
+    case ApiOperation::SubmitRenderJob:
+    case ApiOperation::SubmitProjectCheckJob:
+    case ApiOperation::SubmitProjectPackJob:
     case ApiOperation::GetJob:
     case ApiOperation::CancelJob:
         return "job";
@@ -221,6 +233,8 @@ std::string endpointResponseKey(ApiOperation operation)
     case ApiOperation::DatabaseUsage: return "usage";
     case ApiOperation::DatabaseUsageExport: return "export";
     case ApiOperation::DatabasePurge: return "purge";
+    case ApiOperation::ProjectInfo:
+        return "project";
     case ApiOperation::Inspect: return "inspect";
     case ApiOperation::Mosaic:
         return "";
@@ -300,6 +314,9 @@ void populateEndpointErrors(ApiEndpointMetadata& info)
     case ApiOperation::ClearHistory:
     case ApiOperation::PlanMosaic:
     case ApiOperation::SubmitBuildJob:
+    case ApiOperation::SubmitRenderJob:
+    case ApiOperation::SubmitProjectCheckJob:
+    case ApiOperation::SubmitProjectPackJob:
         addErrorContract(info, 400, "serviceResult");
         addErrorContract(info, 500, "serviceResult");
         break;
@@ -326,6 +343,7 @@ void populateEndpointErrors(ApiEndpointMetadata& info)
         addErrorContract(info, 400, "serviceResult", "purge");
         addErrorContract(info, 500, "serviceResult", "purge");
         break;
+    case ApiOperation::ProjectInfo:
     case ApiOperation::Inspect:
         addErrorContract(info, 400, "serviceResult");
         break;
@@ -406,6 +424,14 @@ const char* apiOperationName(ApiOperation operation)
     case ApiOperation::BrowsePreviewLibrary: return "browsePreviewLibrary";
     case ApiOperation::SubmitMosaicJob: return "submitMosaicJob";
     case ApiOperation::SubmitBuildJob: return "submitBuildJob";
+    case ApiOperation::ProjectInfo:
+        return "projectInfo";
+    case ApiOperation::SubmitRenderJob:
+        return "submitRenderJob";
+    case ApiOperation::SubmitProjectCheckJob:
+        return "submitProjectCheckJob";
+    case ApiOperation::SubmitProjectPackJob:
+        return "submitProjectPackJob";
     case ApiOperation::ListJobs: return "listJobs";
     case ApiOperation::ClearFinishedJobs: return "clearFinishedJobs";
     case ApiOperation::GetJobEvents:
@@ -462,105 +488,188 @@ bool apiContractStable()
 
 std::vector<ApiEndpointMetadata> apiEndpointMetadata()
 {
-    const std::initializer_list<const char *> mosaicFields =
-    {
-        "inputPath", "dbPath", "outputPath", "tileW", "tileH", "outW", "outH", "nativeTileW", "nativeTileH",
-        "candidates", "topNRandom", "neighborWindow", "upscale", "quality", "pngLevel", "lRange", "usePenalty",
-        "labWeight", "gridWeight", "tinyWeight", "edgeWeight", "lbpWeight", "neighborPenalty", "colorStrength",
-        "overlayStrength", "format", "writeMode", "useGpu", "tiled", "deepZoom", "colorAdjust", "adaptiveWeights",
-        "analyze", "benchmark", "generatePreview", "resourceMonitor"
-    };
+    const std::initializer_list<const char *> mosaicFields = {"inputPath",
+                                                              "dbPath",
+                                                              "outputPath",
+                                                              "tileW",
+                                                              "tileH",
+                                                              "outW",
+                                                              "outH",
+                                                              "nativeTileW",
+                                                              "nativeTileH",
+                                                              "candidates",
+                                                              "topNRandom",
+                                                              "neighborWindow",
+                                                              "upscale",
+                                                              "quality",
+                                                              "pngLevel",
+                                                              "lRange",
+                                                              "usePenalty",
+                                                              "labWeight",
+                                                              "gridWeight",
+                                                              "tinyWeight",
+                                                              "edgeWeight",
+                                                              "lbpWeight",
+                                                              "neighborPenalty",
+                                                              "colorStrength",
+                                                              "outputMode",
+                                                              "backend",
+                                                              "threads",
+                                                              "seed",
+                                                              "overwrite",
+                                                              "overlayStrength",
+                                                              "format",
+                                                              "writeMode",
+                                                              "useGpu",
+                                                              "tiled",
+                                                              "deepZoom",
+                                                              "colorAdjust",
+                                                              "adaptiveWeights",
+                                                              "analyze",
+                                                              "benchmark",
+                                                              "generatePreview",
+                                                              "resourceMonitor"};
     auto sample = endpoint("POST", "/api/mosaic/sample-size", "sample output using a completed preview", "preview",
                            ApiOperation::SubmitMosaicSample, ApiRequestShape::Body,
                            mosaicFields, {"inputPath", "previewId"}, true, true);
     sample.requestFields.push_back("previewId");
     sample.requestFields.push_back("previewEdits");
-    return {
-        endpoint("GET", "/api/endpoints", "structured API endpoint discovery", "discovery", ApiOperation::Endpoints,
-                 ApiRequestShape::None),
-        endpoint("GET", "/api/info", "service version and capability summary", "discovery", ApiOperation::Info,
-                 ApiRequestShape::None),
-        endpoint("GET", "/api/ping", "health check", "health", ApiOperation::Ping, ApiRequestShape::None),
-        endpoint("POST", "/api/mosaic", "run mosaic synchronously", "mosaic", ApiOperation::Mosaic,
-                 ApiRequestShape::Body, mosaicFields, {"inputPath"}, true, true),
-        endpoint("POST", "/api/mosaic/plan", "resolve the mosaic geometry and estimate resources", "mosaic",
-                 ApiOperation::PlanMosaic, ApiRequestShape::Body, mosaicFields, {"inputPath"}),
-        std::move(sample),
-        endpoint("POST", "/api/mosaic/coverage", "measure target and library color coverage", "mosaic",
-                 ApiOperation::MosaicCoverage, ApiRequestShape::Body, mosaicFields, {"inputPath"}),
-        endpoint("POST", "/api/db/catalog", "open an ordered library catalog", "database",
-                 ApiOperation::OpenCatalog, ApiRequestShape::Body, {"dbPath", "sort", "anchor"}, {"dbPath", "sort"}),
-        endpoint("GET", "/api/db/catalog/{id}", "read a catalog page", "database",
-                 ApiOperation::GetCatalog, ApiRequestShape::JobQuery, {"id", "offset"}, {"id"}),
-        endpoint("GET", "/api/db/catalog/{id}/image/{asset}", "read a catalog thumbnail", "database",
-                 ApiOperation::GetCatalogImage, ApiRequestShape::JobArtifact, {"id", "asset"}, {"id", "asset"}),
-        endpoint("POST", "/api/mosaic/preview/pin", "pin a completed preview in an A/B slot", "preview",
-                 ApiOperation::PinComparison, ApiRequestShape::Body, {"slot", "previewId"}, {"slot", "previewId"}, true),
-        endpoint("POST", "/api/mosaic/preview/compare", "compare two aligned previews", "preview",
-                 ApiOperation::SubmitComparison, ApiRequestShape::Body, {"a", "b"}, {"a", "b"}, true, true),
-        endpoint("GET", "/api/history", "read local completed-task summaries", "jobs",
-                 ApiOperation::ListHistory, ApiRequestShape::None),
-        endpoint("DELETE", "/api/history", "clear the local task summaries", "jobs",
-                 ApiOperation::ClearHistory, ApiRequestShape::None, {}, {}, true),
-        endpoint("POST", "/api/mosaic/preview/quality", "inspect selected tiles and candidate features", "preview",
-                 ApiOperation::PreviewQuality, ApiRequestShape::Body, {"previewId", "positions", "explain"},
-                 {"previewId", "positions"}),
-        endpoint("POST", "/api/mosaic/preview", "queue the latest interactive selection", "preview",
-                 ApiOperation::SubmitPreview, ApiRequestShape::Body, {"request", "seed"}, {"request", "seed"},
-                 true, true),
-        endpoint("GET", "/api/mosaic/preview/{id}", "read interactive selection status and grid", "preview",
-                 ApiOperation::GetPreview, ApiRequestShape::JobId, {"id"}, {"id"}),
-        endpoint("DELETE", "/api/mosaic/preview/{id}", "cancel or release interactive selection", "preview",
-                 ApiOperation::ClosePreview, ApiRequestShape::JobId, {"id"}, {"id"}, true),
-        endpoint("GET", "/api/mosaic/preview/{id}/image/{asset}", "read a library thumbnail or target reference",
-                 "preview", ApiOperation::GetPreviewImage, ApiRequestShape::JobArtifact, {"id", "asset"},
-                 {"id", "asset"}),
-        endpoint("GET", "/api/mosaic/preview/{id}/recommendations", "read the highest-ranked images for one tile",
-                 "preview", ApiOperation::GetPreviewRecommendations, ApiRequestShape::JobQuery,
-                 {"id", "position"}, {"id", "position"}),
-        endpoint("GET", "/api/mosaic/preview/{id}/library", "browse the preview library by name or ID", "preview",
-                 ApiOperation::BrowsePreviewLibrary, ApiRequestShape::JobQuery, {"id", "q", "offset"}, {"id"}),
-        endpoint("POST", "/api/jobs/mosaic", "start mosaic job", "jobs", ApiOperation::SubmitMosaicJob,
-                 ApiRequestShape::Body,
-                 {"inputPath",  "dbPath",         "outputPath",      "tileW",         "tileH",
-                  "outW",       "outH",           "nativeTileW",     "nativeTileH",   "candidates",
-                  "topNRandom", "neighborWindow", "upscale",         "quality",       "pngLevel",
-                  "lRange",     "usePenalty",     "labWeight",       "gridWeight",    "tinyWeight",
-                  "edgeWeight", "lbpWeight",      "neighborPenalty", "colorStrength", "overlayStrength",
-                  "format",     "writeMode",            "useGpu",        "tiled",
-                  "deepZoom",   "colorAdjust",    "adaptiveWeights", "analyze",       "benchmark",
-                  "generatePreview", "previewId", "previewEdits", "resourceMonitor"},
-                 {"inputPath"}, true, true),
-        endpoint("POST", "/api/jobs/build", "start library build job", "jobs", ApiOperation::SubmitBuildJob,
-                 ApiRequestShape::Body,
-                 {"inputDir", "outputDir", "dbPath", "threads",  "normalizeWidth", "normalizeHeight",
-                  "appendMode", "recursive", "normalizeOnly", "forceMode", "resourceMonitor"},
-                 {"inputDir"}, true, true),
-        endpoint("GET", "/api/jobs", "list jobs", "jobs", ApiOperation::ListJobs, ApiRequestShape::None),
-        endpoint("DELETE", "/api/jobs", "clear finished jobs", "jobs", ApiOperation::ClearFinishedJobs,
-                 ApiRequestShape::None, {}, {}, true),
-        endpoint("GET", "/api/jobs/{id}/events", "read bounded incremental diagnostics", "jobs",
-                 ApiOperation::GetJobEvents, ApiRequestShape::JobQuery, {"id", "after", "limit"}, {"id"}),
-        endpoint("GET", "/api/jobs/{id}/artifacts/{artifactId}", "read a registered closed artifact", "jobs",
-                 ApiOperation::GetJobArtifact, ApiRequestShape::JobArtifact, {"id", "artifactId"},
-                 {"id", "artifactId"}),
-        endpoint("GET", "/api/jobs/{id}", "get job status", "jobs", ApiOperation::GetJob, ApiRequestShape::JobId,
-                 {"id"}, {"id"}),
-        endpoint("DELETE", "/api/jobs/{id}", "cancel queued job", "jobs", ApiOperation::CancelJob,
-                 ApiRequestShape::JobId, {"id"}, {"id"}, true),
-        endpoint("GET|POST", "/api/db/stats", "database statistics", "database", ApiOperation::DatabaseStats,
-                 ApiRequestShape::Query, {"dbPath"}),
-        endpoint("GET|POST", "/api/db/health", "database health report", "database", ApiOperation::DatabaseHealth,
-                 ApiRequestShape::Query, {"dbPath"}),
-        endpoint("GET|POST", "/api/db/usage", "database usage report", "database", ApiOperation::DatabaseUsage,
-                 ApiRequestShape::Query, {"dbPath", "limit", "showUnused"}),
-        endpoint("POST", "/api/db/usage/export", "export used images", "database", ApiOperation::DatabaseUsageExport,
-                 ApiRequestShape::Query, {"dbPath", "outputDir", "confirm"}, {"outputDir", "confirm"}, true),
-        endpoint("POST", "/api/db/purge", "preview or purge orphan records", "database", ApiOperation::DatabasePurge,
-                 ApiRequestShape::Query, {"dbPath", "dryRun", "confirm"}, {}, true),
-        endpoint("GET|POST", "/api/inspect", "inspect a source image", "inspect", ApiOperation::Inspect,
-                 ApiRequestShape::Query, {"imagePath", "dbPath"}, {"imagePath"})
-    };
+    return {endpoint("POST", "/api/project/info", "read portable project metadata", "project",
+                     ApiOperation::ProjectInfo, ApiRequestShape::Body, {"projectPath"}, {"projectPath"}),
+            endpoint("POST", "/api/jobs/render", "render a project without matching", "jobs",
+                     ApiOperation::SubmitRenderJob, ApiRequestShape::Body,
+                     {"projectPath", "outputPath", "outputMode", "format", "nativeTileW", "nativeTileH", "quality",
+                      "pngLevel", "writeMode", "generatePreview", "overlayStrength", "brightnessJitter", "seed",
+                      "threads", "benchmark", "overwrite", "resourceMonitor"},
+                     {"projectPath", "outputPath"}, true, true),
+            endpoint("POST", "/api/jobs/project-check", "verify portable project integrity", "jobs",
+                     ApiOperation::SubmitProjectCheckJob, ApiRequestShape::Body, {"projectPath", "deep"},
+                     {"projectPath"}, false, true),
+            endpoint("POST", "/api/jobs/project-pack", "stream a complete ZIP64 project archive", "jobs",
+                     ApiOperation::SubmitProjectPackJob, ApiRequestShape::Body,
+                     {"projectPath", "outputPath", "overwrite", "deep"}, {"projectPath", "outputPath"}, true, true),
+            endpoint("GET", "/api/endpoints", "structured API endpoint discovery", "discovery", ApiOperation::Endpoints,
+                     ApiRequestShape::None),
+            endpoint("GET", "/api/info", "service version and capability summary", "discovery", ApiOperation::Info,
+                     ApiRequestShape::None),
+            endpoint("GET", "/api/ping", "health check", "health", ApiOperation::Ping, ApiRequestShape::None),
+            endpoint("POST", "/api/mosaic", "run mosaic synchronously", "mosaic", ApiOperation::Mosaic,
+                     ApiRequestShape::Body, mosaicFields, {"inputPath"}, true, true),
+            endpoint("POST", "/api/mosaic/plan", "resolve the mosaic geometry and estimate resources", "mosaic",
+                     ApiOperation::PlanMosaic, ApiRequestShape::Body, mosaicFields, {"inputPath"}),
+            std::move(sample),
+            endpoint("POST", "/api/mosaic/coverage", "measure target and library color coverage", "mosaic",
+                     ApiOperation::MosaicCoverage, ApiRequestShape::Body, mosaicFields, {"inputPath"}),
+            endpoint("POST", "/api/db/catalog", "open an ordered library catalog", "database",
+                     ApiOperation::OpenCatalog, ApiRequestShape::Body, {"dbPath", "sort", "anchor"},
+                     {"dbPath", "sort"}),
+            endpoint("GET", "/api/db/catalog/{id}", "read a catalog page", "database", ApiOperation::GetCatalog,
+                     ApiRequestShape::JobQuery, {"id", "offset"}, {"id"}),
+            endpoint("GET", "/api/db/catalog/{id}/image/{asset}", "read a catalog thumbnail", "database",
+                     ApiOperation::GetCatalogImage, ApiRequestShape::JobArtifact, {"id", "asset"}, {"id", "asset"}),
+            endpoint("POST", "/api/mosaic/preview/pin", "pin a completed preview in an A/B slot", "preview",
+                     ApiOperation::PinComparison, ApiRequestShape::Body, {"slot", "previewId"}, {"slot", "previewId"},
+                     true),
+            endpoint("POST", "/api/mosaic/preview/compare", "compare two aligned previews", "preview",
+                     ApiOperation::SubmitComparison, ApiRequestShape::Body, {"a", "b"}, {"a", "b"}, true, true),
+            endpoint("GET", "/api/history", "read local completed-task summaries", "jobs", ApiOperation::ListHistory,
+                     ApiRequestShape::None),
+            endpoint("DELETE", "/api/history", "clear the local task summaries", "jobs", ApiOperation::ClearHistory,
+                     ApiRequestShape::None, {}, {}, true),
+            endpoint("POST", "/api/mosaic/preview/quality", "inspect selected tiles and candidate features", "preview",
+                     ApiOperation::PreviewQuality, ApiRequestShape::Body, {"previewId", "positions", "explain"},
+                     {"previewId", "positions"}),
+            endpoint("POST", "/api/mosaic/preview", "queue the latest interactive selection", "preview",
+                     ApiOperation::SubmitPreview, ApiRequestShape::Body, {"request", "seed"}, {"request", "seed"}, true,
+                     true),
+            endpoint("GET", "/api/mosaic/preview/{id}", "read interactive selection status and grid", "preview",
+                     ApiOperation::GetPreview, ApiRequestShape::JobId, {"id"}, {"id"}),
+            endpoint("DELETE", "/api/mosaic/preview/{id}", "cancel or release interactive selection", "preview",
+                     ApiOperation::ClosePreview, ApiRequestShape::JobId, {"id"}, {"id"}, true),
+            endpoint("GET", "/api/mosaic/preview/{id}/image/{asset}", "read a library thumbnail or target reference",
+                     "preview", ApiOperation::GetPreviewImage, ApiRequestShape::JobArtifact, {"id", "asset"},
+                     {"id", "asset"}),
+            endpoint("GET", "/api/mosaic/preview/{id}/recommendations", "read the highest-ranked images for one tile",
+                     "preview", ApiOperation::GetPreviewRecommendations, ApiRequestShape::JobQuery, {"id", "position"},
+                     {"id", "position"}),
+            endpoint("GET", "/api/mosaic/preview/{id}/library", "browse the preview library by name or ID", "preview",
+                     ApiOperation::BrowsePreviewLibrary, ApiRequestShape::JobQuery, {"id", "q", "offset"}, {"id"}),
+            endpoint("POST", "/api/jobs/mosaic", "start mosaic job", "jobs", ApiOperation::SubmitMosaicJob,
+                     ApiRequestShape::Body,
+                     {"inputPath",
+                      "dbPath",
+                      "outputPath",
+                      "tileW",
+                      "tileH",
+                      "outW",
+                      "outH",
+                      "nativeTileW",
+                      "nativeTileH",
+                      "candidates",
+                      "topNRandom",
+                      "neighborWindow",
+                      "upscale",
+                      "quality",
+                      "pngLevel",
+                      "lRange",
+                      "usePenalty",
+                      "labWeight",
+                      "gridWeight",
+                      "tinyWeight",
+                      "edgeWeight",
+                      "lbpWeight",
+                      "neighborPenalty",
+                      "colorStrength",
+                      "overlayStrength",
+                      "format",
+                      "writeMode",
+                      "useGpu",
+                      "tiled",
+                      "deepZoom",
+                      "colorAdjust",
+                      "adaptiveWeights",
+                      "analyze",
+                      "benchmark",
+                      "generatePreview",
+                      "previewId",
+                      "previewEdits",
+                      "resourceMonitor",
+                      "outputMode",
+                      "backend",
+                      "threads",
+                      "seed",
+                      "overwrite"},
+                     {"inputPath"}, true, true),
+            endpoint("POST", "/api/jobs/build", "start library build job", "jobs", ApiOperation::SubmitBuildJob,
+                     ApiRequestShape::Body,
+                     {"inputDir", "outputDir", "dbPath", "threads", "normalizeWidth", "normalizeHeight", "appendMode",
+                      "recursive", "normalizeOnly", "forceMode", "resourceMonitor", "backend"},
+                     {"inputDir"}, true, true),
+            endpoint("GET", "/api/jobs", "list jobs", "jobs", ApiOperation::ListJobs, ApiRequestShape::None),
+            endpoint("DELETE", "/api/jobs", "clear finished jobs", "jobs", ApiOperation::ClearFinishedJobs,
+                     ApiRequestShape::None, {}, {}, true),
+            endpoint("GET", "/api/jobs/{id}/events", "read bounded incremental diagnostics", "jobs",
+                     ApiOperation::GetJobEvents, ApiRequestShape::JobQuery, {"id", "after", "limit"}, {"id"}),
+            endpoint("GET", "/api/jobs/{id}/artifacts/{artifactId}", "read a registered closed artifact", "jobs",
+                     ApiOperation::GetJobArtifact, ApiRequestShape::JobArtifact, {"id", "artifactId"},
+                     {"id", "artifactId"}),
+            endpoint("GET", "/api/jobs/{id}", "get job status", "jobs", ApiOperation::GetJob, ApiRequestShape::JobId,
+                     {"id"}, {"id"}),
+            endpoint("DELETE", "/api/jobs/{id}", "cancel queued job", "jobs", ApiOperation::CancelJob,
+                     ApiRequestShape::JobId, {"id"}, {"id"}, true),
+            endpoint("GET|POST", "/api/db/stats", "database statistics", "database", ApiOperation::DatabaseStats,
+                     ApiRequestShape::Query, {"dbPath", "deep"}),
+            endpoint("GET|POST", "/api/db/health", "database health report", "database", ApiOperation::DatabaseHealth,
+                     ApiRequestShape::Query, {"dbPath", "deep"}),
+            endpoint("GET|POST", "/api/db/usage", "database usage report", "database", ApiOperation::DatabaseUsage,
+                     ApiRequestShape::Query, {"dbPath", "limit", "showUnused", "sort"}),
+            endpoint("POST", "/api/db/usage/export", "export used images", "database",
+                     ApiOperation::DatabaseUsageExport, ApiRequestShape::Query,
+                     {"dbPath", "outputDir", "confirm", "selection"}, {"outputDir", "confirm"}, true),
+            endpoint("POST", "/api/db/purge", "preview or purge orphan records", "database",
+                     ApiOperation::DatabasePurge, ApiRequestShape::Query, {"dbPath", "dryRun", "confirm"}, {}, true),
+            endpoint("GET|POST", "/api/inspect", "inspect a source image", "inspect", ApiOperation::Inspect,
+                     ApiRequestShape::Query, {"imagePath", "dbPath"}, {"imagePath"})};
 }
 
 std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpointMetadata>& endpoints)
@@ -682,9 +791,15 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
 
 std::vector<std::string> apiFeatureList()
 {
-    return {"preview-comparison", "task-history", "task-resources", "preview-quality", "library-visuals", "mosaic-plan", "mosaic-size-sample", "mosaic-jobs", "build-jobs", "job-management", "job-diagnostics",
-            "job-progress",   "job-artifacts",   "result-preview", "interactive-preview", "preview-editing", "inspect",
-            "database-stats", "database-health", "database-usage", "database-maintenance", "output-format-policy"};
+    return {"preview-comparison",   "task-history",     "task-resources",
+            "preview-quality",      "library-visuals",  "mosaic-plan",
+            "mosaic-size-sample",   "mosaic-jobs",      "build-jobs",
+            "job-management",       "job-diagnostics",  "job-progress",
+            "job-artifacts",        "result-preview",   "interactive-preview",
+            "preview-editing",      "inspect",          "database-stats",
+            "database-health",      "database-usage",   "database-maintenance",
+            "output-format-policy", "portable-project", "project-render",
+            "project-check",        "project-pack"};
 }
 
 std::vector<ApiEntryPointMetadata> apiEntryPointMetadata()
