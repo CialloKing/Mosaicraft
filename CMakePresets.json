@@ -1,17 +1,24 @@
 {
-  "version": 6,
+  "version": 3,
   "cmakeMinimumRequired": {
-    "major": 4,
-    "minor": 2,
+    "major": 3,
+    "minor": 21,
     "patch": 0
   },
   "configurePresets": [
     {
-      "name": "dependencies",
+      "name": "release-build",
       "hidden": true,
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "windows-dependencies",
+      "inherits": "release-build",
+      "hidden": true,
+      "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_INSTALLED_DIR": "${sourceDir}/build/dependencies",
         "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets",
@@ -20,7 +27,7 @@
     },
     {
       "name": "windows-cpu",
-      "inherits": "dependencies",
+      "inherits": "windows-dependencies",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -44,7 +51,7 @@
     },
     {
       "name": "linux-cpu",
-      "inherits": "dependencies",
+      "inherits": "release-build",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -52,8 +59,6 @@
       },
       "generator": "Ninja",
       "cacheVariables": {
-        "VCPKG_TARGET_TRIPLET": "x64-linux-release",
-        "VCPKG_HOST_TRIPLET": "x64-linux-release",
         "MOSAICRAFT_CUDA": "OFF"
       }
     },
@@ -66,8 +71,8 @@
       }
     },
     {
-      "name": "macos-arm64-cpu",
-      "inherits": "dependencies",
+      "name": "macos-cpu",
+      "inherits": "release-build",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -75,9 +80,13 @@
       },
       "generator": "Ninja",
       "cacheVariables": {
-        "VCPKG_TARGET_TRIPLET": "arm64-osx-release",
-        "VCPKG_HOST_TRIPLET": "arm64-osx-release",
-        "MOSAICRAFT_CUDA": "OFF",
+        "MOSAICRAFT_CUDA": "OFF"
+      }
+    },
+    {
+      "name": "macos-arm64-cpu",
+      "inherits": "macos-cpu",
+      "cacheVariables": {
         "CMAKE_OSX_ARCHITECTURES": "arm64",
         "CMAKE_OSX_DEPLOYMENT_TARGET": "13.0"
       }
@@ -116,6 +125,11 @@
     {
       "name": "linux-cuda",
       "configurePreset": "linux-cuda",
+      "configuration": "Release"
+    },
+    {
+      "name": "macos-cpu",
+      "configurePreset": "macos-cpu",
       "configuration": "Release"
     },
     {
@@ -162,6 +176,14 @@
     {
       "name": "linux-cuda",
       "configurePreset": "linux-cuda",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-cpu",
+      "configurePreset": "macos-cpu",
       "configuration": "Release",
       "output": {
         "outputOnFailure": true

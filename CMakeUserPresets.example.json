@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 3,
   "configurePresets": [
     {
       "name": "my-windows-cpu",
@@ -15,9 +15,9 @@
       }
     },
     {
-      "name": "my-linux-cpu",
-      "inherits": "linux-cpu",
-      "environment": { "VCPKG_ROOT": "<your-vcpkg-root>" }
+      "name": "my-linux-cuda",
+      "inherits": "linux-cuda",
+      "environment": { "CUDAToolkit_ROOT": "<your-cuda-toolkit-root>" }
     }
   ]
 }

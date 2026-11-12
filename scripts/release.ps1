@@ -549,9 +549,12 @@ try {
     if (-not $SkipConfigure) {
         Invoke-Step "Configure" {
             # Source and release builds share presets; explicit overrides take precedence.
-            $configureArgs = @('--preset', $configurePreset, '-S', $RepoRoot, '-B', $buildPath)
+            $configureArgs = @('--preset', $configurePreset, '-S', $RepoRoot, '-B', $buildPath, '-DMOSAICRAFT_BUNDLE_RUNTIME=ON')
             if ($ToolchainFile) {
                 $configureArgs += "-DCMAKE_TOOLCHAIN_FILE=$ToolchainFile"
+                if ($env:VCPKG_OVERLAY_TRIPLETS) {
+                    $configureArgs += "-DVCPKG_OVERLAY_TRIPLETS=$env:VCPKG_OVERLAY_TRIPLETS"
+                }
             }
             if (-not $NoCuda -and $env:CUDAToolkit_ROOT) { $configureArgs += "-DCUDAToolkit_ROOT=$env:CUDAToolkit_ROOT" }
             if ($env:VCPKG_DEFAULT_TRIPLET)

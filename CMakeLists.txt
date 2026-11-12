@@ -29,7 +29,7 @@ configure_file(tools/command-builder/index.html generated/index.html @ONLY)
 # C++17
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-if(APPLE)
+if(APPLE AND VCPKG_TARGET_TRIPLET)
     # Match the pinned codec headers rather than the runner's Homebrew headers.
     set(CMAKE_NO_SYSTEM_FROM_IMPORTED ON)
 endif()
@@ -44,10 +44,19 @@ if (MSVC)
     add_compile_options("/utf-8")
 endif()
 
-# --- 跨平台依赖 ---
-# Windows (vcpkg): unofficial-sqlite3 + nvcc.exe + MSVC 编译选项
-# Linux (apt):    系统 SQLite3 + nvcc + GCC/Clang 编译选项
-find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
+# Homebrew 的 OpenCV 4 是版本化公式，默认不链接到 Homebrew 的公共前缀。
+if(APPLE AND NOT CMAKE_TOOLCHAIN_FILE AND NOT OpenCV_DIR)
+    find_program(MOSAICRAFT_BREW brew)
+    if(MOSAICRAFT_BREW)
+        execute_process(COMMAND "${MOSAICRAFT_BREW}" --prefix opencv@4
+            RESULT_VARIABLE _brew_result OUTPUT_VARIABLE _opencv_brew_prefix
+            OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+        if(NOT _brew_result EQUAL 0)
+            unset(_opencv_brew_prefix)
+        endif()
+    endif()
+endif()
+find_package(OpenCV 4 REQUIRED CONFIG COMPONENTS core imgproc imgcodecs HINTS "${_opencv_brew_prefix}")
 # sqlite3：优先 vcpkg (unofficial-sqlite3)，回退到系统包 (SQLite3)
 find_package(unofficial-sqlite3 CONFIG QUIET)
 if(NOT unofficial-sqlite3_FOUND)
@@ -56,10 +65,11 @@ endif()
 find_package(TIFF REQUIRED)
 find_package(PNG REQUIRED)
 find_package(JPEG REQUIRED)
+find_package(Threads REQUIRED)
 # ============================================================
 # CUDA 选项
 # ============================================================
-option(MOSAICRAFT_CUDA "Enable CUDA GPU acceleration (requires NVIDIA GPU + CUDA Toolkit)" ON)
+option(MOSAICRAFT_CUDA "Enable CUDA GPU acceleration (requires NVIDIA GPU + CUDA Toolkit)" "${WIN32}")
 
 if (MOSAICRAFT_CUDA)
     include(cmake/CudaToolkit.cmake)
@@ -96,18 +106,15 @@ else()
     set(CUDA_OBJ_EXT ".o")
 endif()
 
-# vcpkg include 路径，供 nvcc 使用（nvcc 不经过 target_include_directories）
-if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
-    set(VCPKG_TRIPLET_INCLUDE "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include")
-else()
-    message(WARNING "vcpkg toolchain not detected; nvcc may miss third-party headers")
-    set(VCPKG_TRIPLET_INCLUDE "")
-endif()
-
 # ============================================================
 # 手动编译 CUDA 源文件
 # ============================================================
 if (MOSAICRAFT_CUDA)
+# 手动调用 nvcc 不会继承 CMake 目标的头文件路径，直接复用找到的 OpenCV。
+set(NVCC_INCLUDE_FLAGS "")
+foreach(_include IN LISTS OpenCV_INCLUDE_DIRS)
+    list(APPEND NVCC_INCLUDE_FLAGS "-I${_include}")
+endforeach()
 set(CUDA_OBJ1 "${CMAKE_BINARY_DIR}/CudaBackend${CUDA_OBJ_EXT}")
 set(CUDA_OBJ2 "${CMAKE_BINARY_DIR}/FeatureExtractorCuda${CUDA_OBJ_EXT}")
 set(CUDA_OBJ3 "${CMAKE_BINARY_DIR}/CompatibleFeatures${CUDA_OBJ_EXT}")
@@ -115,15 +122,13 @@ set(CUDA_OBJ4 "${CMAKE_BINARY_DIR}/CompatibleScoring${CUDA_OBJ_EXT}")
 
 add_custom_command(
     OUTPUT ${CUDA_OBJ1}
-    COMMAND "${CUDAToolkit_BIN_DIR}/nvcc${CMAKE_EXECUTABLE_SUFFIX}"
+    COMMAND "${CUDAToolkit_NVCC_EXECUTABLE}"
         -c "${CMAKE_SOURCE_DIR}/compute/CudaBackend.cu"
         -o "${CUDA_OBJ1}"
         ${CUDA_CODE_FLAGS} -std=c++17
         -ccbin "${CMAKE_CXX_COMPILER}"
         -I"${CMAKE_SOURCE_DIR}" -I"${CMAKE_BINARY_DIR}/generated"
-        -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
-        -I"${VCPKG_TRIPLET_INCLUDE}"
-        -I"${TIFF_INCLUDE_DIR}"
+        ${NVCC_INCLUDE_FLAGS}
         ${NVCC_EXTRA_FLAGS}
     VERBATIM
     DEPENDS "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.cu" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh" "${CMAKE_SOURCE_DIR}/compute/CudaPreflight.cuh"
@@ -132,15 +137,13 @@ add_custom_command(
 
 add_custom_command(
     OUTPUT ${CUDA_OBJ2}
-    COMMAND "${CUDAToolkit_BIN_DIR}/nvcc${CMAKE_EXECUTABLE_SUFFIX}"
+    COMMAND "${CUDAToolkit_NVCC_EXECUTABLE}"
         -c "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu"
         -o "${CUDA_OBJ2}"
         ${CUDA_CODE_FLAGS} -std=c++17
         -ccbin "${CMAKE_CXX_COMPILER}"
         -I"${CMAKE_SOURCE_DIR}" -I"${CMAKE_BINARY_DIR}/generated"
-        -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
-        -I"${VCPKG_TRIPLET_INCLUDE}"
-        -I"${TIFF_INCLUDE_DIR}"
+        ${NVCC_INCLUDE_FLAGS}
         ${NVCC_EXTRA_FLAGS}
     VERBATIM
     DEPENDS "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu" "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.h" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh" "${CMAKE_SOURCE_DIR}/compute/CudaPreflight.cuh"
@@ -152,15 +155,13 @@ add_custom_command(
 
 add_custom_command(
     OUTPUT ${CUDA_OBJ3}
-    COMMAND "${CUDAToolkit_BIN_DIR}/nvcc${CMAKE_EXECUTABLE_SUFFIX}"
+    COMMAND "${CUDAToolkit_NVCC_EXECUTABLE}"
         -c "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.cu"
         -o "${CUDA_OBJ3}"
         ${CUDA_CODE_FLAGS} -std=c++17
         -ccbin "${CMAKE_CXX_COMPILER}"
         -I"${CMAKE_SOURCE_DIR}" -I"${CMAKE_BINARY_DIR}/generated"
-        -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
-        -I"${VCPKG_TRIPLET_INCLUDE}"
-        -I"${TIFF_INCLUDE_DIR}"
+        ${NVCC_INCLUDE_FLAGS}
         ${NVCC_EXTRA_FLAGS}
     VERBATIM
     DEPENDS "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.cu" "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.h"
@@ -172,14 +173,13 @@ add_custom_command(
 # 只约束新评分内核；原模板的编译选项与算术保持不变。
 add_custom_command(
     OUTPUT ${CUDA_OBJ4}
-    COMMAND "${CUDAToolkit_BIN_DIR}/nvcc${CMAKE_EXECUTABLE_SUFFIX}"
+    COMMAND "${CUDAToolkit_NVCC_EXECUTABLE}"
         -c "${CMAKE_SOURCE_DIR}/compute/CompatibleScoring.cu"
         -o "${CUDA_OBJ4}"
         ${CUDA_CODE_FLAGS} -std=c++17 --fmad=false --prec-div=true --prec-sqrt=true --ftz=false
         -ccbin "${CMAKE_CXX_COMPILER}"
         -I"${CMAKE_SOURCE_DIR}" -I"${CMAKE_BINARY_DIR}/generated"
-        -I"${VCPKG_TRIPLET_INCLUDE}/opencv4"
-        -I"${VCPKG_TRIPLET_INCLUDE}"
+        ${NVCC_INCLUDE_FLAGS}
         ${NVCC_EXTRA_FLAGS}
     VERBATIM
     DEPENDS "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/CompatibleScoring.cu" "${CMAKE_SOURCE_DIR}/compute/CompatibleScoring.h"
@@ -246,6 +246,7 @@ target_link_libraries(mosaicraft_core PUBLIC
     ${TIFF_LIBRARIES}
     PNG::PNG
     JPEG::JPEG
+    Threads::Threads
 )
 if (WIN32)
     target_link_libraries(mosaicraft_core PRIVATE Psapi)
