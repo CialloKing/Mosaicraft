@@ -19,7 +19,7 @@
     if (!frame) frame = requestAnimationFrame(paint);
   }
   function pump() {
-    // 视口尚未更新时，不从上一帧的可见队列继续加载。
+    // 可视窗口尚未更新时，不从上一帧的可见队列继续加载。
     if (repaint || !MosaicraftViewport.clip(canvas)) return;
     while (loading.size < MosaicraftViewport.parallelLoads && next < queue.length) {
       const key = queue[next++];
