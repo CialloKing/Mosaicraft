@@ -36,8 +36,10 @@ struct PreviewComparison
 {
     uint64_t compared = 0, changed = 0, matchedA = 0, matchedB = 0, uniqueA = 0, uniqueB = 0;
     double meanA = 0, meanB = 0, p90A = 0, p90B = 0;
+    int mapColumns = 0, mapRows = 0;
+    std::vector<unsigned char> imageA, imageB, changedMap;
 };
 
 ServiceResult comparePreview(const MosaicRequest &request, const MosaicSelection &a, const MosaicSelection &b,
-                             PreviewComparison &result);
+                             const std::atomic_bool &canceled, PreviewComparison &result);
 } // namespace mosaicraft

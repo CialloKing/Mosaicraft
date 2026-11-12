@@ -135,6 +135,12 @@ nlohmann::json runtimeSnapshotToJson(const RuntimeSnapshot &value)
         }
         result["runtime"]["resources"] = {{"samples", std::move(samples)}, {"summary", std::move(summary)}};
     }
+    if (value.quality)
+    {
+        const auto &quality = *value.quality;
+        result["runtime"]["quality"] = {{"scored", quality.scored}, {"mean", quality.mean}, {"median", quality.median},
+                                        {"p90", quality.p90}, {"p99", quality.p99}};
+    }
     return result;
 }
 

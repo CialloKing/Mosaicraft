@@ -254,6 +254,13 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 .catalog-grid img { width: 100%; height: 90px; object-fit: contain; display: block; }
 .task-metric-plot { display: block; width: 100%; height: 4rem; background: var(--bg); color: var(--accent); }
 .task-metric-row { display: grid; grid-template-columns: minmax(6rem,1fr) minmax(2rem,2fr) auto; gap: 8px; align-items: center; }
+.ab-overviews { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.ab-overviews figure { margin: 0; }
+.ab-image { position: relative; max-width: 768px; }
+.ab-image img { display: block; width: 100%; }
+.ab-image .ab-layer { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
+.comparison-data { width: 100%; table-layout: fixed; overflow-wrap: anywhere; }
+.comparison-data th, .comparison-data td { text-align: left; }
 [hidden] { display: none !important; }
 .saved-main { color: var(--success); margin-bottom: 10px; }
 .help-page { font-size: .88rem; line-height: 1.8; }
@@ -445,6 +452,17 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <p class="hint" id="live-preview-insights-status" role="status"></p>
       <details id="live-preview-frequency" hidden><summary>本次素材使用</summary><p class="hint"></p><div class="preview-toolbar"></div></details>
       <section id="live-preview-tile-inspection" class="db-result" aria-live="polite" hidden></section>
+      <details id="preview-comparison" class="db-result" hidden>
+        <summary>参数 A/B 对比</summary>
+        <div class="preview-toolbar">
+          <button type="button" class="btn btn-secondary" id="ab-pin-a" disabled>保存为 A</button>
+          <button type="button" class="btn btn-secondary" id="ab-pin-b" disabled>保存为 B</button>
+          <button type="button" class="btn btn-secondary" id="ab-run" disabled>比较 A 与 B</button>
+          <button type="button" class="btn btn-secondary" id="ab-cancel" hidden>取消比较</button>
+          <button type="button" class="btn btn-secondary" id="ab-clear">清空快照</button>
+        </div>
+        <p class="hint" id="ab-status" role="status"></p><div id="ab-result"></div>
+      </details>
     </section>
     <section class="card preview-picker" id="live-preview-picker" aria-labelledby="live-preview-picker-heading" hidden>
       <h3 id="live-preview-picker-heading">替换素材</h3>
@@ -770,6 +788,24 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <button class="btn btn-secondary" id="btn-clear-jobs" onclick="clearFinishedJobs()" style="display:none">清理完成任务记录</button>
   </div>
   <div class="task-layout"><div id="task-list"></div><div><div id="task-detail"></div><div id="task-analysis"></div></div></div>
+  <details id="task-history" class="db-result" hidden>
+    <summary>本地任务历史</summary>
+    <div class="preview-toolbar">
+      <label>类型 <select id="history-type"><option value="">全部</option><option value="mosaic">马赛克</option><option value="build">建库</option></select></label>
+      <label>状态 <select id="history-state"><option value="">全部</option><option value="succeeded">成功</option><option value="failed">失败</option><option value="canceled">已取消</option></select></label>
+      <button type="button" class="btn btn-secondary" id="history-refresh">刷新</button>
+      <button type="button" class="btn btn-secondary" id="history-clear">清除历史</button>
+    </div>
+    <div class="color-charts">
+      <label>任务 A <select id="history-a"></select></label>
+      <label>任务 B <select id="history-b"></select></label>
+    </div>
+    <div class="preview-toolbar">
+      <button type="button" class="btn btn-secondary" id="history-restore-a" disabled>恢复 A 参数</button>
+      <button type="button" class="btn btn-secondary" id="history-restore-b" disabled>恢复 B 参数</button>
+    </div>
+    <p id="history-status" class="hint" role="status"></p><div id="history-result"></div>
+  </details>
 </section>
 
 </main>
@@ -1860,6 +1896,7 @@ function renderTaskArea() {
     taskStore.rendered = html;
   }
   renderTaskAnalysis(job);
+  taskHistory.update();
 }
 function diagnosticDocument() {
   return { exportedAt: new Date().toISOString(), sessionId: taskStore.sessionId, service: serviceInfo,
@@ -1905,6 +1942,7 @@ function restoreRequestParameters(job) {
     document.getElementById('m-cpu').checked = request.useGpu === false;
   } else {
     document.getElementById('b-normsize').value = (request.normalizeWidth || 180) + 'x' + (request.normalizeHeight || 320);
+    document.getElementById('b-monitor').checked = !!request.resourceMonitor;
   }
   document.querySelector('.tab[data-cmd="' + job.type + '"]').click();
   if (typeof syncPreviewOption === 'function') syncPreviewOption();
@@ -2139,6 +2177,7 @@ document.addEventListener('click', event => {
 @taskResultAnalysisScript@
 @mosaicOutputPlanningScript@
 @libraryVisualsUiScript@
+@comparisonUiScript@
 
 // Restore form state before generating or submitting any request.
 initializeFormUi();

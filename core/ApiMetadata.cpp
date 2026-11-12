@@ -85,6 +85,10 @@ std::vector<std::string> endpointQueryKeys(ApiOperation operation)
     case ApiOperation::Info:
     case ApiOperation::Ping:
     case ApiOperation::Mosaic:
+    case ApiOperation::PinComparison:
+    case ApiOperation::SubmitComparison:
+    case ApiOperation::ListHistory:
+    case ApiOperation::ClearHistory:
     case ApiOperation::PreviewQuality:
     case ApiOperation::MosaicCoverage:
     case ApiOperation::OpenCatalog:
@@ -133,6 +137,7 @@ int endpointSuccessStatus(ApiOperation operation)
     switch (operation)
     {
     case ApiOperation::SubmitPreview:
+    case ApiOperation::SubmitComparison:
     case ApiOperation::SubmitMosaicSample:
     case ApiOperation::SubmitMosaicJob:
     case ApiOperation::SubmitBuildJob:
@@ -141,6 +146,9 @@ int endpointSuccessStatus(ApiOperation operation)
     case ApiOperation::Info:
     case ApiOperation::Ping:
     case ApiOperation::Mosaic:
+    case ApiOperation::PinComparison:
+    case ApiOperation::ListHistory:
+    case ApiOperation::ClearHistory:
     case ApiOperation::PreviewQuality:
     case ApiOperation::MosaicCoverage:
     case ApiOperation::OpenCatalog:
@@ -174,6 +182,7 @@ std::string endpointResponseKey(ApiOperation operation)
     switch (operation)
     {
     case ApiOperation::SubmitPreview:
+    case ApiOperation::SubmitComparison:
     case ApiOperation::SubmitMosaicSample:
     case ApiOperation::GetPreview:
         return "preview";
@@ -194,6 +203,9 @@ std::string endpointResponseKey(ApiOperation operation)
     case ApiOperation::PlanMosaic: return "plan";
     case ApiOperation::MosaicCoverage: return "coverage";
     case ApiOperation::PreviewQuality: return "quality";
+    case ApiOperation::PinComparison: return "";
+    case ApiOperation::ListHistory: return "history";
+    case ApiOperation::ClearHistory: return "removed";
     case ApiOperation::OpenCatalog:
     case ApiOperation::GetCatalog: return "catalog";
     case ApiOperation::GetCatalogImage: return "";
@@ -274,6 +286,8 @@ void populateEndpointErrors(ApiEndpointMetadata& info)
         break;
     case ApiOperation::SubmitMosaicJob:
     case ApiOperation::SubmitMosaicSample:
+    case ApiOperation::PinComparison:
+    case ApiOperation::SubmitComparison:
     case ApiOperation::PreviewQuality:
         addErrorContract(info, 400, "serviceResult");
         addErrorContract(info, 409, "serviceResult");
@@ -282,6 +296,8 @@ void populateEndpointErrors(ApiEndpointMetadata& info)
     case ApiOperation::Mosaic:
     case ApiOperation::MosaicCoverage:
     case ApiOperation::OpenCatalog:
+    case ApiOperation::ListHistory:
+    case ApiOperation::ClearHistory:
     case ApiOperation::PlanMosaic:
     case ApiOperation::SubmitBuildJob:
         addErrorContract(info, 400, "serviceResult");
@@ -374,6 +390,10 @@ const char* apiOperationName(ApiOperation operation)
     case ApiOperation::PlanMosaic: return "planMosaic";
     case ApiOperation::MosaicCoverage: return "mosaicCoverage";
     case ApiOperation::PreviewQuality: return "previewQuality";
+    case ApiOperation::PinComparison: return "pinComparison";
+    case ApiOperation::SubmitComparison: return "submitComparison";
+    case ApiOperation::ListHistory: return "listHistory";
+    case ApiOperation::ClearHistory: return "clearHistory";
     case ApiOperation::OpenCatalog: return "openCatalog";
     case ApiOperation::GetCatalog: return "getCatalog";
     case ApiOperation::GetCatalogImage: return "getCatalogImage";
@@ -474,6 +494,14 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata()
                  ApiOperation::GetCatalog, ApiRequestShape::JobQuery, {"id", "offset"}, {"id"}),
         endpoint("GET", "/api/db/catalog/{id}/image/{asset}", "read a catalog thumbnail", "database",
                  ApiOperation::GetCatalogImage, ApiRequestShape::JobArtifact, {"id", "asset"}, {"id", "asset"}),
+        endpoint("POST", "/api/mosaic/preview/pin", "pin a completed preview in an A/B slot", "preview",
+                 ApiOperation::PinComparison, ApiRequestShape::Body, {"slot", "previewId"}, {"slot", "previewId"}, true),
+        endpoint("POST", "/api/mosaic/preview/compare", "compare two aligned previews", "preview",
+                 ApiOperation::SubmitComparison, ApiRequestShape::Body, {"a", "b"}, {"a", "b"}, true, true),
+        endpoint("GET", "/api/history", "read local completed-task summaries", "jobs",
+                 ApiOperation::ListHistory, ApiRequestShape::None),
+        endpoint("DELETE", "/api/history", "clear the local task summaries", "jobs",
+                 ApiOperation::ClearHistory, ApiRequestShape::None, {}, {}, true),
         endpoint("POST", "/api/mosaic/preview/quality", "inspect selected tiles and candidate features", "preview",
                  ApiOperation::PreviewQuality, ApiRequestShape::Body, {"previewId", "positions", "explain"},
                  {"previewId", "positions"}),
@@ -654,7 +682,7 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
 
 std::vector<std::string> apiFeatureList()
 {
-    return {"task-resources", "preview-quality", "library-visuals", "mosaic-plan", "mosaic-size-sample", "mosaic-jobs", "build-jobs", "job-management", "job-diagnostics",
+    return {"preview-comparison", "task-history", "task-resources", "preview-quality", "library-visuals", "mosaic-plan", "mosaic-size-sample", "mosaic-jobs", "build-jobs", "job-management", "job-diagnostics",
             "job-progress",   "job-artifacts",   "result-preview", "interactive-preview", "preview-editing", "inspect",
             "database-stats", "database-health", "database-usage", "database-maintenance", "output-format-policy"};
 }

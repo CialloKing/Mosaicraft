@@ -377,7 +377,7 @@ int main(int argc, char* argv[])
     std::string htmlContent = readFile(htmlPath);
     std::mutex htmlMutex;
     std::mutex runMutex;
-    mosaicraft::JobManager jobManager;
+    mosaicraft::JobManager jobManager(true, true);
     const auto apiEndpoints = mosaicraft::apiEndpointMetadata();
     const auto endpointErrors = mosaicraft::validateApiEndpointMetadata(apiEndpoints);
     if (!endpointErrors.empty()) {

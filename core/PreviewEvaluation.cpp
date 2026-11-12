@@ -1,5 +1,6 @@
 #include "PreviewEvaluation.h"
 #include "LibraryAccess.h"
+#include "ImageCache.h"
 #include "MosaicPlanning.h"
 #include "MosaicSelection.h"
 #include "UnicodeIO.h"
@@ -205,6 +206,128 @@ ServiceResult evaluatePreview(const MosaicRequest &request, const MosaicSelectio
             }
         }
         scores.push_back(std::move(result));
+    }
+    return ServiceResult::success();
+}
+
+ServiceResult comparePreview(const MosaicRequest &request, const MosaicSelection &a, const MosaicSelection &b,
+                             const std::atomic_bool &canceled, PreviewComparison &result)
+{
+    const std::unique_lock<std::mutex> lock(evaluationMutex, std::try_to_lock);
+    const LibraryAccess library(a.dbPath, false);
+    if (!lock.owns_lock() || !library.acquired())
+    {
+        return ServiceResult::failure(1, "preview evaluation is busy", "library_busy");
+    }
+    if (!previewAssetsCurrent(a) || !previewAssetsCurrent(b))
+    {
+        return ServiceResult::failure(1, "comparison assets changed", "preview_stale");
+    }
+    if (auto status = prepareEvaluation(request, a); !status.ok)
+    {
+        return status;
+    }
+    const auto &config = request.config;
+    const MosaicEngine::Config fixed;
+    const cv::Size featureSize(a.featureWidth, a.featureHeight);
+    std::vector<float> scoresA, scoresB;
+    std::unordered_set<int> idsA, idsB;
+    result.mapColumns = std::min(64, a.columns);
+    result.mapRows = std::min(64, a.rows);
+    result.changedMap.assign(size_t(result.mapColumns) * result.mapRows, 0);
+    for (size_t position = 0; position < a.imageIds.size(); ++position)
+    {
+        if (canceled.load(std::memory_order_relaxed))
+        {
+            return ServiceResult::failure(1, "comparison canceled", "preview_canceled");
+        }
+        const int idA = a.imageIds[position], idB = b.imageIds[position];
+        if (idA > 0)
+        {
+            ++result.matchedA;
+            idsA.insert(idA);
+        }
+        if (idB > 0)
+        {
+            ++result.matchedB;
+            idsB.insert(idB);
+        }
+        if (idA != idB)
+        {
+            ++result.changed;
+            const auto x = position % a.columns * result.mapColumns / a.columns;
+            const auto y = position / a.columns * result.mapRows / a.rows;
+            result.changedMap[y * result.mapColumns + x] = 1;
+        }
+        if (idA <= 0 || idB <= 0)
+        {
+            continue;
+        }
+        const auto features = evaluation->features(position, a.columns, featureSize, config);
+        const auto scoreA = evaluation->score(features, idA, fixed);
+        const auto scoreB = idA == idB ? scoreA : evaluation->score(features, idB, fixed);
+        if (scoreA && scoreB)
+        {
+            scoresA.push_back(static_cast<float>(scoreA->score));
+            scoresB.push_back(static_cast<float>(scoreB->score));
+            result.meanA += scoreA->score;
+            result.meanB += scoreB->score;
+        }
+    }
+    result.compared = scoresA.size();
+    result.uniqueA = idsA.size();
+    result.uniqueB = idsB.size();
+    if (result.compared)
+    {
+        const auto p90 = [](std::vector<float> &values)
+        {
+            const auto index = values.size() * 9 / 10;
+            std::nth_element(values.begin(), values.begin() + index, values.end());
+            return values[index];
+        };
+        result.meanA /= result.compared;
+        result.meanB /= result.compared;
+        result.p90A = p90(scoresA);
+        result.p90B = p90(scoresB);
+    }
+
+    // 缩略对照每个分桶取中心素材，差异图层则统计该区域内的所有格子。
+    auto display = config;
+    orientOutputTile(display, a.featureWidth, a.featureHeight);
+    const double bucketWidth = double(display.nativeTileW) * a.columns / result.mapColumns;
+    const double bucketHeight = double(display.nativeTileH) * a.rows / result.mapRows;
+    const double scale = std::min(768.0 / (bucketWidth * result.mapColumns), 768.0 / (bucketHeight * result.mapRows));
+    const int width = std::max(1, int(bucketWidth * scale)), height = std::max(1, int(bucketHeight * scale));
+    ImageCache cache(32 * 1024 * 1024);
+    const auto overview = [&](const MosaicSelection &selection, std::vector<unsigned char> &jpeg)
+    {
+        cv::Mat image(result.mapRows * height, result.mapColumns * width, CV_8UC3, cv::Scalar());
+        for (int row = 0; row < result.mapRows; ++row)
+        {
+            const auto y = int64_t(row * 2 + 1) * selection.rows / (2 * result.mapRows);
+            for (int col = 0; col < result.mapColumns; ++col)
+            {
+                if (canceled.load(std::memory_order_relaxed))
+                {
+                    return false;
+                }
+                const auto x = int64_t(col * 2 + 1) * selection.columns / (2 * result.mapColumns);
+                const auto id = selection.imageIds[y * selection.columns + x];
+                const auto asset = selection.assets.find(id);
+                if (asset != selection.assets.end())
+                {
+                    if (auto tile = cache.getShared(id, asset->second.path, width, height))
+                    {
+                        tile->copyTo(image(cv::Rect(col * width, row * height, width, height)));
+                    }
+                }
+            }
+        }
+        return cv::imencode(".jpg", image, jpeg, {cv::IMWRITE_JPEG_QUALITY, 84});
+    };
+    if (!overview(a, result.imageA) || !overview(b, result.imageB))
+    {
+        return ServiceResult::failure(1, "comparison preview was not encoded", "preview_canceled");
     }
     return ServiceResult::success();
 }

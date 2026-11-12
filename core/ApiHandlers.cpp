@@ -4,6 +4,7 @@
 #include "MosaicPlanning.h"
 #include "LibraryVisuals.h"
 #include "PreviewEvaluation.h"
+#include "HistoryStore.h"
 #include "UnicodeIO.h"
 
 #include <opencv2/imgproc.hpp>
@@ -326,6 +327,17 @@ ApiResponse getPreview(const std::string &id, JobManager &jobs)
     {
         const auto &sample = *snapshot.fileSample;
         body["fileSample"] = {{"bytes", byteRangeJson(sample.bytes)}, {"regions", sample.regions}, {"pixels", sample.pixels}};
+    }
+    if (snapshot.comparison)
+    {
+        const auto &value = *snapshot.comparison;
+        const auto score = [&](double number) { return value.compared ? nlohmann::json(number) : nlohmann::json(nullptr); };
+        body["comparison"] = {{"compared", value.compared}, {"changed", value.changed},
+            {"a", {{"matched", value.matchedA}, {"unique", value.uniqueA}, {"mean", score(value.meanA)},
+                    {"p90", score(value.p90A)}, {"image", jpegDataUrl(value.imageA)}}},
+            {"b", {{"matched", value.matchedB}, {"unique", value.uniqueB}, {"mean", score(value.meanB)},
+                    {"p90", score(value.p90B)}, {"image", jpegDataUrl(value.imageB)}}},
+            {"mapColumns", value.mapColumns}, {"mapRows", value.mapRows}, {"changedMap", value.changedMap}};
     }
     if (snapshot.selection)
     {
@@ -792,6 +804,57 @@ std::optional<ApiResponse> applyPreviewEdits(const nlohmann::json &edits,
     return {};
 }
 
+ApiResponse pinComparison(const std::string &body, JobManager &jobs)
+{
+    const auto payload = nlohmann::json::parse(body, nullptr, false);
+    if (!payload.is_object() || !hasString(payload, "slot") || !hasString(payload, "previewId") ||
+        (payload["slot"] != "A" && payload["slot"] != "B"))
+    {
+        return badRequest("pin requires slot A or B and a previewId");
+    }
+    return jobs.pinPreview(payload["slot"] == "A" ? 0 : 1, payload["previewId"].get<std::string>())
+        ? ApiResponse{200, apiOkJson()} : previewConflict("preview expired");
+}
+
+ApiResponse submitComparison(const std::string &body, JobManager &jobs)
+{
+    const auto payload = nlohmann::json::parse(body, nullptr, false);
+    if (!payload.is_object() || !payload.contains("a") || !payload.contains("b") ||
+        !payload["a"].is_object() || !payload["b"].is_object() ||
+        !hasString(payload["a"], "previewId") || !hasString(payload["b"], "previewId"))
+    {
+        return badRequest("comparison requires two previews");
+    }
+    PreviewSnapshot a, b;
+    if (!jobs.getPreview(payload["a"]["previewId"].get<std::string>(), a) || !a.selection ||
+        !jobs.getPreview(payload["b"]["previewId"].get<std::string>(), b) || !b.selection)
+    {
+        return previewConflict("comparison preview expired");
+    }
+    if (a.selection->editKey != b.selection->editKey || a.selection->dbPath != b.selection->dbPath ||
+        a.selection->targetVersion != b.selection->targetVersion || a.selection->libraryVersion != b.selection->libraryVersion ||
+        a.selection->columns != b.selection->columns || a.selection->rows != b.selection->rows || a.seed != b.seed)
+    {
+        return previewConflict("comparison needs the same target, library, grid and random seed");
+    }
+    if (payload["a"].contains("previewEdits"))
+    {
+        if (auto error = applyPreviewEdits(payload["a"]["previewEdits"], a.selection))
+        {
+            return std::move(*error);
+        }
+    }
+    if (payload["b"].contains("previewEdits"))
+    {
+        if (auto error = applyPreviewEdits(payload["b"]["previewEdits"], b.selection))
+        {
+            return std::move(*error);
+        }
+    }
+    const auto id = jobs.submitPreview(std::move(a.request), a.seed, std::move(a.selection), std::move(b.selection));
+    return {202, apiOkJson("preview", {{"id", id}, {"state", "queued"}})};
+}
+
 } // namespace
 
 ApiRequest apiOperationRequest(ApiOperation operation, ApiRequestContext context)
@@ -914,6 +977,10 @@ ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
         return getPreview(request.id, jobs);
     case ApiOperation::PreviewQuality:
         return previewQuality(request.body, jobs);
+    case ApiOperation::PinComparison:
+        return pinComparison(request.body, jobs);
+    case ApiOperation::SubmitComparison:
+        return submitComparison(request.body, jobs);
     case ApiOperation::ClosePreview:
         return jobs.closePreview(request.id) ? ApiResponse{200, apiOkJson()} : previewNotFound();
     case ApiOperation::GetPreviewImage:
@@ -930,6 +997,24 @@ ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
         return apiListJobs(jobs);
     case ApiOperation::ClearFinishedJobs:
         return apiClearFinishedJobs(jobs);
+    case ApiOperation::ListHistory:
+    {
+        nlohmann::json records;
+        if (!jobs.history() || !jobs.history()->list(records))
+        {
+            return internalError("local history is unavailable");
+        }
+        return {200, apiOkJson("history", std::move(records))};
+    }
+    case ApiOperation::ClearHistory:
+    {
+        int removed = 0;
+        if (!jobs.history() || !jobs.history()->clear(removed))
+        {
+            return internalError("local history is unavailable");
+        }
+        return {200, apiOkJson("removed", removed)};
+    }
     case ApiOperation::GetJobEvents:
         return apiGetJobEvents(request, jobs);
     case ApiOperation::GetJobArtifact:

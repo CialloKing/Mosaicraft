@@ -269,6 +269,12 @@ Returns the complete snapshot. `outputPath` retains its requested-path meaning; 
 取消排队的任务。运行中的任务不会被中断，返回 HTTP 409。
 Cancels a queued job. Running jobs are not interrupted and return HTTP 409.
 
+### `GET|DELETE /api/history`
+
+`GET` 返回 `history`，按结束时间从新到旧排列，最多 100 条。每条记录包含服务会话和任务 ID 组成的 `key`、请求参数、状态、输出路径和体积，以及可用的质量、阶段计时和资源摘要。Web UI 将其保存到工作目录下的 `.mosaicraft/history.sqlite3`（独立结构版本 1），重启后可继续读取。`DELETE` 返回已清除的摘要数 `removed`。成品、图库和当前服务的任务列表均可继续使用。
+
+`GET` lists up to 100 completed jobs with request, output, quality, performance and resource summaries. The Web UI stores records in `.mosaicraft/history.sqlite3` under its working directory. `DELETE` returns the number of removed summaries.
+
 ---
 
 ## 马赛克 / Mosaic
@@ -306,6 +312,10 @@ Both mosaic endpoints allow large output by default, without an extra field or s
 发现 `preview-editing` 后，可用 `GET /api/mosaic/preview/{id}/recommendations?position=0` 查询单格最多 60 张推荐，实际数量取决于匹配候选数和通过筛选的素材数。位置从 0 开始按行计数。`GET /api/mosaic/preview/{id}/library?q=&offset=0` 按素材 ID 顺序每页返回 24 张，可按文件名或 ID 过滤。两种列表的每项均包含 `id`、`name`、`version` 和 `available`。
 
 `POST /api/mosaic/preview/quality` 接受 `previewId` 和最多 512 条 `positions`。每条包含零起始 `position`，手动替换额外带 `imageId/version`。`explain: true` 限单格，并返回裁块 JPEG、入选和候选的五项特征误差，以及可用的原始排名、Top-N 和惩罚。预览误差由服务重新评价，源文件变更返回 409。
+
+发现 `preview-comparison` 后，使用 `POST /api/mosaic/preview/pin` 提交 `{ "slot": "A", "previewId": "…" }` 保留已完成的预览。槽位为 `A` 或 `B`，传入空 ID 可释放槽位。`POST /api/mosaic/preview/compare` 接受 `{ "a": { "previewId": "…" }, "b": { "previewId": "…" } }`，各侧可附上 `previewEdits`。目标、图库版本、网格和随机种子必须相同。返回 202，可通过预览 GET/DELETE 查询和取消。
+
+完成后 `preview.comparison` 包含各侧的 `matched`、`unique`、`mean`、`p90` 和概览 JPEG（`image`），以及 `compared`、`changed`、`mapColumns`、`mapRows` 和行优先的 `changedMap`。均值和 P90 在双方均匹配且评分可用的格子上用默认五特征权重计算。
 
 向 `POST /api/jobs/mosaic` 提交同一组匹配参数及 `previewId`，可直接使用预览中的素材排列。提交时过期、目标或图库变更、参数不匹配返回 409 `preview_stale`。执行前再次检查来源。正式任务一旦入队就持有选图结果，关闭预览不会撤销已提交的任务。
 

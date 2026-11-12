@@ -52,6 +52,12 @@ struct WarningSummary
     std::vector<std::string> paths;
 };
 
+struct QualitySummary
+{
+    uint64_t scored = 0;
+    double mean = 0, median = 0, p90 = 0, p99 = 0;
+};
+
 struct RuntimeSnapshot
 {
     ProgressSnapshot progress;
@@ -66,6 +72,7 @@ struct RuntimeSnapshot
     std::shared_ptr<const BuildVisuals> buildVisuals;
     std::deque<ResourceSample> resourceSamples;
     std::array<ResourceAggregate, resourceNames.size()> resources{};
+    std::optional<QualitySummary> quality;
 };
 
 struct EventPage
@@ -93,6 +100,7 @@ class RuntimeContext
     void metric(const std::string &name, double value) noexcept;
     void buildVisuals(BuildVisuals data) noexcept;
     void resourceSample(const ResourceSample &sample) noexcept;
+    void qualitySummary(const QualitySummary &summary) noexcept;
     void gpuDevice(const std::string &pciBus) noexcept;
     std::string gpuDevice() const;
     void artifact(const std::string &id, const std::string &kind, const std::string &path,

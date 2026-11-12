@@ -4,6 +4,7 @@
 #include "MosaicService.h"
 #include "MosaicSelection.h"
 #include "MosaicPlanning.h"
+#include "PreviewEvaluation.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -18,6 +19,7 @@
 
 namespace mosaicraft
 {
+class HistoryStore;
 
 enum class JobState
 {
@@ -50,6 +52,7 @@ struct PreviewSnapshot
     ProgressSnapshot progress;
     std::shared_ptr<const MosaicSelection> selection;
     std::optional<FileSizeSample> fileSample;
+    std::shared_ptr<const PreviewComparison> comparison;
     MosaicRequest request;
     uint32_t seed = 0;
 };
@@ -57,7 +60,7 @@ struct PreviewSnapshot
 class JobManager
 {
 public:
-    explicit JobManager(bool autoStartWorker = true);
+    explicit JobManager(bool autoStartWorker = true, bool persistentHistory = false);
     ~JobManager();
 
     JobManager(const JobManager&) = delete;
@@ -66,9 +69,12 @@ public:
     std::string submitMosaic(MosaicRequest request, std::shared_ptr<const MosaicSelection> selection = {});
     std::string submitBuild(BuildRequest request);
     std::string submitPreview(MosaicRequest request, uint32_t seed,
-                              std::shared_ptr<const MosaicSelection> sampleSelection = {});
+                              std::shared_ptr<const MosaicSelection> source = {},
+                              std::shared_ptr<const MosaicSelection> compareRight = {});
     bool getPreview(const std::string &id, PreviewSnapshot &out);
     bool closePreview(const std::string &id);
+    bool pinPreview(int slot, const std::string &id);
+    HistoryStore *history() const { return m_history.get(); }
     bool getJob(const std::string& id, JobSnapshot& out) const;
     bool waitJob(const std::string& id, JobSnapshot& out);
     std::vector<JobSnapshot> listJobs() const;
@@ -93,7 +99,7 @@ private:
     struct PreviewJob
     {
         PreviewSnapshot snapshot;
-        std::shared_ptr<const MosaicSelection> sampleSelection;
+        std::shared_ptr<const MosaicSelection> source, compareRight;
         std::shared_ptr<RuntimeContext> runtime = std::make_shared<RuntimeContext>(false);
         std::atomic_bool canceled{false};
         bool interrupted = false;
@@ -115,10 +121,12 @@ private:
     std::unordered_map<std::string, std::shared_ptr<JobRecord>> m_jobs;
     std::deque<std::string> m_queue;
     std::unordered_map<std::string, std::shared_ptr<PreviewJob>> m_previews;
+    std::array<std::string, 2> m_pinnedPreviews;
     std::shared_ptr<PreviewJob> m_pendingPreview, m_runningPreview;
     PreviewWorkspace m_previewWorkspace;
     bool m_releasePreviewWorkspace = false;
     bool m_stopping = false;
+    std::unique_ptr<HistoryStore> m_history;
     std::thread m_worker;
     uint64_t m_nextId = 1;
     uint64_t m_nextPreviewId = 1;

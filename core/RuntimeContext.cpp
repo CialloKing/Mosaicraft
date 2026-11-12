@@ -273,6 +273,12 @@ void RuntimeContext::resourceSample(const ResourceSample &sample) noexcept
     }
 }
 
+void RuntimeContext::qualitySummary(const QualitySummary &summary) noexcept
+{
+    const std::lock_guard<std::mutex> lock(m_mutex);
+    m_snapshot.quality = summary;
+}
+
 void RuntimeContext::gpuDevice(const std::string &pciBus) noexcept
 {
     try

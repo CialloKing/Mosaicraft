@@ -14,7 +14,8 @@ set(outputPlanningScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/outp
 set(libraryVisualsScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/library-visuals.js")
 set(previewInsightsScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/preview-insights.js")
 set(taskMetricsScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/task-metrics.js")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${previewScript}" "${previewPickerScript}" "${resultAnalysisScript}" "${outputPlanningScript}" "${libraryVisualsScript}" "${previewInsightsScript}" "${taskMetricsScript}")
+set(comparisonScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/comparison.js")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${previewScript}" "${previewPickerScript}" "${resultAnalysisScript}" "${outputPlanningScript}" "${libraryVisualsScript}" "${previewInsightsScript}" "${taskMetricsScript}" "${comparisonScript}")
 file(READ "${previewScript}" interactivePreviewScript)
 file(READ "${previewPickerScript}" interactivePreviewPickerScript)
 file(READ "${resultAnalysisScript}" taskResultAnalysisScript)
@@ -22,6 +23,7 @@ file(READ "${outputPlanningScript}" mosaicOutputPlanningScript)
 file(READ "${libraryVisualsScript}" libraryVisualsUiScript)
 file(READ "${previewInsightsScript}" mosaicPreviewInsightsScript)
 file(READ "${taskMetricsScript}" taskMetricsUiScript)
+file(READ "${comparisonScript}" comparisonUiScript)
 configure_file(tools/command-builder/index.html generated/index.html @ONLY)
 
 # C++17
@@ -192,6 +194,7 @@ endif()  # MOSAICRAFT_CUDA
 add_library(mosaicraft_core STATIC
     core/RuntimeContext.cpp
     core/TaskResources.cpp
+    core/HistoryStore.cpp
     core/AnalysisReport.cpp
     core/ApiHandlers.cpp
     core/ApiJson.cpp

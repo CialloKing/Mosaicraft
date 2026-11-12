@@ -119,6 +119,10 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
     double scoreP50 = sortedScores[n / 2];
     double scoreP90 = sortedScores[n * 9 / 10];
     double scoreP99 = sortedScores[n * 99 / 100];
+    if (runtime)
+    {
+        runtime->qualitySummary({static_cast<uint64_t>(n), scoreMean, scoreP50, scoreP90, scoreP99});
+    }
 
     double labSum = 0, gridSum = 0, edgeSum = 0;
     double labW = cfg.labWeight, gridW = cfg.gridWeight, edgeW = cfg.edgeWeight;

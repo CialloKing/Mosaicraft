@@ -1,5 +1,6 @@
 #include "JobManager.h"
 #include "ApiJson.h"
+#include "HistoryStore.h"
 #include <algorithm>
 #include <random>
 
@@ -42,7 +43,7 @@ JobManager::~JobManager()
     }
 }
 
-JobManager::JobManager(bool autoStartWorker)
+JobManager::JobManager(bool autoStartWorker, bool persistentHistory)
 {
     std::random_device random;
     std::ostringstream session;
@@ -52,6 +53,10 @@ JobManager::JobManager(bool autoStartWorker)
         session << std::setw(8) << std::setfill('0') << random();
     }
     m_sessionId = session.str();
+    if (persistentHistory)
+    {
+        m_history = std::make_unique<HistoryStore>();
+    }
     if (autoStartWorker)
     {
         m_worker = std::thread([this]() { workerLoop(); });
@@ -84,12 +89,14 @@ std::string JobManager::submitMosaic(MosaicRequest request, std::shared_ptr<cons
 }
 
 std::string JobManager::submitPreview(MosaicRequest request, uint32_t seed,
-                                      std::shared_ptr<const MosaicSelection> sampleSelection)
+                                      std::shared_ptr<const MosaicSelection> source,
+                                      std::shared_ptr<const MosaicSelection> compareRight)
 {
     auto job = std::make_shared<PreviewJob>();
     job->snapshot.request = std::move(request);
     job->snapshot.seed = seed;
-    job->sampleSelection = std::move(sampleSelection);
+    job->source = std::move(source);
+    job->compareRight = std::move(compareRight);
     job->runtime->stage("queued");
     job->queuedAt = job->accessed = std::chrono::steady_clock::now();
     {
@@ -136,6 +143,10 @@ bool JobManager::closePreview(const std::string &id)
         {
             return false;
         }
+        if (std::find(m_pinnedPreviews.begin(), m_pinnedPreviews.end(), id) != m_pinnedPreviews.end())
+        {
+            return true;
+        }
         it->second->canceled = true;
         if (m_pendingPreview == it->second)
         {
@@ -148,15 +159,41 @@ bool JobManager::closePreview(const std::string &id)
     return true;
 }
 
+bool JobManager::pinPreview(int slot, const std::string &id)
+{
+    const std::lock_guard<std::mutex> lock(m_mutex);
+    if (slot < 0 || slot >= static_cast<int>(m_pinnedPreviews.size()))
+    {
+        return false;
+    }
+    if (!id.empty())
+    {
+        const auto found = m_previews.find(id);
+        if (found == m_previews.end() || !found->second->snapshot.selection)
+        {
+            return false;
+        }
+    }
+    m_pinnedPreviews[slot] = id;
+    trimPreviews();
+    return true;
+}
+
 void JobManager::trimPreviews()
 {
     const auto cutoff = std::chrono::steady_clock::now() - std::chrono::minutes(10);
     std::vector<std::shared_ptr<PreviewJob>> finished;
+    size_t pinned = 0;
     for (auto it = m_previews.begin(); it != m_previews.end();)
     {
         const auto &job = it->second;
         if (job == m_pendingPreview || job == m_runningPreview)
         {
+            ++it;
+        }
+        else if (std::find(m_pinnedPreviews.begin(), m_pinnedPreviews.end(), it->first) != m_pinnedPreviews.end())
+        {
+            ++pinned;
             ++it;
         }
         else if (job->accessed < cutoff)
@@ -173,7 +210,7 @@ void JobManager::trimPreviews()
     {
         return left->accessed > right->accessed;
     });
-    for (size_t i = 4; i < finished.size(); ++i)
+    for (size_t i = 4 - pinned; i < finished.size(); ++i)
     {
         m_previews.erase(finished[i]->snapshot.id);
     }
@@ -189,11 +226,17 @@ void JobManager::runPreview(const std::shared_ptr<PreviewJob> &job)
     std::shared_ptr<MosaicSelection> selection;
     ServiceResult result;
     FileSizeSample fileSample;
+    std::shared_ptr<PreviewComparison> comparison;
     try
     {
-        if (job->sampleSelection)
+        if (job->compareRight)
         {
-            result = sampleMosaicSize(job->snapshot.request, *job->sampleSelection, job->canceled, fileSample);
+            comparison = std::make_shared<PreviewComparison>();
+            result = comparePreview(job->snapshot.request, *job->source, *job->compareRight, job->canceled, *comparison);
+        }
+        else if (job->source)
+        {
+            result = sampleMosaicSize(job->snapshot.request, *job->source, job->canceled, fileSample);
         }
         else
         {
@@ -230,13 +273,18 @@ void JobManager::runPreview(const std::shared_ptr<PreviewJob> &job)
             if (result.ok)
             {
                 job->snapshot.selection = std::move(selection);
-                if (job->sampleSelection)
+                if (comparison)
+                {
+                    job->snapshot.comparison = std::move(comparison);
+                }
+                else if (job->source)
                 {
                     job->snapshot.fileSample = fileSample;
                 }
             }
             job->snapshot.result = std::move(result);
-            job->sampleSelection.reset();
+            job->source.reset();
+            job->compareRight.reset();
         }
         job->accessed = std::chrono::steady_clock::now();
         m_runningPreview.reset();
@@ -409,7 +457,7 @@ void JobManager::trimFinishedJobs()
 
 bool JobManager::cancelQueuedJob(const std::string& id, JobSnapshot& out)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    std::unique_lock<std::mutex> lock(m_mutex);
     auto it = m_jobs.find(id);
     if (it == m_jobs.end()) return false;
 
@@ -437,6 +485,11 @@ bool JobManager::cancelQueuedJob(const std::string& id, JobSnapshot& out)
     record->snapshot.result.runtime = record->runtime->snapshot();
     out = record->snapshot;
     trimFinishedJobs();
+    if (m_history && m_history->available() && !m_history->record(m_sessionId, out))
+    {
+        std::cerr << "WARNING: cannot save job history for " << id << '\n';
+    }
+    lock.unlock();
     m_cv.notify_all();
     return true;
 }
@@ -623,6 +676,11 @@ void JobManager::finishJob(const std::string& id, const ServiceResult& result)
         record->snapshot.result = result;
         record->snapshot.state = result.ok ? JobState::Succeeded : JobState::Failed;
         record->snapshot.finishedAt = std::chrono::system_clock::now();
+        // 在发布结束状态前落盘，任务结束后重启也能读取同一条摘要。
+        if (m_history && m_history->available() && !m_history->record(m_sessionId, record->snapshot))
+        {
+            std::cerr << "WARNING: cannot save job history for " << id << '\n';
+        }
         trimFinishedJobs();
     }
     m_cv.notify_all();

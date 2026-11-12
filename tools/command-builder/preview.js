@@ -342,6 +342,7 @@ const interactivePreview = (() => {
       : '当前参数需要在预览页刷新后才能沿用选图。';
     renderProgress();
     outputPlanning.updatePreview();
+    previewComparison.update();
   }
 
   function editsChanged() {
@@ -950,7 +951,7 @@ const interactivePreview = (() => {
     enabled = !enabled;
     lastError = '';
     if (enabled) {
-      seed = crypto.getRandomValues(new Uint32Array(1))[0];
+      seed = previewComparison.seed() ?? crypto.getRandomValues(new Uint32Array(1))[0];
       canvas.scrollIntoView({block: 'nearest'});
       sync(tab, 0);
     } else {
@@ -1031,6 +1032,12 @@ const interactivePreview = (() => {
     refresh,
     outputSampleKey() {
       return enabled && plan && !pending && planKey === requestKey ? `${plan.id}:${editRevision}` : '';
+    },
+    comparisonInput() {
+      if (!enabled || !plan || pending || planKey !== requestKey) return null;
+      return {previewId: plan.id, previewEdits: Array.from(edits.values()), editKey: plan.editKey, seed: plan.seed,
+        columns: plan.columns, rows: plan.rows, featureBackend: plan.featureBackend, scoreBackend: plan.scoreBackend,
+        metrics: plan.metrics || {}};
     },
     blocksRun: activeTab => enabled && activeTab === 'mosaic' && (!plan || planKey !== requestKey || pending),
     bind(payload) {

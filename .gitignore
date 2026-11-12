@@ -66,3 +66,4 @@ __pycache__/
 
 # Verified pre-upgrade SQLite backups
 **/.mosaicraft-backups/
+**/.mosaicraft/history.sqlite3*
