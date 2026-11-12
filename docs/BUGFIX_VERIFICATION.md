@@ -60,3 +60,58 @@
 - 超大输出默认允许，不设置额外体积门槛。目标与单 tile 最多 1 亿像素；JPEG/WebP 超限返回错误。
 - HTTP API 合约为 **2.0**；维护清理仅 POST，结构化请求体使用 JSON，同源界面已同步升级。
 - v6 修正了特征和评分语义，选图可能与旧版不同；CUDA 路径增加 CPU Canny 步骤。本轮未重跑大型图库性能基准，也不保证 CPU/CUDA 浮点特征或最终选图逐位一致。
+
+## OverlayFS 颜色重排兼容修复（2026-11-12）
+
+本节为独立追加记录，不改变上文 2026-10-11 的历史验收结论。源码基线为 `c9cfa4ae6`，修复提交为 `9bad116ad`。
+
+### 修复行为
+
+- Windows 保留原有卷号预检查和 `MoveFileExW` 行为；POSIX 不再根据目录与图片的 `st_dev` 差异拒绝重排，改为独立检查输出路径是否为目录，由实际硬链接操作判断能否移动。
+- POSIX 继续先创建硬链接、成功后才删除源文件。仅将 `cross_device_link` 转为包含源、目标路径的 `color reorder cannot move images across filesystems` 错误；其他文件系统异常原样抛出。
+- 防覆盖检查、数据库事务、重排日志及恢复流程保持原样；不增加复制回退，不修改图库格式、公共 API、CLI、版本兼容规则或 CI。
+
+### 本次执行结果
+
+环境：Windows 10 专业工作站版，版本 `10.0.19045`；CMake/CTest `4.4.0-rc2`；`windows-cpu` Release，`MOSAICRAFT_CUDA=OFF`。
+
+```powershell
+cmake --build --preset windows-cpu --target mosaicraft MosaicraftWebUI mosaicraft_tests mosaicraft_regression_tests --parallel 4
+ctest --preset windows-cpu --output-junit build/overlayfs-fix-20261112/windows-cpu-ctest.xml
+```
+
+| 验证项 | 结果 |
+|---|---|
+| Windows CPU CLI、Web UI、核心单测和服务回归目标构建 | 通过，退出码 0，30.43 秒 |
+| Windows CPU 完整 CTest | **8/8 通过**，退出码 0，48.00 秒 |
+| 颜色重排、路径占用、重复排序、中断恢复、追加建库 | 随既有 `mosaicraft_regression_tests` 通过 |
+| Linux/POSIX 编译 | **未执行，待 Linux 环境验收** |
+| 真实 OverlayFS 设备号差异及建库 | **未执行，待手动验收** |
+| 真实跨文件系统 EXDEV 及部分暂存后的恢复 | **未执行，待手动验收** |
+
+本机 `wsl --list --quiet` 返回退出码 1 和安装/帮助信息，PATH 中未找到 Docker/Podman，未获得可用 Linux 运行环境。Windows 构建不会编译新增的 POSIX 分支，Windows 回归通过不能替代 Linux 编译、OverlayFS 或 EXDEV 实测。
+
+本地证据保存在忽略目录 `build/overlayfs-fix-20261112/`：`windows-cpu-build.log`、`build-result.json`、`windows-cpu-ctest.log`、`windows-cpu-ctest.xml`、`ctest-result.json`、`environment.json`、`linux-availability.json`。CTest 原始逐项输出也位于 `build/windows-cpu/Testing/Temporary/LastTest.log`。未新增测试框架或修改现有测试用例，未使用真实图库做故障实验。
+
+### Linux 手动验收步骤（待执行）
+
+只使用一次性测试目录；结束后先卸载测试挂载，再清理临时素材，保留验证日志。
+
+1. 构建 CPU 目标：
+
+   ```sh
+   cmake --preset linux-cpu
+   cmake --build --preset linux-cpu --target mosaicraft mosaicraft_tests mosaicraft_regression_tests --parallel 2
+   ```
+
+2. OverlayFS：将 lower 放在 tmpfs，upper/work 放在同一普通文件系统，以 `xino=off` 挂载至独立的 merged 目录。先确认 merged 内的目录与实际普通文件 `st_dev` 不同，同时确认挂载点内硬链接创建成功；不满足此前提不能算覆盖本 Bug。
+3. 将 shell 变量 `merged` 设为上述挂载点的绝对路径，复用现有测试：
+
+   ```sh
+   TMPDIR="$merged" ./build/linux-cpu/Release/bin/mosaicraft_regression_tests '--test-case=color reorder*,default color build and append keep bytes IDs usage and feature references'
+   ```
+
+   对照修复前、后两个二进制：旧版应在卷号预检查失败，新版应完成建库、缓存生成、追加、重复排序和恢复检查。确认记录 ID、图片字节、使用次数及特征引用正确，成功后无重排日志或暂存目录残留。
+
+4. EXDEV：先创建普通文件系统上的一次性图库。在库内子目录挂载 tmpfs，将一张靠后排序的图片移入该子目录，并将测试数据库 `images.file_path` 更新为对应的库内相对路径；另将靠前排序的图片在原文件系统内改名并更新其相对路径，确保它先进入暂存。操作前关闭数据库连接，不使用绝对路径或 `..` 绕过图库路径规则。
+5. 记录各图片的 ID、路径、字节哈希、使用次数和特征引用，再以空输入目录执行 `library add <empty-input> -l <library> --backend cpu --threads 1`。预期在先暂存、后遇到 EXDEV 时返回非零，错误包含源、目标路径；先前暂存的图片应恢复，重排前的图片内容和数据库路径保持一致，成功恢复后日志及暂存目录被清理。
