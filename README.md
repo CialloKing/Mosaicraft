@@ -33,6 +33,8 @@ Mosaicraft 用图库里的照片拼出一张目标图，可通过本地 Web UI �
 
 相对路径以页面顶部显示的服务工作目录为准。更多参数和示例见「使用帮助」。
 
+命令区可选择 Windows PowerShell 5.1、PowerShell 7.3+、CMD、Bash、Zsh 或 POSIX sh，默认按浏览器平台选择并记住设置。程序未加入 PATH 时可填写绝对路径，或 Windows 的 `.\mosaicraft.exe`、Linux/macOS 的 `./mosaicraft`。复制命令使用所选 Shell 的引用规则；页面「运行」继续通过本地服务执行，不受 Shell 选择影响。CMD 遇到 `%`、`!` 或内嵌双引号，PowerShell 5.1 遇到空参数或内嵌双引号时会提示切换 Shell，避免复制后参数被改变。
+
 ### 命令行
 
 在解压目录运行以下命令。`photos` 是素材目录，`target.jpg` 是目标图。示例生成 `result.png` 和便于查看的 `result_preview.jpg`。Windows PowerShell 也可运行 `./mosaicraft.exe`。

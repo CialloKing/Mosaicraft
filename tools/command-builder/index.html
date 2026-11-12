@@ -124,7 +124,8 @@ main:has(#panel-preview.active) { max-width: 1660px; }
 .chk-row label:hover { color: var(--fg); }
 .output-area { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-top: 20px; }
 .output-area .cmd { font-family: 'Cascadia Code', 'Consolas', 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--accent); white-space: pre-wrap; word-break: break-all; line-height: 1.7; background: var(--input-bg); padding: 14px; border-radius: 6px; min-height: 3em; }
-.cmd-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.cmd-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.command-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 12px; margin-bottom: 10px; }
 .cmd-bar span { color: var(--fg2); font-size: 0.8rem; }
 .btns { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .btn { padding: 10px 22px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.88rem; font-weight: 600; transition: .15s; }
@@ -771,7 +772,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 
   <section class="card" id="help-results" aria-labelledby="help-results-title">
     <h3 id="help-results-title">任务进度、诊断与结果怎么读</h3>
-    <p><strong>生成命令</strong>根据当前功能页和表单参数更新下方 PowerShell 命令；<strong>复制到剪贴板</strong>便于在终端执行。连接本地 Web UI 服务后也可直接点击<strong>运行</strong>；仅打开 HTML 时可查看帮助和复制命令，但页面不能替代服务运行任务。<strong>清空最近路径</strong>只清除路径候选，不删除文件或清空表单。</p>
+    <p><strong>生成命令</strong>根据当前功能页、表单参数和所选 Shell 更新下方命令；可选择 Windows PowerShell 5.1、PowerShell 7.3+、CMD、Bash、Zsh 或 POSIX sh，并填写 mosaicraft 程序路径。选择保存在当前浏览器。<strong>复制到剪贴板</strong>便于在终端执行。连接本地 Web UI 服务后也可直接点击<strong>运行</strong>；仅打开 HTML 时可查看帮助和复制命令，但页面不能替代服务运行任务。<strong>清空最近路径</strong>只清除路径候选，不删除文件或清空表单。</p>
     <p><strong>排队</strong>表示等待执行，只有排队任务可取消；<strong>运行中</strong>显示当前阶段和已完成数量，计数是阶段进度。读取索引、单次编码等阶段可能只有阶段名称与运行时间。</p>
     <p><strong>警告</strong>可能表示 CUDA 回退、跳过素材或缺失小块，结合实际后端和最终状态判断结果。<strong>失败</strong>区会给出原因、相关路径及处理建议，技术详情可展开查看，也可复制或导出诊断 JSON。</p>
     <p>主图保存后仍可能进行预览、分析和统计提交。后续阶段失败时，已经有效保存的主图仍显示在结果区。下载以登记的实际产物为准；文件已被改写或删除时会提示不可用。</p>
@@ -795,10 +796,28 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 <!-- ============ OUTPUT ============ -->
 <div class="output-area" id="command-area">
   <div class="cmd-bar">
-    <span>生成的命令 (PowerShell)</span>
+    <span id="command-title">生成的命令</span>
     <span id="copy-feedback" style="color:var(--accent2);display:none">✅ 已复制!</span>
   </div>
-  <div class="cmd" id="cmd-output" aria-label="生成的PowerShell命令"></div>
+  <div class="command-settings">
+    <div class="field">
+      <label for="command-shell">命令行 / Shell</label>
+      <select id="command-shell" aria-describedby="command-shell-hint">
+        <option value="powershell">Windows PowerShell 5.1（powershell.exe）</option>
+        <option value="pwsh">PowerShell 7.3+（pwsh）</option>
+        <option value="cmd">Windows CMD（cmd.exe）</option>
+        <option value="bash">Bash（Linux / WSL / Git Bash）</option>
+        <option value="zsh">Zsh（macOS）</option>
+        <option value="sh">POSIX sh（Linux / macOS）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="command-executable">mosaicraft 程序路径</label>
+      <input id="command-executable" type="text" value="mosaicraft" placeholder="mosaicraft" spellcheck="false" aria-describedby="command-shell-hint">
+    </div>
+  </div>
+  <p class="hint" id="command-shell-hint"></p>
+  <div class="cmd" id="cmd-output" aria-label="生成的命令"></div>
   <p class="hint" id="command-validation" role="status"></p>
   <div class="btns">
     <button class="btn btn-primary" onclick="generateCommand()">🔄 生成命令</button>
@@ -846,6 +865,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 <footer>💡 在文件管理器使用“复制文件地址 / 复制为路径”，再粘贴到输入框；外层双引号会自动去除。</footer>
 
 <script>
+@commandShellUiScript@
 // Tab switching
 document.querySelectorAll('.tab').forEach(t => {
   t.addEventListener('click', () => {
@@ -907,23 +927,77 @@ function generateCommand() {
   try {
     const payload = readFormPayload(tab);
     formModel = {valid:true, tab, payload};
-    document.getElementById('cmd-output').textContent = commandFromPayload(tab, payload);
-    document.getElementById('command-validation').textContent = '';
+    renderGeneratedCommand(tab, payload);
   } catch (error) {
     formModel = {valid:false, tab, payload:null};
     document.getElementById('cmd-output').textContent = '';
+    document.getElementById('btn-copy-command').disabled = true;
     document.getElementById('command-validation').textContent = error.message;
     highlightDiagnostic({code:'invalid_argument', field:error.field, message:error.message});
   }
   outputPlanning.sync();
-  document.getElementById('btn-copy-command').disabled = !formModel.valid;
   updateRunButton();
   persistDraft();
 }
 
+function updateCommandShellHint() {
+  const shell = document.getElementById('command-shell').value;
+  const hints = {
+    powershell: '在 Windows PowerShell 5.1 中执行；用 $PSVersionTable.PSVersion 查看版本。程序在当前目录时填写 .\\mosaicraft.exe。',
+    pwsh: '在 PowerShell 7.3+（pwsh）中执行；用 $PSVersionTable.PSVersion 查看版本。命令仅在本次调用内使用 Standard 参数传递。',
+    cmd: '在 Windows 命令提示符 cmd.exe 中直接粘贴执行（不是 .bat 脚本）。程序在当前目录时可填写 .\\mosaicraft.exe。',
+    bash: '在 Bash 中执行。Linux / WSL 当前目录的程序填写 ./mosaicraft；Git Bash 可用 ./mosaicraft.exe。',
+    zsh: '在 Zsh 中执行。当前目录的程序填写 ./mosaicraft。',
+    sh: '在 POSIX sh 中执行（如 dash、ash）。当前目录的程序填写 ./mosaicraft。'
+  };
+  document.getElementById('command-title').textContent = '生成的命令 · ' + commandShell.names[shell];
+  document.getElementById('cmd-output').setAttribute('aria-label', '生成的 ' + commandShell.names[shell] + ' 命令');
+  document.getElementById('command-shell-hint').textContent = hints[shell] +
+    ' mosaicraft 表示从 PATH 查找；路径按所选 Shell 原样引用，不自动转换 Windows / WSL 路径。此选择只影响复制命令，“运行”仍由本地服务执行。';
+}
+function renderGeneratedCommand(tab, payload) {
+  updateCommandShellHint();
+  const output = document.getElementById('cmd-output');
+  const validation = document.getElementById('command-validation');
+  const button = document.getElementById('btn-copy-command');
+  try {
+    output.textContent = commandFromPayload(tab, payload);
+    validation.textContent = '';
+    button.disabled = false;
+  } catch (error) {
+    // Shell limitations must not disable an otherwise valid structured API request.
+    output.textContent = '';
+    validation.textContent = ({
+      'unknown-shell': '请选择支持的命令行类型。',
+      'missing-executable': '请填写 mosaicraft 程序路径。',
+      'control-character': '命令参数包含换行或控制字符，无法复制为单行命令。',
+      'cmd-argument': 'CMD 命令不支持含 %、! 或双引号的参数，请切换 PowerShell 或 Unix Shell；仍可点击“运行”。',
+      'powershell-legacy-argument': 'PowerShell 5.1 无法可靠传递空参数或内嵌双引号，请切换 PowerShell 7.3+ 或 Unix Shell；仍可点击“运行”。'
+    })[error.message] || error.message;
+    button.disabled = true;
+  }
+}
+function initializeCommandShell() {
+  const saved = storedJson('mosaicraft-command-v1', {});
+  const select = document.getElementById('command-shell');
+  const executable = document.getElementById('command-executable');
+  select.value = commandShell.supported(saved.shell) ? saved.shell :
+    commandShell.defaultForPlatform(navigator.userAgentData?.platform || navigator.platform || '');
+  if (typeof saved.executable === 'string') executable.value = saved.executable;
+  const refresh = () => {
+    saveJson('mosaicraft-command-v1', {shell:select.value, executable:executable.value});
+    document.getElementById('copy-feedback').style.display = 'none';
+    updateCommandShellHint();
+    generateCommand();
+  };
+  select.addEventListener('change', refresh);
+  executable.addEventListener('input', refresh);
+  updateCommandShellHint();
+}
+
 function copyCommand()
 {
-  if (!formModel.valid) return;
+  if (!formModel.valid || document.getElementById('btn-copy-command').disabled) return;
   const cmd = document.getElementById('cmd-output').textContent;
   copyTextToClipboard(cmd).then(() =>
   {
@@ -2160,7 +2234,6 @@ function normalizePath(value) {
   const text = String(value || '').trim();
   return text.length >= 2 && text.startsWith('"') && text.endsWith('"') ? text.slice(1, -1) : text;
 }
-function quotePowerShell(value) { return "'" + String(value).replace(/'/g, "''") + "'"; }
 function uiFieldError(field, message) { return Object.assign(new Error(message), { field }); }
 function highlightDiagnostic(diagnostic) {
   const tab = document.querySelector('.tab.active').dataset.cmd;
@@ -2224,7 +2297,8 @@ const CLI_DEFAULTS = { mosaic: { quality:100, pngLevel:1, writeMode:'auto', tile
   topNRandom:10, lRange:20, neighborWindow:0, neighborPenalty:100, upscale:1, outW:0, outH:0, outputTile:'180x320',
   labWeight:.2, gridWeight:.45, tinyWeight:.25, edgeWeight:.05, lbpWeight:.05, usePenalty:.01, colorStrength:.04, overlayStrength:0 },
   build: {threads:0,normalizeSize:'180x320'}, dbusage:{limit:50} };
-function commandFromPayload(tab, payload) {
+function commandFromPayload(tab, payload, shell = document.getElementById('command-shell').value,
+                            executable = normalizePath(document.getElementById('command-executable').value) || 'mosaicraft') {
   const cli = {...payload};
   if (tab === 'project' && cli.brightnessJitter !== undefined) { cli.colorStrength = cli.brightnessJitter; cli.colorAdjust = true; }
   let command, group = '', input;
@@ -2237,14 +2311,14 @@ function commandFromPayload(tab, payload) {
     command = val('r-action'); group = command === 'render' ? '' : 'project'; input = cli.projectPath;
   } else if (tab === 'inspect') { command = 'inspect'; input = cli.imagePath; }
   else { group = 'library'; command = tab === 'dbusage' ? cli.outputDir ? 'export' : 'usage' : tab === 'dbpurge' ? 'purge' : 'report'; input = cli.dbPath || 'library'; cli.outputPath = cli.outputDir; }
-  const parts = ['mosaicraft', ...(group ? [group] : []), command, quotePowerShell(input)];
+  const parts = [...(group ? [group] : []), command, input];
   for (const option of CLI_OPTION_DEFINITIONS) {
     if (!option.field || !option.commands.split(' ').includes(command)) continue;
     if (option.field === 'colorStrength' && !cli.colorAdjust) continue;
     const value = cli[option.field];
     if (value === undefined || value === '' || value === false) continue;
     if (option.type === 'bool') parts.push('--' + option.name);
-    else parts.push('--' + option.name, typeof value === 'string' ? quotePowerShell(value) : String(value));
+    else parts.push('--' + option.name, String(value));
   }
   const size = (flag, w, h) => { if (w !== undefined && h !== undefined) parts.push(flag, w + 'x' + h); };
   if (command === 'create' || command === 'inspect') {
@@ -2258,7 +2332,7 @@ function commandFromPayload(tab, payload) {
   if (command === 'purge' && cli.confirm) parts.push('--apply');
   if (command === 'usage') { if (cli.limit !== undefined) parts.push('--limit', String(cli.limit)); if (cli.showUnused) parts.push('--unused'); if (cli.sort) parts.push('--sort', cli.sort); }
   if (command === 'export') parts.push('--selection', cli.selection || 'used');
-  return parts.join(' ');
+  return commandShell.render(executable, parts, shell);
 }
 function persistDraft() {
   if (restoringDraft) return;
@@ -2408,6 +2482,7 @@ document.addEventListener('click', event => {
 @comparisonUiScript@
 
 // Restore form state before generating or submitting any request.
+initializeCommandShell();
 initializeFormUi();
 generateCommand();
 checkServer();

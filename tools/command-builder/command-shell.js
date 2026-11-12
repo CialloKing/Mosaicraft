@@ -7,7 +7,7 @@ const commandShell = (() => {
   const supported = shell => Object.hasOwn(names, shell);
   const defaultForPlatform = platform => /^(win|windows)/i.test(platform) ? 'powershell' : /mac|darwin/i.test(platform) ? 'zsh' : 'bash';
   const singleQuoted = value => "'" + value.replace(/'/g, "'\\''") + "'";
-  const powershellQuoted = value => "'" + value.replace(/'/g, "''") + "'";
+  const powershellQuoted = value => "'" + value.replace(/['\u2018\u2019]/g, '$&$&') + "'";
   const windowsQuoted = value => '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';
 
   function render(executable, args, shell) {
