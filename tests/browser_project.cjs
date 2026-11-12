@@ -20,39 +20,63 @@ const {pathToFileURL} = require('node:url');
       const browser = await engine.launch({headless:true});
       try {
         const page = await browser.newPage({viewport:{width:1000,height:760}, offline:true});
+        await page.addInitScript(() => {
+          const NativeImage = window.Image;
+          window.loadedImages = []; window.imageErrors = [];
+          window.Image = function(...args) {
+            const bitmap = new NativeImage(...args);
+            bitmap.addEventListener('load', () => window.loadedImages.push(bitmap.src));
+            bitmap.addEventListener('error', () => window.imageErrors.push(bitmap.src));
+            return bitmap;
+          };
+          window.Image.prototype = NativeImage.prototype;
+        });
         const errors = [], requests = [];
         page.on('pageerror', error => errors.push(error.message));
         page.on('request', request => requests.push(request.url()));
         await page.goto(pathToFileURL(entry).href);
         await page.waitForFunction(() => document.querySelector('#status').textContent.includes('缓存'));
-        await page.waitForFunction(() => document.querySelector('#status').textContent.includes('0.0 / 64') === false);
+        await page.waitForFunction(() => window.loadedImages.some(url => url.includes('/assets/')));
+        assert(!(await page.locator('#status').textContent()).includes('/ 64'));
+        if (process.env.MOSAICRAFT_BROWSER_WAIT_ALL) {
+          await page.waitForFunction(count => window.loadedImages.filter(url => url.includes('/assets/')).length === count,
+            snapshot.assets.length, {timeout:180000});
+          await page.waitForFunction(() => !document.querySelector('#status').textContent.includes('读取失败'));
+          console.log(`${name}: ${await page.locator('#status').textContent()}`);
+        }
         await page.locator('#in').click();
         await page.locator('#reference').click();
         await page.locator('#view').dblclick();
-        await page.waitForFunction(() => document.querySelector('#material').open);
+        await page.waitForFunction(() => document.querySelector('#material').open && document.querySelector('#material-image').naturalWidth > 0);
         await page.locator('#close').click();
         await page.locator('#reference').click();
         await page.locator('#fit').click();
         assert.equal(await page.locator('input,select,[contenteditable=true]').count(), 0);
         assert(requests.every(url => url.startsWith('file:') || url.startsWith('data:')));
         assert.deepEqual(errors, []);
+        assert.deepEqual(await page.evaluate(() => window.imageErrors), []);
+        assert((await page.evaluate(() => window.loadedImages)).every(url => !/overview|thumbnails/.test(url)));
         await page.screenshot({path:path.join(project, '..', `portable-${name}.png`)});
-        const big = {...snapshot, grid:{...snapshot.grid, columns:1000, rows:1000}, layout:Array(1000000).fill(0)};
+        const special = path.join('assets', 'special', `素材 # % 𠮷${path.extname(snapshot.assets[0].path)}`);
+        fs.mkdirSync(path.join(temporary, path.dirname(special)), {recursive:true});
+        fs.copyFileSync(path.join(temporary, snapshot.assets[0].path), path.join(temporary, special));
+        const assets = snapshot.assets.map((asset, i) => i ? asset : {...asset, path:special.split(path.sep).join('/')});
+        const big = {...snapshot, assets, grid:{...snapshot.grid, columns:1000, rows:1000}, layout:Array(1000000).fill(0)};
         fs.writeFileSync(path.join(temporary, 'large.html'), html.replace(pattern,
           (_, a, b, c) => a + JSON.stringify(big) + c));
         requests.length = 0;
         await page.goto(pathToFileURL(path.join(temporary, 'large.html')).href);
-        await page.waitForFunction(() => document.querySelector('#status').textContent.includes('总览'));
-        assert(requests.length < 8, 'overview must not request all source assets');
+        await page.waitForFunction(() => window.loadedImages.some(url => url.includes('/assets/')));
+        assert.equal(await page.evaluate(() => window.loadedImages.filter(url => url.includes('/assets/')).length), 1);
         for (let i = 0; i < 14; ++i) await page.locator('#in').click();
         await page.waitForFunction(() => document.querySelector('#status').textContent.includes('视口浏览'));
         assert(requests.length < 20, 'zoom must load visible resources only');
         const budget = await page.evaluate(() => {
           const cache = new MosaicraftViewport.BitmapCache();
           for (let i = 0; i < 24; ++i) cache.add(String(i), {naturalWidth:1024,naturalHeight:1024,src:'loaded'});
-          return {bytes:cache.bytes, old:cache.get('0')};
+          return {bytes:cache.bytes, old:cache.get('0')?.src};
         });
-        assert(budget.bytes <= 64 * 1024 * 1024 && budget.old === null);
+        assert(budget.bytes === 96 * 1024 * 1024 && budget.old === 'loaded');
         assert.deepEqual(errors, []);
         if (server) {
           await page.context().setOffline(false);
@@ -94,7 +118,7 @@ const {pathToFileURL} = require('node:url');
           assert(fs.existsSync(path.join(project, '..', 'browser-render.png')));
           assert.deepEqual(errors, []);
         }
-        console.log(`${name}: offline viewer, million-cell fallback, viewport loading, cache eviction${server ? ', Web UI project form' : ''} passed`);
+        console.log(`${name}: offline viewer, million-cell source drawing, viewport loading, unbounded cache${server ? ', Web UI project form' : ''} passed`);
       } finally { await browser.close(); }
     }
   } finally { fs.rmSync(temporary, {recursive:true,force:true}); }

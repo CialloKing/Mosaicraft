@@ -719,7 +719,7 @@ try {
     $singleHtml = Invoke-ApiResponse -Method 'GET' -Path ("/api/jobs/{0}/artifacts/main" -f $htmlJob.id)
     Assert-True ($singleHtml.StatusCode -eq 409) 'HTML entry must require a complete project archive'
     $projectInfo = Invoke-Api -Method 'POST' -Path '/api/project/info' -Body @{projectPath=$projectPath}
-    Assert-True ($projectInfo.project.version -eq 1 -and $projectInfo.project.assetCount -gt 0) 'project info missing'
+    Assert-True ($projectInfo.project.version -eq 2 -and $projectInfo.project.assetCount -gt 0) 'project info missing'
     $checkSubmitted = Invoke-Api -Method 'POST' -Path '/api/jobs/project-check' -Body @{projectPath=$projectPath;deep=$true}
     $checked = Wait-JobSucceeded -JobId $checkSubmitted.job.id -Label 'project check' -ExpectedType 'project-check' -ExpectedInputPath $projectPath -ExpectedOutputPath ''
     $renderPath = Join-Path $outputDir 'project-render.png'

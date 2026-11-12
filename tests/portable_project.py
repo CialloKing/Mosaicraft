@@ -4,6 +4,7 @@ from contextlib import closing
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -49,11 +50,69 @@ def main():
         run('create', 'target.png', '-l', 'library', '-o', 'artwork', '--mode', 'html',
             '--backend', 'cpu', '--seed', 42, '--l-range', 255, '--target-blend', .2)
         manifest = json.loads((root / 'artwork/project.json').read_text())
+        assert manifest['version'] == 2
         assert manifest['appearance']['targetBlend'] == .2
         assert not any(Path(item['path']).is_absolute() for item in manifest['resources'])
         assert len(manifest['assets']) <= 10
         assert (root / 'artwork/target.png').is_file()
+        assert not (root / 'artwork/overview.jpg').exists()
+        assert not (root / 'artwork/thumbnails').exists()
+        with closing(sqlite3.connect(root / 'library/mosaicraft.db')) as db:
+            names = {Path(p).name for p, in db.execute('SELECT file_path FROM images')}
+        assert all(Path(a['path']).name in names for a in manifest['assets'])
+        assert len(list((root / 'artwork').rglob('*.*'))) == len(manifest['assets']) + 3
         run('project', 'check', 'artwork/index.html', '--deep')
+        # Distinct content with the same name must survive without renaming; identical bytes copy once.
+        fixture = root / 'same-names'
+        fixture.mkdir()
+        special = '素材 # % 𠮷.PNG'
+        collision = json.loads(json.dumps(manifest))
+        collision.update(grid={'columns': 2, 'rows': 2, 'matchTile': [16, 16]},
+                         assets=[], layout=[0, 1, 2, 1], resources=[])
+        for i, color in enumerate(((20, 50, 80), (180, 210, 240), (20, 50, 80))):
+            name = f'{i}/{special}'
+            (fixture / str(i)).mkdir()
+            png(fixture / name, color)
+            digest = hashlib.sha256((fixture / name).read_bytes()).hexdigest()
+            collision['assets'].append(dict(path=name, sha256=digest, width=32, height=32))
+        shutil.copyfile(root / 'target.png', fixture / 'target.png')
+        for name in ['target.png', *[a['path'] for a in collision['assets']]]:
+            collision['resources'].append(dict(path=name, bytes=(fixture / name).stat().st_size,
+                sha256=hashlib.sha256((fixture / name).read_bytes()).hexdigest(), width=32, height=32))
+        template = (root / 'artwork/index.html').read_text(encoding='utf-8')
+
+        def save_fixture(directory, data):
+            keys = ['version', 'grid', 'outputTile', 'layout', 'assets', 'appearance']
+            keys += ['overview', 'targetDisplay'] if data['version'] == 1 else ['target']
+            snapshot = json.dumps({key: data[key] for key in keys}).replace('<', r'\u003c')
+            html = re.sub(r'(<script id="mosaicraft-snapshot" type="application/json">).*?(</script>)',
+                          lambda match: match[1] + snapshot + match[2], template, flags=re.S)
+            (directory / 'index.html').write_text(html, encoding='utf-8')
+            data['resources'] = [r for r in data['resources'] if r['path'] != 'index.html']
+            data['resources'].append(dict(path='index.html', bytes=(directory / 'index.html').stat().st_size,
+                sha256=hashlib.sha256((directory / 'index.html').read_bytes()).hexdigest(), width=0, height=0))
+            (directory / 'project.json').write_text(json.dumps(data), encoding='utf-8')
+
+        save_fixture(fixture, collision)
+        run('project', 'check', fixture, '--deep')
+        run('render', fixture, '-o', 'preserved', '--mode', 'html')
+        preserved = json.loads((root / 'preserved/project.json').read_text(encoding='utf-8'))
+        assert len(preserved['assets']) == 2
+        assert all(Path(a['path']).name == special for a in preserved['assets'])
+        assert preserved['layout'] == [0, 1, 0, 1]
+        run('project', 'check', 'preserved', '--deep')
+        # Version 1 manifests still validate and render; re-export writes the current format.
+        legacy = json.loads(json.dumps(manifest))
+        legacy.update(version=1, overview='target.png', targetDisplay='target.png')
+        for asset in legacy['assets']:
+            asset.update(display=asset['path'], thumbnail32=asset['path'], thumbnail128=asset['path'])
+        old_project = root / 'legacy'
+        shutil.copytree(root / 'artwork', old_project)
+        save_fixture(old_project, legacy)
+        run('project', 'check', old_project, '--deep')
+        run('render', old_project, '-o', 'legacy.png')
+        run('render', old_project, '-o', 'upgraded', '--mode', 'html')
+        assert json.loads((root / 'upgraded/project.json').read_text())['version'] == 2
         quiet = subprocess.run([str(cli), 'project', 'info', 'artwork', '--quiet'], cwd=root,
                                capture_output=True, timeout=10)
         assert quiet.returncode == 0 and json.loads(quiet.stdout)['ok'] and not quiet.stderr
@@ -96,13 +155,13 @@ def main():
         assert (root / 'unpacked.png').read_bytes() == (root / 'relocated.png').read_bytes()
         (project / 'unrelated.txt').write_text('keep')
         run('render', project, '-o', project, '--mode', 'html', '--overwrite', ok=False)
-        # Derived thumbnails are required for a complete package but not native rendering.
-        thumbnail = project / manifest['assets'][0]['thumbnail32']
-        saved = thumbnail.read_bytes()
-        thumbnail.unlink()
+        # Both checking and rendering require the only stored copy of each source asset.
+        source = project / manifest['assets'][0]['path']
+        saved = source.read_bytes()
+        source.unlink()
         run('project', 'check', project, ok=False)
-        run('render', project, '-o', 'no-thumbnail.png')
-        thumbnail.write_bytes(saved)
+        run('render', project, '-o', 'missing-source.png', ok=False)
+        source.write_bytes(saved)
         pristine = (project / 'project.json').read_bytes()
         for mutate in (
             lambda m: m.update(version=99),
@@ -110,7 +169,7 @@ def main():
             lambda m: m['resources'][0].update(path='../outside.png'),
             lambda m: m['resources'][0].update(sha256='0' * 64),
             lambda m: m['assets'][0].update(width=1),
-            lambda m: m.update(targetDisplay='../outside.png'),
+            lambda m: m.update(target='../outside.png'),
             lambda m: m['grid'].update(columns=2.5),
             lambda m: m.update(outputTile=[18.5, 32]),
         ):

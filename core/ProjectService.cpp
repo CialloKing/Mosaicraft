@@ -2,6 +2,7 @@
 #include "ExecutionScope.h"
 #include "OutputPublication.h"
 #include "PortableViewer.h"
+#include "ProjectFormat.h"
 #include "RequestValidation.h"
 #include "UnicodeIO.h"
 #include "third_party/miniz/miniz.h"
@@ -69,7 +70,8 @@ Project loadProject(const std::string &input)
     std::ifstream inputFile(manifestPath, std::ios::binary);
     Project project{path, json::parse(inputFile)};
     const auto &m = project.manifest;
-    if (m.at("type") != "mosaicraft-project" || m.at("version") != 1)
+    if (m.at("type") != "mosaicraft-project" || !m.at("version").is_number_integer() ||
+        !supportedProjectVersion(m.at("version").get<int64_t>()))
     {
         throw std::invalid_argument("unsupported Mosaicraft project version");
     }
@@ -115,14 +117,21 @@ Project loadProject(const std::string &input)
         }
     };
     requireResource(m.at("target"));
-    requireResource(m.at("overview"));
     requireResource(m.at("entry"));
-    requireResource(m.at("targetDisplay"));
+    if (m.at("version") == 1)
+    {
+        requireResource(m.at("overview"));
+        requireResource(m.at("targetDisplay"));
+    }
     for (const auto &asset : m.at("assets"))
     {
-        for (const auto &key : {"path", "display", "thumbnail32", "thumbnail128"})
+        requireResource(asset.at("path"));
+        if (m.at("version") == 1)
         {
-            requireResource(asset.at(key));
+            for (const auto &key : {"display", "thumbnail32", "thumbnail128"})
+            {
+                requireResource(asset.at(key));
+            }
         }
         const auto &resource = *resourceTable.at(asset.at("path").get<std::string>());
         if (asset.at("sha256") != resource.at("sha256") || asset.at("width") != resource.at("width") ||
@@ -173,10 +182,18 @@ Project loadProject(const std::string &input)
 json browseSnapshot(const json &manifest)
 {
     json snapshot;
-    for (const auto &key :
-         {"version", "grid", "outputTile", "layout", "assets", "appearance", "overview", "targetDisplay"})
+    for (const auto &key : {"version", "grid", "outputTile", "layout", "assets", "appearance"})
     {
         snapshot[key] = manifest.at(key);
+    }
+    if (manifest.at("version") == 1)
+    {
+        snapshot["overview"] = manifest.at("overview");
+        snapshot["targetDisplay"] = manifest.at("targetDisplay");
+    }
+    else
+    {
+        snapshot["target"] = manifest.at("target");
     }
     return snapshot;
 }
@@ -226,16 +243,9 @@ void saveText(const fs::path &path, const std::string &text)
     }
 }
 
-void saveImage(const fs::path &path, const cv::Mat &image, int longest = 0)
+void saveImage(const fs::path &path, const cv::Mat &image)
 {
-    cv::Mat display = image;
-    if (longest > 0 && std::max(image.cols, image.rows) > longest)
-    {
-        const double scale = double(longest) / std::max(image.cols, image.rows);
-        cv::resize(image, display, {std::max(1, int(image.cols * scale)), std::max(1, int(image.rows * scale))}, 0, 0,
-                   cv::INTER_AREA);
-    }
-    if (!imwriteUnicode(pathToUtf8(path), display,
+    if (!imwriteUnicode(pathToUtf8(path), image,
                         path.extension() == ".png" ? std::vector<int>{cv::IMWRITE_PNG_COMPRESSION, 1}
                                                    : std::vector<int>{cv::IMWRITE_JPEG_QUALITY, 90}))
     {
@@ -279,10 +289,9 @@ bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &dir
         runtime.stage("exporting_project");
         const auto root = u8path(directory);
         fs::create_directories(root / "assets");
-        fs::create_directories(root / "thumbnails");
         json manifest{
             {"type", "mosaicraft-project"},
-            {"version", 1},
+            {"version", projectFormatVersion},
             {"grid",
              {{"columns", columns}, {"rows", rows}, {"matchTile", {target.cols / columns, target.rows / rows}}}},
             {"outputTile", {config.nativeTileW, config.nativeTileH}},
@@ -290,8 +299,6 @@ bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &dir
             {"appearance", {{"targetBlend", config.overlayStrength}, {"brightnessJitter", 0}}},
             {"entry", "index.html"},
             {"target", "target.png"},
-            {"targetDisplay", "thumbnails/target.jpg"},
-            {"overview", "overview.jpg"},
             {"assets", json::array()},
             {"layout", json::array()},
             {"resources", json::array()}};
@@ -325,13 +332,10 @@ bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &dir
                 if (!hashes.count(hash))
                 {
                     const int id = static_cast<int>(manifest["assets"].size());
-                    auto extension = pathToUtf8(source.extension());
-                    std::transform(extension.begin(), extension.end(), extension.begin(),
-                                   [](unsigned char c)
-                                   {
-                                       return std::tolower(c);
-                                   });
-                    const std::string original = "assets/" + hash + extension;
+                    // 独立素材目录避免跨平台同名/大小写冲突，文件名和文件字节均保持原样。
+                    const std::string original =
+                        "assets/" + std::to_string(id) + "/" + pathToUtf8(source.filename());
+                    fs::create_directories(resourcePath(root, original).parent_path());
                     fs::copy_file(source, resourcePath(root, original));
                     if (sha256File(root / u8path(original)) != hash)
                     {
@@ -342,29 +346,11 @@ bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &dir
                     {
                         throw std::runtime_error("selected asset cannot be decoded: " + pathToUtf8(source));
                     }
-                    const auto raw = imreadUnicode(pathToUtf8(root / u8path(original)), cv::IMREAD_UNCHANGED);
-                    std::string display = original;
-                    if ((extension != ".jpg" && extension != ".jpeg" && extension != ".png" && extension != ".webp") ||
-                        raw.type() != CV_8UC3)
-                    {
-                        display = "thumbnails/" + hash + "-display.jpg";
-                        saveImage(root / u8path(display), image);
-                        addResource(display, image.size());
-                    }
                     json asset{{"path", original},
                                {"sha256", hash},
                                {"width", image.cols},
-                               {"height", image.rows},
-                               {"display", display}};
+                               {"height", image.rows}};
                     addResource(original, image.size());
-                    for (int size : {32, 128})
-                    {
-                        const auto name = "thumbnails/" + hash + "-" + std::to_string(size) + ".jpg";
-                        saveImage(root / u8path(name), image, size);
-                        const auto thumb = imreadUnicode(pathToUtf8(root / u8path(name)));
-                        addResource(name, thumb.size());
-                        asset["thumbnail" + std::to_string(size)] = name;
-                    }
                     hashes.emplace(hash, id);
                     manifest["assets"].push_back(std::move(asset));
                     runtime.advance("assets", ++processed, -1, "assets");
@@ -375,48 +361,6 @@ bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &dir
         }
         saveImage(root / "target.png", target);
         addResource("target.png", target.size());
-        saveImage(root / "thumbnails/target.jpg", target, 1400);
-        addResource("thumbnails/target.jpg", imreadUnicode(pathToUtf8(root / "thumbnails/target.jpg")).size());
-
-        const double ratio = double(columns) * config.nativeTileW / (double(rows) * config.nativeTileH);
-        const int width = std::max(1, int(1600 * std::min(1.0, ratio)));
-        const int height = std::max(1, int(1600 / std::max(1.0, ratio)));
-        cv::Mat overview(height, width, CV_8UC3, cv::Scalar(64, 64, 64));
-        // 总览缓存有明确预算，素材数增长时仍不分配最终尺寸的合成图。
-        std::unordered_map<int, cv::Mat> thumbs;
-        size_t thumbBytes = 0;
-        for (size_t i = 0; i < selection.size(); ++i)
-        {
-            const int asset = manifest["layout"][i];
-            const int x0 = int((i % columns) * uint64_t(width) / columns);
-            const int x1 = int((i % columns + 1) * uint64_t(width) / columns);
-            const int y0 = int((i / columns) * uint64_t(height) / rows);
-            const int y1 = int((i / columns + 1) * uint64_t(height) / rows);
-            if (asset < 0 || x0 == x1 || y0 == y1)
-            {
-                continue;
-            }
-            if (!thumbs.count(asset))
-            {
-                const auto thumb = imreadUnicode(pathToUtf8(root / u8path(manifest["assets"][asset]["thumbnail32"])));
-                if (thumbBytes + thumb.total() * thumb.elemSize() > 16 * 1024 * 1024)
-                {
-                    thumbs.clear();
-                    thumbBytes = 0;
-                }
-                thumbs[asset] = thumb;
-                thumbBytes += thumb.total() * thumb.elemSize();
-            }
-            cv::resize(thumbs.at(asset), overview(cv::Rect(x0, y0, x1 - x0, y1 - y0)), {x1 - x0, y1 - y0});
-        }
-        if (config.overlayStrength > 0)
-        {
-            cv::Mat reference;
-            cv::resize(target, reference, overview.size());
-            cv::addWeighted(overview, 1 - config.overlayStrength, reference, config.overlayStrength, 0, overview);
-        }
-        saveImage(root / "overview.jpg", overview);
-        addResource("overview.jpg", overview.size());
         auto snapshot = browseSnapshot(manifest).dump(-1, ' ', true);
         // JSON 放入 script 文本时必须转义 <，素材名不能提前结束元素。
         size_t at = 0;
@@ -498,7 +442,7 @@ json ProjectService::info(const std::string &input) const
         bytes += resource["bytes"].get<uint64_t>();
     }
     return {{"path", pathToUtf8(project.root)},
-            {"version", 1},
+            {"version", manifest["version"]},
             {"grid", manifest["grid"]},
             {"outputTile", manifest["outputTile"]},
             {"assetCount", manifest["assets"].size()},

@@ -1,4 +1,4 @@
-// 预览和离线作品共用几何及缓存预算，坐标单位为图块。
+// 共用视口几何；实时预览保留自己的预算，离线工程缓存默认不设上限。
 const MosaicraftViewport = (() => {
   const cacheBudget = 64 * 1024 * 1024;
   const parallelLoads = 8;
@@ -19,11 +19,11 @@ const MosaicraftViewport = (() => {
     };
   }
   class BitmapCache {
-    constructor(budget = cacheBudget) { this.budget = budget; this.bytes = 0; this.entries = new Map(); }
+    constructor(budget = Infinity) { this.budget = budget; this.bytes = 0; this.entries = new Map(); }
     get(key) {
       const item = this.entries.get(key);
       if (!item) return null;
-      this.entries.delete(key); this.entries.set(key, item);
+      if (Number.isFinite(this.budget)) { this.entries.delete(key); this.entries.set(key, item); }
       return item.image;
     }
     add(key, image) {

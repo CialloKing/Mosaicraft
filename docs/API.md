@@ -19,6 +19,8 @@ Both entries call the same core services for mosaic generation, library building
 
 API **1.4** adds portable HTML projects, native rendering from saved layouts, project checks and ZIP64 packaging. Existing request fields remain compatible. The library schema version remains 1.
 
+新 HTML 导出使用工程格式 **2**：仅保存清单、离线 HTML、无损目标图及一份按字节去重的已用素材。素材保留图库文件名，按素材索引分目录防止同名冲突；不生成 overview 或派生缩略图，离线查看器不设置应用图片缓存上限。格式 1 工程仍可查询、检查、打包和回导，源工程不会被修改。API 版本保持 1.4。
+
 ---
 
 ## 服务发现 / Discovery
