@@ -1,8 +1,18 @@
 #include "../compute/PortableCompute.h"
+#include "../core/CliOptions.h"
 
 TEST_CASE("portable backend options preserve defaults and reject invalid score modes")
 {
     using namespace mosaicraft;
+    for (const auto &option : cliOptions())
+    {
+        if (std::string(option.name) == "json" || std::string(option.name) == "quiet")
+        {
+            CHECK(cliOptionSupports(option, "build"));
+            CHECK(cliOptionSupports(option, "info"));
+            CHECK(cliOptionSupports(option, "devices"));
+        }
+    }
     CHECK(parseBackend("vulkan") == BackendPolicy::Vulkan);
     CHECK(parseBackend("metal") == BackendPolicy::Metal);
     CHECK(parseScoreMode("fast") == ScoreMode::Fast);

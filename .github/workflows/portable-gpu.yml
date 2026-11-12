@@ -4,6 +4,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: portable-gpu-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   candidate:
     name: ${{ matrix.platform }} ${{ matrix.backend }} candidate
@@ -43,6 +46,14 @@ jobs:
       - name: Prepare pinned Vulkan headers and offline compiler
         if: matrix.backend == 'Vulkan'
         run: ./scripts/setup-vulkan.ps1
+      - name: Prepare Apple offline shader compiler
+        if: matrix.backend == 'Metal'
+        run: |
+          xcrun -sdk macosx metal --version
+          if ($LASTEXITCODE -ne 0) {
+            xcodebuild -downloadComponent MetalToolchain
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Build, test and archive explicit-only candidate
         run: |
           $options = @{ NoCuda = $true; OutputDir = 'build/archives'; BuildDir = 'build/package-portable' }

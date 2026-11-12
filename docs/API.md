@@ -214,7 +214,7 @@ The plan is optional and is not proof of a saved file. Existing runtime dimensio
 
 ### 新输出模式 / Output modes
 
-马赛克请求新增 `outputMode: "image|html|deepzoom|tiles"`、`backend: "auto|cpu|cuda"`、`threads: 0..256`、`seed` 和 `overwrite`。新字段指定目录模式时 `outputPath` 为完整导出目录；未提供时旧 `tiled/deepZoom` 的文件/前缀解释保持不变。新旧模式冲突返回 400；旧字段只在入口转换，核心使用单一模式。
+马赛克请求接受 `outputMode: "image|html|deepzoom|tiles"`、`backend: "auto|cpu|cuda|vulkan|metal"`、`device`、`scoreMode`、`threads: 0..256`、`seed` 和 `overwrite`。新字段指定目录模式时 `outputPath` 为完整导出目录；未提供时旧 `tiled/deepZoom` 的文件/前缀解释保持不变。新旧模式冲突返回 400；旧字段只在入口转换，核心使用单一模式。
 
 HTML 与显式 `format/quality/pngLevel/writeMode/generatePreview` 互斥，拒绝启用的非零亮度扰动。所有成功 create 自动记录最终排列使用情况，不依赖 analyze。固定种子在相同输入、版本和后端内复现，不承诺跨后端一致。
 

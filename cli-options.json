@@ -409,7 +409,7 @@
     "short": "",
     "type": "bool",
     "field": "",
-    "commands": "* devices",
+    "commands": "*",
     "help": "Hide progress and normal explanations; retain final result and errors",
     "advanced": false
   },
