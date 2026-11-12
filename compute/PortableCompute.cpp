@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <numeric>
 
 namespace mosaicraft::compute
 {
@@ -219,7 +220,8 @@ bool ScoreWorkspace::prepare(int maximum, int count, size_t libraryCount, size_t
     const size_t perRow = stride * 4 + checkedMatchProduct(size_t(count), sizeof(int) + 5 * sizeof(float));
     rows = static_cast<int>(std::min(
         {size_t(maximum), size_t(256), deviceBudget / perRow, hostBudget / (perRow + size_t(count) * sizeof(double))}));
-    uploadRows = std::min({libraryCount, size_t(4096), hostBudget / (stride * 4)});
+    // 上传阶段还需要候选编号暂存，最多占用与打包行相同的主机空间。
+    uploadRows = std::min({libraryCount, size_t(4096), hostBudget / (stride * 8)});
     if (!rows || !uploadRows || library > device.maxBufferBytes)
     {
         rows = 0;
@@ -251,9 +253,24 @@ void ScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &images, Featu
         throw std::invalid_argument("portable score library size mismatch");
     }
     std::vector<uint32_t> packed(uploadRows * stride);
+    std::vector<int> needed;
+    const bool prepareAll = reader.stats().preloaded && images.size() <= uploadRows * stride;
+    if (prepareAll)
+    {
+        // 复用 FeaturePack 的目录批量校验，避免整库上传触发两次逐文件属性查询。
+        needed.resize(images.size());
+        std::iota(needed.begin(), needed.end(), 0);
+        reader.prepare(needed);
+    }
     for (size_t first = 0; first < images.size(); first += uploadRows)
     {
         const size_t count = std::min(uploadRows, images.size() - first);
+        if (!prepareAll)
+        {
+            needed.resize(count);
+            std::iota(needed.begin(), needed.end(), int(first));
+            reader.prepare(needed);
+        }
         for (size_t row = 0; row < count; ++row)
         {
             const auto &r = images[first + row];
