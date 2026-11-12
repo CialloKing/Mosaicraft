@@ -10,6 +10,12 @@
 
 支持基线为 Windows 10 22H2 x64、Ubuntu 22.04/glibc 2.35、macOS 13 ARM64。没有安装器、DMG、Universal 2 或 Developer ID 公证。macOS 包使用 ad-hoc 签名；这不等于 Apple 公证。
 
+## 正式包后端范围
+
+v1.15.7 继续交付 Windows CPU/CUDA、Linux CPU/CUDA、macOS ARM64 CPU 五个包，不添加 Vulkan 或 Metal 附件。标准 presets 默认关闭 MOSAICRAFT_VULKAN 和 MOSAICRAFT_METAL，release.ps1 未收到显式可选后端开关时强制传入 OFF，再检查实际 CMake 缓存。BUILD_INFO.txt 记录 VulkanBackend / MetalBackend 为 disabled。
+
+需要 Vulkan 的用户须[从源码编译](building.md#vulkan-与-metal)。Portable GPU candidates 工作流仅用于可选后端构建验证，不将候选二进制纳入此正式 Release。
+
 ## 固定依赖与缓存
 
 `vcpkg.json` 同时固定工具仓库和依赖基线为 `a0400024711b283056538ac19ced80b91a83c24c`。OpenCV 4.12.0 仅启用 jpeg/png/tiff/webp/intrinsics/thread，产品仅链接 core/imgproc/imgcodecs。TIFF 保留 JPEG、LZMA、ZIP 编解码。三个自定义 triplet 只构建 Release 动态库，Windows 使用动态 CRT。

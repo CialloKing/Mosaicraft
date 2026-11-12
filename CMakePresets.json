@@ -11,7 +11,9 @@
       "hidden": true,
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "MOSAICRAFT_VULKAN": "OFF",
+        "MOSAICRAFT_METAL": "OFF"
       }
     },
     {

@@ -1,6 +1,6 @@
 # GPU 后端与精度模式
 
-当前源码提供 CPU、CUDA、Vulkan、Metal。已安装包只包含它构建时启用的后端；先查看包内 `BUILD_INFO.txt` 和设备发现结果。
+当前源码提供 CPU、CUDA、Vulkan、Metal。v1.15.7 的五个标准发布包均通过条件编译关闭 Vulkan/Metal。需要 Vulkan 的用户须[自行编译](../development/building.md#vulkan-与-metal)，运行时指定 --backend vulkan 不会为标准包增加 Vulkan 能力。已安装包只包含它构建时启用的后端；先查看包内 `BUILD_INFO.txt` 和设备发现结果。
 
 ## 选择后端与设备
 

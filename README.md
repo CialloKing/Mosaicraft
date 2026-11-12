@@ -16,7 +16,7 @@ Mosaicraft 用图库里的照片拼出一张目标图，提供本地 Web UI 和�
 | Linux x64 | Ubuntu 22.04 / glibc 2.35 | `_linux-x64_cpu-only.tar.gz` | `_linux-x64_cuda.tar.gz` |
 | macOS ARM64 | macOS 13 | `_macos-arm64_cpu-only.tar.gz` | — |
 
-包内 `BUILD_INFO.txt` 记录实际构建配置与验收状态。当前源码包含显式启用的 Vulkan/Metal 候选能力，auto 仍为 CUDA → CPU；候选能力和源码版本不表示公开稳定包已经包含。详见[版本状态](docs/releases.md)与[GPU 后端](docs/guides/gpu-backends.md)。
+包内 `BUILD_INFO.txt` 记录实际构建配置与验收状态。v1.15.7 保持五个标准发布包，Vulkan 与 Metal 均不编译进入这些包。需要 Vulkan 的用户须[自行从源码启用并编译](docs/development/building.md#vulkan-与-metal)，不能仅靠运行时参数开启。auto 仍为 CUDA → CPU。详见[版本状态](docs/releases.md)与[GPU 后端](docs/guides/gpu-backends.md)。
 
 ## 快速开始
 

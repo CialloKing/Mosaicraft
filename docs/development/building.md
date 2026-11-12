@@ -46,7 +46,7 @@ cmake --build --preset $preset --target mosaicraft MosaicraftWebUI --parallel
 
 ## Vulkan 与 Metal
 
-Vulkan 与 Metal 都是独立开关，CPU 构建不需要 GPU SDK。设备与性能准入见[四后端实现与验收](portable-gpu.md)。
+Vulkan 与 Metal 都是独立开关，默认 OFF，五个标准发布包保持关闭，CPU 构建不需要 GPU SDK。使用 Vulkan 的用户需要自行从源码编译：选用下方 Vulkan preset，或在配置时显式传入 -DMOSAICRAFT_VULKAN=ON。开发者 preset 的启用不会影响正式包；发布脚本再次显式设置开关并检查缓存，避免复用目录带入额外后端。设备与性能准入见[四后端实现与验收](portable-gpu.md)。
 
 - Windows：先运行 ./scripts/setup-vulkan.ps1，再使用 windows-vulkan 或 windows-cuda-vulkan preset。
 - Linux：安装 Vulkan headers 和 glslang，使用 linux-vulkan preset。

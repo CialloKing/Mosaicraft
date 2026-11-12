@@ -288,6 +288,8 @@ function Write-BuildInfo
         "Platform: $Platform",
         "Arch: $Arch",
         "Runtime: $Runtime",
+        "VulkanBackend: $(if ($Vulkan) { 'enabled' } else { 'disabled' })",
+        "MetalBackend: $(if ($Metal) { 'enabled' } else { 'disabled' })",
         "GpuValidation: $gpuValidation",
         "Configuration: $Configuration",
         "Commit: $CommitHash",
@@ -537,6 +539,9 @@ try {
         Invoke-Step "Configure" {
             # Source and release builds share presets; explicit overrides take precedence.
             $configureArgs = @('--preset', $configurePreset, '-S', $RepoRoot, '-B', $buildPath, '-DMOSAICRAFT_BUNDLE_RUNTIME=ON')
+            # A reused developer cache must not enable optional backends in a standard release.
+            $configureArgs += "-DMOSAICRAFT_VULKAN:BOOL=$(if ($Vulkan) { 'ON' } else { 'OFF' })"
+            $configureArgs += "-DMOSAICRAFT_METAL:BOOL=$(if ($Metal) { 'ON' } else { 'OFF' })"
             if ($ToolchainFile) {
                 $configureArgs += "-DCMAKE_TOOLCHAIN_FILE=$ToolchainFile"
                 if ($env:VCPKG_OVERLAY_TRIPLETS) {
