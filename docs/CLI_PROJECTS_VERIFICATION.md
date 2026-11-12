@@ -90,3 +90,5 @@ GPU 为 NVIDIA GeForce RTX 4060 Laptop GPU，驱动 621.14。严格 CUDA 检查�
 ## 使用和后续
 
 新命令及工程契约见 [CLI 与工程说明](CLI_PROJECTS.md)，接口见 [API](API.md)。后续平台验收及正式发版遵循 [发布检查表](RELEASE_CHECKLIST.md)，不要求重建现有有效图库。
+
+项目内 45,613 张真实图库与 target.png 的追加集成验证见 [HTML 真实数据验收](HTML_PROJECT_REAL_DATA_VERIFICATION.md)，包含实际工程、浏览截图、字节一致性及解压回导结果。
