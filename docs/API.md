@@ -311,13 +311,19 @@ Inspects a source image and optionally reports database match coverage.
 返回数据库大小、LAB 范围、亮度分桶和覆盖间隙。
 Returns database size, LAB ranges, brightness buckets, and coverage gaps.
 
+`lHistogram` 在非空图库中返回 8 档 `{lo, hi, count}`，覆盖保存的 LAB L 值 0～255。`coverageGaps` 为覆盖缺口代码。
+
 ### `GET|POST /api/db/health`
 
 返回健康警告和建议 / Returns health warnings and recommendations.
 
+`missingFiles` 为缺失素材文件数，`usage` 提供已用与未用素材的数量和百分比。`hotspot.topHotspotTilePct` 是按 `runs` 排名前 `topHotspotCount` 张素材累计占用的格数比例。
+
 ### `GET|POST /api/db/usage`
 
 返回使用统计 / Returns usage statistics.
+
+`top` 按 `runs` 降序排列。同一目标图仅首次统计时增加 `runs`，后续任务仍累计 `tiles`（填充格数）。
 
 常用 JSON 字段 / Common JSON fields:
 

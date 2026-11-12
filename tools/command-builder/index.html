@@ -213,6 +213,18 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 .task-results { border-top: 1px solid var(--border); margin-top: 15px; padding-top: 12px; font-size: .8rem; }
 .task-results h3 { font-size: .9rem; margin-bottom: 8px; }
 .result-preview { display: block; max-width: 100%; max-height: 480px; object-fit: contain; margin-top: 12px; background: var(--bg); border-radius: 6px; }
+.db-result { margin-top: 10px; color: var(--fg); font-size: .85rem; }
+.db-result p, .db-result figure { margin: 8px 0; }
+.db-histogram { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; list-style: none; margin: 8px 0; padding: 0; text-align: center; }
+.db-histogram li { display: grid; grid-template-rows: auto 6rem auto; align-items: end; gap: 4px; overflow-wrap: anywhere; }
+.db-histogram-track { display: flex; align-items: end; height: 100%; background: var(--bg); }
+.db-histogram-fill { width: 100%; background: var(--accent); }
+.db-usage-track { display: flex; height: .75rem; border-radius: 4px; overflow: hidden; background: var(--border); margin: 6px 0; }
+.db-usage-fill, .db-rank-fill { background: var(--accent); }
+.db-result-table { width: 100%; border-collapse: collapse; text-align: right; font-variant-numeric: tabular-nums; }
+.db-result-table th, .db-result-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
+.db-rank-track { display: block; height: .55rem; min-width: 1rem; background: var(--bg); }
+.db-rank-fill { display: block; height: 100%; }
 [hidden] { display: none !important; }
 .saved-main { color: var(--success); margin-bottom: 10px; }
 .help-page { font-size: .88rem; line-height: 1.8; }
@@ -639,8 +651,8 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <div class="help-table-wrap"><table class="help-table">
       <thead><tr><th scope="col">功能 / 选项</th><th scope="col">作用与适用场景</th></tr></thead><tbody>
         <tr><td>查询：图片路径、数据库</td><td>选择一张待查询图片，可查看图片特征，并在图库可用时查看亮度接近的候选数量与分布。适合判断图片是否可读取或图库亮度覆盖情况；图片路径必填。</td></tr>
-        <tr><td>统计：数据库</td><td>查看素材总数、特征尺寸、平均颜色与亮度分布等，适合确认图库规模和规格，以及初步发现色彩覆盖不足。</td></tr>
-        <tr><td>健康：数据库</td><td>检查素材文件、Tiny/LBP 特征及明暗和色彩覆盖，并给出使用情况提示。素材打不开或预览出现缺图时先运行；“未使用”提示依赖分析统计，不能单凭此项断定图片无价值。</td></tr>
+        <tr><td>统计：数据库</td><td>查看素材总数、特征尺寸、8 档亮度直方图和覆盖缺口。直方图使用图库保存的 0～255 LAB L 值。</td></tr>
+        <tr><td>健康：数据库</td><td>查看缺失素材文件数、特征检查警告、已用与未用占比，以及高频素材占用的格数比例。使用次数来源于已记录的生成任务。</td></tr>
         <tr><td>清理：数据库 / 跳过确认</td><td>适合从图库目录手动删除图片后同步数据库。先不勾选“跳过确认”并运行，查看失去图片的记录预览；确认无误后勾选并运行，在弹窗中确认，程序删除这些记录及关联特征。它不按“未使用”删除仍存在的图片，也不会从原始素材重新导入图片。</td></tr>
         <tr><td>使用记录：Top N<br><code>-n</code></td><td>默认 50，设置显示多少条已记录的使用排名。正式生成勾选“质量分析”且分析统计成功提交后才有记录；Top N 只限制列表数量，不代表图库其余素材已删除或无用。</td></tr>
         <tr><td>使用记录：导出目录<br><code>--export</code></td><td>留空查询排名；填写目录并确认后，将所有已记录使用过的素材复制到该目录，不受 Top N 显示数量限制。适合整理已用素材，目标目录中的同名导出文件可能被覆盖。</td></tr>
@@ -1264,35 +1276,42 @@ function formatDuration(seconds)
 }
 
 function renderDbStats(stats) {
-  if (!stats || stats.empty) return '<br><span style="font-size:0.76rem">数据库为空</span>';
+  if (!stats || stats.empty) return '<p class="hint">数据库为空</p>';
   const brightness = stats.brightness || {};
   const lab = stats.lab || {};
-  const gaps = (stats.coverageGaps || []).length ? stats.coverageGaps.join(', ') : 'none significant';
-  return '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:260px;overflow:auto">' +
-    'Images: ' + escapeHtml(stats.total) + '\n' +
-    'Normalized: ' + escapeHtml(stats.featureWidth || '?') + 'x' + escapeHtml(stats.featureHeight || '?') + '\n' +
-    'Grid dim: ' + escapeHtml(stats.gridDim) + '\n' +
-    'LAB L: ' + Number(lab.minL || 0).toFixed(1) + '-' + Number(lab.maxL || 0).toFixed(1) + ' avg=' + Number(lab.avgL || 0).toFixed(1) + '\n' +
-    'Brightness: dark=' + escapeHtml(brightness.dark || 0) + ' mid=' + escapeHtml(brightness.mid || 0) + ' bright=' + escapeHtml(brightness.bright || 0) + '\n' +
-    'Coverage gaps: ' + escapeHtml(gaps) +
-    '</pre>';
+  const gapLabels = { dark: '暗部不足', 'green-biased': '绿色覆盖偏少', 'red-deficient': '红色覆盖偏少',
+    'blue-biased': '蓝色覆盖偏少', 'yellow-deficient': '黄色覆盖偏少' };
+  const gaps = (stats.coverageGaps || []).map(gap => gapLabels[gap] || gap);
+  const bins = stats.lHistogram || [];
+  const peak = Math.max(1, ...bins.map(bin => bin.count));
+  const histogram = bins.map(bin => `<li><span>${escapeHtml(bin.count)} 张</span>
+    <span class="db-histogram-track" aria-hidden="true"><span class="db-histogram-fill" style="height:${100 * bin.count / peak}%"></span></span>
+    <span>${escapeHtml(bin.lo)}–${escapeHtml(bin.hi)}</span></li>`).join('');
+  return `<section class="db-result">
+    <p>素材 ${escapeHtml(stats.total)} 张 · 归一化 ${escapeHtml(stats.featureWidth || '?')} × ${escapeHtml(stats.featureHeight || '?')} · 网格特征 ${escapeHtml(stats.gridDim)} 维</p>
+    <p>亮度 ${Number(lab.minL || 0).toFixed(1)}–${Number(lab.maxL || 0).toFixed(1)} · 平均 ${Number(lab.avgL || 0).toFixed(1)} · 暗 ${escapeHtml(brightness.dark || 0)} / 中 ${escapeHtml(brightness.mid || 0)} / 亮 ${escapeHtml(brightness.bright || 0)}</p>
+    ${histogram ? `<figure><figcaption>素材亮度分布（LAB L）</figcaption><ul class="db-histogram">${histogram}</ul></figure>` : ''}
+    <p>覆盖缺口 · ${gaps.length ? gaps.map(escapeHtml).join('、') : '未发现明显缺口'}</p>
+  </section>`;
 }
 
 function renderDbHealth(health) {
-  if (!health || health.empty) return '<br><span style="font-size:0.76rem">数据库为空</span>';
+  if (!health || health.empty) return '<p class="hint">数据库为空</p>';
   const b = health.brightness || {};
   const u = health.usage || {};
   const hotspot = health.hotspot || {};
-  const warnings = (health.warnings || []).length ? health.warnings.join('\nWARN: ') : 'none';
-  const recs = (health.recommendations || []).length ? health.recommendations.join('\n+ ') : 'Database looks well-balanced!';
-  return '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:260px;overflow:auto">' +
-    'Images: ' + escapeHtml(health.total) + '\n' +
-    'Brightness: dark=' + Number(b.darkPct || 0).toFixed(1) + '% mid=' + Number(b.midPct || 0).toFixed(1) + '% bright=' + Number(b.brightPct || 0).toFixed(1) + '%\n' +
-    'Usage: used=' + escapeHtml(u.usedCount || 0) + ' unused=' + escapeHtml(u.unusedCount || 0) + '\n' +
-    'Top hotspot: ' + Number(hotspot.topHotspotTilePct || 0).toFixed(1) + '% of tiles\n' +
-    'WARN: ' + escapeHtml(warnings) + '\n' +
-    '+ ' + escapeHtml(recs) +
-    '</pre>';
+  const warnings = health.warnings || [];
+  const recommendations = health.recommendations || [];
+  const usedPct = Number(u.usedPct || 0);
+  return `<section class="db-result">
+    <p>素材 ${escapeHtml(health.total)} 张 · 缺失素材文件 ${escapeHtml(health.missingFiles || 0)} 个</p>
+    <p>亮度分布 · 暗 ${Number(b.darkPct || 0).toFixed(1)}% / 中 ${Number(b.midPct || 0).toFixed(1)}% / 亮 ${Number(b.brightPct || 0).toFixed(1)}%</p>
+    <div class="db-usage-track" aria-hidden="true"><span class="db-usage-fill" style="width:${usedPct}%"></span></div>
+    <p>已用 ${escapeHtml(u.usedCount || 0)} 张（${usedPct.toFixed(1)}%） · 未用 ${escapeHtml(u.unusedCount || 0)} 张（${Number(u.unusedPct || 0).toFixed(1)}%）</p>
+    <p>${hotspot.topHotspotCount ? `按使用次数排名前 ${escapeHtml(hotspot.topHotspotCount)} 的素材占累计格数的 ${Number(hotspot.topHotspotTilePct || 0).toFixed(1)}%` : '暂无高频素材统计'}</p>
+    ${warnings.length ? `<details><summary>检查警告（${warnings.length}）</summary><ul>${warnings.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></details>` : '<p>未发现检查警告</p>'}
+    ${recommendations.length ? `<details><summary>处理建议（${recommendations.length}）</summary><ul>${recommendations.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></details>` : ''}
+  </section>`;
 }
 
 function renderInspect(info) {
@@ -1312,15 +1331,14 @@ function renderInspect(info) {
 }
 
 function renderDbUsage(usage) {
-  if (!usage || usage.empty) return '<br><span style="font-size:0.76rem">暂无使用统计</span>';
-  let text = 'Top ' + usage.top.length + ' most used images\nRank  Image ID  Runs  Tiles';
-  usage.top.forEach((item, idx) => {
-    text += '\n' + String(idx + 1).padStart(4, ' ') + '  ' +
-      String(item.id).padStart(8, ' ') + '  ' +
-      String(item.runs).padStart(4, ' ') + '  ' +
-      String(item.tiles).padStart(6, ' ');
-  });
-  return '<br><pre style="font-size:0.7rem;margin-top:4px;max-height:260px;overflow:auto">' + escapeHtml(text) + '</pre>';
+  if (!usage || usage.empty) return '<p class="hint">暂无使用统计</p>';
+  const peak = Math.max(1, usage.top[0]?.runs || 0);
+  const rows = usage.top.map((item, index) => `<tr><td>${index + 1}</td><th scope="row">${escapeHtml(item.id)}</th>
+    <td>${escapeHtml(item.runs)}</td><td>${escapeHtml(item.tiles)}</td>
+    <td>${index < 10 ? `<span class="db-rank-track" aria-hidden="true"><span class="db-rank-fill" style="width:${100 * item.runs / peak}%"></span></span>` : ''}</td></tr>`).join('');
+  return `<section class="db-result"><table class="db-result-table"><caption>按使用次数排序（同一目标图只计首次）</caption>
+    <thead><tr><th scope="col">排名</th><th scope="col">素材 ID</th><th scope="col">使用次数</th><th scope="col">累计格数</th><th scope="col">前 10 名</th></tr></thead>
+    <tbody>${rows}</tbody></table></section>`;
 }
 
 function renderDbUsageExport(info) {
