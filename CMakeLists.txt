@@ -7,6 +7,9 @@ foreach(key IN ITEMS softwareVersion libraryVersion featureVersion apiVersion ap
 endforeach()
 project(Mosaicraft VERSION ${softwareVersion} LANGUAGES C CXX)
 configure_file(cmake/Contracts.h.in generated/MosaicraftContracts.h @ONLY)
+set(commandShellScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/command-shell.js")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${commandShellScript}")
+file(READ "${commandShellScript}" commandShellUiScript)
 set(previewScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/preview.js")
 set(previewPickerScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/preview-picker.js")
 set(resultAnalysisScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/result-analysis.js")
@@ -363,6 +366,10 @@ target_include_directories(mosaicraft_tests PRIVATE
 
 # CTest 集成
 enable_testing()
+find_program(NODE_COMMAND NAMES node nodejs)
+if(NODE_COMMAND)
+    add_test(NAME command_shell COMMAND "${NODE_COMMAND}" "${CMAKE_SOURCE_DIR}/tests/test_command_shell.js")
+endif()
 add_test(NAME cuda_architecture_config COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_architectures.cmake")
 add_test(NAME cuda_toolkit_config COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_toolkit.cmake")
 add_test(NAME mosaicraft_tests COMMAND mosaicraft_tests)
