@@ -1,5 +1,6 @@
 #include "compute/CompatibleScoring.h"
 #include "MatchingScore.h"
+#include "MatchInspection.h"
 #include "MosaicEngine.h"
 #include "MosaicSelection.h"
 #include "RuntimeContext.h"
@@ -64,55 +65,6 @@ static void adjustColor(cv::Mat& img, double strength)
 
 namespace
 {
-enum class TileClass { Smooth, Edge, Texture, Normal };
-
-template <typename Grid, typename Lbp>
-TileClass classifyTile(double edge, const Grid &grid, const Lbp &lbp)
-{
-    if (edge > 0.01)
-    {
-        return TileClass::Edge;
-    }
-    if (edge < 0.005)
-    {
-        double sum = 0, squares = 0;
-        for (int cell = 0; cell < 64; ++cell)
-        {
-            const double lightness = grid[cell * 3];
-            sum += lightness;
-            squares += lightness * lightness;
-        }
-        if (squares / 64.0 - (sum / 64.0) * (sum / 64.0) < 100.0)
-        {
-            return TileClass::Smooth;
-        }
-    }
-    double entropy = 0;
-    for (int bin = 0; bin < 256; ++bin)
-    {
-        const float value = lbp[bin];
-        if (value > 0.0f)
-        {
-            entropy -= value * std::log2(value);
-        }
-    }
-    return entropy > 3.0 ? TileClass::Texture : TileClass::Normal;
-}
-
-using MatchWeights = std::array<double, 5>;
-
-MatchWeights adaptiveTileWeights(TileClass type, const MatchWeights &defaults)
-{
-    switch (type)
-    {
-    case TileClass::Smooth: return {0.25, 0.45, 0.20, 0.05, 0.05};
-    case TileClass::Edge: return {0.15, 0.40, 0.25, 0.15, 0.05};
-    case TileClass::Texture: return {0.15, 0.40, 0.20, 0.05, 0.20};
-    case TileClass::Normal: return defaults;
-    }
-    return defaults;
-}
-
 SelectionAnalysis analyzeEditedTiles(const cv::Mat &target, const MosaicEngine::Config &cfg,
                                      cv::Size featureSize, int columns, const std::string &featureDir,
                                      const std::vector<ImageRecord> &records, const std::vector<int> &indices,
@@ -834,6 +786,21 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     }
     std::unique_ptr<detail::SelectionPolicy> selection;
     size_t selectionBytes = 0;
+    if (m_preview && static_cast<size_t>(totalTiles) <= (16ULL * 1024 * 1024) / sizeof(MosaicSelection::PreviewDecision))
+    {
+        m_preview->decisions.resize(totalTiles);
+        selectionBytes = m_preview->decisions.capacity() * sizeof(MosaicSelection::PreviewDecision);
+    }
+    const auto rememberDecision = [&](int position, int index, int rank, int topN)
+    {
+        if (m_preview && !m_preview->decisions.empty())
+        {
+            double neighbor = 0;
+            neighborhood.applyPenalty(neighbor, index, position);
+            m_preview->decisions[position] = {static_cast<uint16_t>(rank + 1), static_cast<uint16_t>(topN),
+                                              static_cast<float>(neighbor)};
+        }
+    };
     if (m_selectionOptions.enabled())
     {
         selection = std::make_unique<detail::SelectionPolicy>(allRecords, neighborhood, m_selectionOptions,
@@ -1023,6 +990,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 chosen = ranked[rank].second;
             }
             bestLibIdx[tile] = chosen;
+            rememberDecision(tile, chosen, rank, topN);
             neighborhood.recordSelection(chosen, tile);
         }
         metrics.msSelect = Ms(Clock::now() - matchingStart).count();
@@ -1932,6 +1900,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     int pick = idxs[rankPos];
                     int chosenLibIdx = indices[pick];
                     bestLibIdx[ti] = chosenLibIdx;
+                    rememberDecision(ti, chosenLibIdx, rankPos, topN);
                     // --analyze: 记录每个 tile 的详细匹配数据，用于后续分析报告
                     if (cfg.analyze)
                     {
@@ -2151,9 +2120,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         recommendationSortMs += Ms(Clock::now() - sortStart).count();
                     }
                     thread_local std::mt19937 rng2(std::random_device{}());
-                    int pickIdx =
-                        scored[std::uniform_int_distribution<int>(0, topN - 1)(m_fixedSeed ? seededRng : rng2)].second;
+                    const int rankPos = std::uniform_int_distribution<int>(0, topN - 1)(m_fixedSeed ? seededRng : rng2);
+                    const int pickIdx = scored[rankPos].second;
                     bestLibIdx[ti] = pickIdx;
+                    rememberDecision(ti, pickIdx, rankPos, topN);
                     if (cfg.analyze)
                     {
                         BenchmarkTimer analysisTimer(cfg.benchmark, metrics.msAnalysis);

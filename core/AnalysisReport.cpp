@@ -553,6 +553,7 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
     const int webColumns = std::min(256, tilesX);
     const int webRows = std::min(256, tilesY);
     std::vector<int> webBins(runtime ? webColumns * webRows : 0, -1);
+    std::array<uint64_t, 32> scoreHistogram{};
     const double webRange = scoreMax - scoreMin;
     int sample = 0;
     for (int ty = 0; ty < tilesY; ++ty)
@@ -573,6 +574,7 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
                 int &bin = webBins[row * webColumns + column];
                 const double ratio = webRange > 0 ? std::clamp((s - scoreMin) / webRange, 0.0, 1.0) : 0.0;
                 bin = std::max(bin, static_cast<int>(std::lround(255 * ratio)));
+                ++scoreHistogram[std::min<size_t>(scoreHistogram.size() - 1, static_cast<size_t>(ratio * scoreHistogram.size()))];
             }
             double t = (s - sMin) / sRange;
             cv::Vec3b color;
@@ -611,7 +613,7 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
         writeAnalysisData(*runtime, anaDir,
                           {{"grid", {{"columns", tilesX}, {"rows", tilesY}}},
                            {"scores", {{"min", scoreMin}, {"median", scoreP50}, {"p90", scoreP90},
-                                        {"p99", scoreP99}, {"max", scoreMax}}},
+                                        {"p99", scoreP99}, {"max", scoreMax}, {"histogram", scoreHistogram}}},
                            {"heatmap", {{"columns", webColumns}, {"rows", webRows}, {"bins", std::move(webBins)}}},
                            {"worst", std::move(webTiles)}});
     }

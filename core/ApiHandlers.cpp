@@ -3,6 +3,7 @@
 #include "ApiJson.h"
 #include "MosaicPlanning.h"
 #include "LibraryVisuals.h"
+#include "PreviewEvaluation.h"
 #include "UnicodeIO.h"
 
 #include <opencv2/imgproc.hpp>
@@ -179,6 +180,107 @@ ApiResponse previewImageNotFound()
     return resultResponse(404, ServiceResult::failure(1, "preview image is unavailable", "preview_image_unavailable"));
 }
 
+std::string jpegDataUrl(const std::vector<unsigned char> &bytes)
+{
+    constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string value = "data:image/jpeg;base64,";
+    value.reserve(value.size() + (bytes.size() + 2) / 3 * 4);
+    for (size_t i = 0; i < bytes.size(); i += 3)
+    {
+        const unsigned left = bytes[i];
+        const unsigned middle = i + 1 < bytes.size() ? bytes[i + 1] : 0;
+        const unsigned right = i + 2 < bytes.size() ? bytes[i + 2] : 0;
+        value += alphabet[left >> 2];
+        value += alphabet[((left & 3) << 4) | (middle >> 4)];
+        value += i + 1 < bytes.size() ? alphabet[((middle & 15) << 2) | (right >> 6)] : '=';
+        value += i + 2 < bytes.size() ? alphabet[right & 63] : '=';
+    }
+    return value;
+}
+
+ApiResponse previewQuality(const std::string &body, JobManager &jobs)
+{
+    const auto input = nlohmann::json::parse(body, nullptr, false);
+    if (!input.is_object() || !hasString(input, "previewId") || !input.contains("positions") ||
+        !input["positions"].is_array() || (input.contains("explain") && !input["explain"].is_boolean()))
+    {
+        return badRequest("quality requires a preview ID and a positions array");
+    }
+    const bool explain = input.value("explain", false);
+    const auto &positions = input["positions"];
+    if (positions.empty() || positions.size() > (explain ? 1 : 512))
+    {
+        return badRequest("too many positions for one quality request");
+    }
+    PreviewSnapshot preview;
+    if (!jobs.getPreview(input["previewId"].get<std::string>(), preview) || !preview.selection)
+    {
+        return previewConflict("preview expired");
+    }
+    const auto &selection = *preview.selection;
+    std::vector<PreviewProbe> probes;
+    probes.reserve(positions.size());
+    for (const auto &position : positions)
+    {
+        if (!position.is_object() || !position.contains("position") || !position["position"].is_number_unsigned() ||
+            position["position"] >= selection.imageIds.size())
+        {
+            return badRequest("invalid tile position");
+        }
+        PreviewProbe probe{position["position"].get<size_t>()};
+        if (position.contains("imageId"))
+        {
+            if (!position["imageId"].is_number_unsigned() || position["imageId"] > INT_MAX || !hasString(position, "version"))
+            {
+                return badRequest("invalid tile replacement");
+            }
+            probe.replacement = position["imageId"].get<int>();
+            const auto *entry = selection.catalog ? selection.catalog->find(probe.replacement) : nullptr;
+            const auto asset = entry ? previewAsset(*entry) : PreviewAsset{};
+            if (!asset.available || asset.version() != position["version"].get_ref<const std::string &>())
+            {
+                return previewConflict("replacement image changed");
+            }
+        }
+        probes.push_back(probe);
+    }
+    std::vector<PreviewTileScore> scores;
+    const auto result = evaluatePreview(preview.request, selection, probes, explain, scores);
+    if (!result.ok)
+    {
+        return resultResponse(result.runtime.diagnostic.code == "preview_stale" ? 409 : 400, result);
+    }
+    auto rows = nlohmann::json::array();
+    for (const auto &score : scores)
+    {
+        nlohmann::json row{{"position", score.position}, {"imageId", score.imageId},
+                           {"score", score.score ? nlohmann::json(*score.score) : nlohmann::json(nullptr)}};
+        if (explain)
+        {
+            row["target"] = jpegDataUrl(score.targetJpeg);
+            row["manual"] = probes.front().replacement != 0;
+            auto &candidates = row["candidates"] = nlohmann::json::array();
+            for (const auto &candidate : score.candidates)
+            {
+                candidates.push_back({{"imageId", candidate.imageId}, {"score", candidate.score},
+                                      {"features", candidate.features}});
+            }
+            if (!probes.front().replacement && score.position < selection.decisions.size())
+            {
+                const auto &decision = selection.decisions[score.position];
+                if (decision.rank && !score.candidates.empty())
+                {
+                    row["decision"] = {{"rank", decision.rank}, {"topN", decision.topN},
+                                       {"neighborPenalty", decision.neighborPenalty},
+                                       {"reusePenalty", score.candidates.front().useCount * preview.request.config.usePenalty}};
+                }
+            }
+        }
+        rows.push_back(std::move(row));
+    }
+    return {200, apiOkJson("quality", std::move(rows))};
+}
+
 ApiResponse submitPreview(const std::string &body, JobManager &jobs)
 {
     const auto payload = nlohmann::json::parse(body, nullptr, false);
@@ -214,6 +316,7 @@ ApiResponse getPreview(const std::string &id, JobManager &jobs)
     }
     nlohmann::json body{{"id", snapshot.id},
                         {"state", jobStateName(snapshot.state)},
+                        {"seed", snapshot.seed},
                         {"progress", progressToJson(snapshot.progress)}};
     if (snapshot.state == JobState::Failed)
     {
@@ -809,6 +912,8 @@ ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
         return submitPreview(request.body, jobs);
     case ApiOperation::GetPreview:
         return getPreview(request.id, jobs);
+    case ApiOperation::PreviewQuality:
+        return previewQuality(request.body, jobs);
     case ApiOperation::ClosePreview:
         return jobs.closePreview(request.id) ? ApiResponse{200, apiOkJson()} : previewNotFound();
     case ApiOperation::GetPreviewImage:

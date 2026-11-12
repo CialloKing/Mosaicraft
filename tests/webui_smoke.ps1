@@ -653,6 +653,8 @@ try {
     $catalog = (Invoke-Api -Method 'GET' -Path ($interactivePath + '/library')).library
     $choice = $catalog.images | Where-Object { $_.id -ne $grid.imageIds[0] -and $_.available } | Select-Object -First 1
     Assert-True ($null -ne $choice) "preview library is missing replacement images"
+    $quality = (Invoke-Api -Method 'POST' -Path '/api/mosaic/preview/quality' -Body @{ previewId = $grid.id; positions = @(@{ position = 0 }); explain = $true }).quality[0]
+    Assert-True ($quality.imageId -eq $grid.imageIds[0] -and $quality.decision.rank -le $quality.decision.topN) "preview inspection did not report the actual selected rank"
     Assert-True ($catalog.total -eq $catalog.images.Count -and -not $catalog.more) "preview library total is incorrect"
     $filteredCatalog = (Invoke-Api -Method 'GET' -Path ($interactivePath + '/library?q=' + $choice.id)).library
     Assert-True ($filteredCatalog.total -eq $filteredCatalog.images.Count -and @($filteredCatalog.images | Where-Object id -eq $choice.id).Count -eq 1) "filtered preview library total is incorrect"
@@ -680,6 +682,7 @@ try {
     $analysis = Invoke-Api -Method 'GET' -Path "$analysisPath/analysis-data"
     Assert-True ($analysis.grid.columns -eq 2 -and $analysis.grid.rows -eq 2 -and $analysis.heatmap.bins.Count -eq 4) "analysis grid or bins are missing"
     Assert-True ($analysis.worst.Count -eq 4 -and $analysis.scores.p90 -ge $analysis.scores.median) "analysis scores are incomplete"
+    Assert-True (($analysis.scores.histogram | Measure-Object -Sum).Sum -eq 4) "analysis histogram did not count the original scores"
     $editedTile = $analysis.worst | Where-Object { $_.row -eq 0 -and $_.column -eq 0 }
     Assert-True ($editedTile.imageId -eq $choice.id) "analysis did not use the edited tile"
     $targetThumb = $pinned.artifacts | Where-Object { $_.id -eq $editedTile.targetArtifactId }

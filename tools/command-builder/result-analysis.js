@@ -76,6 +76,14 @@ const renderTaskAnalysis = (() => {
       <p class="analysis-selection hint" role="status"></p><div class="analysis-pair"></div>`;
     section.querySelector('.analysis-scores').textContent =
       `中位数 ${scores.median.toFixed(4)} · P90 ${scores.p90.toFixed(4)} · P99 ${scores.p99.toFixed(4)}`;
+    if (Array.isArray(scores.histogram) && scores.histogram.length === 32 && scores.histogram.every(Number.isFinite)) {
+      const peak = Math.max(1, ...scores.histogram);
+      const histogram = document.createElement('details');
+      histogram.innerHTML = `<summary>逐格分数分布</summary><div class="color-hue-bars" aria-hidden="true">${scores.histogram.map(count =>
+        `<span style="height:${100 * count / peak}%;background:var(--accent)"></span>`).join('')}</div>
+        <p class="hint">${scores.min.toFixed(4)}–${scores.max.toFixed(4)} · 32 档格数 · ${scores.histogram.join(' / ')}</p>`;
+      section.querySelector('.analysis-scores').after(histogram);
+    }
     const {width, height} = job.runtime || {};
     const aspectRatio = width > 0 && height > 0 ? `${width} / ${height}` : `${grid.columns} / ${grid.rows}`;
     showHeatmap(section, heatmap, aspectRatio);

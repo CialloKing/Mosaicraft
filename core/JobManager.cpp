@@ -87,8 +87,8 @@ std::string JobManager::submitPreview(MosaicRequest request, uint32_t seed,
                                       std::shared_ptr<const MosaicSelection> sampleSelection)
 {
     auto job = std::make_shared<PreviewJob>();
-    job->request = std::move(request);
-    job->seed = seed;
+    job->snapshot.request = std::move(request);
+    job->snapshot.seed = seed;
     job->sampleSelection = std::move(sampleSelection);
     job->runtime->stage("queued");
     job->queuedAt = job->accessed = std::chrono::steady_clock::now();
@@ -193,12 +193,12 @@ void JobManager::runPreview(const std::shared_ptr<PreviewJob> &job)
     {
         if (job->sampleSelection)
         {
-            result = sampleMosaicSize(job->request, *job->sampleSelection, job->canceled, fileSample);
+            result = sampleMosaicSize(job->snapshot.request, *job->sampleSelection, job->canceled, fileSample);
         }
         else
         {
             selection = std::make_shared<MosaicSelection>();
-            result = MosaicService().preview(job->request, job->seed, m_previewWorkspace, job->canceled, *selection,
+            result = MosaicService().preview(job->snapshot.request, job->snapshot.seed, m_previewWorkspace, job->canceled, *selection,
                                              *job->runtime);
         }
     }

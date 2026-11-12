@@ -21,6 +21,7 @@ enum class ApiOperation
     Mosaic,
     PlanMosaic,
     MosaicCoverage,
+    PreviewQuality,
     OpenCatalog,
     GetCatalog,
     GetCatalogImage,

@@ -76,6 +76,11 @@ struct PreviewCatalog
 
 struct MosaicSelection
 {
+    struct PreviewDecision
+    {
+        uint16_t rank = 0, topN = 0;
+        float neighborPenalty = 0;
+    };
     static constexpr int recommendationLimit = 60;
     std::string matchingKey, dbPath, featureBackend, scoreBackend;
     uint64_t targetVersion = 0, libraryVersion = 0;
@@ -83,6 +88,7 @@ struct MosaicSelection
     size_t manualEdits = 0;
     int columns = 0, rows = 0, featureWidth = 0, featureHeight = 0;
     std::vector<int> imageIds, indices;
+    std::vector<PreviewDecision> decisions;
     std::unordered_map<int, PreviewAsset> assets;
     std::shared_ptr<const PreviewCatalog> catalog;
     std::vector<std::array<int, recommendationLimit>> recommendations;

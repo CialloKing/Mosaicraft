@@ -260,6 +260,8 @@ Returns the complete snapshot. `outputPath` retains its requested-path meaning; 
 
 分析数据和缩略图均是可选产物，可用性以任务登记及实际读取结果为准。
 
+`scores.histogram` 为原始逐格分数在 `min..max` 内的 32 档数量，等分时计入首档。
+
 ### `DELETE /api/jobs/{id}`
 
 取消排队的任务。运行中的任务不会被中断，返回 HTTP 409。
@@ -300,6 +302,8 @@ Both mosaic endpoints allow large output by default, without an extra field or s
 `reference` 返回最长边不超过 1400 像素的目标工作图，可与选图网格共用同一视角。Web UI 在当前预览上应用替换，再用有效素材 ID 判断上下左右是否重复。
 
 发现 `preview-editing` 后，可用 `GET /api/mosaic/preview/{id}/recommendations?position=0` 查询单格最多 60 张推荐，实际数量取决于匹配候选数和通过筛选的素材数。位置从 0 开始按行计数。`GET /api/mosaic/preview/{id}/library?q=&offset=0` 按素材 ID 顺序每页返回 24 张，可按文件名或 ID 过滤。两种列表的每项均包含 `id`、`name`、`version` 和 `available`。
+
+`POST /api/mosaic/preview/quality` 接受 `previewId` 和最多 512 条 `positions`。每条包含零起始 `position`，手动替换额外带 `imageId/version`。`explain: true` 限单格，并返回裁块 JPEG、入选和候选的五项特征误差，以及可用的原始排名、Top-N 和惩罚。预览误差由服务重新评价，源文件变更返回 409。
 
 向 `POST /api/jobs/mosaic` 提交同一组匹配参数及 `previewId`，可直接使用预览中的素材排列。提交时过期、目标或图库变更、参数不匹配返回 409 `preview_stale`。执行前再次检查来源。正式任务一旦入队就持有选图结果，关闭预览不会撤销已提交的任务。
 

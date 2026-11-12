@@ -140,18 +140,37 @@ const interactivePreview = (() => {
   let pointer = null;
   const edits = new Map();
   let editRevision = 0;
+  const insights = createPreviewInsights(byId, {
+    id: imageIdAt,
+    edit: position => edits.get(position),
+    repaint: () => requestPaint(false),
+    locate(id) {
+      const position = plan.imageIds.findIndex((_, index) => imageIdAt(index) === id);
+      if (position < 0) return;
+      fitted = false;
+      centerX = position % plan.columns + .5;
+      centerY = Math.floor(position / plan.columns) + .5;
+      requestPaint();
+    }
+  });
   const picker = createPreviewPicker(byId, {
     replace(position, image) {
+      const before = imageIdAt(position);
       if (plan.imageIds[position] === image.id) edits.delete(position);
       else edits.set(position, {position, imageId: image.id, version: image.version});
+      insights.changed([[position, before, imageIdAt(position)]]);
       editsChanged();
     },
     undo(position) {
+      const before = imageIdAt(position);
       edits.delete(position);
+      insights.changed([[position, before, imageIdAt(position)]]);
       editsChanged();
     },
     clear() {
+      const changes = [...edits].map(([position, edit]) => [position, edit.imageId, plan.imageIds[position]]);
       edits.clear();
+      insights.changed(changes);
       editsChanged();
     },
     current: position => ({id: edits.get(position)?.imageId ?? plan?.imageIds[position], edited: edits.has(position)}),
@@ -228,6 +247,7 @@ const interactivePreview = (() => {
     plan = null;
     planKey = '';
     edits.clear();
+    insights.setPlan(null, edits);
     scale = 0;
     fitted = true;
     clearPictures();
@@ -406,6 +426,7 @@ const interactivePreview = (() => {
     plan = next;
     planKey = key;
     if (previous?.editKey !== next.editKey) edits.clear();
+    insights.setPlan(plan, edits);
     failed.clear();
     updateAspect();
     if (!previous || previous.columns !== next.columns || previous.rows !== next.rows) {
@@ -609,6 +630,10 @@ const interactivePreview = (() => {
           const response = await fetch(SERVER_URL + url, {signal: controller.signal});
           if (!response.ok) {
             const error = await readJsonResponse(response);
+            if (!controller.signal.aborted && plan?.id === previewId && error.diagnostic?.code === 'preview_image_unavailable') {
+              const id = Number(key.split(':', 1)[0]);
+              if (id > 0) insights.unavailable(id);
+            }
             if (!controller.signal.aborted && plan?.id === previewId && planKey === requestKey &&
                 ['preview_stale', 'preview_unavailable'].includes(error.diagnostic?.code)) {
               planKey = '';
@@ -635,7 +660,7 @@ const interactivePreview = (() => {
   }
 
   function selectTile(x, y) {
-    if (!plan || !picker.active || !clip()) return;
+    if (!plan || (!picker.active && !insights.checking()) || !clip()) return;
     const g = geometry();
     // 与 Canvas 的整数像素边界一致，避免在密集网格的边缘选中相邻格。
     const sx = canvas.width / g.width;
@@ -643,12 +668,14 @@ const interactivePreview = (() => {
     const col = Math.floor(((Math.floor(x * sx) + 0.5) / sx - g.x) / g.tw);
     const row = Math.floor(((Math.floor(y * sy) + 0.5) / sy - g.y) / g.th);
     if (col >= 0 && col < plan.columns && row >= 0 && row < plan.rows) {
-      picker.select(row * plan.columns + col);
+      const position = row * plan.columns + col;
+      if (picker.active) picker.select(position);
+      if (insights.checking()) void insights.inspect(position);
     }
   }
 
   function paintSelection(g, visible) {
-    canvas.classList.toggle('editing', picker.active);
+    canvas.classList.toggle('editing', picker.active || insights.checking());
     const position = picker.position;
     if (position < 0) {
       selectionBox.hidden = true;
@@ -736,7 +763,7 @@ const interactivePreview = (() => {
   }
 
   function paintGuides(g, view, count, referenceKey, reference) {
-    const markers = markRepeats.checked || markEdits.checked;
+    const markers = markRepeats.checked || markEdits.checked || insights.activeMarkers();
     if (!guideContext || (!showReference && !markers)) {
       clearGuides();
       return;
@@ -754,7 +781,7 @@ const interactivePreview = (() => {
       guideKey = '';
       return;
     }
-    const key = [layoutKey, !!compare, markRepeats.checked, markEdits.checked].join('/');
+    const key = [layoutKey, !!compare, markRepeats.checked, markEdits.checked, insights.revision()].join('/');
     if (guideKey === key) return;
     guideKey = key;
     guides.hidden = false;
@@ -766,14 +793,16 @@ const interactivePreview = (() => {
     if (!markers || dense) return;
 
     // 标记使用独立图层，切换时无需清空素材位图或破坏平移复用。
-    guideContext.strokeStyle = repeatColor;
-    guideContext.fillStyle = editColor;
     guideContext.lineWidth = 1;
-    for (const {position, row, col, x, y, w, h} of slots) {
+    for (const slot of slots) {
+      const {position, row, col, x, y, w, h} = slot;
+      if (insights.activeMarkers()) insights.paintMark(guideContext, slot);
       if (markRepeats.checked && repeatsNeighbor(position, row, col)) {
+        guideContext.strokeStyle = repeatColor;
         guideContext.strokeRect(x + .5, y + .5, Math.max(0, w - 1), Math.max(0, h - 1));
       }
       if (markEdits.checked && edits.has(position)) {
+        guideContext.fillStyle = editColor;
         const edge = Math.min(12, w, h, Math.max(2, Math.min(w, h) / 3));
         guideContext.beginPath();
         guideContext.moveTo(x + w, y);
@@ -909,6 +938,7 @@ const interactivePreview = (() => {
       for (const key of dirtyAssets) slotsByAsset.get(key)?.forEach(draw);
     }
     dirtyAssets.clear();
+    void insights.loadScores(slots, geometryKey, count > visibleTileWarning);
     paintGuides(g, view, count, referenceKey, referenceBitmap);
     paintedOpacity = opacity;
     previousPaint = view;

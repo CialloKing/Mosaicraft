@@ -6,6 +6,55 @@
 
 namespace mosaicraft
 {
+enum class TileClass { Smooth, Edge, Texture, Normal };
+
+template <typename Grid, typename Lbp>
+TileClass classifyTile(double edge, const Grid &grid, const Lbp &lbp)
+{
+    if (edge > 0.01)
+    {
+        return TileClass::Edge;
+    }
+    if (edge < 0.005)
+    {
+        double sum = 0, squares = 0;
+        for (int cell = 0; cell < 64; ++cell)
+        {
+            const double lightness = grid[cell * 3];
+            sum += lightness;
+            squares += lightness * lightness;
+        }
+        if (squares / 64.0 - (sum / 64.0) * (sum / 64.0) < 100.0)
+        {
+            return TileClass::Smooth;
+        }
+    }
+    double entropy = 0;
+    for (int bin = 0; bin < 256; ++bin)
+    {
+        const float value = lbp[bin];
+        if (value > 0.0f)
+        {
+            entropy -= value * std::log2(value);
+        }
+    }
+    return entropy > 3.0 ? TileClass::Texture : TileClass::Normal;
+}
+
+using MatchWeights = std::array<double, 5>;
+
+inline MatchWeights adaptiveTileWeights(TileClass type, const MatchWeights &defaults)
+{
+    switch (type)
+    {
+    case TileClass::Smooth: return {0.25, 0.45, 0.20, 0.05, 0.05};
+    case TileClass::Edge: return {0.15, 0.40, 0.25, 0.15, 0.05};
+    case TileClass::Texture: return {0.15, 0.40, 0.20, 0.05, 0.20};
+    case TileClass::Normal: return defaults;
+    }
+    return defaults;
+}
+
 using FeatureDistances = std::array<double, 5>;
 
 template <class Grid>

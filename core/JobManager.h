@@ -50,6 +50,8 @@ struct PreviewSnapshot
     ProgressSnapshot progress;
     std::shared_ptr<const MosaicSelection> selection;
     std::optional<FileSizeSample> fileSample;
+    MosaicRequest request;
+    uint32_t seed = 0;
 };
 
 class JobManager
@@ -91,8 +93,6 @@ private:
     struct PreviewJob
     {
         PreviewSnapshot snapshot;
-        MosaicRequest request;
-        uint32_t seed = 0;
         std::shared_ptr<const MosaicSelection> sampleSelection;
         std::shared_ptr<RuntimeContext> runtime = std::make_shared<RuntimeContext>(false);
         std::atomic_bool canceled{false};

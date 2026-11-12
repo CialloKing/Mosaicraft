@@ -418,6 +418,9 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
         <button type="button" class="btn btn-secondary" id="live-preview-reference" aria-pressed="false" disabled>目标参考图</button>
         <label class="preview-repeat-label"><input type="checkbox" id="live-preview-mark-repeats" disabled> 框出相邻重复</label>
         <label class="preview-edit-label"><input type="checkbox" id="live-preview-mark-edits" disabled> 标记手动替换</label>
+        <label><input type="checkbox" id="live-preview-mark-missing"> 标记无候选与缺图</label>
+        <label><input type="checkbox" id="live-preview-mark-quality"> 匹配误差</label>
+        <button type="button" class="btn btn-secondary" id="live-preview-inspect-tile" aria-pressed="false" disabled>检查单格</button>
       </div>
       <div class="preview-surface" id="live-preview-surface">
         <canvas id="live-preview-canvas" tabindex="0" aria-label="马赛克预览，方向键平移，加减键缩放，手动模式下回车选择中心格"></canvas>
@@ -436,6 +439,9 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <p class="hint" id="live-preview-density-warning" role="status" hidden>当前窗口中的格子较多，可能卡顿。放大可减少同时显示的格子。</p>
       <p class="hint" id="live-preview-guide-note" role="status" hidden></p>
       <p class="hint" id="live-preview-color" hidden>随机亮度扰动在正式输出时应用。</p>
+      <p class="hint" id="live-preview-insights-status" role="status"></p>
+      <details id="live-preview-frequency" hidden><summary>本次素材使用</summary><p class="hint"></p><div class="preview-toolbar"></div></details>
+      <section id="live-preview-tile-inspection" class="db-result" aria-live="polite" hidden></section>
     </section>
     <section class="card preview-picker" id="live-preview-picker" aria-labelledby="live-preview-picker-heading" hidden>
       <h3 id="live-preview-picker-heading">替换素材</h3>
@@ -2119,6 +2125,7 @@ document.addEventListener('click', event => {
 
 
 @interactivePreviewPickerScript@
+@mosaicPreviewInsightsScript@
 @interactivePreviewScript@
 @taskResultAnalysisScript@
 @mosaicOutputPlanningScript@
