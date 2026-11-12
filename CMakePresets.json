@@ -104,6 +104,34 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
+    },
+    {
+      "name": "windows-vulkan",
+      "inherits": "windows-cpu",
+      "cacheVariables": {
+        "MOSAICRAFT_VULKAN": "ON"
+      }
+    },
+    {
+      "name": "windows-cuda-vulkan",
+      "inherits": "windows-cuda",
+      "cacheVariables": {
+        "MOSAICRAFT_VULKAN": "ON"
+      }
+    },
+    {
+      "name": "linux-vulkan",
+      "inherits": "linux-cpu",
+      "cacheVariables": {
+        "MOSAICRAFT_VULKAN": "ON"
+      }
+    },
+    {
+      "name": "macos-metal",
+      "inherits": "macos-arm64-cpu",
+      "cacheVariables": {
+        "MOSAICRAFT_METAL": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -146,6 +174,26 @@
       "name": "relwithdebinfo",
       "configurePreset": "relwithdebinfo",
       "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "windows-vulkan",
+      "configurePreset": "windows-vulkan",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-cuda-vulkan",
+      "configurePreset": "windows-cuda-vulkan",
+      "configuration": "Release"
+    },
+    {
+      "name": "linux-vulkan",
+      "configurePreset": "linux-vulkan",
+      "configuration": "Release"
+    },
+    {
+      "name": "macos-metal",
+      "configurePreset": "macos-metal",
+      "configuration": "Release"
     }
   ],
   "testPresets": [
@@ -192,6 +240,38 @@
     {
       "name": "macos-arm64-cpu",
       "configurePreset": "macos-arm64-cpu",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-vulkan",
+      "configurePreset": "windows-vulkan",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-cuda-vulkan",
+      "configurePreset": "windows-cuda-vulkan",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-vulkan",
+      "configurePreset": "linux-vulkan",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-metal",
+      "configurePreset": "macos-metal",
       "configuration": "Release",
       "output": {
         "outputOnFailure": true

@@ -10,6 +10,8 @@ param(
     [string]$OutputDir = "",
     [ValidateSet('auto', 'zip', 'tar.gz')][string]$ArchiveFormat = 'auto',
     [switch]$NoCuda,
+    [switch]$Vulkan,
+    [switch]$Metal,
     [ValidateSet('Required', 'BuildOnly')][string]$CudaValidation = 'Required',
     [switch]$AllowUnvalidatedCudaRelease,
     [switch]$AllowUntestedRelease,
@@ -332,7 +334,16 @@ function Write-BuildInfo
         $lines += "Internal.$($property.Name): $($property.Value)"
     }
     Copy-Item -LiteralPath (Join-Path $RepoRoot "contracts.json") -Destination (Join-Path $Destination "contracts.json")
-    if ($Runtime -eq 'cuda')
+    if ($Vulkan -or $Metal)
+    {
+        $lines += "PortableGpuValidation: not-run"
+        $lines += "PortableAutoSelection: disabled"
+        $lines += "PortableKernelVersion: portable-v1"
+        $lines += "ScoreModes: compatible;fast"
+        $lines += "QualityDegradationLimit: 0.01"
+        $lines += "FinalSelectionDifferenceLimit: 0.01"
+    }
+    if (-not $NoCuda)
     {
         foreach ($field in @('CudaArchitectures', 'CudaPtx', 'CudaToolkit', 'CudaRuntimeMode'))
         {
@@ -465,9 +476,12 @@ $versionText = Get-ProjectVersion
 $outputPath = if ($OutputDir) { Resolve-RepoPath $OutputDir } else { $RepoRoot }
 $packagePlatform = Normalize-PackageToken -Value $PackagePlatform -Fallback (Get-DefaultPackagePlatform) -Label "platform"
 $packageArch = Normalize-PackageToken -Value $PackageArch -Fallback (Get-DefaultPackageArch) -Label "arch"
-$packageRuntime = if ($NoCuda) { "cpu-only" } else { "cuda" }
+$packageRuntime = if ($Metal) { 'metal' } elseif ($Vulkan) { if ($NoCuda) { 'vulkan' } else { 'cuda-vulkan' } } elseif ($NoCuda) { 'cpu-only' } else { 'cuda' }
+if ($Vulkan -and $Metal) { throw 'Choose Vulkan or Metal for one platform package' }
 $hostPlatform = Get-DefaultPackagePlatform
 $hostArch = Get-DefaultPackageArch
+if ($Metal -and ($hostPlatform -ne 'macos' -or -not $NoCuda)) { throw 'Metal requires macOS and -NoCuda' }
+if ($Vulkan -and $hostPlatform -eq 'macos') { throw 'Use native Metal for macOS candidate packages' }
 if ($hostPlatform -eq 'macos' -and ($hostArch -ne 'arm64' -or -not $NoCuda))
 {
     throw 'macOS packaging supports ARM64 CPU-only builds'
@@ -477,9 +491,12 @@ if ($hostPlatform -notin @('windows', 'linux', 'macos') -or ($hostPlatform -ne '
     throw 'Packaging requires a supported native x64 Windows/Linux or ARM64 macOS host'
 }
 $configurePreset = if ($hostPlatform -eq 'macos') { 'macos-arm64-cpu' } else { "$hostPlatform-$(if ($NoCuda) { 'cpu' } else { 'cuda' })" }
+if ($Metal) { $configurePreset = 'macos-metal' }
+elseif ($Vulkan) { $configurePreset = "$hostPlatform-$(if ($NoCuda) { 'vulkan' } else { 'cuda-vulkan' })" }
 if (-not $BuildDir) { $BuildDir = "build/$configurePreset" }
 $buildPath = Resolve-RepoPath $BuildDir
 $gpuValidation = if ($NoCuda) { 'not-applicable' } elseif ($CudaValidation -eq 'BuildOnly') { 'not-run' } else { 'passed' }
+if ($NoCuda -and ($Vulkan -or $Metal)) { $gpuValidation = 'not-run' }
 if (-not $NoCuda -and $CudaValidation -eq 'Required' -and ($SkipTests -or $SkipSmoke -or $SkipArchiveValidation))
 {
     throw 'CUDA Required packaging cannot skip tests, smoke or archive validation'
@@ -521,6 +538,7 @@ if ($PackageSuffix) {
 }
 $packageName = "Mosaicraft_v${versionText}_${packagePlatform}-${packageArch}_${packageRuntime}${suffix}"
 if (-not $NoCuda -and $CudaValidation -eq 'BuildOnly' -and -not $AllowUnvalidatedCudaRelease -and -not $AllowUntestedRelease) { $packageName += '_candidate' }
+if (($Vulkan -or $Metal) -and -not $packageName.EndsWith('_candidate')) { $packageName += '_candidate' }
 if ($ArchiveFormat -eq 'auto') { $ArchiveFormat = if (Test-IsWindows) { 'zip' } else { 'tar.gz' } }
 $archiveName = "$packageName.$ArchiveFormat"
 $archivePath = Join-Path $outputPath $archiveName
@@ -591,6 +609,14 @@ try {
     if ($cache -notmatch "(?m)^MOSAICRAFT_CUDA:BOOL=$expectedCuda`r?$")
     {
         throw 'Build directory CUDA configuration does not match the requested package'
+    }
+    foreach ($backend in @('VULKAN', 'METAL'))
+    {
+        $enabled = if (($backend -eq 'VULKAN' -and $Vulkan) -or ($backend -eq 'METAL' -and $Metal)) { 'ON' } else { 'OFF' }
+        if ($cache -notmatch "(?m)^MOSAICRAFT_${backend}:BOOL=$enabled`r?$")
+        {
+            throw "Build directory $backend configuration does not match the requested package"
+        }
     }
     if (-not $NoCuda)
     {

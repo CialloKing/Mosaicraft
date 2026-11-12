@@ -6,7 +6,7 @@ param(
     [string]$ExpectedVersion = "",
     [string]$ExpectedSha256 = "",
     [string]$ExpectedCommit = "",
-    [ValidateSet('', 'cpu-only', 'cuda')][string]$ExpectedRuntime = '',
+    [ValidateSet('', 'cpu-only', 'cuda', 'vulkan', 'cuda-vulkan', 'metal')][string]$ExpectedRuntime = '',
     [ValidateSet('', 'passed', 'not-run', 'not-applicable')][string]$ExpectedGpuValidation = '',
     [string]$DownloadDir = "",
     [int]$TimeoutSeconds = 90,
@@ -440,6 +440,14 @@ function Assert-BuildInfo
         if ($info['GpuValidation'] -notin @('passed', 'not-run', 'not-applicable')) { throw 'Invalid GPU validation state' }
         if ($info['Runtime'] -eq 'cpu-only' -and $info['GpuValidation'] -ne 'not-applicable') { throw 'CPU package has CUDA validation metadata' }
         Assert-CudaPackageName $info $PackageName
+        if ($info['Runtime'] -in @('vulkan', 'cuda-vulkan', 'metal'))
+        {
+            if ($info['PortableGpuValidation'] -ne 'not-run' -or $info['PortableAutoSelection'] -ne 'disabled' -or
+                $PackageName -notmatch '_candidate\.(zip|tar\.gz)$')
+            {
+                throw 'Portable GPU packages require honest candidate metadata and disabled auto selection'
+            }
+        }
     }
 }
 
