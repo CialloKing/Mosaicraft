@@ -11,7 +11,7 @@
   // 原文件名可能含 #、% 或空格，按路径段编码后才能安全交给浏览器。
   const resourceUrl = path => path.split('/').map(encodeURIComponent).join('/');
   let wanted = new Set(), groups = new Map(), queue = [], next = 0, frame = 0, repaint = true;
-  let fitted = false, scale = MosaicraftViewport.maxTileHeight;
+  let fitted = false, scale = MosaicraftViewport.initialTileHeight;
   let centerX = columns / 2, centerY = rows / 2, drag = null, current = null, visibleCells = 0;
   let reference = false;
   function schedule(full = true) {

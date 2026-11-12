@@ -2,7 +2,9 @@
 const MosaicraftViewport = (() => {
   const cacheBudget = 64 * 1024 * 1024;
   const parallelLoads = 8;
-  const maxTileHeight = 256;
+  // 初始浏览尺度独立于放大上限，避免提高上限后首次打开只显示素材局部。
+  const initialTileHeight = 256;
+  const maxTileHeight = 4096;
   const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
   function clip(canvas) {
     if (document.hidden || !canvas.clientWidth || !canvas.clientHeight) return null;
@@ -86,6 +88,6 @@ const MosaicraftViewport = (() => {
       this.entries.set(key, {image, bytes}); this.bytes += bytes;
     }
   }
-  return {cacheBudget, parallelLoads, maxTileHeight, clamp, clip, geometry, visible, pixelBands,
+  return {cacheBudget, parallelLoads, initialTileHeight, maxTileHeight, clamp, clip, geometry, visible, pixelBands,
     centerFirst, releaseBitmap, BitmapCache};
 })();

@@ -46,6 +46,7 @@ const {pathToFileURL} = require('node:url');
           CanvasRenderingContext2D.prototype.drawImage = function(...args) {
             if (this.canvas.id === 'view' && args.length >= 5) {
               const clip = MosaicraftViewport.clip(this.canvas), [x, y, w, h] = args.slice(-4);
+              window.lastTileHeight = h;
               if (!clip || x + w <= clip.x0 || y + h <= clip.y0 || x >= clip.x1 || y >= clip.y1) ++window.outsideDraws;
             }
             return draw.apply(this, args);
@@ -57,18 +58,20 @@ const {pathToFileURL} = require('node:url');
         await page.goto(pathToFileURL(entry).href);
         await page.waitForFunction(() => document.querySelector('#status').textContent.includes('缓存'));
         await page.waitForFunction(() => window.loadedImages.some(url => url.includes('/assets/')));
-        assert((await page.locator('#status').textContent()).includes('最大缩放'));
+        assert.equal(await page.evaluate(() => MosaicraftViewport.initialTileHeight), 256);
+        assert.equal(await page.evaluate(() => MosaicraftViewport.maxTileHeight), 4096);
         const visibleLimit = await page.evaluate(() => {
           const canvas = document.querySelector('#view');
           const data = JSON.parse(document.getElementById('mosaicraft-snapshot').textContent);
           const min = Math.min(canvas.clientWidth / (data.grid.columns * data.outputTile[0] / data.outputTile[1]),
             canvas.clientHeight / data.grid.rows);
-          const scale = Math.max(MosaicraftViewport.maxTileHeight, min);
+          const scale = MosaicraftViewport.clamp(MosaicraftViewport.initialTileHeight, min,
+            Math.max(MosaicraftViewport.maxTileHeight, min));
           return (Math.ceil(canvas.clientWidth / (scale * data.outputTile[0] / data.outputTile[1])) + 2) *
             (Math.ceil(canvas.clientHeight / scale) + 2);
         });
         assert(await page.evaluate(() => window.loadedImages.filter(url => url.includes('/assets/')).length) <= visibleLimit,
-          'initial maximum zoom must only load viewport assets');
+          'initial zoom must only load viewport assets');
         assert(!(await page.locator('#status').textContent()).includes('/ 64'));
         if (process.env.MOSAICRAFT_BROWSER_VIEWPORT_ONLY) {
           await page.waitForFunction(() => document.querySelector('#status').textContent.includes('窗口浏览') &&
@@ -80,8 +83,9 @@ const {pathToFileURL} = require('node:url');
             const canvas = document.querySelector('#view'), clip = MosaicraftViewport.clip(canvas);
             const data = JSON.parse(document.getElementById('mosaicraft-snapshot').textContent);
             const {columns, rows} = data.grid, aspect = data.outputTile[0] / data.outputTile[1];
-            const scale = Math.max(MosaicraftViewport.maxTileHeight,
-              Math.min(canvas.clientWidth / (columns * aspect), canvas.clientHeight / rows));
+            const min = Math.min(canvas.clientWidth / (columns * aspect), canvas.clientHeight / rows);
+            const scale = MosaicraftViewport.clamp(MosaicraftViewport.initialTileHeight, min,
+              Math.max(MosaicraftViewport.maxTileHeight, min));
             const g = MosaicraftViewport.geometry(canvas.clientWidth, canvas.clientHeight, columns, rows, aspect, scale, columns / 2, rows / 2);
             const v = MosaicraftViewport.visible(g, clip, columns, rows);
             const cx = (clip.x0 + clip.x1) / 2, cy = (clip.y0 + clip.y1) / 2, distances = new Map();
@@ -161,8 +165,14 @@ const {pathToFileURL} = require('node:url');
         await page.goto(pathToFileURL(path.join(temporary, 'large.html')).href);
         await page.waitForFunction(() => window.loadedImages.some(url => url.includes('/assets/')));
         assert.equal(await page.evaluate(() => window.loadedImages.filter(url => url.includes('/assets/')).length), 1);
+        assert.equal(await page.evaluate(() => window.lastTileHeight), 256);
         for (let i = 0; i < 14; ++i) await page.locator('#in').click();
-        await page.waitForFunction(() => document.querySelector('#status').textContent.includes('窗口浏览'));
+        await page.waitForFunction(() => document.querySelector('#status').textContent.includes('最大缩放') &&
+          window.lastTileHeight === 4096);
+        await page.locator('#in').click();
+        assert.equal(await page.evaluate(() => window.lastTileHeight), 4096);
+        await page.locator('#out').click();
+        await page.waitForFunction(() => window.lastTileHeight === 2560);
         assert(requests.length < 20, 'zoom must load visible resources only');
         const budget = await page.evaluate(() => {
           const cache = new MosaicraftViewport.BitmapCache();

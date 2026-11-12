@@ -34,3 +34,14 @@
 首屏不再请求全部 6,388 份素材。测试仅验证当前可视窗口所需的局部加载，主动适应窗口后仍允许展示全景。
 
 机器结果保存在同级 `viewport-chromium.json`、`viewport-firefox.json`、`render-result.json`；日志为 `build/html-viewport-build.log`、`build/html-viewport-render.log`、`build/html-viewport-browser.log`。未推送或发布。
+
+## 初始缩放与 4096 上限拆分（2026-11-12）
+
+后续调整将共用参数拆为 `initialTileHeight = 256` 和 `maxTileHeight = 4096`，同时用于实时预览和 HTML 查看器。打开时保留图块高 256 CSS 像素的尺度，继续放大可达 4096；适应窗口所需的最小比例更大时仍沿用该比例。上文“默认最大缩放”及对应结果为调整前的历史记录。
+
+- Windows CUDA 的 CLI、Web UI 增量构建通过；此次没有改动 CUDA 内核，也未重新进行 GPU 验收。
+- `ctest --test-dir build/windows-cuda -C Release -R '^portable_project$' --output-on-failure` 通过。复用小型合成图片创建新的工程，`tests/browser_project.cjs` 在 Chromium 151.0.7922.34、Firefox 153.0 上通过离线浏览、百万格局部加载及缩放边界检查：初始 256，最大 4096，继续放大保持上限，缩小恢复至 2560。
+- 指定的 `output/html-Nahaki-pid100639369-20261112-194725/便携工程` 已更新 HTML，并同步清单中的 HTML 大小与 SHA-256；内嵌快照、排列、素材和目标图未改。该工程 6239 个资源的深度完整性检查通过。
+- 两种浏览器分别以 1100×760 和 375×812 窗口检查该实际工程，初始 256、最大 4096、缩小与适应窗口均通过，仓库链接保留，无脚本错误或横向溢出。
+
+命令结果、日志、截图及更新前的 HTML/清单备份保存在忽略目录 `build/zoom-4096-20261112/`。此次未修改已发布的 v1.15.5 标签或附件。

@@ -69,6 +69,7 @@ function setupPreviewSizing(surface, handle, resetButton) {
 const interactivePreview = (() => {
   const endpoint = '/api/mosaic/preview';
   const visibleTileWarning = 16000;
+  const initialTileHeight = MosaicraftViewport.initialTileHeight;
   const maxTileHeight = MosaicraftViewport.maxTileHeight;
   const cacheBudget = MosaicraftViewport.cacheBudget;
   const parallelLoads = MosaicraftViewport.parallelLoads;
@@ -421,7 +422,7 @@ const interactivePreview = (() => {
     failed.clear();
     updateAspect();
     if (!previous || previous.columns !== next.columns || previous.rows !== next.rows) {
-      scale = maxTileHeight;
+      scale = initialTileHeight;
       fitted = false;
       centerX = next.columns / 2;
       centerY = next.rows / 2;
