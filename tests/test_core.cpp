@@ -107,6 +107,10 @@ TEST_CASE("preview snapshots expose queued progress")
     CHECK(response.body["preview"]["state"] == "queued");
     CHECK(response.body["preview"]["progress"]["stage"] == "queued");
     CHECK(response.body["preview"]["progress"]["activities"].is_array());
+    CHECK(response.body["preview"]["runtime"]["featureBackend"] == "");
+    CHECK(response.body["preview"]["runtime"]["scoreBackend"] == "");
+    CHECK(response.body["preview"]["runtime"]["device"] == "");
+    CHECK(response.body["preview"]["runtime"]["scoreMode"] == "");
 }
 
 TEST_CASE("output format priority retains request intent and filenames")

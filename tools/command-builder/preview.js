@@ -89,6 +89,7 @@ const interactivePreview = (() => {
   const toggle = byId('toggle');
   const refreshButton = byId('refresh');
   const status = byId('status');
+  const backendStatus = byId('backend');
   const progressBox = byId('progress');
   const progressFill = byId('progress-fill');
   const progressLabel = byId('progress-label');
@@ -124,6 +125,8 @@ const interactivePreview = (() => {
   let pending = false;
   let pendingId = '';
   let progress = null;
+  let liveRuntime = null;
+  let liveState = 'queued';
   let plan = null;
   let planKey = '';
   let request = null;
@@ -199,6 +202,7 @@ const interactivePreview = (() => {
     clearTimeout(timer);
     pending = false;
     progress = null;
+    liveRuntime = null;
     if (pendingId) void deleteJson(endpoint + '/' + pendingId);
     pendingId = '';
   }
@@ -324,6 +328,13 @@ const interactivePreview = (() => {
     }
     if (status.textContent !== message) status.textContent = message;
     status.title = hasPlan ? plan.fallbackReason || '' : '';
+    backendStatus.hidden = !enabled || !capable() || (!pending && !hasPlan && !lastError);
+    if (!backendStatus.hidden) {
+      const runtime = pending || lastError ? liveRuntime : plan.runtime || plan;
+      const state = pending ? liveState : lastError ? 'failed' : planKey === requestKey ? 'succeeded' : 'stale';
+      const html = renderComputeStatus(runtime, state);
+      if (backendStatus.innerHTML !== html) backendStatus.innerHTML = html;
+    }
     picker.sync(plan, hasPlan && !pending && planKey === requestKey && capable() && hasFeature('preview-editing'),
       tab === 'preview' && !document.hidden);
     const generation = byId('generation-note');
@@ -345,6 +356,8 @@ const interactivePreview = (() => {
     if (!enabled || !request || !capable() || !clip() || pending || planKey === requestKey || lastError) return;
     pending = true;
     progress = null;
+    liveRuntime = null;
+    liveState = 'queued';
     const version = ++serial;
     // A later POST must reach the queue after any older POST already on the wire.
     timer = setTimeout(() => {
@@ -400,6 +413,8 @@ const interactivePreview = (() => {
       return;
     }
     if (next.progress) progress = next.progress;
+    liveRuntime = next.runtime || null;
+    liveState = next.state;
     if (next.state === 'queued' || next.state === 'running') {
       showStatus();
       timer = setTimeout(() => poll(version, key, id), 120);

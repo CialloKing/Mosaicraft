@@ -319,6 +319,7 @@ ApiResponse getPreview(const std::string &id, JobManager &jobs)
                         {"state", jobStateName(snapshot.state)},
                         {"seed", snapshot.seed},
                         {"progress", progressToJson(snapshot.progress)}};
+    body["runtime"] = runtimeSnapshotToJson(snapshot.result.runtime).at("runtime");
     if (snapshot.state == JobState::Failed)
     {
         body["result"] = serviceResultToJson(snapshot.result);

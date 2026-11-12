@@ -211,6 +211,13 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 .diagnostic-warning { border-color: var(--warm); }
 #task-note { color: var(--warning); font-size: .8rem; margin-top: 8px; }
 #task-connection { font-size: .8rem; }
+.compute-status { margin: 12px 0; padding: 13px 15px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: .8rem; line-height: 1.7; }
+.compute-status-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 7px; }
+.compute-status-badge { border-radius: 5px; padding: 1px 7px; background: var(--indigo); color: var(--accent); font-size: .74rem; }
+.compute-status-grid { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.compute-status-grid span { color: var(--fg2); }
+.compute-status-grid strong { color: var(--fg); margin-left: 7px; }
+.compute-status p { margin: 6px 0 0; overflow-wrap: anywhere; }
 @media (max-width: 760px) { .task-layout { grid-template-columns: 1fr; } #task-list { max-height: 220px; overflow: auto; } }
 
 .field-error { color: var(--error); font-size: .76rem; margin-top: 5px; }
@@ -433,6 +440,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
         <label><input type="checkbox" id="live-preview-mark-quality"> 匹配误差</label>
         <button type="button" class="btn btn-secondary" id="live-preview-inspect-tile" aria-pressed="false" disabled>检查单格</button>
       </div>
+      <div id="live-preview-backend" aria-live="polite" aria-atomic="true" hidden></div>
       <div class="preview-surface" id="live-preview-surface">
         <canvas id="live-preview-canvas" tabindex="0" aria-label="马赛克预览，方向键平移，加减键缩放，手动模式下回车选择中心格"></canvas>
         <canvas id="live-preview-guides" class="preview-guides" width="1" height="1" aria-hidden="true" hidden></canvas>
@@ -1877,6 +1885,7 @@ async function refreshTasks() {
     if (disconnected) interactivePreview.sync(formModel.tab);
     taskStore.failures++;
     delay = [2000, 5000, 10000][Math.min(taskStore.failures - 1, 2)];
+    renderTaskArea();
     document.getElementById('task-connection').textContent = '服务连接异常，保留上次状态；' + (delay / 1000) + ' 秒后重试。' + (error.message || '');
     updateRunButton();
   } finally {
@@ -1964,7 +1973,30 @@ function renderOutputPlan(job) {
   return html;
 }
 function matchingBackendName(value) {
-  return {cpu: 'CPU', template_cuda: '模板 CUDA', compatible_cuda: '兼容 CUDA', none: '不适用'}[value] || '待检测';
+  return {cpu: 'CPU', cuda: 'CUDA', template_cuda: 'CUDA（模板）', compatible_cuda: 'CUDA（兼容）',
+    vulkan: 'Vulkan', metal: 'Metal', none: '不适用'}[value] || value || '待确认';
+}
+function renderComputeStatus(runtime, state = 'running') {
+  runtime = runtime || {};
+  const label = !serverAvailable ? '上次状态 · 已断开' :
+    ({queued:'等待执行',running:'运行中',succeeded:'本次使用',failed:'失败时状态',canceled:'取消时状态',stale:'上次预览'}[state] || '本次使用');
+  let html = '<section class="compute-status" aria-label="实际计算后端"><div class="compute-status-heading"><strong>实际计算后端</strong><span class="compute-status-badge">' + label + '</span></div>';
+  if (state === 'queued') return html + '<p class="hint">等待任务开始，实际后端将在资源准备后确认。</p></section>';
+  const features = runtime.featureBackend, scoring = runtime.scoreBackend;
+  html += '<div class="compute-status-grid"><span>特征提取<strong>' + escapeHtml(matchingBackendName(features)) + '</strong></span>' +
+    '<span>候选评分<strong>' + escapeHtml(matchingBackendName(scoring)) + '</strong></span></div>';
+  const backends = [features, scoring].filter(value => value && value !== 'none');
+  const cpuOnly = backends.length && backends.every(value => value === 'cpu');
+  const deviceId = cpuOnly ? 'cpu' : runtime.device;
+  const device = (serviceInfo?.devices || []).find(item => item.id === deviceId);
+  if (deviceId) html += '<p>设备 · ' + escapeHtml(device?.name || deviceId) + (device && device.id !== 'cpu' ? ' <span class="hint">(' + escapeHtml(device.id) + ')</span>' : '') + '</p>';
+  const portableScore = scoring === 'vulkan' || scoring === 'metal';
+  const mode = runtime.scoreMode === 'fast' ? (portableScore ? '快速 · FP32 距离' : '快速 · 保留原评分精度') :
+    runtime.scoreMode === 'compatible' ? (scoring === 'cpu' ? '兼容 · CPU FP64 评分' : '兼容') : runtime.scoreMode;
+  if (mode && scoring && scoring !== 'none') html += '<p>评分模式 · ' + escapeHtml(mode) + '</p>';
+  if (!backends.length && !deviceId) html += '<p class="hint">正在确认执行设备与后端…</p>';
+  if (runtime.fallbackReason) html += '<p class="hint">CPU 回退 · ' + escapeHtml(runtime.fallbackReason) + '</p>';
+  return html + '</section>';
 }
 function renderTaskDiagnostic(job) {
   let html = '';
@@ -1984,8 +2016,6 @@ function renderTaskDiagnostic(job) {
   html += renderOutputPlan(job);
   if (job.runtime) {
     const runtime = job.runtime;
-    html += '<p>特征提取：' + escapeHtml(matchingBackendName(runtime.featureBackend)) + ' · 评分：' + escapeHtml(matchingBackendName(runtime.scoreBackend)) + '</p>';
-    if (runtime.fallbackReason) html += '<p class="hint">回退原因 · ' + escapeHtml(runtime.fallbackReason) + '</p>';
     html += taskMetrics.render(job);
     html += libraryVisuals.buildSummary(runtime.build);
     if (Object.keys(runtime.metrics || {}).length) html += '<details data-section="metrics"><summary>性能详情（并行阶段不可相加）</summary><pre>' + escapeHtml(JSON.stringify(runtime.metrics, null, 2)) + '</pre></details>';
@@ -2009,7 +2039,7 @@ function renderTaskArea() {
   cancel.title = job && job.state === 'running' ? '运行中任务暂不支持取消' : '仅可取消排队任务';
   for (const id of ['btn-restore-task', 'btn-copy-diagnostics', 'btn-export-diagnostics']) document.getElementById(id).disabled = !job;
   const detail = document.getElementById('task-detail');
-  let html = job ? renderJobStatus(job) + renderTaskProgress(job) + renderTaskDiagnostic(job) : '<p class="hint">选择任务查看进度和诊断。</p>';
+  let html = job ? renderJobStatus(job) + renderComputeStatus(job.runtime, job.state) + renderTaskProgress(job) + renderTaskDiagnostic(job) : '<p class="hint">选择任务查看进度和诊断。</p>';
   if (job && typeof renderTaskArtifacts === 'function') html += renderTaskArtifacts(job);
   if (html !== taskStore.rendered) {
     const opened = Array.from(detail.querySelectorAll('details[open]')).map(item => item.dataset.section);
