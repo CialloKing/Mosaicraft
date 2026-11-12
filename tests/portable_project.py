@@ -50,7 +50,7 @@ def main():
         run('create', 'target.png', '-l', 'library', '-o', 'artwork', '--mode', 'html',
             '--backend', 'cpu', '--seed', 42, '--l-range', 255, '--target-blend', .2)
         manifest = json.loads((root / 'artwork/project.json').read_text())
-        assert manifest['version'] == 2
+        assert 'version' not in manifest
         assert manifest['appearance']['targetBlend'] == .2
         assert not any(Path(item['path']).is_absolute() for item in manifest['resources'])
         assert len(manifest['assets']) <= 10
@@ -82,8 +82,7 @@ def main():
         template = (root / 'artwork/index.html').read_text(encoding='utf-8')
 
         def save_fixture(directory, data):
-            keys = ['version', 'grid', 'outputTile', 'layout', 'assets', 'appearance']
-            keys += ['overview', 'targetDisplay'] if data['version'] == 1 else ['target']
+            keys = ['grid', 'outputTile', 'layout', 'assets', 'appearance', 'target']
             snapshot = json.dumps({key: data[key] for key in keys}).replace('<', r'\u003c')
             html = re.sub(r'(<script id="mosaicraft-snapshot" type="application/json">).*?(</script>)',
                           lambda match: match[1] + snapshot + match[2], template, flags=re.S)
@@ -101,21 +100,10 @@ def main():
         assert all(Path(a['path']).name == special for a in preserved['assets'])
         assert preserved['layout'] == [0, 1, 0, 1]
         run('project', 'check', 'preserved', '--deep')
-        # Version 1 manifests still validate and render; re-export writes the current format.
-        legacy = json.loads(json.dumps(manifest))
-        legacy.update(version=1, overview='target.png', targetDisplay='target.png')
-        for asset in legacy['assets']:
-            asset.update(display=asset['path'], thumbnail32=asset['path'], thumbnail128=asset['path'])
-        old_project = root / 'legacy'
-        shutil.copytree(root / 'artwork', old_project)
-        save_fixture(old_project, legacy)
-        run('project', 'check', old_project, '--deep')
-        run('render', old_project, '-o', 'legacy.png')
-        run('render', old_project, '-o', 'upgraded', '--mode', 'html')
-        assert json.loads((root / 'upgraded/project.json').read_text())['version'] == 2
         quiet = subprocess.run([str(cli), 'project', 'info', 'artwork', '--quiet'], cwd=root,
                                capture_output=True, timeout=10)
         assert quiet.returncode == 0 and json.loads(quiet.stdout)['ok'] and not quiet.stderr
+        assert 'version' not in json.loads(quiet.stdout)['project']
         for repeat in range(2):
             run('create', 'target.png', '-l', 'library', '-o', 'analyzed.png', '--analyze',
                 '--backend', 'cpu', '--seed', 42, '--l-range', 255, *(['--overwrite'] if repeat else []))
@@ -164,7 +152,8 @@ def main():
         source.write_bytes(saved)
         pristine = (project / 'project.json').read_bytes()
         for mutate in (
-            lambda m: m.update(version=99),
+            lambda m: m.update(type='unrelated-project'),
+            lambda m: m.update(overview='target.png'),
             lambda m: m['layout'].__setitem__(0, 9999),
             lambda m: m['resources'][0].update(path='../outside.png'),
             lambda m: m['resources'][0].update(sha256='0' * 64),

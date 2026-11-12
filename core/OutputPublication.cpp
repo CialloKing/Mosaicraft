@@ -1,5 +1,4 @@
 #include "OutputPublication.h"
-#include "ProjectFormat.h"
 #include "UnicodeIO.h"
 #include "json.hpp"
 #include <fstream>
@@ -77,9 +76,7 @@ static void verifyOwnedDirectory(const fs::path &root)
     if (fs::is_regular_file(root / "project.json"))
     {
         const auto manifest = read(root / "project.json");
-        if (manifest.value("type", "") != "mosaicraft-project" || !manifest.contains("version") ||
-            !manifest.at("version").is_number_integer() ||
-            !supportedProjectVersion(manifest.at("version").get<int64_t>()))
+        if (manifest.value("type", "") != "mosaicraft-project" || !manifest.at("resources").is_array())
         {
             throw std::invalid_argument("unrecognized project output");
         }

@@ -2,7 +2,6 @@
 #include "ExecutionScope.h"
 #include "OutputPublication.h"
 #include "PortableViewer.h"
-#include "ProjectFormat.h"
 #include "RequestValidation.h"
 #include "UnicodeIO.h"
 #include "third_party/miniz/miniz.h"
@@ -70,15 +69,18 @@ Project loadProject(const std::string &input)
     std::ifstream inputFile(manifestPath, std::ios::binary);
     Project project{path, json::parse(inputFile)};
     const auto &m = project.manifest;
-    if (m.at("type") != "mosaicraft-project" || !m.at("version").is_number_integer() ||
-        !supportedProjectVersion(m.at("version").get<int64_t>()))
+    if (m.at("type") != "mosaicraft-project")
     {
-        throw std::invalid_argument("unsupported Mosaicraft project version");
+        throw std::invalid_argument("invalid Mosaicraft project type");
     }
-    if (!m.at("version").is_number_integer() || !m.at("grid").at("columns").is_number_integer() ||
-        !m.at("grid").at("rows").is_number_integer())
+    // 工程只使用当前内部结构，旧版总览/缩略图结构不再参与回导。
+    if (m.contains("overview") || m.contains("targetDisplay"))
     {
-        throw std::invalid_argument("project version and grid dimensions must be integers");
+        throw std::invalid_argument("legacy project structure is unsupported; create a new HTML project");
+    }
+    if (!m.at("grid").at("columns").is_number_integer() || !m.at("grid").at("rows").is_number_integer())
+    {
+        throw std::invalid_argument("project grid dimensions must be integers");
     }
     const int64_t columns = m.at("grid").at("columns").get<int64_t>();
     const int64_t rows = m.at("grid").at("rows").get<int64_t>();
@@ -118,21 +120,9 @@ Project loadProject(const std::string &input)
     };
     requireResource(m.at("target"));
     requireResource(m.at("entry"));
-    if (m.at("version") == 1)
-    {
-        requireResource(m.at("overview"));
-        requireResource(m.at("targetDisplay"));
-    }
     for (const auto &asset : m.at("assets"))
     {
         requireResource(asset.at("path"));
-        if (m.at("version") == 1)
-        {
-            for (const auto &key : {"display", "thumbnail32", "thumbnail128"})
-            {
-                requireResource(asset.at(key));
-            }
-        }
         const auto &resource = *resourceTable.at(asset.at("path").get<std::string>());
         if (asset.at("sha256") != resource.at("sha256") || asset.at("width") != resource.at("width") ||
             asset.at("height") != resource.at("height") || !asset.at("width").is_number_integer() ||
@@ -182,18 +172,9 @@ Project loadProject(const std::string &input)
 json browseSnapshot(const json &manifest)
 {
     json snapshot;
-    for (const auto &key : {"version", "grid", "outputTile", "layout", "assets", "appearance"})
+    for (const auto &key : {"grid", "outputTile", "layout", "assets", "appearance", "target"})
     {
         snapshot[key] = manifest.at(key);
-    }
-    if (manifest.at("version") == 1)
-    {
-        snapshot["overview"] = manifest.at("overview");
-        snapshot["targetDisplay"] = manifest.at("targetDisplay");
-    }
-    else
-    {
-        snapshot["target"] = manifest.at("target");
     }
     return snapshot;
 }
@@ -291,7 +272,6 @@ bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &dir
         fs::create_directories(root / "assets");
         json manifest{
             {"type", "mosaicraft-project"},
-            {"version", projectFormatVersion},
             {"grid",
              {{"columns", columns}, {"rows", rows}, {"matchTile", {target.cols / columns, target.rows / rows}}}},
             {"outputTile", {config.nativeTileW, config.nativeTileH}},
@@ -442,7 +422,6 @@ json ProjectService::info(const std::string &input) const
         bytes += resource["bytes"].get<uint64_t>();
     }
     return {{"path", pathToUtf8(project.root)},
-            {"version", manifest["version"]},
             {"grid", manifest["grid"]},
             {"outputTile", manifest["outputTile"]},
             {"assetCount", manifest["assets"].size()},
