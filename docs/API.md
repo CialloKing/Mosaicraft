@@ -245,9 +245,20 @@ Returns the complete snapshot. `outputPath` retains its requested-path meaning; 
 
 ### `GET /api/jobs/{id}/artifacts/{artifactId}`
 
-只接受任务已登记的产物 ID，不接受文件路径。成功按登记 MIME 流式返回文件，支持 HEAD 与字节 Range；主图及 HTML 以附件下载，JPEG 预览可内联显示。使用固定 64 KiB 缓冲，不将整图读入内存。
+只接受任务已登记的产物 ID，不接受文件路径。成功按登记 MIME 流式返回文件，支持 HEAD 与字节 Range；主图及 HTML 以附件下载，JPEG 预览和分析缩略图可内联显示。使用固定 64 KiB 缓冲，不将整图读入内存。
 
 文件不存在或记录已清理返回 404；文件路径、大小或修改时间与登记指纹不一致返回 409（`artifact_changed`）。目录不能下载，仅在详情中提供真实路径。分块为 `tiles` 目录，DeepZoom 另有 `manifest` 和 `viewer`；本接口不打包目录，也不托管完整 DeepZoom 查看器的关联文件。
+
+开启 `analyze` 且有评分结果时，可登记 `analysis-data`（`application/json`）：
+
+| 字段 | 内容 |
+| --- | --- |
+| `grid` | 原网格 `columns`、`rows`。 |
+| `scores` | 选图误差的 `min`、`median`、`p90`、`p99`、`max`，分数越高表示合成前的匹配偏差越大。 |
+| `heatmap` | `columns`、`rows` 各取原网格对应轴与 256 的较小值。`bins` 按行排列，`-1` 表示区域无评分，`0..255` 表示区域最大误差在 `min..max` 内的量化值。原格坐标乘以热力图轴长再除以原网格轴长后向下取整。分数完全相同时用 `0`。 |
+| `worst` | 按误差降序的最多 20 项，包含从 0 开始的 `row`、`column`，以及 `score`、`imageId`。`targetArtifactId` 和 `matchArtifactId` 分别引用已写入的目标裁块、入选素材 JPEG，最长边 256 像素。 |
+
+分析数据和缩略图均是可选产物，可用性以任务登记及实际读取结果为准。
 
 ### `DELETE /api/jobs/{id}`
 

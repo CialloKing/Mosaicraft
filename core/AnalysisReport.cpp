@@ -2,11 +2,14 @@
 #include "RuntimeContext.h"
 #include "FeatureUtils.h"
 #include "UnicodeIO.h"
+#include "json.hpp"
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -15,6 +18,54 @@
 
 namespace mosaicraft::detail
 {
+namespace
+{
+bool writeAnalysisThumbnail(RuntimeContext &runtime, const std::string &dir, const std::string &id,
+                            const cv::Mat &image)
+{
+    const std::string path = dir + "/" + id + ".jpg";
+    try
+    {
+        cv::Mat thumbnail = image;
+        const int longestEdge = std::max(image.cols, image.rows);
+        if (longestEdge > 256)
+        {
+            const double scale = 256.0 / longestEdge;
+            cv::resize(image, thumbnail, {std::max(1, cvRound(image.cols * scale)),
+                                          std::max(1, cvRound(image.rows * scale))}, 0, 0, cv::INTER_AREA);
+        }
+        if (imwriteUnicode(path, thumbnail, {cv::IMWRITE_JPEG_QUALITY, 85}))
+        {
+            runtime.artifact(id, "analysis-image", path, "image/jpeg");
+            return true;
+        }
+    }
+    catch (const std::exception &error)
+    {
+        runtime.emit("warning", "analysis_write_failed", error.what(), {}, path);
+        return false;
+    }
+    runtime.emit("warning", "analysis_write_failed", "cannot write analysis thumbnail", {}, path);
+    return false;
+}
+
+void writeAnalysisData(RuntimeContext &runtime, const std::string &dir, const nlohmann::json &data)
+{
+    const std::string path = dir + "/analysis-data.json";
+    std::ofstream file(u8path(path), std::ios::binary);
+    file << data;
+    file.close();
+    if (file)
+    {
+        runtime.artifact("analysis-data", "report", path, "application/json");
+    }
+    else
+    {
+        runtime.emit("warning", "analysis_write_failed", "cannot write analysis data", {}, path);
+    }
+}
+} // namespace
+
 std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ctx, RuntimeContext *runtime)
 {
     const auto &cfg = ctx.cfg;
@@ -197,7 +248,8 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
 
     std::cout << "  Worst 5 tiles:\n";
     const auto worstIdx = worstTiles.ranks();
-    for (int k = 0; k < std::min(5, n); ++k)
+    const int worstCount = static_cast<int>(worstIdx.size());
+    for (int k = 0; k < std::min(5, worstCount); ++k)
     {
         int sample = worstIdx[k].second;
         int ti = worstTiles.at(sample).tile;
@@ -381,8 +433,8 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
         std::cout << "  Frequency ranking: " << freqDir << "/ (x" << exported << ")\n";
     }
 
-    constexpr int kExport = 20;
-    for (int k = 0; k < std::min(kExport, n); ++k)
+    auto webTiles = nlohmann::json::array();
+    for (int k = 0; k < worstCount; ++k)
     {
         int sample = worstIdx[k].second;
         int ti = worstTiles.at(sample).tile;
@@ -397,6 +449,18 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
                                                                                                      : "N";
         snprintf(fname, sizeof(fname), "%s/worst_%02d_s%.4f_%s_tile.png", anaDir.c_str(), k, worstIdx[k].first, cn);
         writeImage(fname, tileBig);
+        const std::string rank = std::to_string(k + 1);
+        nlohmann::json webTile;
+        if (runtime)
+        {
+            webTile = {{"row", ty}, {"column", tx}, {"score", worstIdx[k].first},
+                       {"imageId", allRecords[selected[ti]].id}};
+            const std::string targetId = "analysis-target-" + rank;
+            if (writeAnalysisThumbnail(*runtime, anaDir, targetId, tileROI))
+            {
+                webTile["targetArtifactId"] = targetId;
+            }
+        }
         if (selected[ti] >= 0 && !allRecords[selected[ti]].filePath.empty())
         {
             cv::Mat match = imreadUnicode(allRecords[selected[ti]].filePath, cv::IMREAD_COLOR);
@@ -404,16 +468,25 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
             {
                 snprintf(fname, sizeof(fname), "%s/worst_%02d_match.png", anaDir.c_str(), k);
                 writeImage(fname, match);
+                const std::string matchId = "analysis-match-" + rank;
+                if (runtime && writeAnalysisThumbnail(*runtime, anaDir, matchId, match))
+                {
+                    webTile["matchArtifactId"] = matchId;
+                }
             }
         }
+        if (runtime)
+        {
+            webTiles.push_back(std::move(webTile));
+        }
     }
-    std::cout << "  Worst tiles exported: " << anaDir << "/ (x" << kExport << ")\n";
+    std::cout << "  Worst tiles exported: " << anaDir << "/ (x" << worstCount << ")\n";
 
     {
         std::string rptPath = anaDir + "/worst_report.txt";
         std::ofstream rpt(u8path(rptPath));
         rpt << "=== Worst Tile Analysis ===\n";
-        for (int k = 0; k < std::min(kExport, n); ++k)
+        for (int k = 0; k < worstCount; ++k)
         {
             int sample = worstIdx[k].second;
             int ti = worstTiles.at(sample).tile, tx = ti % tilesX, ty = ti / tilesX;
@@ -477,6 +550,10 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
     int cellW = cfg.tileW;
     int cellH = cfg.tileH;
     cv::Mat heat(tilesY * cellH, tilesX * cellW, CV_8UC3, cv::Scalar(64, 64, 64));
+    const int webColumns = std::min(256, tilesX);
+    const int webRows = std::min(256, tilesY);
+    std::vector<int> webBins(runtime ? webColumns * webRows : 0, -1);
+    const double webRange = scoreMax - scoreMin;
     int sample = 0;
     for (int ty = 0; ty < tilesY; ++ty)
     {
@@ -488,6 +565,15 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
                 continue;
             }
             double s = analyzeScores[sample++];
+            if (runtime && std::isfinite(s))
+            {
+                // 保留区域内最高误差，避免孤立的坏格在缩小时被平均掉。
+                const auto column = static_cast<int64_t>(tx) * webColumns / tilesX;
+                const auto row = static_cast<int64_t>(ty) * webRows / tilesY;
+                int &bin = webBins[row * webColumns + column];
+                const double ratio = webRange > 0 ? std::clamp((s - scoreMin) / webRange, 0.0, 1.0) : 0.0;
+                bin = std::max(bin, static_cast<int>(std::lround(255 * ratio)));
+            }
             double t = (s - sMin) / sRange;
             cv::Vec3b color;
             if (t < 0.5)
@@ -520,6 +606,15 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
     }
     writeImage(heatPath, heat);
     std::cout << "  Heatmap: " << heatPath << "\n";
+    if (runtime)
+    {
+        writeAnalysisData(*runtime, anaDir,
+                          {{"grid", {{"columns", tilesX}, {"rows", tilesY}}},
+                           {"scores", {{"min", scoreMin}, {"median", scoreP50}, {"p90", scoreP90},
+                                        {"p99", scoreP99}, {"max", scoreMax}}},
+                           {"heatmap", {{"columns", webColumns}, {"rows", webRows}, {"bins", std::move(webBins)}}},
+                           {"worst", std::move(webTiles)}});
+    }
 
     std::string htmlPath = anaDir + "/report.html";
     std::ofstream html(u8path(htmlPath));
@@ -646,7 +741,7 @@ std::unordered_map<int, int> writeAnalysisReport(const AnalysisReportContext &ct
         html << "<h2>Worst Tiles Gallery (Top 10)</h2>\n";
         html << "<div style=\"display:grid;grid-template-columns:repeat(5,1fr);gap:8px\">\n";
         constexpr int kShowWorst = 10;
-        for (int k = 0; k < std::min(kShowWorst, n); ++k)
+        for (int k = 0; k < std::min(kShowWorst, worstCount); ++k)
         {
             int sample = worstIdx[k].second;
             int ti = worstTiles.at(sample).tile;

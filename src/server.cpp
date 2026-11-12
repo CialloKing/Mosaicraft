@@ -97,7 +97,8 @@ static void sendApiResponse(httplib::Response& res, const mosaicraft::ApiRespons
                 encoded << '%' << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << int(ch);
             }
         }
-        res.set_header("Content-Disposition", (file.kind == "preview" ? "inline" : "attachment") +
+        const bool inlineImage = file.kind == "preview" || (file.kind == "analysis-image" && file.mime == "image/jpeg");
+        res.set_header("Content-Disposition", (inlineImage ? "inline" : "attachment") +
                                                   std::string("; filename=\"download\"; filename*=UTF-8''") +
                                                   encoded.str());
         res.set_header("Cache-Control", "no-store");

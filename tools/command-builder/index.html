@@ -218,6 +218,21 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 .task-results { border-top: 1px solid var(--border); margin-top: 15px; padding-top: 12px; font-size: .8rem; }
 .task-results h3 { font-size: .9rem; margin-bottom: 8px; }
 .result-preview { display: block; max-width: 100%; max-height: 480px; object-fit: contain; margin-top: 12px; background: var(--bg); border-radius: 6px; }
+.task-analysis { margin-top: 12px; }
+.task-analysis summary { cursor: pointer; }
+.analysis-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 12px; margin-top: 8px; }
+.analysis-map { position: relative; width: 100%; max-width: 480px; min-height: 44px; max-height: 320px; overflow: hidden; }
+.analysis-map canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
+.analysis-map-pin { position: absolute; min-width: 9px; min-height: 9px; transform: translate(-50%, -50%); border: 2px solid var(--fg); box-shadow: 0 0 0 1px var(--bg); pointer-events: none; }
+.analysis-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 5px 0; font-size: .8rem; }
+.analysis-gradient { width: 5rem; height: .55rem; }
+.analysis-missing { display: inline-block; width: .7rem; height: .7rem; margin-right: 4px; }
+.analysis-worst { list-style: none; padding: 0; margin: 0; max-height: 320px; overflow: auto; }
+.analysis-worst .btn { width: 100%; margin-bottom: 4px; text-align: left; padding: 6px 8px; }
+.analysis-worst .btn[aria-pressed="true"] { background: var(--indigo); }
+.analysis-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.analysis-pair figure { margin: 0; }
+.analysis-pair img { display: block; width: 100%; max-width: 192px; max-height: 192px; object-fit: contain; object-position: left top; image-rendering: pixelated; }
 .db-result { margin-top: 10px; color: var(--fg); font-size: .85rem; }
 .db-result p, .db-result figure { margin: 8px 0; }
 .db-histogram { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; list-style: none; margin: 8px 0; padding: 0; text-align: center; }
@@ -583,7 +598,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <div class="help-table-wrap"><table class="help-table">
         <thead><tr><th scope="col">选项</th><th scope="col">作用与适用场景</th></tr></thead><tbody>
           <tr><td>生成结果预览<br><code>--preview</code></td><td>正式生成单图时额外保存 <code>主图名_preview.jpg</code>，方便快速查看或分享；主图仍按设置保存。预览保持比例、不放大，宽度最多 1400、总像素最多 400 万，JPEG 质量固定 92；不能与分块或 DeepZoom 同用。预览写入失败时主图可能已经保存，查看任务结果确认。</td></tr>
-          <tr><td>质量分析<br><code>--analyze</code></td><td>生成评分、素材频次、热力图及报告，适合比较方案或排查选图；增加处理和写文件耗时。使用统计只在分析流程到达提交点后写入，普通生成不会补写；报告描述选图质量，不衡量叠加后的画面。</td></tr>
+          <tr><td>质量分析<br><code>--analyze</code></td><td>生成评分、素材频次、热力图及报告。完成后在“任务与结果”展开“质量分析”，从误差最大的格子中选一格对照目标裁块和入选素材。分数衡量亮度扰动与基础图叠加前的选图偏差，分数越高，偏差越大。</td></tr>
           <tr><td>性能分析<br><code>--benchmark</code></td><td>显示索引、匹配、输出等阶段耗时及缓冲统计；运行较慢、需要定位瓶颈时开启。并行阶段可能重叠，耗时不能直接相加。</td></tr>
           <tr><td>自适应权重<br><code>--adaptive-weights</code></td><td>根据各目标块的平滑、边缘和纹理特征调整匹配权重。目标同时包含平坦区域和复杂纹理时可尝试，并与关闭时的结果比较；它会改变选图，不保证所有画面都更好。</td></tr>
           <tr><td>随机亮度调整<br><code>--color-adjust</code></td><td>选图后随机调整各素材块的 LAB 亮度，使块与块的亮度有变化；希望画面有更多细微变化时可开启。不会改变选图结果，也可能带来额外颜色转换。</td></tr>
@@ -725,7 +740,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <button class="btn btn-secondary" id="btn-export-diagnostics" onclick="exportDiagnostics()" disabled>导出诊断 JSON</button>
     <button class="btn btn-secondary" id="btn-clear-jobs" onclick="clearFinishedJobs()" style="display:none">清理完成任务记录</button>
   </div>
-  <div class="task-layout"><div id="task-list"></div><div id="task-detail"></div></div>
+  <div class="task-layout"><div id="task-list"></div><div><div id="task-detail"></div><div id="task-analysis"></div></div></div>
 </section>
 
 </main>
@@ -1804,6 +1819,7 @@ function renderTaskArea() {
     if (nextLog && top !== null) nextLog.scrollTop = top;
     taskStore.rendered = html;
   }
+  renderTaskAnalysis(job);
 }
 function diagnosticDocument() {
   return { exportedAt: new Date().toISOString(), sessionId: taskStore.sessionId, service: serviceInfo,
@@ -2039,7 +2055,8 @@ function renderTaskArtifacts(job) {
   if (main && job.state === 'failed') html += '<p class="saved-main">主图已保存；任务后续阶段失败，详情见上方诊断。</p>';
   if (job.runtime && job.runtime.width > 0) html += '<p>' + escapeHtml(job.runtime.format.toUpperCase()) + ' · ' + job.runtime.width + ' × ' + job.runtime.height + ' · 成功小块 ' + job.runtime.matched + ' · 缺失 ' + job.runtime.failed + '</p>';
   for (const item of job.artifacts) {
-    const name = {main:'主图',preview:'预览',library:'图库',tiles:'输出目录',manifest:'DeepZoom 清单',viewer:'DeepZoom 查看页','library-directory':'图库目录',normalized:'归一化目录','analysis-text':'分析文本','analysis-html':'HTML 报告'}[item.id] || item.id;
+    if (item.kind === 'analysis-image') continue;
+    const name = {main:'主图',preview:'预览',library:'图库',tiles:'输出目录',manifest:'DeepZoom 清单',viewer:'DeepZoom 查看页','library-directory':'图库目录',normalized:'归一化目录','analysis-text':'分析文本','analysis-html':'HTML 报告','analysis-data':'分析数据'}[item.id] || item.id;
     html += renderJobPath(name, item.path, '复制路径');
     if (!item.directory) html += '<button class="btn btn-secondary btn-inline" data-artifact-id="' + escapeAttr(item.id) + '">下载' + escapeHtml(name) + '</button>';
   }
@@ -2077,6 +2094,7 @@ document.addEventListener('click', event => {
 
 @interactivePreviewPickerScript@
 @interactivePreviewScript@
+@taskResultAnalysisScript@
 
 // Restore form state before generating or submitting any request.
 initializeFormUi();

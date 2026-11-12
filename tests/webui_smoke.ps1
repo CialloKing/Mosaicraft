@@ -514,7 +514,8 @@ try {
     $mosaic = Invoke-Api -Method "POST" -Path "/api/jobs/mosaic" -Body $mosaicBody
     Assert-True ($mosaic.ok -eq $true -and $null -ne $mosaic.job) "mosaic job was not accepted"
     Assert-JobSnapshot -Job $mosaic.job -ExpectedType "mosaic" -ExpectedInputPath $targetPath -ExpectedOutputPath $mosaicPath
-    Wait-JobSucceeded -JobId $mosaic.job.id -Label "mosaic" -ExpectedType "mosaic" -ExpectedInputPath $targetPath -ExpectedOutputPath $mosaicPath | Out-Null
+    $plain = Wait-JobSucceeded -JobId $mosaic.job.id -Label "mosaic" -ExpectedType "mosaic" -ExpectedInputPath $targetPath -ExpectedOutputPath $mosaicPath
+    Assert-True (@($plain.artifacts | Where-Object { $_.id -like 'analysis-*' }).Count -eq 0) "unexpected analysis without --analyze"
     Assert-True (Test-Path -LiteralPath $mosaicPath) "mosaic output was not created"
 
     foreach ($case in @(
@@ -662,6 +663,20 @@ try {
     $pinned = Wait-JobSucceeded -JobId $interactiveExport.job.id -Label 'interactive preview export' -ExpectedType 'mosaic' -ExpectedInputPath $targetPath -ExpectedOutputPath $interactiveBody.outputPath
     Assert-True ($pinned.runtime.metrics.reusedPreviewSelection -eq 1) "formal export did not reuse preview selection"
     Assert-True ($pinned.runtime.metrics.manualPreviewEdits -eq 1) "formal export did not apply the manual replacement"
+    $analysisPath = "/api/jobs/$($pinned.id)/artifacts"
+    $analysis = Invoke-Api -Method 'GET' -Path "$analysisPath/analysis-data"
+    Assert-True ($analysis.grid.columns -eq 2 -and $analysis.grid.rows -eq 2 -and $analysis.heatmap.bins.Count -eq 4) "analysis grid or bins are missing"
+    Assert-True ($analysis.worst.Count -eq 4 -and $analysis.scores.p90 -ge $analysis.scores.median) "analysis scores are incomplete"
+    $editedTile = $analysis.worst | Where-Object { $_.row -eq 0 -and $_.column -eq 0 }
+    Assert-True ($editedTile.imageId -eq $choice.id) "analysis did not use the edited tile"
+    $targetThumb = $pinned.artifacts | Where-Object { $_.id -eq $editedTile.targetArtifactId }
+    $targetResponse = Invoke-WebRequest -Method HEAD -Uri "$script:BaseUrl$analysisPath/$($targetThumb.id)" -TimeoutSec $TimeoutSeconds
+    Assert-True (($targetResponse.Headers['Content-Type'] -join ',') -match 'image/jpeg' -and
+                 ($targetResponse.Headers['Content-Disposition'] -join ',') -match '^inline') "analysis thumbnail is not inline JPEG"
+    Remove-Item -LiteralPath $targetThumb.path
+    $missingThumb = Invoke-ApiResponse -Method 'GET' -Path "$analysisPath/$($targetThumb.id)"
+    $savedMain = Invoke-ApiResponse -Method 'HEAD' -Path "$analysisPath/main"
+    Assert-True ($missingThumb.StatusCode -eq 404 -and $savedMain.StatusCode -eq 200) "missing analysis thumbnail affected the saved main image"
     Invoke-Api -Method 'DELETE' -Path $interactivePath | Out-Null
     $closed = Invoke-ApiResponse -Method 'POST' -Path '/api/jobs/mosaic' -Body $interactiveBody
     Assert-True ($closed.StatusCode -eq 409 -and $closed.Json.diagnostic.code -eq 'preview_stale') "closed preview must require refresh"

@@ -9,9 +9,11 @@ project(Mosaicraft VERSION ${softwareVersion} LANGUAGES CXX)
 configure_file(cmake/Contracts.h.in generated/MosaicraftContracts.h @ONLY)
 set(previewScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/preview.js")
 set(previewPickerScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/preview-picker.js")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${previewScript}" "${previewPickerScript}")
+set(resultAnalysisScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/result-analysis.js")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${previewScript}" "${previewPickerScript}" "${resultAnalysisScript}")
 file(READ "${previewScript}" interactivePreviewScript)
 file(READ "${previewPickerScript}" interactivePreviewPickerScript)
+file(READ "${resultAnalysisScript}" taskResultAnalysisScript)
 configure_file(tools/command-builder/index.html generated/index.html @ONLY)
 
 # C++17
