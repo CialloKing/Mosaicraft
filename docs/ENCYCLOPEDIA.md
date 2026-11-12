@@ -730,13 +730,13 @@ Web UI 的预览提示改为“生成结果预览默认关闭，勾选后额外�
 
 ### v1.15.5: 便携工程、命令树与 OverlayFS 兼容修复 (2026-11-12)
 
-命令行按 `create`、`render`、`library`、`project` 组织，旧命令和旧选项不再解析；纯归一化使用 `library normalize`，追加建库使用 `library add`。API 能力版本为 1.4、主版本为 1。HTML 便携工程保存已用素材、排列和工作目标，可在原图库不可用时固定排列回导；当前工程不设置格式版本，也不兼容旧总览/缩略图工程。离线查看器复用预览窗口逻辑，默认最大缩放，从窗口中心扩散加载素材并释放窗口外位图，素材副本保留图库文件名。导出 HTML 顶部工具栏提供“项目地址”链接，在新标签页打开 GitHub 仓库，作品本身仍可离线浏览。命令迁移、能力与历史验证边界见 [CLI、便携工程与回导](CLI_PROJECTS.md) 及其验证文档。
+命令行按 `create`、`render`、`library`、`project` 组织，旧命令和旧选项不再解析；纯归一化使用 `library normalize`，追加建库使用 `library add`。API 能力版本为 1.4、主版本为 1。HTML 便携工程保存已用素材、排列和工作目标，可在原图库不可用时固定排列回导；当前工程不设置格式版本，也不兼容旧总览/缩略图工程。离线查看器与实时预览共用窗口逻辑，初始图块高度保持 256 CSS 像素，最大缩放独立提高到 4096 CSS 像素；提高上限不会改变默认打开尺度。从窗口中心扩散加载素材并释放窗口外位图，素材副本保留图库文件名。导出 HTML 顶部工具栏提供“项目地址”链接，在新标签页打开 GitHub 仓库，作品本身仍可离线浏览。命令迁移、能力与历史验证边界见 [CLI、便携工程与回导](CLI_PROJECTS.md) 及其验证文档。
 
 修复 POSIX 颜色重排将目录与图片 `st_dev` 不同直接视为跨卷的错误判断，允许支持硬链接的 OverlayFS 配置继续建库。实际跨文件系统仍安全失败，并报告源、目标路径；保留硬链接后删除、防覆盖、事务日志和恢复逻辑。Windows 卷号预检查不变，图库、特征、缓存及恢复格式版本不变，无需为此重建有效的 v1.15.0 起图库。代码修复阶段 Windows CPU CTest 8/8 通过；真实 OverlayFS 与 EXDEV 恢复手动验收尚未执行，不以普通文件系统测试替代，见 [修复验证记录](BUGFIX_VERIFICATION.md#overlayfs-颜色重排兼容修复2026-11-12)。发布包的构建和 GPU 验收状态以各包 `BUILD_INFO.txt` 为准。
 
 发布验收同时修复输出目录经过符号链接别名时的产物路径登记问题：在创建暂存目录前统一输出真实路径，避免 macOS 临时目录别名导致已完成的工程 ZIP 仍登记在已移除的暂存位置，保证完整工程归档可以下载；POSIX 回归覆盖目录别名下发布后的路径、大小与修改时间。
 
-> **EN**: Version 1.15.5 introduces the grouped CLI and portable HTML projects with fixed-placement rendering, plus a viewport-based offline viewer. Old CLI options and old overview/thumbnail project layouts are not supported. API capability version is 1.4. POSIX color ordering no longer rejects OverlayFS images solely because their device IDs differ from the output directory. Hard-link moves, overwrite protection and recovery remain in place; real cross-filesystem moves are still unsupported. Output publication also resolves directory aliases so completed project archives remain downloadable on macOS. Library and feature formats remain compatible with v1.15.0 and later. Actual OverlayFS and EXDEV recovery experiments remain pending.
+> **EN**: Version 1.15.5 introduces the grouped CLI and portable HTML projects with fixed-placement rendering, plus a viewport-based offline viewer. Both the offline viewer and live preview start at a tile height of 256 CSS pixels and support zooming up to 4096 CSS pixels. Old CLI options and old overview/thumbnail project layouts are not supported. API capability version is 1.4. POSIX color ordering no longer rejects OverlayFS images solely because their device IDs differ from the output directory. Hard-link moves, overwrite protection and recovery remain in place; real cross-filesystem moves are still unsupported. Output publication also resolves directory aliases so completed project archives remain downloadable on macOS. Library and feature formats remain compatible with v1.15.0 and later. Actual OverlayFS and EXDEV recovery experiments remain pending.
 
 ### v1.15.4: 实时预览进度条 (2026-11-12)
 
