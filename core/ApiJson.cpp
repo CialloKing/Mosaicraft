@@ -1,4 +1,5 @@
 #include "ApiJson.h"
+#include "compute/ComputeBackend.h"
 #include "CliOptions.h"
 
 #include "Version.h"
@@ -83,6 +84,9 @@ nlohmann::json runtimeSnapshotToJson(const RuntimeSnapshot &value)
             {"runtime",
              {{"featureBackend", value.featureBackend},
               {"scoreBackend", value.scoreBackend},
+              {"device", value.computeDevice},
+              {"scoreMode", value.scoreMode},
+              {"kernelVersion", value.kernelVersion},
               {"fallbackReason", value.fallbackReason},
               {"format", value.format},
               {"width", value.width},
@@ -231,6 +235,8 @@ nlohmann::json mosaicRequestToJson(const MosaicRequest &request)
     value["topNRandom"] = cfg.topNRandom;
     value["useGpu"] = cfg.useGpu;
     value["backend"] = backendName(cfg.backend);
+    value["device"] = cfg.device;
+    value["scoreMode"] = scoreModeName(cfg.scoreMode);
     value["threads"] = cfg.threads;
     if (request.atomicOutput)
     {
@@ -331,6 +337,7 @@ nlohmann::json buildRequestToJson(const BuildRequest &request)
             {"dbPath", request.dbPath},
             {"threads", request.threads},
             {"backend", backendName(request.backend)},
+            {"device", request.device},
             {"appendMode", request.appendMode},
             {"normalizeOnly", request.normalizeOnly},
             {"forceMode", request.forceMode},
@@ -528,6 +535,18 @@ nlohmann::json apiEndpointsToJson()
     return endpoints;
 }
 
+nlohmann::json computeDevicesToJson()
+{
+    auto result = nlohmann::json::array();
+    for (const auto &device : compute::devices())
+    {
+        result.push_back({{"id", device.id}, {"name", device.name}, {"backend", backendName(device.backend)},
+            {"available", device.available}, {"integrated", device.integrated}, {"validated", device.validated},
+            {"reason", device.reason}, {"maxBufferBytes", device.maxBufferBytes}});
+    }
+    return result;
+}
+
 nlohmann::json apiInfoToJson(const char* entryName)
 {
     const auto endpoints = apiEndpointMetadata();
@@ -568,6 +587,7 @@ nlohmann::json apiInfoToJson(const char* entryName)
               {"enabledEndpointCount", enabledCount},
               {"metadataValid", metadataErrors.empty()},
               {"metadataErrors", metadataErrors}}},
+            {"devices", computeDevicesToJson()},
             {"cliOptions", cliOptionsToJson()},
             {"features", apiFeatureList()}};
 }

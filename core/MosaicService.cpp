@@ -98,7 +98,7 @@ static ServiceResult runMosaic(const MosaicRequest &request, RuntimeContext &run
             }
         }
         const auto diagnostic = runtime.snapshot().diagnostic;
-        const int code = diagnostic.code.rfind("cuda_", 0) == 0 ? 4 : diagnostic.code.rfind("library_", 0) == 0 ? 2 : 1;
+        const int code = (diagnostic.code.rfind("cuda_", 0) == 0 || diagnostic.code.rfind("gpu_", 0) == 0) ? 4 : diagnostic.code.rfind("library_", 0) == 0 ? 2 : 1;
         return ok ? ServiceResult::success("mosaic generated")
                   : ServiceResult::failure(code, diagnostic.message.empty() ? "mosaic generation failed"
                                                                             : diagnostic.message);
@@ -119,12 +119,14 @@ static ServiceResult runMosaic(const MosaicRequest &request, RuntimeContext &run
             const auto snapshot = runtime.snapshot();
             const bool cudaMatching = snapshot.progress.stage == "matching" &&
                 (snapshot.featureBackend.find("cuda") != std::string::npos ||
-                 snapshot.scoreBackend.find("cuda") != std::string::npos);
-            runtime.fail(cudaMatching ? "cuda_execution_failed"
+                 snapshot.scoreBackend.find("cuda") != std::string::npos ||
+                 snapshot.featureBackend == "vulkan" || snapshot.featureBackend == "metal");
+            runtime.fail(cudaMatching ? (snapshot.featureBackend == "vulkan" || snapshot.featureBackend == "metal" ? "gpu_execution_failed" : "cuda_execution_failed")
                          : snapshot.progress.stage == "analyzing" ? "analysis_write_failed" : "internal_error",
                          exception.what());
         }
-        return ServiceResult::failure(runtime.snapshot().diagnostic.code.rfind("cuda_", 0) == 0 ? 4 : 1,
+        const auto code = runtime.snapshot().diagnostic.code;
+        return ServiceResult::failure((code.rfind("cuda_", 0) == 0 || code.rfind("gpu_", 0) == 0) ? 4 : 1,
                                       exception.what());
     }
 }
@@ -158,8 +160,10 @@ ServiceResult MosaicService::preview(const MosaicRequest &request, uint32_t seed
         ExecutionScope scope;
         const bool ok = MosaicEngine().preview(request.inputPath, resolveDbPathForService(request.dbPath),
                                                request.config, seed, workspace, canceled, selection, runtime);
+        const auto diagnostic = runtime.snapshot().diagnostic;
+        const int code = diagnostic.code.rfind("gpu_", 0) == 0 || diagnostic.code.rfind("cuda_", 0) == 0 ? 4 : 1;
         return runtimeResult(ok ? ServiceResult::success() :
-            ServiceResult::failure(1, runtime.snapshot().diagnostic.message), runtime);
+            ServiceResult::failure(code, diagnostic.message), runtime);
     }
     catch (const std::bad_alloc &)
     {
@@ -168,7 +172,10 @@ ServiceResult MosaicService::preview(const MosaicRequest &request, uint32_t seed
     }
     catch (const std::exception &error)
     {
-        return runtimeResult(runtimeFailure(runtime, 1, error.what(), "internal_error"), runtime);
+        const auto state = runtime.snapshot();
+        const bool portable = state.featureBackend == "vulkan" || state.featureBackend == "metal";
+        return runtimeResult(runtimeFailure(runtime, portable ? 4 : 1, error.what(),
+                                           portable ? "gpu_execution_failed" : "internal_error"), runtime);
     }
 }
 } // namespace mosaicraft

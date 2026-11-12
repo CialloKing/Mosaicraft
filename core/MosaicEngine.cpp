@@ -1,4 +1,5 @@
 #include "MosaicEngine.h"
+#include "compute/PortableCompute.h"
 #include "AnalysisReport.h"
 #include "BenchmarkTimer.h"
 #include "BrightnessAdjustment.h"
@@ -173,7 +174,8 @@ std::string MosaicEngine::matchingKey(const Config &cfg)
         << ':' << cfg.candidates << ':' << cfg.lRange << ':' << cfg.usePenalty << ':' << cfg.labWeight
         << ':' << cfg.gridWeight << ':' << cfg.tinyWeight << ':' << cfg.edgeWeight << ':' << cfg.lbpWeight
         << ':' << cfg.neighborWindow << ':' << cfg.neighborPenalty << ':' << cfg.topNRandom
-        << ':' << cfg.useGpu << ':' << cfg.adaptiveWeights << ':' << cfg.analyze;
+        << ':' << cfg.useGpu << ':' << cfg.adaptiveWeights << ':' << cfg.analyze
+        << ':' << backendName(cfg.backend) << ':' << cfg.device << ':' << scoreModeName(cfg.scoreMode) << ":kernel1";
     return key.str();
 }
 
@@ -280,8 +282,22 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     {
         return m_cancelPreview && m_cancelPreview->load(std::memory_order_relaxed);
     };
-    const bool useGpu = cfg.useGpu && cfg.backend != BackendPolicy::Cpu && !m_renderSelection;
-    const auto preflight = useGpu ? cuda::queryCudaAvailability() : cuda::CudaAvailability{};
+    const bool useGpu = cfg.useGpu && cfg.backend != BackendPolicy::Cpu && cfg.device != "cpu" && !m_renderSelection;
+    compute::Device portableDevice;
+    bool portableRequested = false;
+    if (useGpu && (cfg.backend == BackendPolicy::Vulkan || cfg.backend == BackendPolicy::Metal || cfg.device != "auto"))
+    {
+        try
+        {
+            portableDevice = compute::select(cfg.backend, cfg.device);
+            portableRequested = portableDevice.backend == BackendPolicy::Vulkan || portableDevice.backend == BackendPolicy::Metal;
+        }
+        catch (const std::exception &error)
+        {
+            return runtime.fail("gpu_required", error.what(), "device");
+        }
+    }
+    const auto preflight = useGpu && !portableRequested ? cuda::queryCudaAvailability() : cuda::CudaAvailability{};
     const bool cudaEnabled = useGpu && preflight.available;
     if (cfg.backend == BackendPolicy::Cuda && !cudaEnabled && !m_renderSelection)
     {
@@ -296,8 +312,12 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     // 跨阶段统计集中持有，算子线程继续使用原子计数。
     detail::MosaicMetrics metrics;
 
-    std::cout << "GPU: " << (cudaEnabled ? "CUDA enabled" : "disabled (CPU only)") << std::endl;
-    if (useGpu && !cudaEnabled)
+    const std::string actualDevice = portableRequested ? portableDevice.id
+        : cudaEnabled ? "cuda:" + std::to_string(preflight.device) : "cpu";
+    runtime.computeIdentity(actualDevice, scoreModeName(cfg.scoreMode),
+                            portableRequested ? "portable-v1" : cudaEnabled ? "cuda-v6" : "cpu-v6");
+    std::cout << "Compute device: " << actualDevice << "; score mode: " << scoreModeName(cfg.scoreMode) << std::endl;
+    if (useGpu && !cudaEnabled && !portableRequested)
     {
         runtime.emit("warning", "cuda_unavailable", preflight.reason);
         runtime.backends("cpu", "cpu", preflight.reason);
@@ -305,7 +325,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     }
     if (cfg.benchmark && useGpu)
     {
-        std::cout << "  CUDA preflight: " << preflightMs << " ms" << std::endl;
+        std::cout << "  GPU preflight: " << preflightMs << " ms" << std::endl;
     }
     cfg.print();
 
@@ -544,24 +564,35 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             backends.features = FeatureBackend::Cpu;
         }
     }
+    if (portableRequested)
+    {
+        backends.features = portableDevice.backend == BackendPolicy::Vulkan ? FeatureBackend::Vulkan : FeatureBackend::Metal;
+        backends.scoring = cfg.scoreMode == ScoreMode::Fast
+            ? (portableDevice.backend == BackendPolicy::Vulkan ? ScoreBackend::Vulkan : ScoreBackend::Metal) : ScoreBackend::Cpu;
+    }
     const bool templateCuda = backends.scoring == ScoreBackend::TemplateCuda;
     bool compatibleFeatures = backends.features == FeatureBackend::CompatibleCuda;
     const auto backendName = [](auto value)
     {
-        return static_cast<int>(value) == 0   ? "cpu"
-               : static_cast<int>(value) == 1 ? "template_cuda"
-                                              : "compatible_cuda";
+        switch (static_cast<int>(value))
+        {
+        case 1: return "template_cuda";
+        case 2: return "compatible_cuda";
+        case 3: return "vulkan";
+        case 4: return "metal";
+        default: return "cpu";
+        }
     };
     std::optional<uint64_t> sourceVersion;
     std::string scoreKeyPrefix;
     const auto scoreKey = [&](const MatchingBackends &active)
     {
-        return scoreKeyPrefix + ':' + backendName(active.features) + ':' + backendName(active.scoring);
+        return scoreKeyPrefix + ':' + backendName(active.features) + ':' + backendName(active.scoring) + ':' + actualDevice + ':' + scoreModeName(cfg.scoreMode) + ":kernel1";
     };
     const auto tileFeatureKey = [&](FeatureBackend backend)
     {
         return preparedKey + ':' + std::to_string(cfg.tileW) + ':' + std::to_string(cfg.tileH) + ':' +
-            std::to_string(featW) + ':' + std::to_string(featH) + ':' + backendName(backend);
+            std::to_string(featW) + ':' + std::to_string(featH) + ':' + backendName(backend) + ':' + actualDevice + ":kernel1";
     };
     std::shared_ptr<const PreviewScores> reusedScores;
     if (m_previewWorkspace)
@@ -1123,6 +1154,9 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
         const size_t scratch = checkedMatchProduct(N, sizeof(int) + sizeof(std::pair<double, int>)) +
                                FeatureIndex::kDimension * sizeof(float);
+        compute::FeatureWorkspace portableFeatures(portableDevice);
+        compute::ScoreWorkspace portableScores(portableDevice);
+        bool portableFeatureReady = false, portableScoreReady = false;
         cuda::CompatibleFeatureWorkspace compatible;
         cuda::CompatibleScoreWorkspace compatibleScore;
         const size_t deviceBudget = std::min(m_limits.deviceBytes, size_t(256ULL * 1024 * 1024));
@@ -1307,11 +1341,37 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             metrics.maximumBatchTiles = batchRows;
         }
+        if (portableRequested)
+        {
+            const size_t reserved = cpuMatchingBufferBytes(std::min<size_t>(batchRows, 256), N) + scratch;
+            portableFeatureReady = reserved < hostBudget && portableFeatures.prepare(featW, featH,
+                static_cast<int>(std::min<size_t>(batchRows, 256)), hostBudget - reserved, deviceBudget);
+            if (!portableFeatureReady)
+            {
+                return runtime.fail("gpu_required", "required GPU feature resources unavailable", "backend");
+            }
+            batchRows = std::min(batchRows, size_t(portableFeatures.capacity()));
+            if (cfg.scoreMode == ScoreMode::Fast)
+            {
+                const size_t remaining = portableFeatures.deviceBytes() < deviceBudget
+                    ? deviceBudget - portableFeatures.deviceBytes() : 0;
+                portableScoreReady = portableScores.prepare(static_cast<int>(batchRows), N, dbCount,
+                    hostBudget > portableFeatures.hostBytes() + reserved ? hostBudget - portableFeatures.hostBytes() - reserved : 0,
+                    remaining);
+                if (!portableScoreReady)
+                {
+                    return runtime.fail("gpu_required", "required GPU scoring resources unavailable", "backend");
+                }
+                batchRows = std::min(batchRows, size_t(portableScores.capacity()));
+                portableScores.uploadLibrary(allRecords, *featureReader);
+            }
+            metrics.maximumBatchTiles = batchRows;
+            runtime.metric("scoreModeFast", cfg.scoreMode == ScoreMode::Fast ? 1 : 0);
+        }
         if (!templateCuda)
         {
-            std::cout << "Feature backend: " << (compatibleFeatures ? "generic CUDA (CPU compatible)" : "CPU")
-                      << "; scoring: " << (backends.scoring == ScoreBackend::CompatibleCuda
-                          ? "compatible CUDA" : "CPU") << "." << std::endl;
+            std::cout << "Feature backend: " << backendName(backends.features)
+                      << "; scoring: " << backendName(backends.scoring) << "." << std::endl;
         }
         runtime.backends(backendName(backends.features), backendName(backends.scoring));
         const std::string featureKey = tileFeatureKey(backends.features);
@@ -1378,7 +1438,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 return runtime.fail("preview_canceled", "preview canceled");
             }
             buffers.resize(count, featBytes, N, templateCuda, cfg.analyze, pipeline);
-            if (backends.scoring == ScoreBackend::CompatibleCuda)
+            if (backends.scoring == ScoreBackend::CompatibleCuda || portableScoreReady)
             {
                 buffers.scores.resize(size_t(count) * N);
             }
@@ -1464,7 +1524,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     allTB[local] = buffers.lab[local * 3 + 2];
                 }
             }
-            else if (compatibleFeatures)
+            else if (compatibleFeatures || portableFeatureReady)
             {
                 compatibleImages.resize(count);
                 featureWorkers.run(count, [&](size_t local)
@@ -1474,7 +1534,14 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                                     cfg.tileW, cfg.tileH));
                     cv::resize(roi, compatibleImages[local], cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
                 });
-                compatible.extract(compatibleImages, compatibleValues, featureWorkers, {}, &compatibleTimings);
+                if (portableFeatureReady)
+                {
+                    portableFeatures.extract(compatibleImages, compatibleValues, featureWorkers);
+                }
+                else
+                {
+                    compatible.extract(compatibleImages, compatibleValues, featureWorkers, {}, &compatibleTimings);
+                }
                 m_compatibleFeatureImages += count;
                 for (int local = 0; local < count; ++local)
                 {
@@ -2089,11 +2156,18 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             else
             {
-                const bool gpuScoring = backends.scoring == ScoreBackend::CompatibleCuda;
+                const bool gpuScoring = backends.scoring == ScoreBackend::CompatibleCuda || portableScoreReady;
                 if (gpuScoring)
                 {
                     const auto scoreStart = Clock::now();
-                    compatibleScore.score(buffers, count, scoreUsePenalty, allScores.data(), &metrics.scoreTimings);
+                    if (portableScoreReady)
+                    {
+                        portableScores.score(buffers, count, scoreUsePenalty, allScores.data());
+                    }
+                    else
+                    {
+                        compatibleScore.score(buffers, count, scoreUsePenalty, allScores.data(), &metrics.scoreTimings);
+                    }
                     metrics.msGPUScore += Ms(Clock::now() - scoreStart).count();
                     m_compatibleScoreTiles += count;
                 }
@@ -2246,6 +2320,21 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     return false;
                 }
             }
+        }
+        if (portableRequested)
+        {
+            const auto features = portableFeatures.timings(), scoring = portableScores.timings();
+            runtime.metric("gpuAllocationMs", features.allocationMs + scoring.allocationMs);
+            runtime.metric("gpuUploadMs", features.uploadMs + scoring.uploadMs);
+            runtime.metric("gpuComputeWaitMs", features.computeMs + scoring.computeMs);
+            runtime.metric("gpuDownloadMs", features.downloadMs + scoring.downloadMs);
+            runtime.metric("gpuResidentBytes", double(features.residentBytes + scoring.residentBytes));
+            runtime.metric("gpuPeakBufferBytes", double(features.peakResidentBytes + scoring.peakResidentBytes));
+            runtime.metric("gpuLibraryResidentBytes", double(portableScores.libraryBytes()));
+            runtime.metric("gpuSharedMemoryBytes", portableDevice.integrated
+                ? double(features.residentBytes + scoring.residentBytes) : 0);
+            runtime.metric("gpuUploadBytes", double(features.uploadBytes + scoring.uploadBytes));
+            runtime.metric("gpuDownloadBytes", double(features.downloadBytes + scoring.downloadBytes));
         }
         if (featureReader)
         {

@@ -66,6 +66,7 @@ struct RuntimeSnapshot
     uint64_t warningCount = 0;
     std::map<std::string, WarningSummary> warnings;
     std::string featureBackend, scoreBackend, fallbackReason, format;
+    std::string computeDevice, scoreMode, kernelVersion;
     int64_t width = 0, height = 0;
     int matched = 0, failed = 0;
     std::map<std::string, double> metrics;
@@ -97,6 +98,7 @@ class RuntimeContext
     bool fail(const std::string &code, const std::string &message, const std::string &field = {},
               const std::string &path = {}) noexcept;
     void backends(const std::string &features, const std::string &scoring, const std::string &reason = {}) noexcept;
+    void computeIdentity(const std::string &device, const std::string &mode, const std::string &kernel) noexcept;
     void output(int64_t width, int64_t height, const std::string &format, int matched, int failed) noexcept;
     void planOutput(const detail::OutputPlan &plan, const std::string &requestedPath) noexcept;
     void metric(const std::string &name, double value) noexcept;

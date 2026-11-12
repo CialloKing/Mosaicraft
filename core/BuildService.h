@@ -14,6 +14,7 @@ struct BuildRequest
     std::string dbPath = "mosaicraft.db";
     int threads = 0;
     BackendPolicy backend = BackendPolicy::Auto;
+    std::string device = "auto";
     bool appendMode = false;
     bool normalizeOnly = false;
     bool forceMode = false;

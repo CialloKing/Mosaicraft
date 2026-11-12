@@ -16,8 +16,38 @@ inline bool validImageSize(int64_t width, int64_t height)
     return width > 0 && height > 0 && width <= 1000000 && height <= 1000000 && width * height <= 100000000;
 }
 
+inline bool validateDevice(BackendPolicy backend, const std::string &device, bool useGpu,
+                           std::string &error, std::string *field)
+{
+    bool valid = device == "auto" || device == "cpu";
+    const auto colon = device.find(':');
+    if (colon != std::string::npos)
+    {
+        const auto prefix = device.substr(0, colon);
+        valid = (prefix == "cuda" || prefix == "vulkan" || prefix == "metal") && colon + 1 < device.size() &&
+            std::all_of(device.begin() + colon + 1, device.end(), [](unsigned char c) { return c >= '0' && c <= '9'; });
+    }
+    const bool specificGpu = device != "auto" && device != "cpu";
+    if (!valid || (specificGpu && (!useGpu || backend == BackendPolicy::Cpu)) ||
+        (device == "cpu" && backend != BackendPolicy::Auto && backend != BackendPolicy::Cpu) ||
+        (specificGpu && backend != BackendPolicy::Auto && device.substr(0, colon) != backendName(backend)))
+    {
+        error = "device must be auto, cpu or <backend>:<index> and agree with backend/useGpu";
+        if (field)
+        {
+            *field = "device";
+        }
+        return false;
+    }
+    return true;
+}
+
 inline bool validateBuildRequest(const BuildRequest &request, std::string &error, std::string *field = nullptr)
 {
+    if (!validateDevice(request.backend, request.device, true, error, field))
+    {
+        return false;
+    }
     if (request.threads < 0 || request.threads > 256 || request.normalizeWidth > 8192 ||
         request.normalizeHeight > 8192 || !validImageSize(request.normalizeWidth, request.normalizeHeight))
     {
@@ -37,6 +67,10 @@ inline bool validateBuildRequest(const BuildRequest &request, std::string &error
 inline bool validateMosaicRequest(MosaicRequest &request, std::string &error, std::string *field = nullptr)
 {
     auto &cfg = request.config;
+    if (!validateDevice(cfg.backend, cfg.device, cfg.useGpu, error, field))
+    {
+        return false;
+    }
     if (cfg.generatePreview && (cfg.outputMode != OutputMode::Image))
     {
         if (field)

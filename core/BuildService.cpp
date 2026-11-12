@@ -1,4 +1,5 @@
 #include "BuildService.h"
+#include "compute/PortableCompute.h"
 #include "NormalizeService.h"
 #include "ExecutionScope.h"
 
@@ -381,7 +382,21 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
 
     runtime.stage("preparing_images");
     FeatureExtractor extractor;
-    const auto preflight = request.normalizeOnly || request.backend == BackendPolicy::Cpu
+    compute::Device portableDevice;
+    bool portableRequested = false;
+    if (!request.normalizeOnly && (request.backend == BackendPolicy::Vulkan || request.backend == BackendPolicy::Metal || request.device != "auto"))
+    {
+        try
+        {
+            portableDevice = compute::select(request.backend, request.device);
+            portableRequested = portableDevice.backend == BackendPolicy::Vulkan || portableDevice.backend == BackendPolicy::Metal;
+        }
+        catch (const std::exception &error)
+        {
+            return runtimeFailure(runtime, 4, error.what(), "gpu_required", "device");
+        }
+    }
+    const auto preflight = portableRequested || request.normalizeOnly || request.backend == BackendPolicy::Cpu || request.device == "cpu"
         ? cuda::CudaAvailability{} : cuda::queryCudaAvailability();
     if (request.backend == BackendPolicy::Cuda && !preflight.available)
     {
@@ -392,11 +407,14 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
     {
         runtime.gpuDevice(preflight.pciBus);
     }
-    if (!request.normalizeOnly && request.backend != BackendPolicy::Cpu && !preflight.available)
+    if (!portableRequested && !request.normalizeOnly && request.backend != BackendPolicy::Cpu && request.device != "cpu" && !preflight.available)
     {
         runtime.emit("warning", "cuda_unavailable", preflight.reason);
         std::cout << "CUDA unavailable; using CPU before extraction: " << preflight.reason << std::endl;
     }
+    runtime.computeIdentity(portableRequested ? portableDevice.id
+        : preflight.available ? "cuda:" + std::to_string(preflight.device) : "cpu", "compatible",
+        portableRequested ? "portable-v1" : preflight.available ? "cuda-v6" : "cpu-v6");
     bool gpuOk = false;
     bool usedCompatibleFeatures = false;
 #ifdef MOSAICRAFT_CUDA
@@ -743,18 +761,25 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
         {
             normalizers = std::make_unique<WorkerPool>(static_cast<unsigned>(normThreads));
         }
+        compute::FeatureWorkspace portableFeatures(portableDevice);
         cuda::CompatibleFeatureWorkspace compatible;
         cuda::CompatibleTimings compatibleTimings;
         const bool compatibleRequested = preflight.available &&
             !cuda::hasTemplateFeatures(request.normalizeWidth, request.normalizeHeight);
-        const bool compatibleReady = compatibleRequested &&
+        const bool portableReady = portableRequested && portableFeatures.prepare(request.normalizeWidth,
+            request.normalizeHeight, static_cast<int>(batchLimit), pixelBudget, 256ULL * 1024 * 1024);
+        const bool compatibleReady = portableReady || (compatibleRequested &&
             compatible.prepare(request.normalizeWidth, request.normalizeHeight, static_cast<int>(batchLimit),
-                               pixelBudget, true);
+                               pixelBudget, true));
+        if (portableRequested && !portableReady)
+        {
+            return runtimeFailure(runtime, 4, "required GPU feature resources unavailable", "gpu_required", "backend");
+        }
         if (compatibleReady)
         {
-            batchLimit = static_cast<size_t>(compatible.capacity());
+            batchLimit = static_cast<size_t>(portableReady ? portableFeatures.capacity() : compatible.capacity());
         }
-        std::cout << "Features: " << (compatibleReady ? "generic CUDA (CPU compatible)" : "CPU")
+        std::cout << "Features: " << (portableReady ? backendName(portableDevice.backend) : compatibleReady ? "generic CUDA (CPU compatible)" : "CPU")
                   << " (ordered batches, max " << batchLimit << " images, 64 MiB buffer budget)" << std::endl;
         if (compatibleRequested && !compatibleReady)
         {
@@ -766,7 +791,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                          "Generic CUDA resources unavailable; using CPU before extraction.");
             std::cout << "  Generic CUDA resources unavailable; using CPU before extraction." << std::endl;
         }
-        runtime.backends(compatibleReady ? "compatible_cuda" : "cpu", "none");
+        runtime.backends(portableReady ? backendName(portableDevice.backend) : compatibleReady ? "compatible_cuda" : "cpu", "none");
         for (size_t first = 0; first < files.size(); first += batchLimit)
         {
             const size_t count = std::min(batchLimit, files.size() - first);
@@ -882,13 +907,20 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
             {
                 try
                 {
-                    compatible.extract(compatibleImages, features, workers, statistics, &compatibleTimings);
+                    if (portableReady)
+                    {
+                        portableFeatures.extract(compatibleImages, features, workers, statistics);
+                    }
+                    else
+                    {
+                        compatible.extract(compatibleImages, features, workers, statistics, &compatibleTimings);
+                    }
                     usedCompatibleFeatures = true;
                 }
                 catch (const std::exception &error)
                 {
                     // CUDA 运行期失败中止本批；此时尚未写特征文件或开始数据库事务。
-                    return runtimeFailure(runtime, 1, error.what(), "cuda_execution_failed", "");
+                    return runtimeFailure(runtime, 4, error.what(), portableReady ? "gpu_execution_failed" : "cuda_execution_failed", "");
                 }
             }
             workers.run(count,
@@ -971,8 +1003,21 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                       << " skip:" << skipped << ")   " << std::flush;
         }
         std::cout << std::endl;
-        runtime.backends(compatibleReady ? "compatible_cuda" : "cpu", "none");
-        if (compatibleReady)
+        runtime.backends(portableReady ? backendName(portableDevice.backend) : compatibleReady ? "compatible_cuda" : "cpu", "none");
+        if (portableReady)
+        {
+            const auto timings = portableFeatures.timings();
+            runtime.metric("gpuAllocationMs", timings.allocationMs);
+            runtime.metric("gpuUploadMs", timings.uploadMs);
+            runtime.metric("gpuComputeWaitMs", timings.computeMs);
+            runtime.metric("gpuDownloadMs", timings.downloadMs);
+            runtime.metric("gpuResidentBytes", double(timings.residentBytes));
+            runtime.metric("gpuPeakBufferBytes", double(timings.peakResidentBytes));
+            runtime.metric("gpuSharedMemoryBytes", portableDevice.integrated ? double(timings.residentBytes) : 0);
+            runtime.metric("gpuUploadBytes", double(timings.uploadBytes));
+            runtime.metric("gpuDownloadBytes", double(timings.downloadBytes));
+        }
+        if (compatibleReady && !portableReady)
         {
             std::cout << "  Generic CUDA: " << compatibleTimings.images << " images, "
                       << compatibleTimings.batches << " batches; host/device buffers "

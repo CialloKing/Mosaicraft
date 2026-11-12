@@ -172,6 +172,20 @@ void RuntimeContext::backends(const std::string &features, const std::string &sc
     }
 }
 
+void RuntimeContext::computeIdentity(const std::string &device, const std::string &mode, const std::string &kernel) noexcept
+{
+    try
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_snapshot.computeDevice = device;
+        m_snapshot.scoreMode = mode;
+        m_snapshot.kernelVersion = kernel;
+    }
+    catch (...)
+    {
+    }
+}
+
 void RuntimeContext::output(int64_t width, int64_t height, const std::string &format, int matched, int failed) noexcept
 {
     try

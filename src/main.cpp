@@ -53,10 +53,12 @@ void help(const std::string &group, const std::string &command, bool all)
                      "  project check <project>    Verify resources and browse snapshot\n"
                      "  project pack <project>     Store a complete project as ZIP64\n"
                      "  inspect <target>           Image features and grid coverage\n"
+                     "  devices --json             Enumerate compute devices and capabilities\n"
                      "Use '<command> --help' or '--help-all'. Web UI: MosaicraftWebUI.\n";
         return;
     }
-    std::cout << "Usage: mosaicraft " << (group.empty() ? "" : group + " ") << command << " <input> [options]\n";
+    std::cout << "Usage: mosaicraft " << (group.empty() ? "" : group + " ") << command
+              << (command == "devices" ? " [options]\n" : " <input> [options]\n");
     if (command == "render" || group == "project")
     {
         std::cout << "Project input: directory, project.json or index.html. Unpack ZIP before loading.\n";
@@ -81,7 +83,7 @@ void help(const std::string &group, const std::string &command, bool all)
     {
         std::cout << "Use --help-all for advanced options.\n";
     }
-    std::cout << "Exit codes: 0 success; 1 arguments/I/O; 2 library; 3 memory; 4 CUDA.\n";
+    std::cout << "Exit codes: 0 success; 1 arguments/I/O; 2 library; 3 memory; 4 GPU.\n";
 }
 
 Arguments parse(const std::vector<std::string> &argv)
@@ -111,7 +113,7 @@ Arguments parse(const std::vector<std::string> &argv)
     }
     const std::string commands = args.group == "library"   ? " build add report usage export purge normalize "
                                  : args.group == "project" ? " info check pack "
-                                                           : " create render inspect ";
+                                                           : " create render inspect devices ";
     if (commands.find(" " + args.command + " ") == std::string::npos)
     {
         throw std::invalid_argument("unknown command: " + args.command);
@@ -350,6 +352,11 @@ class DiagnosticBuffer : public std::streambuf
 ServiceResult execute(const Arguments &args, json &data, RuntimeContext &runtime)
 {
     const auto &cmd = args.command;
+    if (cmd == "devices")
+    {
+        data["devices"] = computeDevicesToJson();
+        return ServiceResult::success("compute devices enumerated");
+    }
     if (args.input.empty())
     {
         throw std::invalid_argument("a positional input is required; use --help");
@@ -419,6 +426,7 @@ ServiceResult execute(const Arguments &args, json &data, RuntimeContext &runtime
         request.resourceMonitor = args.has("resource-monitor");
         request.threads = integer(args.get("threads", "0"));
         request.backend = parseBackend(args.get("backend", "auto"));
+        request.device = args.get("device", "auto");
         if (request.appendMode)
         {
             request.dbPath = resolveDbPathForService(args.get("library", "library"));

@@ -712,10 +712,18 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         if (getStringField(values, {"backend"}, text, error))
         {
             cfg.backend = parseBackend(text);
-            if (cfg.backend == BackendPolicy::Cuda && !cfg.useGpu)
+            if (cfg.backend != BackendPolicy::Auto && cfg.backend != BackendPolicy::Cpu && !cfg.useGpu)
             {
-                throw std::invalid_argument("backend cuda conflicts with useGpu false");
+                throw std::invalid_argument("explicit GPU backend conflicts with useGpu false");
             }
+        }
+        if (getStringField(values, {"device"}, text, error))
+        {
+            cfg.device = text;
+        }
+        if (getStringField(values, {"scoreMode"}, text, error))
+        {
+            cfg.scoreMode = parseScoreMode(text);
         }
         if (getIntField(values, {"threads"}, intValue, error))
         {
@@ -870,6 +878,10 @@ bool parseBuildRequestJson(const std::string &body, BuildRequest &request, Reque
             error = exception.what();
             return false;
         }
+    }
+    if (getStringField(values, {"device"}, text, error))
+    {
+        request.device = text;
     }
     return error.empty() && validateBuildRequest(request, error.message, &error.field);
 }

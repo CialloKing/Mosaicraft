@@ -20,6 +20,8 @@ public:
     {
         OutputMode outputMode = OutputMode::Image;
         BackendPolicy backend = BackendPolicy::Auto;
+        std::string device = "auto";
+        ScoreMode scoreMode = ScoreMode::Compatible;
         std::optional<uint32_t> seed;
         int threads = 0;
         bool deferUsage = false; // 原子发布成功后才提交最终排列的使用统计。

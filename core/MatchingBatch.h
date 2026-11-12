@@ -10,12 +10,12 @@ namespace mosaicraft
 {
 enum class FeatureBackend
 {
-    Cpu, TemplateCuda, CompatibleCuda
+    Cpu, TemplateCuda, CompatibleCuda, Vulkan, Metal
 };
 
 enum class ScoreBackend
 {
-    Cpu, TemplateCuda, CompatibleCuda
+    Cpu, TemplateCuda, CompatibleCuda, Vulkan, Metal
 };
 
 struct MatchingBackends

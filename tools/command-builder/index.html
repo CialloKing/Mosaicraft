@@ -392,7 +392,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <a class="help-link" href="#help-switches" data-open-help="help-switches">了解预览及其他开关的作用</a>
     <div class="row" style="margin-top:8px">
       <div class="field"><label>亮度扰动幅度 --brightness-jitter</label><input type="number" id="m-colorstr" value="0" min="0" max="0.5" step="0.01" style="max-width:150px"><div class="hint">0 关闭；0.04 表示 L 通道最多 ±4%。HTML 工程要求为 0。</div></div>
-      <div class="field"><label>CPU 线程上限 --threads</label><input id="m-threads" type="number" min="0" max="256" value="0"></div><div class="field"><label>后端 --backend</label><select id="m-backend"><option value="auto">自动回退</option><option value="cpu">CPU</option><option value="cuda">必须使用 CUDA</option></select></div><div class="field"><label>随机种子 --seed</label><input id="m-seed" type="number" min="0" max="4294967295" placeholder="自动生成并记录"></div>
+      <div class="field"><label>CPU 线程上限 --threads</label><input id="m-threads" type="number" min="0" max="256" value="0"></div><div class="field"><label>后端 --backend</label><select id="m-backend"><option value="auto">自动回退</option><option value="cpu">CPU</option><option value="cuda">必须使用 CUDA</option><option value="vulkan">Vulkan（候选）</option><option value="metal">Metal（未实机验收）</option></select></div><div class="field"><label>GPU 设备 --device</label><select id="m-device"><option value="auto">自动选择</option></select></div><div class="field"><label>评分精度 --score-mode</label><select id="m-score-mode"><option value="compatible">兼容（FP64 评分）</option><option value="fast">快速（允许 FP32 距离）</option></select><small>快速模式按固定验收集约束质量退化和选图差异各不超过 1%，不保证任意输入逐格一致。</small></div><div class="field"><label>随机种子 --seed</label><input id="m-seed" type="number" min="0" max="4294967295" placeholder="自动生成并记录"></div>
       <div class="field"><label>基础图叠加强度 --target-blend</label><input type="number" id="m-overlaystr" value="0" min="0" max="1" step="0.05" style="max-width:150px"><div class="hint">0 关闭；0.2 表示 80% 素材 + 20% 基础图。使用缩放、放大和补边后的基础图，强度越高，小图细节越弱。</div></div>
     </div>
   </div>
@@ -511,7 +511,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <div class="field"><label>归一化尺寸 --size</label><input type="text" id="b-normsize" value="180x320" placeholder="180x320"><span class="hint">按宽x高填写，单轴 1～8192。</span><a class="help-link" href="#help-cuda-templates" data-open-help="help-cuda-templates">查看 CUDA 模板尺寸</a></div>
       <div class="field"><label>操作</label><select id="b-mode"><option value="build">新建图库</option><option value="add">追加素材</option><option value="normalize">仅归一化</option></select></div>
       <div class="field"><label>线程上限 --threads</label><input type="number" id="b-threads" min="0" max="256" placeholder="0 = 自动"></div>
-      <div class="field"><label>后端 --backend</label><select id="b-backend"><option value="auto">自动回退</option><option value="cpu">CPU</option><option value="cuda">必须使用 CUDA</option></select></div>
+      <div class="field"><label>后端 --backend</label><select id="b-backend"><option value="auto">自动回退</option><option value="cpu">CPU</option><option value="cuda">必须使用 CUDA</option><option value="vulkan">Vulkan（候选）</option><option value="metal">Metal（未实机验收）</option></select></div><div class="field"><label>GPU 设备 --device</label><select id="b-device"><option value="auto">自动选择</option></select></div>
     </div>
     <div class="chk-row">
       <label><input type="checkbox" id="b-recursive"> 递归扫描子目录 -r</label>
@@ -674,7 +674,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
           <tr><td>外观随机性<br><code>--seed</code></td><td>选图后随机调整各素材块的 LAB 亮度，使块与块的亮度有变化；希望画面有更多细微变化时可开启。不会改变选图结果，也可能带来额外颜色转换。</td></tr>
           <tr><td>亮度扰动幅度<br><code>--brightness-jitter</code></td><td>默认 0，范围 0～0.5；0.04 表示 L 通道相对乘数在约 ±4% 内变化。设为正数即启用，固定种子与格子位置决定扰动，HTML 工程要求为 0。</td></tr>
           <tr><td>基础图叠加强度<br><code>--target-blend</code></td><td>默认 0，范围 0～1；将处理后的目标图按此比例叠在素材上，0.2 约为 80% 素材加 20% 基础图。远看轮廓不明显时可从较低值尝试；越高越弱化素材细节。若同时开启亮度调整，先调整素材再叠加。</td></tr>
-          <tr><td>仅 CPU<br><code>--backend cpu</code></td><td>强制 CPU，适合没有可用 CUDA 或排查 GPU 结果、资源问题。auto 尝试 CUDA 并允许回退；cuda 要求所需阶段使用加速，否则失败。实际后端和原因以任务结果为准。</td></tr>
+          <tr><td>仅 CPU<br><code>--backend cpu</code></td><td>强制 CPU，适合没有可用 CUDA 或排查 GPU 结果、资源问题。auto 保留已验收的 CUDA/CPU 策略；新后端须显式选择。兼容模式允许 CPU 评分；快速模式允许 GPU FP32 距离。指定 GPU 资源不可用时失败。实际后端和原因以任务结果为准。</td></tr>
           <tr><td>分块输出<br><code>--mode tiles</code></td><td>在完整输出目录中生成 <code>index_files</code> 图块目录，分别保存 JPEG 素材块，适合主图过大或后续自行处理分块；结果区提供实际目录。分块不是一张完整主图，不支持同时保存单图预览。</td></tr>
           <tr><td>DeepZoom<br><code>--mode deepzoom</code></td><td>生成分层图块、<code>.dzi</code> 清单和 HTML 查看页，适合浏览超大图的不同缩放级别。需一起保留相关文件与目录；查看页加载浏览组件需要联网。它使用分块输出，不能同时保存单图预览。</td></tr>
         </tbody>
@@ -997,6 +997,23 @@ async function checkServer() {
     const data = await getJson('/api/info');
     if (data.ok) {
       serviceInfo = data.info || null;
+      for (const prefix of ['m', 'b']) {
+        const selector = document.getElementById(prefix + '-device');
+        const previous = selector.value;
+        selector.replaceChildren(new Option('自动选择', 'auto'));
+        for (const device of (serviceInfo.devices || [])) {
+          if (device.backend !== 'cpu') {
+            const option = new Option((device.name || device.backend) + ' [' + device.id + ']' + (device.available ? '' : '（不可用）'), device.id);
+            option.disabled = !device.available;
+            option.title = device.reason || '';
+            selector.add(option);
+          }
+        }
+        if (previous && ![...selector.options].some(option => option.value === previous)) {
+          selector.add(new Option(previous + '（当前不可用）', previous));
+        }
+        selector.value = previous || 'auto';
+      }
       const api = serviceInfo && serviceInfo.api ? serviceInfo.api : null;
       if (!api || !api.structured) throw new Error('structured API unavailable');
       apiInfo = api;
@@ -1614,6 +1631,8 @@ function buildMosaicPayload(previewOnly = false) {
     setIfChecked(payload, 'generatePreview', 'm-preview');
   }
   payload.backend = val('m-backend');
+  payload.device = val('m-device');
+  payload.scoreMode = val('m-score-mode');
   setIfNumber(payload, 'threads', 'm-threads', '线程上限', {integer:true,min:0,max:256});
   setIfNumber(payload, 'seed', 'm-seed', '种子', {integer:true,min:0,max:4294967295});
   if (!previewOnly && payload.outputMode === 'html') {
@@ -1696,7 +1715,7 @@ function buildBuildPayload() {
   payload.appendMode = val('b-mode') === 'add';
   setIfChecked(payload, 'recursive', 'b-recursive');
   payload.normalizeOnly = val('b-mode') === 'normalize';
-  if (!payload.normalizeOnly) payload.backend = val('b-backend');
+  if (!payload.normalizeOnly) { payload.backend = val('b-backend'); payload.device = val('b-device'); }
 
   if (hasFeature('task-resources')) setIfChecked(payload, 'resourceMonitor', 'b-monitor');
 
@@ -2037,12 +2056,32 @@ document.addEventListener('click', event => {
 
 const FORM_FIELDS = {"mosaic": {"inputPath": "m-input", "dbPath": "m-db", "outputPath": "m-output", "format": "m-format", "writeMode": "m-writemode", "tileW": "m-tilew", "tileH": "m-tileh", "candidates": "m-candidates", "topNRandom": "m-topn", "lRange": "m-lrange", "neighborWindow": "m-nwin", "neighborPenalty": "m-npen", "upscale": "m-upscale", "outW": "m-outw", "outH": "m-outh", "labWeight": "m-labw", "gridWeight": "m-gridw", "tinyWeight": "m-tinyw", "edgeWeight": "m-edgew", "lbpWeight": "m-lbpw", "usePenalty": "m-penalty", "quality": "m-quality", "pngLevel": "m-pnglevel", "colorStrength": "m-colorstr", "overlayStrength": "m-overlaystr", "tiled": "m-tiled", "deepZoom": "m-deepzoom", "analyze": "m-analyze", "adaptiveWeights": "m-adaptive", "benchmark": "m-benchmark", "resourceMonitor": "m-monitor", "colorAdjust": "m-coloradj", "generatePreview": "m-preview"}, "build": {"inputDir": "b-input", "outputDir": "b-output", "threads": "b-threads", "appendMode": "b-append", "recursive": "b-recursive", "normalizeOnly": "b-normonly"}};
 
-Object.assign(FORM_FIELDS.mosaic, {outputMode:'m-mode',backend:'m-backend',threads:'m-threads',seed:'m-seed',overwrite:'m-overwrite'});
+Object.assign(FORM_FIELDS.mosaic, {outputMode:'m-mode',backend:'m-backend',device:'m-device',scoreMode:'m-score-mode',threads:'m-threads',seed:'m-seed',overwrite:'m-overwrite'});
 delete FORM_FIELDS.mosaic.colorAdjust;
-Object.assign(FORM_FIELDS.build, {backend:'b-backend'});
+Object.assign(FORM_FIELDS.build, {backend:'b-backend',device:'b-device'});
 delete FORM_FIELDS.build.appendMode;
 delete FORM_FIELDS.build.normalizeOnly;
 FORM_FIELDS.project = {projectPath:'r-project',outputPath:'r-output',outputMode:'r-mode',format:'r-format',overlayStrength:'r-blend',brightnessJitter:'r-jitter',seed:'r-seed',threads:'r-threads',quality:'r-quality',pngLevel:'r-png',writeMode:'r-write',generatePreview:'r-thumbnail',overwrite:'r-overwrite',deep:'r-deep'};
+function restoreDevice(id, value) {
+  const selector = document.getElementById(id);
+  value = value || 'auto';
+  if (![...selector.options].some(option => option.value === value)) {
+    selector.add(new Option(value + '（等待设备探测）', value));
+  }
+  selector.value = value;
+}
+
+for (const prefix of ['m', 'b']) {
+  const backend = document.getElementById(prefix + '-backend');
+  const device = document.getElementById(prefix + '-device');
+  backend.addEventListener('change', () => {
+    if (backend.value !== 'auto' && device.value !== 'auto' && device.value.split(':')[0] !== backend.value) device.value = 'auto';
+  });
+  device.addEventListener('change', () => {
+    if (device.value !== 'auto') backend.value = device.value.split(':')[0];
+  });
+}
+
 function restoreRequestParameters(job) {
   const project = ['render','project-check','project-pack'].includes(job && job.type);
   const tab = project ? 'project' : job && job.type;
@@ -2060,6 +2099,8 @@ function restoreRequestParameters(job) {
     document.getElementById('m-otile').value = (request.nativeTileW || 180) + 'x' + (request.nativeTileH || 320);
     document.getElementById('m-mode').value = request.outputMode || (request.deepZoom ? 'deepzoom' : request.tiled ? 'tiles' : 'image');
     document.getElementById('m-backend').value = request.backend || (request.useGpu === false ? 'cpu' : 'auto');
+    restoreDevice('m-device', request.device);
+    document.getElementById('m-score-mode').value = request.scoreMode || 'compatible';
     document.getElementById('m-colorstr').value = request.colorAdjust ? (request.colorStrength ?? 0.04) : 0;
   } else if (project) {
     document.getElementById('r-action').value = job.type === 'render' ? 'render' : job.type.replace('project-','');
@@ -2071,6 +2112,7 @@ function restoreRequestParameters(job) {
       document.getElementById('b-output').value = libraryDirectory(request.dbPath);
     document.getElementById('b-mode').value = request.normalizeOnly ? 'normalize' : request.appendMode ? 'add' : 'build';
     document.getElementById('b-backend').value = request.backend || 'auto';
+    restoreDevice('b-device', request.device);
   }
   document.querySelector('.tab[data-cmd="' + tab + '"]').click();
   syncPreviewOption(); generateCommand();
@@ -2110,6 +2152,7 @@ function clearFieldErrors() {
 function syncPreviewOption() {
   document.getElementById('b-normsize').disabled = val('b-mode') === 'add';
   document.getElementById('b-backend').disabled = val('b-mode') === 'normalize';
+  document.getElementById('b-device').disabled = val('b-mode') === 'normalize';
   const preview = document.getElementById('m-preview');
   const incompatible = val('m-mode') !== 'image';
   const html = val('m-mode') === 'html';
