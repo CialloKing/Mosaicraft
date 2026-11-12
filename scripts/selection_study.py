@@ -307,8 +307,8 @@ def synthetic(args, original):
         library = root / "library"
         database = library / "mosaicraft.db"
         with (root / "build.log").open("w", encoding="utf-8") as log:
-            subprocess.run([str(args.cli), "build", "-i", str(inputs), "-o", str(library),
-                            "-d", str(database), "--normalize-size", "180x320", "-t", "4", "--yes"],
+            subprocess.run([str(args.cli), "library", "build", str(inputs), "-o", str(library),
+                            "--size", "180x320", "--threads", "4"],
                            stdout=log, stderr=log, check=True)
         snapshot = library / "snapshot.db"
         with readonly_database(database) as source, closing(sqlite3.connect(snapshot)) as target:

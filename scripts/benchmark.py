@@ -14,6 +14,7 @@ import re
 import shutil
 import statistics
 import subprocess
+import threading
 import time
 from study_paths import private_library
 
@@ -64,9 +65,11 @@ def main():
         parser.error("overlay-strength must be finite and between 0 and 1")
     folder = args.output_dir.resolve()
     folder.mkdir(parents=True, exist_ok=True)
-    db = folder / "run.db"
+    library = folder / "library"
+    db = library / "run.db"
     args.target = args.target.resolve()
-    args.snapshot, _ = private_library(args.snapshot.resolve(), folder, images=True)
+    # Keep outputs outside the disposable library, matching the CLI's input protection.
+    args.snapshot, _ = private_library(args.snapshot.resolve(), library, images=True)
     if db == args.snapshot.resolve():
         parser.error("snapshot must differ from disposable run.db")
     variants = [("current", args.exe)]
@@ -91,14 +94,18 @@ def main():
         command = [str(executable.resolve()), "mosaic", "-i", str(args.target.resolve()),
                    "-d", str(db), "-o", str(output), "--format", args.format,
                    "--write-mode", args.write_mode, "--topn-random", "1", "--benchmark"]
+        if name == "current":
+            command = [str(executable.resolve()), "create", str(args.target.resolve()),
+                       "-l", str(db), "-o", str(output), "--format", args.format,
+                       "--write-mode", args.write_mode, "--random-top", "1", "--benchmark", "--overwrite"]
         if analysis:
             command.append("--analyze")
         if name == "current" and args.overlay_strength > 0:
-            command += ["--overlay-strength", str(args.overlay_strength)]
+            command += ["--target-blend", str(args.overlay_strength)]
         if args.cpu:
-            command.append("--cpu")
+            command += ["--backend", "cpu"] if name == "current" else ["--cpu"]
         if args.out_w and args.out_h:
-            command += ["--out-w", str(args.out_w), "--out-h", str(args.out_h)]
+            command += ["--target-size", f"{args.out_w}x{args.out_h}"] if name == "current" else ["--out-w", str(args.out_w), "--out-h", str(args.out_h)]
         before_gpu = gpu_memory()
         gpu_peak = before_gpu
         rss = 0
@@ -106,14 +113,25 @@ def main():
         start = time.perf_counter()
         with log.open("wb") as stream:
             process = subprocess.Popen(command, stdout=stream, stderr=subprocess.STDOUT, cwd=folder)
-            while process.poll() is None:
-                rss = max(rss, peak_rss(process) or 0)
-                used = gpu_memory()
-                if used is not None:
-                    gpu_peak = max(gpu_peak or 0, used)
-                time.sleep(0.2)
+            stopped = threading.Event()
+            def sample():
+                nonlocal rss, gpu_peak
+                while not stopped.is_set():
+                    rss = max(rss, peak_rss(process) or 0)
+                    used = gpu_memory()
+                    if used is not None:
+                        gpu_peak = max(gpu_peak or 0, used)
+                    stopped.wait(0.2)
+            sampler = threading.Thread(target=sample)
+            sampler.start()
+            try:
+                process.wait()
+                # Polling latency must not become part of a short workload's wall time.
+                elapsed = time.perf_counter() - start
+            finally:
+                stopped.set()
+                sampler.join()
             rss = max(rss, peak_rss(process) or 0)
-        elapsed = time.perf_counter() - start
         text = log.read_text(encoding="utf-8", errors="replace")
         if process.returncode:
             raise RuntimeError(f"Benchmark failed: {log}\n{text[-2000:]}")

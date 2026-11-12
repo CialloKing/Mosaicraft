@@ -483,7 +483,7 @@ function Assert-PackageCommands
     }
 
     $cliHelp = Invoke-ExecutableText -FilePath $CliPath -Arguments @("--help")
-    if ($cliHelp -notmatch "mosaic" -or $cliHelp -notmatch "build")
+    if ($cliHelp -notmatch "create <target>" -or $cliHelp -notmatch "render <project>" -or $cliHelp -notmatch "library build")
     {
         throw "CLI help output does not contain expected commands"
     }
