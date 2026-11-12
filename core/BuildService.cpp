@@ -1,4 +1,6 @@
 #include "BuildService.h"
+#include "NormalizeService.h"
+#include "ExecutionScope.h"
 
 #include "Database.h"
 #include "FeatureExtractor.h"
@@ -86,9 +88,34 @@ static bool stdinIsTty()
 
 } // namespace
 
-static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runtime)
+static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContext &runtime);
+
+static ServiceResult runBuild(const BuildRequest &original, RuntimeContext &runtime)
+{
+    BuildRequest request = original;
+    if (request.appendMode)
+    {
+        auto path = request.dbPath == "mosaicraft.db" ? request.outputDir + "/mosaicraft.db" : resolveDbPathForService(request.dbPath);
+        Database existing(path, Database::OpenMode::ReadOnly);
+        if (!existing.isOpen())
+        {
+            return runtimeFailure(runtime, 2, existing.error(), existing.errorCode(), "dbPath");
+        }
+        request.normalizeWidth = std::stoi(existing.getMeta("feature_w"));
+        request.normalizeHeight = std::stoi(existing.getMeta("feature_h"));
+    }
+    return runBuildResolved(request, runtime);
+}
+
+static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContext &runtime)
 {
     runtime.stage("validating");
+    if (request.normalizeOnly)
+    {
+        std::lock_guard<std::mutex> lock(pipelineMutex());
+        ExecutionScope scope;
+        return normalizeImages(request, runtime);
+    }
     const auto commandStart = std::chrono::steady_clock::now();
     std::string validationError, validationField;
     if (!validateBuildRequest(request, validationError, &validationField))
@@ -100,6 +127,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
         return runtimeFailure(runtime, 1, "inputDir is required", "invalid_argument", "inputDir");
     }
     std::lock_guard<std::mutex> pipelineLock(pipelineMutex());
+    ExecutionScope scope;
 
     std::string outputDir = request.outputDir.empty() ? "library" : request.outputDir;
     std::string dbPath = request.dbPath.empty() ? "mosaicraft.db" : request.dbPath;
@@ -358,7 +386,7 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
     {
         runtime.gpuDevice(preflight.pciBus);
     }
-    if (!request.normalizeOnly && !preflight.available)
+    if (!request.normalizeOnly && request.backend != BackendPolicy::Cpu && !preflight.available)
     {
         runtime.emit("warning", "cuda_unavailable", preflight.reason);
         std::cout << "CUDA unavailable; using CPU before extraction: " << preflight.reason << std::endl;
@@ -691,6 +719,10 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
                   << " (ordered batches, max " << batchLimit << " images, 64 MiB buffer budget)" << std::endl;
         if (compatibleRequested && !compatibleReady)
         {
+            if (request.backend == BackendPolicy::Cuda)
+            {
+                return runtimeFailure(runtime, 4, "required CUDA feature resources unavailable", "cuda_required");
+            }
             runtime.emit("warning", "cuda_resource_fallback",
                          "Generic CUDA resources unavailable; using CPU before extraction.");
             std::cout << "  Generic CUDA resources unavailable; using CPU before extraction." << std::endl;

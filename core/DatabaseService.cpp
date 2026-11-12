@@ -2,6 +2,8 @@
 
 #include "Database.h"
 #include "FeatureIO.h"
+#include "FeaturePack.h"
+#include "LibraryVisuals.h"
 #include "MosaicService.h"
 #include "UnicodeIO.h"
 
@@ -54,11 +56,11 @@ DatabaseStatsResult DatabaseService::stats(const DatabaseRequest& request) const
         sumL += l;
         sumA += a;
         sumB += b;
-        if (l < 30)
+        if (l < 50)
         {
             ++out.stats.dark;
         }
-        else if (l < 70)
+        else if (l < 150)
         {
             ++out.stats.mid;
         }
@@ -111,15 +113,38 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
     for (const auto& r : all)
     {
         std::error_code error;
-        if (r.filePath.empty() || !std::filesystem::is_regular_file(u8path(r.filePath), error))
+        const auto status = std::filesystem::status(u8path(r.filePath), error);
+        if (status.type() == std::filesystem::file_type::not_found)
         {
             ++out.health.missingFiles;
         }
+        else if (error || !std::filesystem::is_regular_file(status))
+        {
+            ++out.health.unreadableFiles;
+        }
         std::array<uint8_t, 256> tiny{};
         std::array<float, 256> lbp{};
-        if (!readFeature(r.tinyPath, FeatureKind::Tiny, tiny.data()) || !readFeature(r.lbpPath, FeatureKind::Lbp, lbp.data()))
+        if (r.gridLab.size() != 192 ||
+            !readFeature(r.tinyPath, FeatureKind::Tiny, tiny.data()) ||
+            !readFeature(r.lbpPath, FeatureKind::Lbp, lbp.data()))
         {
-            out.health.warnings.push_back("Missing or invalid feature for image " + std::to_string(r.id));
+            ++out.health.invalidFeatures;
+        }
+        if (request.deep && std::filesystem::is_regular_file(status))
+        {
+            const auto image = imreadUnicode(r.filePath);
+            uint64_t hash = 14695981039346656037ULL;
+            if (!image.empty())
+            {
+                for (size_t i = 0; i < image.total() * image.elemSize(); ++i)
+                {
+                    hash = (hash ^ image.data[i]) * 1099511628211ULL;
+                }
+            }
+            if (image.empty() || std::to_string(hash) != r.fileHash)
+            {
+                ++out.health.corruptImages;
+            }
         }
         if (r.avgL < 50) out.health.dark++;
         else if (r.avgL < 150) out.health.mid++;
@@ -133,7 +158,7 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
     if (out.health.missingFiles > 0)
     {
         out.health.warnings.push_back("Missing image files: " + std::to_string(out.health.missingFiles));
-        out.health.recommendations.push_back("Restore missing image files or run db-purge");
+        out.health.recommendations.push_back("Restore missing image files or run library purge");
     }
     out.health.darkPct = 100.0 * out.health.dark / out.health.total;
     out.health.midPct = 100.0 * out.health.mid / out.health.total;
@@ -146,13 +171,13 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
     if (out.health.minB > 115) out.health.warnings.push_back("Lacking blue/cool-toned images");
     if (out.health.maxB < 140) out.health.warnings.push_back("Lacking yellow-toned images");
 
-    auto used = db.topUsedImages(999999);
+    auto used = db.topUsedImages(0, true);
     out.health.usedCount = static_cast<int>(used.size());
     out.health.unusedCount = out.health.total - out.health.usedCount;
     out.health.usedPct = 100.0 * out.health.usedCount / out.health.total;
     out.health.unusedPct = 100.0 * out.health.unusedCount / out.health.total;
     if (out.health.unusedCount > out.health.total / 2)
-        out.health.warnings.push_back(">50% images never used - consider pruning");
+        out.health.warnings.push_back(">50% images absent from recorded usage (historical usage may be incomplete)");
 
     if (!used.empty())
     {
@@ -175,9 +200,11 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
     if (out.health.minB > 115 || out.health.maxB < 140)
         out.health.recommendations.push_back("Diversify blue-yellow color range");
     if (out.health.unusedCount > out.health.total / 2)
-        out.health.recommendations.push_back("Run db-usage to identify dead weight");
+        out.health.recommendations.push_back("Use library usage to inspect recorded targets and tile counts");
 
-    out.status = ServiceResult::success("database health generated");
+    const int failures = out.health.missingFiles + out.health.unreadableFiles + out.health.invalidFeatures + out.health.corruptImages;
+    out.status = failures ? ServiceResult::failure(1, "library integrity check failed", "library_integrity_failed")
+                          : ServiceResult::success("database health generated");
     return out;
 }
 
@@ -193,7 +220,7 @@ DatabaseUsageResult DatabaseService::usage(const DatabaseUsageRequest& request) 
 
     auto all = db.allRecords();
     out.usage.total = static_cast<int>(all.size());
-    auto top = db.topUsedImages(std::max(1, request.limit));
+    auto top = db.topUsedImages(request.limit, request.sortByTiles);
     out.usage.empty = top.empty();
     for (const auto& item : top)
     {
@@ -202,7 +229,7 @@ DatabaseUsageResult DatabaseService::usage(const DatabaseUsageRequest& request) 
 
     if (request.showUnused)
     {
-        auto used = db.topUsedImages(999999);
+        auto used = db.topUsedImages(0, true);
         std::unordered_set<int> usedIds;
         for (const auto& item : used) usedIds.insert(std::get<0>(item));
 
@@ -252,7 +279,28 @@ DatabaseUsageExportResult DatabaseService::exportUsage(const DatabaseUsageExport
         pathMap[rec.id] = rec.filePath;
     }
 
-    auto allUsed = db.topUsedImages(999999);
+    if (request.selection != "used" && request.selection != "unused" && request.selection != "all")
+    {
+        out.status = ServiceResult::failure(1, "selection must be used, unused or all");
+        return out;
+    }
+    auto allUsed = db.topUsedImages(0, true);
+    std::unordered_set<int> usedIds;
+    for (const auto &[id, runs, tiles] : allUsed)
+    {
+        usedIds.insert(id);
+    }
+    if (request.selection != "used")
+    {
+        allUsed.clear();
+        for (const auto &rec : allRecs)
+        {
+            if (request.selection == "all" || !usedIds.count(rec.id))
+            {
+                allUsed.emplace_back(rec.id, 0, 0);
+            }
+        }
+    }
     std::sort(allUsed.begin(), allUsed.end(),
         [](const auto& a, const auto& b) {
             return std::get<2>(a) > std::get<2>(b);
@@ -333,7 +381,7 @@ DatabasePurgeResult DatabaseService::purge(const DatabasePurgeRequest& request) 
     DatabasePurgeResult out;
     out.purge.dryRun = request.dryRun;
 
-    Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
+    Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Build);
     if (!db.isOpen())
     {
         out.status = ServiceResult::failure(2, db.error(), db.errorCode(), "dbPath");
@@ -346,7 +394,9 @@ DatabasePurgeResult DatabaseService::purge(const DatabasePurgeRequest& request) 
     std::vector<OrphanRecord> orphans;
     for (const auto& rec : all)
     {
-        if (!rec.filePath.empty() && !std::filesystem::exists(u8path(rec.filePath)))
+        std::error_code error;
+        const auto status = std::filesystem::status(u8path(rec.filePath), error);
+        if (!rec.filePath.empty() && status.type() == std::filesystem::file_type::not_found)
         {
             orphans.push_back({rec.id, rec.filePath, rec.tinyPath, rec.lbpPath});
         }
@@ -365,7 +415,7 @@ DatabasePurgeResult DatabaseService::purge(const DatabasePurgeRequest& request) 
         return out;
     }
 
-    out.purge.recommendations.push_back("delete normalized/features/*.bin and lib.ann, then re-run mosaic to rebuild caches");
+    out.purge.recommendations.push_back("Only confirmed missing image records are eligible for removal.");
 
     if (request.dryRun)
     {
@@ -379,36 +429,36 @@ DatabasePurgeResult DatabaseService::purge(const DatabasePurgeRequest& request) 
         return out;
     }
 
-    for (const auto& orphan : orphans)
+    std::vector<int> ids;
+    for (const auto &orphan : orphans)
     {
-        try
+        ids.push_back(orphan.id);
+    }
+    if (!db.removeImages(ids))
+    {
+        out.status = ServiceResult::failure(2, "purge transaction failed; files preserved");
+        return out;
+    }
+    out.purge.removedCount = static_cast<int>(ids.size());
+    std::unordered_set<std::string> referenced;
+    for (const auto &record : db.allRecords())
+    {
+        referenced.insert(record.tinyPath);
+        referenced.insert(record.lbpPath);
+    }
+    for (const auto &orphan : orphans)
+    {
+        for (const auto &path : {orphan.tinyPath, orphan.lbpPath})
         {
-            if (!orphan.tinyPath.empty() && std::filesystem::exists(u8path(orphan.tinyPath)))
+            if (!path.empty() && !referenced.count(path))
             {
-                std::filesystem::remove(u8path(orphan.tinyPath));
+                std::error_code error;
+                std::filesystem::remove(u8path(path), error);
             }
-            if (!orphan.lbpPath.empty() && std::filesystem::exists(u8path(orphan.lbpPath)))
-            {
-                std::filesystem::remove(u8path(orphan.lbpPath));
-            }
-
-            if (db.removeImage(orphan.id))
-            {
-                out.purge.removedCount++;
-            }
-            else
-            {
-                out.purge.failedCount++;
-                out.purge.errors.push_back("failed to remove database record id=" + std::to_string(orphan.id));
-            }
-        }
-        catch (const std::exception& e)
-        {
-            out.purge.failedCount++;
-            out.purge.errors.push_back("failed to purge id=" + std::to_string(orphan.id) + ": " + e.what());
         }
     }
-
+    // 缓存的内容指纹已随记录变更失效；仅移除无引用的旧代，不删除有效源特征。
+    FeaturePack::removeObsolete(pathToUtf8(u8path(db.path()).parent_path() / "features"));
     if (out.purge.failedCount > 0)
     {
         out.status = ServiceResult::failure(1, "purge completed with errors");

@@ -130,6 +130,7 @@ public:
 
     // 删除单条记录（db-purge 用）
     bool removeImage(int id);
+    bool removeImages(const std::vector<int> &ids);
 
     // ——— 读操作 ———
 
@@ -167,7 +168,7 @@ public:
                         const std::string& targetHash = "",
                         const std::string& targetPath = "");
     // 查询使用统计：返回 (image_id, total_runs, total_tiles) 按 total_runs 降序
-    std::vector<std::tuple<int, int, int>> topUsedImages(int limit = 50);
+    std::vector<std::tuple<int, int, int>> topUsedImages(int limit = 50, bool sortByTiles = false);
     bool initUsageStats();
 
 private:

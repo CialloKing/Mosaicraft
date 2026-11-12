@@ -494,24 +494,22 @@ bool Database::updateImagePath(int id, const std::string& oldPath, const std::st
 
 bool Database::removeImage(int id)
 {
+    return removeImages({id});
+}
+
+bool Database::removeImages(const std::vector<int> &ids)
+{
     if (!m_db || !initUsageStats() || !exec("BEGIN IMMEDIATE"))
     {
         return false;
     }
-    // 旧 usage_stats 表未必有级联外键；在同一个事务里显式删除统计。
-    bool ok = exec("DELETE FROM usage_stats WHERE image_id=" + std::to_string(id));
-    const char* sql = "DELETE FROM images WHERE id = ?";
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK)
+    bool ok = true;
+    // 记录及关联统计先在同一事务中提交，提交前不得删除磁盘特征。
+    for (int id : ids)
     {
-        sqlite3_bind_int(stmt, 1, id);
-        ok = sqlite3_step(stmt) == SQLITE_DONE && ok;
+        ok = ok && exec("DELETE FROM usage_stats WHERE image_id=" + std::to_string(id)) &&
+             exec("DELETE FROM images WHERE id=" + std::to_string(id));
     }
-    else
-    {
-        ok = false;
-    }
-    sqlite3_finalize(stmt);
     if (ok && exec("COMMIT"))
     {
         return true;
@@ -840,7 +838,7 @@ bool Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
     return true;
 }
 
-std::vector<std::tuple<int, int, int>> Database::topUsedImages(int limit)
+std::vector<std::tuple<int, int, int>> Database::topUsedImages(int limit, bool sortByTiles)
 {
     std::vector<std::tuple<int, int, int>> result;
     if (!m_db) return result;
@@ -848,7 +846,8 @@ std::vector<std::tuple<int, int, int>> Database::topUsedImages(int limit)
     // 使用 exec 回调模式
     std::string sql = "SELECT image_id, total_runs, total_tiles FROM usage_stats "
                       "JOIN images ON images.id=usage_stats.image_id "
-                      "ORDER BY total_runs DESC LIMIT " + std::to_string(limit);
+                      + std::string("ORDER BY ") + (sortByTiles ? "total_tiles DESC, total_runs DESC" : "total_runs DESC, total_tiles DESC") +
+                      ", image_id ASC" + (limit > 0 ? " LIMIT " + std::to_string(limit) : "");
     char* errMsg = nullptr;
     auto callback = [](void* data, int argc, char** argv, char**) -> int {
         auto* vec = static_cast<std::vector<std::tuple<int,int,int>>*>(data);

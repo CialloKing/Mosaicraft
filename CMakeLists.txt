@@ -202,6 +202,7 @@ add_library(mosaicraft_core STATIC
     core/ApiRequestParser.cpp
     core/ImageNormalizer.cpp
     core/BatchProcessor.cpp
+    core/NormalizeService.cpp
     core/BuildService.cpp
     core/ColorOrder.cpp
     core/Database.cpp

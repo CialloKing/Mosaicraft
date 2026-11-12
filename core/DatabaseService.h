@@ -12,6 +12,7 @@ namespace mosaicraft
 
 struct DatabaseRequest
 {
+    bool deep = false;
     std::string dbPath = "library/mosaicraft.db";
 };
 
@@ -20,10 +21,12 @@ struct DatabaseUsageRequest
     std::string dbPath = "library/mosaicraft.db";
     int limit = 50;
     bool showUnused = false;
+    bool sortByTiles = false;
 };
 
 struct DatabaseUsageExportRequest
 {
+    std::string selection = "used";
     std::string dbPath = "library/mosaicraft.db";
     std::string outputDir;
     bool confirm = false;
@@ -62,6 +65,9 @@ struct DatabaseStats
 struct DatabaseHealth
 {
     int missingFiles = 0;
+    int unreadableFiles = 0;
+    int invalidFeatures = 0;
+    int corruptImages = 0;
     bool empty = true;
     int total = 0;
     int dark = 0, mid = 0, bright = 0;
