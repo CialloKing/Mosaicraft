@@ -38,81 +38,80 @@ Mosaicraft 用图库里的照片拼出一张目标图，可通过本地 Web UI �
 在解压目录运行以下命令。`photos` 是素材目录，`target.jpg` 是目标图。示例生成 `result.png` 和便于查看的 `result_preview.jpg`。Windows PowerShell 也可运行 `./mosaicraft.exe`。
 
 ```powershell
-./mosaicraft build -i photos -o library -r
-./mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o result.png --output-tile 18x32 --preview
+./mosaicraft library build photos -o library --size 180x320 -r
+./mosaicraft create target.jpg -l library -o result.png --output-tile 18x32 --thumbnail
 ```
 
-换一张目标图时可直接复用 `library/mosaicraft.db`。运行 `./mosaicraft --help` 可查看完整命令和选项。
+CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，全部选项用 `--help-all`。
+`--json` 使 stdout 只输出一个 JSON 结果，进度和诊断写入 stderr；`--quiet` 隐藏普通进度，保留结果和错误。
 
 ## 使用指南
 
-### 建库与追加
-
-建库时，素材会按指定尺寸等比缩放、中心裁剪，随后提取特征、按解码像素去重，并按综合色调编号。建议把素材目录和图库目录分开，程序会在图库目录中处理副本。尺寸和格式已符合要求的素材会保留原文件字节。 [同尺寸免重编码](docs/SAME_SIZE_NORMALIZATION.md)
+### 建库与图库管理
 
 ```powershell
-# 建立 270×480 图库
-./mosaicraft build -i photos -o library/270x480 --normalize-size 270x480 -r
-
-# 追加素材时沿用同一图库目录和归一化尺寸
-./mosaicraft build -i new_photos -o library/270x480 --normalize-size 270x480 --append -r
+./mosaicraft library build photos -o library/270x480 --size 270x480 -r
+./mosaicraft library add new_photos -l library/270x480 -r
+./mosaicraft library report library/270x480 --check
+./mosaicraft library report library/270x480 --deep
+./mosaicraft library usage library/270x480 --sort tiles --limit 0 --unused
+./mosaicraft library export library/270x480 -o used_photos --selection used
+./mosaicraft library purge library/270x480
+./mosaicraft library purge library/270x480 --apply
+./mosaicraft library normalize photos -o normalized --size 180x320
 ```
 
-- **换尺寸**时，在新目录建库。`--normalize-size` 默认 `180x320`，每轴支持 1～8192 像素。
-- **追加素材**后，数字文件名可能变化，数据库中的素材 ID 和使用统计会保留。
-- **搬移图库**时，先关闭使用图库的程序，再复制整个图库目录，包括 `mosaicraft.db`、素材和 `features/`。 [可搬移图库](docs/PORTABLE_LIBRARIES.md)
-- **恢复中断的建库**时，若图库留有 `.color-order.json`，恢复文件访问后，用原参数加 `--append` 继续。
+建库归一化尺寸默认 180×320，每轴 1～8192；同尺寸素材保留原文件字节。`build` 只创建新图库，`add` 继承已有规格，保持素材 ID 和统计，并沿用颜色排序。改变规格请新建目录。`normalize` 只复制和归一化，不创建数据库，输入输出目录不得重叠。
 
-### 匹配尺寸与输出尺寸
+`report` 默认快速统计，`--check` 检查资源和特征，`--deep` 再解码并核对像素摘要。LAB 亮度使用 OpenCV 8 位口径，分段为 50/150。覆盖不足和使用不均属于提示；缺失、不可读和损坏属于完整性失败。`purge --apply` 仅删除确认缺失的记录，权限错误和未使用状态不属于自动清理依据。
 
-| 尺寸 | 参数 | 如何选择 |
-| --- | --- | --- |
-| 图库归一化尺寸 | `build --normalize-size WxH` | 按素材比例选择，生成时从图库读取。该尺寸也决定 CUDA 模板。 |
-| 匹配 Tile | `--tile-w`、`--tile-h` | 默认 9×16 像素。想用更多素材块拼出轮廓时，缩小匹配 Tile。 |
-| 输出 Tile | `--output-tile WxH` | 默认 180×320，横向图库使用默认值时取 320×180。想缩小成品尺寸时，按比例缩小输出 Tile。 |
+成功 `create` 自动记录最终排列的使用情况，无需 `--analyze`。`usage --sort targets` 按已记录独立目标数排名，`--sort tiles` 按累计格数；“未使用”表示未出现在已记录历史中。浏览、检查、打包和工程回导不会增加图库统计。
 
-成品宽高由各轴的格数乘以输出 Tile 的对应边长得到。例如，90×160 的目标图按 9×16 分成 10×10 格，输出 Tile 用 180×320 时，成品是 1800×3200。改用 18×32 时，成品是 180×320，仍然匹配 100 格。`--out-w`、`--out-h` 和 `--upscale` 在切块前调整目标图尺寸。
+### 尺寸与输出
 
-### 生成与导出
+| 参数 | 行为 |
+| --- | --- |
+| `--match-tile WxH` | 目标每格覆盖像素，默认 9×16。 |
+| `--output-tile WxH` | 输出每格像素，默认 180×320；横向图库默认取 320×180。放大仅重采样包内素材。 |
+| `--target-size WxH` | 匹配前调整目标尺寸；允许单轴 `auto`，双轴指定可改变比例。 |
+| `--target-upscale N` | 调整目标尺寸后再放大，随后按既有规则补边。 |
+| `--mode image\|html\|deepzoom\|tiles` | 决定单图或完整目录结构。已知图片后缀可推导 image，其他路径必须指定模式。 |
+| `--format jpg\|png\|webp\|tiff` | 图片编码；HTML 与编码参数互斥，Deep Zoom/分块固定使用 JPEG。 |
+| `--target-blend 0..1` | 目标叠加，默认 0。 |
+| `--brightness-jitter 0..0.5` | LAB 亮度扰动，默认 0；HTML 必须为 0。 |
+| `--seed N` | 无符号 32 位种子；未指定时生成并记录。 |
+| `--backend auto\|cpu\|cuda` | 建库和匹配后端；auto 可回退并报告原因，显式 cuda 不可用时失败。 |
+| `--threads N` | CPU 工作上限，0 自动，各阶段可进一步收缩。 |
 
 ```powershell
-# 流式写入大图，同时保存便于查看的 JPEG 预览
-./mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o result.png --write-mode stream --preview
-
-# 使用 20% 的目标图叠加强度，并保存选图质量报告
-./mosaicraft mosaic -i target.jpg -d library/mosaicraft.db -o blended.png --overlay-strength 0.2 --analyze
+./mosaicraft create target.jpg -l library -o result.png --write-mode stream --thumbnail
+./mosaicraft create target.jpg -l library -o blended.png --target-blend 0.2 --analyze
+./mosaicraft create target.jpg -l library -o zoom-view --mode deepzoom
+./mosaicraft create target.jpg -l library -o tiles --mode tiles
 ```
 
-单图格式按 **`--format` → 输出文件后缀 → 输入文件后缀 → PNG** 的顺序确定。
+单图 `--format` 优先于后缀；JPG/WebP 超限时继续使用既有策略：推导格式转等尺寸 PNG，显式格式缩小输出图块。JPEG/WebP `--quality` 默认 100，PNG `--png-compression` 默认 1、范围 1～9。`--overwrite` 允许替换已有文件；目录只允许覆盖可识别且没有额外文件的 Mosaicraft 输出。工程与 ZIP 先暂存后发布，失败保留旧输出。
 
-| 格式 | 选项与超限处理 |
-| --- | --- |
-| JPG、WebP | `--quality` 取 1～100，默认 100。单轴上限分别为 65,500 和 16,383 像素。超限时，自动推导的格式转为等尺寸 PNG，显式指定的格式尝试缩小输出 Tile。 |
-| PNG | `--png-level 1～9`，默认 1。支持 `--write-mode stream` 降低大图写入时的内存占用。 |
-| TIFF | 支持 BigTIFF 和流式写入，适合超大单图。 |
+匹配策略与默认权重保持不变。`--random-top` 默认 10、`--reuse-penalty` 默认 0.01；`--candidates`、`--l-range`、邻域与权重参数仍可用。`inspect <target> -l library` 分别提供整图特征和按正式预处理计算的网格覆盖。
 
-导出单图时，`--preview` 会在主图旁保存 `<主图名>_preview.jpg`。需要单独保存每个图块时用 `--tiled`，需要分层缩放浏览时用 `--deepzoom`。 [输出格式与超限处理](docs/OUTPUT_FORMAT_VERIFICATION.md) · [实时预览与 JPEG 预览](docs/PREVIEW_VERIFICATION.md)
+### HTML 便携工程与回导
 
-### 常用生成参数
+```powershell
+./mosaicraft create target.jpg -l library -o artwork --mode html --target-blend 0.2
+./mosaicraft project info artwork
+./mosaicraft project check artwork --deep
+./mosaicraft render artwork -o result.tiff --output-tile 360x640
+./mosaicraft render artwork/project.json -o result.png --target-blend 0.2 --brightness-jitter 0.04
+./mosaicraft project pack artwork -o artwork.zip
+```
 
-| 需求 | 参数 |
-| --- | --- |
-| 调节选图多样性 | `--candidates` 控制召回候选数，默认 150。`--topn-random` 控制精排后的随机选图范围，默认 10。 |
-| 找不到候选素材 | 遇到 `no_candidates` 时，可增大 `--l-range`（默认 20），或补充与目标图亮度相近的素材。 |
-| 减少素材重复 | `--neighbor-window` 控制邻域范围，`--neighbor-penalty` 控制相邻重复的惩罚，`--penalty` 控制素材复用惩罚。 |
-| 保留目标图轮廓 | `--overlay-strength` 取 0～1，默认 0。设为 0.2 会混合 80% 素材和 20% 对应位置的目标图。 |
-| 微调素材亮度 | 启用 `--color-adjust` 后，`--color-strength` 控制随机亮度扰动，默认 ±4%。 |
-| 查看质量和耗时 | `--analyze` 生成报告和热力图，`--benchmark` 显示分阶段耗时。 |
-| 强制使用 CPU | `--cpu` |
+HTML 输出是完整目录：`project.json`、`index.html`、无损 `target.png`、`overview.jpg`、使用过的唯一素材副本和浏览缩略图。复制整个目录即可移动；传输时用 `project pack` 生成完整 ZIP64，解压后离线打开 `index.html`。浏览器支持缩放、平移、全屏、目标参考和素材查看，不提供编辑或原生图片导出。
 
-### 图库管理
+`render` 接受工程目录、其中的 `project.json` 或 `index.html`，不直接读取 ZIP。排列固定，不重新匹配、不打开原图库、不执行 CUDA 预检。可调整输出模式、编码、图块尺寸、叠加、亮度和外观种子；省略尺寸、外观和种子时继承工程。相同工程、参数及环境下重复输出具有相同解码像素；`render --seed` 只改变外观随机性。输出到新的 HTML 目录可以保存新的叠加效果。
 
-| 命令 | 用途 |
-| --- | --- |
-| `./mosaicraft db-stats -d library/mosaicraft.db` | 查看图库规模、LAB 分布和亮度覆盖。 |
-| `./mosaicraft db-health -d library/mosaicraft.db` | 检查图库完整性和缺失资源。 |
-| `./mosaicraft db-usage -d library/mosaicraft.db` | 查看素材使用统计，可用 `--export <目录>` 导出使用过的素材。 |
-| `./mosaicraft db-purge -d library/mosaicraft.db` | 确认后清理图库中图片文件已缺失的记录及关联特征。 |
+Web UI 的「便携工程」页支持信息、检查、回导与打包，全部复用现有任务队列。HTML 下载需先打包；单独下载入口文件会被拒绝。Deep Zoom 继续保留。
+
+详见 [工程格式与命令迁移](docs/CLI_PROJECTS.md)、[HTTP API](docs/API.md)、[本次验收记录](docs/CLI_PROJECTS_VERIFICATION.md)。
 
 ## CUDA 分辨率模板
 

@@ -4,7 +4,7 @@
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
-当前源码提供 API 1.2，支持实时预览、候选查询及手动替换。图库结构、特征、缓存及恢复格式沿用 v1.15.0 定义的版本 1。早于 v1.15.0 的图库需要在新目录重建，详见 [1.15.0 不兼容更新](BREAKING_1.15.0.md) 和 [API 文档](API.md)。下文历史版本记录保留发布时的说明。
+当前源码提供 API 1.4 和 HTML 便携工程及固定排列回导，支持实时预览、候选查询及手动替换。图库结构、特征、缓存及恢复格式沿用 v1.15.0 定义的版本 1。早于 v1.15.0 的图库需要在新目录重建，详见 [1.15.0 不兼容更新](BREAKING_1.15.0.md) 和 [API 文档](API.md)。下文历史版本记录保留发布时的说明。
 
 ## 目录 / Table of Contents
 
@@ -136,92 +136,27 @@ Output
 
 ## 3. 命令行完全参考 / CLI Reference
 
-> **EN**: `mosaicraft build -i <dir>` builds a library. `mosaicraft mosaic -i <img> -d <db>` generates a mosaic. `mosaicraft inspect -i <img>` inspects an image. Full flag reference below.
+当前命令树和全部迁移说明见 [CLI、便携工程与回导](CLI_PROJECTS.md)；常用参数使用 `<命令> --help`，完整参数使用 `--help-all`。旧 CLI 名称与选项不再解析，历史章节中的命令只反映当时版本。
 
-### build
-
-```
-mosaicraft build -i <dir> [-o <dir>] [-d <path>] [-t <n>]
-```
-
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `-i --input <dir>` | 必填 | 图库图片目录 |
-| `-o --output <dir>` | `normalized` | 归一化输出目录 |
-| `-d --db <path>` | `mosaicraft.db` | 数据库路径 |
-| `-t --threads <n>` | 自动 | 归一化线程数 |
-| `--append` | — | 追加图片后按颜色重排全库 |
-| `-r --recursive` | — | 递归扫描子目录 |
-| `--normalize-only` | — | 仅归一化不建库（初筛用） |
-
-### mosaic
-
-```
-mosaicraft mosaic -i <img> -d <db> [-o <path>] [选项...]
+```powershell
+mosaicraft library build photos -o library --size 180x320
+mosaicraft library add new-photos -l library
+mosaicraft create target.jpg -l library -o result.png
+mosaicraft create target.jpg -l library -o artwork --mode html
+mosaicraft create target.jpg -l library -o zoom --mode deepzoom
+mosaicraft render artwork -o rendered.png --output-tile 360x640
+mosaicraft project check artwork --deep
+mosaicraft project pack artwork -o artwork.zip
+mosaicraft library report library --check
+mosaicraft library usage library --sort tiles --limit 0
+mosaicraft inspect target.jpg -l library
 ```
 
-#### 输入输出
+`--mode image|html|deepzoom|tiles` 决定结构，`--format` 决定编码。亮度扰动统一为 `--brightness-jitter 0..0.5`，默认 0；HTML 要求 0。基础图叠加为 `--target-blend 0..1`。匹配和输出图块分别为 `--match-tile` 和 `--output-tile`，目标尺寸为 `--target-size WxH`（允许单轴 auto），放大为 `--target-upscale`。默认匹配权重、ANN、归一化及输出尺寸未改。
 
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `-i --input <path>` | 必填 | 目标图 |
-| `-d --db <path>` | `mosaicraft.db` | 数据库 |
-| `-o --output <path>` | `mosaic.jpg` | 输出路径（扩展名推格式） |
-| `--format <ext>` | 扩展名 | `jpg`/`png`/`webp`/`tiff` |
-| `--quality <n>` | 95 | JPEG/WebP 质量 |
+HTML 包保存使用过的原素材副本、最终排列、无损工作目标和派生浏览资源。浏览器只查看；原生回导允许输出、编码和外观调整，不重新匹配、不依赖原图库。单图、分块和 Deep Zoom 继续支持亮度扰动；固定种子和格子位置决定外观随机性。
 
-#### tile 控制
-
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `--tile-w <n>` | 9 | 目标图每格宽度 |
-| `--tile-h <n>` | 16 | 目标图每格高度 |
-| `--output-tile <WxH>` | 180x320 | 拼接图输出尺寸 |
-| `--out-w <n>` | 原图 | 目标图缩放宽度 |
-| `--out-h <n>` | 原图 | 目标图缩放高度 |
-| `--upscale <n>` | 关闭 | 先放大原图 n× 再分块 |
-
-#### 匹配控制
-
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| `--candidates <n>` | 150 | ANN 粗筛候选数（105K 图库 sweep：150≈200≈300，最佳平衡点） |
-| `--topn-random <n>` | 10 | Top-N 随机选取（多样性) |
-| `--lab-weight <f>` | 0.20 | LAB 权重 |
-| `--grid-weight <f>` | 0.45 | Grid 权重 |
-| `--tiny-weight <f>` | 0.25 | TinyImage 权重 |
-| `--edge-weight <f>` | 0.05 | 边缘权重 |
-| `--lbp-weight <f>` | 0.05 | LBP 权重 |
-| `--penalty <f>` | 0.01 | 使用频率惩罚（usePenalty） |
-| `--neighbor-penalty <f>` | 100.0 | 邻域重复惩罚（越大越多样） |
-| `--neighbor-window <n>` | 0=auto | 邻域窗口大小（≥2×tilesX） |
-| `--l-range <f>` | 20 | ANN 候选的 L 亮度差上限（0..255） |
-
-#### 输出/工具
-
-| 参数 | 说明 |
-|------|------|
-| `--tiled` | 分块输出 |
-| `--deepzoom` | Deep Zoom + HTML |
-| `--write-mode <mode>` | 写入模式：`auto`/`stream`/`batch` |
-| `--png-level <n>` | PNG 压缩级别 (1-9，默认 1) |
-| `--color-adjust` | 选图后对每个小块施加对称随机 LAB L 扰动（默认关闭） |
-| `--color-strength <f>` | L 通道最大相对扰动，范围 `0..0.5`，默认 `0.04`（`±4%`） |
-| `--overlay-strength <f>` | 基础图透明叠加强度，范围 `0..1`，默认 `0`（关闭） |
-| `--adaptive-weights` | 🧪 自适应权重（实验） |
-| `--cpu` | 强制 CPU |
-| `--benchmark` | 耗时分解 |
-| `--analyze` | 匹配质量报告 + 热力图 |
-
-单独设置强度不会启用亮度调整。每个输出小块从 1001 个等概率档位中抽取乘数，范围为 `1±strength`（默认 `0.96～1.04`），平均值为 1；仅统一缩放 LAB L 通道，A、B 通道保持不变。强度为 0 时保持原像素。乘数分布对称，但像素取整、高亮截断和颜色转换仍可能影响最终图像的平均亮度。
-
-基础图透明叠加使用 `素材 × (1 − overlayStrength) + 基础图 × overlayStrength`，在随机亮度调整后执行。参考为尺寸调整、upscale 和镜像补边后的匹配工作图；使用全图像素中心坐标逐块双线性采样，只有参考图外边界夹紧，避免块间插值接缝。普通、流式、分块及 DeepZoom 共用合成入口，DeepZoom 先合成源小图再生成金字塔。强度 `0` 跳过额外采样和复制；开启时保留工作图并为最多 8 个线程分配小块缓冲，不创建完整输出尺寸的参考图。素材缓存只读，各位置修改独立副本。选图和特征版本保持不变，分析分数仍表示叠加前的匹配质量。验证数据见 [基础图叠加验证](BASE_IMAGE_OVERLAY_VERIFICATION.md)。
-
-### inspect
-
-```
-mosaicraft inspect -i <img> [-d <db>]
-```
+普通说明和进度走 stderr，`--json` 的 stdout 只有一个结构化结果。无结束按键等待，也不交互补充参数。HTTP API 保持旧字段兼容，新增能力见 [API 1.4](API.md)。
 
 ---
 

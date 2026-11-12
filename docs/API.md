@@ -15,9 +15,9 @@ Both entries call the same core services for mosaic generation, library building
 `/api/info` 在 `entryPoints` 中暴露相同的入口边界，调用方可据此区分当前入口和支持的可执行入口集合。
 `/api/info` exposes the same entry point boundary in `entryPoints`, so callers can distinguish the current entry from the supported executable entry set.
 
-当前 API 版本为 **1.3**，主版本为 **1**。1.3 增加输出规划、目标覆盖、图库浏览、体积采样、预览评分与 A/B 对照、资源监控及任务历史。端点继续使用 `/api/*`，图库数据库结构版本为 1。
+当前 API 版本为 **1.4**，主版本为 **1**。新增 HTML 便携工程、固定排列回导、工程检查与 ZIP64 打包，保留已有请求字段及路径语义。端点继续使用 `/api/*`，图库数据库结构版本仍为 1。
 
-API **1.3** adds output planning, target coverage, a library catalog, size sampling, preview scoring and A/B comparison, resource monitoring, and task history. The library schema version remains 1.
+API **1.4** adds portable HTML projects, native rendering from saved layouts, project checks and ZIP64 packaging. Existing request fields remain compatible. The library schema version remains 1.
 
 ---
 
@@ -41,6 +41,8 @@ Returns service version, entry name, structured API status, API contract version
 `info.runtime` identifies the current process session and working directory. Match jobs by session plus ID; IDs can repeat after a restart. Discover optional capabilities through `info.features`.
 
 1.3 功能标记包括 `mosaic-plan`、`mosaic-size-sample`、`library-visuals`、`preview-quality`、`task-resources`、`preview-comparison` 和 `task-history`。
+
+1.4 新增 `portable-project`、`project-render`、`project-check`、`project-pack`。CLI 已更换命令树且不保留旧别名，参见 [CLI 与工程说明](CLI_PROJECTS.md)。旧 HTTP 请求字段继续可用。
 
 ### `GET /api/endpoints`
 
@@ -139,7 +141,9 @@ The API requires a local Host with the current port. Browser Origin must match t
 | `overlayStrength` | finite, `0..1`, default `0` (off) |
 | `threads` | `0..256` |
 | `normalizeWidth`, `normalizeHeight` | `1..8192` |
-| `limit` | `>= 1` |
+| `limit` | 图库排行 `>= 0`，0 表示全部；事件分页仍 `>= 1` |
+| `seed` | `0..4294967295`，省略时生成并记录种子 |
+| `backend` | 建库和匹配 `auto\|cpu\|cuda`，显式 cuda 不静默回退 |
 
 亮度调整默认关闭（`colorAdjust: false`），`colorStrength` 默认 `0.04`；单独设置强度不会启用。选图后，每个输出小块在 `1±colorStrength` 范围的 1001 档乘数中等概率抽取一档，统一缩放 LAB L 通道，A、B 通道保持不变。默认乘数范围为 `0.96～1.04`，平均值为 1；强度为 0 时跳过颜色转换，保持原像素。像素取整、高亮截断和颜色转换仍可能影响最终图像的平均亮度。
 Brightness adjustment defaults to off (`colorAdjust: false`), with `colorStrength` defaulting to `0.04`; setting strength alone does not enable it. After matching, each output tile uniformly samples one of 1001 multipliers in `1±colorStrength` and scales its LAB L channel, leaving A and B unchanged. The default multiplier range is `0.96..1.04`, with a mean of 1; zero strength skips color conversion and preserves the pixels. Quantization, highlight clipping, and color conversion can still affect the final image's mean brightness.
@@ -165,7 +169,7 @@ Base-image overlay is enabled by `overlayStrength`; `0.2` blends 80% tile pixels
 
 ### 单图格式策略 / Single-image output policy
 
-同步 `/api/mosaic`、异步 `/api/jobs/mosaic` 和 CLI 使用相同规则：有效的显式 `format` 优先于输出后缀，其次输入后缀，最后回退 PNG。省略 `outputPath` 默认使用无后缀的 `output/output`，无后缀文件名会追加最终后缀；显式空路径仍失败，父目录需已存在。支持的格式为 JPG/JPEG、PNG、WebP、TIFF/TIF，忽略大小写。输入后缀无法推导时可回退 PNG，无法读取的输入仍失败；未知输出后缀在没有显式格式时返回 HTTP 400，`diagnostic.field` 为 `outputPath`。未知显式格式的字段为 `format`。
+同步 `/api/mosaic`、异步 `/api/jobs/mosaic` 和 CLI 使用相同编码规则（新 CLI 必填输出，非图片后缀必填模式）：有效的显式 `format` 优先于输出后缀，其次输入后缀，最后回退 PNG。省略 `outputPath` 默认使用无后缀的 `output/output`，无后缀文件名会追加最终后缀；显式空路径仍失败，新输出目标会按需创建父目录。支持的格式为 JPG/JPEG、PNG、WebP、TIFF/TIF，忽略大小写。输入后缀无法推导时可回退 PNG，无法读取的输入仍失败；未知输出后缀在没有显式格式时返回 HTTP 400，`diagnostic.field` 为 `outputPath`。未知显式格式的字段为 `format`。
 
 推导的 JPG（单轴上限 65,500）或 WebP（16,383）超限时保留尺寸，改存 PNG；显式 `format: "jpg"/"webp"` 超限时缩小输出 Tile，保留格式。整数取整可能改变比例；网格任一轴的块数已超编码上限时，显式模式失败，需要 PNG/TIFF 或分块。PNG/TIFF 仍检查现有尺寸和资源上限。分块和 DeepZoom 继续使用原分片规则。
 
@@ -194,11 +198,51 @@ The plan is optional and is not proof of a saved file. Existing runtime dimensio
 
 成功提交返回 HTTP 202 和 `job` / Successful submission returns HTTP 202 with `job`.
 
+### 新输出模式 / Output modes
+
+马赛克请求新增 `outputMode: "image|html|deepzoom|tiles"`、`backend: "auto|cpu|cuda"`、`threads: 0..256`、`seed` 和 `overwrite`。新字段指定目录模式时 `outputPath` 为完整导出目录；未提供时旧 `tiled/deepZoom` 的文件/前缀解释保持不变。新旧模式冲突返回 400；旧字段只在入口转换，核心使用单一模式。
+
+HTML 与显式 `format/quality/pngLevel/writeMode/generatePreview` 互斥，拒绝启用的非零亮度扰动。所有成功 create 自动记录最终排列使用情况，不依赖 analyze。固定种子在相同输入、版本和后端内复现，不承诺跨后端一致。
+
+### 工程信息与任务 / Portable projects
+
+工程输入接受目录、其中的 `project.json` 或 `index.html`；ZIP 先解压。HTML 是离线只读查看器，原生回导只读取权威清单和包内素材。
+
+| 端点 | 请求 | 结果 |
+| --- | --- | --- |
+| `POST /api/project/info` | `projectPath` | 200，project：grid、outputTile、assetCount、appearance、seed、estimatedBytes |
+| `POST /api/jobs/render` | `projectPath`, `outputPath` 及输出/外观设置 | 202，复用队列、进度、产物和历史 |
+| `POST /api/jobs/project-check` | `projectPath`，可选 deep | 202，验证版本、索引、路径、大小、SHA-256 和快照；deep 增加解码/尺寸检查 |
+| `POST /api/jobs/project-pack` | `projectPath`, `outputPath`，可选 overwrite/deep | 202，STORE ZIP64，包含完整顶层工程目录 |
+
+render 示例：
+
+```json
+{
+  "projectPath": "artwork/index.html",
+  "outputPath": "rendered.png",
+  "nativeTileW": 360,
+  "nativeTileH": 640,
+  "overlayStrength": 0.2,
+  "brightnessJitter": 0.04,
+  "seed": 42,
+  "threads": 4
+}
+```
+
+render 接受 outputMode、format、nativeTileW/H、quality、pngLevel、writeMode、generatePreview、overlayStrength、brightnessJitter、seed、threads、benchmark、overwrite、resourceMonitor；拒绝匹配尺寸、候选、权重、惩罚和 backend。nativeTileW/H 成对提供。已知图片后缀可推导 image，其他路径必须指定模式。默认沿用工程尺寸、外观和种子；seed 只影响外观，放大只重采样包内素材。HTML 要求 brightnessJitter 为零。
+
+回导不访问原图库、不匹配、不 CUDA 预检、不修改源工程、不增加使用统计。派生缩略图缺失不阻止原生图片渲染，但完整性检查和打包仍报告缺失。查看器不依赖服务、CDN、模块请求或运行时 JSON 读取。
+
+工程和 ZIP 暂存成功后发布，失败恢复旧输出。overwrite 只替换无额外文件的可识别导出目录；保护目标图、图库及源工程。入口 HTML 和工程清单的产物下载返回 409，应先提交 project-pack，再下载 archive 产物。
+
 ### `POST /api/jobs/build`
+
+新增 `backend` 字段控制加速策略；`threads: 0` 自动，正数为应用 CPU 工作线程上限。纯归一化使用 `normalizeOnly: true`，不创建数据库，拒绝输入输出重叠。新 CLI `library build` 只建新库、`library add` 继承现有规格，API 保留已有字段。
 
 启动异步图库构建任务 / Starts an asynchronous library build job.
 
-默认对全库按平均颜色的 HSV 色相和明暗排序并从 `000000` 连续编号，`appendMode: true` 也会重新排列旧图片。输入与输出同目录时也更改已索引原图的文件名。图片 ID、使用统计和图片内容保持不变；`normalizeOnly: true` 不执行全库重排。不增加新的请求字段。
+默认对全库按平均颜色的 HSV 色相和明暗排序并从 `000000` 连续编号，`appendMode: true` 也会重新排列旧图片。输入与输出同目录时也更改已索引原图的文件名。图片 ID、使用统计和图片内容保持不变；`normalizeOnly: true` 不执行全库重排。
 Builds order the entire library by mean-color HSV hue and lightness and number files consecutively from `000000`, including append and same-directory builds. Image IDs, usage statistics and bytes are preserved. `normalizeOnly: true` skips reordering. No new request fields are required.
 
 排序复用数据库平均 LAB，色度 `C < 0.5` 的图片按灰度亮度排列，彩色每 15° 分段并从 345° 开始。CPU/CUDA 独立建库可能因均值精度不同产生顺序差异，同一数据库重复排序保持稳定。
@@ -301,10 +345,10 @@ Runs a mosaic request synchronously. New UI code should prefer `POST /api/jobs/m
 成功生成后返回 HTTP 200 和服务结果，不返回 job。同步生成和异步建库/生成共用串行执行锁，以保证特征缓存写入一致。
 Returns HTTP 200 with a service result after successful generation, without a job. Synchronous generation and asynchronous build/mosaic pipelines share a serial execution lock to keep feature cache writes consistent.
 
-两个生成端点默认允许超大输出，无需额外字段或开关。目标缩放/上采样后的工作图像最多 1 亿像素。单图 JPEG/WebP 超过各自尺寸限制时返回失败，请选择 PNG、TIFF 或 `tiled: true`。PNG/TIFF 可指定 `writeMode: "stream"` 降低内存占用。旧版图库特征需先通过建库端点原地刷新。
-Both mosaic endpoints allow large output by default, without an extra field or switch. Resized/upscaled working targets are limited to 100 million pixels. JPEG/WebP output exceeding format dimensions fails; select PNG, TIFF or `tiled: true`. PNG/TIFF can use `writeMode: "stream"` to reduce memory use. Unsupported libraries must be rebuilt in a new directory before generation.
+两个生成端点默认允许超大输出，无需额外字段或开关。目标缩放/上采样后的工作图像最多 1 亿像素。JPEG/WebP 超限时按统一编码策略改用 PNG 或缩小输出图块；网格本身超过编码上限时失败。PNG/TIFF 可指定 `writeMode: "stream"` 降低内存占用。不兼容的旧图库必须在新目录重建，当前更新不迁移或重建已有有效图库。
+Both mosaic endpoints allow large output by default, without an extra field or switch. Resized/upscaled working targets are limited to 100 million pixels. JPEG/WebP overflow follows the format policy above; a grid exceeding codec limits fails. PNG/TIFF can use `writeMode: "stream"` to reduce memory use. Unsupported libraries must be rebuilt in a new directory before generation.
 
-两个生成端点均接受 `generatePreview: true`，默认 `false`，等价于 CLI `--preview`。只支持单图；与 `tiled` 或 `deepZoom` 组合返回 400，诊断字段为 `generatePreview`。沿用宽度最多 1400、总像素最多 400 万、不放大的 JPEG 预览，质量固定为 92。同步响应只返回产物元数据，使用任务端点生成才能通过任务产物接口下载。
+两个生成端点均接受 `generatePreview: true`，默认 `false`，等价于 CLI `--thumbnail`。只支持单图；与 `tiled` 或 `deepZoom` 组合返回 400，诊断字段为 `generatePreview`。沿用宽度最多 1400、总像素最多 400 万、不放大的 JPEG 预览，质量固定为 92。同步响应只返回产物元数据，使用任务端点生成才能通过任务产物接口下载。
 `generatePreview` is optional and off by default. It uses the existing bounded JPEG preview generator and is incompatible with tiled/DeepZoom output.
 
 ### 实时预览 / Interactive preview
@@ -366,13 +410,13 @@ Returns database size, LAB ranges, brightness buckets, and coverage gaps.
 
 返回健康警告和建议 / Returns health warnings and recommendations.
 
-`missingFiles` 为缺失素材文件数，`usage` 提供已用与未用素材的数量和百分比。`hotspot.topHotspotTilePct` 是按 `runs` 排名前 `topHotspotCount` 张素材累计占用的格数比例。
+`missingFiles` 为缺失素材文件数，`usage` 提供已用与未用素材的数量和百分比。`hotspot.topHotspotTilePct` 是按 `tiles` 排名前 `topHotspotCount` 张素材累计占用的格数比例。
 
 ### `GET|POST /api/db/usage`
 
-返回使用统计 / Returns usage statistics.
+返回已记录使用统计 / Returns recorded usage statistics. 浏览、检查、打包和回导不计数。
 
-`top` 按 `runs` 降序排列。同一目标图仅首次统计时增加 `runs`，后续任务仍累计 `tiles`（填充格数）。
+`sort: "targets"`（默认）按独立目标数 runs 排序，`sort: "tiles"` 按累计格数排序；limit 为 0 返回全部。同一目标图仅首次统计时增加 `runs`，后续任务仍累计 `tiles`（填充格数）。
 
 常用 JSON 字段 / Common JSON fields:
 
@@ -386,7 +430,7 @@ Returns database size, LAB ranges, brightness buckets, and coverage gaps.
 
 ### `POST /api/db/usage/export`
 
-按总 tile 使用量导出已用图片。此端点有文件系统副作用，需要 `confirm: true`。
+selection 支持 used（默认）、unused、all；复制素材，不创建数据库。未使用表示未出现在已记录使用中，不推算历史缺失数据。此端点有文件系统副作用，需要 `confirm: true`。
 Exports used images ordered by total tile count. This endpoint has filesystem side effects and requires `confirm: true`.
 
 ```json
@@ -399,7 +443,7 @@ Exports used images ordered by total tile count. This endpoint has filesystem si
 
 ### `POST /api/db/purge`
 
-预览或移除孤立的数据库记录。默认为干运行。实际删除需要 `dryRun: false` 和 `confirm: true`。
+只报告或移除确认缺失文件的记录，权限错误、损坏特征、覆盖不足及未使用不作为删除依据。事务更新记录及关联统计，提交后失效缓存并清理无引用特征。默认为干运行。实际删除需要 `dryRun: false` 和 `confirm: true`。
 Previews or removes orphan database records. Default is dry-run. Actual deletion requires `dryRun: false` and `confirm: true`.
 
 ```json

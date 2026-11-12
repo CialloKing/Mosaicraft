@@ -6,6 +6,8 @@
 
 ## 1. 发布前状态
 
+CLI/工程更新的补充门槛：运行 portable_project、Chromium/Firefox 离线查看和工程 Web UI smoke；验证 ZIP64 计数边界、库不可用时回导、手动排列一致性及覆盖回滚。五个平台分别记录构建和运行，CUDA 实机验证不能以编译覆盖替代。更新本身不自动推送、打标签或发布。
+
 - 工作区必须干净：`git status --short --branch`
 - 当前版本号必须一致：`CMakeLists.txt`、`core/Version.h`、README、Web UI badge、测试断言、百科版本记录
 - `docs/ENCYCLOPEDIA.md` 必须追加当前版本高层摘要和必要的详细说明
