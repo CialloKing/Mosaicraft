@@ -16,6 +16,10 @@ else()
 endif()
 install(TARGETS mosaicraft MosaicraftWebUI RUNTIME DESTINATION .)
 install(FILES "${CMAKE_BINARY_DIR}/generated/index.html" "${CMAKE_SOURCE_DIR}/contracts.json" DESTINATION .)
+install(FILES "${CMAKE_SOURCE_DIR}/third_party/miniz/LICENSE" "${CMAKE_SOURCE_DIR}/third_party/miniz/SOURCE.md"
+        DESTINATION licenses/miniz)
+install(FILES "${CMAKE_SOURCE_DIR}/third_party/picosha2/LICENSE" "${CMAKE_SOURCE_DIR}/third_party/picosha2/SOURCE.md"
+        DESTINATION licenses/picosha2)
 if(NOT MOSAICRAFT_BUNDLE_RUNTIME)
     return()
 endif()

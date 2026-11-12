@@ -24,3 +24,6 @@ doctest       v2.4.11    https://github.com/doctest/doctest          tests/docte
 #   且 core/stop_condition.h 为项目自行扩展（多向量搜索停止条件），
 #   官方 hnswlib 不包含此文件。因此 hnswlib 无法直接用 FetchContent，
 #   必须保留本地魔改版。
+
+miniz         3.1.2 / 77d0dce8627735138c51770d1799a1ef48f2117d  third_party/miniz
+PicoSHA2      161cb3fc4170fa7a3eca9e582cebd27cc4d1fe29  third_party/picosha2

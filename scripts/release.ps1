@@ -708,6 +708,12 @@ try {
         }
         Copy-RequiredFile -Source (Join-Path $RepoRoot "LICENSE") -Destination $packageRoot
         Copy-RequiredFile -Source (Join-Path $RepoRoot "third_party_versions.txt") -Destination $packageRoot
+        foreach ($dependency in @('miniz','picosha2')) {
+            $licenseTarget = Join-Path $packageRoot "licenses/$dependency"
+            New-Item -ItemType Directory -Force -Path $licenseTarget | Out-Null
+            Copy-RequiredFile -Source (Join-Path $RepoRoot "third_party/$dependency/LICENSE") -Destination $licenseTarget
+            Copy-RequiredFile -Source (Join-Path $RepoRoot "third_party/$dependency/SOURCE.md") -Destination $licenseTarget
+        }
         Write-BuildInfo `
             -Destination $packageRoot `
             -VersionText $versionText `
