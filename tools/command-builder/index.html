@@ -57,6 +57,11 @@ main:has(#panel-preview.active) { max-width: 1660px; }
 .preview-surface canvas.editing { cursor: crosshair; }
 .preview-surface canvas:active { cursor: grabbing; }
 .preview-surface canvas:focus-visible { outline-offset: -3px; }
+.preview-surface .preview-guides { position: absolute; inset: 0; pointer-events: none; }
+.preview-guide-options { margin: 8px 0; }
+.preview-guide-options label { display: inline-flex; align-items: center; gap: 4px; padding: 4px; }
+.preview-repeat-label { color: var(--warning); }
+.preview-edit-label { color: var(--accent2); }
 .preview-placeholder { position: absolute; inset: 0; align-content: center; text-align: center;
   padding: 16px; color: var(--fg2); pointer-events: none; font-size: .85rem; }
 .preview-selection { position: absolute; pointer-events: none; border: 2px solid var(--accent);
@@ -375,8 +380,14 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
         <button type="button" class="btn btn-secondary" id="live-preview-edit" aria-pressed="false" disabled>手动选图</button>
         <button type="button" class="btn btn-secondary" data-open-tab="mosaic">返回生成</button>
       </div>
+      <div class="preview-toolbar preview-guide-options" role="group" aria-label="预览对照与标记">
+        <button type="button" class="btn btn-secondary" id="live-preview-reference" aria-pressed="false" disabled>目标参考图</button>
+        <label class="preview-repeat-label"><input type="checkbox" id="live-preview-mark-repeats" disabled> 框出相邻重复</label>
+        <label class="preview-edit-label"><input type="checkbox" id="live-preview-mark-edits" disabled> 标记手动替换</label>
+      </div>
       <div class="preview-surface" id="live-preview-surface">
         <canvas id="live-preview-canvas" tabindex="0" aria-label="马赛克预览，方向键平移，加减键缩放，手动模式下回车选择中心格"></canvas>
+        <canvas id="live-preview-guides" class="preview-guides" width="1" height="1" aria-hidden="true" hidden></canvas>
         <div id="live-preview-selection" class="preview-selection" aria-hidden="true" hidden></div>
         <p class="preview-placeholder" id="live-preview-placeholder">在生成页填写目标图片后开启预览。</p>
         <button type="button" class="preview-resize" id="live-preview-resize"
@@ -389,6 +400,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       </div>
       <p class="hint" id="live-preview-status" role="status" aria-live="polite"></p>
       <p class="hint" id="live-preview-density-warning" role="status" hidden>当前窗口中的格子较多，可能卡顿。放大可减少同时显示的格子。</p>
+      <p class="hint" id="live-preview-guide-note" role="status" hidden></p>
       <p class="hint" id="live-preview-color" hidden>随机亮度扰动在正式输出时应用。</p>
     </section>
     <section class="card preview-picker" id="live-preview-picker" aria-labelledby="live-preview-picker-heading" hidden>
@@ -593,6 +605,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
         <tr><td>开启 / 关闭预览</td><td>开启后计算当前参数的选图；调整相关参数后等待预览更新。关闭会释放当前预览和手动选图；不需要沿用预览时可关闭后直接生成。</td></tr>
         <tr><td>刷新</td><td>预览过期或提示素材变更时刷新，重新计算当前预览。生成页提示正在更新时，等待完成或关闭预览后再运行。</td></tr>
         <tr><td>缩放、平移与适应窗口</td><td>预览从画面中心以最大倍率打开。使用加减按钮或鼠标滚轮缩放，拖动画布平移。“适应窗口”显示完整画面。画布获得焦点时可用方向键平移、<code>+</code>/<code>-</code> 缩放、<code>0</code> 适应窗口。</td></tr>
+        <tr><td>目标参考图与标记</td><td>点击“目标参考图”可在同一视角对照切块前的目标图。浅黄色框标出与上下左右邻格使用同一素材的格子，蓝色角标表示手动替换。可见格过多时，放大后可查看标记。</td></tr>
         <tr><td>调整预览窗口大小</td><td>拖动画布右下角手柄改变窗口大小；手柄获得焦点后可用方向键调整，按住 Shift 加大步长。“恢复默认大小”恢复窗口尺寸，不改变生成图片尺寸。</td></tr>
         <tr><td>手动选图 / 替换素材</td><td>点击“手动选图”后选择画布格子，再从“推荐候选”或“整个图库”点选可用素材。也可让画布获得焦点并按回车选择中心格。灰色素材不可选；手动选图适合修正局部重复或不合适的画面。</td></tr>
         <tr><td>整个图库 / 搜索 / 页码</td><td>可按文件名包含内容或素材 ID 搜索；每页 24 张，使用上一页、下一页，或输入页码后按回车 / 点击“跳转”。搜索结果重新从第一页开始，总页数随筛选变化。</td></tr>

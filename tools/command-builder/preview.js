@@ -76,6 +76,15 @@ const interactivePreview = (() => {
   setupPreviewSizing(byId('surface'), byId('resize'), byId('reset-size'));
   const canvas = byId('canvas');
   const context = canvas.getContext('2d', {alpha: false});
+  const guides = byId('guides');
+  const guideContext = guides.getContext('2d');
+  const guideNote = byId('guide-note');
+  const referenceButton = byId('reference');
+  const markRepeats = byId('mark-repeats');
+  const markEdits = byId('mark-edits');
+  const guideStyle = getComputedStyle(guides);
+  const repeatColor = guideStyle.getPropertyValue('--warning').trim();
+  const editColor = guideStyle.getPropertyValue('--accent2').trim();
   const toggle = byId('toggle');
   const refreshButton = byId('refresh');
   const status = byId('status');
@@ -98,6 +107,8 @@ const interactivePreview = (() => {
   let slotsByAsset = new Map();
   const dirtyAssets = new Set();
   let layoutKey = '';
+  let guideKey = '';
+  let showReference = false;
   let paintedOpacity = 0;
   let cacheBytes = 0;
   let enabled = false;
@@ -194,6 +205,7 @@ const interactivePreview = (() => {
 
   function clearPictures() {
     cancelImages();
+    clearGuides();
     densityWarning.hidden = true;
     for (const bitmap of cache.values()) bitmap.close();
     cache.clear();
@@ -275,6 +287,8 @@ const interactivePreview = (() => {
     refreshButton.hidden = !enabled;
     refreshButton.disabled = pending || !request || !capable();
     zoomOut.disabled = zoomIn.disabled = fitButton.disabled = !hasPlan;
+    referenceButton.disabled = markRepeats.disabled = markEdits.disabled = !hasPlan || !guideContext;
+    referenceButton.setAttribute('aria-pressed', String(showReference));
     placeholder.hidden = hasPlan;
     placeholder.textContent = enabled ? '等待预览画面。' : '在生成页填写目标图片后开启预览。';
     byId('color').hidden = !enabled || !val('m-coloradj');
@@ -569,7 +583,7 @@ const interactivePreview = (() => {
     for (const [key, url] of wanted) {
       touch(key);
       if (cache.has(key) || loading.has(key) || failed.get(key) === url) continue;
-      let distance = Infinity;
+      let distance = showReference && key.startsWith('reference:') ? -1 : Infinity;
       for (const slot of slotsByAsset.get(key) ?? []) {
         distance = Math.min(distance, (slot.x + slot.w / 2 - cx) ** 2 + (slot.y + slot.h / 2 - cy) ** 2);
       }
@@ -699,12 +713,83 @@ const interactivePreview = (() => {
     return bands;
   }
 
+  function clearGuides() {
+    if (!guides.hidden || guides.width !== 1 || guides.height !== 1) {
+      guides.hidden = true;
+      guides.width = guides.height = 1;
+    }
+    guideNote.hidden = true;
+    guideKey = '';
+  }
+
+  function imageIdAt(position) {
+    return edits.get(position)?.imageId ?? plan.imageIds[position];
+  }
+
+  function repeatsNeighbor(position, row, col) {
+    const id = imageIdAt(position);
+    return id > 0 && ((col > 0 && imageIdAt(position - 1) === id) ||
+      (col + 1 < plan.columns && imageIdAt(position + 1) === id) ||
+      (row > 0 && imageIdAt(position - plan.columns) === id) ||
+      (row + 1 < plan.rows && imageIdAt(position + plan.columns) === id));
+  }
+
+  function paintGuides(g, view, count, referenceKey, reference) {
+    const markers = markRepeats.checked || markEdits.checked;
+    if (!guideContext || (!showReference && !markers)) {
+      clearGuides();
+      return;
+    }
+    const dense = count > visibleTileWarning;
+    const compare = showReference && reference;
+    const note = [];
+    if (showReference && !compare) note.push(failed.has(referenceKey) ? '目标参考图不可用。' : '正在加载目标参考图…');
+    if (dense && markers) note.push('放大预览后可查看标记。');
+    const message = note.join(' ');
+    if (guideNote.textContent !== message) guideNote.textContent = message;
+    guideNote.hidden = !message;
+    if (!compare && (!markers || dense)) {
+      guides.hidden = true;
+      guideKey = '';
+      return;
+    }
+    const key = [layoutKey, !!compare, markRepeats.checked, markEdits.checked].join('/');
+    if (guideKey === key) return;
+    guideKey = key;
+    guides.hidden = false;
+    if (guides.width !== view.width) guides.width = view.width;
+    if (guides.height !== view.height) guides.height = view.height;
+    guideContext.setTransform(view.width / g.width, 0, 0, view.height / g.height, 0, 0);
+    guideContext.clearRect(0, 0, g.width, g.height);
+    if (compare) guideContext.drawImage(reference, g.x, g.y, g.tw * plan.columns, g.th * plan.rows);
+    if (!markers || dense) return;
+
+    // 标记使用独立图层，切换时无需清空素材位图或破坏平移复用。
+    guideContext.strokeStyle = repeatColor;
+    guideContext.fillStyle = editColor;
+    guideContext.lineWidth = 1;
+    for (const {position, row, col, x, y, w, h} of slots) {
+      if (markRepeats.checked && repeatsNeighbor(position, row, col)) {
+        guideContext.strokeRect(x + .5, y + .5, Math.max(0, w - 1), Math.max(0, h - 1));
+      }
+      if (markEdits.checked && edits.has(position)) {
+        const edge = Math.min(12, w, h, Math.max(2, Math.min(w, h) / 3));
+        guideContext.beginPath();
+        guideContext.moveTo(x + w, y);
+        guideContext.lineTo(x + w - edge, y);
+        guideContext.lineTo(x + w, y + edge);
+        guideContext.fill();
+      }
+    }
+  }
+
   function paint() {
     frame = 0;
     layoutPending = false;
     const visible = clip();
     if (!visible || !plan || !context) {
       cancelImages();
+      clearGuides();
       densityWarning.hidden = true;
       return;
     }
@@ -723,8 +808,9 @@ const interactivePreview = (() => {
     densityWarning.hidden = count <= visibleTileWarning;
     const size = thumbnailSize(Math.max(g.tw * sx, g.th * sy), count);
     const prefix = endpoint + '/' + plan.id + '/image/';
-    const referenceKey = opacity > 0 && count ? 'reference:' + plan.id : '';
-    const reference = cache.get(referenceKey);
+    const referenceKey = (showReference || opacity > 0) && count ? 'reference:' + plan.id : '';
+    const referenceBitmap = cache.get(referenceKey);
+    const reference = opacity > 0 ? referenceBitmap : undefined;
     const content = [plan.id, editRevision, size, opacity].join('/');
     const view = {x: g.x, y: g.y, tw: g.tw, th: g.th, width: pixelW, height: pixelH,
       left: Math.floor(visible.x0 * sx), top: Math.floor(visible.y0 * sy),
@@ -822,6 +908,7 @@ const interactivePreview = (() => {
       for (const key of dirtyAssets) slotsByAsset.get(key)?.forEach(draw);
     }
     dirtyAssets.clear();
+    paintGuides(g, view, count, referenceKey, referenceBitmap);
     paintedOpacity = opacity;
     previousPaint = view;
     loadImages();
@@ -844,6 +931,13 @@ const interactivePreview = (() => {
     updateRunButton();
   });
   refreshButton.addEventListener('click', refresh);
+  referenceButton.addEventListener('click', () => {
+    showReference = !showReference;
+    referenceButton.setAttribute('aria-pressed', String(showReference));
+    requestPaint();
+  });
+  markRepeats.addEventListener('change', () => requestPaint());
+  markEdits.addEventListener('change', () => requestPaint());
   zoomOut.addEventListener('click', () => zoom(1 / 1.35));
   zoomIn.addEventListener('click', () => zoom(1.35));
   fitButton.addEventListener('click', fit);
