@@ -131,9 +131,13 @@ bool JobManager::getPreview(const std::string &id, PreviewSnapshot &out)
     }
     it->second->accessed = std::chrono::steady_clock::now();
     out = it->second->snapshot;
-    // Poll the live execution plan instead of waiting for selection to finish.
-    out.result.runtime = it->second->runtime->snapshot();
-    out.progress = out.result.runtime.progress;
+    const auto runtime = it->second->runtime->snapshot();
+    out.progress = runtime.progress;
+    // Completed operations retain their diagnostics, including sampling and comparison failures.
+    if (out.state == JobState::Queued || out.state == JobState::Running || out.state == JobState::Canceled)
+    {
+        out.result.runtime = runtime;
+    }
     return true;
 }
 

@@ -23,6 +23,7 @@
 #include "../core/JobManager.h"
 #include "../core/LibraryPaths.h"
 #include "../core/NeighborhoodState.h"
+#include "../core/MosaicSelection.h"
 #include "../core/OutputPlan.h"
 #include "../core/RequestValidation.h"
 #include "../core/SelectionPolicy.h"
@@ -38,6 +39,7 @@
 #include <opencv2/imgproc.hpp>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 int main(int argc, char** argv)
@@ -111,6 +113,30 @@ TEST_CASE("preview snapshots expose queued progress")
     CHECK(response.body["preview"]["runtime"]["scoreBackend"] == "");
     CHECK(response.body["preview"]["runtime"]["device"] == "");
     CHECK(response.body["preview"]["runtime"]["scoreMode"] == "");
+}
+
+TEST_CASE("preview polling preserves completed failure diagnostics")
+{
+    using namespace mosaicraft;
+    JobManager jobs(true, false);
+    MosaicRequest request;
+    request.config.outputMode = OutputMode::Html;
+    const auto id = jobs.submitPreview(request, 42, std::make_shared<MosaicSelection>());
+    PreviewSnapshot snapshot;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    do
+    {
+        REQUIRE(jobs.getPreview(id, snapshot));
+        if (snapshot.state == JobState::Failed)
+        {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    } while (std::chrono::steady_clock::now() < deadline);
+    REQUIRE(snapshot.state == JobState::Failed);
+    CHECK(snapshot.result.runtime.diagnostic.code == "sample_unavailable");
+    const auto response = handleApiRequest(apiJobRequest(ApiOperation::GetPreview, id), jobs);
+    CHECK(response.body["preview"]["result"]["diagnostic"]["code"] == "sample_unavailable");
 }
 
 TEST_CASE("output format priority retains request intent and filenames")
