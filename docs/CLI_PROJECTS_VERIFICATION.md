@@ -104,3 +104,16 @@ GPU 为 NVIDIA GeForce RTX 4060 Laptop GPU，驱动 621.14。严格 CUDA 检查�
 - 本次数据和日志保存在忽略目录 `build/zoom-16384-20261112/`（`target-codec-*` 及 `target-codec/`）；只使用合成素材。旧工程缺少原文件名记录，仍保留其清单已有的 `target.png`，不根据目录名猜测来源。
 
 以上为此次功能验证，发布及其他平台的最终状态以发布包审计为准，不改变本文之前各节的历史验收边界。
+
+## 目标源文件直接复制与原尺寸转换（2026-11-12）
+
+后续按要求调整：JPG/JPEG、PNG 从首次导出起直接复制来源文件，其他格式转为 PNG 时保留原始宽高。该节取代上一节“JPEG 首次以质量 90 重编码”的当前行为；上一节保留为历史记录。实现提交：`e36f19188`。
+
+目标资源表记录实际文件尺寸，新增 `targetPreparation` 保存匹配缩放尺寸和放大倍数，补边由网格推导。原生回导复用 `resizeTarget`、`padTarget`，HTML 按对应尺寸及反射边界映射目标参考和叠加。旧工程没有该字段时仍将目标视为已预处理的工作图；HTML 再导出保留已有目标文件字节。
+
+- Windows CUDA CLI/Web UI 和测试目标构建通过，完整 `ctest --test-dir build/windows-cuda -C Release --output-on-failure` 通过（8/8）。既有便携工程回归补充 JPG/JPEG/PNG 原输入字节一致、WebP 转换前后原尺寸一致、再次导出字节一致，及目标尺寸 `43x57`、放大倍数 2、反射补边后回导与直接 PNG 渲染字节一致。非法预处理尺寸、倍数及网格仍明确拒绝。
+- 合成输入 JPEG（83×57）、RGBA PNG（81×59）、WebP（69×53）、16 位 TIFF（79×61）、BMP（73×47）均导出成功。JPEG/PNG 与原文件 SHA-256 一致，包括测试元数据；其他格式转换后宽高和解码像素一致，TIFF 的 16 位数据保留。所有工程深度检查及再次导出通过。
+- Chromium 151.0.7922.34、Firefox 153.0 对含新预处理信息的 WebP 来源工程、旧结构 JPEG 工程再导出产物均通过 `tests/browser_project.cjs` 的离线浏览、百万格局部加载和缩放检查。3×5 非均匀目标补边到 4×8 的专项截图中，两种浏览器的参考图与目标全叠加均和原生 PNG 逐像素一致，没有 JS 错误。
+- `pwsh -NoProfile -File tests/webui_smoke.ps1 -WebUiExe build/windows-cuda/Release/bin/MosaicraftWebUI.exe` 通过，覆盖实时预览手动排列后的 HTML 导出、校验、回导及工程归档。
+
+命令脚本、日志和素材全部位于忽略目录 `build/target-source-copy-20261112/`。仅使用合成图片，本次验证不代表 Linux/macOS 或新的发布附件验收。
