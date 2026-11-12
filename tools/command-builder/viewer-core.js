@@ -4,7 +4,7 @@ const MosaicraftViewport = (() => {
   const parallelLoads = 8;
   // 初始浏览尺度独立于放大上限，避免提高上限后首次打开只显示素材局部。
   const initialTileHeight = 256;
-  const maxTileHeight = 4096;
+  const maxTileHeight = 16384;
   const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
   function clip(canvas) {
     if (document.hidden || !canvas.clientWidth || !canvas.clientHeight) return null;

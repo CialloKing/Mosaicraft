@@ -59,7 +59,7 @@ const {pathToFileURL} = require('node:url');
         await page.waitForFunction(() => document.querySelector('#status').textContent.includes('缓存'));
         await page.waitForFunction(() => window.loadedImages.some(url => url.includes('/assets/')));
         assert.equal(await page.evaluate(() => MosaicraftViewport.initialTileHeight), 256);
-        assert.equal(await page.evaluate(() => MosaicraftViewport.maxTileHeight), 4096);
+        assert.equal(await page.evaluate(() => MosaicraftViewport.maxTileHeight), 16384);
         const visibleLimit = await page.evaluate(() => {
           const canvas = document.querySelector('#view');
           const data = JSON.parse(document.getElementById('mosaicraft-snapshot').textContent);
@@ -168,11 +168,11 @@ const {pathToFileURL} = require('node:url');
         assert.equal(await page.evaluate(() => window.lastTileHeight), 256);
         for (let i = 0; i < 14; ++i) await page.locator('#in').click();
         await page.waitForFunction(() => document.querySelector('#status').textContent.includes('最大缩放') &&
-          window.lastTileHeight === 4096);
+          window.lastTileHeight === 16384);
         await page.locator('#in').click();
-        assert.equal(await page.evaluate(() => window.lastTileHeight), 4096);
+        assert.equal(await page.evaluate(() => window.lastTileHeight), 16384);
         await page.locator('#out').click();
-        await page.waitForFunction(() => window.lastTileHeight === 2560);
+        await page.waitForFunction(() => window.lastTileHeight === 10240);
         assert(requests.length < 20, 'zoom must load visible resources only');
         const budget = await page.evaluate(() => {
           const cache = new MosaicraftViewport.BitmapCache();
