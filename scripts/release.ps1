@@ -287,6 +287,8 @@ function Assert-ArchiveDocumentationPolicy {
         "ENCYCLOPEDIA.md",
         "BUILD_INFO.txt",
         "contracts.json",
+        "docs/PORTABLE_GPU.md",
+        "docs/performance/portable-gpu-20261113.json",
         "LICENSE",
         "third_party_versions.txt"
     )) {
@@ -710,6 +712,8 @@ try {
             "docs\RELEASE_CHECKLIST.md",
             "docs\BREAKING_1.15.0.md",
             "docs\PORTABLE_LIBRARIES.md",
+            "docs\PORTABLE_GPU.md",
+            "docs\performance\portable-gpu-20261113.json",
             "docs\performance\reset-1.15.0.json",
             "docs\performance\preview.json",
             "docs\performance\same-size-normalization.json",

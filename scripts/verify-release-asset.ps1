@@ -396,6 +396,14 @@ function Assert-BuildInfo
     $buildInfoPath = Join-Path $Root "BUILD_INFO.txt"
     Assert-FileExists -Path $buildInfoPath
     $info = Read-BuildInfo -Path $buildInfoPath
+    if ($info['Runtime'] -in @('vulkan', 'cuda-vulkan', 'metal'))
+    {
+        # 候选包必须携带机器可读门槛和未实机验收范围，不能只保留源码中的链接。
+        foreach ($document in @('docs/PORTABLE_GPU.md', 'docs/performance/portable-gpu-20261113.json'))
+        {
+            Assert-FileExists -Path (Join-Path $Root $document)
+        }
+    }
     foreach ($property in $versions.PSObject.Properties)
     {
         if ($info["Internal.$($property.Name)"] -ne [string]$property.Value)
