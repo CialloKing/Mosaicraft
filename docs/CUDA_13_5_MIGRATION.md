@@ -6,9 +6,9 @@
 
 CUDA Toolkit 13.5.0 的 nvcc、cudart、cuobjdump 固定为 13.5.37；CCCL 的官方组件版本为 13.3.5.0.6，不是旧 SDK 混入。六个最小组件的 Windows/Linux 地址和 SHA256 来自 [NVIDIA 官方清单](https://developer.download.nvidia.com/compute/cuda/redist/redistrib_13.5.0.json)，保存在 `cmake/cuda-13.5.json`。原 13.3 锁文件和性能记录保留历史用途，安装脚本只使用新锁。
 
-五组平台 Preset 共用 Release-only 依赖目录，通过 VCPKG_ROOT 和 CUDAToolkit_ROOT 显式选择工具链；CPU-only 不查找 CUDA。主入口要求 CMake 4.2+、PowerShell 7，Windows 使用 VS 2026，Linux/macOS 使用 Ninja。Windows default/release/relwithdebinfo 入口仍可用；旧 CMakeSettings.json 已移除。发布脚本复用 Preset，允许覆盖构建目录和 vcpkg toolchain。
+此次迁移时各平台 Preset 共用 Release-only 依赖目录，通过 `VCPKG_ROOT` 和 `CUDAToolkit_ROOT` 选择工具链。当前 Linux/macOS 源码构建使用系统依赖，Linux CUDA 仍通过 `CUDAToolkit_ROOT` 选择 SDK。发布脚本可显式传入 vcpkg 工具链。 [当前构建方法](../README.md#安装与构建)
 
-Linux hosted runner 的 CMake 3.31 无法读取新入口，CI 在安装依赖后复用 vcpkg 固定的 CMake。依赖缓存指纹和共享策略不因 CUDA 版本变化而改变。首次远端迁移试跑还遇到 GitHub vcpkg 下载连续 HTTP 504；它与编译或测试失败分开记录。
+迁移验收时的 CI 使用 vcpkg 提供的 CMake 读取当时的 Preset。依赖缓存指纹和共享策略未随 CUDA 升级改变。首次远端迁移试跑还遇到 GitHub vcpkg 下载连续 HTTP 504。
 
 配置阶段检查实际 nvcc 版本、所用头文件版本，以及缓存中的编译器、头文件、cudart 路径是否位于同一 SDK。旧 13.3 编译器和指向其他 SDK 的缓存明确失败，不能自动混用。新增缓存边界测试不依赖 CUDA 安装，因此 CPU CI 也覆盖此规则。
 

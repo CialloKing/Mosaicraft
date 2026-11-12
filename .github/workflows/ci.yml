@@ -23,30 +23,38 @@ jobs:
             preset: windows-cpu
           - platform: linux-x64
             runner: ubuntu-22.04
-            triplet: x64-linux-release
             preset: linux-cpu
           - platform: macos-arm64
             runner: macos-15
-            triplet: arm64-osx-release
-            preset: macos-arm64-cpu
+            preset: macos-cpu
     runs-on: ${{ matrix.runner }}
-    defaults:
-      run:
-        shell: pwsh
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/dependencies
+        if: runner.os == 'Windows'
         with:
           triplet: ${{ matrix.triplet }}
           cache-namespace: ${{ inputs.cache-namespace || 'deps-v1' }}
       - name: Configure CPU Release
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: cmake --preset '${{ matrix.preset }}'
       - name: Build CLI and Web UI
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: cmake --build --preset '${{ matrix.preset }}' --target mosaicraft MosaicraftWebUI --parallel
+      - name: Build with system packages
+        if: runner.os != 'Windows'
+        shell: sh
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then export PATH="/usr/bin:$PATH"; fi
+          ./scripts/build-native.sh --install-deps
+          ./build/${{ matrix.preset }}/Release/bin/mosaicraft --version
+          ./build/${{ matrix.preset }}/Release/bin/MosaicraftWebUI --help
       - name: Upload diagnostics
-        if: always()
+        if: always() && runner.os == 'Windows'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-${{ matrix.platform }}-${{ github.sha }}

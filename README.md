@@ -128,11 +128,25 @@ CUDA 可用时，建库、实时预览和生成会根据图库的归一化尺寸
 
 ## 安装与构建
 
-使用仓库的 CMake Preset 构建需要 CMake 4.2+、PowerShell 7 和 Git。Windows 使用 Visual Studio 2026 的 C++ 工具。Linux 和 macOS 使用 Ninja 与系统 C++ 编译器，Linux 还需要 `pkg-config`、`zip`、`unzip` 等基础工具。
+### Linux 与 macOS
 
-### 安装依赖
+源码构建使用 C++17 编译器、CMake 3.21+、Ninja，以及系统提供的 OpenCV 4、SQLite、TIFF、PNG 和 JPEG 开发库。Ubuntu 22.04 自带的软件源满足 CMake 版本要求。macOS 请先安装 Xcode Command Line Tools（`xcode-select --install`）和 Homebrew。
 
-在 PowerShell 7 中执行。已有对应提交的 vcpkg 时，设置 `VCPKG_ROOT` 后即可依次运行 `Prepare` 和 `Install`。
+```sh
+git clone https://github.com/CialloKing/Mosaicraft.git
+cd Mosaicraft
+./scripts/build-native.sh --install-deps
+```
+
+`--install-deps` 在 Debian/Ubuntu 上调用 apt，在 Fedora 上调用 dnf，在 macOS 上调用 Homebrew。开发库已安装时，直接运行 `./scripts/build-native.sh`。也可手动执行 `cmake --preset linux-cpu` 和 `cmake --build --preset linux-cpu`，macOS 使用 `macos-cpu`。自定义依赖位置可通过 `CMAKE_PREFIX_PATH` 提供。
+
+- Linux CPU 产物在 `build/linux-cpu/Release/bin`，macOS 在 `build/macos-cpu/Release/bin`。进入目录后运行 `./MosaicraftWebUI` 或 `./mosaicraft --help`。
+- Linux CUDA 构建先安装 CUDA Toolkit 13.5.0（nvcc 13.5.37），再运行 `CUDAToolkit_ROOT=/usr/local/cuda-13.5 ./scripts/build-native.sh --cuda`。将路径换成实际安装位置。产物在 `build/linux-cuda/Release/bin`。 [CUDA 工具链](docs/CUDA_13_5_MIGRATION.md)
+- 原有 vcpkg 构建缓存可用新的构建目录避开，例如 `cmake --preset linux-cpu -B build/linux-system`，然后运行 `cmake --build build/linux-system`。
+
+### Windows
+
+使用 Visual Studio 2026 的 C++ 工具、CMake 4.2+、PowerShell 7 和 Git。已有对应提交的 vcpkg 时，设置 `VCPKG_ROOT` 后即可依次运行 `Prepare` 和 `Install`。
 
 ```powershell
 git clone https://github.com/CialloKing/Mosaicraft.git
@@ -144,17 +158,7 @@ $env:VCPKG_ROOT = (Resolve-Path build/tools/vcpkg).Path
 ./scripts/setup-dependencies.ps1 -Mode Install
 ```
 
-### 编译
-
-| 平台 | CPU Preset | CUDA Preset |
-| --- | --- | --- |
-| Windows x64 | `windows-cpu` | `windows-cuda` |
-| Linux x64 | `linux-cpu` | `linux-cuda` |
-| macOS ARM64 | `macos-arm64-cpu` | — |
-
-使用 CUDA Preset 前，先设置 `CUDAToolkit_ROOT` 指向 CUDA Toolkit 13.5.0（nvcc 13.5.37）。Windows 默认安装位置可用 `$env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5'`。 [CUDA 工具链](docs/CUDA_13_5_MIGRATION.md) · [架构与单卡构建](docs/CUDA_ARCHITECTURES.md)
-
-在安装依赖时的 PowerShell 会话中，把示例的 `windows-cpu` 换成所需的 Preset。
+使用 CUDA 时将下方的 `windows-cpu` 换成 `windows-cuda`，并设置 `$env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5'`。 [架构与单卡构建](docs/CUDA_ARCHITECTURES.md)
 
 ```powershell
 $preset = 'windows-cpu'
@@ -164,7 +168,7 @@ cmake --build --preset $preset --target mosaicraft MosaicraftWebUI --parallel
 
 构建产物位于 `build/<preset>/Release/bin`。
 
-完整 CTest 和 Web UI/API 冒烟测试通常由发布流程运行；v1.15.4 按维护者要求跳过全部测试。推送 `v*` 版本标签会触发 GitHub Actions 打包，本机 CUDA 发布包使用 `scripts/release.ps1` 验收。 [发布清单](docs/RELEASE_CHECKLIST.md)
+发布包使用独立的固定依赖和验收流程，推送 `v*` 版本标签会触发打包。 [发布清单](docs/RELEASE_CHECKLIST.md)
 
 ## 开发文档
 

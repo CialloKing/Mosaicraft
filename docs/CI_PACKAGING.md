@@ -1,6 +1,6 @@
 # CI 与原生发布包
 
-日常 `CI` 在 Windows x64 和 Linux x64 上编译 CPU 版 CLI 与 Web UI。推送 `v*` 版本标签会触发 `Native packages`，执行完整 CTest、Web UI/API smoke、打包和独立包验收。维护者使用通过验收的 Actions artifacts 创建 GitHub Release。
+日常 `CI` 在 Windows x64、Linux x64 和 macOS ARM64 上编译 CPU 版 CLI 与 Web UI。Linux 和 macOS 通过 `scripts/build-native.sh` 使用系统依赖，Windows 使用固定的 vcpkg 依赖。推送 `v*` 版本标签会触发 `Native packages`，执行完整 CTest、Web UI/API smoke、打包和独立包验收。维护者使用通过验收的 Actions artifacts 创建 GitHub Release。
 
 | 平台 | runner | CPU 包 | 云端 CUDA 包 |
 | --- | --- | --- | --- |
@@ -26,7 +26,7 @@
 
 Linux/macOS 分别选择 x64-linux-release、arm64-osx-release。Linux 打包还需要 patchelf。每种运行时使用独立构建目录。CMake 递归收集第三方运行库，Linux 使用相对 RPATH，macOS 修正加载路径后签名；Unix tar.gz 保留执行权限和符号链接。包内附有第三方许可证。
 
-源码和发布脚本共用五组平台 Preset，见 [README 构建入口](../README.md#编译)。主入口使用 CMake 4.2+ 和 PowerShell 7；Linux runner 的系统 CMake 仍为 3.31 时，在依赖安装完成后由 `setup-cmake.ps1` 复用 vcpkg 固定且校验过的 CMake。依赖指纹、安装和缓存步骤保持原工具链口径，CUDA SDK 升级不会改变第三方缓存键。
+Linux/macOS 的日常源码构建使用 CMake 3.21+。发布脚本使用 PowerShell 7，并向 CMake 显式传入固定依赖工具链和运行库打包选项。Windows Preset 的 Visual Studio 2026 生成器需要 CMake 4.2+。 [README 构建入口](../README.md#安装与构建)
 
 ## CUDA 验收状态
 
@@ -66,7 +66,7 @@ CPU 三个平台和 CUDA 两个平台均在独立的新 job 下载附件，不�
 
 依赖日志及 `install-summary.json` 记录安装时间和二进制恢复数量，打包目录的 `release-timings.json` 记录配置、编译、测试、smoke、打包和解压验证时间。GitHub step summary 展示相同阶段数据。
 
-使用 `CI` 的 `cache-namespace` 输入，针对同一提交选择一个全新命名空间后连续手动运行两次，得到 Windows/Linux 冷、热缓存对照。冷日志应没有 Protobuf、DNN 等依赖及 Debug 构建；热日志应恢复所有依赖且不再编译 OpenCV。日常热缓存单 job 目标为十分钟以内，不计排队。
+使用 `CI` 的 `cache-namespace` 输入，针对同一提交选择一个全新命名空间后连续手动运行两次，可得到 Windows 冷、热缓存对照。冷日志应没有 Protobuf、DNN 等依赖及 Debug 构建，热日志应恢复依赖。下方 Linux 数据来自日常 CI 仍使用 vcpkg 的时期。
 
 2026-11-08 对提交 `874503e` 使用独立缓存命名空间，各测一次冷、热缓存；[两次运行](https://github.com/CialloKing/Mosaicraft/actions/runs/42479756921)均通过。依赖列包含固定工具检出、引导、缓存及安装，不包含产品编译。
 
