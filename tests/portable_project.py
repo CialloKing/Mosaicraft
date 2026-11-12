@@ -28,6 +28,17 @@ def main():
             assert all(c >= 32 or c in (9, 10, 13) for c in process.stdout), process.stdout
             return result
 
+        commands = [('create',), ('render',), ('inspect',)] + [
+            ('library', name) for name in ('build', 'add', 'report', 'usage', 'export', 'purge', 'normalize')
+        ] + [('project', name) for name in ('info', 'check', 'pack')]
+        for command in commands:
+            for flag in ('--help', '--help-all'):
+                help_result = subprocess.run([str(cli), *command, flag], capture_output=True, timeout=10)
+                assert help_result.returncode == 0 and b'Usage:' in help_result.stdout
+                assert b'\x1b' not in help_result.stdout + help_result.stderr
+        for old in ('mosaic', 'build', 'db-stats', 'db-health', 'db-usage', 'db-purge'):
+            run(old, ok=False)
+
         photos = root / 'photos'
         photos.mkdir()
         for i in range(10):
@@ -43,6 +54,9 @@ def main():
         assert len(manifest['assets']) <= 10
         assert (root / 'artwork/target.png').is_file()
         run('project', 'check', 'artwork/index.html', '--deep')
+        quiet = subprocess.run([str(cli), 'project', 'info', 'artwork', '--quiet'], cwd=root,
+                               capture_output=True, timeout=10)
+        assert quiet.returncode == 0 and json.loads(quiet.stdout)['ok'] and not quiet.stderr
         for repeat in range(2):
             run('create', 'target.png', '-l', 'library', '-o', 'analyzed.png', '--analyze',
                 '--backend', 'cpu', '--seed', 42, '--l-range', 255, *(['--overwrite'] if repeat else []))

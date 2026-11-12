@@ -85,6 +85,12 @@ const {pathToFileURL} = require('node:url');
           await page.locator('#r-overwrite').check();
           await page.locator('#btn-run').click();
           await page.waitForFunction(() => taskStore.detail?.state === 'succeeded' && taskStore.detail?.type === 'render', null, {timeout:60000});
+          await page.locator('#task-history > summary').click();
+          await page.locator('#history-type').selectOption('render');
+          await page.waitForFunction(() => document.querySelector('#history-a').options.length > 1);
+          await page.locator('#history-a').selectOption({index:1});
+          await page.locator('#history-restore-a').click();
+          assert.equal(await page.locator('#r-project').inputValue(), project);
           assert(fs.existsSync(path.join(project, '..', 'browser-render.png')));
           assert.deepEqual(errors, []);
         }

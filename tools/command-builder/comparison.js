@@ -193,7 +193,7 @@ const taskHistory = (() => {
       result.replaceChildren();
       return;
     }
-    const output = job => job?.outputs?.find(item => ['main', 'library', 'tiles', 'manifest'].includes(item.id));
+    const output = job => job?.outputs?.find(item => ['main', 'library', 'tiles', 'manifest', 'archive', 'project'].includes(item.id));
     const quality = job => job?.runtime?.quality;
     const time = job => job?.runtime?.metrics?.totalMs ?? (job?.startedAt > 0 ? (job.finishedAt - job.startedAt) * 1000 : null);
     const resource = (job, key, statistic = 'peak') => job?.runtime?.resources?.summary?.[key]?.[statistic];

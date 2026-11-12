@@ -817,7 +817,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <details id="task-history" class="db-result" hidden>
     <summary>本地任务历史</summary>
     <div class="preview-toolbar">
-      <label>类型 <select id="history-type"><option value="">全部</option><option value="mosaic">马赛克</option><option value="build">建库</option></select></label>
+      <label>类型 <select id="history-type"><option value="">全部</option><option value="mosaic">马赛克</option><option value="build">建库</option><option value="render">工程回导</option><option value="project-check">工程检查</option><option value="project-pack">工程打包</option></select></label>
       <label>状态 <select id="history-state"><option value="">全部</option><option value="succeeded">成功</option><option value="failed">失败</option><option value="canceled">已取消</option></select></label>
       <button type="button" class="btn btn-secondary" id="history-refresh">刷新</button>
       <button type="button" class="btn btn-secondary" id="history-clear">清除历史</button>
@@ -2092,7 +2092,7 @@ function quotePowerShell(value) { return "'" + String(value).replace(/'/g, "''")
 function uiFieldError(field, message) { return Object.assign(new Error(message), { field }); }
 function highlightDiagnostic(diagnostic) {
   const tab = document.querySelector('.tab.active').dataset.cmd;
-  const maps = { ...FORM_FIELDS[tab], imagePath: 'i-input', normalizeWidth: 'b-normsize', normalizeHeight: 'b-normsize', nativeTileW: 'm-otile', nativeTileH: 'm-otile',
+  const maps = { ...FORM_FIELDS[tab], imagePath: 'i-input', normalizeWidth: 'b-normsize', normalizeHeight: 'b-normsize',
     nativeTileW: tab === 'project' ? 'r-tile' : 'm-otile', nativeTileH: tab === 'project' ? 'r-tile' : 'm-otile' };
   const field = diagnostic.field || '';
   const element = document.getElementById(maps[field] || field);
