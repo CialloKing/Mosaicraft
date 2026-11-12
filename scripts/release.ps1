@@ -441,6 +441,8 @@ function Invoke-ReleaseInspection {
             "CMakeLists.txt",
             "README.md",
             "docs\API.md",
+            "docs\PORTABLE_GPU.md",
+            "docs\performance\portable-gpu-20261113.json",
             "docs\ENCYCLOPEDIA.md",
             "LICENSE",
             "third_party_versions.txt",

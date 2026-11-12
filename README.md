@@ -123,7 +123,7 @@ API 1.5 新增设备发现、设备选择和评分模式。两种新后端都实
 
 ```powershell
 mosaicraft devices --json
-mosaicraft create target.png --db library/mosaicraft.db --backend vulkan --device vulkan:1 --score-mode fast
+mosaicraft create target.png --library library/mosaicraft.db --backend vulkan --device vulkan:1 --score-mode fast
 ```
 
 `auto` 暂保留 CUDA → CPU。Vulkan/Metal 只有在固定范围通过正确性、质量和性能准入后才能加入自动选择；当前候选包不启用该准入。Metal 仅限 macOS，必须显式指定。小任务的初始化和整库上传可能超过计算收益。详见[四后端实现与验收](docs/PORTABLE_GPU.md)。

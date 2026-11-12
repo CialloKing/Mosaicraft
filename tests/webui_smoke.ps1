@@ -389,6 +389,7 @@ try {
     Assert-True ($info.info.features -contains 'output-format-policy') "output policy capability missing"
     Assert-True ($info.info.features -contains 'interactive-preview') "interactive preview capability missing"
     Assert-True ($info.info.features -contains 'preview-editing') "preview editing capability missing"
+    Assert-True (@($info.info.devices | Where-Object id -eq 'cpu').Count -eq 1) 'CPU device discovery missing'
 
     $endpoints = Invoke-Api -Method "GET" -Path "/api/endpoints"
     Assert-True ($endpoints.ok -eq $true) "/api/endpoints did not return ok=true"
@@ -784,6 +785,30 @@ try {
     Remove-Item -LiteralPath $preview.path
     $missingArtifact = Invoke-ApiResponse -Method "GET" -Path ("/api/jobs/{0}/artifacts/preview" -f $completed.id)
     Assert-True ($missingArtifact.StatusCode -eq 404) "deleted artifact should return 404"
+
+    foreach ($device in @($info.info.devices | Where-Object { $_.available -and $_.backend -in @('vulkan', 'metal') }))
+    {
+        $gpuDirectory = Join-Path $tempRoot ('gpu-' + $device.id.Replace(':', '-'))
+        $gpuDb = Join-Path $gpuDirectory 'mosaicraft.db'
+        $gpuBuild = Invoke-Api -Method 'POST' -Path '/api/jobs/build' -Body @{
+            inputDir = $inputDir; outputDir = $gpuDirectory; dbPath = $gpuDb
+            backend = $device.backend; device = $device.id; threads = 2; forceMode = $true
+            normalizeWidth = 36; normalizeHeight = 64
+        }
+        $built = Wait-JobSucceeded -JobId $gpuBuild.job.id -Label $device.id -ExpectedType 'build' -ExpectedInputPath $inputDir -ExpectedOutputPath $gpuDirectory
+        Assert-True ($built.runtime.featureBackend -eq $device.backend -and $built.runtime.device -eq $device.id) 'GPU build did not use requested device'
+        foreach ($mode in @('compatible', 'fast'))
+        {
+            $gpuBody = $mosaicBody.Clone()
+            $gpuBody.useGpu = $true; $gpuBody.backend = $device.backend; $gpuBody.device = $device.id
+            $gpuBody.scoreMode = $mode; $gpuBody.dbPath = $gpuDb
+            $gpuBody.outputPath = Join-Path $outputDir ($device.id.Replace(':', '-') + '-' + $mode + '.png')
+            $gpuJob = Invoke-Api -Method 'POST' -Path '/api/jobs/mosaic' -Body $gpuBody
+            $result = Wait-JobSucceeded -JobId $gpuJob.job.id -Label $device.id -ExpectedType 'mosaic' -ExpectedInputPath $targetPath -ExpectedOutputPath $gpuBody.outputPath
+            $expectedScoring = if ($mode -eq 'fast') { $device.backend } else { 'cpu' }
+            Assert-True ($result.runtime.featureBackend -eq $device.backend -and $result.runtime.scoreBackend -eq $expectedScoring -and $result.runtime.device -eq $device.id) 'GPU generation execution plan mismatch'
+        }
+    }
 
     $history = (Invoke-Api -Method 'GET' -Path '/api/history').history
     $saved = $history | Where-Object id -eq $pinned.id

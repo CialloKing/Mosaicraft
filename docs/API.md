@@ -155,7 +155,9 @@ The API requires a local Host with the current port. Browser Origin must match t
 | `normalizeWidth`, `normalizeHeight` | `1..8192` |
 | `limit` | 图库排行 `>= 0`，0 表示全部；事件分页仍 `>= 1` |
 | `seed` | `0..4294967295`，省略时生成并记录种子 |
-| `backend` | 建库和匹配 `auto\|cpu\|cuda`，显式 cuda 不静默回退 |
+| `backend` | 建库和匹配 `auto\|cpu\|cuda\|vulkan\|metal`，显式 GPU 不切换到其他 GPU 后端 |
+| `device` | 缺省 auto；使用设备发现返回的标识；两个 GPU 阶段不跨显卡 |
+| `scoreMode` | 生成和预览 compatible（默认）或 fast |
 
 亮度调整默认关闭（`colorAdjust: false`），`colorStrength` 默认 `0.04`；单独设置强度不会启用。选图后，每个输出小块在 `1±colorStrength` 范围的 1001 档乘数中等概率抽取一档，统一缩放 LAB L 通道，A、B 通道保持不变。默认乘数范围为 `0.96～1.04`，平均值为 1；强度为 0 时跳过颜色转换，保持原像素。像素取整、高亮截断和颜色转换仍可能影响最终图像的平均亮度。
 Brightness adjustment defaults to off (`colorAdjust: false`), with `colorStrength` defaulting to `0.04`; setting strength alone does not enable it. After matching, each output tile uniformly samples one of 1001 multipliers in `1±colorStrength` and scales its LAB L channel, leaving A and B unchanged. The default multiplier range is `0.96..1.04`, with a mean of 1; zero strength skips color conversion and preserves the pixels. Quantization, highlight clipping, and color conversion can still affect the final image's mean brightness.
