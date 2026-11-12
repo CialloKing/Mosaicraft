@@ -62,27 +62,39 @@ def main():
         assert all(Path(a['path']).name in names for a in manifest['assets'])
         assert len(list((root / 'artwork').rglob('*.*'))) == len(manifest['assets']) + 3
         run('project', 'check', 'artwork/index.html', '--deep')
-        # Preserve the stem and codec policy; re-export must not recompress a prepared JPEG.
+        # JPEG/PNG keep source bytes; other codecs keep source dimensions even when matching resizes/pads.
         for suffix in ('jpg', 'JPEG', 'PNG', 'webp'):
             original = f'原目标图 # % 𠮷.{suffix}'
             target_name = Path(original).with_suffix('.png').name if suffix == 'webp' else original
             signature = b'\xff\xd8' if suffix in ('jpg', 'JPEG') else b'\x89PNG\r\n\x1a\n'
             first, again = f'named-{suffix}', f'again-{suffix}'
-            run('render', 'artwork', '-o', original, '--output-tile', '18x32')
+            run('render', 'artwork', '-o', original, '--output-tile', '13x19')
             run('create', original, '-l', 'library', '-o', first, '--mode', 'html',
-                '--backend', 'cpu', '--seed', 42, '--l-range', 255)
+                '--backend', 'cpu', '--seed', 42, '--l-range', 255,
+                '--target-size', '43x57', '--target-upscale', 2, '--target-blend', 1)
             run('render', first, '-o', again, '--mode', 'html')
             for directory in (first, again):
                 named = json.loads((root / directory / 'project.json').read_text(encoding='utf-8'))
                 assert named['target'] == target_name
                 assert (root / directory / target_name).read_bytes().startswith(signature)
+                resource = next(r for r in named['resources'] if r['path'] == target_name)
+                assert (resource['width'], resource['height']) == (52, 38)
+                assert named['targetPreparation'] == dict(resize=[43, 57], upscale=2)
                 run('project', 'check', directory, '--deep')
             assert (root / first / target_name).read_bytes() == (root / again / target_name).read_bytes()
+            if suffix != 'webp':
+                assert (root / original).read_bytes() == (root / first / target_name).read_bytes()
+            run('create', original, '-l', 'library', '-o', f'direct-{suffix}.png', '--format', 'png',
+                '--backend', 'cpu', '--seed', 42, '--l-range', 255,
+                '--target-size', '43x57', '--target-upscale', 2, '--target-blend', 1)
+            run('render', first, '-o', f'rendered-{suffix}.png')
+            assert (root / f'direct-{suffix}.png').read_bytes() == (root / f'rendered-{suffix}.png').read_bytes()
         # Distinct content with the same name must survive without renaming; identical bytes copy once.
         fixture = root / 'same-names'
         fixture.mkdir()
         special = '素材 # % 𠮷.PNG'
         collision = json.loads(json.dumps(manifest))
+        collision.pop('targetPreparation', None)  # Existing projects stored an already prepared target.
         collision.update(grid={'columns': 2, 'rows': 2, 'matchTile': [16, 16]},
                          assets=[], layout=[0, 1, 2, 1], resources=[])
         for i, color in enumerate(((20, 50, 80), (180, 210, 240), (20, 50, 80))):
@@ -99,6 +111,8 @@ def main():
 
         def save_fixture(directory, data):
             keys = ['grid', 'outputTile', 'layout', 'assets', 'appearance', 'target']
+            if 'targetPreparation' in data:
+                keys.append('targetPreparation')
             snapshot = json.dumps({key: data[key] for key in keys}).replace('<', r'\u003c')
             html = re.sub(r'(<script id="mosaicraft-snapshot" type="application/json">).*?(</script>)',
                           lambda match: match[1] + snapshot + match[2], template, flags=re.S)
@@ -176,6 +190,9 @@ def main():
             lambda m: m['assets'][0].update(width=1),
             lambda m: m.update(target='../outside.png'),
             lambda m: m['grid'].update(columns=2.5),
+            lambda m: m['targetPreparation'].update(resize=[0, 32]),
+            lambda m: m['targetPreparation'].update(upscale=65),
+            lambda m: m['targetPreparation'].update(resize=[31, 48]),
             lambda m: m.update(outputTile=[18.5, 32]),
         ):
             changed = json.loads(pristine)

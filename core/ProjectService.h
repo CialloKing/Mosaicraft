@@ -24,8 +24,7 @@ class ProjectService
 
 bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &directory, const std::string &targetPath,
                       int columns, int rows, const std::vector<ImageRecord> &library,
-                      const std::vector<int> &selection, const cv::Mat &target, OutputStats &stats,
-                      RuntimeContext &runtime, bool copyPreparedTarget = false);
+                      const std::vector<int> &selection, OutputStats &stats, RuntimeContext &runtime);
 std::string sha256File(const std::filesystem::path &path);
 void finalizeHtmlProject(const std::string &directory, RuntimeContext &runtime);
 } // namespace mosaicraft

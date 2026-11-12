@@ -2429,7 +2429,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 
     releaseGpuLib();
     const bool outputOk = cfg.outputMode == OutputMode::Html
-                              ? writeHtmlProject(cfg, outputPath, targetPath, tilesX, tilesY, allRecords, bestLibIdx, target,
+                              ? writeHtmlProject(cfg, outputPath, targetPath, tilesX, tilesY, allRecords, bestLibIdx,
                                                  metrics.outputStats, runtime)
                               : writeIndexedMosaicOutput(outputConfig, outputPlan, allRecords, bestLibIdx, adjustColor,
                                                          metrics.outputStats, target, &runtime);

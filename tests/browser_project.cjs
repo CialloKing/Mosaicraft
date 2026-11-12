@@ -158,7 +158,8 @@ const {pathToFileURL} = require('node:url');
         fs.mkdirSync(path.join(temporary, path.dirname(special)), {recursive:true});
         fs.copyFileSync(path.join(temporary, snapshot.assets[0].path), path.join(temporary, special));
         const assets = snapshot.assets.map((asset, i) => i ? asset : {...asset, path:special.split(path.sep).join('/')});
-        const big = {...snapshot, assets, grid:{...snapshot.grid, columns:1000, rows:1000}, layout:Array(1000000).fill(0)};
+        const big = {...snapshot, assets, targetPreparation:undefined,
+          grid:{...snapshot.grid, columns:1000, rows:1000}, layout:Array(1000000).fill(0)};
         fs.writeFileSync(path.join(temporary, 'large.html'), html.replace(pattern,
           (_, a, b, c) => a + JSON.stringify(big) + c));
         requests.length = 0;

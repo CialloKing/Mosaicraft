@@ -70,6 +70,36 @@
   }
   function minimum() { return Math.min(canvas.clientWidth / (columns * aspect), canvas.clientHeight / rows); }
   function maximum() { return Math.max(MosaicraftViewport.maxTileHeight, minimum()); }
+  function targetBands(start, length, span, pixels) {
+    if (span === 1) return [{offset:0, length, source:0, pixels, flip:false}];
+    const bands = [], end = start + length;
+    for (let at = start; at < end;) {
+      const block = Math.floor(at / span), stop = Math.min(end, (block + 1) * span);
+      const size = stop - at, flip = block % 2 === 1, local = at - block * span;
+      bands.push({offset:at - start, length:size, source:(flip ? span - local - size : local) / span * pixels,
+        pixels:size / span * pixels, flip});
+      at = stop;
+    }
+    return bands;
+  }
+  function drawTarget(target, sx, sy, sw, sh, dx, dy, dw, dh) {
+    const preparation = data.targetPreparation, tile = data.grid.matchTile;
+    const width = preparation ? preparation.resize[0] * preparation.upscale : columns * tile[0];
+    const height = preparation ? preparation.resize[1] * preparation.upscale : rows * tile[1];
+    // 原目标按记录的工作尺寸映射；反射补边分段绘制，不分配整幅放大画布。
+    const xs = targetBands(sx, sw, width, target.width), ys = targetBands(sy, sh, height, target.height);
+    for (const y of ys) for (const x of xs) {
+      const w = x.length / sw * dw, h = y.length / sh * dh;
+      const left = dx + x.offset / sw * dw, top = dy + y.offset / sh * dh;
+      context.save();
+      if (x.flip || y.flip) {
+        context.translate(x.flip ? left * 2 + w : 0, y.flip ? top * 2 + h : 0);
+        context.scale(x.flip ? -1 : 1, y.flip ? -1 : 1);
+      }
+      context.drawImage(target, x.source, y.source, x.pixels, y.pixels, left, top, w, h);
+      context.restore();
+    }
+  }
   function drawGroup(key) {
     const bitmap = cache.get(key), cells = groups.get(key);
     if (!bitmap || !cells) return;
@@ -83,8 +113,8 @@
       context.drawImage(bitmap, dx, dy, dw, dh);
       if (target && blend > 0) {
         context.globalAlpha = blend;
-        context.drawImage(target, x / columns * target.width, y / rows * target.height,
-          target.width / columns, target.height / rows, dx, dy, dw, dh);
+        const tile = data.grid.matchTile;
+        drawTarget(target, x * tile[0], y * tile[1], tile[0], tile[1], dx, dy, dw, dh);
         context.globalAlpha = 1;
       }
     }
@@ -131,7 +161,8 @@
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       context.globalAlpha = 1; context.fillStyle = '#222'; context.fillRect(0, 0, width, height);
       const target = reference && cache.get(targetPath);
-      if (target) context.drawImage(target, g.x, g.y, g.tw * columns, g.th * rows);
+      if (target) drawTarget(target, 0, 0, columns * data.grid.matchTile[0], rows * data.grid.matchTile[1],
+        g.x, g.y, g.tw * columns, g.th * rows);
       else for (const key of groups.keys()) drawGroup(key);
       repaint = false;
     } else if (!reference) {
