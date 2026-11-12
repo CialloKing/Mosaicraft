@@ -569,7 +569,6 @@ nlohmann::json apiInfoToJson(const char* entryName)
               {"metadataValid", metadataErrors.empty()},
               {"metadataErrors", metadataErrors}}},
             {"cliOptions", cliOptionsToJson()},
-            {"projectFormatVersion", 1},
             {"features", apiFeatureList()}};
 }
 

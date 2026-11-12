@@ -385,6 +385,7 @@ try {
     Assert-True ($info.info.api.structured -eq $true) "structured API is not enabled"
     Assert-True ([int]$info.info.api.contractMajorVersion -eq $Versions.apiMajorVersion) "unexpected API contract major version"
     Assert-True ($info.info.api.contractVersion -eq $Versions.apiVersion) "unexpected API contract version"
+    Assert-True ($info.info.PSObject.Properties.Name -notcontains 'projectFormatVersion') 'unexpected project format version'
     Assert-True ($info.info.features -contains 'output-format-policy') "output policy capability missing"
     Assert-True ($info.info.features -contains 'interactive-preview') "interactive preview capability missing"
     Assert-True ($info.info.features -contains 'preview-editing') "preview editing capability missing"
