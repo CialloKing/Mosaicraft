@@ -1,6 +1,6 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-11-12 | 版本 / Version：v1.15.4
+> 最后更新 / Last updated：2026-11-12 | 版本 / Version：v1.15.5
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
@@ -727,6 +727,14 @@ Web UI 的预览提示改为“生成结果预览默认关闭，勾选后额外�
 功能修改已通过真实浏览器检查：预览说明、帮助直达、参数保留、刷新恢复、帮助页任务跟踪、键盘展开、窄屏排版与服务断开后的阅读均正常；JavaScript 语法与帮助锚点检查通过。发布继续按清单执行同提交的原生打包、本机 GPU Required 和真实附件验收。CLI、REST API 2.1、特征 v6、图库格式及评分算法保持兼容。
 
 > **EN**: Version 1.14.10 adds a self-contained Web UI help page covering setup, paths, options, task diagnostics and results. Preview wording explicitly names the option and explains its purpose. Context links open the relevant help section; form state and task tracking survive navigation, while help never generates or submits a command. Narrow screens use stacked option descriptions. API 2.1, feature v6, library formats and engine behavior remain unchanged.
+
+### v1.15.5: 便携工程、命令树与 OverlayFS 兼容修复 (2026-11-12)
+
+命令行按 `create`、`render`、`library`、`project` 组织，旧命令和旧选项不再解析；纯归一化使用 `library normalize`，追加建库使用 `library add`。API 能力版本为 1.4、主版本为 1。HTML 便携工程保存已用素材、排列和工作目标，可在原图库不可用时固定排列回导；当前工程不设置格式版本，也不兼容旧总览/缩略图工程。离线查看器复用预览视口逻辑，默认最大缩放，从窗口中心扩散加载素材并释放窗口外位图，素材副本保留图库文件名。命令迁移、能力与历史验证边界见 [CLI、便携工程与回导](CLI_PROJECTS.md) 及其验证文档。
+
+修复 POSIX 颜色重排将目录与图片 `st_dev` 不同直接视为跨卷的错误判断，允许支持硬链接的 OverlayFS 配置继续建库。实际跨文件系统仍安全失败，并报告源、目标路径；保留硬链接后删除、防覆盖、事务日志和恢复逻辑。Windows 卷号预检查不变，图库、特征、缓存及恢复格式版本不变，无需为此重建有效的 v1.15.0 起图库。代码修复阶段 Windows CPU CTest 8/8 通过；真实 OverlayFS 与 EXDEV 恢复手动验收尚未执行，不以普通文件系统测试替代，见 [修复验证记录](BUGFIX_VERIFICATION.md#overlayfs-颜色重排兼容修复2026-11-12)。发布包的构建和 GPU 验收状态以各包 `BUILD_INFO.txt` 为准。
+
+> **EN**: Version 1.15.5 introduces the grouped CLI and portable HTML projects with fixed-placement rendering, plus a viewport-based offline viewer. Old CLI options and old overview/thumbnail project layouts are not supported. API capability version is 1.4. POSIX color ordering no longer rejects OverlayFS images solely because their device IDs differ from the output directory. Hard-link moves, overwrite protection and recovery remain in place; real cross-filesystem moves are still unsupported. Library and feature formats remain compatible with v1.15.0 and later. Actual OverlayFS and EXDEV recovery experiments remain pending.
 
 ### v1.15.4: 实时预览进度条 (2026-11-12)
 

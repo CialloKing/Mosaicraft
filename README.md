@@ -16,7 +16,7 @@ Mosaicraft 用图库里的照片拼出一张目标图，可通过本地 Web UI �
 | Linux x64 | Ubuntu 22.04 / glibc 2.35 | `_linux-x64_cpu-only.tar.gz` | `_linux-x64_cuda.tar.gz` |
 | macOS ARM64 | macOS 13 | `_macos-arm64_cpu-only.tar.gz` | — |
 
-包内 `BUILD_INFO.txt` 记录构建配置和 GPU 验收状态。v1.15.4 按维护者要求跳过全部测试，Windows/Linux CUDA 包均为 `GpuValidation: not-run`，未做 GPU 实机验收。 [v1.15.4 发布说明与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.4)
+包内 `BUILD_INFO.txt` 记录构建配置和 GPU 验收状态。Windows CUDA 正式包须通过本机 GPU 验收；Linux CUDA 包进行构建、CPU 回退测试和独立包验收，GPU 实机状态保留为 `not-run`。 [v1.15.5 发布说明与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.5)
 
 ## 快速开始
 
