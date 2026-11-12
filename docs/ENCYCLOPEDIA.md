@@ -734,7 +734,9 @@ Web UI 的预览提示改为“生成结果预览默认关闭，勾选后额外�
 
 修复 POSIX 颜色重排将目录与图片 `st_dev` 不同直接视为跨卷的错误判断，允许支持硬链接的 OverlayFS 配置继续建库。实际跨文件系统仍安全失败，并报告源、目标路径；保留硬链接后删除、防覆盖、事务日志和恢复逻辑。Windows 卷号预检查不变，图库、特征、缓存及恢复格式版本不变，无需为此重建有效的 v1.15.0 起图库。代码修复阶段 Windows CPU CTest 8/8 通过；真实 OverlayFS 与 EXDEV 恢复手动验收尚未执行，不以普通文件系统测试替代，见 [修复验证记录](BUGFIX_VERIFICATION.md#overlayfs-颜色重排兼容修复2026-11-12)。发布包的构建和 GPU 验收状态以各包 `BUILD_INFO.txt` 为准。
 
-> **EN**: Version 1.15.5 introduces the grouped CLI and portable HTML projects with fixed-placement rendering, plus a viewport-based offline viewer. Old CLI options and old overview/thumbnail project layouts are not supported. API capability version is 1.4. POSIX color ordering no longer rejects OverlayFS images solely because their device IDs differ from the output directory. Hard-link moves, overwrite protection and recovery remain in place; real cross-filesystem moves are still unsupported. Library and feature formats remain compatible with v1.15.0 and later. Actual OverlayFS and EXDEV recovery experiments remain pending.
+发布验收同时修复输出目录经过符号链接别名时的产物路径登记问题：在创建暂存目录前统一输出真实路径，避免 macOS 临时目录别名导致已完成的工程 ZIP 仍登记在已移除的暂存位置，保证完整工程归档可以下载；POSIX 回归覆盖目录别名下发布后的路径、大小与修改时间。
+
+> **EN**: Version 1.15.5 introduces the grouped CLI and portable HTML projects with fixed-placement rendering, plus a viewport-based offline viewer. Old CLI options and old overview/thumbnail project layouts are not supported. API capability version is 1.4. POSIX color ordering no longer rejects OverlayFS images solely because their device IDs differ from the output directory. Hard-link moves, overwrite protection and recovery remain in place; real cross-filesystem moves are still unsupported. Output publication also resolves directory aliases so completed project archives remain downloadable on macOS. Library and feature formats remain compatible with v1.15.0 and later. Actual OverlayFS and EXDEV recovery experiments remain pending.
 
 ### v1.15.4: 实时预览进度条 (2026-11-12)
 

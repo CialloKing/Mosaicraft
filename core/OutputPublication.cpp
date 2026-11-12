@@ -167,6 +167,8 @@ OutputPublication::OutputPublication(const std::string &path, bool isDirectory, 
         }
     }
     fs::create_directories(destination.parent_path());
+    // 产物登记使用真实路径；macOS 的 /var 等目录别名不能让发布后的登记仍指向暂存区。
+    destination = fs::weakly_canonical(destination);
     std::random_device random;
     do
     {

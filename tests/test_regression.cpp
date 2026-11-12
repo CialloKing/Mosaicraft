@@ -32,6 +32,7 @@
 #include "../core/ColorOrder.h"
 #include "../core/LibraryColorOrder.h"
 #include "../core/LibraryAccess.h"
+#include "../core/OutputPublication.h"
 #include "../core/json.hpp"
 #include <sqlite3.h>
 #include <cmath>
@@ -44,6 +45,7 @@
 #include <atomic>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -991,6 +993,29 @@ TEST_CASE("rebuilding preserves indexed files and source files")
         CHECK(fs::equivalent(u8path(record.filePath).parent_path(), workspace.inputDir()));
     }
 }
+
+#ifndef _WIN32
+TEST_CASE("published artifacts remain accessible through directory aliases")
+{
+    TempWorkspace workspace;
+    const auto alias = workspace.root / "output-alias";
+    fs::create_directory_symlink(workspace.outputDir(), alias);
+    const auto destination = alias / "project.zip";
+    RuntimeContext runtime;
+    {
+        OutputPublication publication(utf8(destination), false, false);
+        std::ofstream(u8path(publication.workPath()), std::ios::binary) << "archive";
+        runtime.artifact("archive", "project-archive", publication.workPath(), "application/zip");
+        publication.commit(runtime);
+    }
+    const auto artifacts = runtime.snapshot().artifacts;
+    REQUIRE(artifacts.size() == 1);
+    CHECK(artifacts[0].path == utf8(fs::canonical(destination)));
+    REQUIRE(fs::is_regular_file(u8path(artifacts[0].path)));
+    CHECK(fs::file_size(u8path(artifacts[0].path)) == artifacts[0].bytes);
+    CHECK(fs::last_write_time(u8path(artifacts[0].path)) == artifacts[0].modified);
+}
+#endif
 
 TEST_CASE("color cache rejects old structures and retains fractional LAB sources")
 {
