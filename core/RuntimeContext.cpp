@@ -246,6 +246,52 @@ void RuntimeContext::planOutput(const detail::OutputPlan &plan, const std::strin
     }
 }
 
+void RuntimeContext::resourceSample(const ResourceSample &sample) noexcept
+{
+    try
+    {
+        const std::lock_guard<std::mutex> lock(m_mutex);
+        m_snapshot.resourceSamples.push_back(sample);
+        if (m_snapshot.resourceSamples.size() > 600)
+        {
+            m_snapshot.resourceSamples.pop_front();
+        }
+        for (size_t i = 0; i < sample.values.size(); ++i)
+        {
+            const double value = sample.values[i];
+            if (value >= 0)
+            {
+                auto &aggregate = m_snapshot.resources[i];
+                aggregate.sum += value;
+                aggregate.peak = std::max(aggregate.peak, value);
+                ++aggregate.count;
+            }
+        }
+    }
+    catch (...)
+    {
+    }
+}
+
+void RuntimeContext::gpuDevice(const std::string &pciBus) noexcept
+{
+    try
+    {
+        const std::lock_guard<std::mutex> lock(m_mutex);
+        m_gpuDevice = pciBus;
+    }
+    catch (...)
+    {
+    }
+}
+
+std::string RuntimeContext::gpuDevice() const
+{
+    const std::lock_guard<std::mutex> lock(m_mutex);
+    return m_snapshot.featureBackend.find("cuda") != std::string::npos ||
+           m_snapshot.scoreBackend.find("cuda") != std::string::npos ? m_gpuDevice : std::string{};
+}
+
 void RuntimeContext::buildVisuals(BuildVisuals data) noexcept
 {
     try

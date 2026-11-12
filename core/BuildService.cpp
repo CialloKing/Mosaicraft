@@ -348,6 +348,10 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
     runtime.stage("preparing_images");
     FeatureExtractor extractor;
     const auto preflight = request.normalizeOnly ? cuda::CudaAvailability{} : cuda::queryCudaAvailability();
+    if (preflight.available)
+    {
+        runtime.gpuDevice(preflight.pciBus);
+    }
     if (!request.normalizeOnly && !preflight.available)
     {
         runtime.emit("warning", "cuda_unavailable", preflight.reason);
@@ -994,6 +998,11 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
     runtime.stage("finalizing");
     visuals.normalized = normDone.load();
     visuals.inserted = inserted;
+    runtime.metric("totalMs", wallMs);
+    runtime.metric("normalizeMs", normMs);
+    runtime.metric("libraryFeaturesMs", gpuMs);
+    runtime.metric("reorderMs", colorSeconds * 1000);
+    runtime.metric("cacheMs", cacheSec * 1000);
     try
     {
         visuals.after = summarizeColors(db.averageColors());

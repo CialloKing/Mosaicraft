@@ -666,6 +666,10 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
     {
         cfg.benchmark = boolValue;
     }
+    if (getBoolField(values, keysFor("resourceMonitor"), boolValue, error))
+    {
+        request.resourceMonitor = boolValue;
+    }
     return error.empty() && validateMosaicRequest(request, error.message, &error.field);
 }
 
@@ -738,6 +742,10 @@ bool parseBuildRequestJson(const std::string &body, BuildRequest &request, Reque
     if (getBoolField(values, keysFor("recursive"), boolValue, error))
     {
         request.recursive = boolValue;
+    }
+    if (getBoolField(values, keysFor("resourceMonitor"), boolValue, error))
+    {
+        request.resourceMonitor = boolValue;
     }
 
     request.allowPrompt = false;

@@ -158,6 +158,7 @@ struct CudaAvailability
     int device = -1, major = 0, minor = 0, driverVersion = 0, runtimeVersion = 0;
     std::string deviceName;
     std::string reason = "CUDA support is not compiled";
+    std::string pciBus;
 };
 
 // Internal regression injection; never exposed through CLI/API.

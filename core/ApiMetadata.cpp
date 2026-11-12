@@ -448,7 +448,7 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata()
         "candidates", "topNRandom", "neighborWindow", "upscale", "quality", "pngLevel", "lRange", "usePenalty",
         "labWeight", "gridWeight", "tinyWeight", "edgeWeight", "lbpWeight", "neighborPenalty", "colorStrength",
         "overlayStrength", "format", "writeMode", "useGpu", "tiled", "deepZoom", "colorAdjust", "adaptiveWeights",
-        "analyze", "benchmark", "generatePreview"
+        "analyze", "benchmark", "generatePreview", "resourceMonitor"
     };
     auto sample = endpoint("POST", "/api/mosaic/sample-size", "sample output using a completed preview", "preview",
                            ApiOperation::SubmitMosaicSample, ApiRequestShape::Body,
@@ -501,12 +501,12 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata()
                   "edgeWeight", "lbpWeight",      "neighborPenalty", "colorStrength", "overlayStrength",
                   "format",     "writeMode",            "useGpu",        "tiled",
                   "deepZoom",   "colorAdjust",    "adaptiveWeights", "analyze",       "benchmark",
-                  "generatePreview", "previewId", "previewEdits"},
+                  "generatePreview", "previewId", "previewEdits", "resourceMonitor"},
                  {"inputPath"}, true, true),
         endpoint("POST", "/api/jobs/build", "start library build job", "jobs", ApiOperation::SubmitBuildJob,
                  ApiRequestShape::Body,
                  {"inputDir", "outputDir", "dbPath", "threads",  "normalizeWidth", "normalizeHeight",
-                  "appendMode", "recursive", "normalizeOnly", "forceMode"},
+                  "appendMode", "recursive", "normalizeOnly", "forceMode", "resourceMonitor"},
                  {"inputDir"}, true, true),
         endpoint("GET", "/api/jobs", "list jobs", "jobs", ApiOperation::ListJobs, ApiRequestShape::None),
         endpoint("DELETE", "/api/jobs", "clear finished jobs", "jobs", ApiOperation::ClearFinishedJobs,
@@ -654,7 +654,7 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
 
 std::vector<std::string> apiFeatureList()
 {
-    return {"preview-quality", "library-visuals", "mosaic-plan", "mosaic-size-sample", "mosaic-jobs", "build-jobs", "job-management", "job-diagnostics",
+    return {"task-resources", "preview-quality", "library-visuals", "mosaic-plan", "mosaic-size-sample", "mosaic-jobs", "build-jobs", "job-management", "job-diagnostics",
             "job-progress",   "job-artifacts",   "result-preview", "interactive-preview", "preview-editing", "inspect",
             "database-stats", "database-health", "database-usage", "database-maintenance", "output-format-policy"};
 }

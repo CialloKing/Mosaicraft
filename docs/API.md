@@ -235,6 +235,8 @@ Returns the complete snapshot. `outputPath` retains its requested-path meaning; 
 
 后端值为 `cpu`、`template_cuda`、`compatible_cuda` 或 `none`；未检测时为空。`metrics` 仅在采集后含数据，不能将空对象解释为耗时为零。阶段计数最多每 200ms 更新一次，阶段切换及诊断立即可见；归一化与特征处理可能并行，应分别显示，不拼接整体百分比。阶段结束、计数达到总量或主图落盘不代表任务已经成功。
 
+异步建库和生成接受可选 `resourceMonitor: true`。`runtime.resources.samples` 最多保存最近 600 个约每秒采集的样本，含相对时间 `elapsedMs`、`cpuPct`（单核为 100%）、`rssBytes`、`gpuPct`、`deviceVramBytes` 和 `processVramBytes`。缺测值为 `null`。`summary` 汇总整个任务的可用样本峰值和均值。开启 `benchmark` 后的耗时子阶段可能重叠。
+
 主图成功、预览或使用统计随后失败时，任务按原规则失败，已经保存的 `main` 产物仍然可用。报告失败沿用原有软失败/异常与提交边界。
 
 ### `GET /api/jobs/{id}/events?after=0&limit=100`

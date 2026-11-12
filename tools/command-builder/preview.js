@@ -295,9 +295,10 @@ const interactivePreview = (() => {
     progressBox.classList.remove('is-indeterminate');
     progressBox.setAttribute('aria-valuenow', String(percent));
     progressBox.setAttribute('aria-valuetext', '正在匹配预览，' + percent + '%');
-    progressBox.title = completed + ' / ' + total + ' 格';
+    const speed = taskMetrics.rate(pendingId || 'preview', progress);
+    progressBox.title = completed + ' / ' + total + ' 格' + (Number.isFinite(speed) ? ` · ${speed.toFixed(1)} 格/秒` : '');
     progressFill.style.width = percent + '%';
-    progressLabel.textContent = '匹配 ' + percent + '%';
+    progressLabel.textContent = '匹配 ' + percent + '%' + (Number.isFinite(speed) ? ` · ${speed.toFixed(1)} 格/秒` : '');
   }
 
   function showStatus() {

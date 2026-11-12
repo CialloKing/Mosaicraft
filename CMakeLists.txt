@@ -13,13 +13,15 @@ set(resultAnalysisScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/resu
 set(outputPlanningScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/output-planning.js")
 set(libraryVisualsScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/library-visuals.js")
 set(previewInsightsScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/preview-insights.js")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${previewScript}" "${previewPickerScript}" "${resultAnalysisScript}" "${outputPlanningScript}" "${libraryVisualsScript}" "${previewInsightsScript}")
+set(taskMetricsScript "${CMAKE_CURRENT_SOURCE_DIR}/tools/command-builder/task-metrics.js")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${previewScript}" "${previewPickerScript}" "${resultAnalysisScript}" "${outputPlanningScript}" "${libraryVisualsScript}" "${previewInsightsScript}" "${taskMetricsScript}")
 file(READ "${previewScript}" interactivePreviewScript)
 file(READ "${previewPickerScript}" interactivePreviewPickerScript)
 file(READ "${resultAnalysisScript}" taskResultAnalysisScript)
 file(READ "${outputPlanningScript}" mosaicOutputPlanningScript)
 file(READ "${libraryVisualsScript}" libraryVisualsUiScript)
 file(READ "${previewInsightsScript}" mosaicPreviewInsightsScript)
+file(READ "${taskMetricsScript}" taskMetricsUiScript)
 configure_file(tools/command-builder/index.html generated/index.html @ONLY)
 
 # C++17
@@ -189,6 +191,7 @@ endif()  # MOSAICRAFT_CUDA
 # ============================================================
 add_library(mosaicraft_core STATIC
     core/RuntimeContext.cpp
+    core/TaskResources.cpp
     core/AnalysisReport.cpp
     core/ApiHandlers.cpp
     core/ApiJson.cpp
@@ -241,6 +244,15 @@ target_link_libraries(mosaicraft_core PUBLIC
     PNG::PNG
     JPEG::JPEG
 )
+if (WIN32)
+    target_link_libraries(mosaicraft_core PRIVATE Psapi)
+endif()
+if (MOSAICRAFT_CUDA)
+    target_include_directories(mosaicraft_core PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+    if (CMAKE_DL_LIBS)
+        target_link_libraries(mosaicraft_core PRIVATE ${CMAKE_DL_LIBS})
+    endif()
+endif()
 # sqlite3：根据 find_package 结果选择对应的 CMake target
 if(TARGET unofficial::sqlite3::sqlite3)
     target_link_libraries(mosaicraft_core PUBLIC unofficial::sqlite3::sqlite3)

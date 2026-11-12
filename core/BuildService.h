@@ -20,6 +20,7 @@ struct BuildRequest
     bool allowPrompt = false;
     int normalizeWidth = 180;
     int normalizeHeight = 320;
+    bool resourceMonitor = false;
 };
 
 class BuildService

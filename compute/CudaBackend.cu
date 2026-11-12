@@ -1126,6 +1126,11 @@ CudaAvailability queryCudaAvailability(CudaProbeFault fault)
         return status;
     }
     status.deviceName = device.name;
+    char bus[32]{};
+    if (cudaDeviceGetPCIBusId(bus, sizeof(bus), status.device) == cudaSuccess)
+    {
+        status.pciBus = bus;
+    }
     status.major = device.major;
     status.minor = device.minor;
     // Reference every real entry point: one dummy kernel cannot prove that all

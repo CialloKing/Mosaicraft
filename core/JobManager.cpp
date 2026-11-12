@@ -561,6 +561,7 @@ void JobManager::runMosaicJob(const std::string& id)
     ServiceResult result;
     try
     {
+        TaskResourceMonitor monitor(*runtime, request.resourceMonitor);
         MosaicService service;
         result = service.run(request, *runtime, selection.get());
     }
@@ -596,6 +597,7 @@ void JobManager::runBuildJob(const std::string& id)
     ServiceResult result;
     try
     {
+        TaskResourceMonitor monitor(*runtime, request.resourceMonitor);
         BuildService service;
         result = service.run(request, *runtime);
     }

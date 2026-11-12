@@ -269,6 +269,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     const bool useGpu = cfg.useGpu && !m_renderSelection;
     const auto preflight = useGpu ? cuda::queryCudaAvailability() : cuda::CudaAvailability{};
     const bool cudaEnabled = useGpu && preflight.available;
+    if (cudaEnabled)
+    {
+        runtime.gpuDevice(preflight.pciBus);
+    }
     const double preflightMs = Ms(Clock::now() - tStart).count();
     // 跨阶段统计集中持有，算子线程继续使用原子计数。
     detail::MosaicMetrics metrics;
@@ -2431,12 +2435,18 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 #endif
 
     // 运行分析报告（如有 --analyze）
+    const double totalMs = Ms(Clock::now() - tStart).count();
+    runtime.metric("totalMs", totalMs);
     if (cfg.benchmark)
     {
-        const double totalMs = Ms(Clock::now() - tStart).count();
         detail::printMosaicBenchmark(metrics, {outputConfig, backends, totalTiles, N, m_compatibleTemporaryBytes, totalMs},
                                      "single");
-        runtime.metric("totalMs", totalMs);
+        runtime.metric("annLoadMs", metrics.msANNLoad);
+        runtime.metric("annBuildMs", metrics.msANNBuild);
+        runtime.metric("cpuScoreMs", metrics.msCPUScore);
+        runtime.metric("gpuScoreMs", metrics.msGPUScore);
+        runtime.metric("neighborMs", metrics.msNeighbor);
+        runtime.metric("sortMs", metrics.msSort);
         runtime.metric("matchingMs", metrics.matchingWallMs);
         runtime.metric("featureMs", metrics.msFeat);
         runtime.metric("annQueryMs", metrics.msANNQuery);

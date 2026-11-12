@@ -18,6 +18,7 @@ struct MosaicRequest
     std::string dbPath = "library/mosaicraft.db";
     std::string outputPath = "output/output";
     MosaicEngine::Config config;
+    bool resourceMonitor = false;
 };
 
 struct ServiceResult

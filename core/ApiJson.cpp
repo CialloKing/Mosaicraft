@@ -112,6 +112,29 @@ nlohmann::json runtimeSnapshotToJson(const RuntimeSnapshot &value)
             report["after"] = colorDistributionToJson(build.after);
         }
     }
+    if (!value.resourceSamples.empty())
+    {
+        auto samples = nlohmann::json::array();
+        nlohmann::json summary = nlohmann::json::object();
+        for (const auto &sample : value.resourceSamples)
+        {
+            nlohmann::json row{{"elapsedMs", sample.elapsedMs}};
+            for (size_t i = 0; i < resourceNames.size(); ++i)
+            {
+                row[resourceNames[i]] = sample.values[i] >= 0 ? nlohmann::json(sample.values[i]) : nlohmann::json(nullptr);
+            }
+            samples.push_back(std::move(row));
+        }
+        for (size_t i = 0; i < resourceNames.size(); ++i)
+        {
+            const auto &stat = value.resources[i];
+            if (stat.count)
+            {
+                summary[resourceNames[i]] = {{"peak", stat.peak}, {"mean", stat.sum / stat.count}};
+            }
+        }
+        result["runtime"]["resources"] = {{"samples", std::move(samples)}, {"summary", std::move(summary)}};
+    }
     return result;
 }
 
@@ -206,6 +229,7 @@ nlohmann::json mosaicRequestToJson(const MosaicRequest &request)
     value["colorStrength"] = cfg.colorStrength;
     value["overlayStrength"] = cfg.overlayStrength;
     value["benchmark"] = cfg.benchmark;
+    value["resourceMonitor"] = request.resourceMonitor;
     value["adaptiveWeights"] = cfg.adaptiveWeights;
     value["analyze"] = cfg.analyze;
     value["pngLevel"] = cfg.pngCompressionLevel;
@@ -234,7 +258,8 @@ nlohmann::json buildRequestToJson(const BuildRequest &request)
             {"forceMode", request.forceMode},
             {"recursive", request.recursive},
             {"normalizeWidth", request.normalizeWidth},
-            {"normalizeHeight", request.normalizeHeight}};
+            {"normalizeHeight", request.normalizeHeight},
+            {"resourceMonitor", request.resourceMonitor}};
 }
 
 nlohmann::json databaseStatsToJson(const DatabaseStats& stats)

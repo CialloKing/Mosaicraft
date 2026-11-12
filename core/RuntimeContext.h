@@ -1,5 +1,6 @@
 #pragma once
 #include "ColorDistribution.h"
+#include "TaskResources.h"
 #include <memory>
 #include <chrono>
 #include "OutputPlan.h"
@@ -63,6 +64,8 @@ struct RuntimeSnapshot
     std::vector<Artifact> artifacts;
     std::optional<detail::OutputPlan> outputPlan;
     std::shared_ptr<const BuildVisuals> buildVisuals;
+    std::deque<ResourceSample> resourceSamples;
+    std::array<ResourceAggregate, resourceNames.size()> resources{};
 };
 
 struct EventPage
@@ -89,6 +92,9 @@ class RuntimeContext
     void planOutput(const detail::OutputPlan &plan, const std::string &requestedPath) noexcept;
     void metric(const std::string &name, double value) noexcept;
     void buildVisuals(BuildVisuals data) noexcept;
+    void resourceSample(const ResourceSample &sample) noexcept;
+    void gpuDevice(const std::string &pciBus) noexcept;
+    std::string gpuDevice() const;
     void artifact(const std::string &id, const std::string &kind, const std::string &path,
                   const std::string &mime = "application/octet-stream") noexcept;
     RuntimeSnapshot snapshot() const;
@@ -98,6 +104,7 @@ class RuntimeContext
     bool m_console;
     mutable std::mutex m_mutex;
     RuntimeSnapshot m_snapshot;
+    std::string m_gpuDevice;
     std::deque<Diagnostic> m_events;
     size_t m_eventBytes = 0;
     uint64_t m_sequence = 0, m_dropped = 0;
