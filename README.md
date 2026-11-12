@@ -16,7 +16,7 @@ Mosaicraft 用图库里的照片拼出一张目标图，可通过本地 Web UI �
 | Linux x64 | Ubuntu 22.04 / glibc 2.35 | `_linux-x64_cpu-only.tar.gz` | `_linux-x64_cuda.tar.gz` |
 | macOS ARM64 | macOS 13 | `_macos-arm64_cpu-only.tar.gz` | — |
 
-包内 `BUILD_INFO.txt` 记录构建配置和 GPU 验收状态。Windows CUDA 正式包须通过本机 GPU 验收；Linux CUDA 包进行构建、CPU 回退测试和独立包验收，GPU 实机状态保留为 `not-run`。 [v1.15.5 发布说明与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.5)
+包内 `BUILD_INFO.txt` 记录构建配置和 GPU 验收状态。Windows CUDA 正式包须通过本机 GPU 验收；Linux CUDA 包进行构建、CPU 回退测试和独立包验收，GPU 实机状态保留为 `not-run`。 [v1.15.6 发布说明与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.6)
 
 ## 快速开始
 
@@ -105,7 +105,7 @@ CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，�
 ./mosaicraft project pack artwork -o artwork.zip
 ```
 
-HTML 输出是完整目录：`project.json`、`index.html`、无损 `target.png` 和 `assets/<素材索引>/<原图库图片文件名>`。每份唯一素材只复制一次，保留原文件名与字节，不生成 overview、缩略图或兼容显示副本。查看器复用实时预览的缩放、裁剪和中心优先加载队列，默认最大缩放并居中，从窗口中心向四周加载当前窗口内素材；拖动后取消窗口外请求并释放其解码位图，页面不可见时也会释放。不设位图缓存大小上限，仅保留当前窗口所需的素材，并发为 8；主动缩小或点击“适应窗口”后可能加载更多素材。复制整个目录即可移动；传输时用 `project pack` 生成完整 ZIP64，解压后离线打开 `index.html`。浏览器支持缩放、平移、全屏、目标参考和素材查看，不提供编辑或原生图片导出。工程采用当前内部结构，不设置格式版本，不再支持旧总览/缩略图工程。
+HTML 输出是完整目录：`project.json`、`index.html`、保留原名的目标图和 `assets/<素材索引>/<原图库图片文件名>`。目标 JPG/JPEG、PNG 直接复制源文件，其他格式按原始分辨率转为 PNG；匹配所需的缩放、放大和补边单独记录，回导时重建。每份唯一素材只复制一次，保留原文件名与字节，不生成 overview、缩略图或兼容显示副本。查看器复用实时预览的缩放、裁剪和中心优先加载队列，初始图块高 256 CSS 像素并居中，最大可放大到 65536 CSS 像素，从窗口中心向四周加载当前窗口内素材；拖动后取消窗口外请求并释放其解码位图，页面不可见时也会释放。不设位图缓存大小上限，仅保留当前窗口所需的素材，并发为 8；主动缩小或点击“适应窗口”后可能加载更多素材。复制整个目录即可移动；传输时用 `project pack` 生成完整 ZIP64，解压后离线打开 `index.html`。浏览器支持缩放、平移、全屏、目标参考和素材查看，不提供编辑或原生图片导出。工程采用当前内部结构，不设置格式版本，不再支持旧总览/缩略图工程。
 
 `render` 接受工程目录、其中的 `project.json` 或 `index.html`，不直接读取 ZIP。排列固定，不重新匹配、不打开原图库、不执行 CUDA 预检。可调整输出模式、编码、图块尺寸、叠加、亮度和外观种子；省略尺寸、外观和种子时继承工程。相同工程、参数及环境下重复输出具有相同解码像素；`render --seed` 只改变外观随机性。输出到新的 HTML 目录可以保存新的叠加效果。
 
