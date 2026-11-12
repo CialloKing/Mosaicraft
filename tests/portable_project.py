@@ -103,7 +103,7 @@ def main():
         quiet = subprocess.run([str(cli), 'project', 'info', 'artwork', '--quiet'], cwd=root,
                                capture_output=True, timeout=10)
         assert quiet.returncode == 0 and json.loads(quiet.stdout)['ok'] and not quiet.stderr
-        assert 'version' not in json.loads(quiet.stdout)['project']
+        assert 'version' not in json.loads(quiet.stdout)['data']
         for repeat in range(2):
             run('create', 'target.png', '-l', 'library', '-o', 'analyzed.png', '--analyze',
                 '--backend', 'cpu', '--seed', 42, '--l-range', 255, *(['--overwrite'] if repeat else []))
