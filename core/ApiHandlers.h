@@ -61,7 +61,7 @@ ApiResponse apiInfo(const char* entryName);
 ApiResponse apiPing();
 
 ApiResponse apiMosaic(const std::string& body, JobManager& jobs);
-ApiResponse apiSubmitMosaicJob(const std::string& body, JobManager& jobs);
+ApiResponse apiSubmitMosaicJob(const std::string& body, JobManager& jobs, bool sampleSize = false);
 ApiResponse apiSubmitBuildJob(const std::string& body, JobManager& jobs);
 ApiResponse apiListJobs(const JobManager& jobs);
 ApiResponse apiClearFinishedJobs(JobManager& jobs);

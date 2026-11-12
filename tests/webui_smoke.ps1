@@ -511,6 +511,9 @@ try {
         topNRandom = 1
         pngLevel = 1
     }
+    $plan = (Invoke-Api -Method 'POST' -Path '/api/mosaic/plan' -Body $mosaicBody).plan
+    Assert-True ($plan.columns -eq 2 -and $plan.rows -eq 2 -and $plan.rawBytes -eq 36 * 64 * 3) "planned grid or pixel budget is incorrect"
+    Assert-True (-not (Test-Path -LiteralPath $mosaicPath)) "planning wrote a mosaic"
     $mosaic = Invoke-Api -Method "POST" -Path "/api/jobs/mosaic" -Body $mosaicBody
     Assert-True ($mosaic.ok -eq $true -and $null -ne $mosaic.job) "mosaic job was not accepted"
     Assert-JobSnapshot -Job $mosaic.job -ExpectedType "mosaic" -ExpectedInputPath $targetPath -ExpectedOutputPath $mosaicPath
@@ -659,6 +662,16 @@ try {
     Assert-True ($pastCatalog.total -eq $catalog.total -and $pastCatalog.images.Count -eq 0 -and -not $pastCatalog.more) "out-of-range preview library page is incorrect"
     $interactiveBody.previewId = $interactive.preview.id
     $interactiveBody.previewEdits = @(@{ position = 0; imageId = $choice.id; version = $choice.version })
+    $sample = (Invoke-Api -Method 'POST' -Path '/api/mosaic/sample-size' -Body $interactiveBody).preview
+    $samplePath = '/api/mosaic/preview/' + $sample.id
+    $sampleDeadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    do {
+        Start-Sleep -Milliseconds 100
+        $sample = (Invoke-Api -Method 'GET' -Path $samplePath).preview
+    } while ($sample.state -in @('queued', 'running') -and [DateTime]::UtcNow -lt $sampleDeadline)
+    Assert-True ($sample.state -eq 'succeeded' -and $sample.fileSample.regions -gt 0 -and $sample.fileSample.pixels -le 4000000) "sample did not use the bounded preview path"
+    Assert-True (-not (Test-Path -LiteralPath $interactiveBody.outputPath)) "sampling wrote a mosaic"
+    Invoke-Api -Method 'DELETE' -Path $samplePath | Out-Null
     $interactiveExport = Invoke-Api -Method 'POST' -Path '/api/jobs/mosaic' -Body $interactiveBody
     $pinned = Wait-JobSucceeded -JobId $interactiveExport.job.id -Label 'interactive preview export' -ExpectedType 'mosaic' -ExpectedInputPath $targetPath -ExpectedOutputPath $interactiveBody.outputPath
     Assert-True ($pinned.runtime.metrics.reusedPreviewSelection -eq 1) "formal export did not reuse preview selection"

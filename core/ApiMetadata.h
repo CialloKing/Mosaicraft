@@ -19,6 +19,8 @@ enum class ApiOperation
     Ping,
 
     Mosaic,
+    PlanMosaic,
+    SubmitMosaicSample,
     SubmitPreview,
     GetPreview,
     ClosePreview,

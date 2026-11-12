@@ -3,6 +3,7 @@
 #include "BuildService.h"
 #include "MosaicService.h"
 #include "MosaicSelection.h"
+#include "MosaicPlanning.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -48,6 +49,7 @@ struct PreviewSnapshot
     ServiceResult result;
     ProgressSnapshot progress;
     std::shared_ptr<const MosaicSelection> selection;
+    std::optional<FileSizeSample> fileSample;
 };
 
 class JobManager
@@ -61,7 +63,8 @@ public:
 
     std::string submitMosaic(MosaicRequest request, std::shared_ptr<const MosaicSelection> selection = {});
     std::string submitBuild(BuildRequest request);
-    std::string submitPreview(MosaicRequest request, uint32_t seed);
+    std::string submitPreview(MosaicRequest request, uint32_t seed,
+                              std::shared_ptr<const MosaicSelection> sampleSelection = {});
     bool getPreview(const std::string &id, PreviewSnapshot &out);
     bool closePreview(const std::string &id);
     bool getJob(const std::string& id, JobSnapshot& out) const;
@@ -90,6 +93,7 @@ private:
         PreviewSnapshot snapshot;
         MosaicRequest request;
         uint32_t seed = 0;
+        std::shared_ptr<const MosaicSelection> sampleSelection;
         std::shared_ptr<RuntimeContext> runtime = std::make_shared<RuntimeContext>(false);
         std::atomic_bool canceled{false};
         bool interrupted = false;

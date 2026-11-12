@@ -83,11 +83,13 @@ std::string JobManager::submitMosaic(MosaicRequest request, std::shared_ptr<cons
     return record->snapshot.id;
 }
 
-std::string JobManager::submitPreview(MosaicRequest request, uint32_t seed)
+std::string JobManager::submitPreview(MosaicRequest request, uint32_t seed,
+                                      std::shared_ptr<const MosaicSelection> sampleSelection)
 {
     auto job = std::make_shared<PreviewJob>();
     job->request = std::move(request);
     job->seed = seed;
+    job->sampleSelection = std::move(sampleSelection);
     job->runtime->stage("queued");
     job->queuedAt = job->accessed = std::chrono::steady_clock::now();
     {
@@ -186,11 +188,19 @@ void JobManager::runPreview(const std::shared_ptr<PreviewJob> &job)
               << std::flush;
     std::shared_ptr<MosaicSelection> selection;
     ServiceResult result;
+    FileSizeSample fileSample;
     try
     {
-        selection = std::make_shared<MosaicSelection>();
-        result = MosaicService().preview(job->request, job->seed, m_previewWorkspace, job->canceled, *selection,
-                                         *job->runtime);
+        if (job->sampleSelection)
+        {
+            result = sampleMosaicSize(job->request, *job->sampleSelection, job->canceled, fileSample);
+        }
+        else
+        {
+            selection = std::make_shared<MosaicSelection>();
+            result = MosaicService().preview(job->request, job->seed, m_previewWorkspace, job->canceled, *selection,
+                                             *job->runtime);
+        }
     }
     catch (const std::exception &error)
     {
@@ -220,8 +230,13 @@ void JobManager::runPreview(const std::shared_ptr<PreviewJob> &job)
             if (result.ok)
             {
                 job->snapshot.selection = std::move(selection);
+                if (job->sampleSelection)
+                {
+                    job->snapshot.fileSample = fileSample;
+                }
             }
             job->snapshot.result = std::move(result);
+            job->sampleSelection.reset();
         }
         job->accessed = std::chrono::steady_clock::now();
         m_runningPreview.reset();
@@ -234,7 +249,11 @@ void JobManager::runPreview(const std::shared_ptr<PreviewJob> &job)
         std::chrono::steady_clock::now() - started).count();
     std::ostringstream summary;
     summary << "[Preview] " << jobStateName(snapshot.state) << ' ' << snapshot.id << " after " << elapsed << " ms";
-    if (snapshot.state == JobState::Succeeded)
+    if (snapshot.fileSample)
+    {
+        summary << " (" << snapshot.fileSample->regions << " sampled regions)";
+    }
+    else if (snapshot.state == JobState::Succeeded)
     {
         summary << " (" << snapshot.result.runtime.matched << " matched, " << snapshot.result.runtime.failed
                 << " without candidates)";

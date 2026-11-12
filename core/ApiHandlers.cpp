@@ -1,6 +1,7 @@
 #include "ApiHandlers.h"
 
 #include "ApiJson.h"
+#include "MosaicPlanning.h"
 #include "UnicodeIO.h"
 
 #include <opencv2/imgproc.hpp>
@@ -31,6 +32,38 @@ namespace
 ApiResponse resultResponse(int status, const ServiceResult& result)
 {
     return {status, serviceResultToJson(result)};
+}
+
+nlohmann::json byteRangeJson(const ByteRange &range)
+{
+    return {{"low", range.low}, {"high", range.high}};
+}
+
+ApiResponse mosaicPlanResponse(const std::string &body)
+{
+    MosaicRequest request;
+    RequestError error;
+    if (!parseMosaicRequestJson(body, request, error))
+    {
+        return resultResponse(400, ServiceResult::failure(1, error.message, "invalid_argument", error.field));
+    }
+    MosaicPlan plan;
+    const auto result = planMosaic(std::move(request), plan);
+    if (!result.ok)
+    {
+        return resultResponse(400, result);
+    }
+    const auto &output = plan.output;
+    return {200, apiOkJson("plan",
+        {{"sourceWidth", plan.sourceWidth}, {"sourceHeight", plan.sourceHeight},
+         {"workingWidth", plan.target.width}, {"workingHeight", plan.target.height},
+         {"columns", output.tilesX}, {"rows", output.tilesY}, {"tileCount", uint64_t(output.tilesX) * output.tilesY},
+         {"tileWidth", output.tileWidth}, {"tileHeight", output.tileHeight}, {"width", output.width}, {"height", output.height},
+         {"format", output.format}, {"requestedFormat", output.requestedFormat}, {"path", output.path},
+         {"mode", plan.mode}, {"writeMode", plan.writeMode}, {"files", plan.files}, {"rawBytes", plan.rawBytes},
+         {"matchingRam", byteRangeJson(plan.matchingRam)}, {"writingRam", byteRangeJson(plan.writingRam)},
+         {"matchingVram", plan.matchingVram ? byteRangeJson(*plan.matchingVram) : nlohmann::json(nullptr)},
+         {"fileBytes", byteRangeJson(plan.fileBytes)}, {"warnings", plan.warnings}})};
 }
 
 ApiResponse badRequest(const std::string& error)
@@ -155,6 +188,11 @@ ApiResponse getPreview(const std::string &id, JobManager &jobs)
     if (snapshot.state == JobState::Failed)
     {
         body["result"] = serviceResultToJson(snapshot.result);
+    }
+    if (snapshot.fileSample)
+    {
+        const auto &sample = *snapshot.fileSample;
+        body["fileSample"] = {{"bytes", byteRangeJson(sample.bytes)}, {"regions", sample.regions}, {"pixels", sample.pixels}};
     }
     if (snapshot.selection)
     {
@@ -582,6 +620,10 @@ ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
         return apiPing();
     case ApiOperation::Mosaic:
         return apiMosaic(request.body, jobs);
+    case ApiOperation::PlanMosaic:
+        return mosaicPlanResponse(request.body);
+    case ApiOperation::SubmitMosaicSample:
+        return apiSubmitMosaicJob(request.body, jobs, true);
     case ApiOperation::SubmitPreview:
         return submitPreview(request.body, jobs);
     case ApiOperation::GetPreview:
@@ -726,7 +768,7 @@ ApiResponse apiMosaic(const std::string& body, JobManager& jobs)
     }
 }
 
-ApiResponse apiSubmitMosaicJob(const std::string& body, JobManager& jobs)
+ApiResponse apiSubmitMosaicJob(const std::string& body, JobManager& jobs, bool sampleSize)
 {
     MosaicRequest request;
     RequestError error;
@@ -748,9 +790,9 @@ ApiResponse apiSubmitMosaicJob(const std::string& body, JobManager& jobs)
         previewId = payload["previewId"].get<std::string>();
         payload.erase("previewId");
     }
-    if (hasEdits && previewId.empty())
+    if ((hasEdits || sampleSize) && previewId.empty())
     {
-        return badRequest("previewEdits requires previewId");
+        return badRequest(sampleSize ? "size sampling requires previewId" : "previewEdits requires previewId");
     }
     if (!parseMosaicRequestJson(previewId.empty() ? body : payload.dump(), request, error))
     {
@@ -773,6 +815,11 @@ ApiResponse apiSubmitMosaicJob(const std::string& body, JobManager& jobs)
             {
                 return std::move(*error);
             }
+        }
+        if (sampleSize)
+        {
+            const auto id = jobs.submitPreview(std::move(request), 0, std::move(preview.selection));
+            return {202, apiOkJson("preview", {{"id", id}, {"state", "queued"}})};
         }
         const std::string jobId = jobs.submitMosaic(std::move(request), std::move(preview.selection));
         JobSnapshot snapshot;

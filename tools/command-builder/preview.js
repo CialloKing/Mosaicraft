@@ -320,6 +320,7 @@ const interactivePreview = (() => {
       ? (edits.size ? '正式生成将应用 ' + edits.size + ' 格手动选图。' : '正式生成将使用当前预览的选图。')
       : '当前参数需要在预览页刷新后才能沿用选图。';
     renderProgress();
+    outputPlanning.updatePreview();
   }
 
   function editsChanged() {
@@ -997,6 +998,9 @@ const interactivePreview = (() => {
   return {
     sync,
     refresh,
+    outputSampleKey() {
+      return enabled && plan && !pending && planKey === requestKey ? `${plan.id}:${editRevision}` : '';
+    },
     blocksRun: activeTab => enabled && activeTab === 'mosaic' && (!plan || planKey !== requestKey || pending),
     bind(payload) {
       if (!enabled) return;

@@ -75,6 +75,8 @@ std::vector<std::string> endpointQueryKeys(ApiOperation operation)
     case ApiOperation::Info:
     case ApiOperation::Ping:
     case ApiOperation::Mosaic:
+    case ApiOperation::PlanMosaic:
+    case ApiOperation::SubmitMosaicSample:
     case ApiOperation::SubmitPreview:
     case ApiOperation::GetPreview:
     case ApiOperation::ClosePreview:
@@ -117,6 +119,7 @@ int endpointSuccessStatus(ApiOperation operation)
     switch (operation)
     {
     case ApiOperation::SubmitPreview:
+    case ApiOperation::SubmitMosaicSample:
     case ApiOperation::SubmitMosaicJob:
     case ApiOperation::SubmitBuildJob:
         return 202;
@@ -124,6 +127,7 @@ int endpointSuccessStatus(ApiOperation operation)
     case ApiOperation::Info:
     case ApiOperation::Ping:
     case ApiOperation::Mosaic:
+    case ApiOperation::PlanMosaic:
     case ApiOperation::GetPreview:
     case ApiOperation::ClosePreview:
     case ApiOperation::GetPreviewImage:
@@ -151,6 +155,7 @@ std::string endpointResponseKey(ApiOperation operation)
     switch (operation)
     {
     case ApiOperation::SubmitPreview:
+    case ApiOperation::SubmitMosaicSample:
     case ApiOperation::GetPreview:
         return "preview";
     case ApiOperation::ClosePreview:
@@ -167,6 +172,7 @@ std::string endpointResponseKey(ApiOperation operation)
     case ApiOperation::Endpoints: return "endpoints";
     case ApiOperation::Info: return "info";
     case ApiOperation::Ping: return "message";
+    case ApiOperation::PlanMosaic: return "plan";
     case ApiOperation::SubmitMosaicJob:
     case ApiOperation::SubmitBuildJob:
     case ApiOperation::GetJob:
@@ -241,11 +247,13 @@ void populateEndpointErrors(ApiEndpointMetadata& info)
         addErrorContract(info, 500, "serviceResult");
         break;
     case ApiOperation::SubmitMosaicJob:
+    case ApiOperation::SubmitMosaicSample:
         addErrorContract(info, 400, "serviceResult");
         addErrorContract(info, 409, "serviceResult");
         addErrorContract(info, 500, "serviceResult");
         break;
     case ApiOperation::Mosaic:
+    case ApiOperation::PlanMosaic:
     case ApiOperation::SubmitBuildJob:
         addErrorContract(info, 400, "serviceResult");
         addErrorContract(info, 500, "serviceResult");
@@ -334,6 +342,8 @@ const char* apiOperationName(ApiOperation operation)
     case ApiOperation::Info: return "info";
     case ApiOperation::Ping: return "ping";
     case ApiOperation::Mosaic: return "mosaic";
+    case ApiOperation::PlanMosaic: return "planMosaic";
+    case ApiOperation::SubmitMosaicSample: return "submitMosaicSample";
     case ApiOperation::SubmitPreview: return "submitPreview";
     case ApiOperation::GetPreview: return "getPreview";
     case ApiOperation::ClosePreview: return "closePreview";
@@ -398,6 +408,19 @@ bool apiContractStable()
 
 std::vector<ApiEndpointMetadata> apiEndpointMetadata()
 {
+    const std::initializer_list<const char *> mosaicFields =
+    {
+        "inputPath", "dbPath", "outputPath", "tileW", "tileH", "outW", "outH", "nativeTileW", "nativeTileH",
+        "candidates", "topNRandom", "neighborWindow", "upscale", "quality", "pngLevel", "lRange", "usePenalty",
+        "labWeight", "gridWeight", "tinyWeight", "edgeWeight", "lbpWeight", "neighborPenalty", "colorStrength",
+        "overlayStrength", "format", "writeMode", "useGpu", "tiled", "deepZoom", "colorAdjust", "adaptiveWeights",
+        "analyze", "benchmark", "generatePreview"
+    };
+    auto sample = endpoint("POST", "/api/mosaic/sample-size", "sample output using a completed preview", "preview",
+                           ApiOperation::SubmitMosaicSample, ApiRequestShape::Body,
+                           mosaicFields, {"inputPath", "previewId"}, true, true);
+    sample.requestFields.push_back("previewId");
+    sample.requestFields.push_back("previewEdits");
     return {
         endpoint("GET", "/api/endpoints", "structured API endpoint discovery", "discovery", ApiOperation::Endpoints,
                  ApiRequestShape::None),
@@ -405,16 +428,10 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata()
                  ApiRequestShape::None),
         endpoint("GET", "/api/ping", "health check", "health", ApiOperation::Ping, ApiRequestShape::None),
         endpoint("POST", "/api/mosaic", "run mosaic synchronously", "mosaic", ApiOperation::Mosaic,
-                 ApiRequestShape::Body,
-                 {"inputPath",  "dbPath",         "outputPath",      "tileW",         "tileH",
-                  "outW",       "outH",           "nativeTileW",     "nativeTileH",   "candidates",
-                  "topNRandom", "neighborWindow", "upscale",         "quality",       "pngLevel",
-                  "lRange",     "usePenalty",     "labWeight",       "gridWeight",    "tinyWeight",
-                  "edgeWeight", "lbpWeight",      "neighborPenalty", "colorStrength", "overlayStrength",
-                  "format",     "writeMode",            "useGpu",        "tiled",
-                  "deepZoom",   "colorAdjust",    "adaptiveWeights", "analyze",       "benchmark",
-                  "generatePreview"},
-                 {"inputPath"}, true, true),
+                 ApiRequestShape::Body, mosaicFields, {"inputPath"}, true, true),
+        endpoint("POST", "/api/mosaic/plan", "resolve the mosaic geometry and estimate resources", "mosaic",
+                 ApiOperation::PlanMosaic, ApiRequestShape::Body, mosaicFields, {"inputPath"}),
+        std::move(sample),
         endpoint("POST", "/api/mosaic/preview", "queue the latest interactive selection", "preview",
                  ApiOperation::SubmitPreview, ApiRequestShape::Body, {"request", "seed"}, {"request", "seed"},
                  true, true),
@@ -592,7 +609,7 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
 
 std::vector<std::string> apiFeatureList()
 {
-    return {"mosaic-jobs",    "build-jobs",      "job-management", "job-diagnostics",
+    return {"mosaic-plan", "mosaic-size-sample", "mosaic-jobs", "build-jobs", "job-management", "job-diagnostics",
             "job-progress",   "job-artifacts",   "result-preview", "interactive-preview", "preview-editing", "inspect",
             "database-stats", "database-health", "database-usage", "database-maintenance", "output-format-policy"};
 }

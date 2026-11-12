@@ -269,6 +269,14 @@ Cancels a queued job. Running jobs are not interrupted and return HTTP 409.
 
 ## 马赛克 / Mosaic
 
+### `POST /api/mosaic/plan` 与 `POST /api/mosaic/sample-size`
+
+规划接受标准生成参数，返回 `plan` 中的工作图、网格、成品尺寸、有效 Tile、实际格式、路径、文件数量上界及警告。`rawBytes` 为未压缩 RGB 体积，`matchingRam`、`matchingVram`、`writingRam`、`fileBytes` 为 `{low, high}` 字节估算。CPU 构建或强制 CPU 时显存项为空。规划不执行匹配或写入输出。
+
+采样额外接受 `previewId` 和可选 `previewEdits`，返回 202。通过现有预览 GET/DELETE 接口查询或取消。成功状态含 `preview.fileSample`，记录 `bytes`、`pixels` 和 `regions`。采样使用当前预览的素材安排与输出参数，成功时仍返回估算区间。
+
+预估区间以平色、渐变和随机纹理样本的编码结果校准。独立的 Windows CPU 验收使用 37×65 目标图、5×5 网格、18×32 输出 Tile 和固定选图。JPG、WebP、PNG、TIFF 的实际体积均落在模型和采样区间内。采样区间中点误差分别为 0.0%、0.2%、0.1%、33.0%，样本仅覆盖这一组参数。
+
 ### `POST /api/mosaic`
 
 同步执行马赛克请求。新 UI 代码应优先使用 `POST /api/jobs/mosaic` 处理长时间任务。

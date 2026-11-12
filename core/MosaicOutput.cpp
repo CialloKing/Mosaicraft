@@ -12,6 +12,7 @@
 #include <array>
 #include <chrono>
 #include <iostream>
+#include <limits>
 #ifdef __APPLE__
 #include <mach/mach.h>
 #endif
@@ -50,6 +51,29 @@ uint64_t availableMemory()
 #endif
 }
 } // namespace
+
+OutputBudget outputBudget(const MosaicEngine::Config &config, const detail::OutputPlan &plan,
+                          uint64_t overlayReferenceBytes, uint64_t overlayWorkingBytes)
+{
+    const uint64_t width = plan.width, height = plan.height;
+    const uint64_t rawBytes = width * height * 3;
+    const uint64_t rowBytes = width * plan.tileHeight * 3;
+    const int rgbRows = static_cast<int>(std::max<uint64_t>(1, std::min<uint64_t>(64, (1024 * 1024) / (width * 3))));
+    const uint64_t conversionBytes = width * 3 * (plan.format == "png" ? rgbRows : 1);
+    const cv::Size previewSize = config.generatePreview ? PreviewAccumulator::outputSize({plan.width, plan.height}) : cv::Size();
+    const uint64_t previewBytes = config.generatePreview
+        ? static_cast<uint64_t>(previewSize.area()) * 6 + width * 12 + previewSize.width * 36ULL : 0;
+    // 两行预取、编码和预览缓冲可与素材缓存同时存活。
+    const uint64_t fixed = ImageCache::kDefaultBudget + conversionBytes + 16 * 1024 * 1024 +
+                           overlayReferenceBytes + overlayWorkingBytes + previewBytes;
+    const auto maximum = std::numeric_limits<uint64_t>::max();
+    const uint64_t streamBytes = rowBytes > (maximum - fixed) / 2 ? maximum : fixed + rowBytes * 2;
+    const uint64_t batchBytes = rawBytes > (maximum - streamBytes) / 2 ? maximum : streamBytes + rawBytes * 2;
+    const uint64_t memory = availableMemory();
+    const bool stream = plan.format != "webp" && (config.writeMode == "stream" ||
+        (config.writeMode == "auto" && (memory ? batchBytes > memory : rawBytes > 500ULL * 1024 * 1024)));
+    return {rawBytes, rowBytes, batchBytes, streamBytes, rgbRows, stream};
+}
 
 static bool writeOutput(const MosaicEngine::Config &config, const std::string &requestedPath, int tilesX, int tilesY,
                         int requestedTileW, int requestedTileH, const std::function<const ImageRecord &(size_t)> &recordAt,
@@ -233,26 +257,9 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         }
 
         const auto &format = plan.format;
-        const uint64_t rawBytes = static_cast<uint64_t>(width) * height * 3;
-        const uint64_t rowBytes = static_cast<uint64_t>(width) * tileH * 3;
-        const int rgbRows = static_cast<int>(
-            std::max<uint64_t>(1, std::min<uint64_t>(64, (1024 * 1024) / (static_cast<uint64_t>(width) * 3))));
-        const uint64_t conversionBytes = static_cast<uint64_t>(width) * 3 * (format == "png" ? rgbRows : 1);
-        const uint64_t memory = availableMemory();
-        const cv::Size previewSize = config.generatePreview ? PreviewAccumulator::outputSize({width, height}) : cv::Size();
-        // 预览画布、JPEG 编码余量和浮点行缓冲也参与 auto 模式的内存估算。
-        const uint64_t previewBudget = config.generatePreview
-                                           ? static_cast<uint64_t>(previewSize.area()) * 6 +
-                                                 static_cast<uint64_t>(width) * 12 + previewSize.width * 36ULL
-                                           : 0;
-        // 编码可能暂存整图，且缓存与两行预取会同时存活，不能只估算画布。
-        const uint64_t estimated =
-            rawBytes * 2 + ImageCache::kDefaultBudget + rowBytes * 2 + conversionBytes + 16 * 1024 * 1024 +
-            stats.overlayReferenceBytes + stats.overlayWorkingBytes + previewBudget;
-        const bool stream =
-            format != "webp" &&
-            (config.writeMode == "stream" ||
-             (config.writeMode == "auto" && (memory ? estimated > memory : rawBytes > 500ULL * 1024 * 1024)));
+        const auto budget = outputBudget(config, plan, stats.overlayReferenceBytes, stats.overlayWorkingBytes);
+        const int rgbRows = budget.rgbRows;
+        const bool stream = budget.stream;
         const bool rgbStream = stream && format == "png";
         std::cout << "  output: " << (stream ? "stream (two tile rows)" : "batch") << std::endl;
 

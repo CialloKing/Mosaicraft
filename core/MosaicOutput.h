@@ -10,6 +10,16 @@
 namespace mosaicraft
 {
 
+struct OutputBudget
+{
+    uint64_t rawBytes, rowBytes, batchBytes, streamBytes;
+    int rgbRows;
+    bool stream;
+};
+
+OutputBudget outputBudget(const MosaicEngine::Config &config, const detail::OutputPlan &plan,
+                          uint64_t overlayReferenceBytes, uint64_t overlayWorkingBytes);
+
 struct OutputStats
 {
     int matched = 0;

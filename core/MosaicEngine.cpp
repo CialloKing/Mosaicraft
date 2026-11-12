@@ -15,6 +15,7 @@
 #include "FeatureUtils.h"
 #include "NeighborhoodState.h"
 #include "MosaicOutput.h"
+#include "MosaicPlanning.h"
 #include "MosaicMetrics.h"
 #include "RequestValidation.h"
 #include "UnicodeIO.h"
@@ -416,56 +417,16 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         targetHash = ss.str();
     }
 
-    // 用户指定输出尺寸时，先缩放目标图到指定分辨率，后续 tile 划分基于此尺寸
-    if (!reusedTarget && (cfg.outW > 0 || cfg.outH > 0))
+    TargetGeometry geometry;
+    if (!reusedTarget)
     {
-        // 未指定的一轴按原图比例推导，0 保留 auto 语义。
-        int64_t width =
-            cfg.outW > 0
-                ? cfg.outW
-                : std::max<int64_t>(1, std::llround(static_cast<double>(target.cols) * cfg.outH / target.rows));
-        int64_t height =
-            cfg.outH > 0
-                ? cfg.outH
-                : std::max<int64_t>(1, std::llround(static_cast<double>(target.rows) * cfg.outW / target.cols));
-        if (!validImageSize(width, height))
+        std::string error;
+        if (!resolveTargetGeometry(target.cols, target.rows, cfg, geometry, error))
         {
-            {
-                std::ostringstream detail;
-                detail << "Target resize exceeds 100 million pixels.";
-                runtime.fail("invalid_argument", detail.str(), "config");
-            }
-            return false;
+            return runtime.fail("invalid_argument", error, "config");
         }
-        cfg.outW = static_cast<int>(width);
-        cfg.outH = static_cast<int>(height);
-        cv::Mat resized;
-        cv::resize(target, resized, cv::Size(cfg.outW, cfg.outH), 0, 0, cv::INTER_AREA);
-        target = resized;
-        std::cout << "Target resized to: " << cfg.outW << "x" << cfg.outH << std::endl;
+        resizeTarget(target, geometry, cfg);
     }
-
-    // --upscale：放大原图后再分 tile，提高最终输出分辨率
-    if (!reusedTarget && cfg.upscale > 1)
-    {
-        int64_t width = static_cast<int64_t>(target.cols) * cfg.upscale;
-        int64_t height = static_cast<int64_t>(target.rows) * cfg.upscale;
-        if (!validImageSize(width, height))
-        {
-            {
-                std::ostringstream detail;
-                detail << "Upscaled target exceeds 100 million pixels.";
-                runtime.fail("invalid_argument", detail.str(), "config");
-            }
-            return false;
-        }
-        cv::Mat up;
-        cv::resize(target, up, cv::Size(static_cast<int>(width), static_cast<int>(height)), 0, 0, cv::INTER_LINEAR);
-        target = up;
-        std::cout << "Target upscaled " << cfg.upscale << "x: "
-                  << target.cols << "x" << target.rows << std::endl;
-    }
-
     const int tilesX = (target.cols + cfg.tileW - 1) / cfg.tileW;
     const int tilesY = (target.rows + cfg.tileH - 1) / cfg.tileH;
     const auto totalTiles64 = static_cast<int64_t>(tilesX) * tilesY;
@@ -518,50 +479,19 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     }
     std::cout << "Database: " << dbCount << " images" << std::endl;
 
-    // Read feature resolution from DB meta (required; old DBs must be rebuilt)，旧库需重建
-    std::string fw = db.getMeta("feature_w");
-    std::string fh = db.getMeta("feature_h");
-    if (fw.empty() || fh.empty())
-    {
-        {
-            std::ostringstream detail;
-            detail << "Database missing feature resolution metadata.";
-            runtime.fail("library_incompatible", detail.str(), "dbPath", dbPath);
-        }
-        std::cerr << "  This database was built with an older version of Mosaicraft." << std::endl;
-        std::cerr << "  Please rebuild with: mosaicraft build -i <photos> -d <db>" << std::endl;
-        return false;
-    }
     int featW = 0, featH = 0;
-    auto widthResult = std::from_chars(fw.data(), fw.data() + fw.size(), featW);
-    auto heightResult = std::from_chars(fh.data(), fh.data() + fh.size(), featH);
-    // 元数据也属于外部输入，必须在像素乘法和 CUDA 分配之前验证。
-    if (widthResult.ec != std::errc{} || widthResult.ptr != fw.data() + fw.size() || heightResult.ec != std::errc{} ||
-        heightResult.ptr != fh.data() + fh.size() || featW > 8192 || featH > 8192 || !validImageSize(featW, featH))
+    if (!readLibraryDimensions(db, featW, featH))
     {
-        {
-            std::ostringstream detail;
-            detail << "Invalid DB feature dimensions. Rebuild the library.";
-            runtime.fail("library_incompatible", detail.str(), "dbPath", dbPath);
-        }
-        return false;
+        return runtime.fail("library_incompatible", "Invalid DB feature dimensions. Rebuild the library.",
+                            "dbPath", dbPath);
     }
-
     int featPixels = featW * featH;
     int featBytes = featPixels * 3;
     std::cout << "  (feature space: " << featW << "x" << featH << ")" << std::endl;
-
-    // 自动检测输出 tile 方向：横屏 320x180，竖屏 180x320
-    if (cfg.nativeTileW == 180 && cfg.nativeTileH == 320)
+    if (orientOutputTile(cfg, featW, featH))
     {
-        if (featW > featH)  // 横屏
-        {
-            cfg.nativeTileW = 320;
-            cfg.nativeTileH = 180;
-            std::cout << "  (auto output tile: 320x180, DB is landscape)" << std::endl;
-        }
+        std::cout << "  (auto output tile: 320x180, DB is landscape)" << std::endl;
     }
-
 
     // 提取特征目录路径，供 FeaturePack / ANN 持久化缓存使用
     std::string featDirCache;
@@ -790,14 +720,9 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                   << "). Output may be distorted." << std::endl;
     }
 
-    // 目标图尺寸不是 tile 的整数倍时，pad 补齐（不改变 tile 尺寸）
-    int padRight  = tilesX * cfg.tileW - target.cols;
-    int padBottom = tilesY * cfg.tileH - target.rows;
-    if (padRight > 0 || padBottom > 0)
-    {
-        cv::copyMakeBorder(target, target, 0, padBottom, 0, padRight,
-                           cv::BORDER_REFLECT);
-    }
+    const int padRight = tilesX * cfg.tileW - target.cols;
+    const int padBottom = tilesY * cfg.tileH - target.rows;
+    padTarget(target, cfg, tilesX, tilesY);
 
     if (tilesX == 0 || tilesY == 0)
     {
