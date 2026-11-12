@@ -61,7 +61,7 @@ class MetalSession final : public Session
             }
         }
     }
-    void buffer(unsigned slot, size_t bytes, const void *input = nullptr) override
+    void buffer(unsigned slot, size_t bytes, const void *input = nullptr, bool /*readback*/ = false) override
     {
         if (slot >= 4 || !bytes || bytes > device.maxBufferLength)
         {

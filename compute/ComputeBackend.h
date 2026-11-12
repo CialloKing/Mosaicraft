@@ -28,7 +28,7 @@ class Session
 {
   public:
     virtual ~Session() = default;
-    virtual void buffer(unsigned slot, size_t bytes, const void *input = nullptr) = 0;
+    virtual void buffer(unsigned slot, size_t bytes, const void *input = nullptr, bool readback = false) = 0;
     virtual void write(unsigned slot, size_t offset, size_t bytes, const void *input) = 0;
     virtual void read(unsigned slot, size_t bytes, void *output) = 0;
     virtual void dispatch(bool scoring, const std::array<uint32_t, 4> &parameters, uint32_t x, uint32_t y = 1) = 0;

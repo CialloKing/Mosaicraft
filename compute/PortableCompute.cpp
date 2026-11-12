@@ -99,7 +99,7 @@ bool FeatureWorkspace::prepare(int w, int h, int maximum, size_t hostBudget, siz
     {
         session = open(device);
         session->buffer(0, size_t(rows) * pixels * 4);
-        session->buffer(1, size_t(rows) * partial);
+        session->buffer(1, size_t(rows) * partial, nullptr, true);
     }
     catch (const std::exception &)
     {
@@ -233,7 +233,7 @@ bool ScoreWorkspace::prepare(int maximum, int count, size_t libraryCount, size_t
         session->buffer(0, library);
         session->buffer(1, size_t(rows) * stride * 4);
         session->buffer(2, size_t(rows) * count * sizeof(int));
-        session->buffer(3, size_t(rows) * count * 5 * sizeof(float));
+        session->buffer(3, size_t(rows) * count * 5 * sizeof(float), nullptr, true);
     }
     catch (const std::exception &)
     {

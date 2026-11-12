@@ -317,7 +317,7 @@ class VulkanSession final : public Session
     {
         release();
     }
-    void buffer(unsigned slot, size_t bytes, const void *input = nullptr) override
+    void buffer(unsigned slot, size_t bytes, const void *input = nullptr, bool readback = false) override
     {
         auto &b = buffers.at(slot);
         if (!bytes || bytes > properties.limits.maxStorageBufferRange)
@@ -343,7 +343,9 @@ class VulkanSession final : public Session
                 const auto flags = memory.memoryTypes[i].propertyFlags;
                 if ((requirements.memoryTypeBits & (1u << i)) && (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
                 {
-                    const int rank = ((flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) ? 2 : 0) +
+                    // 读回缓冲优先主机缓存，否则 BAR/写合并内存的逐字节 CPU 读取可能压过内核收益。
+                    const int rank = ((readback && (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)) ? 4 : 0) +
+                                     ((flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) ? 2 : 0) +
                                      ((flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) ? 1 : 0);
                     if (rank > best)
                     {
