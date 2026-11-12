@@ -1,22 +1,64 @@
 {
   "date": "2026-11-13",
-  "library_rows": 45613,
-  "source_sha256": "d890845b867283ed8314956729ac0a6a5fce0a4819d63ec3f3046197f8de2576",
   "opencv": "4.12.0",
   "hardware": {
     "vulkan:0": "NVIDIA GeForce RTX 4060 Laptop GPU",
     "vulkan:1": "AMD Radeon 780M Graphics"
   },
-  "quality_limit": 0.01,
-  "selection_limit": 0.01,
-  "complete": true,
-  "passed": true,
-  "auto_enabled": false,
   "not_run": [
     "Apple Metal hardware",
     "Intel Vulkan hardware",
     "Linux GPU hardware"
   ],
+  "library_rows": 45613,
+  "source_sha256": "d890845b867283ed8314956729ac0a6a5fce0a4819d63ec3f3046197f8de2576",
+  "quality_limit": 0.01,
+  "selection_limit": 0.01,
+  "complete": true,
+  "passed": true,
+  "benchmark_sha256": "cd9e1c66e649e08689e62654ffcec5dd3e7b083b8aac99d17f41f48b36e9d284",
+  "quality_sha256": "905a588441a51eef622b71a70f2671456b03e0fd612ad4bf86601f5137862d2e",
+  "environment": {
+    "os": "Windows-10-10.0.19045-SP0",
+    "cpu": "AMD Ryzen 9 7940H",
+    "display_driver_versions": {
+      "vulkan:0": "32.0.16.2114",
+      "vulkan:1": "32.0.21030.2001"
+    }
+  },
+  "auto_enabled": false,
+  "acceptance_scope": {
+    "library_normalization": [
+      180,
+      320
+    ],
+    "tile": [
+      9,
+      16
+    ],
+    "output_sizes": [
+      [
+        36,
+        32
+      ],
+      [
+        180,
+        320
+      ],
+      [
+        270,
+        480
+      ]
+    ],
+    "seeds": [
+      42,
+      20261113
+    ],
+    "top_n": [
+      1,
+      10
+    ]
+  },
   "gates": [
     {
       "id": "small-42-1-vulkan-0-compatible",
@@ -28,6 +70,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 101.54868937824456,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 63991808.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -125,6 +174,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 98.34536023199865,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 321740800.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -222,6 +278,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 103.08992880622013,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 59441152.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -319,6 +382,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 98.38218953304451,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 287432704.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -416,6 +486,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 103.10683257610009,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 64577536.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -513,6 +590,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 101.56082424639993,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 321818624.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -610,6 +694,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 109.33565009952918,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 270991360.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -707,6 +798,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 99.99286050975961,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 281305088.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -804,6 +902,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 101.53680103565789,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 65437696.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -901,6 +1006,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 107.3728485573487,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 321789952.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -998,6 +1110,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 98.62889449087523,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 66760704.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -1095,6 +1214,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 139.7344027838571,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 287461376.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -1192,6 +1318,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 96.72632197049914,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 64102400.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -1289,6 +1422,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 103.17204075833527,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 319725568.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -1386,6 +1526,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 99.9857820217965,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 65064960.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -1483,6 +1630,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 102.98017897430843,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 289832960.0
+      },
       "reference_quality": {
         "matched": 8,
         "max_image_uses": 1,
@@ -1580,6 +1734,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 201.9109735603821,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 342142976.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -1677,6 +1838,13 @@
       "allowed": 4,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 239.24390557864265,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 331087872.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -1774,6 +1942,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 292.65516186475185,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 325349376.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -1871,6 +2046,13 @@
       "allowed": 4,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 166.70192707995201,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 297553920.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -1968,6 +2150,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 109.27331025747439,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 323178496.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -2065,6 +2254,13 @@
       "allowed": 4,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 211.8960116085111,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 331087872.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -2162,6 +2358,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 160.82900475339338,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 308056064.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -2259,6 +2462,13 @@
       "allowed": 4,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 231.8350229669235,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 297582592.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -2356,6 +2566,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 178.5923289765568,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 342253568.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -2453,6 +2670,13 @@
       "allowed": 4,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 190.46275177343483,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 326094848.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -2550,6 +2774,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 132.71710294640212,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 346218496.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -2647,6 +2878,13 @@
       "allowed": 4,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 228.63218949992046,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 289812480.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -2744,6 +2982,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 170.16542270485525,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 387133440.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -2841,6 +3086,13 @@
       "allowed": 4,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 117.25430046470592,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 317476864.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -2938,6 +3190,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 160.89717916690077,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 307601408.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -3035,6 +3294,13 @@
       "allowed": 4,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 183.6763525953322,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 297291776.0
+      },
       "reference_quality": {
         "matched": 400,
         "max_image_uses": 2,
@@ -3132,6 +3398,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 227.3340477617316,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 342818816.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -3229,6 +3502,13 @@
       "allowed": 9,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 227.73471485733052,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 331714560.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -3326,6 +3606,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 215.293856277756,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 326045696.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -3423,6 +3710,13 @@
       "allowed": 9,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 286.3607186915458,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 298283008.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -3520,6 +3814,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 209.71348105364524,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 343187456.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -3617,6 +3918,13 @@
       "allowed": 9,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 235.73121551122387,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 331702272.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -3714,6 +4022,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 228.94274261155982,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 326262784.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -3811,6 +4126,13 @@
       "allowed": 9,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 310.0694353040756,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 298479616.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -3908,6 +4230,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 183.44622010384288,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 343830528.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -4005,6 +4334,13 @@
       "allowed": 9,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 232.76929224668055,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 331972608.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -4102,6 +4438,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 199.0047159052095,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 326504448.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -4199,6 +4542,13 @@
       "allowed": 9,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 252.5407013795785,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 298414080.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -4296,6 +4646,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 204.5324235164898,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 349364224.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -4393,6 +4750,13 @@
       "allowed": 9,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 257.6687217734958,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 329273344.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -4490,6 +4854,13 @@
       "allowed": 0,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 288.11252268602544,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 325844992.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -4587,6 +4958,13 @@
       "allowed": 9,
       "positions": [],
       "selection_passed": true,
+      "resources": {
+        "cpuPct": 215.77934941141908,
+        "deviceVramBytes": null,
+        "gpuPct": null,
+        "processVramBytes": null,
+        "rssBytes": 298266624.0
+      },
       "reference_quality": {
         "matched": 900,
         "max_image_uses": 3,
@@ -4676,7 +5054,7 @@
     }
   ],
   "small_task_performance": {
-    "status": "initial measurement; no auto admission",
+    "status": "historical before library/readback optimization",
     "tiles": 8,
     "results": [
       {
@@ -5299,7 +5677,1196 @@
         },
         "auto_eligible": false
       }
-    ]
+    ],
+    "benchmark_sha256": "5a292ff281258ae545837d4348740070f82a9eacfceb2b010841edee27bc0add"
   },
-  "benchmark_sha256": "5a292ff281258ae545837d4348740070f82a9eacfceb2b010841edee27bc0add"
+  "performance_method": {
+    "tiles": 900,
+    "warmup": 1,
+    "hot_pairs": 5,
+    "alternating": true,
+    "timing_resource_monitor": false,
+    "memory_profile": "separate monitored quality runs",
+    "concurrent_local_builds_or_tests": false,
+    "baseline_core_commit": "64501626d"
+  },
+  "performance": [
+    {
+      "device": "vulkan:0",
+      "case": "photo",
+      "cold": {
+        "cpu": {
+          "analysisMs": 6.474,
+          "annBuildMs": 0.0,
+          "annLoadMs": 255.264,
+          "annQueryMs": 43.7453,
+          "cpuScoreMs": 324.7846000000003,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 12.2583,
+          "featureCachePeakBytes": 58567092.0,
+          "featureMs": 204.0593,
+          "gpuScoreMs": 0.0,
+          "matchingBufferPeakBytes": 3230212.0,
+          "matchingMs": 1105.6353,
+          "neighborMs": 184.09879999994467,
+          "placementMs": 135.1724,
+          "seed": 42.0,
+          "selectionMs": 459.77879999999993,
+          "sortMs": 0.9674000000000025,
+          "totalMs": 2299.2952,
+          "resources": {
+            "cpuPct": null,
+            "deviceVramBytes": null,
+            "gpuPct": null,
+            "processVramBytes": null,
+            "rssBytes": null
+          }
+        },
+        "vulkan:0": {
+          "analysisMs": 4.4138,
+          "annBuildMs": 0.0,
+          "annLoadMs": 254.0989,
+          "annQueryMs": 41.5684,
+          "cpuScoreMs": 150.1522000000001,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 13.4649,
+          "featureCachePeakBytes": 58567092.0,
+          "featureMs": 291.76289999999995,
+          "gpuAllocationMs": 70.27590000000001,
+          "gpuComputeWaitMs": 26.165100000000002,
+          "gpuDownloadBytes": 27054000.0,
+          "gpuDownloadMs": 2.3768,
+          "gpuLibraryResidentBytes": 94510136.0,
+          "gpuPeakBufferBytes": 161871968.0,
+          "gpuResidentBytes": 161871968.0,
+          "gpuScoreMs": 23.9558,
+          "gpuSharedMemoryBytes": 0.0,
+          "gpuUploadBytes": 304274936.0,
+          "gpuUploadMs": 27.0664,
+          "matchingBufferPeakBytes": 1453796.0,
+          "matchingMs": 1571.2014,
+          "neighborMs": 146.7666999999882,
+          "placementMs": 134.4135,
+          "scoreModeFast": 1.0,
+          "seed": 42.0,
+          "selectionMs": 151.7681,
+          "sortMs": 0.6898000000000014,
+          "totalMs": 2965.9526,
+          "resources": {
+            "cpuPct": null,
+            "deviceVramBytes": null,
+            "gpuPct": null,
+            "processVramBytes": null,
+            "rssBytes": null
+          }
+        }
+      },
+      "samples": {
+        "cpu": [
+          {
+            "analysisMs": 4.0208,
+            "annBuildMs": 0.0,
+            "annLoadMs": 264.5932,
+            "annQueryMs": 42.7617,
+            "cpuScoreMs": 338.16200000000003,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.4077,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 204.5233,
+            "gpuScoreMs": 0.0,
+            "matchingBufferPeakBytes": 3230212.0,
+            "matchingMs": 1123.7022,
+            "neighborMs": 195.26489999995127,
+            "placementMs": 136.3649,
+            "seed": 42.0,
+            "selectionMs": 464.0557,
+            "sortMs": 0.8458000000000017,
+            "totalMs": 2317.6353,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 4.5208,
+            "annBuildMs": 0.0,
+            "annLoadMs": 256.5274,
+            "annQueryMs": 39.0519,
+            "cpuScoreMs": 319.5448999999998,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.0856,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 205.8871,
+            "gpuScoreMs": 0.0,
+            "matchingBufferPeakBytes": 3230212.0,
+            "matchingMs": 1092.64,
+            "neighborMs": 182.22329999993983,
+            "placementMs": 133.4285,
+            "seed": 42.0,
+            "selectionMs": 443.9829,
+            "sortMs": 0.8037000000000026,
+            "totalMs": 2278.8888,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 4.6675,
+            "annBuildMs": 0.0,
+            "annLoadMs": 255.6242,
+            "annQueryMs": 39.8734,
+            "cpuScoreMs": 319.13689999999986,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.287799999999999,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 208.9845,
+            "gpuScoreMs": 0.0,
+            "matchingBufferPeakBytes": 3230212.0,
+            "matchingMs": 1093.1486,
+            "neighborMs": 178.875699999948,
+            "placementMs": 133.812,
+            "seed": 42.0,
+            "selectionMs": 444.5403,
+            "sortMs": 0.7950000000000019,
+            "totalMs": 2247.0078,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 14.7844,
+            "annBuildMs": 0.0,
+            "annLoadMs": 261.2002,
+            "annQueryMs": 40.6366,
+            "cpuScoreMs": 322.23800000000034,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.477400000000001,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 208.1376,
+            "gpuScoreMs": 0.0,
+            "matchingBufferPeakBytes": 3230212.0,
+            "matchingMs": 1113.6521,
+            "neighborMs": 179.4109999999367,
+            "placementMs": 137.8397,
+            "seed": 42.0,
+            "selectionMs": 449.7849,
+            "sortMs": 0.8217000000000005,
+            "totalMs": 2360.6451,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 4.9323,
+            "annBuildMs": 0.0,
+            "annLoadMs": 264.9394,
+            "annQueryMs": 41.122,
+            "cpuScoreMs": 355.9104000000001,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 13.6031,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 202.996,
+            "gpuScoreMs": 0.0,
+            "matchingBufferPeakBytes": 3230212.0,
+            "matchingMs": 1149.9728,
+            "neighborMs": 208.056999999947,
+            "placementMs": 144.6712,
+            "seed": 42.0,
+            "selectionMs": 489.32719999999995,
+            "sortMs": 0.8597000000000002,
+            "totalMs": 2374.3008,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          }
+        ],
+        "vulkan:0": [
+          {
+            "analysisMs": 30.9742,
+            "annBuildMs": 0.0,
+            "annLoadMs": 260.204,
+            "annQueryMs": 42.2876,
+            "cpuScoreMs": 160.14650000000015,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.646,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 273.2332,
+            "gpuAllocationMs": 75.5085,
+            "gpuComputeWaitMs": 28.1788,
+            "gpuDownloadBytes": 27054000.0,
+            "gpuDownloadMs": 2.5364000000000004,
+            "gpuLibraryResidentBytes": 94510136.0,
+            "gpuPeakBufferBytes": 161871968.0,
+            "gpuResidentBytes": 161871968.0,
+            "gpuScoreMs": 25.5283,
+            "gpuSharedMemoryBytes": 0.0,
+            "gpuUploadBytes": 304274936.0,
+            "gpuUploadMs": 27.3322,
+            "matchingBufferPeakBytes": 1453796.0,
+            "matchingMs": 1578.0228,
+            "neighborMs": 156.64029999998095,
+            "placementMs": 135.0168,
+            "scoreModeFast": 1.0,
+            "seed": 42.0,
+            "selectionMs": 161.8313,
+            "sortMs": 0.7283000000000027,
+            "totalMs": 2997.0539,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 4.9936,
+            "annBuildMs": 0.0,
+            "annLoadMs": 262.4269,
+            "annQueryMs": 40.7294,
+            "cpuScoreMs": 143.13610000000003,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.0909,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 299.0833,
+            "gpuAllocationMs": 67.5251,
+            "gpuComputeWaitMs": 26.065399999999997,
+            "gpuDownloadBytes": 27054000.0,
+            "gpuDownloadMs": 2.5858,
+            "gpuLibraryResidentBytes": 94510136.0,
+            "gpuPeakBufferBytes": 161871968.0,
+            "gpuResidentBytes": 161871968.0,
+            "gpuScoreMs": 23.763399999999997,
+            "gpuSharedMemoryBytes": 0.0,
+            "gpuUploadBytes": 304274936.0,
+            "gpuUploadMs": 27.0627,
+            "matchingBufferPeakBytes": 1453796.0,
+            "matchingMs": 1565.2832,
+            "neighborMs": 139.75679999997868,
+            "placementMs": 136.2272,
+            "scoreModeFast": 1.0,
+            "seed": 42.0,
+            "selectionMs": 144.60789999999997,
+            "sortMs": 0.669700000000002,
+            "totalMs": 2951.6121,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 4.8711,
+            "annBuildMs": 0.0,
+            "annLoadMs": 254.9643,
+            "annQueryMs": 41.5941,
+            "cpuScoreMs": 155.57779999999983,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.825800000000001,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 302.31140000000005,
+            "gpuAllocationMs": 68.9502,
+            "gpuComputeWaitMs": 26.566999999999997,
+            "gpuDownloadBytes": 27054000.0,
+            "gpuDownloadMs": 2.7025999999999994,
+            "gpuLibraryResidentBytes": 94510136.0,
+            "gpuPeakBufferBytes": 161871968.0,
+            "gpuResidentBytes": 161871968.0,
+            "gpuScoreMs": 24.6498,
+            "gpuSharedMemoryBytes": 0.0,
+            "gpuUploadBytes": 304274936.0,
+            "gpuUploadMs": 27.154200000000003,
+            "matchingBufferPeakBytes": 1453796.0,
+            "matchingMs": 1604.5258,
+            "neighborMs": 152.0548999999761,
+            "placementMs": 136.6774,
+            "scoreModeFast": 1.0,
+            "seed": 42.0,
+            "selectionMs": 157.23160000000001,
+            "sortMs": 0.6972000000000017,
+            "totalMs": 3005.7315,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 4.8476,
+            "annBuildMs": 0.0,
+            "annLoadMs": 259.4788,
+            "annQueryMs": 41.4195,
+            "cpuScoreMs": 163.06860000000015,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.440800000000001,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 283.5198,
+            "gpuAllocationMs": 79.245,
+            "gpuComputeWaitMs": 27.2014,
+            "gpuDownloadBytes": 27054000.0,
+            "gpuDownloadMs": 2.9424,
+            "gpuLibraryResidentBytes": 94510136.0,
+            "gpuPeakBufferBytes": 161871968.0,
+            "gpuResidentBytes": 161871968.0,
+            "gpuScoreMs": 25.6002,
+            "gpuSharedMemoryBytes": 0.0,
+            "gpuUploadBytes": 304274936.0,
+            "gpuUploadMs": 27.184099999999994,
+            "matchingBufferPeakBytes": 1453796.0,
+            "matchingMs": 1634.0925,
+            "neighborMs": 159.54169999997515,
+            "placementMs": 138.2438,
+            "scoreModeFast": 1.0,
+            "seed": 42.0,
+            "selectionMs": 164.842,
+            "sortMs": 0.7280000000000009,
+            "totalMs": 3028.4987,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 4.0455,
+            "annBuildMs": 0.0,
+            "annLoadMs": 260.2964,
+            "annQueryMs": 40.135099999999994,
+            "cpuScoreMs": 154.53319999999997,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.0635,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 301.90959999999995,
+            "gpuAllocationMs": 69.4342,
+            "gpuComputeWaitMs": 26.186999999999998,
+            "gpuDownloadBytes": 27054000.0,
+            "gpuDownloadMs": 2.4729,
+            "gpuLibraryResidentBytes": 94510136.0,
+            "gpuPeakBufferBytes": 161871968.0,
+            "gpuResidentBytes": 161871968.0,
+            "gpuScoreMs": 24.4275,
+            "gpuSharedMemoryBytes": 0.0,
+            "gpuUploadBytes": 304274936.0,
+            "gpuUploadMs": 27.047200000000004,
+            "matchingBufferPeakBytes": 1453796.0,
+            "matchingMs": 1599.0373,
+            "neighborMs": 151.13269999998062,
+            "placementMs": 136.2732,
+            "scoreModeFast": 1.0,
+            "seed": 42.0,
+            "selectionMs": 156.15520000000004,
+            "sortMs": 0.7094000000000009,
+            "totalMs": 2980.099,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          }
+        ]
+      },
+      "medians": {
+        "cpu": {
+          "matchingMs": 1113.6521,
+          "totalMs": 2317.6353
+        },
+        "vulkan:0": {
+          "matchingMs": 1599.0373,
+          "totalMs": 2997.0539
+        }
+      },
+      "auto_eligible": false
+    },
+    {
+      "device": "vulkan:1",
+      "case": "photo",
+      "cold": {
+        "cpu": {
+          "analysisMs": 5.0005,
+          "annBuildMs": 0.0,
+          "annLoadMs": 257.1229,
+          "annQueryMs": 44.8099,
+          "cpuScoreMs": 362.66630000000004,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 13.2733,
+          "featureCachePeakBytes": 58567092.0,
+          "featureMs": 211.3226,
+          "gpuScoreMs": 0.0,
+          "matchingBufferPeakBytes": 3230212.0,
+          "matchingMs": 1167.9172,
+          "neighborMs": 213.03549999994144,
+          "placementMs": 142.3878,
+          "seed": 42.0,
+          "selectionMs": 502.274,
+          "sortMs": 0.8990000000000017,
+          "totalMs": 2388.9454,
+          "resources": {
+            "cpuPct": null,
+            "deviceVramBytes": null,
+            "gpuPct": null,
+            "processVramBytes": null,
+            "rssBytes": null
+          }
+        },
+        "vulkan:1": {
+          "analysisMs": 4.5696,
+          "annBuildMs": 0.0,
+          "annLoadMs": 276.7852,
+          "annQueryMs": 47.6697,
+          "cpuScoreMs": 177.97849999999983,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 12.9477,
+          "featureCachePeakBytes": 58567092.0,
+          "featureMs": 341.59580000000005,
+          "gpuAllocationMs": 69.95689999999999,
+          "gpuComputeWaitMs": 73.6606,
+          "gpuDownloadBytes": 27054000.0,
+          "gpuDownloadMs": 2.4973,
+          "gpuLibraryResidentBytes": 94510136.0,
+          "gpuPeakBufferBytes": 161871936.0,
+          "gpuResidentBytes": 161871936.0,
+          "gpuScoreMs": 40.2462,
+          "gpuSharedMemoryBytes": 161871936.0,
+          "gpuUploadBytes": 304274936.0,
+          "gpuUploadMs": 26.2047,
+          "matchingBufferPeakBytes": 1453796.0,
+          "matchingMs": 1622.6733,
+          "neighborMs": 174.31029999996832,
+          "placementMs": 142.7256,
+          "scoreModeFast": 1.0,
+          "seed": 42.0,
+          "selectionMs": 179.914,
+          "sortMs": 0.7853000000000034,
+          "totalMs": 3143.0652,
+          "resources": {
+            "cpuPct": null,
+            "deviceVramBytes": null,
+            "gpuPct": null,
+            "processVramBytes": null,
+            "rssBytes": null
+          }
+        }
+      },
+      "samples": {
+        "cpu": [
+          {
+            "analysisMs": 5.0842,
+            "annBuildMs": 0.0,
+            "annLoadMs": 257.7976,
+            "annQueryMs": 40.687,
+            "cpuScoreMs": 304.0545000000001,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.0336,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 202.9113,
+            "gpuScoreMs": 0.0,
+            "matchingBufferPeakBytes": 3230212.0,
+            "matchingMs": 1080.904,
+            "neighborMs": 169.24979999994517,
+            "placementMs": 136.7768,
+            "seed": 42.0,
+            "selectionMs": 435.98429999999996,
+            "sortMs": 0.7508000000000018,
+            "totalMs": 2280.2445,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 4.0963,
+            "annBuildMs": 0.0,
+            "annLoadMs": 268.0412,
+            "annQueryMs": 39.9597,
+            "cpuScoreMs": 314.30350000000016,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.2228,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 204.6474,
+            "gpuScoreMs": 0.0,
+            "matchingBufferPeakBytes": 3230212.0,
+            "matchingMs": 1102.3083,
+            "neighborMs": 176.70429999994013,
+            "placementMs": 132.9772,
+            "seed": 42.0,
+            "selectionMs": 442.6961,
+            "sortMs": 0.8058000000000016,
+            "totalMs": 2298.5012,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 4.5647,
+            "annBuildMs": 0.0,
+            "annLoadMs": 263.6172,
+            "annQueryMs": 42.2458,
+            "cpuScoreMs": 309.0835000000004,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.77,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 206.7975,
+            "gpuScoreMs": 0.0,
+            "matchingBufferPeakBytes": 3230212.0,
+            "matchingMs": 1090.4218,
+            "neighborMs": 171.8912999999542,
+            "placementMs": 137.1482,
+            "seed": 42.0,
+            "selectionMs": 431.5403,
+            "sortMs": 0.7642000000000012,
+            "totalMs": 2291.1203,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 4.0394,
+            "annBuildMs": 0.0,
+            "annLoadMs": 267.0404,
+            "annQueryMs": 42.94,
+            "cpuScoreMs": 307.8664,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.1074,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 206.2005,
+            "gpuScoreMs": 0.0,
+            "matchingBufferPeakBytes": 3230212.0,
+            "matchingMs": 1099.275,
+            "neighborMs": 169.07359999994372,
+            "placementMs": 135.1928,
+            "seed": 42.0,
+            "selectionMs": 439.3094,
+            "sortMs": 0.7822000000000016,
+            "totalMs": 2287.5851,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 4.2767,
+            "annBuildMs": 0.0,
+            "annLoadMs": 261.9563,
+            "annQueryMs": 43.0282,
+            "cpuScoreMs": 325.56809999999945,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.717,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 203.0226,
+            "gpuScoreMs": 0.0,
+            "matchingBufferPeakBytes": 3230212.0,
+            "matchingMs": 1103.6275,
+            "neighborMs": 184.2058999999319,
+            "placementMs": 135.2379,
+            "seed": 42.0,
+            "selectionMs": 450.2928,
+            "sortMs": 0.850800000000001,
+            "totalMs": 2308.0808,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          }
+        ],
+        "vulkan:1": [
+          {
+            "analysisMs": 4.6484,
+            "annBuildMs": 0.0,
+            "annLoadMs": 257.2308,
+            "annQueryMs": 40.22939999999999,
+            "cpuScoreMs": 153.41769999999974,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.326600000000001,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 320.7872,
+            "gpuAllocationMs": 63.030100000000004,
+            "gpuComputeWaitMs": 71.4086,
+            "gpuDownloadBytes": 27054000.0,
+            "gpuDownloadMs": 2.3554,
+            "gpuLibraryResidentBytes": 94510136.0,
+            "gpuPeakBufferBytes": 161871936.0,
+            "gpuResidentBytes": 161871936.0,
+            "gpuScoreMs": 38.7184,
+            "gpuSharedMemoryBytes": 161871936.0,
+            "gpuUploadBytes": 304274936.0,
+            "gpuUploadMs": 25.204500000000003,
+            "matchingBufferPeakBytes": 1453796.0,
+            "matchingMs": 1492.8731,
+            "neighborMs": 149.8977999999695,
+            "placementMs": 136.2729,
+            "scoreModeFast": 1.0,
+            "seed": 42.0,
+            "selectionMs": 155.02100000000002,
+            "sortMs": 0.7069000000000021,
+            "totalMs": 2890.075,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 5.0687,
+            "annBuildMs": 0.0,
+            "annLoadMs": 252.9557,
+            "annQueryMs": 40.749500000000005,
+            "cpuScoreMs": 148.18600000000012,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.3787,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 323.20289999999994,
+            "gpuAllocationMs": 65.4394,
+            "gpuComputeWaitMs": 70.6134,
+            "gpuDownloadBytes": 27054000.0,
+            "gpuDownloadMs": 2.2870999999999997,
+            "gpuLibraryResidentBytes": 94510136.0,
+            "gpuPeakBufferBytes": 161871936.0,
+            "gpuResidentBytes": 161871936.0,
+            "gpuScoreMs": 37.3689,
+            "gpuSharedMemoryBytes": 161871936.0,
+            "gpuUploadBytes": 304274936.0,
+            "gpuUploadMs": 25.6437,
+            "matchingBufferPeakBytes": 1453796.0,
+            "matchingMs": 1488.7334,
+            "neighborMs": 144.71139999997894,
+            "placementMs": 133.8433,
+            "scoreModeFast": 1.0,
+            "seed": 42.0,
+            "selectionMs": 149.7705,
+            "sortMs": 0.7141000000000014,
+            "totalMs": 2840.1688,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 16.2175,
+            "annBuildMs": 0.0,
+            "annLoadMs": 253.5293,
+            "annQueryMs": 41.6056,
+            "cpuScoreMs": 161.7282999999999,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 13.4828,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 323.6125,
+            "gpuAllocationMs": 64.89680000000001,
+            "gpuComputeWaitMs": 72.2368,
+            "gpuDownloadBytes": 27054000.0,
+            "gpuDownloadMs": 2.1915,
+            "gpuLibraryResidentBytes": 94510136.0,
+            "gpuPeakBufferBytes": 161871936.0,
+            "gpuResidentBytes": 161871936.0,
+            "gpuScoreMs": 38.8858,
+            "gpuSharedMemoryBytes": 161871936.0,
+            "gpuUploadBytes": 304274936.0,
+            "gpuUploadMs": 25.2661,
+            "matchingBufferPeakBytes": 1453796.0,
+            "matchingMs": 1543.0738,
+            "neighborMs": 158.14599999996335,
+            "placementMs": 137.6839,
+            "scoreModeFast": 1.0,
+            "seed": 42.0,
+            "selectionMs": 163.4238,
+            "sortMs": 0.7148000000000003,
+            "totalMs": 2939.1416,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 5.0758,
+            "annBuildMs": 0.0,
+            "annLoadMs": 258.8391,
+            "annQueryMs": 43.6199,
+            "cpuScoreMs": 167.10949999999988,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.8297,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 325.94030000000004,
+            "gpuAllocationMs": 66.8395,
+            "gpuComputeWaitMs": 71.4848,
+            "gpuDownloadBytes": 27054000.0,
+            "gpuDownloadMs": 2.2386999999999997,
+            "gpuLibraryResidentBytes": 94510136.0,
+            "gpuPeakBufferBytes": 161871936.0,
+            "gpuResidentBytes": 161871936.0,
+            "gpuScoreMs": 37.9976,
+            "gpuSharedMemoryBytes": 161871936.0,
+            "gpuUploadBytes": 304274936.0,
+            "gpuUploadMs": 25.0373,
+            "matchingBufferPeakBytes": 1453796.0,
+            "matchingMs": 1540.72,
+            "neighborMs": 163.55199999995756,
+            "placementMs": 137.1026,
+            "scoreModeFast": 1.0,
+            "seed": 42.0,
+            "selectionMs": 168.8881,
+            "sortMs": 0.7403000000000013,
+            "totalMs": 2966.5819,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          },
+          {
+            "analysisMs": 4.4339,
+            "annBuildMs": 0.0,
+            "annLoadMs": 259.824,
+            "annQueryMs": 41.0566,
+            "cpuScoreMs": 163.07300000000032,
+            "deviceTemporaryBytes": 0.0,
+            "encodingMs": 12.5792,
+            "featureCachePeakBytes": 58567092.0,
+            "featureMs": 298.2033,
+            "gpuAllocationMs": 70.3146,
+            "gpuComputeWaitMs": 71.84129999999999,
+            "gpuDownloadBytes": 27054000.0,
+            "gpuDownloadMs": 2.3789,
+            "gpuLibraryResidentBytes": 94510136.0,
+            "gpuPeakBufferBytes": 161871936.0,
+            "gpuResidentBytes": 161871936.0,
+            "gpuScoreMs": 38.520399999999995,
+            "gpuSharedMemoryBytes": 161871936.0,
+            "gpuUploadBytes": 304274936.0,
+            "gpuUploadMs": 24.9592,
+            "matchingBufferPeakBytes": 1453796.0,
+            "matchingMs": 1497.1628,
+            "neighborMs": 159.52419999996943,
+            "placementMs": 132.658,
+            "scoreModeFast": 1.0,
+            "seed": 42.0,
+            "selectionMs": 164.79070000000002,
+            "sortMs": 0.7308000000000009,
+            "totalMs": 2855.3346,
+            "resources": {
+              "cpuPct": null,
+              "deviceVramBytes": null,
+              "gpuPct": null,
+              "processVramBytes": null,
+              "rssBytes": null
+            }
+          }
+        ]
+      },
+      "medians": {
+        "cpu": {
+          "matchingMs": 1099.275,
+          "totalMs": 2291.1203
+        },
+        "vulkan:1": {
+          "matchingMs": 1497.1628,
+          "totalMs": 2890.075
+        }
+      },
+      "auto_eligible": false
+    }
+  ],
+  "cuda_regression": {
+    "case": "photo",
+    "cold": {
+      "baseline": {
+        "analysisMs": 5.765,
+        "annBuildMs": 0.0,
+        "annLoadMs": 260.046,
+        "annQueryMs": 41.5302,
+        "cpuScoreMs": 0.0,
+        "deviceTemporaryBytes": 0.0,
+        "encodingMs": 12.5201,
+        "featureCachePeakBytes": 0.0,
+        "featureMs": 49.5004,
+        "gpuScoreMs": 11.1214,
+        "matchingBufferPeakBytes": 50383336.0,
+        "matchingMs": 533.4323,
+        "neighborMs": 149.70660000000007,
+        "placementMs": 140.1217,
+        "seed": 42.0,
+        "selectionMs": 151.4456,
+        "sortMs": 0.8345000000000019,
+        "totalMs": 2387.5056,
+        "resources": {}
+      },
+      "current": {
+        "analysisMs": 14.6266,
+        "annBuildMs": 0.0,
+        "annLoadMs": 270.6634,
+        "annQueryMs": 40.1266,
+        "cpuScoreMs": 0.0,
+        "deviceTemporaryBytes": 0.0,
+        "encodingMs": 12.3619,
+        "featureCachePeakBytes": 0.0,
+        "featureMs": 40.8527,
+        "gpuScoreMs": 8.387,
+        "matchingBufferPeakBytes": 50383336.0,
+        "matchingMs": 521.3618,
+        "neighborMs": 136.07850000000025,
+        "placementMs": 139.3805,
+        "seed": 42.0,
+        "selectionMs": 137.7574,
+        "sortMs": 0.8225000000000013,
+        "totalMs": 2252.0745,
+        "resources": {
+          "cpuPct": null,
+          "deviceVramBytes": null,
+          "gpuPct": null,
+          "processVramBytes": null,
+          "rssBytes": null
+        }
+      }
+    },
+    "samples": {
+      "baseline": [
+        {
+          "analysisMs": 4.4693,
+          "annBuildMs": 0.0,
+          "annLoadMs": 258.4426,
+          "annQueryMs": 39.8062,
+          "cpuScoreMs": 0.0,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 12.3089,
+          "featureCachePeakBytes": 0.0,
+          "featureMs": 46.9624,
+          "gpuScoreMs": 10.67,
+          "matchingBufferPeakBytes": 50383336.0,
+          "matchingMs": 530.1559,
+          "neighborMs": 149.87879999999998,
+          "placementMs": 135.3789,
+          "seed": 42.0,
+          "selectionMs": 151.6042,
+          "sortMs": 0.8450000000000019,
+          "totalMs": 2226.3784,
+          "resources": {}
+        },
+        {
+          "analysisMs": 8.2109,
+          "annBuildMs": 0.0,
+          "annLoadMs": 273.588,
+          "annQueryMs": 50.0453,
+          "cpuScoreMs": 0.0,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 12.677700000000002,
+          "featureCachePeakBytes": 0.0,
+          "featureMs": 44.1004,
+          "gpuScoreMs": 6.7724,
+          "matchingBufferPeakBytes": 50383336.0,
+          "matchingMs": 539.5613,
+          "neighborMs": 142.41219999999973,
+          "placementMs": 142.3593,
+          "seed": 42.0,
+          "selectionMs": 144.3471,
+          "sortMs": 1.0163000000000015,
+          "totalMs": 2353.2285,
+          "resources": {}
+        },
+        {
+          "analysisMs": 5.7106,
+          "annBuildMs": 0.0,
+          "annLoadMs": 293.1572,
+          "annQueryMs": 41.7898,
+          "cpuScoreMs": 0.0,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 13.0745,
+          "featureCachePeakBytes": 0.0,
+          "featureMs": 43.1973,
+          "gpuScoreMs": 7.658,
+          "matchingBufferPeakBytes": 50383336.0,
+          "matchingMs": 574.7305,
+          "neighborMs": 160.5104000000003,
+          "placementMs": 145.6937,
+          "seed": 42.0,
+          "selectionMs": 162.4149,
+          "sortMs": 0.8699000000000024,
+          "totalMs": 2508.7913,
+          "resources": {}
+        },
+        {
+          "analysisMs": 4.7835,
+          "annBuildMs": 0.0,
+          "annLoadMs": 263.5841,
+          "annQueryMs": 39.1294,
+          "cpuScoreMs": 0.0,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 12.5227,
+          "featureCachePeakBytes": 0.0,
+          "featureMs": 45.2255,
+          "gpuScoreMs": 8.4998,
+          "matchingBufferPeakBytes": 50383336.0,
+          "matchingMs": 522.422,
+          "neighborMs": 141.39049999999992,
+          "placementMs": 139.0713,
+          "seed": 42.0,
+          "selectionMs": 143.0898,
+          "sortMs": 0.8285000000000018,
+          "totalMs": 2244.1269,
+          "resources": {}
+        },
+        {
+          "analysisMs": 4.6305,
+          "annBuildMs": 0.0,
+          "annLoadMs": 256.2493,
+          "annQueryMs": 41.335,
+          "cpuScoreMs": 0.0,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 11.9774,
+          "featureCachePeakBytes": 0.0,
+          "featureMs": 49.3968,
+          "gpuScoreMs": 7.9676,
+          "matchingBufferPeakBytes": 50383336.0,
+          "matchingMs": 530.053,
+          "neighborMs": 149.71570000000006,
+          "placementMs": 136.2806,
+          "seed": 42.0,
+          "selectionMs": 151.4348,
+          "sortMs": 0.8528999999999994,
+          "totalMs": 2220.3909,
+          "resources": {}
+        }
+      ],
+      "current": [
+        {
+          "analysisMs": 5.0063,
+          "annBuildMs": 0.0,
+          "annLoadMs": 260.9257,
+          "annQueryMs": 39.9535,
+          "cpuScoreMs": 0.0,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 12.3795,
+          "featureCachePeakBytes": 0.0,
+          "featureMs": 47.7464,
+          "gpuScoreMs": 7.7675,
+          "matchingBufferPeakBytes": 50383336.0,
+          "matchingMs": 530.1729,
+          "neighborMs": 147.27959999999996,
+          "placementMs": 137.5798,
+          "seed": 42.0,
+          "selectionMs": 149.0695,
+          "sortMs": 0.8299000000000006,
+          "totalMs": 2354.8287,
+          "resources": {
+            "cpuPct": null,
+            "deviceVramBytes": null,
+            "gpuPct": null,
+            "processVramBytes": null,
+            "rssBytes": null
+          }
+        },
+        {
+          "analysisMs": 4.2619,
+          "annBuildMs": 0.0,
+          "annLoadMs": 268.1136,
+          "annQueryMs": 41.5409,
+          "cpuScoreMs": 0.0,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 12.0128,
+          "featureCachePeakBytes": 0.0,
+          "featureMs": 50.1346,
+          "gpuScoreMs": 8.0097,
+          "matchingBufferPeakBytes": 50383336.0,
+          "matchingMs": 540.4408,
+          "neighborMs": 144.81830000000002,
+          "placementMs": 136.4228,
+          "seed": 42.0,
+          "selectionMs": 146.5361,
+          "sortMs": 0.8347000000000008,
+          "totalMs": 2284.3756,
+          "resources": {
+            "cpuPct": null,
+            "deviceVramBytes": null,
+            "gpuPct": null,
+            "processVramBytes": null,
+            "rssBytes": null
+          }
+        },
+        {
+          "analysisMs": 4.4971,
+          "annBuildMs": 0.0,
+          "annLoadMs": 277.4642,
+          "annQueryMs": 39.5814,
+          "cpuScoreMs": 0.0,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 12.637500000000001,
+          "featureCachePeakBytes": 0.0,
+          "featureMs": 46.3276,
+          "gpuScoreMs": 9.1999,
+          "matchingBufferPeakBytes": 50383336.0,
+          "matchingMs": 543.3772,
+          "neighborMs": 145.42789999999974,
+          "placementMs": 141.3367,
+          "seed": 42.0,
+          "selectionMs": 147.2077,
+          "sortMs": 0.8412000000000012,
+          "totalMs": 2309.9063,
+          "resources": {
+            "cpuPct": null,
+            "deviceVramBytes": null,
+            "gpuPct": null,
+            "processVramBytes": null,
+            "rssBytes": null
+          }
+        },
+        {
+          "analysisMs": 4.61,
+          "annBuildMs": 0.0,
+          "annLoadMs": 256.5671,
+          "annQueryMs": 40.1963,
+          "cpuScoreMs": 0.0,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 12.3939,
+          "featureCachePeakBytes": 0.0,
+          "featureMs": 44.9855,
+          "gpuScoreMs": 10.1592,
+          "matchingBufferPeakBytes": 50383336.0,
+          "matchingMs": 530.626,
+          "neighborMs": 156.44210000000024,
+          "placementMs": 143.9482,
+          "seed": 42.0,
+          "selectionMs": 158.2486,
+          "sortMs": 0.868000000000001,
+          "totalMs": 2384.6082,
+          "resources": {
+            "cpuPct": null,
+            "deviceVramBytes": null,
+            "gpuPct": null,
+            "processVramBytes": null,
+            "rssBytes": null
+          }
+        },
+        {
+          "analysisMs": 6.426,
+          "annBuildMs": 0.0,
+          "annLoadMs": 265.3303,
+          "annQueryMs": 38.7178,
+          "cpuScoreMs": 0.0,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 13.6631,
+          "featureCachePeakBytes": 0.0,
+          "featureMs": 45.8913,
+          "gpuScoreMs": 8.0421,
+          "matchingBufferPeakBytes": 50383336.0,
+          "matchingMs": 519.5245,
+          "neighborMs": 134.14540000000005,
+          "placementMs": 137.2455,
+          "seed": 42.0,
+          "selectionMs": 135.8166,
+          "sortMs": 0.825000000000002,
+          "totalMs": 2187.4158,
+          "resources": {
+            "cpuPct": null,
+            "deviceVramBytes": null,
+            "gpuPct": null,
+            "processVramBytes": null,
+            "rssBytes": null
+          }
+        }
+      ]
+    },
+    "medians": {
+      "baseline": {
+        "matchingMs": 530.1559,
+        "totalMs": 2244.1269
+      },
+      "current": {
+        "matchingMs": 530.626,
+        "totalMs": 2309.9063
+      }
+    },
+    "baseline_sha256": "792189b8162e998cc47dc628b46d91ac1fb2d07953a6d94a96e0f72c3b7586eb",
+    "passed": true
+  },
+  "resolved_startup_regression": {
+    "cause": "Explicit CUDA selection initialized Vulkan by enumerating all backends.",
+    "resolution": "Probe only the requested backend; keep full enumeration in the devices command.",
+    "implementation_commit": "897d35117",
+    "before": {
+      "baseline": {
+        "matchingMs": 523.1721,
+        "totalMs": 2219.0605
+      },
+      "current": {
+        "matchingMs": 523.4467,
+        "totalMs": 2413.5906
+      }
+    }
+  },
+  "excluded_timing_comparison": {
+    "status": "incomparable",
+    "reason": "Original benchmark ignored resourceMonitor; current benchmark started NVML sampling. Both benchmark variants now disable monitoring for timing; memory is sampled separately.",
+    "medians": {
+      "baseline": {
+        "matchingMs": 482.713,
+        "totalMs": 2121.929
+      },
+      "current": {
+        "matchingMs": 509.1712,
+        "totalMs": 2340.7885
+      }
+    }
+  },
+  "implementation_commit": "897d35117",
+  "build_validation": {
+    "candidate_workflow_run": 43271417718,
+    "source_commit": "4ac3e62d5",
+    "platforms": {
+      "windows-x64 Vulkan": "passed",
+      "linux-x64 Vulkan": "passed",
+      "macos-arm64 Metal": "passed"
+    },
+    "hardware_validation_inferred_from_ci": false
+  }
 }
