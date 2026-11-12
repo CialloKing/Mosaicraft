@@ -1,6 +1,6 @@
 # Mosaicraft
 
-Mosaicraft 用图库里的照片拼出一张目标图，可通过本地 Web UI 或命令行运行。生成前可以实时预览并逐格换图，生成时可用 NVIDIA CUDA 加速，并将超大图流式写入文件。
+Mosaicraft 用图库里的照片拼出一张目标图，可通过本地 Web UI 或命令行运行。生成前可以实时预览并逐格换图，计算支持 CPU、CUDA，以及显式启用的 Vulkan/Metal 候选后端，并将超大图流式写入文件。
 
 [下载最新版](https://github.com/CialloKing/Mosaicraft/releases/latest) · [快速开始](#快速开始) · [使用指南](#使用指南) · [CUDA 模板](#cuda-分辨率模板) · [源码构建](#安装与构建) · [Star 历史](#star-历史)
 
@@ -80,7 +80,9 @@ CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，�
 | `--target-blend 0..1` | 目标叠加，默认 0。 |
 | `--brightness-jitter 0..0.5` | LAB 亮度扰动，默认 0；HTML 必须为 0。 |
 | `--seed N` | 无符号 32 位种子；未指定时生成并记录。 |
-| `--backend auto\|cpu\|cuda` | 建库和匹配后端；auto 可回退并报告原因，显式 cuda 不可用时失败。 |
+| `--backend auto\|cpu\|cuda\|vulkan\|metal` | 建库和匹配后端；显式 GPU 请求不可用时失败；候选后端须显式启用。 |
+| `--device auto\|<设备标识>` | 建库、追加和生成使用同一 GPU；运行 `mosaicraft devices --json` 查看实际设备与不可用原因。 |
+| `--score-mode compatible\|fast` | 默认 compatible；Vulkan/Metal 使用 GPU 整数统计和 CPU FP64 评分。fast 使用 GPU FP32 距离及 CPU FP64 权重/惩罚。 |
 | `--threads N` | CPU 工作上限，0 自动，各阶段可进一步收缩。 |
 
 ```powershell
@@ -114,6 +116,21 @@ Web UI 的「便携工程」页支持信息、检查、回导与打包，全部�
 详见 [工程格式与命令迁移](docs/CLI_PROJECTS.md)、[HTTP API](docs/API.md)、[本次验收记录](docs/CLI_PROJECTS_VERIFICATION.md)。
 
 ## CUDA 分辨率模板
+
+### Vulkan 和 Metal 候选后端
+
+API 1.5 新增设备发现、设备选择和评分模式。两种新后端都实现特征统计与候选距离；原有 CPU/CUDA 行为和图库格式保持不变，无须重建现有 v1.15 图库。
+
+```powershell
+mosaicraft devices --json
+mosaicraft create target.png --db library/mosaicraft.db --backend vulkan --device vulkan:1 --score-mode fast
+```
+
+`auto` 暂保留 CUDA → CPU。Vulkan/Metal 只有在固定范围通过正确性、质量和性能准入后才能加入自动选择；当前候选包不启用该准入。Metal 仅限 macOS，必须显式指定。小任务的初始化和整库上传可能超过计算收益。详见[四后端实现与验收](docs/PORTABLE_GPU.md)。
+
+快速模式的固定验收集同时约束五特征误差 mean/p90/p99 退化 ≤1%，以及相对 CPU FP64 的最终素材 ID 差异 ≤1%；不将有限样本结果表述为任意输入保证。
+
+Windows Vulkan 构建先运行 `./scripts/setup-vulkan.ps1`，再使用 `windows-vulkan` 或 `windows-cuda-vulkan` preset；Linux 安装 Vulkan headers 和 glslang 后使用 `linux-vulkan`；macOS 完整 Xcode 环境使用 `macos-metal`。着色器离线嵌入，发布包不要求用户安装 SDK。纯 CPU preset 不引入 GPU SDK。
 
 CUDA 可用时，建库、实时预览和生成会根据图库的归一化尺寸自动选择模板，用于特征提取和候选评分。其他合法尺寸可走与 CPU 兼容的通用 CUDA 路径。
 

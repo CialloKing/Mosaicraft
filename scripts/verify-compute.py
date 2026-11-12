@@ -51,14 +51,16 @@ def main():
         ids = [row[0] for row in database.execute("SELECT id FROM images ORDER BY id")]
     study = {"snapshot": str(snapshot), "cases": specification["cases"], "runs": [], "oracle": False}
     report = {"source_sha256": source_hash, "library_rows": count, "quality_limit": 0.01,
-              "selection_limit": 0.01, "gates": [], "performance": [], "complete": False}
+              "selection_limit": 0.01, "gates": [], "performance": [], "complete": False,
+              "benchmark_sha256": hashlib.sha256(options.benchmark.read_bytes()).hexdigest(),
+              "quality_sha256": hashlib.sha256(options.quality.read_bytes()).hexdigest()}
 
     def match(case, device, mode, seed, top, tag, full=False):
         request = dict(inputPath=str(Path(case["input"]).resolve()), dbPath=str(snapshot),
                        outputPath=str(root / (tag + ".png")), backend=device.split(":")[0],
                        device=device, scoreMode=mode, tileW=9, tileH=16, outW=case["width"], outH=case["height"],
                        nativeTileW=9, nativeTileH=16, lRange=255, candidates=150, threads=8,
-                       topNRandom=top, seed=seed, format="png", overwrite=True)
+                       topNRandom=top, seed=seed, format="png", overwrite=True, resourceMonitor=True)
         # Each process sees exactly the same use counts, including end-to-end runs.
         import sqlite3
         with sqlite3.connect(snapshot) as database:

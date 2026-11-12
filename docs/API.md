@@ -15,11 +15,21 @@ Both entries call the same core services for mosaic generation, library building
 `/api/info` 在 `entryPoints` 中暴露相同的入口边界，调用方可据此区分当前入口和支持的可执行入口集合。
 `/api/info` exposes the same entry point boundary in `entryPoints`, so callers can distinguish the current entry from the supported executable entry set.
 
-当前 API 版本为 **1.4**，主版本为 **1**。新增 HTML 便携工程、固定排列回导、工程检查与 ZIP64 打包，保留已有请求字段及路径语义。端点继续使用 `/api/*`，图库数据库结构版本仍为 1。
+当前 API 版本为 **1.5**，主版本为 **1**。增加设备发现、Vulkan/Metal 及评分模式，保留已有请求字段及路径语义。端点继续使用 `/api/*`，图库数据库结构版本仍为 1。
 
-API **1.4** adds portable HTML projects, native rendering from saved layouts, project checks and ZIP64 packaging. Existing request fields remain compatible. The library schema version remains 1.
+API **1.5** adds device discovery, Vulkan/Metal and compatible/fast scoring. Existing CPU/CUDA requests remain compatible. The library schema version remains 1.
 
-HTML 工程仅使用当前内部结构，不设置工程格式版本，清单、浏览快照及工程信息均不输出 version 字段，`GET /api/info` 也不输出 projectFormatVersion。工程仅保存清单、离线 HTML、无损目标图及一份按字节去重的已用素材。素材保留图库文件名，按素材索引分目录防止同名冲突；不生成 overview 或派生缩略图，离线查看器不设置应用图片缓存上限。旧总览/缩略图工程不再支持，需要重新生成。API 版本保持 1.4。
+`GET /api/info` 新增 `devices`：每项包含 `id`、`backend`、`name`、`available`、`integrated`、`validated`、`reason`、`maxBufferBytes`。`available` 仅表示运行时发现能力，不能代替性能或包的硬件验收。新后端的 `validated=false` 表示尚未获得跨任务的默认准入。
+
+建库、追加和生成请求的 `backend` 支持 `auto|cpu|cuda|vulkan|metal`，`device` 缺省 `auto`，也可使用设备发现返回的标识（例如 `vulkan:1`）。后端、设备与 `useGpu` 冲突会拒绝请求。显式 GPU 请求不切换到其他 GPU 后端。
+
+生成和预览增加 `scoreMode=compatible|fast`，缺省 `compatible`。Vulkan/Metal 的兼容评分在 CPU FP64 执行，快速评分在 GPU FP32 计算五种距离，由 CPU 使用现有双精度权重和惩罚合成。CPU/CUDA 首期保留已有精度行为。新后端暂不进入 `auto`。
+
+运行结果 `runtime` 新增实际 `device`、`scoreMode`、`kernelVersion`。`gpuComputeWaitMs` 是主机提交、执行及等待的合计，不能当作纯内核事件时间；其他便携 GPU 指标包括分配、上传、下载、库常驻及峰值缓冲。`gpuSharedMemoryBytes` 是共享 GPU 缓冲的同一份分配，不应再次加到 CPU RSS 作为物理内存总量。NVML 指标只适用于实际 CUDA 设备，其他不可取得值继续使用不可用语义。
+
+保留已有 `cuda_*` 诊断；新增 `gpu_required`、`gpu_execution_failed`，CLI 退出码 4 表示 GPU 错误。GPU 批次执行失败会结束任务，不静默改用 CPU 重算。缓存身份含实际后端、设备、评分模式和内核版本。
+
+HTML 工程仅使用当前内部结构，不设置工程格式版本，清单、浏览快照及工程信息均不输出 version 字段，`GET /api/info` 也不输出 projectFormatVersion。工程仅保存清单、离线 HTML、无损目标图及一份按字节去重的已用素材。素材保留图库文件名，按素材索引分目录防止同名冲突；不生成 overview 或派生缩略图，离线查看器不设置应用图片缓存上限。旧总览/缩略图工程不再支持，需要重新生成。
 
 ---
 

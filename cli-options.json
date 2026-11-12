@@ -400,7 +400,7 @@
     "short": "",
     "type": "bool",
     "field": "",
-    "commands": "* devices",
+    "commands": "*",
     "help": "One JSON result on stdout; progress and diagnostics on stderr",
     "advanced": false
   },

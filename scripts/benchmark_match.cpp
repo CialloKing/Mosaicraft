@@ -138,10 +138,12 @@ int main(int argc, char **argv)
             MatchingAccess::captureSelections(engine, selected);
         }
         RuntimeContext runtime;
+        TaskResourceMonitor monitor(runtime, request.resourceMonitor);
         if (!engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config, runtime))
         {
             return 1;
         }
+        monitor.stop();
         if (capture)
         {
             std::ofstream output(u8path(request.outputPath + ".indices.bin"), std::ios::binary);
@@ -185,6 +187,12 @@ int main(int argc, char **argv)
                 {"metrics", state.metrics}, {"opencv_version", CV_VERSION}, {"match_only", matchOnly},
                 {"strategy", strategy}, {"epsilon", selectionOptions.relative}
             };
+            summary["resources"] = nlohmann::json::object();
+            for (size_t i = 0; i < resourceNames.size(); ++i)
+            {
+                const auto &value = state.resources[i];
+                summary["resources"][resourceNames[i]] = value.count ? nlohmann::json(value.peak) : nlohmann::json(nullptr);
+            }
             std::ofstream output(u8path(summaryPath));
             output << summary.dump(2) << '\n';
             output.close();

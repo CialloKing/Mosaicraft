@@ -1,10 +1,10 @@
 # Mosaicraft 项目百科全书 / Project Encyclopedia
 
-> 最后更新 / Last updated：2026-11-12 | 版本 / Version：v1.15.6
+> 最后更新 / Last updated：2026-11-13 | 版本 / Version：v1.16.0
 >
 > English readers: each major section begins with a brief English summary. The detailed technical reference, logs, and code examples are primarily in Chinese — the project's working language.
 
-当前源码提供 API 1.4 和 HTML 便携工程及固定排列回导，支持实时预览、候选查询及手动替换。图库结构、特征、缓存及恢复格式沿用 v1.15.0 定义的版本 1。早于 v1.15.0 的图库需要在新目录重建，详见 [1.15.0 不兼容更新](BREAKING_1.15.0.md) 和 [API 文档](API.md)。下文历史版本记录保留发布时的说明。
+当前源码提供 API 1.5 和 HTML 便携工程及固定排列回导，支持实时预览、候选查询及手动替换。图库结构、特征、缓存及恢复格式沿用 v1.15.0 定义的版本 1。早于 v1.15.0 的图库需要在新目录重建，详见 [1.15.0 不兼容更新](BREAKING_1.15.0.md) 和 [API 文档](API.md)。下文历史版本记录保留发布时的说明。
 
 ## 目录 / Table of Contents
 
@@ -727,6 +727,13 @@ Web UI 的预览提示改为“生成结果预览默认关闭，勾选后额外�
 功能修改已通过真实浏览器检查：预览说明、帮助直达、参数保留、刷新恢复、帮助页任务跟踪、键盘展开、窄屏排版与服务断开后的阅读均正常；JavaScript 语法与帮助锚点检查通过。发布继续按清单执行同提交的原生打包、本机 GPU Required 和真实附件验收。CLI、REST API 2.1、特征 v6、图库格式及评分算法保持兼容。
 
 > **EN**: Version 1.14.10 adds a self-contained Web UI help page covering setup, paths, options, task diagnostics and results. Preview wording explicitly names the option and explains its purpose. Context links open the relevant help section; form state and task tracking survive navigation, while help never generates or submits a command. Narrow screens use stacked option descriptions. API 2.1, feature v6, library formats and engine behavior remain unchanged.
+
+### v1.16.0（候选）
+
+- 增加 Vulkan/Metal 特征统计和快速评分，保留 CPU/CUDA 原实现与现有图库格式。
+- API 1.5、设备发现与选择、评分精度、缓存身份和 GPU 诊断接通 CLI/Web UI。
+- 固定验收集同时要求质量 mean/p90/p99 退化不超过 1%，以及相对 FP64 的最终选图差异不超过 1%。
+- 新后端暂为显式选择的候选；实机与性能边界见 [四后端验收](PORTABLE_GPU.md)。
 
 ### v1.15.6: 原目标文件保留与更大缩放范围 (2026-11-12)
 
