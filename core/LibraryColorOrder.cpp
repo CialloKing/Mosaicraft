@@ -14,6 +14,7 @@
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <system_error>
 #include <unordered_map>
 
 #ifndef _WIN32
@@ -109,7 +110,19 @@ void moveFile(const fs::path& from, const fs::path& to)
     }
 #else
     // 同卷硬链接再删除旧名字提供不覆盖语义；崩溃时可能留下同一文件的两个链接。
-    fs::create_hard_link(from, to);
+    try
+    {
+        fs::create_hard_link(from, to);
+    }
+    catch (const fs::filesystem_error &exception)
+    {
+        if (exception.code() == std::errc::cross_device_link)
+        {
+            throw std::runtime_error("color reorder cannot move images across filesystems: " +
+                                     pathToUtf8(from) + " -> " + pathToUtf8(to));
+        }
+        throw;
+    }
     fs::remove(from);
 #endif
 }
@@ -366,7 +379,15 @@ bool reorderLibraryByColor(Database& database, const std::string& outputDir,
             throw std::runtime_error("cannot read all library records for color ordering");
         }
         const auto root = absolutePath(outputDir);
+#ifdef _WIN32
         const auto rootVolume = fileInformation(root).volume;
+#else
+        // OverlayFS 的目录和图片可能报告不同的 st_dev；是否可移动由硬链接操作判定。
+        if (!fs::is_directory(root))
+        {
+            throw std::runtime_error("color reorder output path is not a directory: " + pathToUtf8(root));
+        }
+#endif
         struct Source
         {
             fs::path path;
@@ -385,10 +406,12 @@ bool reorderLibraryByColor(Database& database, const std::string& outputDir,
             {
                 throw std::runtime_error("missing or aliased library image: " + record.filePath);
             }
+#ifdef _WIN32
             if (information.volume != rootVolume)
             {
                 throw std::runtime_error("color ordering cannot move images across volumes: " + record.filePath);
             }
+#endif
             sourceInformation.emplace(record.id, Source{source, information.size});
             auto found = colors.find(record.id);
             if (found == colors.end() || found->second.version != kColorOrderVersion ||
