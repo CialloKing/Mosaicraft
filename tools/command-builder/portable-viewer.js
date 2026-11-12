@@ -38,13 +38,18 @@
     const g = current, target = cache.get(targetPath), blend = data.appearance.targetBlend;
     for (const cell of cells) {
       const x = cell % columns, y = Math.floor(cell / columns);
-      const dx = g.x + x * g.tw, dy = g.y + y * g.th;
-      context.fillRect(dx, dy, g.tw, g.th);
-      context.drawImage(bitmap, dx, dy, g.tw, g.th);
+      // 相邻格共用物理像素边界，防止缩小后的半透明边缘露出背景，也使增量绘制与全绘制一致。
+      const dx = Math.round((g.x + x * g.tw) * g.dpr) / g.dpr;
+      const dy = Math.round((g.y + y * g.th) * g.dpr) / g.dpr;
+      const dw = Math.round((g.x + (x + 1) * g.tw) * g.dpr) / g.dpr - dx;
+      const dh = Math.round((g.y + (y + 1) * g.th) * g.dpr) / g.dpr - dy;
+      if (dw <= 0 || dh <= 0) continue;
+      context.fillRect(dx, dy, dw, dh);
+      context.drawImage(bitmap, dx, dy, dw, dh);
       if (target && blend > 0) {
         context.globalAlpha = blend;
         context.drawImage(target, x / columns * target.width, y / rows * target.height,
-          target.width / columns, target.height / rows, dx, dy, g.tw, g.th);
+          target.width / columns, target.height / rows, dx, dy, dw, dh);
         context.globalAlpha = 1;
       }
     }
@@ -60,7 +65,7 @@
       if (fitted) { scale = minimum(); centerX = columns / 2; centerY = rows / 2; }
       scale = MosaicraftViewport.clamp(scale, minimum(), Math.max(1024, minimum()));
       const g = MosaicraftViewport.geometry(width, height, columns, rows, aspect, scale, centerX, centerY);
-      current = g; centerX = (width / 2 - g.x) / g.tw; centerY = (height / 2 - g.y) / g.th;
+      current = {...g, dpr}; centerX = (width / 2 - g.x) / g.tw; centerY = (height / 2 - g.y) / g.th;
       const v = MosaicraftViewport.visible(g, {x0: 0, y0: 0, x1: width, y1: height}, columns, rows);
       groups = new Map();
       if (!reference) {

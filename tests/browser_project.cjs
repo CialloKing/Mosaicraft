@@ -41,8 +41,12 @@ const {pathToFileURL} = require('node:url');
         if (process.env.MOSAICRAFT_BROWSER_WAIT_ALL) {
           await page.waitForFunction(count => window.loadedImages.filter(url => url.includes('/assets/')).length === count,
             snapshot.assets.length, {timeout:180000});
-          await page.waitForFunction(() => !document.querySelector('#status').textContent.includes('读取失败'));
+          await page.waitForFunction(count => document.querySelector('#status').textContent.includes(`已加载 ${count}`),
+            snapshot.assets.length + (snapshot.appearance.targetBlend > 0 ? 1 : 0));
           console.log(`${name}: ${await page.locator('#status').textContent()}`);
+          const incremental = await page.locator('#view').screenshot();
+          await page.locator('#fit').click();
+          assert(incremental.equals(await page.locator('#view').screenshot()), 'incremental and complete drawing must match');
         }
         await page.locator('#in').click();
         await page.locator('#reference').click();
