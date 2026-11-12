@@ -25,6 +25,10 @@ jobs:
             runner: ubuntu-22.04
             triplet: x64-linux-release
             preset: linux-cpu
+          - platform: macos-arm64
+            runner: macos-15
+            triplet: arm64-osx-release
+            preset: macos-arm64-cpu
     runs-on: ${{ matrix.runner }}
     defaults:
       run:

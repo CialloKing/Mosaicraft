@@ -1,5 +1,6 @@
 #include "MosaicPlanning.h"
 #include "BrightnessAdjustment.h"
+#include "DeepZoomLayout.h"
 #include "ImageCache.h"
 #include "MosaicSelection.h"
 #include "TileCompositor.h"
@@ -28,12 +29,15 @@ ServiceResult sampleMosaicSize(const MosaicRequest &request, const MosaicSelecti
     }
     const auto &out = plan.output;
     const int64_t tilePixels = int64_t(out.tileWidth) * out.tileHeight;
-    const int64_t maxPixels = plan.mode == "deepzoom" ? 3200000 : 4000000;
+    const bool pyramid = plan.mode == "deepzoom";
+    // 极窄的样本每层最多缩减一半，给所有低分辨率层预留同等像素预算。
+    const int64_t maxPixels = pyramid ? 1950000 : 4000000;
     if (tilePixels > maxPixels)
     {
         return ServiceResult::failure(1, "one output tile exceeds the sample budget", "sample_unavailable");
     }
-    const bool full = plan.mode == "single" && int64_t(out.width) * out.height <= maxPixels;
+    const bool full = (plan.mode != "tiled" || selection.imageIds.size() == 1) &&
+                      int64_t(out.width) * out.height <= maxPixels;
     const int strata = std::min<int64_t>(4, std::sqrt(maxPixels / tilePixels));
     const int side = std::max(1, static_cast<int>(std::sqrt(maxPixels / (strata * strata * tilePixels))));
     const int regionW = full ? selection.columns : plan.mode == "tiled" ? 1 : std::min(side, selection.columns);
@@ -72,7 +76,16 @@ ServiceResult sampleMosaicSize(const MosaicRequest &request, const MosaicSelecti
     std::mt19937 rng(0);
     uint64_t encodedBytes = 0;
     uint64_t primaryPixels = 0;
-    long double scaledDensity = 0;
+    uint64_t placedTiles = 0;
+    const auto levels = pyramid ? deepZoomLevels(out.width, out.height) : std::vector<DeepZoomLevel>{};
+    std::vector<uint64_t> levelPayload(levels.size()), levelPixels(levels.size());
+    std::vector<unsigned char> encoded;
+    size_t jpegOverhead = 0;
+    if (pyramid)
+    {
+        cv::imencode(".jpg", cv::Mat(1, 1, CV_8UC3, cv::Scalar()), encoded, codec);
+        jpegOverhead = encoded.size();
+    }
     for (int ry = 0; ry < strataY; ++ry)
     {
         for (int rx = 0; rx < strataX; ++rx)
@@ -100,6 +113,7 @@ ServiceResult sampleMosaicSize(const MosaicRequest &request, const MosaicSelecti
                     {
                         continue;
                     }
+                    ++placedTiles;
                     cv::Mat tile = pixels(cv::Rect(x * out.tileWidth, y * out.tileHeight, out.tileWidth, out.tileHeight));
                     image->copyTo(tile);
                     if (cfg.colorAdjust)
@@ -114,7 +128,6 @@ ServiceResult sampleMosaicSize(const MosaicRequest &request, const MosaicSelecti
                     }
                 }
             }
-            std::vector<unsigned char> encoded;
             if (!cv::imencode("." + out.format, pixels, encoded, codec))
             {
                 return ServiceResult::failure(1, "sample encoding failed", "sample_unavailable");
@@ -123,29 +136,49 @@ ServiceResult sampleMosaicSize(const MosaicRequest &request, const MosaicSelecti
             primaryPixels += pixels.total();
             ++sample.regions;
             encodedBytes += encoded.size();
-            if (plan.mode == "deepzoom")
+            if (pyramid)
             {
-                // 低层像素通过相同采样块缩小后编码，按各层面积加权。
-                cv::Mat half;
-                cv::resize(pixels, half, cv::Size(std::max(1, pixels.cols / 2), std::max(1, pixels.rows / 2)),
-                           0, 0, cv::INTER_AREA);
-                if (cv::imencode(".jpg", half, encoded, codec))
+                // 按层分别测有效负载，以该层的实际 JPEG 数量补回固定开销。
+                for (size_t level = 0; level < levels.size(); ++level)
                 {
-                    scaledDensity += static_cast<long double>(encoded.size()) / half.total();
-                    sample.pixels += half.total();
+                    if (canceled.load())
+                    {
+                        return ServiceResult::failure(1, "sampling canceled", "preview_canceled");
+                    }
+                    levelPixels[level] += pixels.total();
+                    levelPayload[level] += encoded.size() - std::min(encoded.size(), jpegOverhead);
+                    if (level + 1 == levels.size())
+                    {
+                        break;
+                    }
+                    const cv::Size half(pixels.cols / 2 + pixels.cols % 2, pixels.rows / 2 + pixels.rows % 2);
+                    cv::resize(pixels, pixels, half, 0, 0, cv::INTER_AREA);
+                    if (!cv::imencode(".jpg", pixels, encoded, codec))
+                    {
+                        return ServiceResult::failure(1, "sample encoding failed", "sample_unavailable");
+                    }
+                    sample.pixels += pixels.total();
                 }
             }
         }
     }
-    if (!full && sample.regions < 2)
+    if ((!full && sample.regions < 2) || placedTiles == 0)
     {
         return ServiceResult::failure(1, "not enough sample regions", "sample_unavailable");
     }
     const long double outputPixels = static_cast<long double>(out.width) * out.height;
-    const long double base = static_cast<long double>(encodedBytes) / primaryPixels * outputPixels;
-    const long double extra = plan.mode == "deepzoom" ? outputPixels * scaledDensity / sample.regions / 3 : 0;
-    const long double headers = plan.mode == "deepzoom" ? 512.0L * plan.files : 0;
-    const auto estimate = std::min<long double>(base + extra + headers, std::numeric_limits<uint64_t>::max() / 4);
+    long double estimate = static_cast<long double>(encodedBytes) / primaryPixels * outputPixels;
+    if (pyramid)
+    {
+        estimate = 4096; // DZI 清单和查看页。
+        for (size_t i = 0; i < levels.size(); ++i)
+        {
+            const auto &level = levels[i];
+            estimate += static_cast<long double>(levelPayload[i]) / levelPixels[i] * level.width * level.height +
+                        static_cast<long double>(jpegOverhead) * level.files();
+        }
+    }
+    estimate = std::min<long double>(estimate, std::numeric_limits<uint64_t>::max() / 4);
     const uint64_t previewBudget = cfg.generatePreview ? 8ULL * 1024 * 1024 : 0;
     const bool exactSample = full && !cfg.colorAdjust && out.format != "tiff" && plan.writeMode == "batch";
     sample.bytes = {static_cast<uint64_t>(estimate * (exactSample ? 0.97 : 0.65)),

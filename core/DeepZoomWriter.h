@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include "DeepZoomLayout.h"
 #include "UnicodeIO.h"
 #include "RuntimeContext.h"
 
@@ -7,7 +8,6 @@
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
-#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -50,21 +50,9 @@ public:
 
         const int totalW = cols * tileW;
         const int totalH = rows * tileH;
-        const int dziTileSize = 256;
-        auto ceilDiv = [](int a, int b) { return (a + b - 1) / b; };
-
-        int maxLevel = 0;
-        for (int dim = std::max(totalW, totalH); dim > 1; dim = (dim + 1) / 2)
-            ++maxLevel;
-
-        auto levelWidth = [&](int level) {
-            return std::max(1, static_cast<int>(
-                std::ceil(totalW / std::pow(2.0, maxLevel - level))));
-        };
-        auto levelHeight = [&](int level) {
-            return std::max(1, static_cast<int>(
-                std::ceil(totalH / std::pow(2.0, maxLevel - level))));
-        };
+        constexpr int dziTileSize = deepZoomTileSize;
+        const auto levels = deepZoomLevels(totalW, totalH);
+        const int maxLevel = static_cast<int>(levels.size()) - 1;
 
         fs::path sourceTilesDir = pyramidDir / "_source_tiles";
         fs::remove_all(sourceTilesDir, ec);
@@ -163,8 +151,8 @@ public:
                   << " mosaic tiles (" << tileW << "x" << tileH << ")"
                   << std::endl;
 
-        int fullCols = ceilDiv(totalW, dziTileSize);
-        int fullRows = ceilDiv(totalH, dziTileSize);
+        int fullCols = DeepZoomLevel::tiles(totalW);
+        int fullRows = DeepZoomLevel::tiles(totalH);
         std::cout << "  DZI level " << maxLevel << ": " << fullCols << "x" << fullRows
                   << " tiles (" << totalW << "x" << totalH << ")" << std::flush;
 
@@ -193,12 +181,14 @@ public:
 
         for (int level = maxLevel - 1; level >= 0; --level)
         {
-            int levelW = levelWidth(level);
-            int levelH = levelHeight(level);
-            int prevW = levelWidth(level + 1);
-            int prevH = levelHeight(level + 1);
-            int levelCols = ceilDiv(levelW, dziTileSize);
-            int levelRows = ceilDiv(levelH, dziTileSize);
+            const auto &current = levels[maxLevel - level];
+            const auto &previous = levels[maxLevel - level - 1];
+            int levelW = current.width;
+            int levelH = current.height;
+            int prevW = previous.width;
+            int prevH = previous.height;
+            int levelCols = DeepZoomLevel::tiles(levelW);
+            int levelRows = DeepZoomLevel::tiles(levelH);
 
             std::cout << "  DZI level " << level << ": " << levelCols << "x" << levelRows
                       << " tiles (" << levelW << "x" << levelH << ")" << std::flush;

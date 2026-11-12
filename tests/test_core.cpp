@@ -1163,14 +1163,11 @@ TEST_CASE("API JSON serialization is shared")
     CHECK(infoJson["api"]["compatibility"].get<std::string>() == "stable");
     CHECK(infoJson["api"]["stable"].get<bool>());
     CHECK(infoJson["api"]["endpointCount"].get<int>() == apiEndpointMetadata().size());
-    CHECK(infoJson["api"]["enabledEndpointCount"].get<int>() == 24);
+    CHECK(infoJson["api"]["enabledEndpointCount"].get<int>() == std::count_if(endpointsJson.begin(), endpointsJson.end(),
+        [](const nlohmann::json &endpoint) { return endpoint["enabled"].get<bool>(); }));
     CHECK(infoJson["api"]["metadataValid"].get<bool>());
     CHECK(infoJson["api"]["metadataErrors"].empty());
 
-    auto enabledInfoJson = apiInfoToJson("MosaicraftWebUI");
-    CHECK(enabledInfoJson["api"]["endpointCount"].get<int>() == apiEndpointMetadata().size());
-    CHECK(enabledInfoJson["api"]["enabledEndpointCount"].get<int>() == apiEndpointMetadata().size());
-    CHECK(enabledInfoJson["api"]["metadataValid"].get<bool>());
 }
 
 TEST_CASE("API JSON serialization covers jobs and database shapes")

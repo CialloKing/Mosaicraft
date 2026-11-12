@@ -8,7 +8,8 @@ const outputPlanning = (() => {
   const warningLabels = {
     output_scaled: '显式格式超过像素上限，输出 Tile 将缩小。',
     output_format_changed: '自动推导的格式超过像素上限，将使用 PNG。',
-    tile_aspect_mismatch: '输出 Tile 和图库素材的宽高比不同。'
+    tile_aspect_mismatch: '输出 Tile 和图库素材的宽高比不同。',
+    output_aspect_mismatch: '成品和工作图的宽高比相差超过 2%。'
   };
   let requestKey = '';
   let timer = 0;

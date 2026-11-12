@@ -396,7 +396,8 @@ try {
         "info", "endpoints", "submitMosaicJob", "submitBuildJob",
         "getJob", "cancelJob", "clearFinishedJobs", "databaseStats",
         "databaseHealth", "databaseUsage", "databaseUsageExport",
-        "databasePurge", "inspect"
+        "databasePurge", "inspect", "planMosaic", "mosaicCoverage", "openCatalog",
+        "submitMosaicSample", "previewQuality", "pinComparison", "submitComparison", "listHistory", "clearHistory"
     )
     foreach ($operation in $required) {
         Assert-True ($operations -contains $operation) "missing API operation: $operation"
@@ -574,6 +575,7 @@ try {
         $policyBody.lRange = 255
         if ($case.Explicit) { $policyBody.format = $case.Format }
         else { $policyBody.outputPath = Join-Path $outputDir ($case.Name + '.' + $case.Format) }
+        $preflight = (Invoke-Api -Method 'POST' -Path '/api/mosaic/plan' -Body $policyBody).plan
         if ($case.Explicit) {
             $policy = Invoke-Api -Method 'POST' -Path '/api/mosaic' -Body $policyBody
         }
@@ -583,6 +585,8 @@ try {
             Assert-True (-not ($policy.request.PSObject.Properties.Name -contains 'format')) 'inferred format became explicit restoration data'
         }
         $plan = $policy.runtime.outputPlan
+        Assert-True ($preflight.format -eq $plan.format -and $preflight.width -eq $plan.width -and
+                     $preflight.height -eq $plan.height -and $preflight.path -eq $plan.path) 'preflight disagrees with encoded output'
         Assert-True ($plan.format -eq $case.Expected -and [int]$plan.width -eq $case.Width) 'output plan dimensions/format incorrect'
         Assert-True ([int]$policy.runtime.width -eq $case.Width -and $policy.runtime.format -eq $case.Expected) 'saved output disagrees with plan'
         Assert-True ($plan.scaled -eq $case.Explicit -and $plan.formatChanged -ne $case.Explicit) 'wrong output adjustment policy'
@@ -674,6 +678,19 @@ try {
     Assert-True ($sample.state -eq 'succeeded' -and $sample.fileSample.regions -gt 0 -and $sample.fileSample.pixels -le 4000000) "sample did not use the bounded preview path"
     Assert-True (-not (Test-Path -LiteralPath $interactiveBody.outputPath)) "sampling wrote a mosaic"
     Invoke-Api -Method 'DELETE' -Path $samplePath | Out-Null
+    $comparison = (Invoke-Api -Method 'POST' -Path '/api/mosaic/preview/compare' -Body @{
+        a = @{ previewId = $grid.id }
+        b = @{ previewId = $grid.id; previewEdits = $interactiveBody.previewEdits }
+    }).preview
+    $comparisonPath = '/api/mosaic/preview/' + $comparison.id
+    $comparisonDeadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    do {
+        Start-Sleep -Milliseconds 100
+        $comparison = (Invoke-Api -Method 'GET' -Path $comparisonPath).preview
+    } while ($comparison.state -in @('queued', 'running') -and [DateTime]::UtcNow -lt $comparisonDeadline)
+    Assert-True ($comparison.state -eq 'succeeded' -and $comparison.comparison.compared -eq 4 -and
+                 $comparison.comparison.changed -eq 1 -and $comparison.comparison.changedMap[0] -eq 1) "A/B scoring did not use the edited grid"
+    Invoke-Api -Method 'DELETE' -Path $comparisonPath | Out-Null
     $interactiveExport = Invoke-Api -Method 'POST' -Path '/api/jobs/mosaic' -Body $interactiveBody
     $pinned = Wait-JobSucceeded -JobId $interactiveExport.job.id -Label 'interactive preview export' -ExpectedType 'mosaic' -ExpectedInputPath $targetPath -ExpectedOutputPath $interactiveBody.outputPath
     Assert-True ($pinned.runtime.metrics.reusedPreviewSelection -eq 1) "formal export did not reuse preview selection"
@@ -737,6 +754,11 @@ try {
     $missingArtifact = Invoke-ApiResponse -Method "GET" -Path ("/api/jobs/{0}/artifacts/preview" -f $completed.id)
     Assert-True ($missingArtifact.StatusCode -eq 404) "deleted artifact should return 404"
 
+    $history = (Invoke-Api -Method 'GET' -Path '/api/history').history
+    $saved = $history | Where-Object id -eq $pinned.id
+    Assert-True ($saved.runtime.quality.scored -eq 4 -and $saved.request.inputPath -eq $targetPath) "history omitted the job summary"
+    $cleared = Invoke-Api -Method 'DELETE' -Path '/api/history'
+    Assert-True ($cleared.removed -eq $history.Count -and (Test-Path -LiteralPath $main.path)) "clearing history affected saved output"
     Invoke-Api -Method "DELETE" -Path "/api/jobs" | Out-Null
     Write-Host "Web UI/API smoke passed: $script:BaseUrl"
 }

@@ -647,6 +647,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
           <tr><td>生成结果预览<br><code>--preview</code></td><td>正式生成单图时额外保存 <code>主图名_preview.jpg</code>，方便快速查看或分享；主图仍按设置保存。预览保持比例、不放大，宽度最多 1400、总像素最多 400 万，JPEG 质量固定 92；不能与分块或 DeepZoom 同用。预览写入失败时主图可能已经保存，查看任务结果确认。</td></tr>
           <tr><td>质量分析<br><code>--analyze</code></td><td>生成评分、素材频次、热力图及报告。完成后在“任务与结果”展开“质量分析”，从误差最大的格子中选一格对照目标裁块和入选素材。分数衡量亮度扰动与基础图叠加前的选图偏差，分数越高，偏差越大。</td></tr>
           <tr><td>性能分析<br><code>--benchmark</code></td><td>显示索引、匹配、输出等阶段耗时及缓冲统计；运行较慢、需要定位瓶颈时开启。并行阶段可能重叠，耗时不能直接相加。</td></tr>
+          <tr><td>资源监控</td><td>每秒采集进程 CPU 和驻留内存。CUDA 任务在驱动支持时还可显示所用设备的利用率、显存及进程显存。任务历史保留峰值和均值。</td></tr>
           <tr><td>自适应权重<br><code>--adaptive-weights</code></td><td>根据各目标块的平滑、边缘和纹理特征调整匹配权重。目标同时包含平坦区域和复杂纹理时可尝试，并与关闭时的结果比较；它会改变选图，不保证所有画面都更好。</td></tr>
           <tr><td>随机亮度调整<br><code>--color-adjust</code></td><td>选图后随机调整各素材块的 LAB 亮度，使块与块的亮度有变化；希望画面有更多细微变化时可开启。不会改变选图结果，也可能带来额外颜色转换。</td></tr>
           <tr><td>亮度扰动幅度<br><code>--color-strength</code></td><td>默认 0.04，范围 0～0.5；0.04 表示 L 通道相对乘数在约 ±4% 内随机变化，0 不改变像素。必须同时勾选“随机亮度调整”，只填写幅度不会启用；效果过强时调低。</td></tr>
@@ -657,6 +658,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
         </tbody>
       </table></div>
     </details>
+    <p>「输出规划」显示工作图、网格、成品尺寸和资源估算。有当前预览时，可用现有选图和输出参数采样缩小体积估算区间。「目标与图库覆盖」用目标格平均亮度和当前 L 范围统计候选数量。</p>
   </section>
 
   <section class="card" id="help-live-preview" aria-labelledby="help-live-preview-title">
@@ -675,6 +677,8 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       </tbody>
     </table></div>
     <p>实时预览会先匹配整张图，再按可见区域加载缩略图。视口内超过 16,000 格时会提示可能卡顿。随机亮度扰动在正式输出时应用。</p>
+    <p>打开「素材复用」可定位高频素材，开启误差图层可查看视口内合成前的选图偏差。保存方案 A 后调整匹配参数，再保存方案 B，可在同一目标、图库、网格和随机种子下比较。</p>
+    <p>「任务与结果」中的本地历史保留最近 100 个已结束任务。选择两条可比较摘要，也可将任意一条的参数恢复到表单。清除历史只删除这些摘要。</p>
   </section>
 
   <section class="card" id="help-build" aria-labelledby="help-build-title">

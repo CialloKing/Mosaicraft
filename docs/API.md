@@ -15,9 +15,9 @@ Both entries call the same core services for mosaic generation, library building
 `/api/info` 在 `entryPoints` 中暴露相同的入口边界，调用方可据此区分当前入口和支持的可执行入口集合。
 `/api/info` exposes the same entry point boundary in `entryPoints`, so callers can distinguish the current entry from the supported executable entry set.
 
-当前 API 版本为 **1.2**，主版本为 **1**。路由仍使用 /api/*，没有额外契约身份字段或强制版本请求头。旧别名和命令接口已删除；参数与错误规则见下文。图库只接受结构版本 1，旧库需在新目录重建，详见 [1.15.0 不兼容更新](BREAKING_1.15.0.md)。
+当前 API 版本为 **1.3**，主版本为 **1**。1.3 增加输出规划、目标覆盖、图库浏览、体积采样、预览评分与 A/B 对照、资源监控及任务历史。端点继续使用 `/api/*`，图库数据库结构版本为 1。
 
-API **1.2** adds manual tile replacement to interactive previews. Unsupported libraries must be rebuilt in a new directory.
+API **1.3** adds output planning, target coverage, a library catalog, size sampling, preview scoring and A/B comparison, resource monitoring, and task history. The library schema version remains 1.
 
 ---
 
@@ -39,6 +39,8 @@ Returns service version, entry name, structured API status, API contract version
 
 `info.runtime` 包含 `sessionId`、`workingDirectory`（相对路径解析目录）和 `finishedJobLimit: 50`。服务重启后会话 ID 改变，任务 ID 可能重新从 `job-000001` 开始；客户端必须将会话和任务 ID 一起识别。`info.features` 包含 `job-diagnostics`、`job-progress`、`job-artifacts`、`result-preview`；同时包含 `output-format-policy`。
 `info.runtime` identifies the current process session and working directory. Match jobs by session plus ID; IDs can repeat after a restart. Discover optional capabilities through `info.features`.
+
+1.3 功能标记包括 `mosaic-plan`、`mosaic-size-sample`、`library-visuals`、`preview-quality`、`task-resources`、`preview-comparison` 和 `task-history`。
 
 ### `GET /api/endpoints`
 
@@ -237,6 +239,8 @@ Returns the complete snapshot. `outputPath` retains its requested-path meaning; 
 
 异步建库和生成接受可选 `resourceMonitor: true`。`runtime.resources.samples` 最多保存最近 600 个约每秒采集的样本，含相对时间 `elapsedMs`、`cpuPct`（单核为 100%）、`rssBytes`、`gpuPct`、`deviceVramBytes` 和 `processVramBytes`。缺测值为 `null`。`summary` 汇总整个任务的可用样本峰值和均值。开启 `benchmark` 后的耗时子阶段可能重叠。
 
+`gpuPct` 和 `deviceVramBytes` 描述运行 CUDA 的设备。进程显存以驱动可提供的数据为准，Windows WDDM 下可能缺测。 [NVIDIA NVML 进程显存文档](https://docs.nvidia.com/deploy/nvml-api/620/api/structnvmlProcessInfo__t.html)
+
 主图成功、预览或使用统计随后失败时，任务按原规则失败，已经保存的 `main` 产物仍然可用。报告失败沿用原有软失败/异常与提交边界。
 
 ### `GET /api/jobs/{id}/events?after=0&limit=100`
@@ -283,9 +287,11 @@ Cancels a queued job. Running jobs are not interrupted and return HTTP 409.
 
 规划接受标准生成参数，返回 `plan` 中的工作图、网格、成品尺寸、有效 Tile、实际格式、路径、文件数量上界及警告。`rawBytes` 为未压缩 RGB 体积，`matchingRam`、`matchingVram`、`writingRam`、`fileBytes` 为 `{low, high}` 字节估算。CPU 构建或强制 CPU 时显存项为空。规划不执行匹配或写入输出。
 
-采样额外接受 `previewId` 和可选 `previewEdits`，返回 202。通过现有预览 GET/DELETE 接口查询或取消。成功状态含 `preview.fileSample`，记录 `bytes`、`pixels` 和 `regions`。采样使用当前预览的素材安排与输出参数，成功时仍返回估算区间。
+采样额外接受 `previewId` 和可选 `previewEdits`，返回 202。通过现有预览 GET/DELETE 接口查询或取消。成功状态含 `preview.fileSample`，记录 `bytes`、`pixels` 和 `regions`。最多抽取 16 个区域、编码 400 万像素。分块按 JPEG 文件数外推，DeepZoom 按各层的像素和 JPEG 文件数外推。采样成功后返回估算区间。
 
 预估区间以平色、渐变和随机纹理样本的编码结果校准。独立的 Windows CPU 验收使用 37×65 目标图、5×5 网格、18×32 输出 Tile 和固定选图。JPG、WebP、PNG、TIFF 的实际体积均落在模型和采样区间内。采样区间中点误差分别为 0.0%、0.2%、0.1%、33.0%，样本仅覆盖这一组参数。
+
+另一组留出样本用 73×99 目标图和 9×7 网格。分块 JPEG 和 DeepZoom 的实际体积分别为 40,506 和 12,695 字节，均落在两种区间内。采样中点误差分别为 7.5% 和 20.5%。各层 JPEG 和查看文件数与规划一致。
 
 ### `POST /api/mosaic`
 

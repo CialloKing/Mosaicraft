@@ -1,6 +1,7 @@
 #include "MosaicPlanning.h"
 
 #include "Database.h"
+#include "DeepZoomLayout.h"
 #include "MatchingBatch.h"
 #include "MosaicOutput.h"
 #include "RequestValidation.h"
@@ -76,16 +77,10 @@ void estimateFileRange(MosaicPlan &plan, const MosaicEngine::Config &config)
     {
         plan.files = 2; // DZI 清单和查看页。
         pixels = 0;
-        for (;;)
+        for (const auto &level : deepZoomLevels(plan.output.width, plan.output.height))
         {
-            plan.files += divUp(width, 256) * divUp(height, 256);
-            pixels += static_cast<long double>(width) * height;
-            if (width == 1 && height == 1)
-            {
-                break;
-            }
-            width = divUp(width, 2);
-            height = divUp(height, 2);
+            plan.files += level.files();
+            pixels += static_cast<long double>(level.width) * level.height;
         }
     }
     if (config.generatePreview)
@@ -123,9 +118,12 @@ void estimateFileRange(MosaicPlan &plan, const MosaicEngine::Config &config)
         low = 0.015;
         high = 4.7;
     }
-    const long double headers = 512.0L * plan.files;
+    const uint64_t jpegFiles = format == "jpg" ? plan.files - (plan.mode == "deepzoom" ? 2 : config.generatePreview) : 0;
+    const long double headers = 700.0L * jpegFiles + 512.0L * (plan.files - jpegFiles) +
+                                (plan.mode == "deepzoom" ? 4096.0L : 0);
     const long double preview = config.generatePreview ? 8.0L * MiB : 0;
-    plan.fileBytes = {boundedBytes(pixels * low), boundedBytes(pixels * high + headers + preview)};
+    plan.fileBytes = {boundedBytes(pixels * low + 600.0L * jpegFiles),
+                      boundedBytes(pixels * high + headers + preview)};
 }
 } // namespace
 
@@ -274,6 +272,12 @@ ServiceResult planMosaic(MosaicRequest request, MosaicPlan &plan)
     if (std::abs(double(plan.libraryWidth) / plan.libraryHeight - double(plan.output.tileWidth) / plan.output.tileHeight) > 0.02)
     {
         plan.warnings.push_back("tile_aspect_mismatch");
+    }
+    const double targetAspect = double(plan.target.width) / plan.target.height;
+    const double outputAspect = double(plan.output.width) / plan.output.height;
+    if (std::abs(outputAspect / targetAspect - 1.0) > 0.02)
+    {
+        plan.warnings.push_back("output_aspect_mismatch");
     }
 
     const uint64_t count = uint64_t(plan.target.columns) * plan.target.rows;
