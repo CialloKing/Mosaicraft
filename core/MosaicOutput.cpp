@@ -1,5 +1,6 @@
 ﻿#include "MosaicOutput.h"
 #include "RuntimeContext.h"
+#include "BrightnessAdjustment.h"
 #include "OutputPlan.h"
 #include "BigTiffWriter.h"
 #include "DeepZoomWriter.h"
@@ -120,7 +121,8 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
             throw std::invalid_argument("overlayStrength must be finite and between 0 and 1");
         }
         const unsigned workers = static_cast<unsigned>(
-            std::min<size_t>(count, std::min(8u, std::max(1u, std::thread::hardware_concurrency()))));
+            std::min<size_t>(count, config.threads > 0 ? static_cast<unsigned>(config.threads)
+                : std::min(8u, std::max(1u, std::thread::hardware_concurrency()))));
         std::unique_ptr<TileCompositor> compositor;
         if (config.overlayStrength > 0)
         {
@@ -178,7 +180,14 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
                 cv::Mat adjusted = image->clone();
                 if (config.colorAdjust)
                 {
-                    adjustColor(adjusted, config.colorStrength);
+                    if (config.seed)
+                    {
+                        detail::adjustBrightnessAt(adjusted, config.colorStrength, *config.seed, i);
+                    }
+                    else
+                    {
+                        adjustColor(adjusted, config.colorStrength);
+                    }
                 }
                 if (compositor)
                 {

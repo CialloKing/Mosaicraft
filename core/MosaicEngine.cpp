@@ -242,6 +242,18 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         return false;
     }
     Config cfg = validated.config;
+    if (cfg.seed)
+    {
+        m_fixedSeed = true;
+        m_seed = *cfg.seed;
+    }
+    else if (!m_fixedSeed)
+    {
+        m_fixedSeed = true;
+        m_seed = std::random_device{}();
+    }
+    cfg.seed = m_seed;
+    runtime.metric("seed", m_seed);
     if (m_selectionOptions.enabled() &&
         (!std::isfinite(m_selectionOptions.relative) || m_selectionOptions.relative < 0 ||
          !std::isfinite(m_selectionOptions.absolute) || m_selectionOptions.absolute < 0 || cfg.analyze))
@@ -266,9 +278,14 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     {
         return m_cancelPreview && m_cancelPreview->load(std::memory_order_relaxed);
     };
-    const bool useGpu = cfg.useGpu && !m_renderSelection;
+    const bool useGpu = cfg.useGpu && cfg.backend != BackendPolicy::Cpu && !m_renderSelection;
     const auto preflight = useGpu ? cuda::queryCudaAvailability() : cuda::CudaAvailability{};
     const bool cudaEnabled = useGpu && preflight.available;
+    if (cfg.backend == BackendPolicy::Cuda && !cudaEnabled)
+    {
+        return runtime.fail("cuda_required", "CUDA was explicitly requested but is unavailable: " + preflight.reason,
+                            "backend");
+    }
     if (cudaEnabled)
     {
         runtime.gpuDevice(preflight.pciBus);
@@ -847,7 +864,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
         const auto &report = m_renderSelection && !m_renderSelection->manualEdits
             ? m_renderSelection->analysis : diagnostics;
-        const auto usage = detail::writeAnalysisReport(
+        detail::writeAnalysisReport(
             detail::AnalysisReportContext{
                 outputConfig, analysisOutputPath, target,        totalTiles,      tilesX,
                 tilesY,       outTileW,           outTileH,      featW,           featH,
@@ -855,6 +872,12 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 report.grid,  report.edge,       report.gaps,   report.ranks,    report.annRanks,
                 report.categories, report.gridCells, report.worstTiles, allRecords, bestLibIdx},
             &runtime);
+        // 使用记录来自最终排列，不依赖可选的分析报告是否生成。
+        std::unordered_map<int, int> usage;
+        for (int index : bestLibIdx)
+        {
+            if (index >= 0) { ++usage[allRecords.at(index).id]; }
+        }
         if (db.isOpen() && !usage.empty() && !db.recordRunUsage(usage, targetHash, targetPath))
         {
             runtime.fail("usage_commit_failed", "mosaic output saved, but usage statistics could not be committed",
@@ -1058,9 +1081,13 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         {
             reportMatching(0);
         }
-        WorkerPool queryWorkers;
+        WorkerPool queryWorkers(cfg.threads > 0 ? static_cast<unsigned>(cfg.threads) : 0);
         unsigned featureThreads = templateCuda ? std::min(8u, std::max(1u, std::thread::hardware_concurrency()))
                                              : std::max(2u, std::thread::hardware_concurrency());
+        if (cfg.threads > 0)
+        {
+            featureThreads = std::min(featureThreads, static_cast<unsigned>(cfg.threads));
+        }
         WorkerPool featureWorkers(static_cast<unsigned>(std::min<size_t>(batchRows, featureThreads)));
         std::unique_ptr<cuda::FeatureWorkspace> workspace;
         std::unique_ptr<cuda::ScoreWorkspace> scoreWorkspace;

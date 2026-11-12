@@ -55,7 +55,7 @@ inline bool validateMosaicRequest(MosaicRequest &request, std::string &error, st
         error = "overlayStrength must be finite and between 0 and 1";
         return false;
     }
-    if (cfg.tileW < 4 || cfg.tileH < 4 || !validImageSize(cfg.tileW, cfg.tileH) ||
+    if (cfg.threads < 0 || cfg.threads > 256 || cfg.tileW < 4 || cfg.tileH < 4 || !validImageSize(cfg.tileW, cfg.tileH) ||
         !validImageSize(cfg.nativeTileW, cfg.nativeTileH) || cfg.outW < 0 || cfg.outH < 0 || cfg.outW > 1000000 ||
         cfg.outH > 1000000 || cfg.upscale < 0 || cfg.upscale > 64 || cfg.candidates < 1 || cfg.candidates > 10000 ||
         cfg.topNRandom < 1 || cfg.topNRandom > 10000 || cfg.neighborWindow < 0 || cfg.neighborWindow > 1000000 ||

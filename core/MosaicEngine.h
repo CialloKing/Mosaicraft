@@ -1,6 +1,7 @@
 #pragma once
 #include "MatchingBatch.h"
 #include "SelectionPolicy.h"
+#include "ExecutionOptions.h"
 
 #include <iostream>
 #include <atomic>
@@ -17,6 +18,10 @@ class MosaicEngine
 public:
     struct Config
     {
+        OutputMode outputMode = OutputMode::Image;
+        BackendPolicy backend = BackendPolicy::Auto;
+        std::optional<uint32_t> seed;
+        int threads = 0;
         int tileW = 9;          // 默认 9×16（图库 180×320 的等比缩小），最大化 tile 数量
         int tileH = 16;
         int candidates = 150;  // 105K图库 sweep: 150≈200≈300, 最佳平衡点

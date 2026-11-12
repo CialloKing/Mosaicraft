@@ -347,7 +347,13 @@ static ServiceResult runBuild(const BuildRequest &request, RuntimeContext &runti
 
     runtime.stage("preparing_images");
     FeatureExtractor extractor;
-    const auto preflight = request.normalizeOnly ? cuda::CudaAvailability{} : cuda::queryCudaAvailability();
+    const auto preflight = request.normalizeOnly || request.backend == BackendPolicy::Cpu
+        ? cuda::CudaAvailability{} : cuda::queryCudaAvailability();
+    if (request.backend == BackendPolicy::Cuda && !preflight.available)
+    {
+        return runtimeFailure(runtime, 4, "CUDA was explicitly requested but is unavailable: " + preflight.reason,
+                              "cuda_required", "backend");
+    }
     if (preflight.available)
     {
         runtime.gpuDevice(preflight.pciBus);
