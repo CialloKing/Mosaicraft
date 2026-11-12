@@ -22,9 +22,10 @@ class ProjectService
     ServiceResult render(const ProjectRequest &request, RuntimeContext &runtime) const;
 };
 
-bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &directory, int columns, int rows,
-                      const std::vector<ImageRecord> &library, const std::vector<int> &selection, const cv::Mat &target,
-                      OutputStats &stats, RuntimeContext &runtime);
+bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &directory, const std::string &targetPath,
+                      int columns, int rows, const std::vector<ImageRecord> &library,
+                      const std::vector<int> &selection, const cv::Mat &target, OutputStats &stats,
+                      RuntimeContext &runtime, bool copyPreparedTarget = false);
 std::string sha256File(const std::filesystem::path &path);
 void finalizeHtmlProject(const std::string &directory, RuntimeContext &runtime);
 } // namespace mosaicraft

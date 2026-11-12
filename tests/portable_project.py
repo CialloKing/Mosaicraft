@@ -62,6 +62,22 @@ def main():
         assert all(Path(a['path']).name in names for a in manifest['assets'])
         assert len(list((root / 'artwork').rglob('*.*'))) == len(manifest['assets']) + 3
         run('project', 'check', 'artwork/index.html', '--deep')
+        # Preserve the stem and codec policy; re-export must not recompress a prepared JPEG.
+        for suffix in ('jpg', 'JPEG', 'PNG', 'webp'):
+            original = f'原目标图 # % 𠮷.{suffix}'
+            target_name = Path(original).with_suffix('.png').name if suffix == 'webp' else original
+            signature = b'\xff\xd8' if suffix in ('jpg', 'JPEG') else b'\x89PNG\r\n\x1a\n'
+            first, again = f'named-{suffix}', f'again-{suffix}'
+            run('render', 'artwork', '-o', original, '--output-tile', '18x32')
+            run('create', original, '-l', 'library', '-o', first, '--mode', 'html',
+                '--backend', 'cpu', '--seed', 42, '--l-range', 255)
+            run('render', first, '-o', again, '--mode', 'html')
+            for directory in (first, again):
+                named = json.loads((root / directory / 'project.json').read_text(encoding='utf-8'))
+                assert named['target'] == target_name
+                assert (root / directory / target_name).read_bytes().startswith(signature)
+                run('project', 'check', directory, '--deep')
+            assert (root / first / target_name).read_bytes() == (root / again / target_name).read_bytes()
         # Distinct content with the same name must survive without renaming; identical bytes copy once.
         fixture = root / 'same-names'
         fixture.mkdir()

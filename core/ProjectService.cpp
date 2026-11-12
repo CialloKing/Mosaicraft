@@ -1,6 +1,7 @@
 #include "ProjectService.h"
 #include "ExecutionScope.h"
 #include "OutputPublication.h"
+#include "OutputPlan.h"
 #include "PortableViewer.h"
 #include "RequestValidation.h"
 #include "UnicodeIO.h"
@@ -224,11 +225,11 @@ void saveText(const fs::path &path, const std::string &text)
     }
 }
 
-void saveImage(const fs::path &path, const cv::Mat &image)
+void saveImage(const fs::path &path, const cv::Mat &image, const std::string &format)
 {
     if (!imwriteUnicode(pathToUtf8(path), image,
-                        path.extension() == ".png" ? std::vector<int>{cv::IMWRITE_PNG_COMPRESSION, 1}
-                                                   : std::vector<int>{cv::IMWRITE_JPEG_QUALITY, 90}))
+                        format == "png" ? std::vector<int>{cv::IMWRITE_PNG_COMPRESSION, 1}
+                                        : std::vector<int>{cv::IMWRITE_JPEG_QUALITY, 90}))
     {
         throw std::runtime_error("cannot encode project resource: " + pathToUtf8(path));
     }
@@ -257,9 +258,10 @@ std::string sha256File(const fs::path &path)
     return picosha2::get_hash_hex_string(hash);
 }
 
-bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &directory, int columns, int rows,
-                      const std::vector<ImageRecord> &library, const std::vector<int> &selection, const cv::Mat &target,
-                      OutputStats &stats, RuntimeContext &runtime)
+bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &directory, const std::string &targetPath,
+                      int columns, int rows, const std::vector<ImageRecord> &library,
+                      const std::vector<int> &selection, const cv::Mat &target, OutputStats &stats,
+                      RuntimeContext &runtime, bool copyPreparedTarget)
 {
     try
     {
@@ -269,6 +271,13 @@ bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &dir
         }
         runtime.stage("exporting_project");
         const auto root = u8path(directory);
+        const auto source = u8path(targetPath);
+        const auto extension = pathToUtf8(source.extension());
+        const auto sourceFormat = detail::normalizeOutputFormat(extension.empty() ? extension : extension.substr(1));
+        const std::string targetFormat = sourceFormat == "jpg" ? "jpg" : "png";
+        // 仅 JPEG 来源使用 JPEG；其他格式统一 PNG，文件主名和合法后缀写法沿用来源。
+        const auto targetName = detail::outputPathForFormat(pathToUtf8(source.filename()), targetFormat);
+        const auto targetFile = resourcePath(root, targetName);
         fs::create_directories(root / "assets");
         json manifest{
             {"type", "mosaicraft-project"},
@@ -278,7 +287,7 @@ bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &dir
             {"seed", config.seed.value_or(0)},
             {"appearance", {{"targetBlend", config.overlayStrength}, {"brightnessJitter", 0}}},
             {"entry", "index.html"},
-            {"target", "target.png"},
+            {"target", targetName},
             {"assets", json::array()},
             {"layout", json::array()},
             {"resources", json::array()}};
@@ -339,8 +348,20 @@ bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &dir
             }
             manifest["layout"].push_back(remap.at(index));
         }
-        saveImage(root / "target.png", target);
-        addResource("target.png", target.size());
+        if (copyPreparedTarget && (sourceFormat == "jpg" || sourceFormat == "png"))
+        {
+            // 已存工作目标无需再次预处理，直接复制避免 JPEG 回导时反复有损压缩。
+            fs::copy_file(source, targetFile);
+            if (sha256File(source) != sha256File(targetFile))
+            {
+                throw std::runtime_error("prepared target changed while being copied");
+            }
+        }
+        else
+        {
+            saveImage(targetFile, target, targetFormat);
+        }
+        addResource(targetName, target.size());
         auto snapshot = browseSnapshot(manifest).dump(-1, ' ', true);
         // JSON 放入 script 文本时必须转义 <，素材名不能提前结束元素。
         size_t at = 0;
@@ -600,7 +621,8 @@ ServiceResult ProjectService::render(const ProjectRequest &request, RuntimeConte
                 verifyResource(project, resource, true);
             }
         }
-        const auto target = imreadUnicode(pathToUtf8(resourcePath(project.root, manifest["target"])));
+        const auto targetPath = pathToUtf8(resourcePath(project.root, manifest["target"]));
+        const auto target = imreadUnicode(targetPath);
         const int columns = manifest["grid"]["columns"], rows = manifest["grid"]["rows"];
         if (target.cols != int64_t(columns) * manifest["grid"]["matchTile"][0].get<int>() ||
             target.rows != int64_t(rows) * manifest["grid"]["matchTile"][1].get<int>())
@@ -616,7 +638,8 @@ ServiceResult ProjectService::render(const ProjectRequest &request, RuntimeConte
         runtime.metric("seed", *config.seed);
         runtime.backends("none", "none");
         const bool ok = config.outputMode == OutputMode::Html
-                            ? writeHtmlProject(config, path, columns, rows, assets, selection, target, stats, runtime)
+                            ? writeHtmlProject(config, path, targetPath, columns, rows, assets, selection, target,
+                                               stats, runtime, true)
                             : writeIndexedMosaicOutput(
                                   config, config.outputMode == OutputMode::Image ? path : path + "/index", columns,
                                   rows, config.nativeTileW, config.nativeTileH, assets, selection,

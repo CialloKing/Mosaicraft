@@ -94,3 +94,13 @@ GPU 为 NVIDIA GeForce RTX 4060 Laptop GPU，驱动 621.14。严格 CUDA 检查�
 新命令及工程契约见 [CLI 与工程说明](CLI_PROJECTS.md)，接口见 [API](API.md)。后续平台验收及正式发版遵循 [发布检查表](RELEASE_CHECKLIST.md)，不要求重建现有有效图库。
 
 项目内 45,613 张真实图库与 target.png 的追加集成验证见 [HTML 真实数据验收](HTML_PROJECT_REAL_DATA_VERIFICATION.md)，包含实际工程、浏览截图、字节一致性及解压回导结果。
+
+## 目标图原名与编码选择（2026-11-12）
+
+当前 HTML 导出保留目标输入文件主名，`.jpg`/`.jpeg`（不区分大小写）保存为 JPEG，质量 90；PNG 和其他来源保存为 PNG，兼容的原后缀及大小写保留。HTML 再导出直接复制已存 JPEG/PNG 工作目标，避免重新编码造成 JPEG 累积损失。清单和内嵌快照继续使用同一目标资源路径，不新增格式字段。
+
+- Windows CUDA CLI/Web UI 构建通过。复用 `ctest --test-dir build/windows-cuda -C Release -R '^portable_project$' --output-on-failure` 通过（1/1），新增的精简检查覆盖 JPG、JPEG、PNG、WebP 输入，中文、空格、`#`、`%` 和生僻字名称、实际编码签名、再导出目标字节一致及深度完整性检查。既有 `target.png` 工程、移动、打包和失败边界回归继续通过。
+- 用合成图片创建 `原目标图 # % 𠮷.JPEG` 便携工程，确认目标名称、编码和再导出字节保留，深度检查通过。`tests/browser_project.cjs` 在 Chromium 151.0.7922.34、Firefox 153.0 上通过该 JPEG 工程的离线目标参考/叠加、百万格局部加载及初始 256 / 最大 16384 的缩放检查。
+- 本次数据和日志保存在忽略目录 `build/zoom-16384-20261112/`（`target-codec-*` 及 `target-codec/`）；只使用合成素材。旧工程缺少原文件名记录，仍保留其清单已有的 `target.png`，不根据目录名猜测来源。
+
+以上为此次功能验证，发布及其他平台的最终状态以发布包审计为准，不改变本文之前各节的历史验收边界。
