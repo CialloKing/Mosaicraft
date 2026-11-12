@@ -587,18 +587,14 @@ const interactivePreview = (() => {
     }
     pendingLoads = [];
     nextLoad = 0;
-    const cx = (visible.x0 + visible.x1) / 2;
-    const cy = (visible.y0 + visible.y1) / 2;
+    const candidates = [];
     for (const [key, url] of wanted) {
       touch(key);
       if (cache.has(key) || loading.has(key) || failed.get(key) === url) continue;
-      let distance = showReference && key.startsWith('reference:') ? -1 : Infinity;
-      for (const slot of slotsByAsset.get(key) ?? []) {
-        distance = Math.min(distance, (slot.x + slot.w / 2 - cx) ** 2 + (slot.y + slot.h / 2 - cy) ** 2);
-      }
-      pendingLoads.push([key, url, distance]);
+      candidates.push(key);
     }
-    pendingLoads.sort((a, b) => a[2] - b[2]);
+    pendingLoads = MosaicraftViewport.centerFirst(candidates, slotsByAsset, visible,
+      showReference ? 'reference:' + plan.id : '').map(key => [key, wanted.get(key)]);
   }
 
   function loadImages() {

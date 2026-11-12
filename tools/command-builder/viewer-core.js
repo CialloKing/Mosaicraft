@@ -1,4 +1,4 @@
-// 共用视口几何；实时预览保留自己的预算，离线工程缓存默认不设上限。
+// 共用窗口几何和中心优先队列；离线工程按窗口保留位图，不设置大小上限。
 const MosaicraftViewport = (() => {
   const cacheBudget = 64 * 1024 * 1024;
   const parallelLoads = 8;
@@ -40,6 +40,21 @@ const MosaicraftViewport = (() => {
     }
     return bands;
   }
+  function centerFirst(keys, slotsByAsset, visible, priorityKey = '') {
+    const cx = (visible.x0 + visible.x1) / 2, cy = (visible.y0 + visible.y1) / 2;
+    return Array.from(keys, key => {
+      let distance = key === priorityKey ? -1 : Infinity;
+      for (const slot of slotsByAsset.get(key) ?? []) {
+        distance = Math.min(distance, (slot.x + slot.w / 2 - cx) ** 2 + (slot.y + slot.h / 2 - cy) ** 2);
+      }
+      return {key, distance};
+    }).sort((a, b) => a.distance - b.distance).map(item => item.key);
+  }
+  function releaseBitmap(bitmap) {
+    if (typeof bitmap.close === 'function') bitmap.close();
+    else if (typeof bitmap.removeAttribute === 'function') bitmap.removeAttribute('src');
+    else bitmap.src = '';
+  }
   class BitmapCache {
     constructor(budget = Infinity) { this.budget = budget; this.bytes = 0; this.entries = new Map(); }
     get(key) {
@@ -48,21 +63,29 @@ const MosaicraftViewport = (() => {
       if (Number.isFinite(this.budget)) { this.entries.delete(key); this.entries.set(key, item); }
       return item.image;
     }
+    delete(key) {
+      const item = this.entries.get(key);
+      if (!item) return;
+      this.entries.delete(key); this.bytes -= item.bytes;
+      releaseBitmap(item.image);
+    }
+    retain(keys) {
+      for (const key of this.entries.keys()) if (!keys.has(key)) this.delete(key);
+    }
     add(key, image) {
-      const bytes = image.naturalWidth * image.naturalHeight * 4;
-      if (bytes > this.budget) { image.src = ''; return; }
+      const bytes = (image.naturalWidth ?? image.width) * (image.naturalHeight ?? image.height) * 4;
+      if (bytes > this.budget) { releaseBitmap(image); return; }
       const previous = this.entries.get(key);
       if (previous) {
         this.entries.delete(key); this.bytes -= previous.bytes;
-        if (previous.image !== image) previous.image.src = '';
+        if (previous.image !== image) releaseBitmap(previous.image);
       }
       while (this.bytes + bytes > this.budget && this.entries.size) {
-        const [oldKey, old] = this.entries.entries().next().value;
-        this.entries.delete(oldKey); this.bytes -= old.bytes;
-        old.image.src = '';
+        this.delete(this.entries.keys().next().value);
       }
       this.entries.set(key, {image, bytes}); this.bytes += bytes;
     }
   }
-  return {cacheBudget, parallelLoads, maxTileHeight, clamp, clip, geometry, visible, pixelBands, BitmapCache};
+  return {cacheBudget, parallelLoads, maxTileHeight, clamp, clip, geometry, visible, pixelBands,
+    centerFirst, releaseBitmap, BitmapCache};
 })();

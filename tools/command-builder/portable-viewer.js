@@ -26,10 +26,24 @@
       if (!wanted.has(key) || cache.get(key) || loading.has(key) || failed.has(key)) continue;
       const image = new Image();
       loading.set(key, image);
-      image.onload = () => {
+      image.onload = async () => {
         if (loading.get(key) !== image) return;
-        loading.delete(key); cache.add(key, image); dirty.add(key);
-        schedule(key === targetPath); pump();
+        let bitmap;
+        try {
+          // file:// 无需 fetch；位图可在离开窗口时 close，避免只移除 Image 引用却保留解码资源。
+          bitmap = typeof createImageBitmap === 'function' ? await createImageBitmap(image) : image;
+          if (loading.get(key) !== image || !wanted.has(key) || !MosaicraftViewport.clip(canvas)) {
+            MosaicraftViewport.releaseBitmap(bitmap);
+            return;
+          }
+          cache.add(key, bitmap); dirty.add(key);
+        } catch {
+          if (loading.get(key) === image && wanted.has(key)) failed.add(key);
+        } finally {
+          if (bitmap !== image) image.removeAttribute('src');
+          if (loading.get(key) === image) loading.delete(key);
+          schedule(key === targetPath); pump();
+        }
       };
       image.onerror = () => {
         if (loading.get(key) !== image) return;
@@ -45,6 +59,14 @@
       image.removeAttribute('src');
       loading.delete(key);
     }
+    cache.retain(wanted);
+  }
+  function visibilityChanged() {
+    if (!MosaicraftViewport.clip(canvas)) {
+      wanted.clear(); groups.clear(); queue = []; next = 0;
+      cancelOutside(); dirty.clear(); repaint = true;
+    }
+    schedule();
   }
   function minimum() { return Math.min(canvas.clientWidth / (columns * aspect), canvas.clientHeight / rows); }
   function maximum() { return Math.max(MosaicraftViewport.maxTileHeight, minimum()); }
@@ -103,8 +125,8 @@
       wanted = new Set(groups.keys());
       if (reference || data.appearance.targetBlend > 0) wanted.add(targetPath);
       cancelOutside();
-      // 参考图优先，剩余资源只按可见区域排队；缓存不因大小或格子数而淘汰。
-      queue = wanted.has(targetPath) ? [targetPath, ...groups.keys()] : [...wanted];
+      // 与实时预览共用按格子中心到窗口中心的距离排序，同一素材只排一次。
+      queue = MosaicraftViewport.centerFirst(wanted, groups, clip, reference ? targetPath : '');
       next = 0;
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       context.globalAlpha = 1; context.fillStyle = '#222'; context.fillRect(0, 0, width, height);
@@ -117,7 +139,7 @@
       for (const key of dirty) drawGroup(key);
     }
     dirty.clear();
-    status.textContent = `${columns} × ${rows} · ${data.assets.length} 素材 · 视口浏览${scale === maximum() ? ' · 最大缩放' : ''} · 可见 ${visibleCells} 格 · 已加载 ${cache.entries.size} · 缓存 ${(cache.bytes / 1048576).toFixed(1)} MiB${failed.size ? ` · ${failed.size} 个资源读取失败（浏览器可能不支持原格式）` : ''}`;
+    status.textContent = `${columns} × ${rows} · ${data.assets.length} 素材 · 窗口浏览${scale === maximum() ? ' · 最大缩放' : ''} · 可见 ${visibleCells} 格 · 已加载 ${cache.entries.size} · 缓存 ${(cache.bytes / 1048576).toFixed(1)} MiB${failed.size ? ` · ${failed.size} 个资源读取失败（浏览器可能不支持原格式）` : ''}`;
     pump();
   }
   function zoom(factor, x = canvas.clientWidth / 2, y = canvas.clientHeight / 2) {
@@ -144,17 +166,19 @@
     document.getElementById('material-label').textContent = `${asset.path.split('/').pop()} · ${asset.width} × ${asset.height} · 格子 ${x}, ${y}`;
     material.showModal();
   });
-  document.getElementById('close').onclick = () => { material.close(); document.getElementById('material-image').removeAttribute('src'); };
+  document.getElementById('close').onclick = () => material.close();
+  material.addEventListener('close', () => document.getElementById('material-image').removeAttribute('src'));
   document.getElementById('fit').onclick = () => { fitted = true; schedule(); };
   document.getElementById('in').onclick = () => zoom(1.6);
   document.getElementById('out').onclick = () => zoom(1 / 1.6);
   document.getElementById('reference').onclick = e => { reference = !reference; e.target.setAttribute('aria-pressed', String(reference)); schedule(); };
   document.getElementById('fullscreen').onclick = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { status.textContent = '浏览器不允许全屏。'; } };
-  new ResizeObserver(() => schedule()).observe(canvas);
-  new IntersectionObserver(() => schedule()).observe(canvas);
-  window.addEventListener('scroll', () => schedule(), {passive: true, capture: true});
-  window.visualViewport?.addEventListener('scroll', () => schedule(), {passive: true});
-  window.visualViewport?.addEventListener('resize', () => schedule(), {passive: true});
-  document.addEventListener('visibilitychange', () => schedule());
+  new ResizeObserver(visibilityChanged).observe(canvas);
+  new IntersectionObserver(visibilityChanged).observe(canvas);
+  window.addEventListener('scroll', visibilityChanged, {passive: true, capture: true});
+  window.visualViewport?.addEventListener('scroll', visibilityChanged, {passive: true});
+  window.visualViewport?.addEventListener('resize', visibilityChanged, {passive: true});
+  document.addEventListener('visibilitychange', visibilityChanged);
+  window.addEventListener('pagehide', () => { wanted.clear(); cancelOutside(); });
   schedule();
 })();
