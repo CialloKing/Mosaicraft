@@ -2,7 +2,18 @@
 const MosaicraftViewport = (() => {
   const cacheBudget = 64 * 1024 * 1024;
   const parallelLoads = 8;
+  const maxTileHeight = 256;
   const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
+  function clip(canvas) {
+    if (document.hidden || !canvas.clientWidth || !canvas.clientHeight) return null;
+    const rect = canvas.getBoundingClientRect(), visual = window.visualViewport;
+    const left = visual?.offsetLeft ?? 0, top = visual?.offsetTop ?? 0;
+    const right = left + (visual?.width ?? document.documentElement.clientWidth);
+    const bottom = top + (visual?.height ?? document.documentElement.clientHeight);
+    const x0 = Math.max(0, left - rect.left), y0 = Math.max(0, top - rect.top);
+    const x1 = Math.min(rect.width, right - rect.left), y1 = Math.min(rect.height, bottom - rect.top);
+    return x1 > x0 && y1 > y0 ? {x0, y0, x1, y1} : null;
+  }
   function geometry(width, height, columns, rows, aspect, scale, centerX, centerY) {
     const tw = scale * aspect, th = scale;
     const worldW = tw * columns, worldH = th * rows;
@@ -17,6 +28,17 @@ const MosaicraftViewport = (() => {
       firstRow: clamp(Math.floor((clip.y0 - g.y) / g.th), 0, rows),
       lastRow: clamp(Math.ceil((clip.y1 - g.y) / g.th), 0, rows)
     };
+  }
+  function pixelBands(first, last, origin, step, ratio) {
+    const bands = [];
+    let start = Math.round((origin + first * step) * ratio);
+    for (let index = first; index < last; ++index) {
+      const end = Math.round((origin + (index + 1) * step) * ratio);
+      // 相邻格共用物理像素边界，零像素格不请求图片。
+      if (end > start) bands.push({index, start, end});
+      start = end;
+    }
+    return bands;
   }
   class BitmapCache {
     constructor(budget = Infinity) { this.budget = budget; this.bytes = 0; this.entries = new Map(); }
@@ -42,5 +64,5 @@ const MosaicraftViewport = (() => {
       this.entries.set(key, {image, bytes}); this.bytes += bytes;
     }
   }
-  return {cacheBudget, parallelLoads, clamp, geometry, visible, BitmapCache};
+  return {cacheBudget, parallelLoads, maxTileHeight, clamp, clip, geometry, visible, pixelBands, BitmapCache};
 })();

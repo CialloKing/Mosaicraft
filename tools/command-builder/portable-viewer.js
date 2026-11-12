@@ -11,39 +11,52 @@
   // 原文件名可能含 #、% 或空格，按路径段编码后才能安全交给浏览器。
   const resourceUrl = path => path.split('/').map(encodeURIComponent).join('/');
   let wanted = new Set(), groups = new Map(), queue = [], next = 0, frame = 0, repaint = true;
-  let fitted = true, scale = 1, centerX = columns / 2, centerY = rows / 2, drag = null, current = null;
+  let fitted = false, scale = MosaicraftViewport.maxTileHeight;
+  let centerX = columns / 2, centerY = rows / 2, drag = null, current = null, visibleCells = 0;
   let reference = false;
   function schedule(full = true) {
     repaint ||= full;
     if (!frame) frame = requestAnimationFrame(paint);
   }
   function pump() {
+    // 视口尚未更新时，不从上一帧的可见队列继续加载。
+    if (repaint || !MosaicraftViewport.clip(canvas)) return;
     while (loading.size < MosaicraftViewport.parallelLoads && next < queue.length) {
       const key = queue[next++];
       if (!wanted.has(key) || cache.get(key) || loading.has(key) || failed.has(key)) continue;
       const image = new Image();
       loading.set(key, image);
       image.onload = () => {
+        if (loading.get(key) !== image) return;
         loading.delete(key); cache.add(key, image); dirty.add(key);
         schedule(key === targetPath); pump();
       };
-      image.onerror = () => { loading.delete(key); failed.add(key); schedule(false); pump(); };
+      image.onerror = () => {
+        if (loading.get(key) !== image) return;
+        loading.delete(key); failed.add(key); schedule(false); pump();
+      };
       image.src = resourceUrl(key);
     }
   }
+  function cancelOutside() {
+    for (const [key, image] of loading) {
+      if (wanted.has(key)) continue;
+      image.onload = image.onerror = null;
+      image.removeAttribute('src');
+      loading.delete(key);
+    }
+  }
   function minimum() { return Math.min(canvas.clientWidth / (columns * aspect), canvas.clientHeight / rows); }
+  function maximum() { return Math.max(MosaicraftViewport.maxTileHeight, minimum()); }
   function drawGroup(key) {
     const bitmap = cache.get(key), cells = groups.get(key);
     if (!bitmap || !cells) return;
     const g = current, target = cache.get(targetPath), blend = data.appearance.targetBlend;
-    for (const cell of cells) {
-      const x = cell % columns, y = Math.floor(cell / columns);
-      // 相邻格共用物理像素边界，防止缩小后的半透明边缘露出背景，也使增量绘制与全绘制一致。
-      const dx = Math.round((g.x + x * g.tw) * g.dpr) / g.dpr;
-      const dy = Math.round((g.y + y * g.th) * g.dpr) / g.dpr;
-      const dw = Math.round((g.x + (x + 1) * g.tw) * g.dpr) / g.dpr - dx;
-      const dh = Math.round((g.y + (y + 1) * g.th) * g.dpr) / g.dpr - dy;
-      if (dw <= 0 || dh <= 0) continue;
+    context.save();
+    context.beginPath();
+    context.rect(g.clip.x0, g.clip.y0, g.clip.x1 - g.clip.x0, g.clip.y1 - g.clip.y0);
+    context.clip();
+    for (const {col: x, row: y, x: dx, y: dy, w: dw, h: dh} of cells) {
       context.fillRect(dx, dy, dw, dh);
       context.drawImage(bitmap, dx, dy, dw, dh);
       if (target && blend > 0) {
@@ -53,9 +66,16 @@
         context.globalAlpha = 1;
       }
     }
+    context.restore();
   }
   function paint() {
     frame = 0;
+    const clip = MosaicraftViewport.clip(canvas);
+    if (!clip) {
+      wanted.clear(); groups.clear(); queue = []; next = 0;
+      cancelOutside(); dirty.clear(); repaint = true;
+      return;
+    }
     const width = canvas.clientWidth, height = canvas.clientHeight;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     if (canvas.width !== Math.ceil(width * dpr) || canvas.height !== Math.ceil(height * dpr)) {
@@ -63,22 +83,26 @@
     }
     if (repaint) {
       if (fitted) { scale = minimum(); centerX = columns / 2; centerY = rows / 2; }
-      scale = MosaicraftViewport.clamp(scale, minimum(), Math.max(1024, minimum()));
+      scale = MosaicraftViewport.clamp(scale, minimum(), maximum());
       const g = MosaicraftViewport.geometry(width, height, columns, rows, aspect, scale, centerX, centerY);
-      current = {...g, dpr}; centerX = (width / 2 - g.x) / g.tw; centerY = (height / 2 - g.y) / g.th;
-      const v = MosaicraftViewport.visible(g, {x0: 0, y0: 0, x1: width, y1: height}, columns, rows);
+      current = {...g, dpr, clip}; centerX = (width / 2 - g.x) / g.tw; centerY = (height / 2 - g.y) / g.th;
+      const v = MosaicraftViewport.visible(g, clip, columns, rows);
+      const visibleColumns = MosaicraftViewport.pixelBands(v.firstCol, v.lastCol, g.x, g.tw, dpr);
+      const visibleRows = MosaicraftViewport.pixelBands(v.firstRow, v.lastRow, g.y, g.th, dpr);
+      visibleCells = visibleColumns.length * visibleRows.length;
       groups = new Map();
       if (!reference) {
-        for (let y = v.firstRow; y < v.lastRow; ++y) for (let x = v.firstCol; x < v.lastCol; ++x) {
-          const cell = y * columns + x, id = data.layout[cell];
+        for (const {index: y, start: y0, end: y1} of visibleRows) for (const {index: x, start: x0, end: x1} of visibleColumns) {
+          const id = data.layout[y * columns + x];
           if (id < 0) continue;
           const key = data.assets[id].path;
           if (!groups.has(key)) groups.set(key, []);
-          groups.get(key).push(cell);
+          groups.get(key).push({col: x, row: y, x: x0 / dpr, y: y0 / dpr, w: (x1 - x0) / dpr, h: (y1 - y0) / dpr});
         }
       }
       wanted = new Set(groups.keys());
       if (reference || data.appearance.targetBlend > 0) wanted.add(targetPath);
+      cancelOutside();
       // 参考图优先，剩余资源只按可见区域排队；缓存不因大小或格子数而淘汰。
       queue = wanted.has(targetPath) ? [targetPath, ...groups.keys()] : [...wanted];
       next = 0;
@@ -93,13 +117,15 @@
       for (const key of dirty) drawGroup(key);
     }
     dirty.clear();
-    status.textContent = `${columns} × ${rows} · ${data.assets.length} 素材 · 视口浏览 · 已加载 ${cache.entries.size} · 缓存 ${(cache.bytes / 1048576).toFixed(1)} MiB${failed.size ? ` · ${failed.size} 个资源读取失败（浏览器可能不支持原格式）` : ''}`;
+    status.textContent = `${columns} × ${rows} · ${data.assets.length} 素材 · 视口浏览${scale === maximum() ? ' · 最大缩放' : ''} · 可见 ${visibleCells} 格 · 已加载 ${cache.entries.size} · 缓存 ${(cache.bytes / 1048576).toFixed(1)} MiB${failed.size ? ` · ${failed.size} 个资源读取失败（浏览器可能不支持原格式）` : ''}`;
     pump();
   }
   function zoom(factor, x = canvas.clientWidth / 2, y = canvas.clientHeight / 2) {
     if (!current) return;
     const worldX = (x - current.x) / current.tw, worldY = (y - current.y) / current.th;
-    scale = MosaicraftViewport.clamp(scale * factor, minimum(), Math.max(1024, minimum())); fitted = false;
+    const nextScale = MosaicraftViewport.clamp(scale * factor, minimum(), maximum());
+    if (nextScale === scale) return;
+    scale = nextScale; fitted = false;
     centerX = worldX + (canvas.clientWidth / 2 - x) / (scale * aspect);
     centerY = worldY + (canvas.clientHeight / 2 - y) / scale; schedule();
   }
@@ -125,5 +151,10 @@
   document.getElementById('reference').onclick = e => { reference = !reference; e.target.setAttribute('aria-pressed', String(reference)); schedule(); };
   document.getElementById('fullscreen').onclick = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { status.textContent = '浏览器不允许全屏。'; } };
   new ResizeObserver(() => schedule()).observe(canvas);
+  new IntersectionObserver(() => schedule()).observe(canvas);
+  window.addEventListener('scroll', () => schedule(), {passive: true, capture: true});
+  window.visualViewport?.addEventListener('scroll', () => schedule(), {passive: true});
+  window.visualViewport?.addEventListener('resize', () => schedule(), {passive: true});
+  document.addEventListener('visibilitychange', () => schedule());
   schedule();
 })();

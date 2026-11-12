@@ -22,14 +22,28 @@ const {pathToFileURL} = require('node:url');
         const page = await browser.newPage({viewport:{width:1000,height:760}, offline:true});
         await page.addInitScript(() => {
           const NativeImage = window.Image;
-          window.loadedImages = []; window.imageErrors = [];
+          window.loadedImages = []; window.imageErrors = []; window.requestedImages = [];
+          const source = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
           window.Image = function(...args) {
             const bitmap = new NativeImage(...args);
+            Object.defineProperty(bitmap, 'src', {
+              get() { return source.get.call(this); },
+              set(url) { window.requestedImages.push(url); source.set.call(this, url); }
+            });
             bitmap.addEventListener('load', () => window.loadedImages.push(bitmap.src));
-            bitmap.addEventListener('error', () => window.imageErrors.push(bitmap.src));
+            bitmap.addEventListener('error', () => { if (bitmap.getAttribute('src')) window.imageErrors.push(bitmap.src); });
             return bitmap;
           };
           window.Image.prototype = NativeImage.prototype;
+          const draw = CanvasRenderingContext2D.prototype.drawImage;
+          window.outsideDraws = 0;
+          CanvasRenderingContext2D.prototype.drawImage = function(...args) {
+            if (this.canvas.id === 'view' && args.length >= 5) {
+              const clip = MosaicraftViewport.clip(this.canvas), [x, y, w, h] = args.slice(-4);
+              if (!clip || x + w <= clip.x0 || y + h <= clip.y0 || x >= clip.x1 || y >= clip.y1) ++window.outsideDraws;
+            }
+            return draw.apply(this, args);
+          };
         });
         const errors = [], requests = [];
         page.on('pageerror', error => errors.push(error.message));
@@ -37,8 +51,50 @@ const {pathToFileURL} = require('node:url');
         await page.goto(pathToFileURL(entry).href);
         await page.waitForFunction(() => document.querySelector('#status').textContent.includes('缓存'));
         await page.waitForFunction(() => window.loadedImages.some(url => url.includes('/assets/')));
+        assert((await page.locator('#status').textContent()).includes('最大缩放'));
+        const visibleLimit = await page.evaluate(() => {
+          const canvas = document.querySelector('#view');
+          const data = JSON.parse(document.getElementById('mosaicraft-snapshot').textContent);
+          const min = Math.min(canvas.clientWidth / (data.grid.columns * data.outputTile[0] / data.outputTile[1]),
+            canvas.clientHeight / data.grid.rows);
+          const scale = Math.max(MosaicraftViewport.maxTileHeight, min);
+          return (Math.ceil(canvas.clientWidth / (scale * data.outputTile[0] / data.outputTile[1])) + 2) *
+            (Math.ceil(canvas.clientHeight / scale) + 2);
+        });
+        assert(await page.evaluate(() => window.loadedImages.filter(url => url.includes('/assets/')).length) <= visibleLimit,
+          'initial maximum zoom must only load viewport assets');
         assert(!(await page.locator('#status').textContent()).includes('/ 64'));
+        if (process.env.MOSAICRAFT_BROWSER_VIEWPORT_ONLY) {
+          const initialStatus = await page.locator('#status').textContent();
+          const initialRequests = await page.evaluate(() => window.requestedImages.length);
+          assert(initialRequests <= visibleLimit + 1, 'initial requests must remain within the viewport');
+          await page.screenshot({path:path.join(project, '..', `viewport-${name}-initial.png`)});
+          const before = await page.locator('#view').screenshot();
+          const box = await page.locator('#view').boundingBox();
+          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+          await page.mouse.down();
+          await page.mouse.move(box.x + box.width / 6, box.y + box.height * .7);
+          await page.mouse.up();
+          await page.waitForTimeout(200);
+          assert(!before.equals(await page.locator('#view').screenshot()), 'panning must change visible content');
+          await page.evaluate(() => { document.querySelector('#view').style.transform = 'translateY(10000px)'; });
+          await page.waitForTimeout(100);
+          const hiddenRequests = await page.evaluate(() => window.requestedImages.length);
+          await page.waitForTimeout(200);
+          assert.equal(await page.evaluate(() => window.requestedImages.length), hiddenRequests, 'offscreen canvas must pause loading');
+          await page.evaluate(() => { document.querySelector('#view').style.transform = ''; });
+          await page.waitForTimeout(100);
+          assert.deepEqual(errors, []);
+          assert.deepEqual(await page.evaluate(() => window.imageErrors), []);
+          assert.equal(await page.evaluate(() => window.outsideDraws), 0, 'offscreen tiles must never be drawn');
+          const report = {browser:name,version:browser.version(),initialStatus,initialRequests,visibleLimit,
+            requestsAfterPan:await page.evaluate(() => window.requestedImages.length),hiddenRequests,errors};
+          fs.writeFileSync(path.join(project, '..', `viewport-${name}.json`), JSON.stringify(report,null,2));
+          console.log(JSON.stringify(report));
+          continue;
+        }
         if (process.env.MOSAICRAFT_BROWSER_WAIT_ALL) {
+          await page.locator('#fit').click();
           await page.waitForFunction(count => window.loadedImages.filter(url => url.includes('/assets/')).length === count,
             snapshot.assets.length, {timeout:180000});
           await page.waitForFunction(count => document.querySelector('#status').textContent.includes(`已加载 ${count}`),

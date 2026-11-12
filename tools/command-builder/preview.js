@@ -69,7 +69,7 @@ function setupPreviewSizing(surface, handle, resetButton) {
 const interactivePreview = (() => {
   const endpoint = '/api/mosaic/preview';
   const visibleTileWarning = 16000;
-  const maxTileHeight = 256;
+  const maxTileHeight = MosaicraftViewport.maxTileHeight;
   const cacheBudget = MosaicraftViewport.cacheBudget;
   const parallelLoads = MosaicraftViewport.parallelLoads;
   const byId = name => document.getElementById('live-preview-' + name);
@@ -190,18 +190,7 @@ const interactivePreview = (() => {
   }
 
   function clip() {
-    if (!enabled || tab !== 'preview' || document.hidden || !canvas.clientWidth || !canvas.clientHeight) return null;
-    const rect = canvas.getBoundingClientRect();
-    const visual = window.visualViewport;
-    const left = visual?.offsetLeft ?? 0;
-    const top = visual?.offsetTop ?? 0;
-    const right = left + (visual?.width ?? document.documentElement.clientWidth);
-    const bottom = top + (visual?.height ?? document.documentElement.clientHeight);
-    const x0 = Math.max(0, left - rect.left);
-    const y0 = Math.max(0, top - rect.top);
-    const x1 = Math.min(rect.width, right - rect.left);
-    const y1 = Math.min(rect.height, bottom - rect.top);
-    return x1 > x0 && y1 > y0 ? {x0, y0, x1, y1} : null;
+    return enabled && tab === 'preview' ? MosaicraftViewport.clip(canvas) : null;
   }
 
   function cancelPending() {
@@ -727,18 +716,6 @@ const interactivePreview = (() => {
     return {x0, y0, x1, y1};
   }
 
-  function pixelBands(first, last, origin, step, ratio) {
-    const bands = [];
-    let start = Math.round((origin + first * step) * ratio);
-    for (let index = first; index < last; ++index) {
-      const end = Math.round((origin + (index + 1) * step) * ratio);
-      // 相邻格子共用边界，缩成零像素的格子无需请求缩略图。
-      if (end > start) bands.push({index, start, end});
-      start = end;
-    }
-    return bands;
-  }
-
   function clearGuides() {
     if (!guides.hidden || guides.width !== 1 || guides.height !== 1) {
       guides.hidden = true;
@@ -828,10 +805,7 @@ const interactivePreview = (() => {
     const pixelH = Math.max(1, Math.round(g.height * ratio));
     const sx = pixelW / g.width;
     const sy = pixelH / g.height;
-    const firstCol = clamp(Math.floor((visible.x0 - g.x) / g.tw), 0, plan.columns);
-    const lastCol = clamp(Math.ceil((visible.x1 - g.x) / g.tw), 0, plan.columns);
-    const firstRow = clamp(Math.floor((visible.y0 - g.y) / g.th), 0, plan.rows);
-    const lastRow = clamp(Math.ceil((visible.y1 - g.y) / g.th), 0, plan.rows);
+    const {firstCol, lastCol, firstRow, lastRow} = MosaicraftViewport.visible(g, visible, plan.columns, plan.rows);
     const count = (lastRow - firstRow) * (lastCol - firstCol);
     densityWarning.hidden = count <= visibleTileWarning;
     const size = thumbnailSize(Math.max(g.tw * sx, g.th * sy), count);
@@ -869,8 +843,8 @@ const interactivePreview = (() => {
       slotsByAsset = new Map();
       if (referenceKey) wanted.set(referenceKey, prefix + 'reference');
       const keys = new Map();
-      const columns = pixelBands(firstCol, lastCol, g.x, g.tw, sx);
-      const rows = pixelBands(firstRow, lastRow, g.y, g.th, sy);
+      const columns = MosaicraftViewport.pixelBands(firstCol, lastCol, g.x, g.tw, sx);
+      const rows = MosaicraftViewport.pixelBands(firstRow, lastRow, g.y, g.th, sy);
       for (const {index: row, start: y0, end: y1} of rows) {
         for (const {index: col, start: x0, end: x1} of columns) {
           const position = row * plan.columns + col;
