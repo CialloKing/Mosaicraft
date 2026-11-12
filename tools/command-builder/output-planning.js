@@ -48,7 +48,7 @@ const outputPlanning = (() => {
   function updatePreview() {
     const key = interactivePreview.outputSampleKey();
     if (sampleKey && sampleKey !== key) cancelSample('预览已变更，显示模型估算。');
-    sampleButton.disabled = !ready || !key || !hasFeature('mosaic-size-sample') || activeSample;
+    sampleButton.disabled = !ready || !key || formModel.payload?.outputMode === 'html' || !hasFeature('mosaic-size-sample') || activeSample;
     cancelButton.hidden = !activeSample;
   }
 

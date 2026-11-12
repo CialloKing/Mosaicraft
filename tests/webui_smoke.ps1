@@ -447,7 +447,7 @@ try {
         Assert-True ($badStrength.Json.message -eq "colorStrength must be between 0.000000 and 0.500000") "colorStrength bounds should be explicit"
     }
 
-    $badUsage = Invoke-ApiResponse -Method "GET" -Path "/api/db/usage?dbPath=missing.db&limit=0"
+    $badUsage = Invoke-ApiResponse -Method "GET" -Path "/api/db/usage?dbPath=missing.db&limit=-1"
     foreach ($strength in @(-0.01, 1.01, "NaN", "Infinity")) {
         $badOverlay = Invoke-ApiResponse -Method "POST" -Path "/api/jobs/mosaic" -Body @{
             inputPath = $targetPath
@@ -458,7 +458,7 @@ try {
     }
     Assert-True ($badUsage.StatusCode -eq 400) "invalid usage limit should return HTTP 400"
     Assert-True ($badUsage.Json.ok -eq $false) "invalid usage limit should return ok=false"
-    Assert-True ($badUsage.Json.message -eq "limit must be at least 1") "invalid usage limit message should be explicit"
+    Assert-True ($badUsage.Json.message -eq "limit must be at least 0") "invalid usage limit message should be explicit"
 
     $missingJob = Invoke-ApiResponse -Method "GET" -Path "/api/jobs/not-found"
     Assert-True ($missingJob.StatusCode -eq 404) "missing job should return HTTP 404"
@@ -702,6 +702,35 @@ try {
     Assert-True (($analysis.scores.histogram | Measure-Object -Sum).Sum -eq 4) "analysis histogram did not count the original scores"
     $editedTile = $analysis.worst | Where-Object { $_.row -eq 0 -and $_.column -eq 0 }
     Assert-True ($editedTile.imageId -eq $choice.id) "analysis did not use the edited tile"
+    $htmlBody = $interactiveBody.Clone()
+    $htmlBody.outputMode = 'html'
+    $htmlBody.outputPath = Join-Path $outputDir 'portable-artwork'
+    $htmlBody.colorAdjust = $false
+    foreach ($key in @('format','quality','pngLevel','writeMode','generatePreview')) { $htmlBody.Remove($key) }
+    $htmlSubmitted = Invoke-Api -Method 'POST' -Path '/api/jobs/mosaic' -Body $htmlBody
+    $htmlJob = Wait-JobSucceeded -JobId $htmlSubmitted.job.id -Label 'HTML export' -ExpectedType 'mosaic' -ExpectedInputPath $targetPath -ExpectedOutputPath $htmlBody.outputPath
+    $projectPath = $htmlBody.outputPath
+    $project = Get-Content -LiteralPath (Join-Path $projectPath 'project.json') -Raw | ConvertFrom-Json
+    $selected = $project.assets[$project.layout[0]]
+    $selectedBytes = (Get-FileHash -LiteralPath (Join-Path $projectPath $selected.path) -Algorithm SHA256).Hash
+    $expectedBytes = (Get-FileHash -LiteralPath (Join-Path $libraryDir $choice.name) -Algorithm SHA256).Hash
+    # 导出按最终手动排列保存；预览接口可能转码，工程摘要必须等于复制文件本身。
+    Assert-True ($selectedBytes -eq $expectedBytes -and $selectedBytes.ToLowerInvariant() -eq $selected.sha256 -and $htmlJob.runtime.metrics.manualPreviewEdits -eq 1) 'HTML did not retain the final manual selection'
+    $singleHtml = Invoke-ApiResponse -Method 'GET' -Path ("/api/jobs/{0}/artifacts/main" -f $htmlJob.id)
+    Assert-True ($singleHtml.StatusCode -eq 409) 'HTML entry must require a complete project archive'
+    $projectInfo = Invoke-Api -Method 'POST' -Path '/api/project/info' -Body @{projectPath=$projectPath}
+    Assert-True ($projectInfo.project.version -eq 1 -and $projectInfo.project.assetCount -gt 0) 'project info missing'
+    $checkSubmitted = Invoke-Api -Method 'POST' -Path '/api/jobs/project-check' -Body @{projectPath=$projectPath;deep=$true}
+    $checked = Wait-JobSucceeded -JobId $checkSubmitted.job.id -Label 'project check' -ExpectedType 'project-check' -ExpectedInputPath $projectPath -ExpectedOutputPath ''
+    $renderPath = Join-Path $outputDir 'project-render.png'
+    $renderSubmitted = Invoke-Api -Method 'POST' -Path '/api/jobs/render' -Body @{projectPath=$projectPath;outputPath=$renderPath;brightnessJitter=0.04;seed=12;threads=2}
+    $rendered = Wait-JobSucceeded -JobId $renderSubmitted.job.id -Label 'project render' -ExpectedType 'render' -ExpectedInputPath $projectPath -ExpectedOutputPath $renderPath
+    Assert-True ($rendered.runtime.featureBackend -eq 'none' -and $rendered.runtime.scoreBackend -eq 'none') 'project render executed matching'
+    $zipPath = Join-Path $outputDir 'portable-artwork.zip'
+    $packSubmitted = Invoke-Api -Method 'POST' -Path '/api/jobs/project-pack' -Body @{projectPath=$projectPath;outputPath=$zipPath}
+    $packed = Wait-JobSucceeded -JobId $packSubmitted.job.id -Label 'project pack' -ExpectedType 'project-pack' -ExpectedInputPath $projectPath -ExpectedOutputPath $zipPath
+    $archiveResponse = Invoke-ApiResponse -Method 'HEAD' -Path ("/api/jobs/{0}/artifacts/archive" -f $packed.id)
+    Assert-True ($archiveResponse.StatusCode -eq 200) 'complete project archive is not downloadable'
     $targetThumb = $pinned.artifacts | Where-Object { $_.id -eq $editedTile.targetArtifactId }
     $targetResponse = Invoke-WebRequest -Method HEAD -Uri "$script:BaseUrl$analysisPath/$($targetThumb.id)" -TimeoutSec $TimeoutSeconds
     Assert-True (($targetResponse.Headers['Content-Type'] -join ',') -match 'image/jpeg' -and

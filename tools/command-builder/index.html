@@ -307,11 +307,11 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 <nav class="tabs" id="tabs" aria-label="功能导航">
   <button class="tab active" data-cmd="mosaic" aria-current="page">🎨 生成马赛克</button>
   <button class="tab" data-cmd="preview">预览</button>
+  <button class="tab" data-cmd="project">📁 便携工程</button>
   <button class="tab" data-cmd="build">📦 建库</button>
   <button class="tab" data-cmd="inspect">🔍 查询</button>
-  <button class="tab" data-cmd="dbstats">📊 统计</button>
+  <button class="tab" data-cmd="dbstats">📊 图库报告</button>
   <button class="tab" data-cmd="dbpurge">🧹 清理</button>
-  <button class="tab" data-cmd="dbhealth">🩺 健康</button>
   <button class="tab" data-cmd="dbusage">📋 使用记录</button>
   <button class="tab" data-cmd="help">📖 使用帮助</button>
 </nav>
@@ -323,9 +323,9 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>📂 必需路径（支持绝对路径与相对路径）</h3>
     <div class="row">
-      <div class="field field-full"><label>目标图片 -i（必填）</label><input type="text" id="m-input" placeholder="粘贴绝对路径，如 D:\photos\target.jpg"></div>
-      <div class="field field-full"><label>数据库 -d（默认情况下不需要填，默认 ./library/mosaicraft.db）</label><input type="text" id="m-db" placeholder="留空使用默认值，或粘贴目录路径如 D:\my_library"></div>
-      <div class="field field-full"><label>输出路径 -o（留空保存到 ./output/，文件名为 output，后缀自动确定）</label><input type="text" id="m-output" value="" placeholder="留空使用默认文件名，或粘贴文件路径如 D:\results\mosaic.jpg"><p class="hint">显式选择输出格式时，实际文件后缀以所选格式为准。</p></div>
+      <div class="field field-full"><label>目标图片（必填位置参数）</label><input type="text" id="m-input" placeholder="粘贴绝对路径，如 D:\photos\target.jpg"></div>
+      <div class="field field-full"><label>图库 --library（默认 ./library/mosaicraft.db）</label><input type="text" id="m-db" placeholder="留空使用默认值，或粘贴目录路径如 D:\my_library"></div>
+      <div class="field field-full"><label>输出路径 -o（单图为文件，HTML / Deep Zoom / 分块为完整目录）</label><input type="text" id="m-output" value="output/output.png" placeholder="留空使用默认文件名，或粘贴文件路径如 D:\results\mosaic.jpg"><p class="hint">显式选择输出格式时，实际文件后缀以所选格式为准。</p></div>
     </div>
     <div class="preview-toolbar">
       <button type="button" class="btn btn-secondary" data-open-tab="preview">打开预览页</button>
@@ -335,9 +335,10 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>🎨 格式与质量</h3>
     <div class="row">
+      <div class="field"><label>输出模式 --mode</label><select id="m-mode"><option value="image">单图</option><option value="html">HTML 便携工程</option><option value="deepzoom">Deep Zoom</option><option value="tiles">分块</option></select></div>
       <div class="field"><label>输出格式 --format</label><select id="m-format" title="自动：输出后缀优先，否则使用输入后缀"><option value="">自动：输出后缀优先，否则使用输入后缀</option><option value="jpg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option><option value="tiff">TIFF</option></select></div>
       <div class="field"><label>JPEG/WebP 质量 --quality</label><input type="number" id="m-quality" value="100" min="1" max="100"></div>
-      <div class="field"><label>PNG 压缩级别 --png-level</label><select id="m-pnglevel"><option value="">默认(1)</option><option value="1">1 最快</option><option value="3">3 平衡</option><option value="6">6 较小</option><option value="9">9 最小</option></select></div>
+      <div class="field"><label>PNG 压缩级别 --png-compression</label><select id="m-pnglevel"><option value="">默认(1)</option><option value="1">1 最快</option><option value="3">3 平衡</option><option value="6">6 较小</option><option value="9">9 最小</option></select></div>
       <div class="field"><label>写入模式 --write-mode</label><select id="m-writemode"><option value="">auto(自动)</option><option value="stream">stream(流式低内存)</option><option value="batch">batch(全量缓冲)</option></select></div>
     </div>
     <p class="hint" id="format-policy-hint">自动推导的 JPG/WebP 超限时改存 PNG，保留完整尺寸；显式选择 JPG/WebP 时缩小输出 Tile。</p>
@@ -345,20 +346,20 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>📐 Tile 参数</h3>
     <div class="row">
-      <div class="field"><label>Tile 宽度 --tile-w</label><input type="number" id="m-tilew" value="9" min="4"></div>
-      <div class="field"><label>Tile 高度 --tile-h</label><input type="number" id="m-tileh" value="16" min="4"></div>
+      <div class="field"><label>Tile 宽度 --match-tile (宽)</label><input type="number" id="m-tilew" value="9" min="4"></div>
+      <div class="field"><label>Tile 高度 --match-tile (高)</label><input type="number" id="m-tileh" value="16" min="4"></div>
       <div class="field"><label>候选数 --candidates</label><input type="number" id="m-candidates" value="150" min="10"></div>
-      <div class="field"><label>TopN 随机 --topn-random</label><input type="number" id="m-topn" value="10" min="1"><span class="hint">随机选取池大小</span></div>
+      <div class="field"><label>TopN 随机 --random-top</label><input type="number" id="m-topn" value="10" min="1"><span class="hint">随机选取池大小</span></div>
     </div>
     <div class="row">
       <div class="field"><label>L 亮度范围 --l-range</label><input type="number" id="m-lrange" value="20" min="0" step="1"></div>
       <div class="field"><label>邻域窗口 --neighbor-window</label><input type="number" id="m-nwin" value="0" min="0" placeholder="0=自动"></div>
       <div class="field"><label>邻域惩罚 --neighbor-penalty</label><input type="number" id="m-npen" value="100" min="0" step="1"><span class="hint">基础惩罚值</span></div>
-      <div class="field"><label>上采样 --upscale</label><input type="number" id="m-upscale" min="1" placeholder="1× (不放大)"></div>
+      <div class="field"><label>上采样 --target-upscale</label><input type="number" id="m-upscale" min="1" placeholder="1× (不放大)"></div>
     </div>
     <div class="row">
-      <div class="field"><label>输出宽度 --out-w</label><input type="number" id="m-outw" min="0" max="1000000" placeholder="0=自动；单轴保持比例"></div>
-      <div class="field"><label>输出高度 --out-h</label><input type="number" id="m-outh" min="0" max="1000000" placeholder="0=自动；单轴保持比例"></div>
+      <div class="field"><label>匹配前目标宽度 --target-size WxH</label><input type="number" id="m-outw" min="0" max="1000000" placeholder="0=自动；单轴保持比例"></div>
+      <div class="field"><label>匹配前目标高度 --target-size WxH</label><input type="number" id="m-outh" min="0" max="1000000" placeholder="0=自动；单轴保持比例"></div>
       <div class="field"><label>输出 Tile 尺寸 --output-tile</label><input type="text" id="m-otile" value="180x320" placeholder="180x320"></div>
     </div>
   </div>
@@ -372,27 +373,27 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <div class="field"><label>LBP --lbp-weight</label><input type="number" id="m-lbpw" value="0.05" step="0.01"></div>
     </div>
     <div class="row">
-      <div class="field"><label>复用惩罚 --penalty</label><input type="number" id="m-penalty" value="0.01" step="0.01"></div>
+      <div class="field"><label>复用惩罚 --reuse-penalty</label><input type="number" id="m-penalty" value="0.01" step="0.01"></div>
     </div>
   </div>
   <div class="card">
     <h3>🔘 开关选项</h3>
     <div class="chk-row">
-      <label><input type="checkbox" id="m-tiled"> 分块输出 --tiled</label>
-      <label><input type="checkbox" id="m-deepzoom"> DeepZoom --deepzoom</label>
+      <label hidden><input type="checkbox" id="m-tiled"> 旧草稿分块状态</label>
+      <label hidden><input type="checkbox" id="m-deepzoom"> 旧草稿 Deep Zoom 状态</label>
       <label><input type="checkbox" id="m-analyze"> 质量分析 --analyze</label>
       <label><input type="checkbox" id="m-adaptive"> 自适应权重 --adaptive-weights</label>
       <label><input type="checkbox" id="m-benchmark"> 性能分析 --benchmark</label>
       <label><input type="checkbox" id="m-monitor"> 资源监控</label>
-      <label><input type="checkbox" id="m-coloradj"> 随机亮度调整 --color-adjust（默认关闭）</label>
-      <label><input type="checkbox" id="m-cpu"> 仅 CPU --cpu</label>
-      <label><input type="checkbox" id="m-preview" aria-describedby="preview-hint"> 生成结果预览 --preview</label>
+      <label><input type="checkbox" id="m-overwrite"> 覆盖已有 Mosaicraft 输出 --overwrite</label><label hidden><input type="checkbox" id="m-cpu"> 旧草稿 CPU 状态</label>
+      <label><input type="checkbox" id="m-preview" aria-describedby="preview-hint"> 生成结果预览 --thumbnail</label>
     </div>
     <p class="hint" id="preview-hint">生成结果预览默认关闭，勾选后额外保存一张用于快速查看的 JPEG 预览图。</p>
     <a class="help-link" href="#help-switches" data-open-help="help-switches">了解预览及其他开关的作用</a>
     <div class="row" style="margin-top:8px">
-      <div class="field"><label>亮度扰动幅度 --color-strength</label><input type="number" id="m-colorstr" value="0.04" min="0" max="0.5" step="0.01" style="max-width:150px"><div class="hint">0.04 表示 L 通道最多 ±4%；单独设置幅度不会启用。幅度为 0 时保持原像素。</div></div>
-      <div class="field"><label>基础图叠加强度 --overlay-strength</label><input type="number" id="m-overlaystr" value="0" min="0" max="1" step="0.05" style="max-width:150px"><div class="hint">0 关闭；0.2 表示 80% 素材 + 20% 基础图。使用缩放、放大和补边后的基础图，强度越高，小图细节越弱。</div></div>
+      <div class="field"><label>亮度扰动幅度 --brightness-jitter</label><input type="number" id="m-colorstr" value="0" min="0" max="0.5" step="0.01" style="max-width:150px"><div class="hint">0 关闭；0.04 表示 L 通道最多 ±4%。HTML 工程要求为 0。</div></div>
+      <div class="field"><label>CPU 线程上限 --threads</label><input id="m-threads" type="number" min="0" max="256" value="0"></div><div class="field"><label>后端 --backend</label><select id="m-backend"><option value="auto">自动回退</option><option value="cpu">CPU</option><option value="cuda">必须使用 CUDA</option></select></div><div class="field"><label>随机种子 --seed</label><input id="m-seed" type="number" min="0" max="4294967295" placeholder="自动生成并记录"></div>
+      <div class="field"><label>基础图叠加强度 --target-blend</label><input type="number" id="m-overlaystr" value="0" min="0" max="1" step="0.05" style="max-width:150px"><div class="hint">0 关闭；0.2 表示 80% 素材 + 20% 基础图。使用缩放、放大和补边后的基础图，强度越高，小图细节越弱。</div></div>
     </div>
   </div>
   <section class="card" id="m-output-plan" hidden>
@@ -500,22 +501,20 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>📂 必需路径</h3>
     <div class="row">
-      <div class="field field-full"><label>图片目录 -i（必填）</label><input type="text" id="b-input" placeholder="粘贴文件夹路径，如 D:\photos"></div>
-      <div class="field field-full"><label>输出目录 -o（默认 ./library）</label><input type="text" id="b-output" placeholder="粘贴目录路径，如 D:\mylib"></div>
-      <div class="field field-full"><label>数据库 -d（默认情况下不需要填，自动在输出目录内生成）</label><input type="text" id="b-db" placeholder="留空则自动生成，或指定路径"></div>
+      <div class="field field-full"><label>图片目录（必填位置参数）</label><input type="text" id="b-input" placeholder="粘贴文件夹路径，如 D:\photos"></div>
+      <div class="field field-full"><label>图库 / 输出目录（默认 ./library）</label><input type="text" id="b-output" placeholder="粘贴目录路径，如 D:\mylib"><p class="hint">新建与归一化使用 --output；追加使用 --library，并继承该目录的图库规格。</p></div>
     </div>
   </div>
   <div class="card">
     <h3>⚙️ 选项</h3>
     <div class="row">
-      <div class="field"><label>归一化尺寸 --normalize-size</label><input type="text" id="b-normsize" value="180x320" placeholder="180x320"><span class="hint">按宽x高填写，单轴 1～8192。</span><a class="help-link" href="#help-cuda-templates" data-open-help="help-cuda-templates">查看 CUDA 模板尺寸</a></div>
-      <div class="field"><label>线程数 -t</label><input type="number" id="b-threads" placeholder="auto"></div>
+      <div class="field"><label>归一化尺寸 --size</label><input type="text" id="b-normsize" value="180x320" placeholder="180x320"><span class="hint">按宽x高填写，单轴 1～8192。</span><a class="help-link" href="#help-cuda-templates" data-open-help="help-cuda-templates">查看 CUDA 模板尺寸</a></div>
+      <div class="field"><label>操作</label><select id="b-mode"><option value="build">新建图库</option><option value="add">追加素材</option><option value="normalize">仅归一化</option></select></div>
+      <div class="field"><label>线程上限 --threads</label><input type="number" id="b-threads" min="0" max="256" placeholder="0 = 自动"></div>
+      <div class="field"><label>后端 --backend</label><select id="b-backend"><option value="auto">自动回退</option><option value="cpu">CPU</option><option value="cuda">必须使用 CUDA</option></select></div>
     </div>
     <div class="chk-row">
-      <label><input type="checkbox" id="b-append"> 增量模式 --append</label>
       <label><input type="checkbox" id="b-recursive"> 递归扫描子目录 -r</label>
-      <label><input type="checkbox" id="b-normonly"> 仅归一化 --normalize-only</label>
-      <label><input type="checkbox" id="b-force"> 跳过已有图库确认 -y（按颜色重新编号）</label>
       <label><input type="checkbox" id="b-monitor"> 资源监控</label>
     </div>
     <p class="hint">建库默认按图片整体色调排列全库，从 000000 连续编号。追加后旧编号可能改变；输入与输出同目录时，也会更改原文件名。可在 Windows 资源管理器中按名称升序查看颜色渐变。仅归一化模式不重排图库。</p>
@@ -527,30 +526,53 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>📂 查询参数</h3>
     <div class="row">
-      <div class="field field-full"><label>图片路径 -i（必填）</label><input type="text" id="i-input" placeholder="粘贴图片路径"></div>
-      <div class="field field-full"><label>数据库 -d（默认情况下不需要填，默认 ./library/mosaicraft.db）</label><input type="text" id="i-db" placeholder="粘贴目录或.db文件路径"></div>
+      <div class="field field-full"><label>图片路径（必填位置参数）</label><input type="text" id="i-input" placeholder="粘贴图片路径"></div>
+      <div class="field field-full"><label>图库 --library（默认 ./library/mosaicraft.db）</label><input type="text" id="i-db" placeholder="粘贴目录或.db文件路径"></div>
     </div>
   </div>
 </div>
 
 <!-- ============ DB-STATS ============ -->
 <div class="panel" id="panel-dbstats">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d（默认情况下不需要填，默认 ./library/mosaicraft.db）</label><input type="text" id="s-db" placeholder="粘贴目录或.db文件路径"></div></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>图库 --library（默认 ./library/mosaicraft.db）</label><input type="text" id="s-db" placeholder="粘贴目录或.db文件路径"></div></div><label><input id="s-check" type="checkbox"> 检查文件与特征</label> <label><input id="s-deep" type="checkbox"> 解码并核验像素摘要</label></div>
 </div>
 
 <!-- ============ DB-PURGE ============ -->
 <div class="panel" id="panel-dbpurge">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d（默认情况下不需要填，默认 ./library/mosaicraft.db）</label><input type="text" id="p-db" placeholder="粘贴目录或.db文件路径"></div></div><div class="chk-row" style="margin-top:8px"><label><input type="checkbox" id="p-force"> 跳过确认 -y</label></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>图库 --library（默认 ./library/mosaicraft.db）</label><input type="text" id="p-db" placeholder="粘贴目录或.db文件路径"></div></div><div class="chk-row" style="margin-top:8px"><label><input type="checkbox" id="p-force"> 实际清理 --apply（默认仅报告）</label></div></div>
 </div>
 
 <!-- ============ DB-HEALTH ============ -->
 <div class="panel" id="panel-dbhealth">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d（默认情况下不需要填，默认 ./library/mosaicraft.db）</label><input type="text" id="h-db" placeholder="粘贴目录或.db文件路径"></div></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>图库 --library（默认 ./library/mosaicraft.db）</label><input type="text" id="h-db" placeholder="粘贴目录或.db文件路径"></div></div></div>
 </div>
 
 <!-- ============ DB-USAGE ============ -->
 <div class="panel" id="panel-dbusage">
-  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>数据库 -d（默认情况下不需要填，默认 ./library/mosaicraft.db）</label><input type="text" id="u-db" placeholder="粘贴目录或.db文件路径"></div><div class="field"><label>Top N -n</label><input type="number" id="u-n" value="50" min="1"></div><div class="field field-full"><label>导出目录 --export</label><input type="text" id="u-export" placeholder="不导出"></div></div></div>
+  <div class="card"><h3>参数</h3><div class="row"><div class="field field-full"><label>图库 --library（默认 ./library/mosaicraft.db）</label><input type="text" id="u-db" placeholder="粘贴目录或.db文件路径"></div><div class="field"><label>排行数量 --limit（0 = 全部）</label><input type="number" id="u-n" value="50" min="0"></div><div class="field field-full"><label>素材导出目录 --output</label><input type="text" id="u-export" placeholder="不导出"></div><div class="field"><label>使用排序</label><select id="u-sort"><option value="targets">独立目标数</option><option value="tiles">累计格数</option></select></div><div class="field"><label>导出选择</label><select id="u-selection"><option value="used">已记录使用</option><option value="unused">未见于已记录使用</option><option value="all">全部素材</option></select></div></div><label><input type="checkbox" id="u-unused"> 显示未使用素材</label></div>
+</div>
+
+<div class="panel" id="panel-project">
+  <section class="card"><h3>便携工程与回导</h3><p>选择服务可访问的工程目录、project.json 或 index.html。ZIP 请先解压；浏览器只负责查看作品。回导使用包内排列和素材，不访问原图库。</p>
+    <div class="row"><div class="field field-full"><label>工程路径</label><input id="r-project" type="text" placeholder="D:\artwork 或其中的 project.json / index.html"></div>
+    <div class="field"><label>操作</label><select id="r-action"><option value="render">重新渲染</option><option value="info">读取信息</option><option value="check">完整性检查</option><option value="pack">打包 ZIP64</option></select></div>
+    <div class="field field-full"><label>输出文件或完整目录</label><input id="r-output" type="text" placeholder="渲染图片路径、工程目录或 ZIP 文件"></div></div>
+    <div class="btns"><button type="button" class="btn btn-secondary" id="r-info">读取工程信息</button></div><div id="r-info-result" role="status"></div>
+  </section>
+  <section class="card"><h3>输出与外观</h3><div class="row">
+    <div class="field"><label>输出模式</label><select id="r-mode"><option value="image">单图</option><option value="html">新的 HTML 工程</option><option value="deepzoom">Deep Zoom</option><option value="tiles">分块</option></select></div>
+    <div class="field"><label>图片格式</label><select id="r-format"><option value="">由文件后缀确定</option><option value="png">PNG</option><option value="jpg">JPEG</option><option value="webp">WebP</option><option value="tiff">TIFF</option></select></div>
+    <div class="field"><label>输出图块 WxH</label><input id="r-tile" placeholder="留空继承工程尺寸"></div>
+    <div class="field"><label>目标叠加 0～1</label><input id="r-blend" type="number" min="0" max="1" step="0.05" placeholder="继承工程"></div>
+    <div class="field"><label>亮度扰动 0～0.5</label><input id="r-jitter" type="number" min="0" max="0.5" step="0.01" placeholder="继承工程，HTML 必须为 0"></div>
+    <div class="field"><label>外观种子</label><input id="r-seed" type="number" min="0" max="4294967295" placeholder="继承工程"></div>
+    <div class="field"><label>线程上限</label><input id="r-threads" type="number" min="0" max="256" value="0"></div>
+    <div class="field"><label>JPEG/WebP 质量</label><input id="r-quality" type="number" min="1" max="100" placeholder="100"></div>
+    <div class="field"><label>PNG 压缩</label><input id="r-png" type="number" min="1" max="9" placeholder="1"></div>
+    <div class="field"><label>写入模式</label><select id="r-write"><option value="">自动</option><option value="stream">流式</option><option value="batch">全量</option></select></div>
+    </div><div class="chk-row"><label><input id="r-thumbnail" type="checkbox">附加单图缩略图</label><label><input id="r-overwrite" type="checkbox">覆盖已有输出</label><label><input id="r-deep" type="checkbox">深度检查</label></div>
+    <p class="hint">放大图块只会重采样包内素材，不能恢复归一化前照片细节。重新渲染不会重新选图或增加图库使用记录。HTML 请发送完整 ZIP，解压后离线打开 index.html。</p>
+  </section>
 </div>
 
 <!-- ============ HELP ============ -->
@@ -599,20 +621,20 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 
   <section class="card" aria-labelledby="help-options-title">
     <h3 id="help-options-title">生成选项详解</h3>
-    <p class="help-intro">选项后面的 <code>-i</code>、<code>--preview</code> 等名称对应命令行参数。网页会根据同一份表单生成命令和提交请求，初次使用可以保留默认匹配参数。</p>
+    <p class="help-intro">选项后面的 <code>-i</code>、<code>--thumbnail</code> 等名称对应命令行参数。网页会根据同一份表单生成命令和提交请求，初次使用可以保留默认匹配参数。</p>
     <details id="help-size">
       <summary>尺寸与格式：小块数量、输出大小和文件类型</summary>
       <p>先对目标图缩放与上采样，再按匹配 Tile 划网格；最后用选中的素材填充每个网格。最终尺寸由网格数和输出 Tile 尺寸共同决定，页面上的“输出宽度 / 高度”不是最终主图尺寸。</p>
       <div class="help-table-wrap"><table class="help-table">
         <thead><tr><th scope="col">选项</th><th scope="col">作用、默认值与适用场景</th></tr></thead><tbody>
-          <tr><td>Tile 宽度 / 高度<br><code>--tile-w / --tile-h</code></td><td>每个匹配区域在处理后目标图中占用的宽高，默认 <code>9 × 16</code>，各轴至少 4。缩小可得到更多素材块和更细的整体轮廓，但匹配和输出成本更高；放大适合先快速试图或减少素材块数。尽量让宽高比与图库素材、输出 Tile 接近，以免最终画面比例改变。</td></tr>
-          <tr><td>输出宽度 / 高度<br><code>--out-w / --out-h</code></td><td>切块前把目标图缩放到指定像素。留空或 0 不指定；只填一轴时另一轴按原比例推导，两轴都填则按填写尺寸缩放，可能拉伸画面。原图很大或实时预览格数过多时，可先缩小一轴来减少网格数量；原始目标图本身也须满足尺寸上限。</td></tr>
-          <tr><td>上采样<br><code>--upscale</code></td><td>在上述目标缩放之后、切块之前按整数倍放大，默认 1，范围 1～64。2 倍通常约产生 4 倍网格；需要更密的拼图时使用，代价是更长耗时、更大输出和内存开销，放大不会创造原图细节。</td></tr>
+          <tr><td>Tile 宽度 / 高度<br><code>--match-tile</code></td><td>每个匹配区域在处理后目标图中占用的宽高，默认 <code>9 × 16</code>，各轴至少 4。缩小可得到更多素材块和更细的整体轮廓，但匹配和输出成本更高；放大适合先快速试图或减少素材块数。尽量让宽高比与图库素材、输出 Tile 接近，以免最终画面比例改变。</td></tr>
+          <tr><td>输出宽度 / 高度<br><code>--target-size</code></td><td>切块前把目标图缩放到指定像素。留空或 0 不指定；只填一轴时另一轴按原比例推导，两轴都填则按填写尺寸缩放，可能拉伸画面。原图很大或实时预览格数过多时，可先缩小一轴来减少网格数量；原始目标图本身也须满足尺寸上限。</td></tr>
+          <tr><td>上采样<br><code>--target-upscale</code></td><td>在上述目标缩放之后、切块之前按整数倍放大，默认 1，范围 1～64。2 倍通常约产生 4 倍网格；需要更密的拼图时使用，代价是更长耗时、更大输出和内存开销，放大不会创造原图细节。</td></tr>
           <tr><td>输出 Tile 尺寸<br><code>--output-tile</code></td><td>每个入选素材在最终图中占用的像素，写成 <code>宽x高</code>，默认 <code>180x320</code>；横向图库遇到该默认值时使用 <code>320x180</code>。需要较小文件时可按相同比例缩小，如 <code>32x18</code>；放大会使素材更易看清，但不会增加匹配块数。比例与匹配 Tile 不同时，整体画面比例也会改变。</td></tr>
           <tr><td>输出格式<br><code>--format</code></td><td>默认自动：先看输出文件后缀，再看目标图后缀，否则用 PNG；显式选择优先，并调整不一致的输出后缀。JPG 适合照片和较小文件，PNG 适合无损保存，WebP 适合需要该格式的场景，TIFF 适合支持它的后续流程。不支持的输出后缀会报错，除非显式选择支持的格式。</td></tr>
           <tr><td>格式尺寸上限</td><td>JPG 单轴最多 65,500 像素，WebP 为 16,383。自动推导的 JPG/WebP 超限时改存 PNG 并保留尺寸；显式选定时缩小输出 Tile 以适配。若网格某轴的块数本身超限，需改用 PNG/TIFF 或分块输出。任务“输出计划”显示适配，结果区显示实际文件。</td></tr>
           <tr><td>JPEG/WebP 质量<br><code>--quality</code></td><td>默认 100，范围 1～100；数值较低通常减小文件，但压缩损失更明显。照片输出过大时可适当降低并检查画质；不控制 PNG、TIFF 或单独保存的结果预览。分块 JPEG 也使用此质量。</td></tr>
-          <tr><td>PNG 压缩级别<br><code>--png-level</code></td><td>默认 1，范围 1～9。提高级别通常更省空间、保存更慢，不改变 PNG 像素；经常分享或归档时可尝试较高级别，频繁试图可保留 1。自动改存 PNG 时也使用此值。</td></tr>
+          <tr><td>PNG 压缩级别<br><code>--png-compression</code></td><td>默认 1，范围 1～9。提高级别通常更省空间、保存更慢，不改变 PNG 像素；经常分享或归档时可尝试较高级别，频繁试图可保留 1。自动改存 PNG 时也使用此值。</td></tr>
           <tr><td>写入模式<br><code>--write-mode</code></td><td><code>auto</code> 按估计内存自动选；<code>stream</code> 逐行分段写入，适合内存紧张的大图；<code>batch</code> 使用整图缓冲，适合内存充足的情况。流式仍需缓冲小块行，WebP 仍使用整图编码；分块输出另按小块保存。</td></tr>
         </tbody>
       </table></div>
@@ -625,11 +647,11 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <div class="help-table-wrap"><table class="help-table">
         <thead><tr><th scope="col">选项</th><th scope="col">作用、默认值与适用场景</th></tr></thead><tbody>
           <tr><td>候选数<br><code>--candidates</code></td><td>每块进入精细比较的候选范围，默认 150，界面支持 10～10000。选图不够贴合且图库充足时可尝试增大；候选越多通常耗时和内存越高，不保证效果一定更好。</td></tr>
-          <tr><td>TopN 随机<br><code>--topn-random</code></td><td>从评分靠前的最多 N 个有效候选中随机选择，默认 10，界面支持 1～10000。设 1 倾向使用当前评分最优项；增大可增加多样性，但可能降低局部贴合。实际池大小不会超过有效候选数。</td></tr>
+          <tr><td>TopN 随机<br><code>--random-top</code></td><td>从评分靠前的最多 N 个有效候选中随机选择，默认 10，界面支持 1～10000。设 1 倾向使用当前评分最优项；增大可增加多样性，但可能降低局部贴合。实际池大小不会超过有效候选数。</td></tr>
           <tr><td>L 亮度范围<br><code>--l-range</code></td><td>候选与目标小块的平均 L 亮度差上限，默认 20，范围 0～255。缺少候选或有空格时可尝试增大；缩小会更严格地限制亮度，但可能排除可用素材。</td></tr>
           <tr><td>邻域窗口<br><code>--neighbor-window</code></td><td>考虑本次选图中附近重复的窗口，0 为自动，界面最大 1000000。局部重复明显时可与邻域惩罚一起调整；窗口越大并不保证完全不重复，效果取决于候选与图库。</td></tr>
           <tr><td>邻域惩罚<br><code>--neighbor-penalty</code></td><td>默认 100，非负。提高会增加邻域内重复素材的评分成本，适合减轻相邻重复；代价可能是选用相似度较低的素材。它影响本次布局，与历史使用计数的复用惩罚不同。</td></tr>
-          <tr><td>复用惩罚<br><code>--penalty</code></td><td>默认 0.01，非负；按图片记录中的使用计数增加评分成本，0 不施加这项惩罚。该计数与“使用记录”页由质量分析写入的统计分开；新建图库的计数通常为 0，调高后不一定产生变化。排查本次相邻重复时优先查看邻域选项。</td></tr>
+          <tr><td>复用惩罚<br><code>--reuse-penalty</code></td><td>默认 0.01，非负；按图片记录中的使用计数增加评分成本，0 不施加这项惩罚。该计数与“使用记录”页的最终排列统计分开；新建图库的计数通常为 0，调高后不一定产生变化。排查本次相邻重复时优先查看邻域选项。</td></tr>
           <tr><td>LAB 权重<br><code>--lab-weight</code></td><td>默认 0.20，比较整体平均颜色与亮度。整体色调不够贴合时可尝试提高。</td></tr>
           <tr><td>Grid 权重<br><code>--grid-weight</code></td><td>默认 0.45，比较 8×8 区域的颜色布局。希望素材内部明暗、色块位置更接近目标块时可尝试提高。</td></tr>
           <tr><td>Tiny 权重<br><code>--tiny-weight</code></td><td>默认 0.25，比较缩略灰度图的明暗结构。整体轮廓和明暗分布比色彩更重要时可尝试提高。</td></tr>
@@ -644,17 +666,17 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <p>以下开关初始均关闭，浏览器恢复表单草稿后可能保留上次选择。实时预览是单独的操作，不等于这里的“生成结果预览”。</p>
       <div class="help-table-wrap"><table class="help-table">
         <thead><tr><th scope="col">选项</th><th scope="col">作用与适用场景</th></tr></thead><tbody>
-          <tr><td>生成结果预览<br><code>--preview</code></td><td>正式生成单图时额外保存 <code>主图名_preview.jpg</code>，方便快速查看或分享；主图仍按设置保存。预览保持比例、不放大，宽度最多 1400、总像素最多 400 万，JPEG 质量固定 92；不能与分块或 DeepZoom 同用。预览写入失败时主图可能已经保存，查看任务结果确认。</td></tr>
+          <tr><td>生成结果预览<br><code>--thumbnail</code></td><td>正式生成单图时额外保存 <code>主图名_preview.jpg</code>，方便快速查看或分享；主图仍按设置保存。预览保持比例、不放大，宽度最多 1400、总像素最多 400 万，JPEG 质量固定 92；不能与分块或 DeepZoom 同用。预览写入失败时主图可能已经保存，查看任务结果确认。</td></tr>
           <tr><td>质量分析<br><code>--analyze</code></td><td>生成评分、素材频次、热力图及报告。完成后在“任务与结果”展开“质量分析”，从误差最大的格子中选一格对照目标裁块和入选素材。分数衡量亮度扰动与基础图叠加前的选图偏差，分数越高，偏差越大。</td></tr>
           <tr><td>性能分析<br><code>--benchmark</code></td><td>显示索引、匹配、输出等阶段耗时及缓冲统计；运行较慢、需要定位瓶颈时开启。并行阶段可能重叠，耗时不能直接相加。</td></tr>
           <tr><td>资源监控</td><td>每秒采集进程 CPU 和驻留内存。CUDA 任务在驱动支持时还可显示所用设备的利用率、显存及进程显存。任务历史保留峰值和均值。</td></tr>
           <tr><td>自适应权重<br><code>--adaptive-weights</code></td><td>根据各目标块的平滑、边缘和纹理特征调整匹配权重。目标同时包含平坦区域和复杂纹理时可尝试，并与关闭时的结果比较；它会改变选图，不保证所有画面都更好。</td></tr>
-          <tr><td>随机亮度调整<br><code>--color-adjust</code></td><td>选图后随机调整各素材块的 LAB 亮度，使块与块的亮度有变化；希望画面有更多细微变化时可开启。不会改变选图结果，也可能带来额外颜色转换。</td></tr>
-          <tr><td>亮度扰动幅度<br><code>--color-strength</code></td><td>默认 0.04，范围 0～0.5；0.04 表示 L 通道相对乘数在约 ±4% 内随机变化，0 不改变像素。必须同时勾选“随机亮度调整”，只填写幅度不会启用；效果过强时调低。</td></tr>
-          <tr><td>基础图叠加强度<br><code>--overlay-strength</code></td><td>默认 0，范围 0～1；将处理后的目标图按此比例叠在素材上，0.2 约为 80% 素材加 20% 基础图。远看轮廓不明显时可从较低值尝试；越高越弱化素材细节。若同时开启亮度调整，先调整素材再叠加。</td></tr>
-          <tr><td>仅 CPU<br><code>--cpu</code></td><td>强制 CPU，适合没有可用 CUDA 或排查 GPU 结果、资源问题。未勾选时尝试可用 CUDA；准备阶段资源不足等情况可回退，实际后端和警告以任务结果为准。</td></tr>
-          <tr><td>分块输出<br><code>--tiled</code></td><td>按输出前缀生成 <code>_files</code> 目录，分别保存 JPEG 素材块，适合主图过大或后续自行处理分块；结果区提供实际目录。分块不是一张完整主图，不支持同时保存单图预览。</td></tr>
-          <tr><td>DeepZoom<br><code>--deepzoom</code></td><td>生成分层图块、<code>.dzi</code> 清单和 HTML 查看页，适合浏览超大图的不同缩放级别。需一起保留相关文件与目录；查看页加载浏览组件需要联网。它使用分块输出，不能同时保存单图预览。</td></tr>
+          <tr><td>外观随机性<br><code>--seed</code></td><td>选图后随机调整各素材块的 LAB 亮度，使块与块的亮度有变化；希望画面有更多细微变化时可开启。不会改变选图结果，也可能带来额外颜色转换。</td></tr>
+          <tr><td>亮度扰动幅度<br><code>--brightness-jitter</code></td><td>默认 0，范围 0～0.5；0.04 表示 L 通道相对乘数在约 ±4% 内变化。设为正数即启用，固定种子与格子位置决定扰动，HTML 工程要求为 0。</td></tr>
+          <tr><td>基础图叠加强度<br><code>--target-blend</code></td><td>默认 0，范围 0～1；将处理后的目标图按此比例叠在素材上，0.2 约为 80% 素材加 20% 基础图。远看轮廓不明显时可从较低值尝试；越高越弱化素材细节。若同时开启亮度调整，先调整素材再叠加。</td></tr>
+          <tr><td>仅 CPU<br><code>--backend cpu</code></td><td>强制 CPU，适合没有可用 CUDA 或排查 GPU 结果、资源问题。auto 尝试 CUDA 并允许回退；cuda 要求所需阶段使用加速，否则失败。实际后端和原因以任务结果为准。</td></tr>
+          <tr><td>分块输出<br><code>--mode tiles</code></td><td>在完整输出目录中生成 <code>index_files</code> 图块目录，分别保存 JPEG 素材块，适合主图过大或后续自行处理分块；结果区提供实际目录。分块不是一张完整主图，不支持同时保存单图预览。</td></tr>
+          <tr><td>DeepZoom<br><code>--mode deepzoom</code></td><td>生成分层图块、<code>.dzi</code> 清单和 HTML 查看页，适合浏览超大图的不同缩放级别。需一起保留相关文件与目录；查看页加载浏览组件需要联网。它使用分块输出，不能同时保存单图预览。</td></tr>
         </tbody>
       </table></div>
     </details>
@@ -689,16 +711,16 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
         <tr><td>图片目录<br><code>-i</code></td><td>必填，指向原始素材所在文件夹。默认只扫描这一层；下级目录也要扫描时勾选“递归”。输入与输出分开时，程序处理副本，不给原始素材改名。</td></tr>
         <tr><td>输出目录<br><code>-o</code></td><td>保存归一化素材与特征的图库目录，留空为工作目录下的 <code>library</code>。每组想独立使用的素材可指定不同的输出目录；避免把输出放在将递归扫描的输入目录内部。</td></tr>
         <tr><td>数据库<br><code>-d</code></td><td>图库索引位置；留空时在输出目录创建 <code>mosaicraft.db</code>。通常保持默认即可，生成时选择这个文件或整个图库目录；搬移或备份时同时保留数据库和完整图库资源。</td></tr>
-        <tr><td>归一化尺寸<br><code>--normalize-size</code></td><td>默认 <code>180x320</code>，格式为宽 × 高，单轴 1～8192。程序等比缩放覆盖后中心裁剪，尺寸不同可能裁掉画面边缘；横屏素材可用 <code>320x180</code>。原图尺寸和格式完全匹配时保留原文件字节。已有非空图库的尺寸必须一致；改尺寸请在新目录重建。</td></tr>
+        <tr><td>归一化尺寸<br><code>--size</code></td><td>默认 <code>180x320</code>，格式为宽 × 高，单轴 1～8192。程序等比缩放覆盖后中心裁剪，尺寸不同可能裁掉画面边缘；横屏素材可用 <code>320x180</code>。原图尺寸和格式完全匹配时保留原文件字节。已有非空图库的尺寸必须一致；改尺寸请在新目录重建。</td></tr>
         <tr><td>线程数<br><code>-t</code></td><td>控制 CPU 图片处理线程，留空或 0 自动选择，界面支持至 256。电脑同时运行其他任务或资源占用过高时可降低；增加线程未必更快，也可能增加内存和磁盘压力。</td></tr>
-        <tr><td>增量模式<br><code>--append</code></td><td>向现有图库加入新素材，跳过内容重复项并刷新需要更新的特征，适合定期补充图片。仍会对全库按颜色排序、重新编号；已删除的原始素材若仍在输入目录，重新导入时可能再次入库。</td></tr>
+        <tr><td>增量模式<br><code>library add</code></td><td>向现有图库加入新素材，跳过内容重复项并刷新需要更新的特征，适合定期补充图片。仍会对全库按颜色排序、调整文件名，素材 ID 保持不变；已删除的原始素材若仍在输入目录，重新导入时可能再次入库。</td></tr>
         <tr><td>递归扫描子目录<br><code>-r</code></td><td>连同图片目录的下级文件夹一起扫描，适合素材按相册或日期分层存放。默认关闭，只扫描指定目录；不希望混入其他文件夹时保持关闭。</td></tr>
-        <tr><td>仅归一化<br><code>--normalize-only</code></td><td>只输出统一尺寸素材，不完成匹配所需的特征提取和全库颜色重排。仅想准备尺寸一致的图片时使用；要作为马赛克图库还需正常建库。</td></tr>
+        <tr><td>仅归一化<br><code>library normalize</code></td><td>只输出统一尺寸素材，不完成匹配所需的特征提取和全库颜色重排。仅想准备尺寸一致的图片时使用；要作为马赛克图库还需正常建库。</td></tr>
         <tr><td>跳过已有图库确认<br><code>-y</code></td><td>允许对已有记录的图库继续普通建库；新增素材通常可用增量模式。普通和增量建库都可能改变全库数字文件名；输入与输出为同一目录时，已索引原图也会被重新编号。使用前确认图库路径。</td></tr>
       </tbody>
     </table></div>
     <h4 id="help-cuda-templates">CUDA 分辨率模板</h4>
-    <p>CUDA 可用时，程序按图库的归一化尺寸自动选择模板提取和评分。建库时填写对应的 <code>--normalize-size</code>，生成和实时预览时直接读取图库尺寸。匹配 Tile 和输出 Tile 的尺寸可分别设置。</p>
+    <p>CUDA 可用时，程序按图库的归一化尺寸自动选择模板提取和评分。建库时填写对应的 <code>--size</code>，生成和实时预览时直接读取图库尺寸。匹配 Tile 和输出 Tile 的尺寸可分别设置。</p>
     <ul class="help-template-sizes">
       <li>正方形：<code>256x256</code>、<code>512x512</code></li>
       <li>竖屏（9:16）：<code>180x320</code>、<code>270x480</code>、<code>360x640</code>、<code>540x960</code></li>
@@ -733,8 +755,8 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
         <tr><td>统计：数据库</td><td>查看素材总数、特征尺寸、8 档亮度直方图和覆盖缺口。直方图使用图库保存的 0～255 LAB L 值。</td></tr>
         <tr><td>健康：数据库</td><td>查看缺失素材文件数、特征检查警告、已用与未用占比，以及高频素材占用的格数比例。使用次数来源于已记录的生成任务。</td></tr>
         <tr><td>清理：数据库 / 跳过确认</td><td>适合从图库目录手动删除图片后同步数据库。先不勾选“跳过确认”并运行，查看失去图片的记录预览；确认无误后勾选并运行，在弹窗中确认，程序删除这些记录及关联特征。它不按“未使用”删除仍存在的图片，也不会从原始素材重新导入图片。</td></tr>
-        <tr><td>使用记录：Top N<br><code>-n</code></td><td>默认 50，设置显示多少条已记录的使用排名。正式生成勾选“质量分析”且分析统计成功提交后才有记录；Top N 只限制列表数量，不代表图库其余素材已删除或无用。</td></tr>
-        <tr><td>使用记录：导出目录<br><code>--export</code></td><td>留空查询排名；填写目录并确认后，将所有已记录使用过的素材复制到该目录，不受 Top N 显示数量限制。适合整理已用素材，目标目录中的同名导出文件可能被覆盖。</td></tr>
+        <tr><td>使用记录：排行数量<br><code>--limit</code></td><td>默认 50，设置显示多少条已记录的使用排名。成功生成自动记录最终排列，与质量分析开关无关；0 表示全部。列表数量不代表其余素材已删除或无用。</td></tr>
+        <tr><td>使用记录：素材导出<br><code>library export --selection</code></td><td>留空查询排名；填写目录并确认后，按 used、unused 或 all 选择复制素材，不受排行数量限制；未使用指未见于已记录历史。适合整理已用素材，目标目录中的同名导出文件可能被覆盖。</td></tr>
       </tbody>
     </table></div>
   </section>
@@ -754,7 +776,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <details><summary>为什么预览选项变灰了？</summary><p>检查是否勾选了分块输出或 DeepZoom；这两种模式不支持单图预览，页面会清除并禁用“生成结果预览”。旧服务未提供预览能力时也会禁用，并显示原因。</p></details>
     <details><summary>为什么没有候选，或者部分小块是空的？</summary><p>先检查图库是否可读、素材是否足够，以及 L 亮度范围是否过窄。适当放宽范围或补充对应明暗、色调的素材；缺失素材和特征可通过健康检查与重新建库排查。</p></details>
     <details><summary>为什么文件名后缀或最终尺寸和预想的不一样？</summary><p>明确选择输出格式时，最终后缀会按格式调整。最终尺寸由目标图处理后的网格数量与输出 Tile 尺寸共同决定，参见“尺寸与格式”的例子；实际结果区提供最终路径和尺寸。</p></details>
-    <details><summary>为什么使用记录没有数据？</summary><p>使用统计在勾选“质量分析”的生成任务到达分析提交点后写入。普通生成不会提交这份统计，分析提前退出或统计提交失败时也不会产生本轮完整记录。</p></details>
+    <details><summary>为什么使用记录没有数据？</summary><p>成功生成会自动记录最终排列，与质量分析开关无关。未使用表示未见于已记录历史；历史缺失不会补造。预览、检查、浏览、打包与工程回导不增加使用统计。</p></details>
     <details><summary>服务断线或提交超时后怎么办？</summary><p>页面会保留最后状态并自动重连。若提示“提交结果未知”，先检查任务列表确认是否已经创建任务，再决定是否重新提交，以免重复执行。</p></details>
     <details><summary>为什么大尺寸目标还没缩放就被拒绝？</summary><p>原始目标图、缩放后和上采样后的工作图都受尺寸限制；原图本身超过 1 亿像素时，页面中的输出宽高无法绕过原图检查。请先在外部将目标图片缩小，再重新选择。</p></details>
     <details><summary>删除图片并清理后，为什么重新建库又出现了？</summary><p>清理只同步图库中已缺失图片的记录，不修改原始素材。重新从仍包含这些图片的来源建库或追加时，它们可能再次被导入。要避免重新加入，请先整理来源素材，再建库。</p></details>
@@ -1077,6 +1099,15 @@ async function runCommand() {
       await pollJob(data.job.id, status);
       return;
     }
+    if (tab === 'project') {
+      const action = val('r-action');
+      const endpoint = action === 'info' ? '/api/project/info' : '/api/jobs/' + (action === 'render' ? 'render' : 'project-' + action);
+      const data = await postJson(endpoint, payload);
+      if (!data.ok) { renderFailure(status, data); return; }
+      if (action === 'info') { showProjectInfo(data.project); status.textContent = '工程信息已读取。'; return; }
+      status.textContent = '已提交 ' + data.job.id + '，请在任务与结果中查看。';
+      setCurrentJob(data.job.id); return;
+    }
     if (tab === 'build') {
       const data = await postJson('/api/jobs/build', payload);
       if (!data.ok || !data.job) {
@@ -1097,6 +1128,11 @@ async function runCommand() {
         return;
       }
       status.innerHTML = '<span style="color:var(--success)">✅ Done</span>' + renderDbStats(data.stats);
+      if (val('s-check') || val('s-deep')) {
+        const health = await postJson('/api/db/health', {...payload, deep:!!val('s-deep')});
+        if (health.health) status.innerHTML += renderDbHealth(health.health);
+        if (!health.ok) status.innerHTML += '<p class="hint">完整性检查失败：' + escapeHtml(health.message) + '</p>';
+      }
       libraryVisuals.paint(status);
       libraryVisuals.mountCatalog(status, payload.dbPath);
       return;
@@ -1317,6 +1353,7 @@ function renderJobStatus(job, title)
 
 function jobTypeLabel(type)
 {
+  if (['render','project-check','project-pack'].includes(type)) return {render:'工程回导渲染','project-check':'工程检查','project-pack':'工程打包'}[type];
   if (type === 'mosaic')
   {
     return '生成马赛克';
@@ -1434,12 +1471,13 @@ function renderInspect(info) {
 
 function renderDbUsage(usage) {
   if (!usage || usage.empty) return '<p class="hint">暂无使用统计</p>';
-  const peak = Math.max(1, usage.top[0]?.runs || 0);
+  const metric = val('u-sort') === 'tiles' ? 'tiles' : 'runs';
+  const peak = Math.max(1, ...usage.top.map(item => item[metric] || 0));
   const rows = usage.top.map((item, index) => `<tr><td>${index + 1}</td><th scope="row">${escapeHtml(item.id)}</th>
     <td>${escapeHtml(item.runs)}</td><td>${escapeHtml(item.tiles)}</td>
-    <td>${index < 10 ? `<span class="db-rank-track" aria-hidden="true"><span class="db-rank-fill" style="width:${100 * item.runs / peak}%"></span></span>` : ''}</td></tr>`).join('');
-  return `<section class="db-result"><table class="db-result-table"><caption>按使用次数排序（同一目标图只计首次）</caption>
-    <thead><tr><th scope="col">排名</th><th scope="col">素材 ID</th><th scope="col">使用次数</th><th scope="col">累计格数</th><th scope="col">前 10 名</th></tr></thead>
+    <td>${index < 10 ? `<span class="db-rank-track" aria-hidden="true"><span class="db-rank-fill" style="width:${100 * item[metric] / peak}%"></span></span>` : ''}</td></tr>`).join('');
+  return `<section class="db-result"><table class="db-result-table"><caption>按${metric === 'tiles' ? '累计格数' : '独立目标数'}排序（同一目标只记录首次）</caption>
+    <thead><tr><th scope="col">排名</th><th scope="col">素材 ID</th><th scope="col">独立目标数</th><th scope="col">累计格数</th><th scope="col">前 10 名</th></tr></thead>
     <tbody>${rows}</tbody></table></section>`;
 }
 
@@ -1560,21 +1598,31 @@ function buildMosaicPayload(previewOnly = false) {
   setIfChecked(payload, 'analyze', 'm-analyze');
   setIfChecked(payload, 'adaptiveWeights', 'm-adaptive');
   if (!previewOnly) {
-    setIfValue(payload, 'outputPath', 'm-output');
+    payload.outputPath = requireValue('m-output', '输出路径');
+    payload.outputMode = val('m-mode');
+    setIfChecked(payload, 'overwrite', 'm-overwrite');
     setIfValue(payload, 'format', 'm-format');
     setIfValue(payload, 'writeMode', 'm-writemode');
     setIfNumber(payload, 'quality', 'm-quality', 'JPEG/WebP 质量', { integer: true, min: 1, max: 100 });
     setIfNumber(payload, 'pngLevel', 'm-pnglevel', 'PNG 压缩级别', { integer: true, min: 1, max: 9 });
     setIfNumber(payload, 'colorStrength', 'm-colorstr', '亮度扰动幅度', { min: 0, max: 0.5 });
     setIfNumber(payload, 'overlayStrength', 'm-overlaystr', '基础图叠加强度', { min: 0, max: 1 });
-    setIfChecked(payload, 'tiled', 'm-tiled');
-    setIfChecked(payload, 'deepZoom', 'm-deepzoom');
+
     setIfChecked(payload, 'benchmark', 'm-benchmark');
     if (hasFeature('task-resources')) setIfChecked(payload, 'resourceMonitor', 'm-monitor');
-    setIfChecked(payload, 'colorAdjust', 'm-coloradj');
+    payload.colorAdjust = (payload.colorStrength || 0) > 0;
     setIfChecked(payload, 'generatePreview', 'm-preview');
   }
-  if (val('m-cpu')) payload.useGpu = false;
+  payload.backend = val('m-backend');
+  setIfNumber(payload, 'threads', 'm-threads', '线程上限', {integer:true,min:0,max:256});
+  setIfNumber(payload, 'seed', 'm-seed', '种子', {integer:true,min:0,max:4294967295});
+  if (!previewOnly && payload.outputMode === 'html') {
+    if (payload.colorAdjust && payload.colorStrength > 0) throw uiFieldError('m-colorstr', 'HTML 首版不支持非零亮度扰动，请设置为 0。');
+    for (const key of ['format','quality','pngLevel','writeMode','generatePreview']) delete payload[key];
+  }
+  if (!previewOnly && ['deepzoom','tiles'].includes(payload.outputMode)) {
+    for (const key of ['format','pngLevel','writeMode','generatePreview']) delete payload[key];
+  }
 
   const weights = ['labWeight','gridWeight','tinyWeight','edgeWeight','lbpWeight'];
   if (weights.reduce((sum,key) => sum + (payload[key] === undefined ? CLI_DEFAULTS.mosaic[key] : payload[key]), 0) <= 0)
@@ -1586,24 +1634,83 @@ function buildMosaicPayload(previewOnly = false) {
   return payload;
 }
 
+function buildProjectPayload() {
+  const payload = {projectPath:requireValue('r-project', '工程路径')};
+  const action = val('r-action');
+  if (action === 'info') return payload;
+  if (action === 'check') { payload.deep = !!val('r-deep'); return payload; }
+  payload.outputPath = requireValue('r-output', '输出路径');
+  setIfChecked(payload, 'overwrite', 'r-overwrite');
+  if (action === 'pack') return payload;
+  payload.outputMode = val('r-mode');
+  const size = setIfSize(payload, 'outputTile', 'r-tile', '输出图块');
+  if (size) { payload.nativeTileW = size.w; payload.nativeTileH = size.h; }
+  setIfNumber(payload, 'overlayStrength', 'r-blend', '目标叠加', {min:0,max:1});
+  setIfNumber(payload, 'brightnessJitter', 'r-jitter', '亮度扰动', {min:0,max:0.5});
+  setIfNumber(payload, 'seed', 'r-seed', '外观种子', {integer:true,min:0,max:4294967295});
+  setIfNumber(payload, 'threads', 'r-threads', '线程上限', {integer:true,min:0,max:256});
+  if (payload.outputMode === 'html') {
+    if (payload.brightnessJitter > 0) throw uiFieldError('r-jitter', 'HTML 不支持非零亮度扰动');
+  } else {
+    setIfNumber(payload, 'quality', 'r-quality', 'JPEG/WebP 质量', {integer:true,min:1,max:100});
+    if (payload.outputMode === 'image') {
+      setIfValue(payload, 'format', 'r-format'); setIfValue(payload, 'writeMode', 'r-write');
+      setIfNumber(payload, 'pngLevel', 'r-png', 'PNG 压缩', {integer:true,min:1,max:9});
+      setIfChecked(payload, 'generatePreview', 'r-thumbnail');
+    }
+  }
+  return payload;
+}
+function showProjectInfo(project) {
+  document.getElementById('r-info-result').innerHTML = '<pre>' + escapeHtml(JSON.stringify(project, null, 2)) + '</pre>';
+}
+async function readProjectInfo() {
+  const status = document.getElementById('r-info-result');
+  try {
+    const data = await postJson('/api/project/info', {projectPath:requireValue('r-project', '工程路径')});
+    if (!data.ok) { renderFailure(status, data); return; }
+    showProjectInfo(data.project);
+  } catch (error) { status.textContent = error.message; }
+}
+function selectProject(path, action = 'render') {
+  document.getElementById('r-project').value = path;
+  document.getElementById('r-action').value = action;
+  if (action === 'pack') document.getElementById('r-output').value = path.replace(/[\\/]+$/, '') + '.zip';
+  document.querySelector('.tab[data-cmd="project"]').click();
+  rememberPath('r-project'); generateCommand(); readProjectInfo();
+}
+document.getElementById('r-info').addEventListener('click', readProjectInfo);
+document.addEventListener('click', event => {
+  const use = event.target.closest('[data-use-project]');
+  const pack = event.target.closest('[data-pack-project]');
+  if (use) selectProject(use.dataset.useProject);
+  if (pack) selectProject(pack.dataset.packProject, 'pack');
+});
+
 function buildBuildPayload() {
   const payload = {};
   payload.inputDir = requireValue('b-input', '图片目录');
   setIfValue(payload, 'outputDir', 'b-output');
-  setIfValue(payload, 'dbPath', 'b-db');
   setIfNumber(payload, 'threads', 'b-threads', '线程数', { integer: true, min: 0, max:256 });
   const normSize = setIfSize(payload, 'normalizeSize', 'b-normsize', '归一化尺寸');
-  setIfChecked(payload, 'appendMode', 'b-append');
+  payload.appendMode = val('b-mode') === 'add';
   setIfChecked(payload, 'recursive', 'b-recursive');
-  setIfChecked(payload, 'normalizeOnly', 'b-normonly');
-  setIfChecked(payload, 'forceMode', 'b-force');
+  payload.normalizeOnly = val('b-mode') === 'normalize';
+  if (!payload.normalizeOnly) payload.backend = val('b-backend');
+
   if (hasFeature('task-resources')) setIfChecked(payload, 'resourceMonitor', 'b-monitor');
 
-  if (normSize) {
+  if (normSize && !payload.appendMode) {
     payload.normalizeWidth = normSize.w;
     payload.normalizeHeight = normSize.h;
   }
   return payload;
+}
+
+function libraryDirectory(path) {
+  if (!/\.db$/i.test(path)) return path;
+  const separator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  return separator < 0 ? '.' : path.slice(0, separator + 1);
 }
 
 function escapeHtml(text) {
@@ -1928,39 +2035,54 @@ document.addEventListener('click', event => {
 });
 
 
-const FORM_FIELDS = {"mosaic": {"inputPath": "m-input", "dbPath": "m-db", "outputPath": "m-output", "format": "m-format", "writeMode": "m-writemode", "tileW": "m-tilew", "tileH": "m-tileh", "candidates": "m-candidates", "topNRandom": "m-topn", "lRange": "m-lrange", "neighborWindow": "m-nwin", "neighborPenalty": "m-npen", "upscale": "m-upscale", "outW": "m-outw", "outH": "m-outh", "labWeight": "m-labw", "gridWeight": "m-gridw", "tinyWeight": "m-tinyw", "edgeWeight": "m-edgew", "lbpWeight": "m-lbpw", "usePenalty": "m-penalty", "quality": "m-quality", "pngLevel": "m-pnglevel", "colorStrength": "m-colorstr", "overlayStrength": "m-overlaystr", "tiled": "m-tiled", "deepZoom": "m-deepzoom", "analyze": "m-analyze", "adaptiveWeights": "m-adaptive", "benchmark": "m-benchmark", "resourceMonitor": "m-monitor", "colorAdjust": "m-coloradj", "generatePreview": "m-preview"}, "build": {"inputDir": "b-input", "outputDir": "b-output", "dbPath": "b-db", "threads": "b-threads", "appendMode": "b-append", "recursive": "b-recursive", "normalizeOnly": "b-normonly", "forceMode": "b-force"}};
+const FORM_FIELDS = {"mosaic": {"inputPath": "m-input", "dbPath": "m-db", "outputPath": "m-output", "format": "m-format", "writeMode": "m-writemode", "tileW": "m-tilew", "tileH": "m-tileh", "candidates": "m-candidates", "topNRandom": "m-topn", "lRange": "m-lrange", "neighborWindow": "m-nwin", "neighborPenalty": "m-npen", "upscale": "m-upscale", "outW": "m-outw", "outH": "m-outh", "labWeight": "m-labw", "gridWeight": "m-gridw", "tinyWeight": "m-tinyw", "edgeWeight": "m-edgew", "lbpWeight": "m-lbpw", "usePenalty": "m-penalty", "quality": "m-quality", "pngLevel": "m-pnglevel", "colorStrength": "m-colorstr", "overlayStrength": "m-overlaystr", "tiled": "m-tiled", "deepZoom": "m-deepzoom", "analyze": "m-analyze", "adaptiveWeights": "m-adaptive", "benchmark": "m-benchmark", "resourceMonitor": "m-monitor", "colorAdjust": "m-coloradj", "generatePreview": "m-preview"}, "build": {"inputDir": "b-input", "outputDir": "b-output", "threads": "b-threads", "appendMode": "b-append", "recursive": "b-recursive", "normalizeOnly": "b-normonly"}};
 
+Object.assign(FORM_FIELDS.mosaic, {outputMode:'m-mode',backend:'m-backend',threads:'m-threads',seed:'m-seed',overwrite:'m-overwrite'});
+delete FORM_FIELDS.mosaic.colorAdjust;
+Object.assign(FORM_FIELDS.build, {backend:'b-backend'});
+delete FORM_FIELDS.build.appendMode;
+delete FORM_FIELDS.build.normalizeOnly;
+FORM_FIELDS.project = {projectPath:'r-project',outputPath:'r-output',outputMode:'r-mode',format:'r-format',overlayStrength:'r-blend',brightnessJitter:'r-jitter',seed:'r-seed',threads:'r-threads',quality:'r-quality',pngLevel:'r-png',writeMode:'r-write',generatePreview:'r-thumbnail',overwrite:'r-overwrite',deep:'r-deep'};
 function restoreRequestParameters(job) {
-  if (!job || !job.request || !FORM_FIELDS[job.type]) {
+  const project = ['render','project-check','project-pack'].includes(job && job.type);
+  const tab = project ? 'project' : job && job.type;
+  if (!job || !job.request || !FORM_FIELDS[tab]) {
     taskStore.note = '此任务没有可恢复的参数。'; renderTaskArea(); return;
   }
   const request = job.request;
-  for (const [key, id] of Object.entries(FORM_FIELDS[job.type])) {
+  for (const [key, id] of Object.entries(FORM_FIELDS[tab])) {
     const element = document.getElementById(id);
     if (!element) continue;
     if (element.type === 'checkbox') element.checked = !!request[key];
     else element.value = request[key] === undefined ? '' : request[key];
   }
-  if (job.type === 'mosaic') {
+  if (tab === 'mosaic') {
     document.getElementById('m-otile').value = (request.nativeTileW || 180) + 'x' + (request.nativeTileH || 320);
-    document.getElementById('m-cpu').checked = request.useGpu === false;
+    document.getElementById('m-mode').value = request.outputMode || (request.deepZoom ? 'deepzoom' : request.tiled ? 'tiles' : 'image');
+    document.getElementById('m-backend').value = request.backend || (request.useGpu === false ? 'cpu' : 'auto');
+    document.getElementById('m-colorstr').value = request.colorAdjust ? (request.colorStrength ?? 0.04) : 0;
+  } else if (project) {
+    document.getElementById('r-action').value = job.type === 'render' ? 'render' : job.type.replace('project-','');
+    document.getElementById('r-tile').value = request.nativeTileW ? request.nativeTileW + 'x' + request.nativeTileH : '';
   } else {
     document.getElementById('b-normsize').value = (request.normalizeWidth || 180) + 'x' + (request.normalizeHeight || 320);
     document.getElementById('b-monitor').checked = !!request.resourceMonitor;
+    if (request.appendMode && request.dbPath && request.dbPath !== 'mosaicraft.db')
+      document.getElementById('b-output').value = libraryDirectory(request.dbPath);
+    document.getElementById('b-mode').value = request.normalizeOnly ? 'normalize' : request.appendMode ? 'add' : 'build';
+    document.getElementById('b-backend').value = request.backend || 'auto';
   }
-  document.querySelector('.tab[data-cmd="' + job.type + '"]').click();
-  if (typeof syncPreviewOption === 'function') syncPreviewOption();
-  generateCommand();
-  taskStore.note = '参数已恢复，请检查后点击运行。';
-  renderTaskArea();
+  document.querySelector('.tab[data-cmd="' + tab + '"]').click();
+  syncPreviewOption(); generateCommand();
+  taskStore.note = '参数已恢复，请检查后点击运行。'; renderTaskArea();
 }
 
 let formModel = { valid: false, payload: null };
 let restoringDraft = false;
 const PATH_FIELDS = {
-  'm-input': 'images', 'i-input': 'images', 'm-db': 'databases', 'b-db': 'databases',
+  'm-input': 'images', 'i-input': 'images', 'm-db': 'databases',
   'i-db': 'databases', 's-db': 'databases', 'h-db': 'databases', 'p-db': 'databases', 'u-db': 'databases',
-  'm-output': 'outputs', 'b-input': 'inputs', 'b-output': 'directories', 'u-export': 'directories'
+  'r-project': 'directories', 'r-output': 'outputs', 'm-output': 'outputs', 'b-input': 'inputs', 'b-output': 'directories', 'u-export': 'directories'
 };
 function normalizePath(value) {
   const text = String(value || '').trim();
@@ -1971,7 +2093,7 @@ function uiFieldError(field, message) { return Object.assign(new Error(message),
 function highlightDiagnostic(diagnostic) {
   const tab = document.querySelector('.tab.active').dataset.cmd;
   const maps = { ...FORM_FIELDS[tab], imagePath: 'i-input', normalizeWidth: 'b-normsize', normalizeHeight: 'b-normsize', nativeTileW: 'm-otile', nativeTileH: 'm-otile',
-    nativeTileW: 'm-otile', nativeTileH: 'm-otile', normalizeWidth: 'b-normsize', normalizeHeight: 'b-normsize' };
+    nativeTileW: tab === 'project' ? 'r-tile' : 'm-otile', nativeTileH: tab === 'project' ? 'r-tile' : 'm-otile' };
   const field = diagnostic.field || '';
   const element = document.getElementById(maps[field] || field);
   if (!element || !element.closest('.panel.active')) return;
@@ -1986,23 +2108,32 @@ function clearFieldErrors() {
   document.querySelectorAll('.field-error').forEach(element => element.remove());
 }
 function syncPreviewOption() {
+  document.getElementById('b-normsize').disabled = val('b-mode') === 'add';
+  document.getElementById('b-backend').disabled = val('b-mode') === 'normalize';
   const preview = document.getElementById('m-preview');
-  const incompatible = val('m-tiled') || val('m-deepzoom');
+  const incompatible = val('m-mode') !== 'image';
+  const html = val('m-mode') === 'html';
+  for (const id of ['m-format','m-quality','m-pnglevel','m-writemode']) document.getElementById(id).disabled = html;
+  const projectMode = val('r-mode'), action = val('r-action');
+  for (const id of ['r-format','r-png','r-write','r-thumbnail']) document.getElementById(id).disabled = projectMode !== 'image' || action !== 'render';
+  document.getElementById('r-quality').disabled = projectMode === 'html' || action !== 'render';
+  for (const id of ['m-format','m-pnglevel','m-writemode']) document.getElementById(id).disabled = incompatible;
   const unsupported = serverAvailable && !hasFeature('result-preview');
   document.getElementById('format-policy-hint').textContent = incompatible
-    ? '分块和 DeepZoom 使用现有分片编码与路径前缀，整图尺寸不触发格式回退或缩小。'
+    ? '目录输出包含全部产物。HTML 复制唯一素材，可离线浏览及回导；Deep Zoom 和分块使用 JPEG。'
     : serverAvailable && !hasFeature('output-format-policy')
     ? '当前服务使用旧版格式规则；新格式优先级与超限适配需要更新服务。'
     : '自动推导的 JPG/WebP 超限时改存 PNG，保留完整尺寸；显式选择 JPG/WebP 时缩小输出 Tile。';
   preview.disabled = incompatible || unsupported;
   if (preview.disabled) preview.checked = false;
   document.getElementById('preview-hint').textContent = incompatible
-    ? '分块与 DeepZoom 模式不生成单图预览。' : unsupported
+    ? 'HTML、分块和 Deep Zoom 模式不生成附加单图缩略图。' : unsupported
     ? '此服务未提供预览能力，可升级服务或复制命令执行。' : '生成结果预览默认关闭，勾选后额外保存一张用于快速查看的 JPEG 预览图。';
 }
 function readFormPayload(tab) {
   if (tab === 'mosaic') return buildMosaicPayload();
   if (tab === 'build') return buildBuildPayload();
+  if (tab === 'project') return buildProjectPayload();
   const prefixes = { inspect: 'i', dbstats: 's', dbhealth: 'h', dbpurge: 'p', dbusage: 'u' };
   const payload = {};
   setIfValue(payload, 'dbPath', prefixes[tab] + '-db');
@@ -2010,47 +2141,50 @@ function readFormPayload(tab) {
   if (tab === 'dbpurge') { payload.dryRun = !val('p-force'); payload.confirm = !!val('p-force'); }
   if (tab === 'dbusage') {
     const output = val('u-export');
-    if (output) { payload.outputDir = output; payload.confirm = true; }
-    else { payload.limit = parseUiNumber('u-n', 'Top N', {integer:true,min:1}) || 50; payload.showUnused = false; }
+    if (output) { payload.outputDir = output; payload.confirm = true; payload.selection = val('u-selection'); }
+    else { payload.limit = parseUiNumber('u-n', '排行数量', {integer:true,min:0}) ?? 50; payload.showUnused = !!val('u-unused'); payload.sort = val('u-sort'); }
   }
   return payload;
 }
-const CLI_FIELDS = {
-  mosaic: [['inputPath','-i','path'],['dbPath','-d','path'],['outputPath','-o','path'],['format','--format'],
-    ['quality','--quality'],['pngLevel','--png-level'],['writeMode','--write-mode'],['tileW','--tile-w'],['tileH','--tile-h'],
-    ['candidates','--candidates'],['topNRandom','--topn-random'],['lRange','--l-range'],['neighborWindow','--neighbor-window'],
-    ['neighborPenalty','--neighbor-penalty'],['upscale','--upscale'],['outW','--out-w'],['outH','--out-h'],['outputTile','--output-tile'],
-    ['labWeight','--lab-weight'],['gridWeight','--grid-weight'],['tinyWeight','--tiny-weight'],['edgeWeight','--edge-weight'],['lbpWeight','--lbp-weight'],
-    ['usePenalty','--penalty'],['colorStrength','--color-strength'],['overlayStrength','--overlay-strength'],['tiled','--tiled','flag'],
-    ['deepZoom','--deepzoom','flag'],['analyze','--analyze','flag'],['adaptiveWeights','--adaptive-weights','flag'],
-    ['benchmark','--benchmark','flag'],['colorAdjust','--color-adjust','flag'],['generatePreview','--preview','flag']],
-  build: [['inputDir','-i','path'],['outputDir','-o','path'],['dbPath','-d','path'],['threads','--threads'],['normalizeSize','--normalize-size'],
-    ['appendMode','--append','flag'],['recursive','-r','flag'],['normalizeOnly','--normalize-only','flag'],['forceMode','-y','flag']],
-  inspect: [['imagePath','-i','path'],['dbPath','-d','path']],
-  dbstats: [['dbPath','-d','path']], dbhealth: [['dbPath','-d','path']],
-  dbpurge: [['dbPath','-d','path'],['confirm','-y','flag']],
-  dbusage: [['dbPath','-d','path'],['limit','-n'],['outputDir','--export','path']]
-};
+const CLI_OPTION_DEFINITIONS = @mosaicCliOptionsJson@;
 const CLI_DEFAULTS = { mosaic: { quality:100, pngLevel:1, writeMode:'auto', tileW:9, tileH:16, candidates:150,
   topNRandom:10, lRange:20, neighborWindow:0, neighborPenalty:100, upscale:1, outW:0, outH:0, outputTile:'180x320',
   labWeight:.2, gridWeight:.45, tinyWeight:.25, edgeWeight:.05, lbpWeight:.05, usePenalty:.01, colorStrength:.04, overlayStrength:0 },
   build: {threads:0,normalizeSize:'180x320'}, dbusage:{limit:50} };
 function commandFromPayload(tab, payload) {
-  const command = {dbstats:'db-stats',dbpurge:'db-purge',dbhealth:'db-health',dbusage:'db-usage'}[tab] || tab;
-  const parts = ['mosaicraft', command];
-  // CLI 的尺寸便捷参数只在命令生成时组合，不进入 API 请求。
   const cli = {...payload};
-  if (tab === 'mosaic' && payload.nativeTileW !== undefined && payload.nativeTileH !== undefined)
-    cli.outputTile = payload.nativeTileW + 'x' + payload.nativeTileH;
-  if (tab === 'build' && payload.normalizeWidth !== undefined && payload.normalizeHeight !== undefined)
-    cli.normalizeSize = payload.normalizeWidth + 'x' + payload.normalizeHeight;
-  for (const [key, flag, type] of CLI_FIELDS[tab]) {
-    const value = cli[key];
-    if (value === undefined || value === '' || value === false || value === (CLI_DEFAULTS[tab] || {})[key]) continue;
-    if (type === 'flag') { if (value) parts.push(flag); }
-    else parts.push(flag, type === 'path' ? quotePowerShell(value) : String(value));
+  if (tab === 'project' && cli.brightnessJitter !== undefined) { cli.colorStrength = cli.brightnessJitter; cli.colorAdjust = true; }
+  let command, group = '', input;
+  if (tab === 'mosaic') { command = 'create'; input = cli.inputPath; }
+  else if (tab === 'build') {
+    group = 'library'; command = cli.normalizeOnly ? 'normalize' : cli.appendMode ? 'add' : 'build'; input = cli.inputDir;
+    if (command === 'add') cli.dbPath = cli.dbPath || cli.outputDir || 'library';
+    else cli.outputPath = cli.outputDir || 'library';
+  } else if (tab === 'project') {
+    command = val('r-action'); group = command === 'render' ? '' : 'project'; input = cli.projectPath;
+  } else if (tab === 'inspect') { command = 'inspect'; input = cli.imagePath; }
+  else { group = 'library'; command = tab === 'dbusage' ? cli.outputDir ? 'export' : 'usage' : tab === 'dbpurge' ? 'purge' : 'report'; input = cli.dbPath || 'library'; cli.outputPath = cli.outputDir; }
+  const parts = ['mosaicraft', ...(group ? [group] : []), command, quotePowerShell(input)];
+  for (const option of CLI_OPTION_DEFINITIONS) {
+    if (!option.field || !option.commands.split(' ').includes(command)) continue;
+    if (option.field === 'colorStrength' && !cli.colorAdjust) continue;
+    const value = cli[option.field];
+    if (value === undefined || value === '' || value === false) continue;
+    if (option.type === 'bool') parts.push('--' + option.name);
+    else parts.push('--' + option.name, typeof value === 'string' ? quotePowerShell(value) : String(value));
   }
-  if (tab === 'mosaic' && payload.useGpu === false) parts.push('--cpu');
+  const size = (flag, w, h) => { if (w !== undefined && h !== undefined) parts.push(flag, w + 'x' + h); };
+  if (command === 'create' || command === 'inspect') {
+    size('--match-tile', cli.tileW, cli.tileH);
+    if (cli.outW || cli.outH) size('--target-size', cli.outW || 'auto', cli.outH || 'auto');
+  }
+  if (command === 'create' || command === 'render') size('--output-tile', cli.nativeTileW, cli.nativeTileH);
+  if (command === 'build' || command === 'normalize') size('--size', cli.normalizeWidth, cli.normalizeHeight);
+  if (command === 'report' && (tab === 'dbhealth' || val('s-check') || val('s-deep'))) parts.push('--check');
+  if ((command === 'report' && val('s-deep')) || (group === 'project' && cli.deep)) parts.push('--deep');
+  if (command === 'purge' && cli.confirm) parts.push('--apply');
+  if (command === 'usage') { if (cli.limit !== undefined) parts.push('--limit', String(cli.limit)); if (cli.showUnused) parts.push('--unused'); if (cli.sort) parts.push('--sort', cli.sort); }
+  if (command === 'export') parts.push('--selection', cli.selection || 'used');
   return parts.join(' ');
 }
 function persistDraft() {
@@ -2092,6 +2226,20 @@ function initializeFormUi() {
   });
   restoringDraft = true;
   const draft = storedJson('mosaicraft-form-v1', {});
+  if (draft.fields) {
+    if ('m-coloradj' in draft.fields) {
+      if (!draft.fields['m-coloradj']) draft.fields['m-colorstr'] = '0';
+      delete draft.fields['m-coloradj'];
+    }
+    if (!draft.fields['b-mode']) draft.fields['b-mode'] = draft.fields['b-normonly'] ? 'normalize' : draft.fields['b-append'] ? 'add' : 'build';
+    delete draft.fields['b-append']; delete draft.fields['b-normonly'];
+    if (draft.fields['b-db']) draft.fields['b-output'] = libraryDirectory(draft.fields['b-db']);
+    delete draft.fields['b-db']; delete draft.fields['b-force'];
+  }
+  if (draft.fields && !draft.fields['m-mode']) {
+    draft.fields['m-mode'] = draft.fields['m-deepzoom'] ? 'deepzoom' : draft.fields['m-tiled'] ? 'tiles' : 'image';
+    draft.fields['m-backend'] = draft.fields['m-cpu'] ? 'cpu' : 'auto';
+  }
   const validDraft = draft.version === UI_STATE_VERSION && draft.fields && typeof draft.fields === 'object' &&
     !Array.isArray(draft.fields) && Object.entries(draft.fields).every(([id, value]) => {
       const element = document.getElementById(id);
@@ -2115,7 +2263,7 @@ function initializeFormUi() {
     element.addEventListener('input', generateCommand);
     element.addEventListener('change', () => {
       if (PATH_FIELDS[element.id]) { element.value = normalizePath(element.value); rememberPath(element.id); }
-      generateCommand();
+      syncPreviewOption(); generateCommand();
     });
   });
 }
@@ -2140,11 +2288,13 @@ function renderTaskArtifacts(job) {
     if (item.kind === 'analysis-image') continue;
     const name = {main:'主图',preview:'预览',library:'图库',tiles:'输出目录',manifest:'DeepZoom 清单',viewer:'DeepZoom 查看页','library-directory':'图库目录',normalized:'归一化目录','analysis-text':'分析文本','analysis-html':'HTML 报告','analysis-data':'分析数据'}[item.id] || item.id;
     html += renderJobPath(name, item.path, '复制路径');
-    if (!item.directory) html += '<button class="btn btn-secondary btn-inline" data-artifact-id="' + escapeAttr(item.id) + '">下载' + escapeHtml(name) + '</button>';
+    if (!item.directory && !['project-entry','project-manifest'].includes(item.kind)) html += '<button class="btn btn-secondary btn-inline" data-artifact-id="' + escapeAttr(item.id) + '">下载' + escapeHtml(name) + '</button>';
   }
+  const project = job.artifacts.find(item => item.id === 'project');
+  if (project) html += '<p><button class="btn btn-secondary" data-use-project="' + escapeAttr(project.path) + '">回导此工程</button> <button class="btn btn-secondary" data-pack-project="' + escapeAttr(project.path) + '">打包完整工程</button></p><p class="hint">HTML 工程请下载完整 ZIP，解压后打开 index.html。</p>';
   if (library) html += '<p><button class="btn btn-secondary" onclick="useTaskLibrary()">使用此图库</button></p>';
   if (preview) html += '<img data-preview="true" class="result-preview" src="' + artifactUrl(job.id, preview.id) + '" alt="马赛克结果预览" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><p class="hint" hidden>预览文件不可用，可能已删除或改写。</p>';
-  else if (job.type === 'mosaic' && !['tiled','deepzoom'].includes(job.runtime && job.runtime.format)) {
+  else if (job.type === 'mosaic' && !['tiled','deepzoom','html'].includes(job.runtime && job.runtime.format)) {
     const requested = job.request && job.request.generatePreview;
     const message = requested && job.state === 'failed' ? '预览未成功保存，请查看失败诊断；主图不会自动加载。'
       : requested && ['running','queued'].includes(job.state) ? '预览生成后将在这里显示。'
@@ -2177,6 +2327,7 @@ document.addEventListener('click', event => {
 @interactivePreviewPickerScript@
 @mosaicPreviewInsightsScript@
 @taskMetricsUiScript@
+@mosaicViewportScript@
 @interactivePreviewScript@
 @taskResultAnalysisScript@
 @mosaicOutputPlanningScript@

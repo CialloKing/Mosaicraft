@@ -70,8 +70,8 @@ const interactivePreview = (() => {
   const endpoint = '/api/mosaic/preview';
   const visibleTileWarning = 16000;
   const maxTileHeight = 256;
-  const cacheBudget = 64 * 1024 * 1024;
-  const parallelLoads = 8;
+  const cacheBudget = MosaicraftViewport.cacheBudget;
+  const parallelLoads = MosaicraftViewport.parallelLoads;
   const byId = name => document.getElementById('live-preview-' + name);
   setupPreviewSizing(byId('surface'), byId('resize'), byId('reset-size'));
   const canvas = byId('canvas');
@@ -530,12 +530,8 @@ const interactivePreview = (() => {
     } else {
       scale = clamp(scale, min, Math.max(maxTileHeight, min));
     }
-    const tw = scale * tileAspect;
-    const th = scale;
-    const worldW = tw * plan.columns;
-    const worldH = th * plan.rows;
-    const x = worldW <= width ? (width - worldW) / 2 : clamp(width / 2 - centerX * tw, width - worldW, 0);
-    const y = worldH <= height ? (height - worldH) / 2 : clamp(height / 2 - centerY * th, height - worldH, 0);
+    const g = MosaicraftViewport.geometry(width, height, plan.columns, plan.rows, tileAspect, scale, centerX, centerY);
+    const {tw, th, x, y} = g;
     centerX = (width / 2 - x) / tw;
     centerY = (height / 2 - y) / th;
     return {width, height, tw, th, x, y};
