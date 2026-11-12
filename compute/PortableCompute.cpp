@@ -44,6 +44,37 @@ void pack(uint32_t *to, double l, double a, double b, double edge, const Grid &g
 }
 } // namespace
 
+std::array<float, 5> fp32Distances(const MatchingBuffers &tiles, size_t tile, const ImageRecord &record,
+                                   const FeaturePack::Reader::Row &payload)
+{
+    constexpr double weights[64] = {
+#include "core/GridWeights.inc"
+    };
+    const float dl = float(tiles.l[tile]) - float(record.avgL);
+    const float da = float(tiles.a[tile]) - float(record.avgA);
+    const float db = float(tiles.b[tile]) - float(record.avgB);
+    std::array<float, 5> result{std::sqrt(dl * dl + da * da + db * db) / 100.0f, 0, 0,
+                                std::abs(float(tiles.edge[tile]) - float(record.edgeDensity)), 0};
+    for (size_t cell = 0; cell < 64; ++cell)
+    {
+        const size_t offset = cell * 3;
+        const float l = tiles.grid[tile][offset] - record.gridLab[offset];
+        const float a = tiles.grid[tile][offset + 1] - record.gridLab[offset + 1];
+        const float b = tiles.grid[tile][offset + 2] - record.gridLab[offset + 2];
+        result[1] += std::sqrt(l * l + a * a + b * b) * float(weights[cell]);
+    }
+    result[1] = result[1] / 64.0f / 100.0f;
+    for (size_t bin = 0; bin < 256; ++bin)
+    {
+        const float diff = float(tiles.tiny[tile][bin]) - float(payload.tiny[bin]);
+        result[2] += diff * diff;
+        result[4] += std::abs(tiles.lbp[tile][bin] - payload.lbp[bin]);
+    }
+    result[2] = payload.tinyValid ? result[2] / (256.0f * 255.0f * 255.0f) : 1.0f;
+    result[4] = payload.lbpValid ? result[4] / 2.0f : 1.0f;
+    return result;
+}
+
 bool FeatureWorkspace::prepare(int w, int h, int maximum, size_t hostBudget, size_t deviceBudget)
 {
     session.reset();
@@ -180,7 +211,7 @@ bool ScoreWorkspace::prepare(int maximum, int count, size_t libraryCount, size_t
     session.reset();
     records = nullptr;
     rows = 0;
-    if (maximum < 1 || count < 1 || libraryCount < 1 || libraryCount > size_t(INT32_MAX))
+    if (maximum < 1 || count < 1 || libraryCount < 1 || libraryCount > UINT32_MAX / stride)
     {
         throw std::invalid_argument("invalid portable score dimensions");
     }
@@ -188,7 +219,8 @@ bool ScoreWorkspace::prepare(int maximum, int count, size_t libraryCount, size_t
     const size_t perRow = stride * 4 + checkedMatchProduct(size_t(count), sizeof(int) + 5 * sizeof(float));
     rows = static_cast<int>(std::min(
         {size_t(maximum), size_t(256), deviceBudget / perRow, hostBudget / (perRow + size_t(count) * sizeof(double))}));
-    if (!rows || library > hostBudget || library > device.maxBufferBytes)
+    uploadRows = std::min({libraryCount, size_t(4096), hostBudget / (stride * 4)});
+    if (!rows || !uploadRows || library > device.maxBufferBytes)
     {
         rows = 0;
         return false;
@@ -218,15 +250,19 @@ void ScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &images, Featu
     {
         throw std::invalid_argument("portable score library size mismatch");
     }
-    std::vector<uint32_t> packed(images.size() * stride);
-    for (size_t i = 0; i < images.size(); ++i)
+    std::vector<uint32_t> packed(uploadRows * stride);
+    for (size_t first = 0; first < images.size(); first += uploadRows)
     {
-        const auto &r = images[i];
-        const auto &f = reader.get(static_cast<int>(i));
-        pack(packed.data() + i * stride, r.avgL, r.avgA, r.avgB, r.edgeDensity, r.gridLab, f.tiny, f.lbp, f.tinyValid,
-             f.lbpValid);
+        const size_t count = std::min(uploadRows, images.size() - first);
+        for (size_t row = 0; row < count; ++row)
+        {
+            const auto &r = images[first + row];
+            const auto &f = reader.get(static_cast<int>(first + row));
+            pack(packed.data() + row * stride, r.avgL, r.avgA, r.avgB, r.edgeDensity, r.gridLab, f.tiny, f.lbp,
+                 f.tinyValid, f.lbpValid);
+        }
+        session->write(0, first * stride * 4, count * stride * 4, packed.data());
     }
-    session->buffer(0, library, packed.data());
     records = &images;
 }
 

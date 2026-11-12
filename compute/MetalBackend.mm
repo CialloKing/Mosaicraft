@@ -1,6 +1,8 @@
 #include "ComputeBackend.h"
 #include "PortableMetal.h"
+#import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <stdexcept>
@@ -75,15 +77,24 @@ class MetalSession final : public Session
                 throw std::runtime_error("Metal buffer allocation failed");
             }
             timings.residentBytes += bytes;
+            timings.peakResidentBytes = std::max(timings.peakResidentBytes, timings.residentBytes);
             timings.allocationMs += elapsed(start);
         }
         if (input)
         {
-            const auto start = Clock::now();
-            std::memcpy(buffers[slot].contents, input, bytes);
-            timings.uploadMs += elapsed(start);
-            timings.uploadBytes += bytes;
+            write(slot, 0, bytes, input);
         }
+    }
+    void write(unsigned slot, size_t offset, size_t bytes, const void *input) override
+    {
+        if (slot >= 4 || offset > buffers[slot].length || bytes > buffers[slot].length - offset)
+        {
+            throw std::out_of_range("Metal upload exceeds buffer");
+        }
+        const auto start = Clock::now();
+        std::memcpy(static_cast<uint8_t *>(buffers[slot].contents) + offset, input, bytes);
+        timings.uploadMs += elapsed(start);
+        timings.uploadBytes += bytes;
     }
     void read(unsigned slot, size_t bytes, void *output) override
     {
@@ -142,6 +153,10 @@ std::vector<Device> metalDevices()
             description.maxBufferBytes = native.maxBufferLength;
             description.reason = "candidate: hardware validation not-run";
             result.push_back(std::move(description));
+        }
+        if (result.empty())
+        {
+            result.push_back({BackendPolicy::Metal, "metal", "Metal", "no Metal devices"});
         }
         return result;
     }

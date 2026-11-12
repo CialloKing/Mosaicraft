@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <vulkan/vulkan.h>
 #ifdef _WIN32
+#define NOMINMAX
 #include <windows.h>
 #else
 #include <dlfcn.h>
@@ -32,18 +33,19 @@ void check(VkResult result, const char *operation)
 
 #define VULKAN_FUNCTIONS(X)                                                                                            \
     X(DestroyInstance)                                                                                                 \
-    X(EnumeratePhysicalDevices) X(GetPhysicalDeviceProperties) X(GetPhysicalDeviceQueueFamilyProperties)               \
-        X(GetPhysicalDeviceMemoryProperties) X(CreateDevice) X(DestroyDevice) X(GetDeviceQueue) X(DeviceWaitIdle)      \
-            X(CreateBuffer) X(DestroyBuffer) X(GetBufferMemoryRequirements) X(AllocateMemory) X(FreeMemory)            \
-                X(BindBufferMemory) X(MapMemory) X(UnmapMemory) X(FlushMappedMemoryRanges)                             \
-                    X(InvalidateMappedMemoryRanges) X(CreateDescriptorSetLayout) X(DestroyDescriptorSetLayout)         \
-                        X(CreatePipelineLayout) X(DestroyPipelineLayout) X(CreateShaderModule) X(DestroyShaderModule)  \
-                            X(CreateComputePipelines) X(DestroyPipeline) X(CreateDescriptorPool)                       \
-                                X(DestroyDescriptorPool) X(AllocateDescriptorSets) X(UpdateDescriptorSets)             \
-                                    X(CreateCommandPool) X(DestroyCommandPool) X(AllocateCommandBuffers)               \
-                                        X(ResetCommandPool) X(BeginCommandBuffer) X(EndCommandBuffer)                  \
-                                            X(CmdBindPipeline) X(CmdBindDescriptorSets) X(CmdPushConstants)            \
-                                                X(CmdDispatch) X(CmdPipelineBarrier) X(QueueSubmit) X(QueueWaitIdle)
+    X(EnumeratePhysicalDevices)                                                                                        \
+    X(GetPhysicalDeviceProperties) X(GetPhysicalDeviceQueueFamilyProperties) X(GetPhysicalDeviceMemoryProperties)      \
+        X(CreateDevice) X(DestroyDevice) X(GetDeviceQueue) X(DeviceWaitIdle) X(CreateBuffer) X(DestroyBuffer)          \
+            X(GetBufferMemoryRequirements) X(AllocateMemory) X(FreeMemory) X(BindBufferMemory) X(MapMemory)            \
+                X(UnmapMemory) X(FlushMappedMemoryRanges) X(InvalidateMappedMemoryRanges) X(CreateDescriptorSetLayout) \
+                    X(DestroyDescriptorSetLayout) X(CreatePipelineLayout) X(DestroyPipelineLayout)                     \
+                        X(CreateShaderModule) X(DestroyShaderModule) X(CreateComputePipelines) X(DestroyPipeline)      \
+                            X(CreateDescriptorPool) X(DestroyDescriptorPool) X(AllocateDescriptorSets)                 \
+                                X(UpdateDescriptorSets) X(CreateCommandPool) X(DestroyCommandPool)                     \
+                                    X(AllocateCommandBuffers) X(ResetCommandPool) X(BeginCommandBuffer)                \
+                                        X(EndCommandBuffer) X(CmdBindPipeline) X(CmdBindDescriptorSets)                \
+                                            X(CmdPushConstants) X(CmdDispatch) X(CmdPipelineBarrier) X(QueueSubmit)    \
+                                                X(QueueWaitIdle)
 
 struct Runtime
 {
@@ -164,6 +166,7 @@ class VulkanSession final : public Session
         VkDeviceMemory allocation = VK_NULL_HANDLE;
         void *mapped = nullptr;
         size_t capacity = 0;
+        size_t allocated = 0;
         bool coherent = false;
     };
     std::array<Buffer, 4> buffers;
@@ -324,7 +327,7 @@ class VulkanSession final : public Session
         if (b.capacity < bytes)
         {
             const auto start = Clock::now();
-            timings.residentBytes -= b.capacity;
+            timings.residentBytes -= b.allocated;
             free(b);
             VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
             bi.size = bytes;
@@ -357,27 +360,38 @@ class VulkanSession final : public Session
             mi.allocationSize = requirements.size;
             mi.memoryTypeIndex = selected;
             check(api.AllocateMemory(device, &mi, nullptr, &b.allocation), "allocate buffer");
+            b.allocated = size_t(requirements.size);
+            timings.residentBytes += b.allocated;
+            timings.peakResidentBytes = std::max(timings.peakResidentBytes, timings.residentBytes);
             check(api.BindBufferMemory(device, b.handle, b.allocation, 0), "bind buffer");
             check(api.MapMemory(device, b.allocation, 0, VK_WHOLE_SIZE, 0, &b.mapped), "map buffer");
             b.capacity = bytes;
             b.coherent = (memory.memoryTypes[selected].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0;
-            timings.residentBytes += bytes;
             timings.allocationMs += elapsed(start);
         }
         if (input)
         {
-            const auto start = Clock::now();
-            std::memcpy(b.mapped, input, bytes);
-            if (!b.coherent)
-            {
-                VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
-                range.memory = b.allocation;
-                range.size = VK_WHOLE_SIZE;
-                check(api.FlushMappedMemoryRanges(device, 1, &range), "flush buffer");
-            }
-            timings.uploadMs += elapsed(start);
-            timings.uploadBytes += bytes;
+            write(slot, 0, bytes, input);
         }
+    }
+    void write(unsigned slot, size_t offset, size_t bytes, const void *input) override
+    {
+        auto &b = buffers.at(slot);
+        if (offset > b.capacity || bytes > b.capacity - offset)
+        {
+            throw std::out_of_range("Vulkan upload exceeds buffer");
+        }
+        const auto start = Clock::now();
+        std::memcpy(static_cast<uint8_t *>(b.mapped) + offset, input, bytes);
+        if (!b.coherent)
+        {
+            VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
+            range.memory = b.allocation;
+            range.size = VK_WHOLE_SIZE;
+            check(api.FlushMappedMemoryRanges(device, 1, &range), "flush buffer");
+        }
+        timings.uploadMs += elapsed(start);
+        timings.uploadBytes += bytes;
     }
     void read(unsigned slot, size_t bytes, void *output) override
     {
@@ -458,7 +472,10 @@ std::vector<Device> vulkanDevices()
             device.integrated = p.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
             device.maxBufferBytes = p.limits.maxStorageBufferRange;
             device.available = p.apiVersion >= VK_API_VERSION_1_1 && p.limits.maxComputeWorkGroupInvocations >= 128 &&
-                               p.limits.maxComputeSharedMemorySize >= 451 * sizeof(uint32_t);
+                               p.limits.maxComputeSharedMemorySize >= 451 * sizeof(uint32_t) &&
+                               p.limits.maxComputeWorkGroupSize[0] >= 128 &&
+                               p.limits.maxPerStageDescriptorStorageBuffers >= 4 &&
+                               p.limits.maxDescriptorSetStorageBuffers >= 4 && p.limits.maxPushConstantsSize >= 16;
             try
             {
                 api.family(physicals[i]);

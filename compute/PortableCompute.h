@@ -7,6 +7,10 @@
 
 namespace mosaicraft::compute
 {
+// 用于诊断着色器误差；生产兼容路径仍以 cpuBaseScore 的 FP64 语义为准。
+std::array<float, 5> fp32Distances(const MatchingBuffers &tiles, size_t tile, const ImageRecord &record,
+                                   const FeaturePack::Reader::Row &payload);
+
 class FeatureWorkspace
 {
     Device device;
@@ -43,6 +47,7 @@ class ScoreWorkspace
     const std::vector<ImageRecord> *records = nullptr;
     int rows = 0, candidates = 0;
     size_t library = 0, temporary = 0;
+    size_t uploadRows = 0;
 
   public:
     explicit ScoreWorkspace(Device description) : device(std::move(description))
