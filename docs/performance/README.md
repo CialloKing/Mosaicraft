@@ -4,6 +4,8 @@
 
 ## 文件索引
 
+- [backend-retest-20261118.json](backend-retest-20261118.json)
+- [backend-retest-20261118.svg](backend-retest-20261118.svg)
 - [base-image-overlay.json](base-image-overlay.json)
 - [ci-packaging.json](ci-packaging.json)
 - [cuda-13.5-migration.json](cuda-13.5-migration.json)
