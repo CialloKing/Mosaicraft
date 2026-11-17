@@ -11,6 +11,7 @@ import sqlite3
 import statistics
 import subprocess
 import time
+import uuid
 
 from study_paths import digest, private_library, readonly_database
 
@@ -40,7 +41,7 @@ def describe(values):
     median = statistics.median(values)
     return dict(n=len(values), median=median, mean=statistics.mean(values),
                 min=min(values), max=max(values), p10=percentile(values, 0.1),
-                p90=percentile(values, 0.9), stdev=statistics.stdev(values),
+                p90=percentile(values, 0.9), stdev=statistics.stdev(values) if len(values) > 1 else None,
                 mad=statistics.median(abs(value - median) for value in values))
 
 
@@ -79,6 +80,9 @@ def summarize(report):
                 for metric in metrics:
                     ratios = [row["metrics"][metric] / baseline["metrics"][metric]
                               for row, baseline in zip(rows, groups[reference])]
+                    if report.get("exploratory"):
+                        comparison[metric] = dict(median_ratio=statistics.median(ratios), rounds=len(ratios))
+                        continue
                     # Pair within rounds so slow/fast periods affect both sides.
                     boot = [statistics.median(rng.choices(ratios, k=len(ratios))) for _ in range(10000)]
                     comparison[metric] = dict(median_ratio=statistics.median(ratios),
@@ -97,11 +101,15 @@ def main():
     parser.add_argument("--output", type=Path, required=True, help="new, disposable result directory")
     parser.add_argument("--rounds", type=int, default=24)
     parser.add_argument("--warmups", type=int, default=3)
+    parser.add_argument("--prepared-run", type=Path, help="reuse a completed run's private library and caches")
+    parser.add_argument("--explore", action="store_true", help="scale probe only; allow unbalanced counts, no confidence intervals")
     options = parser.parse_args()
     specification = json.loads(options.manifest.read_text(encoding="utf-8-sig"))
     variants = specification["variants"]
     block_size = len(variants) * (2 if len(variants) % 2 else 1)
-    if len(variants) < 2 or options.rounds < 2 or options.rounds % block_size or options.warmups < 1:
+    if len(variants) < 2 or options.rounds < 1 or options.warmups < 0:
+        parser.error("use >=2 variants, >=1 round and >=0 warmups")
+    if not options.explore and (options.rounds < 2 or options.rounds % block_size or options.warmups < 1):
         parser.error("use >=2 variants, >=1 warmup and measured rounds divisible by the balanced block size")
     for items in (variants, specification["cases"]):
         names = [item["id"] for item in items]
@@ -121,17 +129,36 @@ def main():
         source_sha256=digest(source), benchmark_sha256=digest(benchmark), quality_sha256=digest(quality),
         source_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parents[1], text=True).strip(),
         environment=specification.get("environment", {}), cases=[dict(item, sha256=digest(item["input"])) for item in cases],
-        variants=variants, reference=reference, rounds=options.rounds, warmups=options.warmups,
+        variants=variants, reference=reference, rounds=options.rounds, warmups=options.warmups, exploratory=options.explore,
         common_request=specification.get("request", {}), samples=[],
         method="Fresh process per task; warm filesystem/driver caches; database restored before each run; "
                "balanced backend order; all samples retained; no resource polling inside timings; "
                "paired-round bootstrap percentile CI (10000 resamples); not a cold-disk or energy benchmark.")
     save(root / "report.json", report)
-    print("Preparing isolated library and caches...", flush=True)
-    snapshot, count = private_library(source, root / "library", images=True)
+    if options.prepared_run:
+        prepared = options.prepared_run.resolve()
+        previous = json.loads((prepared / "report.json").read_text(encoding="utf-8"))
+        if not previous["complete"] or previous["source_sha256"] != report["source_sha256"]:
+            raise ValueError("prepared run must be complete and use the same unchanged source database")
+        snapshot = Path(previous.get("library_snapshot", str(prepared / "library/snapshot.db"))).resolve()
+        if snapshot == source:
+            raise ValueError("prepared snapshot must differ from the original database")
+        with readonly_database(snapshot) as original:
+            count = original.execute("SELECT count(*) FROM images").fetchone()[0]
+        if count != previous["library_rows"]:
+            raise ValueError("prepared library row count changed")
+        report["prepared_from"] = str(prepared)
+        print("Reusing completed run's private library and caches...", flush=True)
+    else:
+        print("Preparing isolated library and caches...", flush=True)
+        snapshot, count = private_library(source, root / "library", images=True)
+        run([quality, "--prepare-cache", snapshot], root / "prepare-cache.log")
     report["library_rows"] = count
-    run([quality, "--prepare-cache", snapshot], root / "prepare-cache.log")
-    database = snapshot.with_name("run.db")
+    report["library_snapshot"] = str(snapshot)
+    report["snapshot_sha256"] = digest(snapshot)
+    # Keep relative asset paths intact without overwriting an earlier run's database.
+    database = snapshot.with_name("run-" + uuid.uuid4().hex + ".db")
+    report["working_database"] = str(database)
     first_selections = {}
     rng = random.Random(20261118)
     plans = {case["id"]: balanced_orders(len(variants), options.rounds, rng) for case in cases}
@@ -147,7 +174,8 @@ def main():
                     with readonly_database(snapshot) as original, closing(sqlite3.connect(database)) as target:
                         original.backup(target)
                     output = root / (tag + ".png")
-                    request = dict(report["common_request"], inputPath=case["input"], dbPath=str(database),
+                    settings = dict(report["common_request"], **case.get("request", {}))
+                    request = dict(settings, inputPath=case["input"], dbPath=str(database),
                         outputPath=str(output), outW=case["width"], outH=case["height"],
                         backend=variant["backend"], device=variant["device"], scoreMode=variant["scoreMode"],
                         resourceMonitor=False, overwrite=True, format="png")
@@ -168,7 +196,8 @@ def main():
                         raise RuntimeError(f"{tag}: incomplete output, warning or invalid selections")
                     backend = variant["backend"]
                     expected_score = "cpu" if backend == "cpu" or (backend == "vulkan" and variant["scoreMode"] == "compatible") else backend
-                    if backend not in summary["feature_backend"] or expected_score not in summary["score_backend"]:
+                    if (backend not in summary["feature_backend"] or expected_score not in summary["score_backend"] or
+                            summary["device"] != variant["device"]):
                         raise RuntimeError(f"{tag}: requested backend did not run")
                     key = (case["id"], variant["id"])
                     hashes = (digest(selection_path), digest(output))
@@ -180,10 +209,9 @@ def main():
                         feature_backend=summary["feature_backend"], score_backend=summary["score_backend"],
                         device=summary["device"], selected_count=len(selected), selection_sha256=hashes[0],
                         output_sha256=hashes[1], log=tag + ".log"))
-                save(root / "report.json", report)
-                last = report["samples"][-len(variants):]
-                print(f"{phase} {iteration + 1}/{rounds} {case['id']}: " + ", ".join(
-                    f"{row['variant']}={row['metrics']['totalMs']:.0f}ms" for row in last), flush=True)
+                    save(root / "report.json", report)
+                    print(f"{phase} {iteration + 1}/{rounds} {case['id']} {variant['id']}: "
+                          f"match={summary['metrics']['matchingMs']:.0f}ms total={summary['metrics']['totalMs']:.0f}ms", flush=True)
     report["selection_differences"] = {}
     for case in cases:
         baseline = first_selections[(case["id"], reference)]["indices"]
@@ -192,6 +220,8 @@ def main():
     report["source_unchanged"] = digest(source) == report["source_sha256"]
     if not report["source_unchanged"]:
         raise RuntimeError("source database changed during benchmark")
+    if digest(snapshot) != report["snapshot_sha256"]:
+        raise RuntimeError("prepared snapshot changed during benchmark")
     report["summary"] = summarize(report)
     report["complete"] = True
     report["finished_utc"] = datetime.now(timezone.utc).isoformat()
