@@ -134,6 +134,8 @@ def main():
         method="Fresh process per task; warm filesystem/driver caches; database restored before each run; "
                "balanced backend order; all samples retained; no resource polling inside timings; "
                "paired-round bootstrap percentile CI (10000 resamples); not a cold-disk or energy benchmark.")
+    if options.explore:
+        report["method"] = "Exploratory scale probe only; no confidence intervals or statistical ranking. " + report["method"].split("paired-round")[0]
     save(root / "report.json", report)
     if options.prepared_run:
         prepared = options.prepared_run.resolve()
