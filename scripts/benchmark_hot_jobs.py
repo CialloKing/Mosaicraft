@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import random
 import socket
 import sqlite3
 import subprocess
@@ -11,21 +12,11 @@ from contextlib import closing
 from pathlib import Path
 from urllib.request import ProxyHandler, Request, build_opener
 
-from benchmark_backends import save
+from benchmark_backends import balanced_orders, save, summarize
 from study_paths import digest, readonly_database
 
 
-def main():
-    p=argparse.ArgumentParser(description=__doc__)
-    for k in ('server','prepared','input','output'):
-        p.add_argument('--'+k,type=Path,required=True)
-    p.add_argument('--jobs',type=int,default=10)
-    p.add_argument('--backend',choices=('cpu','cuda'),default='cpu')
-    a=p.parse_args(); exe=a.server.resolve(); src=(a.prepared/'library/snapshot.db').resolve()
-    source=digest(src); manifest=json.loads((a.prepared/'report.json').read_bytes())
-    if not manifest['complete'] or manifest.get('snapshot_sha256',source)!=source or a.jobs<2:
-        p.error('requires a prepared private library and at least two tasks')
-    out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
+def session(a,exe,src,source,out):
     db=src.with_name('session-'+uuid.uuid4().hex+'.db'); target=a.input.resolve()
     data=dict(complete=False,snapshot_sha256=source,binary_sha256=digest(exe),input_sha256=digest(target),samples=[])
     with socket.socket() as sock:
@@ -81,9 +72,52 @@ def main():
         if digest(src)!=source:
             raise RuntimeError('snapshot changed')
         data.update(complete=True);save(out/'report.json',data)
+        return data['samples']
     finally:
         for suffix in ('','-shm','-wal','-journal','.library.lock'):
             Path(str(db)+suffix).unlink(missing_ok=True)
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    for k in ('server','prepared','input','output'):
+        p.add_argument('--'+k,type=Path,required=True)
+    p.add_argument('--jobs',type=int,default=10)
+    p.add_argument('--backend',choices=('cpu','cuda'),default='cpu')
+    p.add_argument('--candidate',type=Path,help='pair complete sessions using a second server')
+    p.add_argument('--rounds',type=int,default=8); p.add_argument('--warmups',type=int,default=2)
+    a=p.parse_args(); src=(a.prepared/'library/snapshot.db').resolve()
+    source=digest(src); manifest=json.loads((a.prepared/'report.json').read_bytes())
+    if a.rounds<1 or a.warmups<0:
+        p.error('invalid sample counts')
+    if not manifest['complete'] or manifest.get('snapshot_sha256',source)!=source or a.jobs<2:
+        p.error('requires a prepared private library and at least two tasks')
+    out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
+    if not a.candidate:
+        session(a,a.server.resolve(),src,source,out)
+        return
+    bins=[a.server.resolve(),a.candidate.resolve()]
+    variants=[dict(id=name,sha256=digest(exe)) for name,exe in zip(('baseline','candidate'),bins)]
+    keys=('first','second','session_total')
+    report=dict(reference='baseline',variants=variants,cases=[dict(id=k) for k in keys],
+                backend=a.backend,jobs=a.jobs,snapshot_sha256=source,input_sha256=digest(a.input),
+                exploratory=a.rounds<8 or a.warmups<2,complete=False,samples=[])
+    orders=balanced_orders(2,a.rounds,random.Random(29)); expected=None
+    for phase,count in [('warmup',a.warmups),('measured',a.rounds)]:
+        for r in range(count):
+            for i in orders[r%a.rounds]:
+                name=variants[i]['id']; folder=out/f'{phase}-{r}-{name}'; folder.mkdir()
+                jobs=session(a,bins[i],src,source,folder)
+                hashes=[job['png_sha256'] for job in jobs]
+                if expected is None:
+                    expected=hashes
+                # Usage deliberately advances between jobs; compare the same ordinal, not job one ten times.
+                if a.backend=='cpu' and hashes!=expected:
+                    raise ValueError(f'{folder}: different selections/output across CPU sessions')
+                for k,ms in zip(keys,(jobs[0]['wall_ms'],jobs[1]['wall_ms'],sum(j['wall_ms'] for j in jobs))):
+                    report['samples'].append(dict(phase=phase,round=r,case=k,variant=name,metrics=dict(processWallMs=ms)))
+                save(out/'report.json',report)
+    report.update(complete=True,summary=summarize(report));save(out/'report.json',report)
+
 
 if __name__=='__main__':
     main()
