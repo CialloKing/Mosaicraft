@@ -28,6 +28,7 @@ struct OutputStats
     double encodingMs = 0;
     double previewMs = 0; // 包含在 encodingMs 中，不能再次加入总耗时。
     double loadingMs = 0; // 工作线程耗时之和，不计入墙钟总和。
+    double decodeMs = 0, resizeMs = 0; // Owner-only worker time, excluding cache waits.
     double colorMs = 0, codecMs = 0;
     double overlaySamplingMs = 0, overlayBlendMs = 0; // 工作线程耗时之和。
     uint64_t overlayReferenceBytes = 0, overlayWorkingBytes = 0; // 后者为工作线程临时缓冲预算。

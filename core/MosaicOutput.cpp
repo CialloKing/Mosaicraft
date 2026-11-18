@@ -157,7 +157,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         // 生产者仅协调；编码占一个执行位，显式单线程仍然顺序写出。
         WorkerPool pool(reserveEncoder ? std::min<unsigned>(workers, config.threads - 1) : workers);
         std::atomic<int> failures{0};
-        std::atomic<int64_t> loadingNs{0};
+        std::atomic<int64_t> loadingNs{0}, decodeNs{0}, resizeNs{0};
         std::atomic<int64_t> samplingNs{0}, blendingNs{0};
         auto finishOverlayStats = [&]()
         {
@@ -172,7 +172,14 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
                 return {};
             }
             const auto loadStart = now();
-            auto image = cache.getShared(recordAt(i).id, recordAt(i).filePath, tileW, tileH);
+            ImageCache::LoadTimes times;
+            const bool profileImage = config.benchmark && config.outputMode == OutputMode::Image;
+            auto image = cache.getShared(recordAt(i).id, recordAt(i).filePath, tileW, tileH, profileImage ? &times : nullptr);
+            if (profileImage)
+            {
+                decodeNs.fetch_add(times.decodeNs, std::memory_order_relaxed);
+                resizeNs.fetch_add(times.resizeNs, std::memory_order_relaxed);
+            }
             if (config.benchmark)
             {
                 loadingNs += std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - loadStart).count();
@@ -400,9 +407,13 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
             cv::Mat rows(tileH, width, CV_8UC3);
             for (int y = 0; y < tilesY; ++y)
             {
+                const auto start = now();
                 fill(rows, y);
+                stats.placementMs += elapsed(start);
+                const auto writing = now();
                 writeRows(rows, y * tileH);
                 previewRows(rows, y * tileH);
+                stats.encodingMs += elapsed(writing);
             }
         }
         else if (stream)
@@ -580,6 +591,8 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         stats.cachePeakBytes = cache.stats().peakBytes;
         stats.cacheSharedLoads = cache.stats().sharedLoads;
         stats.loadingMs = loadingNs.load() / 1000000.0;
+        stats.decodeMs = decodeNs.load() / 1000000.0;
+        stats.resizeMs = resizeNs.load() / 1000000.0;
         stats.failed = failures;
         stats.matched = static_cast<int>(count) - stats.failed;
         finishOverlayStats();

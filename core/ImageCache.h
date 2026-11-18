@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "UnicodeIO.h"
+#include <chrono>
 #include <functional>
 #include <future>
 #include <list>
@@ -78,18 +79,33 @@ class ImageCache
         return m_stats;
     }
 
-    Image getShared(int imageId, const std::string &path, int width, int height)
+    struct LoadTimes
+    {
+        int64_t decodeNs = 0, resizeNs = 0;
+    };
+    Image getShared(int imageId, const std::string &path, int width, int height, LoadTimes *times = nullptr)
     {
         return getSharedWithLoader(imageId, width, height,
                                    [&]()
                                    {
+                                       using Clock = std::chrono::steady_clock;
+                                       const auto start = times ? Clock::now() : Clock::time_point{};
                                        cv::Mat source = imreadUnicode(path, cv::IMREAD_COLOR);
+                                       const auto decoded = times ? Clock::now() : Clock::time_point{};
+                                       if (times)
+                                       {
+                                           times->decodeNs = std::chrono::duration_cast<std::chrono::nanoseconds>(decoded - start).count();
+                                       }
                                        if (source.empty() || (source.cols == width && source.rows == height))
                                        {
                                            return source;
                                        }
                                        cv::Mat resized;
                                        cv::resize(source, resized, cv::Size(width, height), 0, 0, cv::INTER_AREA);
+                                       if (times)
+                                       {
+                                           times->resizeNs = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - decoded).count();
+                                       }
                                        return resized;
                                    });
     }

@@ -774,6 +774,17 @@ ServiceResult ProjectService::render(const ProjectRequest &request, RuntimeConte
             return runtimeResult(ServiceResult::failure(1, "project rendering failed"), runtime);
         }
         publication.commit(runtime);
+        if (config.benchmark && config.outputMode == OutputMode::Image)
+        {
+            // Decode/resize sum worker time and overlap placement; do not sum these with the process wall time.
+            runtime.metric("decodeWorkerMs", stats.decodeMs);
+            runtime.metric("resizeWorkerMs", stats.resizeMs);
+            runtime.metric("placementMs", stats.placementMs);
+            runtime.metric("encodingMs", stats.encodingMs);
+            runtime.metric("codecWriteMs", stats.codecMs);
+            runtime.metric("cacheDecodes", double(stats.cacheDecodes));
+            runtime.metric("cachePeakBytes", double(stats.cachePeakBytes));
+        }
         return runtimeResult(ServiceResult::success("project rendered without matching"), runtime);
     }
     catch (const std::exception &error)
