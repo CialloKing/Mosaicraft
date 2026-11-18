@@ -799,6 +799,14 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
             std::vector<ImageRecord> records(count);
             std::vector<uint8_t> ready(count, 0);
             std::vector<std::string> errors(count);
+            // 生产者只写自己的槽，查重和提交仍由单写者按扫描顺序执行。
+            const auto hashReady = [&](size_t i)
+            {
+                if (MOSAICRAFT_TRIAL_BUILD_HASH && !images[i].empty())
+                {
+                    records[i].fileHash = hashMatForBuild(images[i]);
+                }
+            };
             if (normalizers)
             {
                 // 只保留当前有界批次的落盘像素，让顺序去重和提交继续使用原路径。
@@ -806,6 +814,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                 normalizers->run(count, [&](size_t i)
                 {
                     normalizeOne(first + i, &images[i]);
+                    hashReady(i);
                 });
                 batchNormalization += std::chrono::steady_clock::now() - started;
             }
@@ -824,6 +833,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                         {
                             throw std::runtime_error("cannot decode saved image");
                         }
+                        hashReady(i);
                     }
                     catch (const std::exception &error)
                     {
@@ -842,7 +852,12 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                     continue;
                 }
                 const auto &outPath = outPaths[first + i];
-                const auto hash = hashMatForBuild(images[i]);
+                auto &record = records[i];
+                if (!MOSAICRAFT_TRIAL_BUILD_HASH)
+                {
+                    record.fileHash = hashMatForBuild(images[i]);
+                }
+                const auto &hash = record.fileHash;
                 if (db.existsByHash(hash) || !pendingHashes.insert(hash).second)
                 {
                     ++visuals.duplicates;
@@ -863,9 +878,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                     ++skipped;
                     continue;
                 }
-                auto &record = records[i];
                 record.filePath = outPath;
-                record.fileHash = hash;
                 record.srcWidth = images[i].cols;
                 record.srcHeight = images[i].rows;
                 record.aspectRatio = static_cast<double>(record.srcWidth) / record.srcHeight;
