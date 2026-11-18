@@ -1202,7 +1202,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         {
             reportMatching(0);
         }
-        const bool shareWorkers = MOSAICRAFT_TRIAL_SCHEDULE && cfg.threads > 0 && !portableRequested;
+        // 单线程时特征、Canny、ANN 与评分依次运行，不为闲置阶段另开线程池。
+        const bool shareWorkers = cfg.threads == 1 || (MOSAICRAFT_TRIAL_SCHEDULE && cfg.threads > 0 && !portableRequested);
         // 顺序选图和预取协调各占一个执行位。少于四个执行位时不启动预取。
         const bool overlap = shareWorkers && cfg.threads >= 4 && !selection && !m_preview && !cfg.analyze &&
                              !m_previewWorkspace && (templateCuda ? preflight.device == 0 : !cudaEnabled);
