@@ -41,6 +41,11 @@ struct FeaturePipelineConfig
     std::size_t hostBudget = 256ULL * 1024 * 1024;
     std::size_t deviceBudget = 256ULL * 1024 * 1024;
     PipelineFault testFault = PipelineFault::None;
+    // 可选只读 BGR 目标，由调用方保存到管线销毁；步长包含 ROI 的父图填充。
+    const std::uint8_t *target = nullptr;
+    std::size_t targetStep = 0;
+    int cols = 0, rows = 0, tileW = 0, tileH = 0;
+    unsigned workers = 0;
 };
 
 struct DeviceFeatureState;
@@ -68,7 +73,8 @@ class FeatureWorkspace
     std::uint8_t *pipelineInput();
     std::size_t pinnedBytes() const;
     std::size_t residentBytes() const;
-    void beginBatch(int count);
+    void beginBatch(int count, int firstTile = 0);
+    int pieceSize(int tile, int requested) const;
     void extract(int first, int count, double *lab, float *grid, std::uint8_t *tiny, double *edge, float *lbp,
                  GpuTimings *timings = nullptr);
     DeviceFeatureView deviceView(int first, int count) const;

@@ -252,9 +252,11 @@ if (NOT MOSAICRAFT_CUDA)
     target_sources(mosaicraft_core PRIVATE core/CudaStubs.cpp)
 endif()
 # 候选构建供真实 CLI 配对对照，验收前不改变发行版。
+option(MOSAICRAFT_TRIAL_CUDA_TARGET "Benchmark tile-local resizing on the CUDA device" OFF)
 option(MOSAICRAFT_TRIAL_CPU_TILES "Benchmark reusable CPU tile features" OFF)
 option(MOSAICRAFT_TRIAL_LBP_SIMD "Vectorize LBP in the CPU tile trial" ON)
 set_property(SOURCE core/MosaicEngine.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+    MOSAICRAFT_TRIAL_CUDA_TARGET=$<BOOL:${MOSAICRAFT_TRIAL_CUDA_TARGET}>
     MOSAICRAFT_TRIAL_CPU_TILES=$<BOOL:${MOSAICRAFT_TRIAL_CPU_TILES}>
     MOSAICRAFT_TRIAL_LBP_SIMD=$<BOOL:${MOSAICRAFT_TRIAL_LBP_SIMD}>)
 include(cmake/PortableCompute.cmake)

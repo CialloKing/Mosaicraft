@@ -2384,3 +2384,45 @@ TEST_CASE("target feature scratch matches reference on strided tiles and SIMD ta
         }
     }
 }
+
+TEST_CASE("CUDA compact target honors stride, tile boundaries and one-row budgets")
+{
+    using namespace mosaicraft::cuda;
+    if (!isCudaAvailable())
+    {
+        return;
+    }
+    cv::Mat parent(32, 24, CV_8UC3);
+    const auto roi = parent(cv::Rect(2, 0, 18, 32));
+    FeaturePipelineConfig cfg;
+    cfg.maxTiles = 2;
+    cfg.cols = roi.cols;
+    cfg.rows = roi.rows;
+    cfg.target = roi.data;
+    cfg.targetStep = roi.step;
+    cfg.tileW = 9;
+    cfg.tileH = 16;
+    // 输入暂存、常驻特征和单条带恰好装下；第二次调用必须切换条带。
+    cfg.deviceBudget = 2 * (180 * 320 * 3 + 448 * sizeof(float) + 256 + 6 * sizeof(double)) + 18 * 16 * 3;
+    FeatureWorkspace pipeline;
+    GpuTimings timings;
+    REQUIRE(pipeline.preparePipeline(cfg, &timings));
+    CHECK(pipeline.pieceSize(1, 2) == 1);
+    for (int i = 0; i < 4; ++i)
+    {
+        roi(cv::Rect(i % 2 * 9, i / 2 * 16, 9, 16)).setTo(cv::Scalar::all(i * 40));
+    }
+    for (int i = 0; i < 4; ++i)
+    {
+        std::fill_n(pipeline.pipelineInput(), 180 * 320 * 3, static_cast<uint8_t>(i * 40));
+        std::array<uint8_t, 256> tiny;
+        std::array<float, 192> grid;
+        std::array<float, 256> lbp;
+        double lab[3], edge;
+        pipeline.beginBatch(1, i);
+        pipeline.extract(0, 1, lab, grid.data(), tiny.data(), &edge, lbp.data(), &timings);
+        CHECK(std::all_of(tiny.begin(), tiny.end(), [i](int v) { return std::abs(v - i * 40) <= 1; }));
+        CHECK(edge == 0);
+    }
+    CHECK(timings.uploadBytes == 18 * 32 * 3);
+}

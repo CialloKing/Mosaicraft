@@ -29,7 +29,8 @@ struct FeaturePipeline
 {
     FeaturePipelineConfig config;
     PinnedBuffer input, download;
-    DeviceBuffer<uint8_t> images, tiny;
+    DeviceBuffer<uint8_t> target, images, tiny;
+    int stripeRows = 0, loadedStripe = -1, firstTile = 0;
     DeviceBuffer<float> grid, lbp;
     DeviceBuffer<double> lab, bright, contrast, edge;
     std::shared_ptr<DeviceFeatureState> state = std::make_shared<DeviceFeatureState>();
@@ -93,7 +94,20 @@ bool FeatureWorkspace::preparePipeline(const FeaturePipelineConfig &config, GpuT
         {
             return false;
         }
-        p->workers = std::make_unique<WorkerPool>();
+        if (config.target && config.tileW > 0 && config.tileH > 0 && config.cols > 0 && config.rows > 0 &&
+            config.cols % config.tileW == 0 && config.rows % config.tileH == 0 &&
+            config.targetStep >= size_t(config.cols) * 3)
+        {
+            const size_t used = pixels + resident + chunk * 6 * sizeof(double);
+            const size_t ceiling = std::min(config.deviceBudget, freeBytes / 2);
+            const size_t row = size_t(config.cols) * 3 * config.tileH;
+            const auto stripes = std::min(size_t(config.rows / config.tileH), (ceiling > used ? ceiling - used : 0) / row);
+            if (stripes && optionalCudaAllocation(p->target.allocate(stripes * row)))
+            {
+                p->stripeRows = static_cast<int>(stripes);
+            }
+        }
+        p->workers = std::make_unique<WorkerPool>(config.workers);
         p->state->grid = p->grid.get();
         p->state->lbp = p->lbp.get();
         p->state->tiny = p->tiny.get();
@@ -131,16 +145,28 @@ size_t FeatureWorkspace::pinnedBytes() const
 
 size_t FeatureWorkspace::residentBytes() const
 {
-    return buffers->pipeline ? buffers->pipeline->state->bytes : 0;
+    return buffers->pipeline ? buffers->pipeline->state->bytes + buffers->pipeline->target.capacityBytes() : 0;
 }
 
-void FeatureWorkspace::beginBatch(int count)
+int FeatureWorkspace::pieceSize(int tile, int requested) const
+{
+    const auto *p = buffers->pipeline.get();
+    if (!p || !p->stripeRows)
+    {
+        return requested;
+    }
+    const int64_t span = int64_t(p->stripeRows) * (p->config.cols / p->config.tileW);
+    return static_cast<int>(std::min<int64_t>(requested, span - tile % span));
+}
+
+void FeatureWorkspace::beginBatch(int count, int firstTile)
 {
     auto *p = buffers->pipeline.get();
     if (!p || count <= 0 || count > p->config.maxTiles)
     {
         throw std::invalid_argument("invalid CUDA feature batch");
     }
+    p->firstTile = firstTile;
     ++p->state->generation;
     p->state->count = count;
     p->state->ready = 0;
@@ -767,6 +793,33 @@ int launchKernel(const uint8_t *h_images, int N, double *h_avgLAB, float *h_grid
 
 namespace
 {
+// 与 8 位线性缩放一样先做水平定点插值，坐标局限于本格，不能采样邻格。
+__global__ void resizeTileInput(const uint8_t *src, uint8_t *dst, int stride, int tilesX, int tileW, int tileH,
+                                int w, int h, int first, int stripeY)
+{
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= w * h)
+    {
+        return;
+    }
+    const int tile = first + blockIdx.y;
+    const float fx = static_cast<float>(((i % w) + 0.5) * (double(tileW) / w) - 0.5);
+    const float fy = static_cast<float>(((i / w) + 0.5) * (double(tileH) / h) - 0.5);
+    const int x = __float2int_rd(fx), y = __float2int_rd(fy);
+    const int x0 = max(0, min(x, tileW - 1)), x1 = max(0, min(x + 1, tileW - 1));
+    const int y0 = max(0, min(y, tileH - 1)), y1 = max(0, min(y + 1, tileH - 1));
+    const int ax = __float2int_rn((fx - x) * 2048), ay = __float2int_rn((fy - y) * 2048);
+    src += size_t(tile / tilesX * tileH - stripeY) * stride + tile % tilesX * tileW * 3;
+    dst += (size_t(blockIdx.y) * w * h + i) * 3;
+    for (int k = 0; k < 3; ++k)
+    {
+        const auto *a = src + size_t(y0) * stride + k, *b = src + size_t(y1) * stride + k;
+        const int top = ((2048 - ax) * a[x0 * 3] + ax * a[x1 * 3]) >> 4;
+        const int bot = ((2048 - ax) * b[x0 * 3] + ax * b[x1 * 3]) >> 4;
+        dst[k] = static_cast<uint8_t>((((2048 - ay) * top >> 16) + (ay * bot >> 16) + 2) >> 2);
+    }
+}
+
 template <int W, int H>
 void extractPipelined(FeaturePipeline &p, int first, int count, double *lab, float *grid, uint8_t *tiny,
                       double *edge, float *lbp, GpuTimings *timings)
@@ -776,13 +829,41 @@ void extractPipelined(FeaturePipeline &p, int first, int count, double *lab, flo
     StreamDrain drain(transfer.stream);
     // ready 仅在 CPU 和 GPU 均成功完成后推进；失败批次不能生成可评分的视图。
     transfer.mark(0);
-    requireCuda(cudaMemcpyAsync(p.images.get(), p.input.get(), rows * imgBytes, cudaMemcpyHostToDevice,
-                                transfer.stream));
+    size_t uploaded = 0;
+    const auto &cfg = p.config;
+    int stripeY = 0;
+    if (p.stripeRows)
+    {
+        const int tilesX = cfg.cols / cfg.tileW;
+        const int stripe = (p.firstTile + first) / tilesX / p.stripeRows;
+        stripeY = stripe * p.stripeRows * cfg.tileH;
+        if (p.loadedStripe != stripe)
+        {
+            const size_t pitch = size_t(cfg.cols) * 3;
+            const int lines = std::min(cfg.rows - stripeY, p.stripeRows * cfg.tileH);
+            requireCuda(cudaMemcpy2DAsync(p.target.get(), pitch, cfg.target + size_t(stripeY) * cfg.targetStep,
+                                          cfg.targetStep, pitch, lines, cudaMemcpyHostToDevice, transfer.stream));
+            uploaded = pitch * lines;
+            p.loadedStripe = stripe;
+        }
+    }
+    else
+    {
+        uploaded = rows * imgBytes;
+        requireCuda(cudaMemcpyAsync(p.images.get(), p.input.get(), uploaded, cudaMemcpyHostToDevice, transfer.stream));
+    }
     if (p.config.testFault == PipelineFault::AfterUpload)
     {
         throw std::runtime_error("injected CUDA failure after upload");
     }
     transfer.mark(1);
+    if (p.stripeRows)
+    {
+        resizeTileInput<<<dim3((W * H + 255) / 256, count), 256, 0, transfer.stream>>>(
+            p.target.get(), p.images.get(), cfg.cols * 3, cfg.cols / cfg.tileW, cfg.tileW, cfg.tileH,
+            W, H, p.firstTile + first, stripeY);
+        requireCuda(cudaGetLastError());
+    }
     featureKernel<W, H><<<count, W, 0, transfer.stream>>>(
         p.images.get(), p.grid.get() + first * 192, p.tiny.get() + first * 256,
         p.lbp.get() + first * 256, p.lab.get(), p.bright.get(), p.contrast.get(), p.edge.get(), count);
@@ -841,7 +922,7 @@ void extractPipelined(FeaturePipeline &p, int first, int count, double *lab, flo
     p.state->ready += count;
     if (timings)
     {
-        timings->uploadBytes += rows * imgBytes;
+        timings->uploadBytes += uploaded;
         timings->downloadBytes += rows * (3 * sizeof(double) + 192 * sizeof(float) +
                                           (p.config.downloadLbp ? 256 * sizeof(float) : 0) +
                                           (p.config.downloadTiny ? 256 : 0));

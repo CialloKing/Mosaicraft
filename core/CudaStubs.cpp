@@ -101,7 +101,11 @@ std::size_t FeatureWorkspace::residentBytes() const
 {
     return 0;
 }
-void FeatureWorkspace::beginBatch(int)
+int FeatureWorkspace::pieceSize(int, int requested) const
+{
+    return requested;
+}
+void FeatureWorkspace::beginBatch(int, int)
 {
     throw std::runtime_error("CUDA is not available");
 }

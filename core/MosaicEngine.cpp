@@ -1252,6 +1252,18 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 cuda::FeaturePipelineConfig options;
                 options.maxTiles = static_cast<int>(batchRows);
                 options.width = featW;
+                options.workers = cfg.threads;
+                if (MOSAICRAFT_TRIAL_CUDA_TARGET && fastScore && !m_previewWorkspace && !m_preview &&
+                    !m_selectionOptions.expand &&
+                    cfg.tileW <= featW && cfg.tileH <= featH)
+                {
+                    options.target = target.data;
+                    options.targetStep = target.step;
+                    options.cols = target.cols;
+                    options.rows = target.rows;
+                    options.tileW = cfg.tileW;
+                    options.tileH = cfg.tileH;
+                }
                 options.height = featH;
                 // 调整权重时，主机缓存需要完整特征以复用同步评分。
                 options.downloadTiny = cfg.analyze || cacheTileFeatures;
@@ -1536,15 +1548,16 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 // 复用输入暂存，避免放大 kernel/暂存容量导致吞吐回退。
                 if (pipeline)
                 {
-                    workspace->beginBatch(count);
+                    workspace->beginBatch(count, first);
                 }
-                for (int piece = 0; piece < count; piece += 256)
+                for (int piece = 0; piece < count;)
                 {
                     if (canceled())
                     {
                         return runtime.fail("preview_canceled", "preview canceled");
                     }
-                    const int pieceCount = std::min(256, count - piece);
+                    const int limit = std::min(256, count - piece);
+                    const int pieceCount = pipeline ? workspace->pieceSize(first + piece, limit) : limit;
                     auto *input = pipeline ? workspace->pipelineInput() : buffers.images.data();
                     featureWorkers.run(
                         pieceCount,
@@ -1574,6 +1587,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         }
                         return false;
                     }
+                    piece += pieceCount;
                 }
                 for (int local = 0; local < count; ++local)
                 {
