@@ -22,7 +22,8 @@ namespace mosaicraft
 // 构造 / 析构
 // ============================================================
 
-Database::Database(const std::string &dbPath, OpenMode mode) : m_db(nullptr)
+Database::Database(const std::string &dbPath, OpenMode mode, std::vector<ImageRecord> *matchingRows,
+                   double *readMs) : m_db(nullptr)
 {
     std::error_code error;
     m_path = pathToUtf8(std::filesystem::weakly_canonical(u8path(dbPath), error));
@@ -50,7 +51,9 @@ Database::Database(const std::string &dbPath, OpenMode mode) : m_db(nullptr)
     bool valid = openConnection(m_new, !m_new);
     if (valid && !m_new)
     {
-        valid = validateSchema();
+        // 在只读连接的同一快照内校验并取走匹配行；损坏库仍在打开可写连接前拒绝。
+        valid = (!matchingRows || beginTransaction()) && validateSchema(matchingRows, readMs) &&
+                (!matchingRows || commitTransaction());
         if (valid && !m_exclusive && std::filesystem::exists(libraryJournalPath(m_path)))
         {
             m_error = "unfinished color reorder; run build to recover: " + dbPath;
@@ -546,7 +549,35 @@ bool Database::existsByHash(const std::string& hash)
     return exists;
 }
 
+bool Database::readMatchingRows(std::vector<ImageRecord> &out)
+{
+    sqlite3_stmt *count = nullptr;
+    const bool counted = sqlite3_prepare_v2(m_db, "SELECT COUNT(*) FROM images", -1, &count, nullptr) == SQLITE_OK &&
+                         sqlite3_step(count) == SQLITE_ROW;
+    const auto size = counted ? sqlite3_column_int64(count, 0) : -1;
+    sqlite3_finalize(count);
+    if (size < 0 || size >= std::numeric_limits<int>::max())
+    {
+        return false;
+    }
+    bool valid = false;
+    // 保持既有查询及平分行序；计数覆盖被 BETWEEN 排除的 NULL、无穷或非法亮度。
+    auto rows = readRange(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max(),
+                          static_cast<int>(size) + 1, &valid);
+    if (!valid || rows.size() != static_cast<size_t>(size))
+    {
+        return false;
+    }
+    out = std::move(rows);
+    return true;
+}
+
 std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int limit)
+{
+    return readRange(minL, maxL, limit, nullptr);
+}
+
+std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit, bool *validated)
 {
     std::vector<ImageRecord> results;
     if (!m_db)
@@ -583,8 +614,19 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
 
     // 每次查询只准备一次库根目录，记录读取只拼接资源路径。
     const LibraryPaths paths(m_path);
-    while (sqlite3_step(stmt) == SQLITE_ROW)
+    std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> guard(stmt, sqlite3_finalize);
+    if (validated)
     {
+        results.reserve(static_cast<size_t>(limit - 1));
+    }
+    int rc;
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW)
+    {
+        if (validated && (sqlite3_column_type(stmt, 16) != SQLITE_BLOB || sqlite3_column_bytes(stmt, 16) != 768 ||
+                          sqlite3_column_type(stmt, 21) != SQLITE_INTEGER || sqlite3_column_int64(stmt, 21) != kFeatureVersion))
+        {
+            return {};
+        }
         ImageRecord rec;
         int col = 0;
 
@@ -647,6 +689,16 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
         rec.useCount       = sqlite3_column_int(stmt, col++);
         rec.featureVersion = sqlite3_column_int(stmt, col++);
 
+        if (validated && (rec.filePath.empty() || !LibraryPaths::relative(rec.filePath) ||
+                          !LibraryPaths::relative(rec.tinyPath) || !LibraryPaths::relative(rec.lbpPath) ||
+                          !std::isfinite(rec.avgL) || !std::isfinite(rec.avgA) || !std::isfinite(rec.avgB) ||
+                          !std::all_of(rec.gridLab.begin(), rec.gridLab.end(), [](float value)
+                          {
+                              return std::isfinite(value);
+                          })))
+        {
+            return {};
+        }
         if (m_db)
         {
             rec.filePath = paths.resolve(rec.filePath);
@@ -664,7 +716,10 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
         }
     }
 
-    sqlite3_finalize(stmt);
+    if (validated)
+    {
+        *validated = rc == SQLITE_DONE;
+    }
     return results;
 }
 

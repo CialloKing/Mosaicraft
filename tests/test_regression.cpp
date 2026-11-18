@@ -213,6 +213,11 @@ TEST_CASE("new libraries reject incompatible structures and remain portable")
     auto build = makeBuildRequest(workspace);
     REQUIRE(BuildService().run(build).ok);
     bool incompatible = false;
+    SUBCASE("a corrupt row excluded by the matching luminance range")
+    {
+        REQUIRE(fixtureSql(workspace.dbPath(), "UPDATE images SET avg_l=NULL WHERE id=(SELECT min(id) FROM images)") == SQLITE_OK);
+        incompatible = true;
+    }
     SUBCASE("unversioned old library")
     {
         REQUIRE(fixtureSql(workspace.dbPath(), "PRAGMA user_version=0") == SQLITE_OK);
@@ -248,6 +253,10 @@ TEST_CASE("new libraries reject incompatible structures and remain portable")
             CHECK_FALSE(blocked.isOpen());
             CHECK(std::string(blocked.errorCode()) == "library_incompatible");
         }
+        std::vector<ImageRecord> rows;
+        Database matching(build.dbPath, Database::OpenMode::ReadOnly, &rows);
+        CHECK_FALSE(matching.isOpen());
+        CHECK(std::string(matching.errorCode()) == "library_incompatible");
         build.forceMode = true;
         CHECK_FALSE(BuildService().run(build).ok);
         CHECK_FALSE(fs::exists(workspace.libraryDir() / ".mosaicraft-backups"));

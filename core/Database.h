@@ -93,7 +93,8 @@ public:
         ReadOnly,
         Build
     };
-    explicit Database(const std::string& dbPath, OpenMode mode = OpenMode::Create);
+    explicit Database(const std::string& dbPath, OpenMode mode = OpenMode::Create,
+                      std::vector<ImageRecord> *matchingRows = nullptr, double *readMs = nullptr);
     ~Database();
 
     // 禁止拷贝（sqlite3* 独占所有权）
@@ -183,7 +184,9 @@ private:
     std::string m_error;
     bool m_exclusive = false, m_new = false;
     bool openConnection(bool create, bool readOnly = false);
-    bool validateSchema();
+    bool validateSchema(std::vector<ImageRecord> *matchingRows, double *readMs);
+    bool readMatchingRows(std::vector<ImageRecord> &out);
+    std::vector<ImageRecord> readRange(double minL, double maxL, int limit, bool *validated);
     void closeConnection();
     bool validateStoredPaths();
 

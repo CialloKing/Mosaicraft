@@ -4,6 +4,7 @@
 #include "FeatureIO.h"
 #include <sqlite3.h>
 #include <charconv>
+#include <chrono>
 #include <map>
 #include <string>
 
@@ -86,7 +87,7 @@ bool Database::validateStoredPaths()
     return valid && rc == SQLITE_DONE;
 }
 
-bool Database::validateSchema()
+bool Database::validateSchema(std::vector<ImageRecord> *matchingRows, double *readMs)
 {
     auto incompatible = [&](const std::string &reason)
     {
@@ -166,9 +167,24 @@ bool Database::validateSchema()
             return incompatible("invalid feature dimensions");
         }
     }
-    if ((!MOSAICRAFT_TRIAL_LIBRARY_PATHS && !scalar("SELECT count(*) FROM images WHERE feature_version IS NOT " + std::to_string(kFeatureVersion) +
+    bool rowsValid;
+    if (matchingRows)
+    {
+        using Clock = std::chrono::steady_clock;
+        const auto start = readMs ? Clock::now() : Clock::time_point{};
+        rowsValid = readMatchingRows(*matchingRows);
+        if (readMs)
+        {
+            *readMs = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+        }
+    }
+    else
+    {
+        rowsValid = validateStoredPaths();
+    }
+    if ((!matchingRows && !MOSAICRAFT_TRIAL_LIBRARY_PATHS && !scalar("SELECT count(*) FROM images WHERE feature_version IS NOT " + std::to_string(kFeatureVersion) +
                 " OR grid_lab IS NULL OR typeof(grid_lab)!='blob' OR length(grid_lab)!=768", 0)) ||
-        !validateStoredPaths())
+        !rowsValid)
     {
         return incompatible("invalid feature rows or stored paths");
     }

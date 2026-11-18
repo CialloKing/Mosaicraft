@@ -464,7 +464,12 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     }
     runtime.stage("reading_library");
     const auto dbOpenStart = Clock::now();
-    Database db(dbPath, m_preview ? Database::OpenMode::ReadOnly : Database::OpenMode::Existing);
+    const bool readOnce = MOSAICRAFT_TRIAL_MATCH_READ && !m_preview && !m_renderSelection &&
+                          !portableRequested && cfg.outputMode == OutputMode::Image;
+    std::vector<ImageRecord> allRecords;
+    double snapshotReadMs = 0;
+    Database db(dbPath, m_preview ? Database::OpenMode::ReadOnly : Database::OpenMode::Existing,
+                readOnce ? &allRecords : nullptr, cfg.benchmark ? &snapshotReadMs : nullptr);
     if (!db.isOpen())
     {
         {
@@ -477,14 +482,14 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 
     if (cfg.benchmark)
     {
-        runtime.metric("databaseOpenValidateMs", Ms(Clock::now() - dbOpenStart).count());
+        runtime.metric("databaseOpenValidateMs", Ms(Clock::now() - dbOpenStart).count() - snapshotReadMs);
     }
     if (m_indexSession && (m_indexSession->database != db.path() || m_indexSession->device != actualDevice))
     {
         // 切换库或设备时先释放旧资源，再开始本次任务的图库准备。
         *m_indexSession = {};
     }
-    int dbCount = db.totalCount();
+    int dbCount = readOnce ? static_cast<int>(allRecords.size()) : db.totalCount();
     if (dbCount == 0)
     {
         {
@@ -517,31 +522,33 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         std::cout << "[Preview] Preparing library features and scoring backend..." << std::endl;
     }
     const auto recordsStart = Clock::now();
-    auto allRecords = db.allRecords();  // 全量记录，GPU 路径需连续索引
-    dbCount = static_cast<int>(allRecords.size());
-    for (const auto& record : allRecords)
+    if (!readOnce)
     {
-        // 分析读取全部 192 维；拒绝不完整旧记录，避免越界和虚假的匹配报告。
-        if (record.featureVersion != FeatureExtractor::featureVersion() || record.gridLab.size() != 192 ||
-            !std::all_of(record.gridLab.begin(), record.gridLab.end(),
-                         [](float value)
-                         {
-                             return std::isfinite(value);
-                         }))
+        allRecords = db.allRecords();  // 全量记录，GPU 路径需连续索引
+        dbCount = static_cast<int>(allRecords.size());
+        for (const auto& record : allRecords)
         {
+            // 分析读取全部 192 维；拒绝不完整旧记录，避免越界和虚假的匹配报告。
+            if (record.featureVersion != FeatureExtractor::featureVersion() || record.gridLab.size() != 192 ||
+                !std::all_of(record.gridLab.begin(), record.gridLab.end(),
+                             [](float value)
+                             {
+                                 return std::isfinite(value);
+                             }))
             {
-                std::ostringstream detail;
-                detail << "Invalid grid features for image " << record.id
-                       << ". Rebuild this library before generating a mosaic.";
-                runtime.fail("library_incompatible", detail.str(), "dbPath", dbPath);
+                {
+                    std::ostringstream detail;
+                    detail << "Invalid grid features for image " << record.id
+                           << ". Rebuild this library before generating a mosaic.";
+                    runtime.fail("library_incompatible", detail.str(), "dbPath", dbPath);
+                }
+                return false;
             }
-            return false;
         }
     }
-
     if (cfg.benchmark)
     {
-        runtime.metric("databaseReadRecordsMs", Ms(Clock::now() - recordsStart).count());
+        runtime.metric("databaseReadRecordsMs", readOnce ? snapshotReadMs : Ms(Clock::now() - recordsStart).count());
     }
     const uint64_t libraryVersion = m_preview || m_renderSelection
         ? previewLibraryVersion(allRecords, featW, featH) : 0;
