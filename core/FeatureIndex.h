@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Database.h"
+#include "BenchmarkTimer.h"
 #include "Version.h"
 #include "UnicodeIO.h"
 #include "WorkerPool.h"
@@ -147,8 +148,14 @@ class FeatureIndex
         }
     }
 
-    // 从文件加载索引
-    bool load(const std::string &path, int dim, const std::vector<ImageRecord> &records, bool *hot = nullptr)
+    struct LoadTimings
+    {
+        double fingerprintMs = 0, fileDigestMs = 0, deserializeMs = 0;
+    };
+
+    // 各子阶段均包含在 annLoadMs 中；热命中仍须校验两个指纹，但不反序列化。
+    bool load(const std::string &path, int dim, const std::vector<ImageRecord> &records, bool *hot = nullptr,
+              LoadTimings *timings = nullptr)
     {
         constexpr int kDim = kDimension;
         if (dim != kDim)
@@ -167,12 +174,27 @@ class FeatureIndex
         uint64_t storedFingerprint = 0, digest = 0;
         std::ifstream meta(u8path(path + ".meta"));
         if (!(meta >> magic >> version >> libraryVersion >> featureVersion >> storedDimension >> storedCount >> storedFingerprint >> digest) ||
-            magic != "MOSAICRAFT_ANN" || version != kAnnVersion || libraryVersion != kLibraryVersion || featureVersion != kFeatureVersion || storedDimension != kDimension || storedCount != count ||
-            storedFingerprint != fingerprint(records) || !digest || digest != fileDigest(path))
+            magic != "MOSAICRAFT_ANN" || version != kAnnVersion || libraryVersion != kLibraryVersion || featureVersion != kFeatureVersion || storedDimension != kDimension || storedCount != count || !digest)
         {
             return false;
         }
 
+        LoadTimings unused;
+        auto &stats = timings ? *timings : unused;
+        {
+            BenchmarkTimer timer(timings != nullptr, stats.fingerprintMs);
+            if (storedFingerprint != fingerprint(records))
+            {
+                return false;
+            }
+        }
+        {
+            BenchmarkTimer timer(timings != nullptr, stats.fileDigestMs);
+            if (digest != fileDigest(path))
+            {
+                return false;
+            }
+        }
         meta >> std::ws;
         if (!meta.eof())
         {
@@ -206,6 +228,7 @@ class FeatureIndex
         m_index = new hnswlib::HierarchicalNSW<float>(m_space, count, 16, 200);
         try
         {
+            BenchmarkTimer timer(timings != nullptr, stats.deserializeMs);
             m_index->loadIndex(path, m_space, count);
         }
         catch (...)

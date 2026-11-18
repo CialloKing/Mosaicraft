@@ -1187,10 +1187,17 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 annIndex = std::move(indexSession->index);
             }
         }
+        FeatureIndex::LoadTimings indexTimes;
         const auto indexStart = Clock::now();
         bool loaded = (reuseIndex && !indexSession) || annIndex->load(annPath, FeatureIndex::kDimension, allRecords,
-                                                   retainIndex ? &hotIndex : nullptr);
+                                                   retainIndex ? &hotIndex : nullptr, cfg.benchmark ? &indexTimes : nullptr);
         metrics.msANNLoad = Ms(Clock::now() - indexStart).count();
+        if (cfg.benchmark)
+        {
+            runtime.metric("annFingerprintMs", indexTimes.fingerprintMs);
+            runtime.metric("annFileDigestMs", indexTimes.fileDigestMs);
+            runtime.metric("annDeserializeMs", indexTimes.deserializeMs);
+        }
         if (!loaded)
         {
             const auto buildStart = Clock::now();
