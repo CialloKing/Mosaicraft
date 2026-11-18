@@ -4,6 +4,8 @@
 
 ## 文件索引
 
+- [一次 create：CPU / CUDA、原生输出和建库的配对验收](create-29ac0f477.md)
+
 - [backend-retest-20261118.json](backend-retest-20261118.json)
 - [backend-retest-20261118.svg](backend-retest-20261118.svg)
 - [backend-scale-20261118.json](backend-scale-20261118.json)
