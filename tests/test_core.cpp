@@ -412,6 +412,38 @@ TEST_CASE("dynamic CUDA features exactly reproduce CPU integers statistics and s
         CHECK(features[0].edge == before.edge);
         CHECK_THROWS_AS(workspace.extract({cv::Mat()}, features, workers), std::invalid_argument);
     }
+    // A strided, asymmetric target; only one complete tile row fits alongside the OpenCV LUT.
+    cv::Mat parent(34, 21, CV_8UC3);
+    cv::RNG(71).fill(parent, cv::RNG::UNIFORM, 0, 256);
+    const cv::Mat target = parent(cv::Rect(1, 1, 18, 32));
+    const size_t oneStripe = 18 * 16 * 3, table = 3 * (1u << 24);
+    REQUIRE(workspace.prepare(91, 163, 4, 16u << 20));
+    CHECK_FALSE(workspace.prepareTarget(target, 9, 16, 1u << 20, table + oneStripe - 1));
+    CompatibleTimings transfer;
+    REQUIRE(workspace.prepareTarget(target, 9, 16, 1u << 20, table + oneStripe, &transfer));
+    CHECK(workspace.targetBatchRows(1, 3) == 1);
+    CompatibleFeatureWorkspace control;
+    REQUIRE(control.prepare(91, 163, 2, 16u << 20));
+    for (int y = 0; y < 2; ++y)
+    {
+        std::vector<cv::Mat> resized(2);
+        for (int x = 0; x < 2; ++x)
+        {
+            cv::resize(target(cv::Rect(x * 9, y * 16, 9, 16)), resized[x], cv::Size(91, 163));
+        }
+        std::vector<CompatibleFeature> actual, expected;
+        workspace.extract(resized, actual, workers, {}, &transfer, y * 2);
+        control.extract(resized, expected, workers);
+        for (size_t i = 0; i < expected.size(); ++i)
+        {
+            CHECK(actual[i].lab == expected[i].lab);
+            CHECK(actual[i].grid == expected[i].grid);
+            CHECK(actual[i].lbp == expected[i].lbp);
+            CHECK(actual[i].tiny == expected[i].tiny);
+            CHECK(actual[i].edge == expected[i].edge);
+        }
+    }
+    CHECK(transfer.gpu.uploadBytes == table + 2 * oneStripe);
     // 同时越过 LAB uint32 总和与 LBP float += 1 的 2^24 边界。
     cv::Mat large(2060, 8192, CV_8UC3, cv::Scalar(255, 255, 255));
     cv::RNG random(42);

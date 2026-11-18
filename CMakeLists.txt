@@ -158,7 +158,7 @@ add_custom_command(
         ${NVCC_INCLUDE_FLAGS}
         ${NVCC_EXTRA_FLAGS}
     VERBATIM
-    DEPENDS "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu" "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.h" "${CMAKE_SOURCE_DIR}/compute/TileCanny.cuh" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh" "${CMAKE_SOURCE_DIR}/compute/CudaPreflight.cuh"
+    DEPENDS "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.cu" "${CMAKE_SOURCE_DIR}/compute/FeatureExtractorCuda.h" "${CMAKE_SOURCE_DIR}/compute/TileCanny.cuh" "${CMAKE_SOURCE_DIR}/compute/TileResize.cuh" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh" "${CMAKE_SOURCE_DIR}/compute/CudaPreflight.cuh"
         "${CMAKE_SOURCE_DIR}/compute/TemplateFeatureSizes.h"
         "${CMAKE_SOURCE_DIR}/core/FeatureUtils.h" "${CMAKE_SOURCE_DIR}/core/GridWeights.inc" "${CMAKE_SOURCE_DIR}/core/FeatureExtractor.h" "${CMAKE_SOURCE_DIR}/core/UnicodeIO.h"
         "${CMAKE_SOURCE_DIR}/core/WorkerPool.h"
@@ -176,7 +176,7 @@ add_custom_command(
         ${NVCC_INCLUDE_FLAGS}
         ${NVCC_EXTRA_FLAGS}
     VERBATIM
-    DEPENDS "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.cu" "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.h"
+    DEPENDS "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.cu" "${CMAKE_SOURCE_DIR}/compute/CompatibleFeatures.h" "${CMAKE_SOURCE_DIR}/compute/TileResize.cuh"
         "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh" "${CMAKE_SOURCE_DIR}/compute/CudaPreflight.cuh"
         "${CMAKE_SOURCE_DIR}/core/FeatureUtils.h" "${CMAKE_SOURCE_DIR}/core/GridWeights.inc" "${CMAKE_SOURCE_DIR}/core/FeatureExtractor.h"
         "${CMAKE_SOURCE_DIR}/core/WorkerPool.h"
@@ -252,6 +252,7 @@ if (NOT MOSAICRAFT_CUDA)
     target_sources(mosaicraft_core PRIVATE core/CudaStubs.cpp)
 endif()
 # 候选构建供真实 CLI 配对对照，验收前不改变发行版。
+option(MOSAICRAFT_TRIAL_GENERIC_TARGET "Benchmark raw input for generic fast CUDA features" OFF)
 option(MOSAICRAFT_TRIAL_CUDA_ORDERED_GRID "Diagnose template CUDA grid reduction order" OFF)
 option(MOSAICRAFT_TRIAL_CUDA_TARGET "Benchmark tile-local resizing on the CUDA device" OFF)
 option(MOSAICRAFT_TRIAL_SCHEDULE "Share the explicit worker budget across matching stages" OFF)
@@ -260,6 +261,7 @@ option(MOSAICRAFT_TRIAL_CUDA_CANNY "Benchmark end-to-end CUDA target features" O
 option(MOSAICRAFT_TRIAL_CPU_TILES "Use verified reusable features for fast CPU tiles" ON)
 option(MOSAICRAFT_TRIAL_LBP_SIMD "Vectorize LBP in the CPU tile trial" ON)
 set_property(SOURCE core/MosaicEngine.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+    MOSAICRAFT_TRIAL_GENERIC_TARGET=$<BOOL:${MOSAICRAFT_TRIAL_GENERIC_TARGET}>
     MOSAICRAFT_TRIAL_CUDA_ORDERED_GRID=$<BOOL:${MOSAICRAFT_TRIAL_CUDA_ORDERED_GRID}>
     MOSAICRAFT_TRIAL_CUDA_CANNY=$<BOOL:${MOSAICRAFT_TRIAL_CUDA_CANNY}>
     MOSAICRAFT_TRIAL_CUDA_TARGET=$<BOOL:${MOSAICRAFT_TRIAL_CUDA_TARGET}>

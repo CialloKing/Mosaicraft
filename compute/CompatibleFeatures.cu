@@ -1,6 +1,7 @@
 #include "CudaPreflight.cuh"
 #include "CompatibleFeatures.h"
 #include "DeviceBuffer.cuh"
+#include "TileResize.cuh"
 #include "core/FeatureExtractor.h"
 #include "core/FeatureUtils.h"
 #include <algorithm>
@@ -12,6 +13,29 @@ namespace cuda
 {
 namespace
 {
+constexpr size_t lutPlane = 256 * 256 * 3, lutBytes = 256 * lutPlane;
+
+__global__ void packTarget(const uint8_t *src, uint8_t *out, const uint8_t *lut, int width, int height,
+                           int tilesX, int tileW, int tileH, int firstInStripe, double sx, double sy)
+{
+    const int i = blockIdx.x * blockDim.x + threadIdx.x, pixels = width * height;
+    if (i >= pixels)
+    {
+        return;
+    }
+    const int tile = firstInStripe + blockIdx.y;
+    const size_t stride = size_t(tilesX) * tileW * 3;
+    src += size_t(tile / tilesX * tileH) * stride + size_t(tile % tilesX) * tileW * 3;
+    uint8_t bgr[3];
+    resizeTilePixel(src, stride, tileW, tileH, i % width, i / width, sx, sy, bgr);
+    const int idx = (bgr[0] | (bgr[1] << 8) | (bgr[2] << 16)) * 3;
+    out += size_t(blockIdx.y) * pixels * 4;
+    for (int k = 0; k < 3; ++k)
+    {
+        out[i * 3 + k] = lut[idx + k];
+    }
+    out[pixels * 3 + i] = (3735 * bgr[0] + 19235 * bgr[1] + 9798 * bgr[2] + 16384) >> 15;
+}
 constexpr int threads = 256;
 constexpr int pixelsPerBlock = 4096;
 struct IntegerFeatures
@@ -129,7 +153,9 @@ struct CompatibleFeatureWorkspace::Impl
     bool statistics = false;
     PipelineFault fault = PipelineFault::None;
     PinnedBuffer input, output;
-    DeviceBuffer<uint8_t> pixels;
+    DeviceBuffer<uint8_t> pixels, stripe, lut;
+    cv::Mat target;
+    int tileW = 0, tileH = 0, stripeRows = 0, loadedY = -1;
     DeviceBuffer<IntegerFeatures> partials, result;
     TransferStream transfer;
 };
@@ -195,6 +221,72 @@ bool CompatibleFeatureWorkspace::prepare(int width, int height, int maxImages, s
     }
 }
 
+bool CompatibleFeatureWorkspace::prepareTarget(const cv::Mat &target, int tileW, int tileH,
+                                                size_t extraHost, size_t extraDevice, CompatibleTimings *timings)
+{
+    if (!m_impl || m_impl->statistics || !m_impl->target.empty() || target.empty() || target.type() != CV_8UC3 ||
+        tileW < 1 || tileH < 1 || tileW > m_impl->width || tileH > m_impl->height ||
+        target.cols % tileW || target.rows % tileH)
+    {
+        throw std::invalid_argument("invalid generic CUDA target");
+    }
+    size_t free = 0, total = 0;
+    if (!optionalCudaAllocation(cudaMemGetInfo(&free, &total)))
+    {
+        return false;
+    }
+    const size_t budget = std::min(extraDevice, free / 2), row = size_t(target.cols) * tileH * 3;
+    const size_t rows = std::min<size_t>(target.rows / tileH, budget > lutBytes ? (budget - lutBytes) / row : 0);
+    if (!rows || extraHost < 2 * lutPlane)
+    {
+        return false;
+    }
+    auto &p = *m_impl;
+    PinnedBuffer lookup;
+    if (!optionalCudaAllocation(lookup.allocate(2 * lutPlane)) ||
+        !optionalCudaAllocation(p.stripe.allocate(rows * row)) || !optionalCudaAllocation(p.lut.allocate(lutBytes)))
+    {
+        p.stripe.reset();
+        p.lut.reset();
+        return false;
+    }
+    // Keep exact OpenCV colour conversion (including its rounding). Build one red plane at a time;
+    // this one-off cost and the 48 MiB upload must count against any savings on small jobs.
+    PhaseTimer timer(timings ? &timings->prepareMs : nullptr);
+    cv::Mat input(256, 256, CV_8UC3, lookup.get()), lab(256, 256, CV_8UC3, lookup.get() + lutPlane);
+    for (int red = 0; red < 256; ++red)
+    {
+        for (int i = 0; i < 65536; ++i)
+        {
+            input.data[i * 3] = static_cast<uint8_t>(i);
+            input.data[i * 3 + 1] = static_cast<uint8_t>(i >> 8);
+            input.data[i * 3 + 2] = static_cast<uint8_t>(red);
+        }
+        cv::cvtColor(input, lab, cv::COLOR_BGR2Lab);
+        requireCuda(cudaMemcpy(p.lut.get() + red * lutPlane, lab.data, lutPlane, cudaMemcpyHostToDevice));
+    }
+    p.target = target;
+    p.tileW = tileW;
+    p.tileH = tileH;
+    p.stripeRows = static_cast<int>(rows);
+    p.device += rows * row + lutBytes;
+    if (timings)
+    {
+        timings->gpu.uploadBytes += lutBytes;
+    }
+    return true;
+}
+
+int CompatibleFeatureWorkspace::targetBatchRows(int first, int limit) const
+{
+    if (!m_impl || m_impl->target.empty())
+    {
+        return limit;
+    }
+    const int64_t stripe = int64_t(m_impl->stripeRows) * (m_impl->target.cols / m_impl->tileW);
+    return static_cast<int>(std::min<int64_t>(limit, stripe - first % stripe));
+}
+
 int CompatibleFeatureWorkspace::capacity() const
 {
     return m_impl ? m_impl->count : 0;
@@ -210,7 +302,7 @@ size_t CompatibleFeatureWorkspace::deviceBytes() const
 
 void CompatibleFeatureWorkspace::extract(const std::vector<cv::Mat> &images,
                                          std::vector<CompatibleFeature> &features, WorkerPool &workers,
-                                         const std::vector<ImageRecord *> &statistics, CompatibleTimings *timings)
+                                         const std::vector<ImageRecord *> &statistics, CompatibleTimings *timings, int firstTile)
 {
     if (!m_impl || images.empty() || images.size() > static_cast<size_t>(capacity()) ||
         (!statistics.empty() && (!m_impl->statistics || statistics.size() != images.size())))
@@ -226,6 +318,11 @@ void CompatibleFeatureWorkspace::extract(const std::vector<cv::Mat> &images,
             throw std::invalid_argument("compatible CUDA expects equally sized 8-bit BGR images");
         }
     }
+    if (!p.target.empty() && (firstTile < 0 || targetBatchRows(firstTile, static_cast<int>(images.size())) != images.size() || int64_t(firstTile) + int64_t(images.size()) >
+        int64_t(p.target.cols / p.tileW) * (p.target.rows / p.tileH)))
+    {
+        throw std::invalid_argument("generic CUDA tile range exceeds target");
+    }
     features.resize(images.size());
     const size_t pixels = static_cast<size_t>(p.width) * p.height;
     {
@@ -235,21 +332,50 @@ void CompatibleFeatureWorkspace::extract(const std::vector<cv::Mat> &images,
             auto *input = p.input.get() + i * pixels * 4;
             cv::Mat lab(p.height, p.width, CV_8UC3, input);
             cv::Mat gray(p.height, p.width, CV_8UC1, input + pixels * 3);
-            cv::cvtColor(images[i], lab, cv::COLOR_BGR2Lab);
+            if (p.target.empty())
+            {
+                cv::cvtColor(images[i], lab, cv::COLOR_BGR2Lab);
+            }
             cv::cvtColor(images[i], gray, cv::COLOR_BGR2GRAY);
         });
     }
+    size_t uploaded = 0;
     StreamDrain drain(p.transfer.stream);
     try
     {
         p.transfer.mark(0);
-        requireCuda(cudaMemcpyAsync(p.pixels.get(), p.input.get(), images.size() * pixels * 4,
-                                    cudaMemcpyHostToDevice, p.transfer.stream));
+        const int tilesX = p.target.empty() ? 0 : p.target.cols / p.tileW;
+        int stripeY = 0;
+        if (!tilesX)
+        {
+            uploaded = images.size() * pixels * 4;
+            requireCuda(cudaMemcpyAsync(p.pixels.get(), p.input.get(), uploaded, cudaMemcpyHostToDevice, p.transfer.stream));
+        }
+        else
+        {
+            stripeY = (firstTile / tilesX / p.stripeRows) * p.stripeRows;
+            if (p.loadedY != stripeY)
+            {
+                const size_t pitch = size_t(p.target.cols) * 3;
+                const int lines = std::min(p.stripeRows, p.target.rows / p.tileH - stripeY) * p.tileH;
+                requireCuda(cudaMemcpy2DAsync(p.stripe.get(), pitch, p.target.ptr(stripeY * p.tileH), p.target.step,
+                                              pitch, lines, cudaMemcpyHostToDevice, p.transfer.stream));
+                p.loadedY = stripeY;
+                uploaded = pitch * lines;
+            }
+        }
         if (p.fault == PipelineFault::AfterUpload)
         {
             throw std::runtime_error("injected compatible CUDA failure after upload");
         }
         p.transfer.mark(1);
+        if (tilesX)
+        {
+            packTarget<<<dim3((pixels + threads - 1) / threads, static_cast<unsigned>(images.size())), threads, 0, p.transfer.stream>>>(
+                p.stripe.get(), p.pixels.get(), p.lut.get(), p.width, p.height, tilesX, p.tileW, p.tileH,
+                firstTile - stripeY * tilesX, double(p.tileW) / p.width, double(p.tileH) / p.height);
+            requireCuda(cudaGetLastError());
+        }
         compatibleKernel<<<dim3(p.blocks, static_cast<unsigned>(images.size())), threads, 0, p.transfer.stream>>>(
             p.pixels.get(), p.width, p.height, p.blocks, p.partials.get());
         requireCuda(cudaGetLastError());
@@ -329,7 +455,7 @@ void CompatibleFeatureWorkspace::extract(const std::vector<cv::Mat> &images,
     {
         timings->images += images.size();
         ++timings->batches;
-        timings->gpu.uploadBytes += images.size() * pixels * 4;
+        timings->gpu.uploadBytes += uploaded;
         timings->gpu.downloadBytes += images.size() * sizeof(IntegerFeatures);
         timings->gpu.pinnedBytes = p.input.capacityBytes() + p.output.capacityBytes();
         timings->gpu.peakTemporaryBytes = p.device;

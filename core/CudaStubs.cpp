@@ -58,6 +58,14 @@ bool CompatibleFeatureWorkspace::prepare(int, int, int, size_t, bool, size_t, Pi
 {
     return false;
 }
+bool CompatibleFeatureWorkspace::prepareTarget(const cv::Mat &, int, int, size_t, size_t, CompatibleTimings *)
+{
+    return false;
+}
+int CompatibleFeatureWorkspace::targetBatchRows(int, int limit) const
+{
+    return limit;
+}
 int CompatibleFeatureWorkspace::capacity() const
 {
     return 0;
@@ -71,7 +79,7 @@ size_t CompatibleFeatureWorkspace::deviceBytes() const
     return 0;
 }
 void CompatibleFeatureWorkspace::extract(const std::vector<cv::Mat> &, std::vector<CompatibleFeature> &,
-                                         WorkerPool &, const std::vector<ImageRecord *> &, CompatibleTimings *)
+                                         WorkerPool &, const std::vector<ImageRecord *> &, CompatibleTimings *, int)
 {
     throw std::runtime_error("CUDA is not available");
 }

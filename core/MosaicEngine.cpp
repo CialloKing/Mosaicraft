@@ -1429,6 +1429,18 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             {
                 batchRows = static_cast<size_t>(compatibleScore.capacity());
                 pinnedBytes += compatibleScore.hostBytes();
+                if (MOSAICRAFT_TRIAL_GENERIC_TARGET && fastScore && compatibleFeatures && !m_previewWorkspace &&
+                    !m_preview && cfg.tileW <= featW && cfg.tileH <= featH)
+                {
+                    const size_t usedHost = cpuMatchingBufferBytes(batchRows, N) + batchRows * N *
+                        (scalarBytes + 2 * sizeof(int)) + scratch + compatible.hostBytes() + compatibleScore.hostBytes();
+                    const size_t usedDevice = compatible.deviceBytes() + compatibleScore.deviceBytes();
+                    if (usedHost < hostBudget && usedDevice < deviceBudget)
+                    {
+                        compatible.prepareTarget(target, cfg.tileW, cfg.tileH, hostBudget - usedHost,
+                                                 deviceBudget - usedDevice, &compatibleTimings);
+                    }
+                }
                 m_compatibleTemporaryBytes = compatible.deviceBytes() + compatibleScore.deviceBytes();
                 // Reader 保留原来源校验及缺失标志，上传暂存按块复用，不复制整库到另一份主机数组。
                 compatibleScore.uploadLibrary(allRecords, *featureReader, &metrics.libraryTimings);
@@ -1686,7 +1698,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 }
                 else
                 {
-                    compatible.extract(compatibleImages, compatibleValues, featureWorkers, {}, &compatibleTimings);
+                    compatible.extract(compatibleImages, compatibleValues, featureWorkers, {}, &compatibleTimings, first);
                 }
                 m_compatibleFeatureImages += count;
                 for (int local = 0; local < count; ++local)
@@ -1913,7 +1925,12 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         {
             return runtime.fail("preview_canceled", "preview canceled");
         }
-        if (!prepare(0, static_cast<int>(batchRows), buffers))
+        const auto rowsAt = [&](int first)
+        {
+            const int limit = static_cast<int>(std::min<size_t>(batchRows, totalTiles - first));
+            return MOSAICRAFT_TRIAL_GENERIC_TARGET ? compatible.targetBatchRows(first, limit) : limit;
+        };
+        if (!prepare(0, rowsAt(0), buffers))
         {
             return false;
         }
@@ -1921,9 +1938,9 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                   << (prefetch ? " (one batch ahead)" : "") << std::endl;
         for (int first = 0; first < totalTiles;)
         {
-            const int count = static_cast<int>(std::min<size_t>(batchRows, totalTiles - first));
+            const int count = rowsAt(first);
             const int next = first + count;
-            const int nextCount = static_cast<int>(std::min<size_t>(batchRows, totalTiles - next));
+            const int nextCount = rowsAt(next);
             ++metrics.matchingBatches;
             auto &allTL = buffers.l;
             auto &allTA = buffers.a;
@@ -2604,6 +2621,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
         if (compatibleFeatures)
         {
+            if (cfg.benchmark)
+            {
+                runtime.metric("genericFeatureUploadBytes", double(compatibleTimings.gpu.uploadBytes));
+            }
             std::cout << "\n  Generic CUDA: " << compatibleTimings.images << " images, "
                       << compatibleTimings.batches << " batches; host/device buffers "
                       << compatible.hostBytes() << "/" << compatible.deviceBytes() << " bytes; preprocess "

@@ -33,12 +33,16 @@ class CompatibleFeatureWorkspace
     // false 只表示计算前资源不足。运行中 CUDA 错误必须抛出，不能静默重算。
     bool prepare(int width, int height, int maxImages, size_t hostBudget, bool statistics = false,
                  size_t deviceBudget = 256ULL * 1024 * 1024, PipelineFault fault = PipelineFault::None);
+    // Optional fast-create path; leave the preallocated CUDA workspace intact if it cannot fit.
+    bool prepareTarget(const cv::Mat &target, int tileW, int tileH, size_t extraHost, size_t extraDevice,
+                       CompatibleTimings *timings = nullptr);
+    int targetBatchRows(int first, int limit) const;
     int capacity() const;
     size_t hostBytes() const;
     size_t deviceBytes() const;
     void extract(const std::vector<cv::Mat> &images, std::vector<CompatibleFeature> &features,
                  WorkerPool &workers, const std::vector<ImageRecord *> &statistics = {},
-                 CompatibleTimings *timings = nullptr);
+                 CompatibleTimings *timings = nullptr, int firstTile = 0);
 
   private:
     struct Impl;
