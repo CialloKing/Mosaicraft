@@ -13,7 +13,7 @@
 using namespace mosaicraft;
 
 // 复用 API 配置以指定小输出 tile，不给生产 CLI 增加基准专用参数。
-int main(int argc, char **argv)
+int main(int argc, char **argv) try
 {
     if (argc < 2)
     {
@@ -229,4 +229,10 @@ int main(int argc, char **argv)
         std::cerr << result.message << '\n';
     }
     return result.exitCode;
+}
+catch (const std::exception &error)
+{
+    // 与真实 CLI 一样报告不支持的强制 ISA 等错误，不能因未捕获异常而只留下空日志。
+    std::cerr << error.what() << '\n';
+    return 1;
 }
