@@ -9,7 +9,7 @@ import time
 import uuid
 from contextlib import closing
 from pathlib import Path
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 
 from benchmark_backends import save
 from study_paths import digest, readonly_database
@@ -30,10 +30,12 @@ def main():
     data=dict(complete=False,snapshot_sha256=source,binary_sha256=digest(exe),input_sha256=digest(target),samples=[])
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
+    # Match the server's localhost listener (which can be IPv6-only); never proxy a private job.
+    client=build_opener(ProxyHandler({}))
     def api(path,body=None):
-        req=Request(f'http://127.0.0.1:{port}'+path, data=None if body is None else json.dumps(body).encode(),
+        req=Request(f'http://localhost:{port}'+path, data=None if body is None else json.dumps(body).encode(),
                     headers={'Content-Type':'application/json'})
-        with urlopen(req,timeout=20) as res:
+        with client.open(req,timeout=20) as res:
             value=json.load(res)
         if not value.get('ok'):
             raise RuntimeError(value)
