@@ -40,7 +40,7 @@ def main():
     bins = {k: getattr(a, k).resolve() for k in ('baseline', 'candidate')}
     data = dict(reference='baseline', variants=[dict(id=k, sha256=digest(v)) for k,v in bins.items()],
                 cases=[dict(id=str(n)) for n in a.tiles], samples=[], backend=a.backend, threads=a.threads,
-                input_sha256=digest(a.input), snapshot_sha256=digest(src), complete=False)
+                input_sha256=digest(a.input), snapshot_sha256=digest(src), complete=False, exploratory=a.rounds < 8 or a.warmups < 2)
     if manifest.get('snapshot_sha256', data['snapshot_sha256']) != data['snapshot_sha256']:
         raise ValueError('snapshot identity mismatch')
     rng = random.Random(29)
