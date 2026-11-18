@@ -62,6 +62,31 @@ def balanced_orders(count, rounds, rng):
     return result[:rounds]
 
 
+def extend_pairs(report, path, rounds):
+    if not path:
+        return 0, 0
+    old = json.loads(path.read_bytes())
+    # Match the entire experiment identity, not a label such as "candidate" or "cpu".
+    keys = set(report) - {'complete', 'samples', 'exploratory'}
+    if not old['complete'] or any(old.get(k) != report[k] for k in keys):
+        raise ValueError('extension requires the same binaries, inputs, cases and execution settings')
+    counts = []
+    if any(s['phase'] not in ('measured','warmup') for s in old['samples']):
+        raise ValueError('unknown phase')
+    for phase in ('measured','warmup'):
+        rows = [s for s in old['samples'] if s['phase'] == phase]
+        count = max((s['round'] for s in rows), default=-1) + 1
+        expected = {(c['id'],v['id'],r) for c in report['cases'] for v in report['variants'] for r in range(count)}
+        if len(rows) != len(expected) or {(s['case'],s['variant'],s['round']) for s in rows} != expected:
+            raise ValueError('incomplete or duplicate samples in extension report')
+        counts.append(count)
+    if counts[0] >= rounds:
+        raise ValueError('round count must exceed the completed report')
+    report['extended_from'] = dict(report=str(path.resolve()), sha256=digest(path), measured=counts[0])
+    report['samples'] = old['samples']
+    return tuple(counts)
+
+
 def summarize(report):
     measured = [row for row in report["samples"] if row["phase"] == "measured"]
     metrics = [key for key in ("matchingMs", "totalMs", "processWallMs")

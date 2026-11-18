@@ -10,7 +10,7 @@ import time
 from contextlib import closing
 from pathlib import Path
 
-from benchmark_backends import balanced_orders, save, summarize
+from benchmark_backends import balanced_orders, extend_pairs, save, summarize
 from study_paths import digest, readonly_database
 
 
@@ -33,6 +33,7 @@ def main():
         p.add_argument('--'+k,type=Path,required=True)
     p.add_argument('--threads',type=int,default=8)
     p.add_argument('--rounds',type=int,default=8); p.add_argument('--warmups',type=int,default=2)
+    p.add_argument('--extend',type=Path,help='keep measured build/add pairs from this completed report')
     a = p.parse_args()
     if a.rounds < 1 or a.warmups < 0:
         p.error('invalid sample counts')
@@ -44,10 +45,15 @@ def main():
     data = dict(reference='baseline', variants=variants,cases=[dict(id=k) for k in ('build','add')],samples=[],
                 complete=False,threads=a.threads,exploratory=a.rounds<8 or a.warmups<2,
                 sources=[{x.name:digest(x) for x in sorted(d.iterdir()) if x.is_file()} for d in inputs])
-    reference = {}; orders = balanced_orders(2,a.rounds,random.Random(29))
-    for phase,n in [('warmup',a.warmups),('measured',a.rounds)]:
-        for r in range(n):
-            for i in orders[r%a.rounds]:
+    offset,warm_offset=extend_pairs(data,a.extend,a.rounds)
+    reference={}
+    for row in data['samples']:
+        if row['logical_sha256'] != reference.setdefault(row['case'],row['logical_sha256']):
+            raise ValueError('inconsistent historical logical rows')
+    orders = balanced_orders(2,a.rounds-offset,random.Random(29+offset))
+    for phase,first,n in [('warmup',warm_offset,a.warmups),('measured',offset,a.rounds-offset)]:
+        for r in range(first,first+n):
+            for i in orders[(r-first)%len(orders)]:
                 name = variants[i]['id']; previous = 0
                 # 每对有独立新图库；追加沿用该构建的事务和身份，不向原图目录写入。
                 with tempfile.TemporaryDirectory(dir=out) as work:

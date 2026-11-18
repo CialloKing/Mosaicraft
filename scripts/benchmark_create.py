@@ -10,7 +10,7 @@ import uuid
 from contextlib import closing
 from pathlib import Path
 
-from benchmark_backends import balanced_orders, save, summarize
+from benchmark_backends import balanced_orders, extend_pairs, save, summarize
 from study_paths import digest, readonly_database
 
 CASES = {900: (270, 480, 150), 3600: (540, 960, 150),
@@ -45,30 +45,11 @@ def main():
                 input_sha256=digest(a.input), snapshot_sha256=digest(src), complete=False, exploratory=a.rounds < 8 or a.warmups < 2)
     if manifest.get('snapshot_sha256', data['snapshot_sha256']) != data['snapshot_sha256']:
         raise ValueError('snapshot identity mismatch')
-    offset = warm_offset = 0
+    offset,warm_offset = extend_pairs(data,a.extend,a.rounds)
     hashes = {}
-    if a.extend:
-        old = json.loads(a.extend.read_bytes())
-        if not old['complete'] or any(old.get(k) != data[k] for k in
-                ('reference','variants','cases','backend','threads','input_sha256','snapshot_sha256')):
-            p.error('extension must use exactly the same samples, inputs and binaries')
-        data['samples'] = old['samples']
-        for phase in ('measured', 'warmup'):
-            samples = [x for x in data['samples'] if x['phase'] == phase]
-            count = max((x['round'] for x in samples), default=-1) + 1
-            expected = {(n,k,r) for n in a.tiles for k in bins for r in range(count)}
-            if len(samples) != len(expected) or {(int(x['case']),x['variant'],x['round']) for x in samples} != expected:
-                p.error('incomplete or duplicate samples in input report')
-            if phase == 'measured':
-                offset = count
-            else:
-                warm_offset = count
-        if offset >= a.rounds:
-            p.error('--rounds must exceed the original measured count')
-        data['extended_from'] = dict(report=str(a.extend.resolve()), sha256=digest(a.extend), measured=offset)
-        for sample in data['samples']:
-            if sample['variant'] == 'baseline':
-                hashes.setdefault(int(sample['case']), sample['png_sha256'])
+    for sample in data['samples']:
+        if sample['variant'] == 'baseline':
+            hashes.setdefault(int(sample['case']), sample['png_sha256'])
     rng = random.Random(29 + offset)
     added = a.rounds - offset
     orders = {n: balanced_orders(2, added, rng) for n in a.tiles}
