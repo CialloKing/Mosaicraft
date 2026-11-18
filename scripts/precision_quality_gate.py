@@ -48,7 +48,15 @@ def assess(rows, groups, modes_pair):
         passed = missing and all(new[k] <= 1.03*old[k]+1e-6 for k in fields[:3]) and (
             new['repeat'] <= old['repeat'] + 0.02 and new['unique_images'] >= 0.90*old['unique_images'])
         if modes_pair[0] == 'baseline':
-            passed = missing and all(new[k] <= old[k]+1e-12 for k in fields[:4]) and new['unique_images'] >= old['unique_images']
+            # 不让三次种子的中位数掩盖同组中一次退化；聚合值仅供报告阅读。
+            passed = missing
+            for a,b in zip(modes['baseline'], modes['candidate'], strict=True):
+                if a.rsplit('-',1)[0] != b.rsplit('-',1)[0]:
+                    raise ValueError('unpaired quality samples')
+                left, right = rows[a], rows[b]
+                passed &= all(right[k] <= left[k]+1e-12 for k in fields[:3]) and (
+                    right['neighborhood']['3']['same_pair_rate'] <= left['neighborhood']['3']['same_pair_rate']+1e-12 and
+                    right['unique_images'] >= left['unique_images'])
         result.append(dict(group=key, passed=passed, coverage_ok=missing, **dict(zip(modes_pair,(old,new)))))
     return result
 
@@ -93,6 +101,12 @@ def main():
     folder = args.output.resolve()
     if args.finish_existing:
         study = json.loads((folder / 'study.json').read_bytes())
+        if 'baseline_sha256' in study:
+            provenance = study if 'match_sha256' in study else json.loads((folder/'gate.json').read_bytes())
+            if (not args.baseline_match or digest(args.baseline_match) != study['baseline_sha256'] or
+                    digest(args.match) != provenance['match_sha256'] or digest(args.quality) != provenance['quality_sha256'] or
+                    snapshot_sha != provenance['snapshot_sha256']):
+                raise ValueError('cannot resume with different binaries or snapshot')
         evaluation = json.loads((folder / 'evaluation.json').read_bytes())
         passed = finish(folder, study, evaluation, snapshot, snapshot_sha, args.prepared_run / 'report.json',
                         args.match, args.quality)
@@ -104,7 +118,8 @@ def main():
     study = dict(snapshot=str(database), oracle=False, cases=targets(args.inputs,folder), runs=[])
     labels = ('baseline','candidate') if args.baseline_match else ('compatible','fast')
     if args.baseline_match:
-        study['baseline_sha256'] = digest(args.baseline_match)
+        study.update(baseline_sha256=digest(args.baseline_match), match_sha256=digest(args.match),
+                     quality_sha256=digest(args.quality), snapshot_sha256=snapshot_sha)
     groups = {}
     for device in args.device:
         backend = device.split(':')[0]
