@@ -21,7 +21,7 @@ struct MosaicMetrics
     double msSelect = 0;
     double msPlace = 0;
     double msEncode = 0;
-    double msCPUScore = 0;
+    double msCPUScore = 0, msBaseScore = 0;
     double msPrep = 0;
     double matchingWallMs = 0;
 

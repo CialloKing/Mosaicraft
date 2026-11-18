@@ -827,6 +827,26 @@ void FeaturePack::Reader::prepare(const std::vector<int> &candidates)
 {
     m_impl->prepare(candidates);
 }
+const FeaturePack::Reader::Row *FeaturePack::Reader::preparedRow(int index) const
+{
+    const Impl &state = *m_impl;
+    if (index < 0 || size_t(index) >= state.records.size())
+    {
+        return nullptr;
+    }
+    const Row *row = nullptr;
+    if (state.statistics.preloaded)
+    {
+        row = state.checked[index] ? &state.rows[index] : nullptr;
+    }
+    else
+    {
+        const auto it = state.cache.find(index);
+        row = it == state.cache.end() ? nullptr : &it->second.row;
+    }
+    return row && row->tinyValid && row->lbpValid ? row : nullptr;
+}
+
 const FeaturePack::Reader::Row &FeaturePack::Reader::get(int index)
 {
     const auto &row = m_impl->get(index);

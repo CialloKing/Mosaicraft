@@ -44,6 +44,8 @@ class FeaturePack
         Reader &operator=(const Reader &) = delete;
         void prepare(const std::vector<int> &candidates);
         const Row &get(int index);
+        // prepare 后直到下次非 const 操作为止可并行访问，不加载、不移动 LRU 节点。
+        const Row *preparedRow(int index) const;
         const ReadStats &stats() const;
 
       private:

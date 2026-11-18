@@ -1441,6 +1441,23 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             runtime.metric("previewCandidatesReused", reuseCandidates ? 1 : 0);
         }
+        const size_t cpuWorkspace = scratch + compatible.hostBytes() + portableFeatures.hostBytes() +
+                                    (pruneGrid ? size_t(rankLimit) * sizeof(double) : 0);
+        const auto fitsCpuScores = [&](size_t rows)
+        {
+            return cpuWorkspace <= hostBudget && cpuMatchingBufferBytes(rows, N) +
+                   checkedMatchProduct(rows * N, sizeof(double)) <= hostBudget - cpuWorkspace;
+        };
+        if (backends.scoring == ScoreBackend::Cpu && !selection && cfg.threads != 1)
+        {
+            while (batchRows > 1 && !fitsCpuScores(batchRows))
+            {
+                batchRows /= 2;
+            }
+            metrics.maximumBatchTiles = batchRows;
+        }
+        const bool parallelBase = backends.scoring == ScoreBackend::Cpu && !selection && cfg.threads != 1 &&
+                                  batchRows > 1 && fitsCpuScores(batchRows);
         auto prepare = [&](int first, int count, MatchingBuffers &buffers)
         {
             if (canceled())
@@ -1448,7 +1465,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 return runtime.fail("preview_canceled", "preview canceled");
             }
             buffers.resize(count, featBytes, N, templateCuda, cfg.analyze, pipeline);
-            if (backends.scoring == ScoreBackend::CompatibleCuda || portableScoreReady)
+            if (backends.scoring == ScoreBackend::CompatibleCuda || portableScoreReady || parallelBase)
             {
                 buffers.scores.resize(size_t(count) * N);
             }
@@ -2191,6 +2208,34 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     metrics.msCPUFeatures += readMs;
                     metrics.msSelect += readMs;
                 }
+                bool preparedScores = gpuScoring;
+                if (parallelBase)
+                {
+                    const auto start = Clock::now();
+                    std::atomic<bool> missing{false};
+                    queryWorkers.run(count, [&](size_t local)
+                    {
+                        const size_t begin = local * N;
+                        for (size_t pos = begin; pos < begin + N; ++pos)
+                        {
+                            const int index = allIndices[pos];
+                            if (index < 0)
+                            {
+                                continue;
+                            }
+                            const auto *row = featureReader->preparedRow(index);
+                            if (!row)
+                            {
+                                // 极小预算可能无法固定一整行；回到原读取路径，以保留缺失特征的错误语义。
+                                missing.store(true, std::memory_order_relaxed);
+                                return;
+                            }
+                            allScores[pos] = cpuBaseScore(buffers, local, allRecords[index], *row, cfg.usePenalty);
+                        }
+                    });
+                    preparedScores = !missing.load(std::memory_order_relaxed);
+                    metrics.msBaseScore += Ms(Clock::now() - start).count();
+                }
                 const auto selectionStart = Clock::now();
                 for (int local = 0; local < count; ++local)
                 {
@@ -2226,7 +2271,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         }
                         const auto &r = allRecords[li];
                         const size_t candidate = static_cast<size_t>(local) * N + j;
-                        double s = gpuScoring ? allScores[candidate]
+                        double s = preparedScores ? allScores[candidate]
                             : cpuBaseScore(buffers, local, r, featureReader->get(li), cfg.usePenalty);
                         if (newScores)
                         {
@@ -2606,6 +2651,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         runtime.metric("annLoadMs", metrics.msANNLoad);
         runtime.metric("annBuildMs", metrics.msANNBuild);
         runtime.metric("cpuScoreMs", metrics.msCPUScore);
+        runtime.metric("batchBaseScoreMs", metrics.msBaseScore);
         runtime.metric("gpuScoreMs", metrics.msGPUScore);
         runtime.metric("neighborMs", metrics.msNeighbor);
         runtime.metric("prepareMs", metrics.msPrep);
