@@ -585,23 +585,14 @@ std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit
         return results;
     }
 
-    const char* sql = R"SQL(
-        SELECT id, file_path, file_hash, format, src_width, src_height,
-               aspect_ratio, file_size,
-               avg_l, avg_a, avg_b,
-               mean_brightness, std_brightness, contrast,
-               saturation, color_variance,
-               grid_lab,
-               tiny_path,
-               edge_density,
-               lbp_path,
-               use_count,
-               feature_version
-        FROM images
-        WHERE avg_l BETWEEN ? AND ?
-        ORDER BY use_count ASC
-        LIMIT ?
-    )SQL";
+    // 完整读接口仍返回归一化/分析元数据；匹配路径不从 SQLite 复制不用的列。
+    static const std::string matchingColumns = "SELECT id,file_path,file_hash,avg_l,avg_a,avg_b,grid_lab,"
+        "tiny_path,edge_density,lbp_path,use_count,feature_version";
+    static const std::string range = " FROM images WHERE avg_l BETWEEN ? AND ? ORDER BY use_count ASC LIMIT ?";
+    static const std::string matchSql = matchingColumns + range;
+    static const std::string fullSql = matchingColumns + ",format,src_width,src_height,aspect_ratio,file_size,"
+        "mean_brightness,std_brightness,contrast,saturation,color_variance" + range;
+    const char *sql = (validated ? matchSql : fullSql).c_str();
 
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK)
@@ -622,8 +613,8 @@ std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit
     int rc;
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW)
     {
-        if (validated && (sqlite3_column_type(stmt, 16) != SQLITE_BLOB || sqlite3_column_bytes(stmt, 16) != 768 ||
-                          sqlite3_column_type(stmt, 21) != SQLITE_INTEGER || sqlite3_column_int64(stmt, 21) != kFeatureVersion))
+        if (validated && (sqlite3_column_type(stmt, 6) != SQLITE_BLOB || sqlite3_column_bytes(stmt, 6) != 768 ||
+                          sqlite3_column_type(stmt, 11) != SQLITE_INTEGER || sqlite3_column_int64(stmt, 11) != kFeatureVersion))
         {
             return {};
         }
@@ -637,14 +628,6 @@ std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit
         rec.fileHash     = sqlite3_column_type(stmt, col) != SQLITE_NULL
                            ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, col)) : "";
         col++;
-        rec.format       = sqlite3_column_type(stmt, col) != SQLITE_NULL
-                           ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, col)) : "";
-        col++;
-        rec.srcWidth     = sqlite3_column_int(stmt, col++);
-        rec.srcHeight    = sqlite3_column_int(stmt, col++);
-        rec.aspectRatio  = sqlite3_column_double(stmt, col++);
-        rec.fileSize     = sqlite3_column_int64(stmt, col++);
-
         rec.avgL         = sqlite3_column_double(stmt, col++);
         // NULL 不能冒充合法的零色度，排序应在移动文件前报告损坏的均值。
         auto average = [&]()
@@ -656,13 +639,6 @@ std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit
         };
         rec.avgA = average();
         rec.avgB = average();
-
-        rec.meanBrightness = sqlite3_column_double(stmt, col++);
-        rec.stdBrightness  = sqlite3_column_double(stmt, col++);
-        rec.contrast       = sqlite3_column_double(stmt, col++);
-
-        rec.saturation     = sqlite3_column_double(stmt, col++);
-        rec.colorVariance  = sqlite3_column_double(stmt, col++);
 
         // grid_lab BLOB → std::vector<float>
         if (sqlite3_column_type(stmt, col) != SQLITE_NULL)
@@ -689,6 +665,23 @@ std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit
         rec.useCount       = sqlite3_column_int(stmt, col++);
         rec.featureVersion = sqlite3_column_int(stmt, col++);
 
+        if (!validated)
+        {
+            rec.format       = sqlite3_column_type(stmt, col) != SQLITE_NULL
+                               ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, col)) : "";
+            col++;
+            rec.srcWidth     = sqlite3_column_int(stmt, col++);
+            rec.srcHeight    = sqlite3_column_int(stmt, col++);
+            rec.aspectRatio  = sqlite3_column_double(stmt, col++);
+            rec.fileSize     = sqlite3_column_int64(stmt, col++);
+
+            rec.meanBrightness = sqlite3_column_double(stmt, col++);
+            rec.stdBrightness  = sqlite3_column_double(stmt, col++);
+            rec.contrast       = sqlite3_column_double(stmt, col++);
+
+            rec.saturation     = sqlite3_column_double(stmt, col++);
+            rec.colorVariance  = sqlite3_column_double(stmt, col++);
+        }
         if (validated && (rec.filePath.empty() || !LibraryPaths::relative(rec.filePath) ||
                           !LibraryPaths::relative(rec.tinyPath) || !LibraryPaths::relative(rec.lbpPath) ||
                           !std::isfinite(rec.avgL) || !std::isfinite(rec.avgA) || !std::isfinite(rec.avgB) ||
