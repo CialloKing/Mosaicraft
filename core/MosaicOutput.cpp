@@ -331,8 +331,9 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         {
             if (format == "png")
             {
+                // 默认一级压缩优先速度；显式提高压缩级别时保留自适应滤波以优先文件大小。
                 png = std::make_unique<PngStreamWriter>(stats.path, width, height, config.pngCompressionLevel,
-                    stream && MOSAICRAFT_TRIAL_PNG_SUB ? PNG_FILTER_SUB : PNG_ALL_FILTERS);
+                    stream && MOSAICRAFT_TRIAL_PNG_SUB && config.pngCompressionLevel == 1 ? PNG_FILTER_SUB : PNG_ALL_FILTERS);
             }
             else if (format == "jpg")
             {
