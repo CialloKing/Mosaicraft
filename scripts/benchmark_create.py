@@ -24,12 +24,16 @@ def main():
     p.add_argument('--backend', choices=('cpu', 'cuda'), required=True)
     p.add_argument('--tiles', type=int, nargs='+', choices=CASES, default=list(CASES))
     p.add_argument('--threads', type=int, default=0)
+    p.add_argument('--candidate-threads', type=int, help='compare a thread budget against --threads in paired runs')
     p.add_argument('--rounds', type=int, default=8)
     p.add_argument('--warmups', type=int, default=2)
     p.add_argument('--extend', type=Path, help='completed paired report; --rounds is the combined measured count')
     a = p.parse_args()
     if a.rounds < 1 or a.warmups < 0 or len(set(a.tiles)) != len(a.tiles):
         p.error('invalid sample counts or duplicate cases')
+    candidate_threads = a.threads if a.candidate_threads is None else a.candidate_threads
+    if not all(0 <= n <= 256 for n in (a.threads, candidate_threads)):
+        p.error('thread counts must be in 0..256')
     prepared = a.prepared.resolve()
     manifest = json.loads((prepared/'report.json').read_bytes())
     src = prepared/'library'/'snapshot.db'
@@ -43,6 +47,8 @@ def main():
     data = dict(reference='baseline', variants=[dict(id=k, sha256=digest(v)) for k,v in bins.items()],
                 cases=[dict(id=str(n)) for n in a.tiles], samples=[], backend=a.backend, threads=a.threads,
                 input_sha256=digest(a.input), snapshot_sha256=digest(src), complete=False, exploratory=a.rounds < 8 or a.warmups < 2)
+    if candidate_threads != a.threads:
+        data['candidate_threads'] = candidate_threads
     if manifest.get('snapshot_sha256', data['snapshot_sha256']) != data['snapshot_sha256']:
         raise ValueError('snapshot identity mismatch')
     offset,warm_offset = extend_pairs(data,a.extend,a.rounds)
@@ -65,7 +71,8 @@ def main():
                         with readonly_database(src) as original, closing(sqlite3.connect(db)) as dest:
                             original.backup(dest)
                         cmd = [bins[name],'create',a.input.resolve(),'-l',db,'-o',image,'--backend',a.backend,
-                               '--score-mode','fast','--threads',a.threads,'--target-size',f'{w}x{h}',
+                               '--score-mode','fast','--threads',a.threads if name == 'baseline' else candidate_threads,
+                               '--target-size',f'{w}x{h}',
                                '--match-tile','9x16','--output-tile','9x16','--l-range',255,'--seed',42,
                                '--random-top',10,'--candidates',c,'--overwrite','--json']
                         with (out/f'{tag}.json').open('wb') as stdout, (out/f'{tag}.log').open('wb') as stderr:

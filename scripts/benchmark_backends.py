@@ -67,8 +67,8 @@ def extend_pairs(report, path, rounds):
         return 0, 0
     old = json.loads(path.read_bytes())
     # Match the entire experiment identity, not a label such as "candidate" or "cpu".
-    keys = set(report) - {'complete', 'samples', 'exploratory'}
-    if not old['complete'] or any(old.get(k) != report[k] for k in keys):
+    keys = (old.keys() | report.keys()) - {'complete','samples','exploratory','summary','different_outputs','extended_from'}
+    if not old['complete'] or any(old.get(k) != report.get(k) for k in keys):
         raise ValueError('extension requires the same binaries, inputs, cases and execution settings')
     counts = []
     if any(s['phase'] not in ('measured','warmup') for s in old['samples']):
