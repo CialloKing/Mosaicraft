@@ -819,19 +819,43 @@ bool Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
             }
         }
     }
-    for (const auto& [imgId, tileCount] : imageUseCount)
+    if (MOSAICRAFT_TRIAL_LIBRARY_PATHS && !imageUseCount.empty())
     {
-        std::string runsExpr = isNewTarget ? "total_runs + 1" : "total_runs";
-        std::string sql = "INSERT INTO usage_stats (image_id, total_runs, total_tiles, last_used) "
-                          "VALUES (" + std::to_string(imgId) + ", "
-                          + (isNewTarget ? "1" : "0") + ", "
-                          + std::to_string(tileCount)
-                          + ", datetime('now')) "
-                          "ON CONFLICT(image_id) DO UPDATE SET "
-                          "total_runs = " + runsExpr + ", "
-                          "total_tiles = total_tiles + " + std::to_string(tileCount)
-                          + ", last_used = datetime('now')";
-        ok = exec(sql) && ok;
+        // 整次提交只编译一次。保留每素材一次 upsert、原事务边界和首见目标计数。
+        const char *sql = "INSERT INTO usage_stats(image_id,total_runs,total_tiles,last_used) "
+                          "VALUES(?1,?2,?3,datetime('now')) ON CONFLICT(image_id) DO UPDATE SET "
+                          "total_runs=CASE WHEN ?2 THEN total_runs+1 ELSE total_runs END,"
+                          "total_tiles=total_tiles+?3,last_used=datetime('now')";
+        sqlite3_stmt *stmt = nullptr;
+        ok = ok && sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK;
+        const std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> cleanup(stmt, sqlite3_finalize);
+        for (const auto &[id, tiles] : imageUseCount)
+        {
+            if (!ok)
+            {
+                break;
+            }
+            ok = sqlite3_bind_int(stmt, 1, id) == SQLITE_OK && sqlite3_bind_int(stmt, 2, isNewTarget) == SQLITE_OK &&
+                 sqlite3_bind_int(stmt, 3, tiles) == SQLITE_OK && sqlite3_step(stmt) == SQLITE_DONE &&
+                 sqlite3_reset(stmt) == SQLITE_OK;
+        }
+    }
+    else
+    {
+        for (const auto& [imgId, tileCount] : imageUseCount)
+        {
+            std::string runsExpr = isNewTarget ? "total_runs + 1" : "total_runs";
+            std::string sql = "INSERT INTO usage_stats (image_id, total_runs, total_tiles, last_used) "
+                              "VALUES (" + std::to_string(imgId) + ", "
+                              + (isNewTarget ? "1" : "0") + ", "
+                              + std::to_string(tileCount)
+                              + ", datetime('now')) "
+                              "ON CONFLICT(image_id) DO UPDATE SET "
+                              "total_runs = " + runsExpr + ", "
+                              "total_tiles = total_tiles + " + std::to_string(tileCount)
+                              + ", last_used = datetime('now')";
+            ok = exec(sql) && ok;
+        }
     }
     if (!ok)
     {
