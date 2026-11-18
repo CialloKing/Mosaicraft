@@ -1,4 +1,5 @@
 #include "PortableCompute.h"
+#include "FastDistance.h"
 #include "core/FeatureExtractor.h"
 #include "core/FeatureUtils.h"
 #include <algorithm>
@@ -43,12 +44,39 @@ void pack(uint32_t *to, double l, double a, double b, double edge, const Grid &g
     to[516] = tinyValid;
     to[517] = lbpValid;
 }
+ReduceDistances fastReducer()
+{
+#if defined(MOSAICRAFT_AVX2_DISTANCE)
+    static const auto impl = cv::checkHardwareSupport(CV_CPU_AVX2) ? vectorDistanceSums : nullptr;
+#elif defined(MOSAICRAFT_NEON_DISTANCE)
+    static const auto impl = cv::checkHardwareSupport(CV_CPU_NEON) ? vectorDistanceSums : nullptr;
+#else
+    constexpr ReduceDistances impl = nullptr;
+#endif
+    return impl;
+}
 } // namespace
+
+const char *fastScoreRevision()
+{
+#if defined(MOSAICRAFT_AVX2_DISTANCE)
+    if (fastReducer())
+    {
+        return ":fp32-v3-avx2";
+    }
+#elif defined(MOSAICRAFT_NEON_DISTANCE)
+    if (fastReducer())
+    {
+        return ":fp32-v3-neon";
+    }
+#endif
+    return ":fp32-v3-scalar";
+}
 
 std::array<float, 5> fp32Distances(const MatchingBuffers &tiles, size_t tile, const ImageRecord &record,
                                    const FeaturePack::Reader::Row &payload)
 {
-    constexpr double weights[64] = {
+    static constexpr float weights[64] = {
 #include "core/GridWeights.inc"
     };
     const float dl = float(tiles.l[tile]) - float(record.avgL);
@@ -56,25 +84,35 @@ std::array<float, 5> fp32Distances(const MatchingBuffers &tiles, size_t tile, co
     const float db = float(tiles.b[tile]) - float(record.avgB);
     std::array<float, 5> result{std::sqrt(dl * dl + da * da + db * db) / 100.0f, 0, 0,
                                 std::abs(float(tiles.edge[tile]) - float(record.edgeDensity)), 0};
-    for (size_t cell = 0; cell < 64; ++cell)
+    const auto grid = tiles.grid[tile].data();
+    const auto lbp = tiles.lbp[tile].data();
+    const auto tiny = tiles.tiny[tile].data();
+    DistanceSums sums{};
+    if (const auto reduce = fastReducer())
     {
-        const size_t offset = cell * 3;
-        const float l = tiles.grid[tile][offset] - record.gridLab[offset];
-        const float a = tiles.grid[tile][offset + 1] - record.gridLab[offset + 1];
-        const float b = tiles.grid[tile][offset + 2] - record.gridLab[offset + 2];
-        result[1] += std::sqrt(l * l + a * a + b * b) * float(weights[cell]);
+        sums = reduce(grid, record.gridLab.data(), lbp, payload.lbp.data(), tiny, payload.tiny.data(), weights);
     }
-    result[1] = result[1] / 64.0f / 100.0f;
-    // 256 项最大平方和小于 2^24，整数归约精确，也便于编译器向量化。
-    unsigned tinySum = 0;
-    for (size_t bin = 0; bin < 256; ++bin)
+    else
     {
-        const int diff = int(tiles.tiny[tile][bin]) - int(payload.tiny[bin]);
-        tinySum += unsigned(diff * diff);
-        result[4] += std::abs(tiles.lbp[tile][bin] - payload.lbp[bin]);
+        for (size_t cell = 0; cell < 64; ++cell)
+        {
+            const size_t offset = cell * 3;
+            const float l = grid[offset] - record.gridLab[offset];
+            const float a = grid[offset + 1] - record.gridLab[offset + 1];
+            const float b = grid[offset + 2] - record.gridLab[offset + 2];
+            sums.grid += std::sqrt(l * l + a * a + b * b) * float(weights[cell]);
+        }
+        // 256 项最大平方和小于 2^24，整数归约精确，也便于编译器向量化。
+        for (size_t bin = 0; bin < 256; ++bin)
+        {
+            const int diff = int(tiny[bin]) - int(payload.tiny[bin]);
+            sums.tiny += unsigned(diff * diff);
+            sums.lbp += std::abs(lbp[bin] - payload.lbp[bin]);
+        }
     }
-    result[2] = payload.tinyValid ? float(tinySum) / (256.0f * 255.0f * 255.0f) : 1.0f;
-    result[4] = payload.lbpValid ? result[4] / 2.0f : 1.0f;
+    result[1] = sums.grid / 64.0f / 100.0f;
+    result[2] = payload.tinyValid ? float(sums.tiny) / (256.0f * 255.0f * 255.0f) : 1.0f;
+    result[4] = payload.lbpValid ? sums.lbp / 2.0f : 1.0f;
     return result;
 }
 

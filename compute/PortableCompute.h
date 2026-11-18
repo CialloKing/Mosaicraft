@@ -7,7 +7,8 @@
 
 namespace mosaicraft::compute
 {
-// 用于诊断着色器误差；生产兼容路径仍以 cpuBaseScore 的 FP64 语义为准。
+const char *fastScoreRevision();
+// 快速 CPU 评分和着色器诊断共用；兼容评分仍独立执行原 FP64 表达式。
 std::array<float, 5> fp32Distances(const MatchingBuffers &tiles, size_t tile, const ImageRecord &record,
                                    const FeaturePack::Reader::Row &payload);
 

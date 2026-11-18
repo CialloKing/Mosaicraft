@@ -2064,7 +2064,7 @@ function renderComputeStatus(runtime, state = 'running') {
   const deviceId = cpuOnly ? 'cpu' : runtime.device;
   const device = (serviceInfo?.devices || []).find(item => item.id === deviceId);
   if (deviceId) html += '<p>设备 · ' + escapeHtml(device?.name || deviceId) + (device && device.id !== 'cpu' ? ' <span class="hint">(' + escapeHtml(device.id) + ')</span>' : '') + '</p>';
-  const mode = runtime.scoreMode === 'fast' ? (runtime.kernelVersion?.includes('fp32-v2') ? '快速 · FP32 评分' : '快速 · 历史实现') :
+  const mode = runtime.scoreMode === 'fast' ? (runtime.kernelVersion?.includes(':fp32-v') ? '快速 · FP32 评分' : '快速 · 历史实现') :
     runtime.scoreMode === 'compatible' ? (scoring === 'cpu' ? '兼容 · CPU FP64 评分' : '兼容') : runtime.scoreMode;
   if (mode && scoring && scoring !== 'none') html += '<p>评分模式 · ' + escapeHtml(mode) + '</p>';
   if (!backends.length && !deviceId) html += '<p class="hint">正在确认执行设备与后端…</p>';

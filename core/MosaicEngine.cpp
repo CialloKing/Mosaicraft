@@ -165,9 +165,9 @@ bool MosaicEngine::generate(const std::string& targetPath,
     return generate(targetPath, dbPath, outputPath, config, runtime);
 }
 
-static const char *scoreRevision(ScoreMode mode)
+static const char *scoreRevision(ScoreMode mode, bool cpu = true)
 {
-    return mode == ScoreMode::Fast ? ":fp32-v2" : ":kernel1";
+    return mode == ScoreMode::Compatible ? ":kernel1" : (cpu ? compute::fastScoreRevision() : ":fp32-v2");
 }
 
 std::string MosaicEngine::matchingKey(const Config &cfg)
@@ -319,9 +319,13 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 
     const std::string actualDevice = portableRequested ? portableDevice.id
         : cudaEnabled ? "cuda:" + std::to_string(preflight.device) : "cpu";
-    runtime.computeIdentity(actualDevice, scoreModeName(cfg.scoreMode),
-                            std::string(portableRequested ? "portable-v1" : cudaEnabled ? "cuda-v6" : "cpu-v6") +
-                            (cfg.scoreMode == ScoreMode::Fast ? scoreRevision(cfg.scoreMode) : ""));
+    const auto identifyScorer = [&](bool cpu)
+    {
+        const char *family = portableRequested ? "portable-v1" : cudaEnabled ? "cuda-v6" : "cpu-v6";
+        runtime.computeIdentity(actualDevice, scoreModeName(cfg.scoreMode), std::string(family) +
+            (cfg.scoreMode == ScoreMode::Fast ? scoreRevision(cfg.scoreMode, cpu) : ""));
+    };
+    identifyScorer(!cudaEnabled && !portableRequested);
     std::cout << "Compute device: " << actualDevice << "; score mode: " << scoreModeName(cfg.scoreMode) << std::endl;
     if (useGpu && !cudaEnabled && !portableRequested)
     {
@@ -593,7 +597,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     std::string scoreKeyPrefix;
     const auto scoreKey = [&](const MatchingBackends &active)
     {
-        return scoreKeyPrefix + ':' + backendName(active.features) + ':' + backendName(active.scoring) + ':' + actualDevice + ':' + scoreModeName(cfg.scoreMode) + scoreRevision(cfg.scoreMode);
+        return scoreKeyPrefix + ':' + backendName(active.features) + ':' + backendName(active.scoring) + ':' + actualDevice + ':' +
+               scoreModeName(cfg.scoreMode) + scoreRevision(cfg.scoreMode, active.scoring == ScoreBackend::Cpu);
     };
     const auto tileFeatureKey = [&](FeatureBackend backend)
     {
@@ -1019,6 +1024,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     else if (reusedScores)
     {
         metrics.msPrep = Ms(matchingStart - tStart).count();
+        identifyScorer(backends.scoring == ScoreBackend::Cpu);
         runtime.backends(backendName(backends.features), backendName(backends.scoring));
         runtime.metric("previewIndexReused", m_previewWorkspace->index ? 1 : 0);
         runtime.metric("previewCandidatesReused", 1);
@@ -1394,6 +1400,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             std::cout << "Feature backend: " << backendName(backends.features)
                       << "; scoring: " << backendName(backends.scoring) << "." << std::endl;
         }
+        identifyScorer(backends.scoring == ScoreBackend::Cpu);
         runtime.backends(backendName(backends.features), backendName(backends.scoring));
         const std::string featureKey = tileFeatureKey(backends.features);
         const bool reuseTileFeatures = cacheTileFeatures && m_previewWorkspace->tileFeatureKey == featureKey;
