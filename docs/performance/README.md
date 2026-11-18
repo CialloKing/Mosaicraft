@@ -4,6 +4,8 @@
 
 ## 文件索引
 
+- [相对 182a41ebb：CPU 小图、AVX-512 与 Ada 大图设备 Canny](create-182a41ebb.md)
+
 - [一次 create：CPU / CUDA、原生输出和建库的配对验收](create-29ac0f477.md)
 
 - [backend-retest-20261118.json](backend-retest-20261118.json)
