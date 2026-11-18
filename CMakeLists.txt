@@ -272,7 +272,7 @@ option(MOSAICRAFT_TRIAL_STREAM "Overlap explicit-budget JPEG/PNG encoding and pl
 set_property(SOURCE core/MosaicOutput.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     MOSAICRAFT_TRIAL_PNG_SUB=$<BOOL:${MOSAICRAFT_TRIAL_PNG_SUB}>
     MOSAICRAFT_TRIAL_STREAM=$<BOOL:${MOSAICRAFT_TRIAL_STREAM}>)
-option(MOSAICRAFT_TRIAL_LIBRARY_PATHS "Reuse the validated root for simple relative library paths" OFF)
+option(MOSAICRAFT_TRIAL_LIBRARY_PATHS "Use validated sequential reads for the existing library format" ON)
 set_property(SOURCE core/LibraryPaths.cpp core/FeaturePack.cpp core/Database.cpp core/DatabaseSchema.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     MOSAICRAFT_TRIAL_LIBRARY_PATHS=$<BOOL:${MOSAICRAFT_TRIAL_LIBRARY_PATHS}>)
 option(MOSAICRAFT_TRIAL_BUILD_AHEAD "Benchmark bounded build normalization lookahead" OFF)
