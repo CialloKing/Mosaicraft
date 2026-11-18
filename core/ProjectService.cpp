@@ -372,11 +372,12 @@ bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &dir
         {
             addResource(asset.at("path").get<std::string>(),
                         cv::Size(asset.at("width").get<int>(), asset.at("height").get<int>()),
-                        MOSAICRAFT_TRIAL_HTML_ASSETS ? asset.at("sha256").get<std::string>() : std::string());
+                        asset.at("sha256").get<std::string>());
             manifest["assets"].push_back(std::move(asset));
             runtime.advance("assets", manifest["assets"].size(), -1, "assets");
         };
-        if (MOSAICRAFT_TRIAL_HTML_ASSETS)
+        // 单执行位不建额外计算池；正常任务只并行彼此独立的素材。
+        if (config.threads != 1 && selection.size() > 1)
         {
             std::vector<int> unique, owners;
             for (int index : selection)
