@@ -64,7 +64,8 @@ def balanced_orders(count, rounds, rng):
 
 def summarize(report):
     measured = [row for row in report["samples"] if row["phase"] == "measured"]
-    metrics = ("matchingMs", "totalMs", "processWallMs")
+    metrics = [key for key in ("matchingMs", "totalMs", "processWallMs")
+               if all(key in row["metrics"] for row in measured)]
     result = {}
     rng = random.Random(20261118)
     reference = report["reference"]
@@ -99,6 +100,7 @@ def main():
     parser.add_argument("--benchmark", type=Path, required=True)
     parser.add_argument("--quality", type=Path, required=True, help="existing cache preparation tool")
     parser.add_argument("--output", type=Path, required=True, help="new, disposable result directory")
+    parser.add_argument("--no-detail", action="store_true", help="time production paths without per-candidate instrumentation")
     parser.add_argument("--rounds", type=int, default=24)
     parser.add_argument("--warmups", type=int, default=3)
     parser.add_argument("--prepared-run", type=Path, help="reuse a completed run's private library and caches")
@@ -130,7 +132,9 @@ def main():
     root = options.output.resolve()
     root.mkdir(parents=True, exist_ok=options.resume)
     benchmark, quality = options.benchmark.resolve(), options.quality.resolve()
-    report = dict(complete=False, started_utc=datetime.now(timezone.utc).isoformat(),
+    binaries = {v["id"]: (base / v["benchmark"]).resolve() if "benchmark" in v else benchmark for v in variants}
+    report = dict(no_detail=options.no_detail, variant_binaries={k: digest(p) for k, p in binaries.items()},
+        complete=False, started_utc=datetime.now(timezone.utc).isoformat(),
         source_sha256=digest(source), benchmark_sha256=digest(benchmark), quality_sha256=digest(quality),
         source_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parents[1], text=True).strip(),
         environment=specification.get("environment", {}), cases=[dict(item, sha256=digest(item["input"])) for item in cases],
@@ -145,6 +149,8 @@ def main():
         previous = json.loads((root / "report.json").read_text(encoding="utf-8"))
         keys = ("source_sha256", "benchmark_sha256", "quality_sha256", "cases", "variants", "reference",
                 "rounds", "warmups", "common_request", "exploratory")
+        if previous.get("variant_binaries", {k: previous["benchmark_sha256"] for k in binaries}) != report["variant_binaries"] or previous.get("no_detail", False) != options.no_detail:
+            raise ValueError("resume requires identical variant binaries and diagnostic mode")
         if previous["complete"] or any(previous[key] != report[key] for key in keys):
             raise ValueError("resume requires an incomplete run with identical binaries, inputs and parameters")
         previous.setdefault("resumptions", []).append(dict(at_utc=datetime.now(timezone.utc).isoformat(),
@@ -220,7 +226,8 @@ def main():
                     request_path = root / (tag + ".request.json")
                     summary_path = root / (tag + ".summary.json")
                     save(request_path, request)
-                    wall = run([benchmark, request_path, "--seed", seed, "--selections", "--summary", summary_path],
+                    wall = run([binaries[variant["id"]], request_path, "--seed", seed, "--selections", "--summary", summary_path,
+                                *(["--no-detail"] if options.no_detail else [])],
                                root / (tag + ".log"))
                     summary = json.loads(summary_path.read_text(encoding="utf-8"))
                     selection_path = Path(str(output) + ".indices.bin")
@@ -250,7 +257,7 @@ def main():
                         output_sha256=hashes[1], log=tag + ".log", output_varied=varied, different_from_first=difference))
                     save(root / "report.json", report)
                     print(f"{phase} {iteration + 1}/{rounds} {case['id']} {variant['id']}: "
-                          f"match={summary['metrics']['matchingMs']:.0f}ms total={summary['metrics']['totalMs']:.0f}ms"
+                          f"total={summary['metrics']['totalMs']:.0f}ms"
                           + (f" OUTPUT VARIATION: {difference} tiles" if varied else ""), flush=True)
     report["selection_differences"] = {}
     for case in cases:
