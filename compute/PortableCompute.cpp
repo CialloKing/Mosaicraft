@@ -49,7 +49,7 @@ void pack(uint32_t *to, double l, double a, double b, double edge, const Grid &g
 }
 struct Kernel
 {
-    ReduceDistances reduce;
+    ReduceDistances reduce, planar;
     const char *revision;
 };
 
@@ -63,21 +63,21 @@ const Kernel &fastKernel()
         // OpenCV 同时检查 CPUID 与 OS 保存的寄存器状态；未通过端到端验收不改变 auto。
         if (name == "avx512" && cv::checkHardwareSupport(CV_CPU_AVX2) && cv::checkHardwareSupport(CV_CPU_AVX512_SKX))
         {
-            return {avx512DistanceSums, ":fp32-v3-avx512"};
+            return {avx512DistanceSums<false>, avx512DistanceSums<true>, ":fp32-v3-avx512"};
         }
         if ((name == "auto" || name == "avx2") && cv::checkHardwareSupport(CV_CPU_AVX2))
         {
-            return {vectorDistanceSums, ":fp32-v3-avx2"};
+            return {vectorDistanceSums<false>, vectorDistanceSums<true>, ":fp32-v3-avx2"};
         }
 #elif defined(MOSAICRAFT_NEON_DISTANCE)
         if ((name == "auto" || name == "neon") && cv::checkHardwareSupport(CV_CPU_NEON))
         {
-            return {vectorDistanceSums, ":fp32-v3-neon"};
+            return {vectorDistanceSums<false>, vectorDistanceSums<true>, ":fp32-v3-neon"};
         }
 #endif
         if (name == "auto" || name == "scalar")
         {
-            return {nullptr, ":fp32-v3-scalar"};
+            return {nullptr, nullptr, ":fp32-v3-scalar"};
         }
         throw std::invalid_argument("Unavailable CPU fast score kernel: " + std::string(name));
     }();
@@ -91,7 +91,7 @@ const char *fastScoreRevision()
 }
 
 std::array<float, 5> fp32Distances(const MatchingBuffers &tiles, size_t tile, const ImageRecord &record,
-                                   const FeaturePack::Reader::Row &payload)
+                                   const FeaturePack::Reader::Row &payload, const float *tilePlanar, const float *recordPlanar)
 {
     static constexpr float weights[64] = {
 #include "core/GridWeights.inc"
@@ -105,9 +105,9 @@ std::array<float, 5> fp32Distances(const MatchingBuffers &tiles, size_t tile, co
     const auto lbp = tiles.lbp[tile].data();
     const auto tiny = tiles.tiny[tile].data();
     DistanceSums sums{};
-    if (const auto reduce = fastKernel().reduce)
+    if (const auto reduce = tilePlanar ? fastKernel().planar : fastKernel().reduce)
     {
-        sums = reduce(grid, record.gridLab.data(), lbp, payload.lbp.data(), tiny, payload.tiny.data(), weights);
+        sums = reduce(tilePlanar ? tilePlanar : grid, recordPlanar ? recordPlanar : record.gridLab.data(), lbp, payload.lbp.data(), tiny, payload.tiny.data(), weights);
     }
     else
     {

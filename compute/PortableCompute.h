@@ -10,7 +10,8 @@ namespace mosaicraft::compute
 const char *fastScoreRevision();
 // 快速 CPU 评分和着色器诊断共用；兼容评分仍独立执行原 FP64 表达式。
 std::array<float, 5> fp32Distances(const MatchingBuffers &tiles, size_t tile, const ImageRecord &record,
-                                   const FeaturePack::Reader::Row &payload);
+                                   const FeaturePack::Reader::Row &payload, const float *tilePlanar = nullptr,
+                                   const float *recordPlanar = nullptr);
 
 class FeatureWorkspace
 {

@@ -7,6 +7,7 @@
 
 namespace mosaicraft::compute
 {
+template<bool Planar>
 DistanceSums vectorDistanceSums(const float *grid, const float *otherGrid, const float *lbp,
                                 const float *otherLbp, const uint8_t *tiny, const uint8_t *otherTiny,
                                 const float *weights)
@@ -19,6 +20,10 @@ DistanceSums vectorDistanceSums(const float *grid, const float *otherGrid, const
     {
         const auto channel = [&](int c)
         {
+            if constexpr (Planar)
+            {
+                return _mm256_sub_ps(_mm256_loadu_ps(grid + 64 * c + i), _mm256_loadu_ps(otherGrid + 64 * c + i));
+            }
             return _mm256_sub_ps(_mm256_i32gather_ps(grid + 3 * i + c, lanes, 4),
                                  _mm256_i32gather_ps(otherGrid + 3 * i + c, lanes, 4));
         };
@@ -57,7 +62,20 @@ DistanceSums vectorDistanceSums(const float *grid, const float *otherGrid, const
     auto t = vdupq_n_u32(0);
     for (int i = 0; i < 64; i += 4)
     {
-        const auto x = vld3q_f32(grid + i * 3), y = vld3q_f32(otherGrid + i * 3);
+        const auto load = [&](const float *values)
+        {
+            if constexpr (Planar)
+            {
+                float32x4x3_t channels;
+                for (int c = 0; c < 3; ++c)
+                {
+                    channels.val[c] = vld1q_f32(values + 64 * c + i);
+                }
+                return channels;
+            }
+            return vld3q_f32(values + i * 3);
+        };
+        const auto x = load(grid), y = load(otherGrid);
         const auto l = vsubq_f32(x.val[0], y.val[0]), a = vsubq_f32(x.val[1], y.val[1]),
                    b = vsubq_f32(x.val[2], y.val[2]);
         const auto d = vsqrtq_f32(vaddq_f32(vaddq_f32(vmulq_f32(l, l), vmulq_f32(a, a)), vmulq_f32(b, b)));
@@ -76,4 +94,8 @@ DistanceSums vectorDistanceSums(const float *grid, const float *otherGrid, const
     return {vaddvq_f32(g), vaddvq_f32(h), vaddvq_u32(t)};
 #endif
 }
+template DistanceSums vectorDistanceSums<true>(const float *, const float *, const float *, const float *,
+    const uint8_t *, const uint8_t *, const float *);
+template DistanceSums vectorDistanceSums<false>(const float *, const float *, const float *, const float *,
+    const uint8_t *, const uint8_t *, const float *);
 } // namespace mosaicraft::compute

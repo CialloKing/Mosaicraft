@@ -11,9 +11,11 @@ struct DistanceSums
 };
 using ReduceDistances = DistanceSums (*)(const float *, const float *, const float *, const float *,
                                          const uint8_t *, const uint8_t *, const float *);
+template<bool Planar>
 DistanceSums vectorDistanceSums(const float *grid, const float *otherGrid, const float *lbp,
                                 const float *otherLbp, const uint8_t *tiny, const uint8_t *otherTiny,
                                 const float *weights);
+template<bool Planar>
 DistanceSums avx512DistanceSums(const float *grid, const float *otherGrid, const float *lbp,
                                 const float *otherLbp, const uint8_t *tiny, const uint8_t *otherTiny,
                                 const float *weights);

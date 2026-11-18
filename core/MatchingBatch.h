@@ -76,7 +76,7 @@ inline size_t matchingBatchRows(const MatchingLimits &limits, int width, int hei
 struct MatchingBuffers
 {
     std::vector<double> l, a, b, edge, lab, labW, gridW, tinyW, edgeW, lbpW, scores;
-    FeatureMatrix<float, 192> grid{0};
+    FeatureMatrix<float, 192> grid{0}, planar{0};
     FeatureMatrix<uint8_t, 256> tiny{0};
     FeatureMatrix<float, 256> lbp{0};
     std::vector<float> queries, fastScores;
@@ -124,7 +124,7 @@ struct MatchingBuffers
     }
     size_t capacityBytes() const
     {
-        size_t result = grid.capacityBytes() + tiny.capacityBytes() + lbp.capacityBytes() + images.capacity();
+        size_t result = planar.capacityBytes() + grid.capacityBytes() + tiny.capacityBytes() + lbp.capacityBytes() + images.capacity();
         for (const auto *values : {&l, &a, &b, &edge, &lab, &labW, &gridW, &tinyW, &edgeW, &lbpW, &scores})
         {
             result += values->capacity() * sizeof(double);

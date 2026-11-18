@@ -12,6 +12,7 @@ __m256 accumulate(__m256 sum, __m512 values)
 }
 }
 
+template<bool Planar>
 DistanceSums avx512DistanceSums(const float *grid, const float *otherGrid, const float *lbp,
                                 const float *otherLbp, const uint8_t *tiny, const uint8_t *otherTiny,
                                 const float *weights)
@@ -23,6 +24,10 @@ DistanceSums avx512DistanceSums(const float *grid, const float *otherGrid, const
     {
         const auto channel = [&](int c)
         {
+            if constexpr (Planar)
+            {
+                return _mm512_sub_ps(_mm512_loadu_ps(grid + 64 * c + i), _mm512_loadu_ps(otherGrid + 64 * c + i));
+            }
             return _mm512_sub_ps(_mm512_i32gather_ps(lanes, grid + 3 * i + c, 4),
                                  _mm512_i32gather_ps(lanes, otherGrid + 3 * i + c, 4));
         };
@@ -55,4 +60,8 @@ DistanceSums avx512DistanceSums(const float *grid, const float *otherGrid, const
     }
     return sums;
 }
+template DistanceSums avx512DistanceSums<true>(const float *, const float *, const float *, const float *,
+    const uint8_t *, const uint8_t *, const float *);
+template DistanceSums avx512DistanceSums<false>(const float *, const float *, const float *, const float *,
+    const uint8_t *, const uint8_t *, const float *);
 } // namespace mosaicraft::compute

@@ -928,7 +928,16 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     {
         return runtime.fail("invalid_argument", "selection diagnostics exceed matching host budget");
     }
-    const size_t hostBudget = limits.hostBytes - selectionBytes;
+    // 原布局仍供 ANN 和邻域使用；可选平面副本及两个可能重叠的目标批次都先占预算。
+    const size_t planarLibraryBytes = trialOptions.planar ? checkedMatchProduct(dbCount, 192 * sizeof(float)) : 0;
+    const size_t planarTileBytes = trialOptions.planar
+        ? checkedMatchProduct(std::min<size_t>(totalTiles, limits.maxTiles), 2 * 192 * sizeof(float)) : 0;
+    if (planarLibraryBytes > limits.hostBytes - selectionBytes ||
+        planarTileBytes >= limits.hostBytes - selectionBytes - planarLibraryBytes)
+    {
+        return runtime.fail("invalid_argument", "planar score layout exceeds matching host budget");
+    }
+    const size_t hostBudget = limits.hostBytes - selectionBytes - planarLibraryBytes - planarTileBytes;
     MatchingLimits batchLimits = limits;
     batchLimits.hostBytes = hostBudget;
 
@@ -1570,10 +1579,30 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
         std::vector<double> fastSelectionRow(templateCuda && fastScore ? N : 0);
         size_t wideHistoryRows = 0;
-        const auto fastDistance = [&](const MatchingBuffers &batch, size_t tile, const ImageRecord &record,
+        const auto transposeGrid = [](const float *in, float *out)
+        {
+            for (int i = 0; i < 64; ++i)
+            {
+                for (int c = 0; c < 3; ++c)
+                {
+                    out[64 * c + i] = in[3 * i + c];
+                }
+            }
+        };
+        FeatureMatrix<float, 192> planarLibrary(trialOptions.planar ? dbCount : 0);
+        if (trialOptions.planar)
+        {
+            for (int i = 0; i < dbCount; ++i)
+            {
+                transposeGrid(allRecords[i].gridLab.data(), planarLibrary[i].data());
+            }
+        }
+        const auto fastDistance = [&](const MatchingBuffers &batch, size_t tile, int index,
                                       const FeaturePack::Reader::Row &features)
         {
-            const auto d = compute::fp32Distances(batch, tile, record, features);
+            const auto d = compute::fp32Distances(batch, tile, allRecords[index], features,
+                trialOptions.planar ? batch.planar[tile].data() : nullptr,
+                trialOptions.planar ? planarLibrary[index].data() : nullptr);
             return float(batch.labW[tile]) * d[0] + float(batch.gridW[tile]) * d[1] +
                    float(batch.tinyW[tile]) * d[2] + float(batch.edgeW[tile]) * d[3] + float(batch.lbpW[tile]) * d[4];
         };
@@ -1812,6 +1841,14 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                            metrics.opLbpNs += std::chrono::duration_cast<Ns>(t6 - t5).count();
                                        }
                                    });
+            }
+            if (trialOptions.planar)
+            {
+                buffers.planar.resize(count);
+                for (int local = 0; local < count; ++local)
+                {
+                    transposeGrid(allGrid[local].data(), buffers.planar[local].data());
+                }
             }
             if (!newTileFeatures.empty())
             {
@@ -2452,7 +2489,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                             }
                             if (fastScore)
                             {
-                                buffers.fastScores[pos] = fastDistance(buffers, local, allRecords[index], *row);
+                                buffers.fastScores[pos] = fastDistance(buffers, local, index, *row);
                             }
                             else
                             {
@@ -2509,7 +2546,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         if (fastScore)
                         {
                             const float distance = preparedScores ? buffers.fastScores[candidate]
-                                : fastDistance(buffers, local, r, featureReader->get(li));
+                                : fastDistance(buffers, local, li, featureReader->get(li));
                             s = history->combine(distance, r.useCount, cfg.usePenalty);
                         }
                         else
@@ -2599,7 +2636,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 }
             }
             const size_t temporary = featureReader ? featureReader->stats().temporaryPeakBytes : 0;
-            metrics.matchingPeakBytes = std::max(metrics.matchingPeakBytes, selectionBytes + buffers.capacityBytes() + ahead.capacityBytes() +
+            metrics.matchingPeakBytes = std::max(metrics.matchingPeakBytes, selectionBytes + planarLibraryBytes + buffers.capacityBytes() + ahead.capacityBytes() +
                                                                 temporary + pinnedBytes + compatible.hostBytes() + rankBytes +
                                                                 fastSelectionRow.capacity() * sizeof(double) +
                                                                 idxs.capacity() * sizeof(int) +
