@@ -5,6 +5,7 @@
 #include "RequestValidation.h"
 #include "UnicodeIO.h"
 
+#include <chrono>
 #include <filesystem>
 
 namespace mosaicraft
@@ -86,11 +87,22 @@ static ServiceResult runMosaic(const MosaicRequest &request, RuntimeContext &run
         {
             if (ok)
             {
-                publication->commit(runtime,
-                                    [&]()
-                                    {
-                                        runtime.commitUsage();
-                                    });
+                using Clock = std::chrono::steady_clock;
+                const auto publishStart = Clock::now();
+                publication->commit(runtime, [&]()
+                {
+                    const auto usageStart = Clock::now();
+                    runtime.commitUsage();
+                    if (validated.config.benchmark)
+                    {
+                        runtime.metric("usageCommitMs", std::chrono::duration<double, std::milli>(Clock::now() - usageStart).count());
+                    }
+                });
+                if (validated.config.benchmark)
+                {
+                    // 发布墙钟已含统计提交；两者不能重复相加。
+                    runtime.metric("publishIncludingUsageMs", std::chrono::duration<double, std::milli>(Clock::now() - publishStart).count());
+                }
             }
             else
             {

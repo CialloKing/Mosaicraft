@@ -462,6 +462,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                   << " (" << totalTiles << " tiles). Reading the library..." << std::endl;
     }
     runtime.stage("reading_library");
+    const auto dbOpenStart = Clock::now();
     Database db(dbPath, m_preview ? Database::OpenMode::ReadOnly : Database::OpenMode::Existing);
     if (!db.isOpen())
     {
@@ -473,6 +474,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         return false;
     }
 
+    if (cfg.benchmark)
+    {
+        runtime.metric("databaseOpenValidateMs", Ms(Clock::now() - dbOpenStart).count());
+    }
     if (m_indexSession && (m_indexSession->database != db.path() || m_indexSession->device != actualDevice))
     {
         // 切换库或设备时先释放旧资源，再开始本次任务的图库准备。
@@ -510,6 +515,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     {
         std::cout << "[Preview] Preparing library features and scoring backend..." << std::endl;
     }
+    const auto recordsStart = Clock::now();
     auto allRecords = db.allRecords();  // 全量记录，GPU 路径需连续索引
     dbCount = static_cast<int>(allRecords.size());
     for (const auto& record : allRecords)
@@ -532,6 +538,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
     }
 
+    if (cfg.benchmark)
+    {
+        runtime.metric("databaseReadRecordsMs", Ms(Clock::now() - recordsStart).count());
+    }
     const uint64_t libraryVersion = m_preview || m_renderSelection
         ? previewLibraryVersion(allRecords, featW, featH) : 0;
     if (m_renderSelection &&
@@ -662,8 +672,13 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         std::vector<int> needed(dbCount);
         std::iota(needed.begin(), needed.end(), 0);
         std::vector<uint8_t> tinyValid, lbpValid;
+        const auto packStart = Clock::now();
         const bool cacheLoaded = FeaturePack::load(featDirCache, allRecords, needed, h_tiny, h_lbp, tinyValid, lbpValid,
                                                    cfg.benchmark ? &metrics.libraryReadStats : nullptr);
+        if (cfg.benchmark)
+        {
+            runtime.metric("libraryReadPackMs", Ms(Clock::now() - packStart).count());
+        }
         if (!cacheLoaded)
         {
             std::cout << "  (validated feature cache miss, using source files)" << std::endl;
@@ -1355,6 +1370,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             featureReader = std::make_unique<FeaturePack::Reader>(templateCuda ? std::string() : featDirCache, allRecords,
                 readerBudget, templateCuda ? nullptr : &runtime,
                 retainIndex && !templateCuda ? &m_indexSession->features : nullptr);
+            if (cfg.benchmark)
+            {
+                runtime.metric("featureReaderPrepareMs", Ms(Clock::now() - readStart).count());
+            }
             if (retainIndex)
             {
                 runtime.metric("libraryFeatureRowsReused", featureReader->stats().sessionHit ? dbCount : 0);
