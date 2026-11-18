@@ -51,6 +51,30 @@ class WorkerPool
         wait();
     }
 
+    size_t size() const
+    {
+        return m_threads.size();
+    }
+
+    template<class Job>
+    void runChunks(size_t count, size_t grain, Job job)
+    {
+        if (grain <= 1)
+        {
+            run(count, std::move(job));
+            return;
+        }
+        // 只按块调度独立行；每一行的候选与最终选图顺序保持不变。
+        run(count / grain + (count % grain != 0), [&](size_t block)
+        {
+            const size_t first = block * grain;
+            for (size_t i = first; i < first + std::min(grain, count - first); ++i)
+            {
+                job(i);
+            }
+        });
+    }
+
     // start/wait 允许任务内预取下一批；同一个池同时只能持有一个批次。
     void start(std::size_t count, std::function<void(std::size_t)> job)
     {

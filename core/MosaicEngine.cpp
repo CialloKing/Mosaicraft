@@ -2,6 +2,7 @@
 #include "compute/PortableCompute.h"
 #include "AnalysisReport.h"
 #include "BenchmarkTimer.h"
+#include "CpuTrial.h"
 #include "BrightnessAdjustment.h"
 #include "CandidateFeatures.h"
 #include "Database.h"
@@ -856,9 +857,15 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         cfg.neighborWindow = autoNeighborWindow();
     }
 
+    auto limits = m_limits;
+    detail::CpuTrial trialOptions;
+    if (cfg.backend == BackendPolicy::Cpu && cfg.scoreMode == ScoreMode::Fast && cfg.outputMode == OutputMode::Image && !m_preview && !m_renderSelection)
+    {
+        trialOptions.read(limits, runtime);
+    }
     NeighborCounters neighborCounters;
     detail::NeighborhoodState neighborhood(allRecords, tilesX, cfg.neighborWindow, cfg.neighborPenalty,
-                                           cfg.benchmark ? &neighborCounters : nullptr);
+                                           cfg.benchmark ? &neighborCounters : nullptr, trialOptions.slots, trialOptions.ways);
 
     // 权重归一化：将各特征权重转为 tile 评分系数
     double wSum = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight;
@@ -881,7 +888,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         m_preview->recommendations.resize(totalTiles);
     }
     std::unique_ptr<detail::SelectionPolicy> selection;
-    size_t selectionBytes = 0;
+    // 超出原有固定缓存的部分先从匹配预算扣除，再决定可用批次大小。
+    size_t selectionBytes = GridDuplicateCache::extraBytes(trialOptions.slots);
     if (m_preview && static_cast<size_t>(totalTiles) <= (16ULL * 1024 * 1024) / sizeof(MosaicSelection::PreviewDecision))
     {
         m_preview->decisions.resize(totalTiles);
@@ -902,13 +910,13 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         selection = std::make_unique<detail::SelectionPolicy>(allRecords, neighborhood, m_selectionOptions,
                                                               cfg.usePenalty, N + (m_selectionOptions.expand ? 900 : 0),
                                                               &bestLibIdx, tilesX);
-        selectionBytes = selection->capacityBytes();
+        selectionBytes += selection->capacityBytes();
         // 两个单块 CUDA 评分暂存和最多 600 个查询/分数的上界；不随总图块数增长。
         selectionBytes += m_selectionOptions.expand ? 32 * 1024 : 0;
         if (m_selectionObserver)
         {
-            if (selectionBytes >= m_limits.hostBytes ||
-                checkedMatchProduct(totalTiles, sizeof(SelectionDiagnostic)) >= m_limits.hostBytes - selectionBytes)
+            if (selectionBytes >= limits.hostBytes ||
+                checkedMatchProduct(totalTiles, sizeof(SelectionDiagnostic)) >= limits.hostBytes - selectionBytes)
             {
                 return runtime.fail("invalid_argument", "selection diagnostics exceed matching host budget");
             }
@@ -916,12 +924,12 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             selectionBytes += m_selectionObserver->capacity() * sizeof(SelectionDiagnostic);
         }
     }
-    if (selectionBytes >= m_limits.hostBytes)
+    if (selectionBytes >= limits.hostBytes)
     {
         return runtime.fail("invalid_argument", "selection diagnostics exceed matching host budget");
     }
-    const size_t hostBudget = m_limits.hostBytes - selectionBytes;
-    MatchingLimits batchLimits = m_limits;
+    const size_t hostBudget = limits.hostBytes - selectionBytes;
+    MatchingLimits batchLimits = limits;
     batchLimits.hostBytes = hostBudget;
 
     // 输出 Mat：批量模式时直接拼接，流式模式时仅作占位
@@ -1134,13 +1142,13 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         // Only CPU and CUDA sessions were qualified; portable backends keep their original preview behavior.
         auto *indexSession = portableRequested ? nullptr : m_indexSession;
         bool retainIndex = false, hotIndex = false;
-        size_t readerBudget = m_limits.featureBytes;
+        size_t readerBudget = limits.featureBytes;
         if (indexSession)
         {
             std::error_code ec;
             const auto disk = std::filesystem::file_size(u8path(annPath), ec);
             // 保守限制单个闲置图（序列化数据外还有锁、访问表与标签表），不在新任务旁保留第二份。
-            retainIndex = !ec && disk <= m_limits.featureBytes / 6 && dbCount <= 100000;
+            retainIndex = !ec && disk <= limits.featureBytes / 6 && dbCount <= 100000;
             if (retainIndex)
             {
                 // 图、访问表和标签映射的保守预留；剩余预算才能用作只读行缓存。
@@ -1205,9 +1213,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             reportMatching(0);
         }
         // 单线程时特征、Canny、ANN 与评分依次运行，不为闲置阶段另开线程池。
-        const bool shareWorkers = cfg.threads == 1 || (MOSAICRAFT_TRIAL_SCHEDULE && cfg.threads > 0 && !portableRequested);
+        const bool sharedSchedule = trialOptions.share < 0 ? bool(MOSAICRAFT_TRIAL_SCHEDULE) : trialOptions.share != 0;
+        const bool wantPrefetch = trialOptions.prefetch < 0 ? bool(MOSAICRAFT_TRIAL_SCHEDULE) : trialOptions.prefetch != 0;
+        const bool shareWorkers = cfg.threads == 1 || ((sharedSchedule || wantPrefetch) && cfg.threads > 0 && !portableRequested);
         // 顺序选图和预取协调各占一个执行位。少于四个执行位时不启动预取。
-        const bool overlap = shareWorkers && cfg.threads >= 4 && !selection && !m_preview && !cfg.analyze &&
+        const bool overlap = wantPrefetch && shareWorkers && cfg.threads >= 4 && !selection && !m_preview && !cfg.analyze &&
                              !m_previewWorkspace && (templateCuda ? preflight.device == 0 : !cudaEnabled);
         std::unique_ptr<WorkerPool> separateQueries;
         if (!shareWorkers)
@@ -1248,7 +1258,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         bool portableFeatureReady = false, portableScoreReady = false;
         cuda::CompatibleFeatureWorkspace compatible;
         cuda::CompatibleScoreWorkspace compatibleScore;
-        const size_t deviceBudget = std::min(m_limits.deviceBytes, size_t(256ULL * 1024 * 1024));
+        const size_t deviceBudget = std::min(limits.deviceBytes, size_t(256ULL * 1024 * 1024));
         cuda::CompatibleTimings compatibleTimings;
         std::vector<cv::Mat> compatibleImages;
         std::vector<cuda::CompatibleFeature> compatibleValues;
@@ -1258,7 +1268,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             const size_t hostRows = cpuMatchingBufferBytes(requestedRows, N);
             compatibleFeatures = hostRows < hostBudget && scratch < hostBudget - hostRows &&
                 compatible.prepare(featW, featH, static_cast<int>(requestedRows),
-                                   hostBudget - hostRows - scratch, false, deviceBudget, m_limits.featureFault);
+                                   hostBudget - hostRows - scratch, false, deviceBudget, limits.featureFault);
             backends.features = compatibleFeatures ? FeatureBackend::CompatibleCuda : FeatureBackend::Cpu;
             if (compatibleFeatures)
             {
@@ -1308,7 +1318,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             const size_t hostRows = gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, true);
             const size_t scoreHost = batchRows * scoreRowBytes;
-            if (!templateFeatureHit && m_limits.cudaPipeline && hostRows + scratch + scoreHost < hostBudget &&
+            if (!templateFeatureHit && limits.cudaPipeline && hostRows + scratch + scoreHost < hostBudget &&
                 scoreRowBytes + expansionDeviceReserve < deviceBudget)
             {
                 cuda::FeaturePipelineConfig options;
@@ -1406,7 +1416,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 if (remainingHost >= scoreMinimum && remainingDevice >= scoreMinimum)
                 {
                     ready = compatibleScore.prepare(static_cast<int>(rows), N, dbCount, remainingHost,
-                                                     remainingDevice, m_limits.scoreFault, &preflight, fastScore);
+                                                     remainingDevice, limits.scoreFault, &preflight, fastScore);
                     break;
                 }
                 if (rows == 1)
@@ -1419,7 +1429,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     const size_t reserved = cpuMatchingBufferBytes(rows, N) + scratch;
                     compatibleFeatures = reserved < hostBudget &&
                         compatible.prepare(featW, featH, static_cast<int>(rows), hostBudget - reserved,
-                                           false, deviceBudget, m_limits.featureFault);
+                                           false, deviceBudget, limits.featureFault);
                     backends.features = compatibleFeatures ? FeatureBackend::CompatibleCuda : FeatureBackend::Cpu;
                     if (compatibleFeatures)
                     {
@@ -1718,7 +1728,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             else
             {
-                featureWorkers.run(count,
+                featureWorkers.runChunks(count, trialOptions.featureGrain,
                                    [&](size_t local)
                                    {
                                        using Ns = std::chrono::nanoseconds;
@@ -1917,6 +1927,17 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                     (hostBudget - scratch - pinnedBytes) / 2;
         const bool prefetch = totalTiles > batchRows && (cpuOverlap || gpuOverlap);
         metrics.matchingPrefetch = prefetch;
+        if (cfg.benchmark)
+        {
+            runtime.metric("featureWorkerSlots", featureWorkers.size());
+            runtime.metric("annWorkerSlots", queryWorkers.size());
+            runtime.metric("cpuBaseScoreWorkerSlots", parallelBase ? queryWorkers.size() : 0);
+            runtime.metric("matchingBatchTiles", batchRows);
+            runtime.metric("matchingPrefetch", prefetch);
+            runtime.metric("matchingHostBudgetBytes", hostBudget);
+            runtime.metric("featureReaderBudgetBytes", readerBudget);
+            runtime.metric("neighborCacheSlots", trialOptions.slots);
+        }
         bool preparedNext = false;
         // 池必须在缓冲/prepare 之后创建，错误退出也会先等待预取线程，再销毁它引用的数据。
         std::unique_ptr<WorkerPool> prefetchWorkers;
@@ -2412,7 +2433,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 {
                     const auto start = Clock::now();
                     std::atomic<bool> missing{false};
-                    queryWorkers.run(count, [&](size_t local)
+                    queryWorkers.runChunks(count, trialOptions.scoreGrain, [&](size_t local)
                     {
                         const size_t begin = local * N;
                         for (size_t pos = begin; pos < begin + N; ++pos)
@@ -2886,6 +2907,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         runtime.metric("prepareMs", metrics.msPrep);
         runtime.metric("neighborCandidates", static_cast<double>(neighborCounters.candidates));
         runtime.metric("neighborGridCacheHits", static_cast<double>(neighborCounters.hits));
+        runtime.metric("neighborCacheReplacements", static_cast<double>(neighborCounters.replacements));
         runtime.metric("neighborGridDistances", static_cast<double>(neighborCounters.distances));
         runtime.metric("neighborGridEarlyExits", static_cast<double>(neighborCounters.earlyExits));
         runtime.metric("neighborPruned", static_cast<double>(neighborCounters.pruned));

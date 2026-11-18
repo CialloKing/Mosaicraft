@@ -46,7 +46,7 @@ class NeighborhoodState
 {
   public:
     NeighborhoodState(const std::vector<ImageRecord> &records, int tilesX, int window, double penalty,
-                      NeighborCounters *counters = nullptr);
+                      NeighborCounters *counters = nullptr, unsigned slots = 65536, unsigned ways = 1);
 
     // 只接收已验证的图库索引，不排序、不取随机数，也不改变选图窗口。
     void applyPenalty(double &score, int libraryIndex, int tile, RankBound *bound = nullptr);

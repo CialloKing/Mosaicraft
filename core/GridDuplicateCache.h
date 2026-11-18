@@ -3,12 +3,13 @@
 #include "FeatureUtils.h"
 #include <array>
 #include <cstdint>
+#include <stdexcept>
 
 namespace mosaicraft
 {
 struct NeighborCounters
 {
-    uint64_t candidates = 0, hits = 0, distances = 0, earlyExits = 0, pruned = 0;
+    uint64_t candidates = 0, hits = 0, distances = 0, earlyExits = 0, pruned = 0, replacements = 0;
 };
 
 class GridDuplicateCache
@@ -20,14 +21,24 @@ class GridDuplicateCache
     };
     const std::vector<ImageRecord> &m_records;
     std::vector<bool> m_finite;
-    std::vector<Entry> m_slots{65536};
+    std::vector<Entry> m_slots;
+    unsigned m_ways;
     double m_threshold = -1;
     NeighborCounters *m_counters;
 
   public:
-    explicit GridDuplicateCache(const std::vector<ImageRecord> &records, NeighborCounters *counters = nullptr)
-        : m_records(records), m_counters(counters)
+    static size_t extraBytes(unsigned slots)
     {
+        return slots > 65536 ? (slots - 65536) * sizeof(Entry) : 0;
+    }
+    explicit GridDuplicateCache(const std::vector<ImageRecord> &records, NeighborCounters *counters = nullptr,
+                                unsigned slots = 65536, unsigned ways = 1)
+        : m_records(records), m_slots(slots), m_ways(ways), m_counters(counters)
+    {
+        if (slots == 0 || (slots & (slots - 1)) || (ways != 1 && ways != 2) || slots < ways)
+        {
+            throw std::invalid_argument("invalid neighbor cache geometry");
+        }
         for (const auto &record : records)
         {
             const auto &grid = record.gridLab;
@@ -52,12 +63,22 @@ class GridDuplicateCache
         uint64_t hash = key ^ (key >> 30);
         hash *= UINT64_C(0xbf58476d1ce4e5b9);
         hash ^= hash >> 27;
-        auto &entry = m_slots[hash & (m_slots.size() - 1)];
+        const size_t slot = hash & (m_slots.size() - 1);
+        auto &entry = m_slots[m_ways == 2 ? slot & ~size_t(1) : slot];
+        if (m_ways == 2 && entry.key != key)
+        {
+            // 首路为最近访问项。总槽数不变，两路对照不额外增加内存。
+            std::swap(entry, m_slots[slot | 1]);
+        }
         if (entry.key != key)
         {
             const auto &a = m_records[first].gridLab;
             const auto &b = m_records[second].gridLab;
             const double stop = m_finite[first] && m_finite[second] ? threshold : INFINITY;
+            if (m_counters && entry.key != UINT64_MAX)
+            {
+                ++m_counters->replacements;
+            }
             entry = {key, gridDistance8x8(a, b, false, stop, m_counters ? &m_counters->earlyExits : nullptr) < threshold};
             if (m_counters)
             {

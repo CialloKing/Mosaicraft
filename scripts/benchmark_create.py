@@ -23,7 +23,8 @@ SETTINGS = {
     'kernel': ('scalar', 'avx2', 'avx512', 'neon'),
     'batch': ('1024', '2048'), 'host_mib': ('256', '512', '1024'),
     'feature_mib': ('256', '512', '1024'), 'slots': ('65536', '262144', '1048576'),
-    'score_grain': ('1', '4', '8', '16'), 'prefetch': ('0', '1'),
+    'score_grain': ('1', '4', '8', '16'), 'feature_grain': ('1', '4', '8', '16'),
+    'prefetch': ('0', '1'), 'share': ('0', '1'), 'ways': ('1', '2'),
 }
 PREFIX = 'MOSAICRAFT_BENCH_'
 

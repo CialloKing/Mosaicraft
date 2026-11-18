@@ -11,8 +11,8 @@ constexpr int gridWindow = 50;
 } // namespace
 
 NeighborhoodState::NeighborhoodState(const std::vector<ImageRecord> &records, int tilesX, int window, double penalty,
-                                     NeighborCounters *counters)
-    : m_duplicateCache(records, counters), m_counters(counters), m_window(window), m_minGap(std::max(50, tilesX)), m_penalty(penalty),
+                                     NeighborCounters *counters, unsigned slots, unsigned ways)
+    : m_duplicateCache(records, counters, slots, ways), m_counters(counters), m_window(window), m_minGap(std::max(50, tilesX)), m_penalty(penalty),
       m_frequency(records.size()), m_lastUsedAt(records.size(), -1)
 {
 }
