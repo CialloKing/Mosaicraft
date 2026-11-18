@@ -9,7 +9,8 @@ namespace mosaicraft::detail
 class NeighborhoodState
 {
   public:
-    NeighborhoodState(const std::vector<ImageRecord> &records, int tilesX, int window, double penalty);
+    NeighborhoodState(const std::vector<ImageRecord> &records, int tilesX, int window, double penalty,
+                      NeighborCounters *counters = nullptr);
 
     // 只接收已验证的图库索引，不排序、不取随机数，也不改变选图窗口。
     void applyPenalty(double &score, int libraryIndex, int tile);
@@ -19,6 +20,7 @@ class NeighborhoodState
   private:
     const std::vector<ImageRecord> &m_records;
     GridDuplicateCache m_duplicateCache;
+    NeighborCounters *m_counters;
     int m_window;
     int m_minGap;
     double m_penalty;

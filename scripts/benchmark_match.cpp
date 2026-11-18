@@ -20,14 +20,14 @@ int main(int argc, char **argv)
         std::cerr << "usage: benchmark_match <request.json> [small|indices|small-indices]"
                      " [--seed uint32] [--selections] [--match-only] [--batch-tiles count]"
                      " [--strategy L|Q|D|QD|QDX] [--epsilon fraction] [--diagnostics rows.json]"
-                     " [--summary output.json]\n";
+                     " [--summary output.json] [--no-detail]\n";
         return 1;
     }
     std::string profile, summaryPath;
     std::string strategy = "L", diagnosticsPath;
     SelectionOptions selectionOptions;
     bool fixedSeed = false, capture = false;
-    bool matchOnly = false;
+    bool matchOnly = false, detailed = true;
     size_t batchTiles = 0;
     uint32_t seed = 0;
     for (int i = 2; i < argc; ++i)
@@ -47,6 +47,10 @@ int main(int argc, char **argv)
         else if (argument == "--summary" && i + 1 < argc)
         {
             summaryPath = argv[++i];
+        }
+        else if (argument == "--no-detail")
+        {
+            detailed = false;
         }
         else if (argument == "--selections")
         {
@@ -110,7 +114,7 @@ int main(int argc, char **argv)
         std::cerr << "invalid benchmark request: " << error << '\n';
         return 1;
     }
-    request.config.benchmark = true;
+    request.config.benchmark = detailed;
     selectionOptions.quality = strategy == "Q" || strategy == "QD" || strategy == "QDX";
     selectionOptions.spatial = strategy == "D" || strategy == "QD" || strategy == "QDX";
     selectionOptions.expand = strategy == "QDX";

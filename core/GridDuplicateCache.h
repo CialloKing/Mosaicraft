@@ -6,6 +6,11 @@
 
 namespace mosaicraft
 {
+struct NeighborCounters
+{
+    uint64_t candidates = 0, hits = 0, distances = 0, earlyExits = 0, pruned = 0;
+};
+
 class GridDuplicateCache
 {
     struct Entry
@@ -17,9 +22,11 @@ class GridDuplicateCache
     std::vector<bool> m_finite;
     std::vector<Entry> m_slots{65536};
     double m_threshold = -1;
+    NeighborCounters *m_counters;
 
   public:
-    explicit GridDuplicateCache(const std::vector<ImageRecord> &records) : m_records(records)
+    explicit GridDuplicateCache(const std::vector<ImageRecord> &records, NeighborCounters *counters = nullptr)
+        : m_records(records), m_counters(counters)
     {
         for (const auto &record : records)
         {
@@ -51,7 +58,15 @@ class GridDuplicateCache
             const auto &a = m_records[first].gridLab;
             const auto &b = m_records[second].gridLab;
             const double stop = m_finite[first] && m_finite[second] ? threshold : INFINITY;
-            entry = {key, gridDistance8x8(a, b, false, stop) < threshold};
+            entry = {key, gridDistance8x8(a, b, false, stop, m_counters ? &m_counters->earlyExits : nullptr) < threshold};
+            if (m_counters)
+            {
+                ++m_counters->distances;
+            }
+        }
+        else if (m_counters)
+        {
+            ++m_counters->hits;
         }
         return entry.similar;
     }

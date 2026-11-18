@@ -824,7 +824,9 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         cfg.neighborWindow = autoNeighborWindow();
     }
 
-    detail::NeighborhoodState neighborhood(allRecords, tilesX, cfg.neighborWindow, cfg.neighborPenalty);
+    NeighborCounters neighborCounters;
+    detail::NeighborhoodState neighborhood(allRecords, tilesX, cfg.neighborWindow, cfg.neighborPenalty,
+                                           cfg.benchmark ? &neighborCounters : nullptr);
 
     // 权重归一化：将各特征权重转为 tile 评分系数
     double wSum = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight;
@@ -2386,6 +2388,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
     } // 索引、缓存、线程池及大批次缓冲在贴图/编码之前释放。
     metrics.matchingWallMs = Ms(Clock::now() - matchingStart).count();
+    runtime.metric("matchingMs", metrics.matchingWallMs);
     if (selection || m_matchOnly)
     {
         runtime.metric("selectionBufferBytes", selectionBytes);
@@ -2595,6 +2598,12 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         runtime.metric("cpuScoreMs", metrics.msCPUScore);
         runtime.metric("gpuScoreMs", metrics.msGPUScore);
         runtime.metric("neighborMs", metrics.msNeighbor);
+        runtime.metric("prepareMs", metrics.msPrep);
+        runtime.metric("neighborCandidates", static_cast<double>(neighborCounters.candidates));
+        runtime.metric("neighborGridCacheHits", static_cast<double>(neighborCounters.hits));
+        runtime.metric("neighborGridDistances", static_cast<double>(neighborCounters.distances));
+        runtime.metric("neighborGridEarlyExits", static_cast<double>(neighborCounters.earlyExits));
+        runtime.metric("neighborPruned", static_cast<double>(neighborCounters.pruned));
         runtime.metric("sortMs", metrics.msSort);
         runtime.metric("matchingMs", metrics.matchingWallMs);
         runtime.metric("featureMs", metrics.msFeat);
