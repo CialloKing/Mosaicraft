@@ -703,7 +703,7 @@ void JobManager::runMosaicJob(const std::string& id)
     try
     {
         TaskResourceMonitor monitor(*runtime, request.resourceMonitor);
-        MosaicService service;
+        MosaicService service(MOSAICRAFT_TRIAL_HOT_ANN ? &m_libraryIndex : nullptr);
         result = service.run(request, *runtime, selection.get());
     }
     catch (const std::exception& e)

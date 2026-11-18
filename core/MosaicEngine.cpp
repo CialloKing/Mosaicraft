@@ -1111,8 +1111,25 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             m_previewWorkspace->libraryPath == db.path() && m_previewWorkspace->libraryVersion == libraryVersion;
         auto annIndex = reuseIndex ? m_previewWorkspace->index : std::make_shared<FeatureIndex>();
         const std::string annPath = featDirCache.empty() ? "lib.ann196" : featDirCache + "/lib.ann196";
+        bool retainIndex = false, hotIndex = false;
+        if (m_indexSession)
+        {
+            std::error_code ec;
+            const auto disk = std::filesystem::file_size(u8path(annPath), ec);
+            // 保守限制单个闲置图（序列化数据外还有锁、访问表与标签表），不在新任务旁保留第二份。
+            retainIndex = !ec && disk <= m_limits.featureBytes / 6 && dbCount <= 100000;
+            if (!retainIndex || m_indexSession->database != db.path() || m_indexSession->device != actualDevice)
+            {
+                *m_indexSession = {};
+            }
+            if (retainIndex && m_indexSession->index)
+            {
+                annIndex = std::move(m_indexSession->index);
+            }
+        }
         const auto indexStart = Clock::now();
-        bool loaded = reuseIndex || annIndex->load(annPath, FeatureIndex::kDimension, allRecords);
+        bool loaded = reuseIndex || annIndex->load(annPath, FeatureIndex::kDimension, allRecords,
+                                                   retainIndex ? &hotIndex : nullptr);
         metrics.msANNLoad = Ms(Clock::now() - indexStart).count();
         if (!loaded)
         {
@@ -1134,6 +1151,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             metrics.msANNBuild = Ms(Clock::now() - buildStart).count();
         }
 
+        if (retainIndex)
+        {
+            *m_indexSession = {db.path(), actualDevice, annIndex};
+            runtime.metric("libraryIndexReused", hotIndex ? 1 : 0);
+        }
         if (m_previewWorkspace)
         {
             // 196 维索引按图库代际复用；超大图库仍沿用单次匹配的内存模型。

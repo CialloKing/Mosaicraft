@@ -12,6 +12,12 @@ namespace mosaicraft
 class RuntimeContext;
 struct MosaicSelection;
 struct PreviewWorkspace;
+class FeatureIndex;
+struct LibraryIndexSession
+{
+    std::string database, device;
+    std::shared_ptr<FeatureIndex> index;
+};
 
 class MosaicEngine
 {
@@ -107,7 +113,9 @@ public:
         }
     };
 
-    MosaicEngine() = default;
+    explicit MosaicEngine(LibraryIndexSession *session = nullptr) : m_indexSession(session)
+    {
+    }
 
     bool generate(const std::string &targetPath, const std::string &dbPath, const std::string &outputPath,
                   const Config &config, RuntimeContext &runtime);
@@ -140,6 +148,7 @@ public:
     std::vector<int> *m_selectedObserver = nullptr;
     MosaicSelection *m_preview = nullptr;
     const MosaicSelection *m_renderSelection = nullptr;
+    LibraryIndexSession *m_indexSession = nullptr;
     PreviewWorkspace *m_previewWorkspace = nullptr;
     const std::atomic_bool *m_cancelPreview = nullptr;
     size_t m_compatibleFeatureImages = 0;

@@ -50,7 +50,11 @@ struct ServiceResult
 
 class MosaicService
 {
+    LibraryIndexSession *m_session;
 public:
+    explicit MosaicService(LibraryIndexSession *session = nullptr) : m_session(session)
+    {
+    }
     ServiceResult run(const MosaicRequest& request) const;
     ServiceResult run(const MosaicRequest &request, RuntimeContext &runtime,
                       const MosaicSelection *selection = nullptr) const;

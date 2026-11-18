@@ -128,6 +128,7 @@ private:
     std::array<std::string, 2> m_pinnedPreviews;
     std::shared_ptr<PreviewJob> m_pendingPreview, m_runningPreview;
     PreviewWorkspace m_previewWorkspace;
+    LibraryIndexSession m_libraryIndex;
     bool m_releasePreviewWorkspace = false;
     bool m_stopping = false;
     std::unique_ptr<HistoryStore> m_history;

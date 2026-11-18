@@ -108,6 +108,7 @@ class FeatureIndex
         }
 
         m_count = count;
+        m_loadedDigest = 0;
         m_fingerprint = fingerprint(records);
         return true;
     }
@@ -147,7 +148,7 @@ class FeatureIndex
     }
 
     // 从文件加载索引
-    bool load(const std::string &path, int dim, const std::vector<ImageRecord> &records)
+    bool load(const std::string &path, int dim, const std::vector<ImageRecord> &records, bool *hot = nullptr)
     {
         constexpr int kDim = kDimension;
         if (dim != kDim)
@@ -178,7 +179,16 @@ class FeatureIndex
             return false;
         }
 
-        // 释放旧索引
+        // 只有磁盘内容和图库向量身份均已验证才保留图；使用次数改变会重新排序当前记录。
+        if (hot && m_index && m_loadedDigest == digest && m_fingerprint == storedFingerprint && m_count == count)
+        {
+            for (int i = 0; i < count; ++i)
+            {
+                m_idToIndex.at(records[i].id) = i;
+            }
+            *hot = true;
+            return true;
+        }
         delete m_index;
         m_index = nullptr;
         delete m_space;
@@ -207,6 +217,7 @@ class FeatureIndex
             return false;
         }
 
+        m_loadedDigest = digest;
         m_fingerprint = storedFingerprint;
         m_dim = kDim;
         m_count = count;
@@ -396,7 +407,7 @@ class FeatureIndex
         return input.bad() ? 0 : hash;
     }
 
-    uint64_t m_fingerprint = 0;
+    uint64_t m_fingerprint = 0, m_loadedDigest = 0;
     hnswlib::HierarchicalNSW<float> *m_index;
     hnswlib::SpaceInterface<float> *m_space;
     std::unordered_map<int, int> m_idToIndex; // image_id → allRecords index

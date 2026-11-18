@@ -28,7 +28,7 @@ std::string resolveDbPathForService(const std::string& rawPath)
 }
 
 static ServiceResult runMosaic(const MosaicRequest &request, RuntimeContext &runtime,
-                               const MosaicSelection *selection)
+                               const MosaicSelection *selection, LibraryIndexSession *session)
 {
     runtime.stage("validating");
     if (request.inputPath.empty())
@@ -61,7 +61,7 @@ static ServiceResult runMosaic(const MosaicRequest &request, RuntimeContext &run
     {
         std::lock_guard<std::mutex> lock(pipelineMutex());
         ExecutionScope scope;
-        MosaicEngine engine;
+        MosaicEngine engine(session);
         const auto dbPath = resolveDbPathForService(request.dbPath);
         protectOutput(request.outputPath, {request.inputPath, pathToUtf8(u8path(dbPath).parent_path())});
         std::unique_ptr<OutputPublication> publication;
@@ -140,7 +140,7 @@ ServiceResult MosaicService::run(const MosaicRequest &request) const
 ServiceResult MosaicService::run(const MosaicRequest &request, RuntimeContext &runtime,
                                  const MosaicSelection *selection) const
 {
-    return runtimeResult(runMosaic(request, runtime, selection), runtime);
+    return runtimeResult(runMosaic(request, runtime, selection, m_session), runtime);
 }
 
 ServiceResult MosaicService::preview(const MosaicRequest &request, uint32_t seed, PreviewWorkspace &workspace,
