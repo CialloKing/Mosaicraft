@@ -16,9 +16,19 @@ TEST_CASE("portable backend options preserve defaults and reject invalid score m
     CHECK(parseBackend("vulkan") == BackendPolicy::Vulkan);
     CHECK(parseBackend("metal") == BackendPolicy::Metal);
     CHECK(parseScoreMode("fast") == ScoreMode::Fast);
+    CHECK(MosaicEngine::Config{}.scoreMode == ScoreMode::Fast);
     CHECK_THROWS_AS(parseScoreMode("fp16"), std::invalid_argument);
-    MosaicRequest request;
+    MosaicRequest defaults;
     RequestError error;
+    REQUIRE(parseMosaicRequestJson(
+        R"({"inputPath":"target.png","dbPath":"library.db","backend":"vulkan","device":"vulkan:1"})",
+        defaults, error));
+    CHECK(defaults.config.scoreMode == ScoreMode::Fast);
+    REQUIRE(parseMosaicRequestJson(
+        R"({"inputPath":"target.png","dbPath":"library.db","backend":"vulkan","device":"vulkan:1","scoreMode":"compatible"})",
+        defaults, error));
+    CHECK(defaults.config.scoreMode == ScoreMode::Compatible);
+    MosaicRequest request;
     REQUIRE(parseMosaicRequestJson(
         R"({"inputPath":"target.png","dbPath":"library.db","backend":"vulkan","device":"vulkan:1","scoreMode":"fast"})",
         request, error));

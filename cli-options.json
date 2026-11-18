@@ -122,7 +122,7 @@
     "type": "string",
     "field": "scoreMode",
     "commands": "create",
-    "help": "compatible | fast; fast uses FP32 weighted feature scores",
+    "help": "fast (default) | compatible; fast uses FP32 weighted feature scores",
     "advanced": true
   },
   {

@@ -18,6 +18,7 @@
 - [架构与数据契约](development/architecture.md)：处理流程、数据边界及版本来源。
 - [CUDA 配置](development/cuda.md)：架构、模板与实机覆盖范围。
 - [四后端实现与验收](development/portable-gpu.md)：实现边界、双 1% 门槛与实际结果。
+- [全项目匹配优化报告](development/matching-optimization-20261118.md)：M0-M4 实施、四后端性能/精度门槛与回归证据。
 - [CI 与打包](development/packaging.md)：原生 CI、依赖和独立包策略。
 - [发布清单](development/releasing.md)：版本、验收、包内容与发布步骤。
 - [文档维护](development/documentation.md)：分类、更新和链接检查规则。

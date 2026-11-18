@@ -400,7 +400,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <a class="help-link" href="#help-switches" data-open-help="help-switches">了解预览及其他开关的作用</a>
     <div class="row" style="margin-top:8px">
       <div class="field"><label>亮度扰动幅度 --brightness-jitter</label><input type="number" id="m-colorstr" value="0" min="0" max="0.5" step="0.01" style="max-width:150px"><div class="hint">0 关闭；0.04 表示 L 通道最多 ±4%。HTML 工程要求为 0。</div></div>
-      <div class="field"><label>CPU 线程上限 --threads</label><input id="m-threads" type="number" min="0" max="256" value="0"></div><div class="field"><label>后端 --backend</label><select id="m-backend"><option value="auto">自动回退</option><option value="cpu">CPU</option><option value="cuda">必须使用 CUDA</option><option value="vulkan">Vulkan（候选）</option><option value="metal">Metal（未实机验收）</option></select></div><div class="field"><label>GPU 设备 --device</label><select id="m-device"><option value="auto">自动选择</option></select></div><div class="field"><label>评分精度 --score-mode</label><select id="m-score-mode"><option value="compatible">兼容（FP64 评分）</option><option value="fast">快速（FP32 评分）</option></select><small>快速模式允许素材排名变化；需要复现旧路径时请选择兼容模式。</small></div><div class="field"><label>随机种子 --seed</label><input id="m-seed" type="number" min="0" max="4294967295" placeholder="自动生成并记录"></div>
+      <div class="field"><label>CPU 线程上限 --threads</label><input id="m-threads" type="number" min="0" max="256" value="0"></div><div class="field"><label>后端 --backend</label><select id="m-backend"><option value="auto">自动回退</option><option value="cpu">CPU</option><option value="cuda">必须使用 CUDA</option><option value="vulkan">Vulkan（候选）</option><option value="metal">Metal（未实机验收）</option></select></div><div class="field"><label>GPU 设备 --device</label><select id="m-device"><option value="auto">自动选择</option></select></div><div class="field"><label>评分精度 --score-mode</label><select id="m-score-mode"><option value="fast">快速（FP32 评分）</option><option value="compatible">兼容（FP64 评分）</option></select><small>快速模式允许素材排名变化；需要复现旧路径时请选择兼容模式。</small></div><div class="field"><label>随机种子 --seed</label><input id="m-seed" type="number" min="0" max="4294967295" placeholder="自动生成并记录"></div>
       <div class="field"><label>基础图叠加强度 --target-blend</label><input type="number" id="m-overlaystr" value="0" min="0" max="1" step="0.05" style="max-width:150px"><div class="hint">0 关闭；0.2 表示 80% 素材 + 20% 基础图。使用缩放、放大和补边后的基础图，强度越高，小图细节越弱。</div></div>
     </div>
   </div>
@@ -2203,6 +2203,7 @@ function restoreRequestParameters(job) {
     document.getElementById('m-mode').value = request.outputMode || (request.deepZoom ? 'deepzoom' : request.tiled ? 'tiles' : 'image');
     document.getElementById('m-backend').value = request.backend || (request.useGpu === false ? 'cpu' : 'auto');
     restoreDevice('m-device', request.device);
+    // Missing scoreMode identifies a legacy saved request; preserve its original ranking path.
     document.getElementById('m-score-mode').value = request.scoreMode || 'compatible';
     document.getElementById('m-colorstr').value = request.colorAdjust ? (request.colorStrength ?? 0.04) : 0;
   } else if (project) {
