@@ -369,7 +369,8 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
             }
             else if (extension == ".png")
             {
-                writeParams = {cv::IMWRITE_PNG_COMPRESSION, 9};
+                // 无损像素决定身份与特征；只为确需缩放的图库 PNG 选择较快压缩，同尺寸仍复制原字节。
+                writeParams = {cv::IMWRITE_PNG_COMPRESSION, 3};
             }
             saved = normalizer.process(input, output, writeParams, pixels);
             if (!saved)
