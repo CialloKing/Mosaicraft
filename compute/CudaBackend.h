@@ -7,6 +7,7 @@
 
 namespace mosaicraft
 {
+class WorkerPool;
 namespace cuda
 {
 
@@ -46,6 +47,7 @@ struct FeaturePipelineConfig
     std::size_t targetStep = 0;
     int cols = 0, rows = 0, tileW = 0, tileH = 0;
     unsigned workers = 0;
+    WorkerPool *sharedWorkers = nullptr; // 借用生成任务的池，生命周期覆盖管线。
     bool deviceCanny = false;
 };
 

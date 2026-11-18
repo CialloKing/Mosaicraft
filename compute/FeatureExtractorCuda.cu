@@ -118,7 +118,7 @@ bool FeatureWorkspace::preparePipeline(const FeaturePipelineConfig &config, GpuT
                 }
             }
         }
-        if (!p->cannyRows)
+        if (!p->cannyRows && !config.sharedWorkers)
         {
             p->workers = std::make_unique<WorkerPool>(config.workers);
         }
@@ -934,7 +934,8 @@ void extractPipelined(FeaturePipeline &p, int first, int count, double *lab, flo
     {
         PhaseTimer timer(timings ? &timings->cannyMs : nullptr);
         // CPU 与 DMA 只读同一份锁页 BGR。run 收束所有任务（包括异常），随后再等待 GPU。
-        p.workers->run(rows,
+        auto &workers = p.config.sharedWorkers ? *p.config.sharedWorkers : *p.workers;
+        workers.run(rows,
                        [&](size_t i)
                        {
                            if (p.config.testFault == PipelineFault::CpuTask && i == 0)

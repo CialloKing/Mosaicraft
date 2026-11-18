@@ -1174,14 +1174,23 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         {
             reportMatching(0);
         }
-        WorkerPool queryWorkers(cfg.threads > 0 ? static_cast<unsigned>(cfg.threads) : 0);
+        const bool shareWorkers = MOSAICRAFT_TRIAL_SCHEDULE && cfg.threads > 0 && !portableRequested;
+        // 顺序选图和预取协调各占一个执行位。少于四个执行位时不启动预取。
+        const bool overlap = shareWorkers && cfg.threads >= 4 && !selection && !m_preview && !cfg.analyze &&
+                             !m_previewWorkspace && (templateCuda ? preflight.device == 0 : !cudaEnabled);
+        std::unique_ptr<WorkerPool> separateQueries;
+        if (!shareWorkers)
+        {
+            separateQueries = std::make_unique<WorkerPool>(cfg.threads > 0 ? static_cast<unsigned>(cfg.threads) : 0);
+        }
         unsigned featureThreads = templateCuda ? std::min(8u, std::max(1u, std::thread::hardware_concurrency()))
                                              : std::max(2u, std::thread::hardware_concurrency());
         if (cfg.threads > 0)
         {
-            featureThreads = std::min(featureThreads, static_cast<unsigned>(cfg.threads));
+            featureThreads = std::min(featureThreads, static_cast<unsigned>(cfg.threads - (overlap ? 2 : 0)));
         }
         WorkerPool featureWorkers(static_cast<unsigned>(std::min<size_t>(batchRows, featureThreads)));
+        WorkerPool &queryWorkers = separateQueries ? *separateQueries : featureWorkers;
         std::unique_ptr<cuda::FeatureWorkspace> workspace;
         std::unique_ptr<cuda::ScoreWorkspace> scoreWorkspace;
         std::unique_ptr<cuda::ScoreWorkspace> expandedScores[2];
@@ -1275,6 +1284,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 options.maxTiles = static_cast<int>(batchRows);
                 options.width = featW;
                 options.workers = cfg.threads;
+                options.sharedWorkers = shareWorkers ? &featureWorkers : nullptr;
                 if (MOSAICRAFT_TRIAL_CUDA_TARGET && fastScore && !m_previewWorkspace && !m_preview &&
                     !m_selectionOptions.expand &&
                     cfg.tileW <= featW && cfg.tileH <= featH)
@@ -1847,10 +1857,12 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             return true;
         };
         // 扩搜会再次读取当前设备特征；下一批预取不能提前覆盖同一个工作区。
-        const bool prefetch = templateCuda && cfg.threads == 0 && !m_selectionOptions.expand &&
-                              totalTiles > batchRows && hostBudget >= scratch + pinnedBytes &&
-                              gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, pipeline) <=
-                                  (hostBudget - scratch - pinnedBytes) / 2;
+        const bool cpuOverlap = overlap && !cudaEnabled && parallelBase && fitsCpuScores(batchRows * 2);
+        const bool gpuOverlap = templateCuda && (cfg.threads == 0 || overlap) && !m_selectionOptions.expand &&
+                                hostBudget >= scratch + pinnedBytes &&
+                                gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, pipeline) <=
+                                    (hostBudget - scratch - pinnedBytes) / 2;
+        const bool prefetch = totalTiles > batchRows && (cpuOverlap || gpuOverlap);
         metrics.matchingPrefetch = prefetch;
         bool preparedNext = false;
         // 池必须在缓冲/prepare 之后创建，错误退出也会先等待预取线程，再销毁它引用的数据。
@@ -1989,6 +2001,18 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 }
                 return true;
             };
+            const auto startPrefetch = [&]()
+            {
+                if (prefetch && nextCount > 0)
+                {
+                    preparedNext = false;
+                    // 只准备独立批次；候选筛选不读邻域、使用历史或 RNG。
+                    prefetchWorkers->start(1, [&, next, nextCount](size_t)
+                    {
+                        preparedNext = prepare(next, nextCount, ahead);
+                    });
+                }
+            };
             if (templateCuda)
             {
                 const auto scoreStart = Clock::now();
@@ -2033,16 +2057,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 {
                     std::copy(allScores.begin(), allScores.end(), newScores->values.begin() + scoreOffset);
                 }
-                if (prefetch && nextCount > 0)
-                {
-                    // 下一批只准备与邻域状态无关的数据；评分和选择仍由当前线程顺序执行。
-                    preparedNext = false;
-                    prefetchWorkers->start(1,
-                                           [&, next, nextCount](size_t)
-                                           {
-                                               preparedNext = prepare(next, nextCount, ahead);
-                                           });
-                }
+                startPrefetch();
                 const auto selectionStart = Clock::now();
                 if (cfg.analyze)
                 {
@@ -2369,6 +2384,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     preparedScores = !missing.load(std::memory_order_relaxed);
                     metrics.msBaseScore += Ms(Clock::now() - start).count();
                 }
+                startPrefetch();
                 const auto selectionStart = Clock::now();
                 for (int local = 0; local < count; ++local)
                 {
