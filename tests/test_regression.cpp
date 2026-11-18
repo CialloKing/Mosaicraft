@@ -613,6 +613,14 @@ TEST_CASE("compatible CUDA scores are exact and failures never publish partial r
             }
         }
     }
+    std::vector<float> compact(candidates);
+    GpuTimings fastTiming;
+    scoring.score(tiles, 1, 0, nullptr, &fastTiming, compact.data());
+    CHECK(fastTiming.downloadBytes == candidates * sizeof(float));
+    for (int i = 0; i < 67; ++i)
+    {
+        CHECK(compact[i] == doctest::Approx(cpuBaseScore(tiles, 0, records[i], reader.get(i), 0)).epsilon(0.0001));
+    }
     CHECK(timing.eventComputeMs > 0);
     CHECK(timing.downloadBytes > 0);
     CHECK(scoring.hostBytes() <= budget);

@@ -41,6 +41,10 @@ struct RowHistory
     }
     double combine(float distance, int uses, double penalty) const
     {
+        if (!std::isfinite(distance))
+        {
+            throw std::runtime_error("non-finite FP32 feature score");
+        }
         const auto delta = int64_t(uses) - minimum;
         if (wide)
         {

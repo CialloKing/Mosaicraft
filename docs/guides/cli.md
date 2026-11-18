@@ -47,7 +47,7 @@ CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，�
 | `--seed N` | 无符号 32 位种子；未指定时生成并记录。 |
 | `--backend auto\|cpu\|cuda\|vulkan\|metal` | 建库和匹配后端；显式 GPU 请求不可用时失败；候选后端须显式启用。 |
 | `--device auto\|<设备标识>` | 建库、追加和生成使用同一 GPU；运行 `mosaicraft devices --json` 查看实际设备与不可用原因。 |
-| `--score-mode compatible\|fast` | 默认 compatible；Vulkan/Metal 使用 GPU 整数统计和 CPU FP64 评分。fast 使用 GPU FP32 距离及 CPU FP64 权重/惩罚。 |
+| `--score-mode compatible\|fast` | 默认 compatible；Vulkan/Metal 使用 GPU 整数统计和 CPU FP64 评分。fast 在 CPU 或所选 GPU 上计算 FP32 加权特征分，历史与邻域在主机合成。 |
 | `--threads N` | CPU 工作上限，0 自动，各阶段可进一步收缩。 |
 
 ```sh

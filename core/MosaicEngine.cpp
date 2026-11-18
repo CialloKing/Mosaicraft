@@ -165,6 +165,11 @@ bool MosaicEngine::generate(const std::string& targetPath,
     return generate(targetPath, dbPath, outputPath, config, runtime);
 }
 
+static const char *scoreRevision(ScoreMode mode)
+{
+    return mode == ScoreMode::Fast ? ":fp32-v2" : ":kernel1";
+}
+
 std::string MosaicEngine::matchingKey(const Config &cfg)
 {
     std::ostringstream key;
@@ -175,7 +180,7 @@ std::string MosaicEngine::matchingKey(const Config &cfg)
         << ':' << cfg.gridWeight << ':' << cfg.tinyWeight << ':' << cfg.edgeWeight << ':' << cfg.lbpWeight
         << ':' << cfg.neighborWindow << ':' << cfg.neighborPenalty << ':' << cfg.topNRandom
         << ':' << cfg.useGpu << ':' << cfg.adaptiveWeights << ':' << cfg.analyze
-        << ':' << backendName(cfg.backend) << ':' << cfg.device << ':' << scoreModeName(cfg.scoreMode) << ":kernel1";
+        << ':' << backendName(cfg.backend) << ':' << cfg.device << ':' << scoreModeName(cfg.scoreMode) << scoreRevision(cfg.scoreMode);
     return key.str();
 }
 
@@ -315,7 +320,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     const std::string actualDevice = portableRequested ? portableDevice.id
         : cudaEnabled ? "cuda:" + std::to_string(preflight.device) : "cpu";
     runtime.computeIdentity(actualDevice, scoreModeName(cfg.scoreMode),
-                            portableRequested ? "portable-v1" : cudaEnabled ? "cuda-v6" : "cpu-v6");
+                            std::string(portableRequested ? "portable-v1" : cudaEnabled ? "cuda-v6" : "cpu-v6") +
+                            (cfg.scoreMode == ScoreMode::Fast ? scoreRevision(cfg.scoreMode) : ""));
     std::cout << "Compute device: " << actualDevice << "; score mode: " << scoreModeName(cfg.scoreMode) << std::endl;
     if (useGpu && !cudaEnabled && !portableRequested)
     {
@@ -587,7 +593,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     std::string scoreKeyPrefix;
     const auto scoreKey = [&](const MatchingBackends &active)
     {
-        return scoreKeyPrefix + ':' + backendName(active.features) + ':' + backendName(active.scoring) + ':' + actualDevice + ':' + scoreModeName(cfg.scoreMode) + ":kernel1";
+        return scoreKeyPrefix + ':' + backendName(active.features) + ':' + backendName(active.scoring) + ':' + actualDevice + ':' + scoreModeName(cfg.scoreMode) + scoreRevision(cfg.scoreMode);
     };
     const auto tileFeatureKey = [&](FeatureBackend backend)
     {
