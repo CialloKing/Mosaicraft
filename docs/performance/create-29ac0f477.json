@@ -5610,6 +5610,256 @@
           }
         }
       }
+    },
+    "final-cpu": {
+      "report_sha256": "ebf732f18bbfddaed557a222c69c1413fc0fdc9022f61803938bac58a09b277a",
+      "variants": [
+        {
+          "id": "baseline",
+          "sha256": "09c4f17388d20a625c313dd6836a30b0b538def5c042ee04faeba2b64390746e"
+        },
+        {
+          "id": "candidate",
+          "sha256": "8d936df50a49cb750649f02ff996664dc56488b7c56fe20444636c7862fc8696"
+        }
+      ],
+      "input_sha256": "2034a478fb9adf1e2040499759eb909fbbdce61848c27b1b46aadf97bb8b0037",
+      "snapshot_sha256": "2bd3104871fb12fa8d64dc68d15805dfbb428e459b39c36082c2e5d72508f729",
+      "backend": "cpu",
+      "threads": 0,
+      "exploratory": true,
+      "cases": {
+        "900": {
+          "ms": [
+            [
+              0,
+              2165.498,
+              1848.506
+            ],
+            [
+              1,
+              2463.812,
+              1828.017
+            ],
+            [
+              2,
+              2332.684,
+              1872.084
+            ]
+          ],
+          "ratio": 0.8025451368505184,
+          "png_sha256": {
+            "warmup": {
+              "baseline": {
+                "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d": 1
+              },
+              "candidate": {
+                "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d": 1
+              }
+            },
+            "measured": {
+              "baseline": {
+                "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d": 3
+              },
+              "candidate": {
+                "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d": 3
+              }
+            }
+          }
+        },
+        "57600": {
+          "ms": [
+            [
+              0,
+              12269.754,
+              9904.762
+            ],
+            [
+              1,
+              11695.66,
+              10243.282
+            ],
+            [
+              2,
+              11591.517,
+              10507.47
+            ]
+          ],
+          "ratio": 0.875819103011085,
+          "png_sha256": {
+            "warmup": {
+              "baseline": {
+                "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7": 1
+              },
+              "candidate": {
+                "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7": 1
+              }
+            },
+            "measured": {
+              "baseline": {
+                "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7": 3
+              },
+              "candidate": {
+                "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7": 3
+              }
+            }
+          }
+        }
+      }
+    },
+    "final-cuda": {
+      "report_sha256": "b66efe7a57919e063c2778b918a2aeda1eb9d9389b9cd3010257dbdda690c50b",
+      "variants": [
+        {
+          "id": "baseline",
+          "sha256": "09c4f17388d20a625c313dd6836a30b0b538def5c042ee04faeba2b64390746e"
+        },
+        {
+          "id": "candidate",
+          "sha256": "8d936df50a49cb750649f02ff996664dc56488b7c56fe20444636c7862fc8696"
+        }
+      ],
+      "input_sha256": "2034a478fb9adf1e2040499759eb909fbbdce61848c27b1b46aadf97bb8b0037",
+      "snapshot_sha256": "2bd3104871fb12fa8d64dc68d15805dfbb428e459b39c36082c2e5d72508f729",
+      "backend": "cuda",
+      "threads": 0,
+      "exploratory": true,
+      "cases": {
+        "900": {
+          "ms": [
+            [
+              0,
+              2419.306,
+              2176.678
+            ],
+            [
+              1,
+              2419.345,
+              2027.203
+            ],
+            [
+              2,
+              2476.316,
+              1947.541
+            ]
+          ],
+          "ratio": 0.8379140635162063,
+          "png_sha256": {
+            "warmup": {
+              "baseline": {
+                "6192a130bbd25a989e730e721f7d45dbaa46a7d9171777ab61d13778ca50b960": 1
+              },
+              "candidate": {
+                "6192a130bbd25a989e730e721f7d45dbaa46a7d9171777ab61d13778ca50b960": 1
+              }
+            },
+            "measured": {
+              "baseline": {
+                "6192a130bbd25a989e730e721f7d45dbaa46a7d9171777ab61d13778ca50b960": 3
+              },
+              "candidate": {
+                "6192a130bbd25a989e730e721f7d45dbaa46a7d9171777ab61d13778ca50b960": 3
+              }
+            }
+          }
+        },
+        "57600": {
+          "ms": [
+            [
+              0,
+              8052.409,
+              7522.38
+            ],
+            [
+              1,
+              7893.445,
+              7515.609
+            ],
+            [
+              2,
+              8178.009,
+              8292.358
+            ]
+          ],
+          "ratio": 0.9521329026812824,
+          "png_sha256": {
+            "warmup": {
+              "baseline": {
+                "864586b4a61af88bba2fd1be3d15d74aa691c16621e8a129d58e8dd3caee8b19": 1
+              },
+              "candidate": {
+                "864586b4a61af88bba2fd1be3d15d74aa691c16621e8a129d58e8dd3caee8b19": 1
+              }
+            },
+            "measured": {
+              "baseline": {
+                "864586b4a61af88bba2fd1be3d15d74aa691c16621e8a129d58e8dd3caee8b19": 3
+              },
+              "candidate": {
+                "864586b4a61af88bba2fd1be3d15d74aa691c16621e8a129d58e8dd3caee8b19": 3
+              }
+            }
+          }
+        }
+      }
+    },
+    "template-small-quick": {
+      "report_sha256": "ab0edb96e23afb7ede0682882eb0a1a0617e789f1afa41e34770df5d4e34d11f",
+      "variants": [
+        {
+          "id": "baseline",
+          "sha256": "d4614fa278c8dd2e95e9aca21011b836eccc4f879bace1a19bc6a31a7a1749e1"
+        },
+        {
+          "id": "candidate",
+          "sha256": "e0a3877ce0284e5db75264438348eb3915a578880d8afa0c62bca4a9839efbfd"
+        }
+      ],
+      "input_sha256": "2034a478fb9adf1e2040499759eb909fbbdce61848c27b1b46aadf97bb8b0037",
+      "snapshot_sha256": "2bd3104871fb12fa8d64dc68d15805dfbb428e459b39c36082c2e5d72508f729",
+      "backend": "cuda",
+      "threads": 0,
+      "exploratory": true,
+      "cases": {
+        "900": {
+          "ms": [
+            [
+              0,
+              1991.924,
+              2186.384
+            ],
+            [
+              1,
+              2097.231,
+              2188.998
+            ],
+            [
+              2,
+              2294.019,
+              2192.81
+            ]
+          ],
+          "ratio": 1.0437560266935975,
+          "png_sha256": {
+            "warmup": {
+              "baseline": {
+                "6192a130bbd25a989e730e721f7d45dbaa46a7d9171777ab61d13778ca50b960": 1
+              },
+              "candidate": {
+                "6192a130bbd25a989e730e721f7d45dbaa46a7d9171777ab61d13778ca50b960": 1
+              }
+            },
+            "measured": {
+              "baseline": {
+                "6192a130bbd25a989e730e721f7d45dbaa46a7d9171777ab61d13778ca50b960": 3
+              },
+              "candidate": {
+                "6192a130bbd25a989e730e721f7d45dbaa46a7d9171777ab61d13778ca50b960": 3
+              }
+            }
+          }
+        }
+      }
     }
   },
   "p1-quality": {
@@ -8050,6 +8300,200 @@
         "unique_images": 76,
         "radius3_same_pair_rate": 0.24193548387096775
       }
+    }
+  },
+  "final_diagnostics": {
+    "source_commit": "1940ece61",
+    "note": "One separate, instrumented run per backend; timings may overlap. RSS/VRAM are sampled; null means unavailable. Wall comparisons are in the paired experiments.",
+    "stages": {
+      "final-cpu-standard": {
+        "binary_sha256": "acd86727e73340a998a463ab43933cdacc2bbe06f196920f739550f3cdbbc6ea",
+        "snapshot_sha256": "2bd3104871fb12fa8d64dc68d15805dfbb428e459b39c36082c2e5d72508f729",
+        "device": "cpu",
+        "feature_backend": "cpu",
+        "score_backend": "cpu",
+        "matched": 57600,
+        "failed": 0,
+        "warnings": 0,
+        "metrics": {
+          "analysisMs": 37.1469,
+          "annBuildMs": 0.0,
+          "annLoadMs": 236.0508,
+          "annQueryMs": 1769.8805000000002,
+          "batchBaseScoreMs": 450.9774,
+          "cpuScoreMs": 1779.3914000000232,
+          "databaseOpenValidateMs": 255.6755,
+          "databaseReadRecordsMs": 335.6013,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 892.8334,
+          "featureCachePeakBytes": 58567092.0,
+          "featureMs": 3356.3539999999994,
+          "featureReaderPrepareMs": 100.7947,
+          "gpuScoreMs": 0.0,
+          "matchingBufferPeakBytes": 4238728.0,
+          "matchingMs": 8692.9085,
+          "neighborCandidates": 8640000.0,
+          "neighborGridCacheHits": 64089403.0,
+          "neighborGridDistances": 23200522.0,
+          "neighborGridEarlyExits": 23185145.0,
+          "neighborMs": 1545.388799929539,
+          "neighborPruned": 6852417.0,
+          "placementMs": 968.4982,
+          "prepareMs": 624.1475,
+          "seed": 42.0,
+          "selectionMs": 2759.1318999999976,
+          "sortMs": 47.498899999999644,
+          "totalMs": 11223.5739,
+          "wideHistoryRows": 0.0
+        },
+        "resources": {
+          "cpuPct": 841.3173073390084,
+          "deviceVramBytes": null,
+          "gpuPct": null,
+          "processVramBytes": null,
+          "rssBytes": 260214784.0
+        }
+      },
+      "final-cuda-standard": {
+        "binary_sha256": "acd86727e73340a998a463ab43933cdacc2bbe06f196920f739550f3cdbbc6ea",
+        "snapshot_sha256": "2bd3104871fb12fa8d64dc68d15805dfbb428e459b39c36082c2e5d72508f729",
+        "device": "cuda:0",
+        "feature_backend": "template_cuda",
+        "score_backend": "template_cuda",
+        "matched": 57600,
+        "failed": 0,
+        "warnings": 0,
+        "metrics": {
+          "analysisMs": 25.2188,
+          "annBuildMs": 0.0,
+          "annLoadMs": 257.466,
+          "annQueryMs": 1736.5680999999995,
+          "batchBaseScoreMs": 0.0,
+          "cpuScoreMs": 0.0,
+          "databaseOpenValidateMs": 271.2054,
+          "databaseReadRecordsMs": 378.6363,
+          "deviceTemporaryBytes": 0.0,
+          "encodingMs": 660.4480000000001,
+          "featureCachePeakBytes": 0.0,
+          "featureMs": 2680.4352000000003,
+          "gpuScoreMs": 164.09060000000005,
+          "libraryReadPackMs": 292.1947,
+          "matchingBufferPeakBytes": 54201288.0,
+          "matchingMs": 5046.189,
+          "neighborCandidates": 8640000.0,
+          "neighborGridCacheHits": 63545508.0,
+          "neighborGridDistances": 22962315.0,
+          "neighborGridEarlyExits": 22946628.0,
+          "neighborMs": 3973.454900000003,
+          "neighborPruned": 6868307.0,
+          "placementMs": 757.0822,
+          "prepareMs": 1171.6214,
+          "seed": 42.0,
+          "selectionMs": 4232.748899999999,
+          "sortMs": 77.26359999998787,
+          "totalMs": 7667.8435,
+          "wideHistoryRows": 0.0
+        },
+        "resources": {
+          "cpuPct": 844.676627434867,
+          "deviceVramBytes": 2451849216.0,
+          "gpuPct": 47.0,
+          "processVramBytes": null,
+          "rssBytes": 379371520.0
+        }
+      }
+    },
+    "render": {
+      "180x320": {
+        "size": [
+          2880,
+          6400
+        ],
+        "pixels_sha256": "ba715347d7a03d1b7f05ba6a4e5674bd8e284983b6507885c00984426dad1ab0",
+        "metrics": {
+          "cacheDecodes": 320.0,
+          "cachePeakBytes": 0.0,
+          "codecWriteMs": 857.1136000000001,
+          "decodeWorkerMs": 410.9981,
+          "encodingMs": 857.3440999999999,
+          "placementMs": 78.1969,
+          "resizeWorkerMs": 0.0,
+          "seed": 42.0
+        }
+      },
+      "90x160": {
+        "size": [
+          1440,
+          3200
+        ],
+        "pixels_sha256": "243db2b70e4e7ff953639c38aee9a870fa2671cdfb265df59fe0dcf6567494e5",
+        "metrics": {
+          "cacheDecodes": 320.0,
+          "cachePeakBytes": 0.0,
+          "codecWriteMs": 209.53670000000002,
+          "decodeWorkerMs": 372.7939,
+          "encodingMs": 209.67420000000004,
+          "placementMs": 68.1074,
+          "resizeWorkerMs": 8.2524,
+          "seed": 42.0
+        }
+      }
+    },
+    "selection_spots": {
+      "scope": "exact selections on specified cases only; not a full quality gate",
+      "match_sha256": "acd86727e73340a998a463ab43933cdacc2bbe06f196920f739550f3cdbbc6ea",
+      "reference_match_sha256": "7866c5cbc16c5e1980cec86ba84ff81da87b60ea503ab4677ff6978de531da6c",
+      "snapshot_sha256": "2bd3104871fb12fa8d64dc68d15805dfbb428e459b39c36082c2e5d72508f729",
+      "cases": {
+        "cpu-edge-top1-42-candidate": {
+          "target_sha256": "59b48b4fdda56d70039c35ee79cf7ddf868af9b5a660ec5cf99064aff0f00d25",
+          "reference_selection_sha256": "15000a0f67824cd428dae4bf6c191ba55babd993477ddd1ee2e275d91bda1faf",
+          "candidate_selection_sha256": "15000a0f67824cd428dae4bf6c191ba55babd993477ddd1ee2e275d91bda1faf",
+          "matched": 400,
+          "missing": 0,
+          "backend": "cpu"
+        },
+        "cpu-scarce-top10-20261111-candidate": {
+          "target_sha256": "68a686b0eac9c62077ffc40d5e2642db9fe0f061b45f56c28455406a8d7e169d",
+          "reference_selection_sha256": "692a92bb1d45f2a79e1a6c1feefb642ece48d79a200baeaa22d0454428cc9e5b",
+          "candidate_selection_sha256": "692a92bb1d45f2a79e1a6c1feefb642ece48d79a200baeaa22d0454428cc9e5b",
+          "matched": 400,
+          "missing": 0,
+          "backend": "cpu"
+        },
+        "cuda-0-edge-top1-42-candidate": {
+          "target_sha256": "59b48b4fdda56d70039c35ee79cf7ddf868af9b5a660ec5cf99064aff0f00d25",
+          "reference_selection_sha256": "f12ddea719fbe8c1a31e1bd6fe461be97e09647ea0b87675ccdd18b73432b9e7",
+          "candidate_selection_sha256": "f12ddea719fbe8c1a31e1bd6fe461be97e09647ea0b87675ccdd18b73432b9e7",
+          "matched": 400,
+          "missing": 0,
+          "backend": "template_cuda"
+        },
+        "cuda-0-scarce-top10-20261111-candidate": {
+          "target_sha256": "68a686b0eac9c62077ffc40d5e2642db9fe0f061b45f56c28455406a8d7e169d",
+          "reference_selection_sha256": "b1f35289970ff6c7c93aa1faf5942c8134702b5ec6bdb11831ddd306a6352bf7",
+          "candidate_selection_sha256": "b1f35289970ff6c7c93aa1faf5942c8134702b5ec6bdb11831ddd306a6352bf7",
+          "matched": 400,
+          "missing": 0,
+          "backend": "template_cuda"
+        }
+      }
+    },
+    "cuda_log": {
+      "sha256": "3bbe7a4c910fb50d29aba58b921b72733a8ee575191335a32858fcb85d8fa5cf",
+      "Library GPU allocation": "0.5 ms",
+      "Library GPU upload": "17.2 ms",
+      "Library device bytes": "95148718",
+      "Feature upload bytes": "9953280000",
+      "Feature download bytes": "45619200",
+      "Feature GPU wait": "468.5 ms",
+      "Feature CUDA event upload": "796.4 ms",
+      "Feature CUDA event compute": "1076.7 ms",
+      "Feature CUDA event download": "37.3 ms",
+      "Score GPU wait": "146.0 ms",
+      "Score CUDA event upload": "8.5 ms",
+      "Score CUDA event compute": "132.9 ms",
+      "Score CUDA event download": "7.5 ms"
     }
   }
 }
