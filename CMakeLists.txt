@@ -271,7 +271,7 @@ set_property(SOURCE core/MosaicOutput.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     MOSAICRAFT_TRIAL_PNG_SUB=$<BOOL:${MOSAICRAFT_TRIAL_PNG_SUB}>
     MOSAICRAFT_TRIAL_STREAM=$<BOOL:${MOSAICRAFT_TRIAL_STREAM}>)
 option(MOSAICRAFT_TRIAL_LIBRARY_PATHS "Reuse the validated root for simple relative library paths" OFF)
-set_property(SOURCE core/LibraryPaths.cpp core/FeaturePack.cpp core/Database.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+set_property(SOURCE core/LibraryPaths.cpp core/FeaturePack.cpp core/Database.cpp core/DatabaseSchema.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     MOSAICRAFT_TRIAL_LIBRARY_PATHS=$<BOOL:${MOSAICRAFT_TRIAL_LIBRARY_PATHS}>)
 option(MOSAICRAFT_TRIAL_BUILD_AHEAD "Benchmark bounded build normalization lookahead" OFF)
 option(MOSAICRAFT_TRIAL_BUILD_HASH "Hash decoded build inputs in producer slots" OFF)

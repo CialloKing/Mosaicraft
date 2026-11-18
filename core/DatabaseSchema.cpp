@@ -39,14 +39,26 @@ void Database::closeConnection()
 bool Database::validateStoredPaths()
 {
     sqlite3_stmt *statement = nullptr;
-    if (sqlite3_prepare_v2(m_db, "SELECT file_path,tiny_path,lbp_path,grid_lab,avg_l,avg_a,avg_b FROM images", -1, &statement, nullptr) != SQLITE_OK)
+    // 全表已逐行验证路径与数值，把格式/版本判定放入同一快照，不删减校验。
+    const char *columns = MOSAICRAFT_TRIAL_LIBRARY_PATHS
+        ? "SELECT file_path,tiny_path,lbp_path,grid_lab,avg_l,avg_a,avg_b,feature_version IS ? AND typeof(grid_lab)='blob' FROM images"
+        : "SELECT file_path,tiny_path,lbp_path,grid_lab,avg_l,avg_a,avg_b FROM images";
+    if (sqlite3_prepare_v2(m_db, columns, -1, &statement, nullptr) != SQLITE_OK)
     {
         return false;
+    }
+    if (MOSAICRAFT_TRIAL_LIBRARY_PATHS)
+    {
+        sqlite3_bind_int(statement, 1, kFeatureVersion);
     }
     int rc;
     bool valid = true;
     while ((rc = sqlite3_step(statement)) == SQLITE_ROW)
     {
+        if (MOSAICRAFT_TRIAL_LIBRARY_PATHS && !sqlite3_column_int(statement, 7))
+        {
+            valid = false;
+        }
         for (int column = 0; column < 3; ++column)
         {
             const auto *value = reinterpret_cast<const char *>(sqlite3_column_text(statement, column));
@@ -154,8 +166,8 @@ bool Database::validateSchema()
             return incompatible("invalid feature dimensions");
         }
     }
-    if (!scalar("SELECT count(*) FROM images WHERE feature_version IS NOT " + std::to_string(kFeatureVersion) +
-                " OR grid_lab IS NULL OR typeof(grid_lab)!='blob' OR length(grid_lab)!=768", 0) ||
+    if ((!MOSAICRAFT_TRIAL_LIBRARY_PATHS && !scalar("SELECT count(*) FROM images WHERE feature_version IS NOT " + std::to_string(kFeatureVersion) +
+                " OR grid_lab IS NULL OR typeof(grid_lab)!='blob' OR length(grid_lab)!=768", 0)) ||
         !validateStoredPaths())
     {
         return incompatible("invalid feature rows or stored paths");

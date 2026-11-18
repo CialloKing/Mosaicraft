@@ -14,6 +14,21 @@ namespace mosaicraft
 {
 namespace
 {
+// 可直接拼接的严格子集；每个分量必须从字母或数字开始，拒绝空分量和 ..。
+bool canonicalRelative(const std::string &value)
+{
+    bool first = true;
+    for (unsigned char c : value)
+    {
+        const bool letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+        if (!letter && (first || (c != '_' && c != '-' && c != '.' && c != '/')))
+        {
+            return false;
+        }
+        first = c == '/';
+    }
+    return !first;
+}
 bool equalComponent(const std::filesystem::path &a, const std::filesystem::path &b)
 {
 #ifdef _WIN32
@@ -41,6 +56,10 @@ LibraryPaths::LibraryPaths(const std::string &database) : m_root(u8path(database
 bool LibraryPaths::relative(const std::string &value)
 {
     if (value.empty())
+    {
+        return true;
+    }
+    if (MOSAICRAFT_TRIAL_LIBRARY_PATHS && canonicalRelative(value))
     {
         return true;
     }
@@ -111,18 +130,7 @@ std::string LibraryPaths::resolve(const std::string &value) const
     if (MOSAICRAFT_TRIAL_LIBRARY_PATHS)
     {
         // 只走已能证明是规范相对路径的 ASCII 子集；其他输入保留平台原有校验和规范化。
-        bool simple = true, first = true;
-        for (unsigned char c : value)
-        {
-            const bool letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
-            if (!letter && (first || (c != '_' && c != '-' && c != '.' && c != '/')))
-            {
-                simple = false;
-                break;
-            }
-            first = c == '/';
-        }
-        if (simple && !first)
+        if (canonicalRelative(value))
         {
             std::string result = m_prefix + value;
 #ifdef _WIN32
