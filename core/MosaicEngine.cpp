@@ -1358,11 +1358,15 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 options.workers = cfg.threads;
                 options.orderedGrid = MOSAICRAFT_TRIAL_CUDA_ORDERED_GRID && fastScore && !m_previewWorkspace;
                 options.sharedWorkers = shareWorkers ? &featureWorkers : nullptr;
-                if (MOSAICRAFT_TRIAL_CUDA_TARGET && fastScore && !m_previewWorkspace && !m_preview &&
+                // 仅将正式配对覆盖的 Ada 模板用于普通单图；不向小图、其他架构或模板外推。
+                const bool largeTarget = preflight.major == 8 && preflight.minor == 9 &&
+                    cfg.outputMode == OutputMode::Image && !cfg.analyze && !cfg.adaptiveWeights &&
+                    featW == 180 && featH == 320 && cfg.tileW == 9 && cfg.tileH == 16 && totalTiles >= 14400;
+                if ((MOSAICRAFT_TRIAL_CUDA_TARGET || largeTarget) && fastScore && !m_previewWorkspace && !m_preview &&
                     !m_selectionOptions.expand &&
                     cfg.tileW <= featW && cfg.tileH <= featH)
                 {
-                    options.deviceCanny = MOSAICRAFT_TRIAL_CUDA_CANNY;
+                    options.deviceCanny = largeTarget || MOSAICRAFT_TRIAL_CUDA_CANNY;
                     options.target = target.data;
                     options.targetStep = target.step;
                     options.cols = target.cols;
@@ -1376,15 +1380,28 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 options.downloadLbp = cfg.analyze || cfg.adaptiveWeights || cacheTileFeatures;
                 options.hostBudget = hostBudget - hostRows - scratch - scoreHost;
                 options.deviceBudget = deviceBudget - scoreRowBytes - expansionDeviceReserve;
-                pipeline = workspace->preparePipeline(options, cfg.benchmark ? &metrics.featureTimings : nullptr);
-                if (pipeline)
+                auto prepare = [&]()
                 {
+                    if (!workspace->preparePipeline(options, cfg.benchmark ? &metrics.featureTimings : nullptr) ||
+                        (largeTarget && options.target && workspace->needsHostPixels()))
+                    {
+                        return false;
+                    }
                     const auto allocationStart = Clock::now();
-                    pipeline = scoreWorkspace->preparePipeline(static_cast<int>(batchRows), N, scoreHost,
-                                                                 workspace->residentBytes(),
-                                                                 deviceBudget - expansionDeviceReserve,
-                                                                 cuda::PipelineFault::None, fastScore);
+                    const bool ready = scoreWorkspace->preparePipeline(static_cast<int>(batchRows), N, scoreHost,
+                        workspace->residentBytes(), deviceBudget - expansionDeviceReserve,
+                        cuda::PipelineFault::None, fastScore);
                     metrics.scoreTimings.allocationMs += Ms(Clock::now() - allocationStart).count();
+                    return ready;
+                };
+                pipeline = prepare();
+                if (!pipeline && largeTarget && options.target)
+                {
+                    // 尚未传目标或启动内核。先还原旧同设备流水线，不把主机 Canny + 设备缩放作为默认。
+                    scoreWorkspace->resetPipeline();
+                    options.target = nullptr;
+                    options.deviceCanny = false;
+                    pipeline = prepare();
                 }
                 if (!pipeline)
                 {
