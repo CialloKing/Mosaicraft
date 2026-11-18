@@ -59,7 +59,8 @@ def main():
     args = parser.parse_args()
     previous = json.loads((args.prepared_run / 'report.json').read_bytes())
     snapshot = Path(previous.get('library_snapshot', args.prepared_run / 'library/snapshot.db')).resolve()
-    if not previous['complete'] or digest(snapshot) != previous['snapshot_sha256']:
+    snapshot_sha = digest(snapshot)
+    if not previous['complete'] or snapshot_sha != previous.get('snapshot_sha256', snapshot_sha):
         raise ValueError('need an unchanged, completed private snapshot')
     folder = args.output.resolve()
     folder.mkdir(parents=True, exist_ok=False)
@@ -113,7 +114,8 @@ def main():
     if digest(snapshot)!=previous['snapshot_sha256']:
         raise RuntimeError('private source snapshot changed')
     save(folder/'gate.json',dict(passed=all(row['passed'] for row in groups), groups=groups,
-        snapshot_sha256=digest(snapshot),match_sha256=digest(args.match),quality_sha256=digest(args.quality)))
+        snapshot_sha256=digest(snapshot),prepared_report_sha256=digest(args.prepared_run/'report.json'),
+        match_sha256=digest(args.match),quality_sha256=digest(args.quality)))
     return 0 if all(row['passed'] for row in groups) else 2
 
 
