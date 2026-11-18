@@ -85,7 +85,8 @@ def main():
                             resourceMonitor=False,analyze=False,generatePreview=False,colorAdjust=False,format='png')
                         req, summary = folder/(tag+'.request.json'), folder/(tag+'.summary.json')
                         save(req, request)
-                        run([args.match,req,'--match-only','--seed',seed,'--no-detail','--summary',summary],folder/(tag+'.log'))
+                        flags = ['--allow-unmatched'] if case['id'] == 'scarce' else []
+                        run([args.match,req,'--match-only',*flags,'--seed',seed,'--no-detail','--summary',summary],folder/(tag+'.log'))
                         actual = json.loads(summary.read_bytes())
                         scorer = 'cpu' if mode=='compatible' and backend in ('metal','vulkan') else backend
                         # match-only 的 failed 是未匹配格数，不是退出状态；稀缺场景由逐种子覆盖率门槛验收。

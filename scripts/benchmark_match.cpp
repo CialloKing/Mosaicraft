@@ -18,7 +18,7 @@ int main(int argc, char **argv)
     if (argc < 2)
     {
         std::cerr << "usage: benchmark_match <request.json> [small|indices|small-indices]"
-                     " [--seed uint32] [--selections] [--match-only] [--batch-tiles count]"
+                     " [--seed uint32] [--selections] [--match-only [--allow-unmatched]] [--batch-tiles count]"
                      " [--strategy L|Q|D|QD|QDX] [--epsilon fraction] [--diagnostics rows.json]"
                      " [--summary output.json] [--no-detail]\n";
         return 1;
@@ -27,7 +27,7 @@ int main(int argc, char **argv)
     std::string strategy = "L", diagnosticsPath;
     SelectionOptions selectionOptions;
     bool fixedSeed = false, capture = false;
-    bool matchOnly = false, detailed = true;
+    bool matchOnly = false, allowUnmatched = false, detailed = true;
     size_t batchTiles = 0;
     uint32_t seed = 0;
     for (int i = 2; i < argc; ++i)
@@ -60,6 +60,10 @@ int main(int argc, char **argv)
         {
             matchOnly = true;
             capture = true;
+        }
+        else if (argument == "--allow-unmatched")
+        {
+            allowUnmatched = true;
         }
         else if (argument == "--batch-tiles" && i + 1 < argc)
         {
@@ -105,6 +109,11 @@ int main(int argc, char **argv)
             return 1;
         }
     }
+    if (allowUnmatched && !matchOnly)
+    {
+        std::cerr << "--allow-unmatched requires --match-only\n";
+        return 1;
+    }
     std::ifstream input(u8path(argv[1]));
     const std::string body((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     MosaicRequest request;
@@ -145,7 +154,13 @@ int main(int argc, char **argv)
         TaskResourceMonitor monitor(runtime, request.resourceMonitor);
         if (!engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config, runtime))
         {
-            return 1;
+            // 仅稀缺目标的质量验收可接受完整的部分匹配网格，不放行中止、设备错误或全空结果。
+            const auto state = runtime.snapshot();
+            if (!allowUnmatched || state.diagnostic.code != "no_candidates" || !state.matched || !state.failed ||
+                selected.size() != size_t(state.matched) + size_t(state.failed))
+            {
+                return 1;
+            }
         }
         monitor.stop();
         if (capture)
