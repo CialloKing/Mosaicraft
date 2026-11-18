@@ -282,7 +282,7 @@ option(MOSAICRAFT_TRIAL_BUILD_HASH "Hash new CPU library inputs in producer slot
 set_property(SOURCE core/BuildService.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     MOSAICRAFT_TRIAL_BUILD_AHEAD=$<BOOL:${MOSAICRAFT_TRIAL_BUILD_AHEAD}>
     MOSAICRAFT_TRIAL_BUILD_HASH=$<BOOL:${MOSAICRAFT_TRIAL_BUILD_HASH}>)
-option(MOSAICRAFT_TRIAL_HOT_ANN "Retain a validated ANN graph across Web UI jobs" OFF)
+option(MOSAICRAFT_TRIAL_HOT_ANN "Reuse validated read-only CPU/CUDA library data across Web UI jobs" ON)
 set_property(SOURCE core/JobManager.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     MOSAICRAFT_TRIAL_HOT_ANN=$<BOOL:${MOSAICRAFT_TRIAL_HOT_ANN}>)
 include(cmake/PortableCompute.cmake)

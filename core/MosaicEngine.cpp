@@ -1131,9 +1131,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             m_previewWorkspace->libraryPath == db.path() && m_previewWorkspace->libraryVersion == libraryVersion;
         auto annIndex = reuseIndex ? m_previewWorkspace->index : std::make_shared<FeatureIndex>();
         const std::string annPath = featDirCache.empty() ? "lib.ann196" : featDirCache + "/lib.ann196";
+        // Only CPU and CUDA sessions were qualified; portable backends keep their original preview behavior.
+        auto *indexSession = portableRequested ? nullptr : m_indexSession;
         bool retainIndex = false, hotIndex = false;
         size_t readerBudget = m_limits.featureBytes;
-        if (m_indexSession)
+        if (indexSession)
         {
             std::error_code ec;
             const auto disk = std::filesystem::file_size(u8path(annPath), ec);
@@ -1144,17 +1146,17 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 // 图、访问表和标签映射的保守预留；剩余预算才能用作只读行缓存。
                 readerBudget -= std::min<uint64_t>(readerBudget, disk * 2 + 8 * 1024 * 1024);
             }
-            if (!retainIndex || m_indexSession->database != db.path() || m_indexSession->device != actualDevice)
+            if (!retainIndex || indexSession->database != db.path() || indexSession->device != actualDevice)
             {
-                *m_indexSession = {};
+                *indexSession = {};
             }
-            if (retainIndex && !reuseIndex && m_indexSession->index)
+            if (retainIndex && !reuseIndex && indexSession->index)
             {
-                annIndex = std::move(m_indexSession->index);
+                annIndex = std::move(indexSession->index);
             }
         }
         const auto indexStart = Clock::now();
-        bool loaded = (reuseIndex && !m_indexSession) || annIndex->load(annPath, FeatureIndex::kDimension, allRecords,
+        bool loaded = (reuseIndex && !indexSession) || annIndex->load(annPath, FeatureIndex::kDimension, allRecords,
                                                    retainIndex ? &hotIndex : nullptr);
         metrics.msANNLoad = Ms(Clock::now() - indexStart).count();
         if (!loaded)
@@ -1179,9 +1181,9 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 
         if (retainIndex)
         {
-            m_indexSession->database = db.path();
-            m_indexSession->device = actualDevice;
-            m_indexSession->index = annIndex;
+            indexSession->database = db.path();
+            indexSession->device = actualDevice;
+            indexSession->index = annIndex;
             runtime.metric("libraryIndexReused", hotIndex ? 1 : 0);
         }
         if (m_previewWorkspace)
@@ -1195,7 +1197,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             m_previewWorkspace->index = dbCount <= 100000 ? annIndex : nullptr;
             m_previewWorkspace->libraryPath = db.path();
             m_previewWorkspace->libraryVersion = libraryVersion;
-            runtime.metric("previewIndexReused", m_indexSession ? hotIndex : reuseIndex);
+            runtime.metric("previewIndexReused", indexSession ? hotIndex : reuseIndex);
         }
         runtime.stage("matching");
         if (m_preview)
@@ -1371,7 +1373,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             const auto readStart = Clock::now();
             featureReader = std::make_unique<FeaturePack::Reader>(templateCuda ? std::string() : featDirCache, allRecords,
                 readerBudget, templateCuda ? nullptr : &runtime,
-                retainIndex && !templateCuda ? &m_indexSession->features : nullptr);
+                retainIndex && !templateCuda ? &indexSession->features : nullptr);
             if (cfg.benchmark)
             {
                 runtime.metric("featureReaderPrepareMs", Ms(Clock::now() - readStart).count());
