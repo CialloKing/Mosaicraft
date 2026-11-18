@@ -60,7 +60,7 @@ size_t scoreBytes(size_t count, int candidates, bool compactOnly)
 ScoreInput scoreLayout(uint8_t *start, int count, int candidates, bool compactOnly)
 {
     auto *cursor = start;
-    ScoreInput result;
+    ScoreInput result{};
     for (auto **field : {&result.l, &result.a, &result.b, &result.edge, &result.labW,
                          &result.gridW, &result.tinyW, &result.edgeW, &result.lbpW})
     {

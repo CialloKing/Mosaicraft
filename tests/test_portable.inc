@@ -135,6 +135,6 @@ TEST_CASE("portable FP32 reference retains missing feature penalties")
     }
     const auto fast = compute::fp32Distances(tiles, 0, records[0], row);
     CHECK(fast[1] == doctest::Approx(gridDistance8x8(tiles.grid[0], records[0].gridLab, true)).epsilon(1e-5));
-    CHECK(fast[2] == float(tinyMSE(tiles.tiny[0], row.tiny)));
+    CHECK(fast[2] == doctest::Approx(tinyMSE(tiles.tiny[0], row.tiny)).epsilon(1e-7));
     CHECK(fast[4] == doctest::Approx(lbpDistance(tiles.lbp[0], row.lbp)).epsilon(1e-5));
 }

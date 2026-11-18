@@ -644,7 +644,8 @@ TEST_CASE("compatible CUDA scores are exact and failures never publish partial r
     CHECK(scoring.deviceBytes() + 256 * candidates * sizeof(float) == wideBytes);
     scoring.uploadLibrary(records, reader);
     GpuTimings fastTiming;
-    CHECK_THROWS_AS(scoring.score(tiles, 1, 0, compact.data()), std::invalid_argument);
+    std::vector<double> incompatible(candidates);
+    CHECK_THROWS_AS(scoring.score(tiles, 1, 0, incompatible.data()), std::invalid_argument);
     scoring.score(tiles, 1, 0, nullptr, &fastTiming, compact.data());
     CHECK(fastTiming.downloadBytes == candidates * sizeof(float));
     for (int i = 0; i < 67; ++i)
