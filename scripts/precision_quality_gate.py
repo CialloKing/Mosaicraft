@@ -92,17 +92,24 @@ def main():
                         # match-only 的 failed 是未匹配格数，不是退出状态；稀缺场景由逐种子覆盖率门槛验收。
                         if (actual['failed'] and case['id'] != 'scarce') or actual['warnings'] or (
                                 actual['device'] != device or scorer not in actual['score_backend'] or
-                                actual['score_mode'] != mode or backend not in actual['feature_backend']):
+                                actual['score_mode'] != mode or not actual['kernel'] or backend not in actual['feature_backend']):
                             raise ValueError(f'{tag}: unexpected execution path')
                         selection = Path(str(output)+'.indices.bin')
-                        study['runs'].append(dict(id=tag,case=case['id'],selection=str(selection),selection_sha256=digest(selection)))
+                        study['runs'].append(dict(id=tag,case=case['id'],selection=str(selection),selection_sha256=digest(selection),
+                            matched=actual['matched'], missing=actual['failed'], kernel=actual['kernel']))
                         groups[group][mode].append(tag)
                 print(group,flush=True)
     save(folder/'study.json',study)
     run([args.quality,folder/'study.json',folder/'evaluation.json'],folder/'evaluation.log')
     evaluation=json.loads((folder/'evaluation.json').read_bytes())
-    assert evaluation['complete'] and len(evaluation['runs'])==len(study['runs'])
-    groups=assess({r['id']:r['quality'] for r in evaluation['runs']},groups)
+    rows = {r['id']: r['quality'] for r in evaluation['runs']}
+    if not evaluation['complete'] or len(rows) != len(study['runs']):
+        raise ValueError('incomplete quality evaluation')
+    for expected in study['runs']:
+        actual = rows[expected['id']]
+        if any(actual[key] != expected[key] for key in ('matched', 'missing')):
+            raise ValueError(f"{expected['id']}: captured grid does not match reported coverage")
+    groups = assess(rows, groups)
     if digest(snapshot)!=previous['snapshot_sha256']:
         raise RuntimeError('private source snapshot changed')
     save(folder/'gate.json',dict(passed=all(row['passed'] for row in groups), groups=groups,

@@ -87,6 +87,7 @@ def summarize(report):
                     # Pair within rounds so slow/fast periods affect both sides.
                     boot = [statistics.median(rng.choices(ratios, k=len(ratios))) for _ in range(10000)]
                     comparison[metric] = dict(median_ratio=statistics.median(ratios),
+                        p10=percentile(ratios, 0.1), p90=percentile(ratios, 0.9),
                         bootstrap95=[percentile(boot, 0.025), percentile(boot, 0.975)],
                         faster_rounds=sum(value < 1 for value in ratios), rounds=len(ratios))
                 summary["relative_to_reference"] = comparison
@@ -239,9 +240,9 @@ def main():
                             index < 0 or index >= count for index in selected) or not output.is_file():
                         raise RuntimeError(f"{tag}: incomplete output, warning or invalid selections")
                     backend = variant["backend"]
-                    expected_score = "cpu" if backend == "cpu" or (backend == "vulkan" and variant["scoreMode"] == "compatible") else backend
+                    expected_score = "cpu" if backend == "cpu" or (backend in ("vulkan", "metal") and variant["scoreMode"] == "compatible") else backend
                     if (backend not in summary["feature_backend"] or expected_score not in summary["score_backend"] or
-                            summary["device"] != variant["device"]):
+                            summary["device"] != variant["device"] or summary["score_mode"] != variant["scoreMode"] or not summary["kernel"]):
                         raise RuntimeError(f"{tag}: requested backend did not run")
                     key = (case["id"], variant["id"])
                     hashes = (digest(selection_path), digest(output))
@@ -253,7 +254,7 @@ def main():
                     report["samples"].append(dict(phase=phase, round=iteration, position=position,
                         case=case["id"], variant=variant["id"], metrics=dict(summary["metrics"], processWallMs=wall),
                         feature_backend=summary["feature_backend"], score_backend=summary["score_backend"],
-                        device=summary["device"], selected_count=len(selected), selection_sha256=hashes[0],
+                        device=summary["device"], score_mode=summary["score_mode"], kernel=summary["kernel"], selected_count=len(selected), selection_sha256=hashes[0],
                         output_sha256=hashes[1], log=tag + ".log", output_varied=varied, different_from_first=difference))
                     save(root / "report.json", report)
                     print(f"{phase} {iteration + 1}/{rounds} {case['id']} {variant['id']}: "
