@@ -264,6 +264,9 @@ set_property(SOURCE core/MosaicEngine.cpp APPEND PROPERTY COMPILE_DEFINITIONS
 option(MOSAICRAFT_TRIAL_STREAM "Overlap explicit-budget JPEG/PNG encoding and placement" OFF)
 set_property(SOURCE core/MosaicOutput.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     MOSAICRAFT_TRIAL_STREAM=$<BOOL:${MOSAICRAFT_TRIAL_STREAM}>)
+option(MOSAICRAFT_TRIAL_LIBRARY_PATHS "Reuse the validated root for simple relative library paths" OFF)
+set_property(SOURCE core/LibraryPaths.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+    MOSAICRAFT_TRIAL_LIBRARY_PATHS=$<BOOL:${MOSAICRAFT_TRIAL_LIBRARY_PATHS}>)
 include(cmake/PortableCompute.cmake)
 
 target_compile_definitions(mosaicraft_core PRIVATE

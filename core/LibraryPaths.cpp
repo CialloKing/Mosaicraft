@@ -1,5 +1,6 @@
 #include "LibraryPaths.h"
 #include "UnicodeIO.h"
+#include <algorithm>
 #include <cctype>
 #include <stdexcept>
 #ifdef _WIN32
@@ -32,6 +33,10 @@ LibraryPaths::LibraryPaths(const std::string &database) : m_root(u8path(database
 {
     // macOS 的 /var 与 /private/var 等别名必须在缓存库根时统一，避免误判库内资源。
     m_root = std::filesystem::weakly_canonical(std::filesystem::absolute(m_root));
+    if (MOSAICRAFT_TRIAL_LIBRARY_PATHS)
+    {
+        m_prefix = pathToUtf8(m_root / std::filesystem::path());
+    }
 }
 bool LibraryPaths::relative(const std::string &value)
 {
@@ -102,6 +107,29 @@ std::string LibraryPaths::resolve(const std::string &value) const
     if (value.empty())
     {
         return {};
+    }
+    if (MOSAICRAFT_TRIAL_LIBRARY_PATHS)
+    {
+        // 只走已能证明是规范相对路径的 ASCII 子集；其他输入保留平台原有校验和规范化。
+        bool simple = true, first = true;
+        for (unsigned char c : value)
+        {
+            const bool letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+            if (!letter && (first || (c != '_' && c != '-' && c != '.' && c != '/')))
+            {
+                simple = false;
+                break;
+            }
+            first = c == '/';
+        }
+        if (simple && !first)
+        {
+            std::string result = m_prefix + value;
+#ifdef _WIN32
+            std::replace(result.begin() + m_prefix.size(), result.end(), '/', '\\');
+#endif
+            return result;
+        }
     }
     if (!relative(value))
     {

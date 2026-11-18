@@ -10,6 +10,7 @@ inline constexpr const char *portablePathFormat = "db-relative-v1";
 class LibraryPaths
 {
     std::filesystem::path m_root;
+    std::string m_prefix;
   public:
     explicit LibraryPaths(const std::string &database);
     std::string store(const std::string &path) const;
