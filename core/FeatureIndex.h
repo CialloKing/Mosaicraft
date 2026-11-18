@@ -230,21 +230,7 @@ class FeatureIndex
     std::vector<int> query(const float *tileVec, int k) const
     {
         std::vector<int> result;
-        if (!m_index || !tileVec || k <= 0 || m_count <= 0)
-        {
-            return result;
-        }
-        k = std::min(k, m_count);
-
-        std::priority_queue<std::pair<float, hnswlib::labeltype>> pq;
-        try
-        {
-            pq = m_index->searchKnn(tileVec, static_cast<size_t>(k));
-        }
-        catch (...)
-        {
-            return result;
-        }
+        auto pq = nearest(tileVec, k);
         while (!pq.empty())
         {
             result.push_back(static_cast<int>(pq.top().second));
@@ -284,7 +270,7 @@ class FeatureIndex
         return indices;
     }
 
-    void queryBatch(const std::vector<float> &queries, int k, std::vector<int> &indices, WorkerPool &pool) const
+    void queryBatch(const std::vector<float> &queries, int k, std::vector<int> &indices, WorkerPool &pool, bool direct = false) const
     {
         if (k <= 0 || queries.size() % kDimension != 0)
         {
@@ -299,6 +285,18 @@ class FeatureIndex
         pool.run(count,
                  [&](size_t i)
                  {
+                     if (direct)
+                     {
+                         auto heap = nearest(queries.data() + i * kDimension, k);
+                         auto *end = indices.data() + i * k + heap.size();
+                         // 最大堆倒序落入实际命中前缀；库小于 k 时尾部仍是 -1。
+                         while (!heap.empty())
+                         {
+                             *--end = idToAllRecordsIndex(static_cast<int>(heap.top().second));
+                             heap.pop();
+                         }
+                         return;
+                     }
                      auto ids = query(queries.data() + i * kDimension, k);
                      for (size_t j = 0; j < ids.size(); ++j)
                      {
@@ -317,6 +315,23 @@ class FeatureIndex
     }
 
   private:
+    using Neighbors = std::priority_queue<std::pair<float, hnswlib::labeltype>>;
+    Neighbors nearest(const float *tileVec, int k) const
+    {
+        if (m_index && tileVec && k > 0 && m_count > 0)
+        {
+            try
+            {
+                return m_index->searchKnn(tileVec, static_cast<size_t>(std::min(k, m_count)));
+            }
+            catch (...)
+            {
+                // 与原单行接口一致，查询失败留空，由调用方报告缺少候选。
+            }
+        }
+        return {};
+    }
+
     static uint64_t appendHash(uint64_t hash, uint32_t value)
     {
         for (unsigned shift = 0; shift < 32; shift += 8)

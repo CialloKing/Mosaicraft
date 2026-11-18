@@ -1934,6 +1934,13 @@ TEST_CASE("ANN cache validates features and parallel queries preserve ordering")
         queries.insert(queries.end(), query.begin(), query.end());
     }
     CHECK(index.queryBatch(queries, 8, 1) == index.queryBatch(queries, 8, 4));
+    WorkerPool pool(2);
+    for (int k : {1, 8, 40})
+    {
+        std::vector<int> direct;
+        index.queryBatch(queries, k, direct, pool, true);
+        CHECK(direct == index.queryBatch(queries, k, 1));
+    }
     const auto directory =
         std::filesystem::temp_directory_path() /
         std::filesystem::u8path("mosaicraft-ann-中文-" +

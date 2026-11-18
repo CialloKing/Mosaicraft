@@ -1750,7 +1750,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     std::copy(tileVector.begin(), tileVector.end(),
                               buffers.queries.begin() + static_cast<size_t>(local) * FeatureIndex::kDimension);
                 }
-                annIndex->queryBatch(buffers.queries, N, allIndices, queryWorkers);
+                annIndex->queryBatch(buffers.queries, N, allIndices, queryWorkers, MOSAICRAFT_TRIAL_ANN_ROWS);
                 if (!newCandidates.empty())
                 {
                     // 亮度阈值会变，缓存必须在原地过滤之前保存。
