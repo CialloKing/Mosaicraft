@@ -281,7 +281,8 @@ class FeatureIndex
         return indices;
     }
 
-    void queryBatch(const std::vector<float> &queries, int k, std::vector<int> &indices, WorkerPool &pool, bool direct = false) const
+    void queryBatch(const std::vector<float> &queries, int k, std::vector<int> &indices, WorkerPool &pool, bool direct = false,
+                    const std::vector<int> &owners = {}) const
     {
         if (k <= 0 || queries.size() % kDimension != 0)
         {
@@ -292,10 +293,18 @@ class FeatureIndex
         {
             throw std::overflow_error("ANN batch size overflow");
         }
+        if (!owners.empty() && owners.size() != count)
+        {
+            throw std::invalid_argument("invalid ANN owner rows");
+        }
         indices.assign(count * k, -1);
         pool.run(count,
                  [&](size_t i)
                  {
+                     if (!owners.empty() && owners[i] != static_cast<int>(i))
+                     {
+                         return;
+                     }
                      if (direct)
                      {
                          auto heap = nearest(queries.data() + i * kDimension, k);
@@ -314,6 +323,19 @@ class FeatureIndex
                          indices[i * k + j] = idToAllRecordsIndex(ids[j]);
                      }
                  });
+        // 查询线程全部完成后复制候选；每个重复格仍独立过滤、评分、惩罚和消费随机数。
+        for (size_t i = 0; i < owners.size(); ++i)
+        {
+            const size_t owner = static_cast<size_t>(owners[i]);
+            if (owner != i)
+            {
+                if (owner >= i || owners[owner] != static_cast<int>(owner))
+                {
+                    throw std::invalid_argument("invalid ANN representative");
+                }
+                std::copy_n(indices.data() + owner * k, k, indices.data() + i * k);
+            }
+        }
     }
 
     int dimension() const

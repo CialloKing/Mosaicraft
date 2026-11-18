@@ -13,7 +13,7 @@ struct CpuTrial
 {
     unsigned featureGrain = 1, scoreGrain = 1, slots = 65536, ways = 1;
     int prefetch = -1, share = -1;
-    bool planar = false;
+    bool planar = false, reuseTiles = false;
 
     void read(MatchingLimits &limits, RuntimeContext &runtime)
     {
@@ -54,6 +54,7 @@ struct CpuTrial
         featureGrain = get("MOSAICRAFT_BENCH_FEATURE_GRAIN", "feature_grain", 1, {1, 4, 8, 16});
         scoreGrain = get("MOSAICRAFT_BENCH_SCORE_GRAIN", "score_grain", 1, {1, 4, 8, 16});
         slots = get("MOSAICRAFT_BENCH_SLOTS", "slots", 65536, {65536, 262144, 1048576});
+        reuseTiles = get("MOSAICRAFT_BENCH_REUSE_TILES", "reuse_tiles", 0, {0, 1}) != 0;
         planar = get("MOSAICRAFT_BENCH_PLANAR", "planar", 0, {0, 1}) != 0;
         ways = get("MOSAICRAFT_BENCH_WAYS", "ways", 1, {1, 2});
         prefetch = get("MOSAICRAFT_BENCH_PREFETCH", "prefetch", -1, {0, 1});

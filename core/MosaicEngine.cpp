@@ -12,6 +12,7 @@
 #include "FeaturePack.h"
 #include "FeatureUtils.h"
 #include "TileFeatures.h"
+#include "IdenticalTiles.h"
 #include "MatchInspection.h"
 #include "MatchingScore.h"
 #include "MosaicMetrics.h"
@@ -897,6 +898,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     std::unique_ptr<detail::SelectionPolicy> selection;
     // 超出原有固定缓存的部分先从匹配预算扣除，再决定可用批次大小。
     size_t selectionBytes = GridDuplicateCache::extraBytes(trialOptions.slots);
+    if (trialOptions.reuseTiles)
+    {
+        selectionBytes += (256 + std::min<size_t>(totalTiles, limits.maxTiles)) * sizeof(int);
+    }
     if (m_preview && static_cast<size_t>(totalTiles) <= (16ULL * 1024 * 1024) / sizeof(MosaicSelection::PreviewDecision))
     {
         m_preview->decisions.resize(totalTiles);
@@ -1629,6 +1634,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
         const bool parallelBase = backends.scoring == ScoreBackend::Cpu && !selection && cfg.threads != 1 &&
                                   batchRows > 1 && fitsCpuScores(batchRows);
+        size_t identicalHits = 0;
+        double identicalProbeMs = 0;
         auto prepare = [&](int first, int count, MatchingBuffers &buffers)
         {
             if (canceled())
@@ -1660,6 +1667,15 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             auto &tileLbpW = buffers.lbpW;
             auto &tileGrid4x4 = buffers.grid4;
             const auto featureStart = Clock::now();
+            std::vector<int> owners;
+            if (trialOptions.reuseTiles)
+            {
+                identicalHits += detail::identicalTileOwners(target, {cfg.tileW, cfg.tileH}, tilesX, first, count, owners);
+                if (cfg.benchmark)
+                {
+                    identicalProbeMs += Ms(Clock::now() - featureStart).count();
+                }
+            }
             if (reuseTileFeatures)
             {
                 for (int local = 0; local < count; ++local)
@@ -1767,6 +1783,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 featureWorkers.runChunks(count, trialOptions.featureGrain,
                                    [&](size_t local)
                                    {
+                                       if (!owners.empty() && owners[local] != static_cast<int>(local))
+                                       {
+                                           return;
+                                       }
                                        using Ns = std::chrono::nanoseconds;
                                        const int ti = first + static_cast<int>(local);
                                        int ty = ti / tilesX, tx = ti % tilesX;
@@ -1849,6 +1869,20 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                        }
                                    });
             }
+            for (size_t i = 0; i < owners.size(); ++i)
+            {
+                const size_t from = owners[i];
+                if (from != i)
+                {
+                    allTL[i] = allTL[from];
+                    allTA[i] = allTA[from];
+                    allTB[i] = allTB[from];
+                    allEdge[i] = allEdge[from];
+                    std::copy_n(allGrid[from].data(), 192, allGrid[i].data());
+                    std::copy_n(allTiny[from].data(), 256, allTiny[i].data());
+                    std::copy_n(allLBP[from].data(), 256, allLBP[i].data());
+                }
+            }
             if (trialOptions.planar)
             {
                 buffers.planar.resize(count);
@@ -1900,7 +1934,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         std::copy(tileVector.begin(), tileVector.end(), row);
                     }
                 }
-                annIndex->queryBatch(buffers.queries, N, allIndices, queryWorkers, MOSAICRAFT_TRIAL_ANN_ROWS);
+                annIndex->queryBatch(buffers.queries, N, allIndices, queryWorkers, MOSAICRAFT_TRIAL_ANN_ROWS, owners);
                 if (!newCandidates.empty())
                 {
                     // 亮度阈值会变，缓存必须在原地过滤之前保存。
@@ -2683,6 +2717,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             runtime.metric("gpuDownloadBytes", double(features.downloadBytes + scoring.downloadBytes));
         }
         runtime.metric("wideHistoryRows", static_cast<double>(wideHistoryRows));
+        if (cfg.benchmark && trialOptions.reuseTiles)
+        {
+            runtime.metric("identicalTileHits", identicalHits);
+            runtime.metric("identicalTileProbeMs", identicalProbeMs);
+        }
         if (featureReader)
         {
             metrics.featureReadStats = featureReader->stats();
