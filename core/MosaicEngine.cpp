@@ -1441,6 +1441,15 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             runtime.metric("previewCandidatesReused", reuseCandidates ? 1 : 0);
         }
+        const bool fastScore = cfg.scoreMode == ScoreMode::Fast && !selection && backends.scoring == ScoreBackend::Cpu;
+        size_t wideHistoryRows = 0;
+        const auto fastDistance = [&](const MatchingBuffers &batch, size_t tile, const ImageRecord &record,
+                                      const FeaturePack::Reader::Row &features)
+        {
+            const auto d = compute::fp32Distances(batch, tile, record, features);
+            return float(batch.labW[tile]) * d[0] + float(batch.gridW[tile]) * d[1] +
+                   float(batch.tinyW[tile]) * d[2] + float(batch.edgeW[tile]) * d[3] + float(batch.lbpW[tile]) * d[4];
+        };
         const size_t cpuWorkspace = scratch + compatible.hostBytes() + portableFeatures.hostBytes() +
                                     (pruneGrid ? size_t(rankLimit) * sizeof(double) : 0);
         const auto fitsCpuScores = [&](size_t rows)
@@ -1465,7 +1474,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 return runtime.fail("preview_canceled", "preview canceled");
             }
             buffers.resize(count, featBytes, N, templateCuda, cfg.analyze, pipeline);
-            if (backends.scoring == ScoreBackend::CompatibleCuda || portableScoreReady || parallelBase)
+            if (fastScore && parallelBase)
+            {
+                buffers.fastScores.resize(size_t(count) * N);
+            }
+            else if (backends.scoring == ScoreBackend::CompatibleCuda || portableScoreReady || parallelBase)
             {
                 buffers.scores.resize(size_t(count) * N);
             }
@@ -2230,7 +2243,14 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                 missing.store(true, std::memory_order_relaxed);
                                 return;
                             }
-                            allScores[pos] = cpuBaseScore(buffers, local, allRecords[index], *row, cfg.usePenalty);
+                            if (fastScore)
+                            {
+                                buffers.fastScores[pos] = fastDistance(buffers, local, allRecords[index], *row);
+                            }
+                            else
+                            {
+                                allScores[pos] = cpuBaseScore(buffers, local, allRecords[index], *row, cfg.usePenalty);
+                            }
                         }
                     });
                     preparedScores = !missing.load(std::memory_order_relaxed);
@@ -2261,6 +2281,12 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     }
                     rankBound.reset();
                     scored.clear();
+                    std::optional<RowHistory> history;
+                    if (fastScore)
+                    {
+                        history.emplace(allIndices.data() + size_t(local) * N, N, allRecords, cfg.usePenalty);
+                        wideHistoryRows += history->wide;
+                    }
                     const auto scoreStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
                     for (int j = 0; j < N; ++j)
                     {
@@ -2271,8 +2297,18 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         }
                         const auto &r = allRecords[li];
                         const size_t candidate = static_cast<size_t>(local) * N + j;
-                        double s = preparedScores ? allScores[candidate]
-                            : cpuBaseScore(buffers, local, r, featureReader->get(li), cfg.usePenalty);
+                        double s = 0;
+                        if (fastScore)
+                        {
+                            const float distance = preparedScores ? buffers.fastScores[candidate]
+                                : fastDistance(buffers, local, r, featureReader->get(li));
+                            s = history->combine(distance, r.useCount, cfg.usePenalty);
+                        }
+                        else
+                        {
+                            s = preparedScores ? allScores[candidate]
+                                : cpuBaseScore(buffers, local, r, featureReader->get(li), cfg.usePenalty);
+                        }
                         if (newScores)
                         {
                             newScores->values[scoreOffset + candidate] = s;
@@ -2393,6 +2429,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             runtime.metric("gpuUploadBytes", double(features.uploadBytes + scoring.uploadBytes));
             runtime.metric("gpuDownloadBytes", double(features.downloadBytes + scoring.downloadBytes));
         }
+        runtime.metric("wideHistoryRows", static_cast<double>(wideHistoryRows));
         if (featureReader)
         {
             metrics.featureReadStats = featureReader->stats();

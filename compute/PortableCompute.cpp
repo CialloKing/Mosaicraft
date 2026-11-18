@@ -65,13 +65,15 @@ std::array<float, 5> fp32Distances(const MatchingBuffers &tiles, size_t tile, co
         result[1] += std::sqrt(l * l + a * a + b * b) * float(weights[cell]);
     }
     result[1] = result[1] / 64.0f / 100.0f;
+    // 256 项最大平方和小于 2^24，整数归约精确，也便于编译器向量化。
+    unsigned tinySum = 0;
     for (size_t bin = 0; bin < 256; ++bin)
     {
-        const float diff = float(tiles.tiny[tile][bin]) - float(payload.tiny[bin]);
-        result[2] += diff * diff;
+        const int diff = int(tiles.tiny[tile][bin]) - int(payload.tiny[bin]);
+        tinySum += unsigned(diff * diff);
         result[4] += std::abs(tiles.lbp[tile][bin] - payload.lbp[bin]);
     }
-    result[2] = payload.tinyValid ? result[2] / (256.0f * 255.0f * 255.0f) : 1.0f;
+    result[2] = payload.tinyValid ? float(tinySum) / (256.0f * 255.0f * 255.0f) : 1.0f;
     result[4] = payload.lbpValid ? result[4] / 2.0f : 1.0f;
     return result;
 }

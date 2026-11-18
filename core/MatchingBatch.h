@@ -79,7 +79,7 @@ struct MatchingBuffers
     FeatureMatrix<float, 192> grid{0};
     FeatureMatrix<uint8_t, 256> tiny{0};
     FeatureMatrix<float, 256> lbp{0};
-    std::vector<float> queries;
+    std::vector<float> queries, fastScores;
     std::vector<int> indices;
     std::vector<uint8_t> images;
     std::vector<std::vector<float>> grid4;
@@ -125,7 +125,7 @@ struct MatchingBuffers
         {
             result += values->capacity() * sizeof(double);
         }
-        result += queries.capacity() * sizeof(float) + indices.capacity() * sizeof(int);
+        result += (queries.capacity() + fastScores.capacity()) * sizeof(float) + indices.capacity() * sizeof(int);
         result += grid4.capacity() * sizeof(std::vector<float>);
         for (const auto &row : grid4)
         {
