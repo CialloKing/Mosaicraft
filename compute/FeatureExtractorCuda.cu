@@ -814,8 +814,9 @@ int launchKernel(const uint8_t *h_images, int N, double *h_avgLAB, float *h_grid
 namespace
 {
 // 与 8 位线性缩放一样先做水平定点插值，坐标局限于本格，不能采样邻格。
+template <int w, int h>
 __global__ void resizeTileInput(const uint8_t *src, uint8_t *dst, int stride, int tilesX, int tileW, int tileH,
-                                int w, int h, int first, int stripeY)
+                                double scaleX, double scaleY, int first, int stripeY)
 {
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= w * h)
@@ -823,8 +824,8 @@ __global__ void resizeTileInput(const uint8_t *src, uint8_t *dst, int stride, in
         return;
     }
     const int tile = first + blockIdx.y;
-    const float fx = static_cast<float>(((i % w) + 0.5) * (double(tileW) / w) - 0.5);
-    const float fy = static_cast<float>(((i / w) + 0.5) * (double(tileH) / h) - 0.5);
+    const float fx = static_cast<float>(((i % w) + 0.5) * scaleX - 0.5);
+    const float fy = static_cast<float>(((i / w) + 0.5) * scaleY - 0.5);
     const int x = __float2int_rd(fx), y = __float2int_rd(fy);
     const int x0 = max(0, min(x, tileW - 1)), x1 = max(0, min(x + 1, tileW - 1));
     const int y0 = max(0, min(y, tileH - 1)), y1 = max(0, min(y + 1, tileH - 1));
@@ -879,9 +880,10 @@ void extractPipelined(FeaturePipeline &p, int first, int count, double *lab, flo
     transfer.mark(1);
     if (p.stripeRows)
     {
-        resizeTileInput<<<dim3((W * H + 255) / 256, count), 256, 0, transfer.stream>>>(
+        // 模板行宽可化简像素下标；双精度比例每次启动只算一次。
+        resizeTileInput<W, H><<<dim3((W * H + 255) / 256, count), 256, 0, transfer.stream>>>(
             p.target.get(), p.images.get(), cfg.cols * 3, cfg.cols / cfg.tileW, cfg.tileW, cfg.tileH,
-            W, H, p.firstTile + first, stripeY);
+            double(cfg.tileW) / W, double(cfg.tileH) / H, p.firstTile + first, stripeY);
         requireCuda(cudaGetLastError());
     }
     featureKernel<W, H><<<count, W, 0, transfer.stream>>>(
