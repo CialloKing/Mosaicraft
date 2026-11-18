@@ -2,6 +2,7 @@
 import argparse
 import json
 import random
+import shutil
 import sqlite3
 import subprocess
 import time
@@ -94,9 +95,18 @@ def main():
                         if (not res['ok'] or res['warningCount'] or rt['matched'] != n or rt['failed'] or
                             rt['device'].split(':')[0] != a.backend or rt['scoreMode'] != 'fast'):
                             raise RuntimeError(tag+': incomplete or unexpected execution')
+                        if (rt['fallbackReason'] or a.backend not in rt['featureBackend'] or
+                                a.backend not in rt['scoreBackend'] or not rt['kernelVersion']):
+                            raise RuntimeError(tag+': selected device did not run both stages')
                         sha = digest(image)
+                        # 同种子未必同图；只在墙钟之外保存每种内容一次，下一轮不得覆盖异常样本。
+                        witness = out/'outputs'/(sha+'.png')
+                        if not witness.exists():
+                            witness.parent.mkdir(exist_ok=True)
+                            shutil.copyfile(image, witness)
                         sample = dict(phase=phase, round=r, case=str(n), variant=name, png_sha256=sha,
-                                      device=rt['device'], kernel=rt['kernelVersion'], metrics=dict(rt['metrics'],processWallMs=wall))
+                                      device=rt['device'], kernel=rt['kernelVersion'], feature_backend=rt['featureBackend'],
+                                      score_backend=rt['scoreBackend'], metrics=dict(rt['metrics'],processWallMs=wall))
                         data['samples'].append(sample); save(out/'report.json',data)
                         if name == 'baseline' and n not in hashes:
                             hashes[n] = sha
