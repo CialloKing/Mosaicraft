@@ -809,6 +809,9 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
             !cuda::hasTemplateFeatures(request.normalizeWidth, request.normalizeHeight);
         const bool portableReady = portableRequested && portableFeatures.prepare(request.normalizeWidth,
             request.normalizeHeight, static_cast<int>(batchLimit), pixelBudget, 256ULL * 1024 * 1024);
+        // 正式对照只证明新建 CPU 图库获益；追加及其他后端保持原先的哈希位置。
+        const bool producerHash = MOSAICRAFT_TRIAL_BUILD_HASH && !request.appendMode &&
+                                  !inputIsOutput && !compatibleRequested && !portableRequested;
         const bool compatibleReady = portableReady || (compatibleRequested &&
             compatible.prepare(request.normalizeWidth, request.normalizeHeight, static_cast<int>(batchLimit),
                                pixelBudget, true));
@@ -842,7 +845,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
             pending.records.resize(count);
             normalizers->start(count, [&, first](size_t i)
             {
-                if (normalizeOne(first + i, &pending.images[i]) && MOSAICRAFT_TRIAL_BUILD_HASH)
+                if (normalizeOne(first + i, &pending.images[i]) && producerHash)
                 {
                     pending.records[i].fileHash = hashMatForBuild(pending.images[i]);
                 }
@@ -862,7 +865,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
             // 生产者只写自己的槽，查重和提交仍由单写者按扫描顺序执行。
             const auto hashReady = [&](size_t i)
             {
-                if (MOSAICRAFT_TRIAL_BUILD_HASH && !images[i].empty())
+                if (producerHash && !images[i].empty())
                 {
                     records[i].fileHash = hashMatForBuild(images[i]);
                 }
@@ -928,7 +931,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                 }
                 const auto &outPath = outPaths[first + i];
                 auto &record = records[i];
-                if (!MOSAICRAFT_TRIAL_BUILD_HASH)
+                if (!producerHash)
                 {
                     record.fileHash = hashMatForBuild(images[i]);
                 }
