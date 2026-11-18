@@ -465,8 +465,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     }
     runtime.stage("reading_library");
     const auto dbOpenStart = Clock::now();
-    const bool readOnce = MOSAICRAFT_TRIAL_MATCH_READ && !m_preview && !m_renderSelection &&
-                          !portableRequested && cfg.outputMode == OutputMode::Image;
+    // 只有小图 CPU fast 单图的配对墙钟通过准入；不向 CUDA、预览或其他输出外推。
+    const bool readOnce = MOSAICRAFT_TRIAL_MATCH_READ && !cudaEnabled && !portableRequested &&
+                          cfg.scoreMode == ScoreMode::Fast && totalTiles <= 3600 && !m_preview &&
+                          !m_renderSelection && cfg.outputMode == OutputMode::Image;
     std::vector<ImageRecord> allRecords;
     double snapshotReadMs = 0;
     Database db(dbPath, m_preview ? Database::OpenMode::ReadOnly : Database::OpenMode::Existing,
@@ -483,6 +485,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 
     if (cfg.benchmark)
     {
+        runtime.metric("matchingSnapshotRead", readOnce ? 1 : 0);
         runtime.metric("databaseOpenValidateMs", Ms(Clock::now() - dbOpenStart).count() - snapshotReadMs);
     }
     if (m_indexSession && (m_indexSession->database != db.path() || m_indexSession->device != actualDevice))
