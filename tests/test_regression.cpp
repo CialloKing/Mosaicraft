@@ -638,6 +638,11 @@ TEST_CASE("compatible CUDA scores are exact and failures never publish partial r
         }
     }
     std::vector<float> compact(candidates);
+    const auto wideBytes = scoring.deviceBytes();
+    REQUIRE(scoring.prepare(256, candidates, 67, budget, budget, CompatibleScoreFault::None, nullptr, true));
+    REQUIRE(scoring.capacity() == 256);
+    CHECK(scoring.deviceBytes() + 256 * candidates * sizeof(float) == wideBytes);
+    scoring.uploadLibrary(records, reader);
     GpuTimings fastTiming;
     scoring.score(tiles, 1, 0, nullptr, &fastTiming, compact.data());
     CHECK(fastTiming.downloadBytes == candidates * sizeof(float));
