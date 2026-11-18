@@ -17,6 +17,7 @@ struct LibraryIndexSession
 {
     std::string database, device;
     std::shared_ptr<FeatureIndex> index;
+    FeaturePack::Reader::Session features;
 };
 
 class MosaicEngine

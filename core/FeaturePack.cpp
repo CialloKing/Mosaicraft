@@ -535,6 +535,8 @@ struct FeaturePack::Reader::Impl
     using ReadStats = Reader::ReadStats;
     const std::vector<ImageRecord> &records;
     size_t budget;
+    Session *session;
+    bool pristine = true;
     ReadStats statistics;
     RuntimeContext *runtime = nullptr;
     std::vector<bool> reportedMissing;
@@ -565,9 +567,38 @@ struct FeaturePack::Reader::Impl
 #endif
     }
 
-    Impl(const std::string &directory, const std::vector<ImageRecord> &input, size_t bytes)
-        : records(input), budget(bytes), positions(input.size(), -1), checked(input.size(), 0), seen(input.size(), 0)
+    ~Impl()
     {
+        // 来源回退可能覆盖行，不能把临时修正当作不可变包传给下一次任务。
+        if (session && pristine && statistics.preloaded)
+        {
+            session->rows = std::move(rows);
+        }
+    }
+
+    static std::optional<uint64_t> contentDigest(FILE *file)
+    {
+        rewind(file);
+        uint64_t hash = kHashStart;
+        std::array<uint8_t, 64 * 1024> buffer;
+        while (auto n = fread(buffer.data(), 1, buffer.size(), file))
+        {
+            hash = hashBytes(buffer.data(), n, hash);
+        }
+        const bool ok = !ferror(file) && seek(file, 4);
+        return ok ? std::optional<uint64_t>(hash) : std::nullopt;
+    }
+
+    Impl(const std::string &directory, const std::vector<ImageRecord> &input, size_t bytes, Session *saved)
+        : records(input), budget(bytes), session(saved), positions(input.size(), -1), checked(input.size(), 0), seen(input.size(), 0)
+    {
+        // 先取走上次的缓存；提前退出、容量不够或重验失败时旧行自然释放。
+        Session previous;
+        if (session)
+        {
+            previous = std::move(*session);
+            *session = {};
+        }
         std::unordered_map<int, int> ids;
         for (size_t i = 0; i < records.size(); ++i)
         {
@@ -626,10 +657,35 @@ struct FeaturePack::Reader::Impl
         }
         if (records.size() <= budget / sizeof(Row))
         {
+            if (session)
+            {
+                const auto tinyHash = contentDigest(tiny.get()), lbpHash = contentDigest(lbp.get());
+                if (!tinyHash || !lbpHash)
+                {
+                    tiny.reset();
+                    lbp.reset();
+                    return;
+                }
+                session->directory = directory;
+                session->generation = manifest.generation;
+                session->metadata = manifest.metadataHash;
+                session->tiny = *tinyHash;
+                session->lbp = *lbpHash;
+                if (previous.directory == directory && previous.generation == manifest.generation &&
+                    previous.metadata == manifest.metadataHash && previous.tiny == *tinyHash &&
+                    previous.lbp == *lbpHash && previous.rows.size() == records.size())
+                {
+                    rows = std::move(previous.rows);
+                    statistics.preloaded = statistics.sessionHit = true;
+                    statistics.peakBytes = rows.size() * sizeof(Row);
+                    return;
+                }
+                previous = {};
+            }
             rows.resize(records.size());
             for (size_t i = 0; i < metadata.size(); ++i)
             {
-                if (!readPacked(static_cast<int>(i), rows[ids.at(metadata[i].id)], false))
+                if (!readPacked(static_cast<int>(i), rows[i], false))
                 {
                     // 预载发现半包/损坏时不接受该代次，来源按需读取，避免全库回退 I/O。
                     std::vector<Row>().swap(rows);
@@ -685,6 +741,7 @@ struct FeaturePack::Reader::Impl
                 return;
             }
         }
+        pristine = false;
         if (!record.tinyPath.empty() && ts.size == 256 + kFeatureHeaderBytes)
         {
             ++statistics.sourceReads;
@@ -721,14 +778,14 @@ struct FeaturePack::Reader::Impl
             if (!checked[index])
             {
                 ++statistics.misses;
-                load(index, rows[index], sampler);
+                load(index, rows[positions[index]], sampler);
                 checked[index] = 1;
             }
             else
             {
                 ++statistics.hits;
             }
-            return rows[index];
+            return rows[positions[index]];
         }
         auto existing = cache.find(index);
         if (existing != cache.end())
@@ -821,8 +878,8 @@ struct FeaturePack::Reader::Impl
 };
 
 FeaturePack::Reader::Reader(const std::string &directory, const std::vector<ImageRecord> &records, size_t budget,
-                            RuntimeContext *runtime)
-    : m_impl(std::make_unique<Impl>(directory, records, budget))
+                            RuntimeContext *runtime, Session *session)
+    : m_impl(std::make_unique<Impl>(directory, records, budget, session))
 {
     m_impl->runtime = runtime;
     if (runtime)
@@ -845,7 +902,7 @@ const FeaturePack::Reader::Row *FeaturePack::Reader::preparedRow(int index) cons
     const Row *row = nullptr;
     if (state.statistics.preloaded)
     {
-        row = state.checked[index] ? &state.rows[index] : nullptr;
+        row = state.checked[index] ? &state.rows[state.positions[index]] : nullptr;
     }
     else
     {

@@ -31,14 +31,21 @@ class FeaturePack
             std::array<float, 256> lbp{};
             bool tinyValid = false, lbpValid = false;
         };
+        // 只缓存已通过行校验的包，不缓存使用次数、来源检查结果或当前 SQL 行序。
+        struct Session
+        {
+            std::string directory, generation;
+            uint64_t metadata = 0, tiny = 0, lbp = 0;
+            std::vector<Row> rows;
+        };
         struct ReadStats
         {
             size_t hits = 0, misses = 0, sourceReads = 0, packedRows = 0, evictions = 0, peakBytes = 0;
             size_t temporaryPeakBytes = 0;
-            bool preloaded = false;
+            bool preloaded = false, sessionHit = false;
         };
         Reader(const std::string &directory, const std::vector<ImageRecord> &records,
-               size_t budget = 256ULL * 1024 * 1024, RuntimeContext *runtime = nullptr);
+               size_t budget = 256ULL * 1024 * 1024, RuntimeContext *runtime = nullptr, Session *session = nullptr);
         ~Reader();
         Reader(const Reader &) = delete;
         Reader &operator=(const Reader &) = delete;

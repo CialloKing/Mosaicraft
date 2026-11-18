@@ -473,6 +473,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         return false;
     }
 
+    if (m_indexSession && (m_indexSession->database != db.path() || m_indexSession->device != actualDevice))
+    {
+        // 切换库或设备时先释放旧资源，再开始本次任务的图库准备。
+        *m_indexSession = {};
+    }
     int dbCount = db.totalCount();
     if (dbCount == 0)
     {
@@ -1112,12 +1117,18 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         auto annIndex = reuseIndex ? m_previewWorkspace->index : std::make_shared<FeatureIndex>();
         const std::string annPath = featDirCache.empty() ? "lib.ann196" : featDirCache + "/lib.ann196";
         bool retainIndex = false, hotIndex = false;
+        size_t readerBudget = m_limits.featureBytes;
         if (m_indexSession)
         {
             std::error_code ec;
             const auto disk = std::filesystem::file_size(u8path(annPath), ec);
             // 保守限制单个闲置图（序列化数据外还有锁、访问表与标签表），不在新任务旁保留第二份。
             retainIndex = !ec && disk <= m_limits.featureBytes / 6 && dbCount <= 100000;
+            if (retainIndex)
+            {
+                // 图、访问表和标签映射的保守预留；剩余预算才能用作只读行缓存。
+                readerBudget -= std::min<uint64_t>(readerBudget, disk * 2 + 8 * 1024 * 1024);
+            }
             if (!retainIndex || m_indexSession->database != db.path() || m_indexSession->device != actualDevice)
             {
                 *m_indexSession = {};
@@ -1153,7 +1164,9 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 
         if (retainIndex)
         {
-            *m_indexSession = {db.path(), actualDevice, annIndex};
+            m_indexSession->database = db.path();
+            m_indexSession->device = actualDevice;
+            m_indexSession->index = annIndex;
             runtime.metric("libraryIndexReused", hotIndex ? 1 : 0);
         }
         if (m_previewWorkspace)
@@ -1340,7 +1353,12 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         {
             const auto readStart = Clock::now();
             featureReader = std::make_unique<FeaturePack::Reader>(templateCuda ? std::string() : featDirCache, allRecords,
-                                                                  m_limits.featureBytes, templateCuda ? nullptr : &runtime);
+                readerBudget, templateCuda ? nullptr : &runtime,
+                retainIndex && !templateCuda ? &m_indexSession->features : nullptr);
+            if (retainIndex)
+            {
+                runtime.metric("libraryFeatureRowsReused", featureReader->stats().sessionHit ? dbCount : 0);
+            }
             if (!templateCuda)
             {
                 metrics.msCPUFeatures += Ms(Clock::now() - readStart).count();

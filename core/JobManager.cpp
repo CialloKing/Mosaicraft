@@ -619,6 +619,7 @@ void JobManager::workerLoop()
             if (!work)
             {
                 trimPreviews();
+                m_libraryIndex = {}; // 空闲队列不长期占用图库资源。
                 m_releasePreviewWorkspace = m_previews.empty();
             }
             if (m_stopping && m_queue.empty()) return;
@@ -671,6 +672,7 @@ void JobManager::workerLoop()
         else if (type == "build")
         {
             ConsoleQuickEditGuard guard;
+            m_libraryIndex = {};
             runBuildJob(id);
         }
         else {

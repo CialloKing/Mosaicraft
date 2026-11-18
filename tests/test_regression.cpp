@@ -2406,6 +2406,23 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     CHECK(preloaded.get(2).tiny[0] == cached.tiny(2)[0]);
     CHECK(preloaded.get(0).lbp[0] == cached.lbp(0)[0]);
     CHECK(preloaded.stats().sourceReads == 0);
+    FeaturePack::Reader::Session session;
+    constexpr size_t sessionBudget = 1024 * 1024;
+    {
+        FeaturePack::Reader first(dir, records, sessionBudget, nullptr, &session);
+        CHECK_FALSE(first.stats().sessionHit);
+        CHECK(first.get(0).tiny[0] == 1);
+    }
+    {
+        auto reordered = records;
+        std::swap(reordered[0], reordered[2]);
+        FeaturePack::Reader second(dir, reordered, sessionBudget, nullptr, &session);
+        REQUIRE(second.stats().sessionHit);
+        second.prepare({0, 2});
+        REQUIRE(second.preparedRow(0));
+        CHECK(second.preparedRow(0)->tiny[0] == 3);
+        CHECK(second.get(2).tiny[0] == 1);
+    }
     FeaturePack::Reader limited(dir, records, 2 * sizeof(FeaturePack::Reader::Row));
     CHECK_FALSE(limited.stats().preloaded);
     CHECK(limited.get(2).tiny[0] == 3);
@@ -2423,7 +2440,8 @@ TEST_CASE("feature generations validate sources legacy caches corruption and pub
     }
     CandidateFeatures corrupt(records, needed, dir);
     CHECK(corrupt.tiny(0)[0] == 1);
-    FeaturePack::Reader corruptReader(dir, records);
+    FeaturePack::Reader corruptReader(dir, records, sessionBudget, nullptr, &session);
+    CHECK_FALSE(corruptReader.stats().sessionHit);
     CHECK(corruptReader.get(0).tiny[0] == 1);
     CHECK(corruptReader.stats().sourceReads == 2);
     {
