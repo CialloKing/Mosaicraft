@@ -1771,10 +1771,17 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             {
                 for (int local = 0; local < count; ++local)
                 {
-                    buildTileVector(allTL[local], allTA[local], allTB[local], allGrid[local], allTiny[local],
-                                    allEdge[local], allLBP[local], tileVector);
-                    std::copy(tileVector.begin(), tileVector.end(),
-                              buffers.queries.begin() + static_cast<size_t>(local) * FeatureIndex::kDimension);
+                    auto *row = buffers.queries.data() + static_cast<size_t>(local) * FeatureIndex::kDimension;
+                    if (MOSAICRAFT_TRIAL_ANN_ROWS)
+                    {
+                        writeTileVector(allTL[local], allTA[local], allTB[local], allGrid[local], allEdge[local], row);
+                    }
+                    else
+                    {
+                        buildTileVector(allTL[local], allTA[local], allTB[local], allGrid[local], allTiny[local],
+                                        allEdge[local], allLBP[local], tileVector);
+                        std::copy(tileVector.begin(), tileVector.end(), row);
+                    }
                 }
                 annIndex->queryBatch(buffers.queries, N, allIndices, queryWorkers, MOSAICRAFT_TRIAL_ANN_ROWS);
                 if (!newCandidates.empty())

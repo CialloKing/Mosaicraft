@@ -418,11 +418,9 @@ class FeatureIndex
 // ============================================================
 // 构建粗筛向量 (196 维)，精排仍使用全部五特征
 // ============================================================
-template <class Grid, class Tiny = std::vector<uint8_t>, class Lbp = std::vector<float>>
-inline void buildTileVector(double tL, double tA, double tB, const Grid &grid, const Tiny &tiny, double edge,
-                            const Lbp &lbp, std::vector<float> &out)
+template <class Grid>
+inline void writeTileVector(double tL, double tA, double tB, const Grid &grid, double edge, float *out)
 {
-    out.resize(FeatureIndex::kDimension);
     int off = 0;
 
     out[off++] = static_cast<float>(tL / 255.0);
@@ -434,10 +432,15 @@ inline void buildTileVector(double tL, double tA, double tB, const Grid &grid, c
         out[off++] = (j < static_cast<int>(grid.size())) ? grid[j] / 255.0f : 0.0f;
     }
 
-    (void)tiny;
-    (void)lbp;
-
     out[off++] = static_cast<float>(edge);
+}
+
+template <class Grid, class Tiny = std::vector<uint8_t>, class Lbp = std::vector<float>>
+inline void buildTileVector(double tL, double tA, double tB, const Grid &grid, const Tiny &, double edge,
+                            const Lbp &, std::vector<float> &out)
+{
+    out.resize(FeatureIndex::kDimension);
+    writeTileVector(tL, tA, tB, grid, edge, out.data());
 }
 
 } // namespace mosaicraft
