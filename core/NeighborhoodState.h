@@ -1,7 +1,7 @@
 #pragma once
 #include "GridDuplicateCache.h"
 #include <deque>
-#include <unordered_map>
+#include <vector>
 
 namespace mosaicraft::detail
 {
@@ -18,15 +18,13 @@ class NeighborhoodState
     void replay(const std::vector<int> &indices, int tile);
 
   private:
-    const std::vector<ImageRecord> &m_records;
     GridDuplicateCache m_duplicateCache;
     NeighborCounters *m_counters;
     int m_window;
     int m_minGap;
     double m_penalty;
-    std::deque<int> m_recentIds;
-    std::unordered_map<int, int> m_frequency;
-    std::unordered_map<int, int> m_lastUsedAt;
+    std::deque<int> m_recentIndices;
+    std::vector<int> m_frequency, m_lastUsedAt;
     std::deque<int> m_recentGrids;
 };
 } // namespace mosaicraft::detail

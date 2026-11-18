@@ -12,19 +12,18 @@ constexpr int gridWindow = 50;
 
 NeighborhoodState::NeighborhoodState(const std::vector<ImageRecord> &records, int tilesX, int window, double penalty,
                                      NeighborCounters *counters)
-    : m_records(records), m_duplicateCache(records, counters), m_counters(counters), m_window(window), m_minGap(std::max(50, tilesX)), m_penalty(penalty)
+    : m_duplicateCache(records, counters), m_counters(counters), m_window(window), m_minGap(std::max(50, tilesX)), m_penalty(penalty),
+      m_frequency(records.size()), m_lastUsedAt(records.size(), -1)
 {
 }
 
 void NeighborhoodState::applyPenalty(double &score, int libraryIndex, int tile)
 {
-    const int id = m_records[libraryIndex].id;
     if (m_counters)
     {
         ++m_counters->candidates;
     }
-    const auto frequency = m_frequency.find(id);
-    const int count = frequency != m_frequency.end() ? frequency->second : 0;
+    const int count = m_frequency[libraryIndex];
     // 逐项加到原分数上；先合并惩罚再相加会改变浮点舍入和平分结果。
     if (count >= 3)
     {
@@ -38,8 +37,8 @@ void NeighborhoodState::applyPenalty(double &score, int libraryIndex, int tile)
     {
         score += m_penalty * 0.1;
     }
-    const auto previous = m_lastUsedAt.find(id);
-    if (previous != m_lastUsedAt.end() && tile - previous->second < m_minGap)
+    const int previous = m_lastUsedAt[libraryIndex];
+    if (previous >= 0 && tile - previous < m_minGap)
     {
         score += 500.0;
     }
@@ -55,23 +54,19 @@ void NeighborhoodState::applyPenalty(double &score, int libraryIndex, int tile)
 
 void NeighborhoodState::recordSelection(int libraryIndex, int tile)
 {
-    const int id = m_records[libraryIndex].id;
-    m_recentIds.push_back(id);
-    ++m_frequency[id];
-    m_lastUsedAt[id] = tile;
+    // 下标只在当前图库快照内有效；不依赖持久化 ID 连续或从零开始。
+    m_recentIndices.push_back(libraryIndex);
+    ++m_frequency[libraryIndex];
+    m_lastUsedAt[libraryIndex] = tile;
     m_recentGrids.push_back(libraryIndex);
     while (static_cast<int>(m_recentGrids.size()) > gridWindow)
     {
         m_recentGrids.pop_front();
     }
-    if (static_cast<int>(m_recentIds.size()) > m_window)
+    if (static_cast<int>(m_recentIndices.size()) > m_window)
     {
-        const int oldId = m_recentIds.front();
-        m_recentIds.pop_front();
-        if (--m_frequency[oldId] <= 0)
-        {
-            m_frequency.erase(oldId);
-        }
+        --m_frequency[m_recentIndices.front()];
+        m_recentIndices.pop_front();
     }
 }
 
