@@ -17,7 +17,7 @@ NeighborhoodState::NeighborhoodState(const std::vector<ImageRecord> &records, in
 {
 }
 
-void NeighborhoodState::applyPenalty(double &score, int libraryIndex, int tile)
+void NeighborhoodState::applyPenalty(double &score, int libraryIndex, int tile, RankBound *bound)
 {
     if (m_counters)
     {
@@ -42,6 +42,15 @@ void NeighborhoodState::applyPenalty(double &score, int libraryIndex, int tile)
     {
         score += 500.0;
     }
+    // 余下的 Grid 惩罚只会增加分数；保留候选的位置，避免改变旧路径的平分排序。
+    if (bound && bound->excludes(score))
+    {
+        if (m_counters)
+        {
+            ++m_counters->pruned;
+        }
+        return;
+    }
     for (const int recent : m_recentGrids)
     {
         if (m_duplicateCache.similar(libraryIndex, recent, gridThreshold))
@@ -49,6 +58,10 @@ void NeighborhoodState::applyPenalty(double &score, int libraryIndex, int tile)
             score += gridPenalty;
             break;
         }
+    }
+    if (bound)
+    {
+        bound->observe(score);
     }
 }
 

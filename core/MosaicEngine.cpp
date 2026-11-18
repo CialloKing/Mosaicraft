@@ -945,6 +945,13 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     int adaptiveSmoothCount = 0, adaptiveEdgeCount = 0, adaptiveTextureCount = 0, adaptiveNormalCount = 0;
     std::vector<double> edgeDistribution, entropyDistribution;
     std::mt19937 seededRng(m_seed);
+    const int rankLimit = std::min(N, std::max(cfg.topNRandom, m_preview && !newScores
+        ? MosaicSelection::recommendationLimit : 0));
+    // 诊断和实验需要所有候选的真实分数；普通路径只需要能进入有序前缀的候选。
+    const bool pruneGrid = !cfg.analyze && !selection && rankLimit < N &&
+                           size_t(rankLimit) <= hostBudget / sizeof(double) / 16;
+    detail::RankBound rankBound(pruneGrid ? rankLimit : 0);
+    auto *bound = pruneGrid ? &rankBound : nullptr;
     const auto matchingStart = Clock::now();
     auto lastPreviewProgress = matchingStart;
     const auto reportMatching = [&](int completed)
@@ -1028,6 +1035,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             const size_t offset = static_cast<size_t>(tile) * N;
             const int *indices = reusedScores->indices.data() + offset;
             const double *scores = reusedScores->values.data() + offset;
+            rankBound.reset();
             ranked.clear();
             int valid = 0;
             for (int j = 0; j < N; ++j)
@@ -1035,7 +1043,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 values[j] = scores[j];
                 if (indices[j] >= 0)
                 {
-                    neighborhood.applyPenalty(values[j], indices[j], tile);
+                    neighborhood.applyPenalty(values[j], indices[j], tile, bound);
                     ++valid;
                     if (!templateCuda)
                     {
@@ -1936,6 +1944,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         continue;
                     }
                     // 统计有效候选数，跳过全为 -1 的 tile
+                    rankBound.reset();
                     int validCount = 0;
                     for (int j = 0; j < N; ++j)
                     {
@@ -1958,7 +1967,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         {
                             continue;
                         }
-                        neighborhood.applyPenalty(scores[j], libIdx, ti);
+                        neighborhood.applyPenalty(scores[j], libIdx, ti, bound);
                     }
                     // Top-N 随机选取：从前 topN 个最佳候选中随机选择
                     // 8, 8 vs 4, 4 Grid 对比实验（--analyze 模式）
@@ -2205,6 +2214,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                         }
                         continue;
                     }
+                    rankBound.reset();
                     scored.clear();
                     const auto scoreStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
                     for (int j = 0; j < N; ++j)
@@ -2223,7 +2233,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                             newScores->values[scoreOffset + candidate] = s;
                         }
                         BenchmarkTimer neighborTimer(cfg.benchmark, metrics.msNeighbor);
-                        neighborhood.applyPenalty(s, li, ti);
+                        neighborhood.applyPenalty(s, li, ti, bound);
                         scored.push_back({s, li});
                     }
                     if (cfg.benchmark)
