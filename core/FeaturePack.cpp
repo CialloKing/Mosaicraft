@@ -193,6 +193,14 @@ bool writeFloatRow(FILE *file, const float *values)
 }
 uint64_t hashFloatRow(const float *values)
 {
+#if defined(_WIN32) || (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+    if (MOSAICRAFT_TRIAL_LIBRARY_PATHS)
+    {
+        // 磁盘哈希定义为 IEEE-754 小端字节；本机布局相同时避免每个 LBP 行临时分配。
+        static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
+        return hashBytes(values, 256 * sizeof(float));
+    }
+#endif
     const auto bytes = encodeFloats(values, 256);
     return hashBytes(bytes.data(), bytes.size());
 }

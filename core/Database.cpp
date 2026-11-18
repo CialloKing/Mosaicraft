@@ -653,7 +653,15 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
             rec.tinyPath = paths.resolve(rec.tinyPath);
             rec.lbpPath = paths.resolve(rec.lbpPath);
         }
-        results.push_back(rec);
+        if (MOSAICRAFT_TRIAL_LIBRARY_PATHS)
+        {
+            // 行已完整解码；移交路径与 Grid 存储，不再复制同一条记录。
+            results.emplace_back(std::move(rec));
+        }
+        else
+        {
+            results.push_back(rec);
+        }
     }
 
     sqlite3_finalize(stmt);
