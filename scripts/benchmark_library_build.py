@@ -16,15 +16,17 @@ from study_paths import digest, readonly_database
 
 def logical_rows(root):
     h = hashlib.sha256()
+    photo_bytes = 0
     with readonly_database(root/'mosaicraft.db') as db:
         for row in db.execute('SELECT id,file_path,file_hash,avg_l,avg_a,avg_b,edge_density,grid_lab,feature_version,use_count,tiny_path,lbp_path FROM images ORDER BY id'):
+            photo_bytes += (root/row[1]).stat().st_size
             for v in row[:-2]:
                 b = v if isinstance(v,bytes) else repr(v).encode()
                 h.update(len(b).to_bytes(4,'little')); h.update(b)
             for rel in row[-2:]:
                 h.update(bytes.fromhex(digest(root/rel)))
         count, = db.execute('SELECT COUNT(*) FROM images').fetchone()
-    return h.hexdigest(), count
+    return h.hexdigest(), count, photo_bytes
 
 
 def main():
@@ -65,12 +67,12 @@ def main():
                             start=time.perf_counter(); result=subprocess.run(cmd,stdout=subprocess.PIPE,stderr=log,check=True)
                             wall=(time.perf_counter()-start)*1000
                         res=json.loads(result.stdout); save(out/(tag+'.json'),res)
-                        sig,count=logical_rows(root)
+                        sig,count,photo_bytes=logical_rows(root)
                         if not res['ok'] or res['warningCount'] or count <= previous or reference.setdefault(verb,sig) != sig:
                             raise ValueError(tag+': incomplete or inequivalent library')
                         rows=count-previous; previous=count
                         data['samples'].append(dict(phase=phase,round=r,variant=name,case=verb,logical_sha256=sig,
-                            rows=rows,images_per_second=rows*1000/wall,metrics=dict(processWallMs=wall)))
+                            rows=rows,photo_bytes=photo_bytes,images_per_second=rows*1000/wall,metrics=dict(processWallMs=wall)))
                         save(out/'report.json',data); print(tag,round(wall),rows,flush=True)
     data.update(complete=True,summary=summarize(data)); save(out/'report.json',data)
 
