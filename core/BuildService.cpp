@@ -78,6 +78,39 @@ static std::string hashMatForBuild(const cv::Mat& mat)
     return std::to_string(hash);
 }
 
+// 下一批只写已保留的临时素材名。若当前批提交失败，先收束线程再撤销尚未交接的文件。
+struct PendingNormalized
+{
+    WorkerPool *pool;
+    const std::vector<std::string> &paths;
+    const std::vector<uint8_t> &saved;
+    std::vector<cv::Mat> images;
+    std::vector<ImageRecord> records;
+    size_t first = 0;
+    ~PendingNormalized()
+    {
+        if (!images.empty())
+        {
+            try
+            {
+                pool->wait();
+            }
+            catch (...)
+            {
+                // 主批已失败；仍须清理其他工作线程成功写出的暂存。
+            }
+            for (size_t i = 0; i < images.size(); ++i)
+            {
+                if (saved[first + i])
+                {
+                    std::error_code ec;
+                    fs::remove(u8path(paths[first + i]), ec);
+                }
+            }
+        }
+    }
+};
+
 static bool stdinIsTty()
 {
 #ifdef _WIN32
@@ -755,11 +788,19 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
         // 同目录输入的尺寸可能不同，单张处理保证超预算图片独占批次。
         size_t batchLimit =
             inputIsOutput ? 1 : std::min<size_t>(256, std::max<size_t>(1, pixelBudget / pixelsPerImage));
-        WorkerPool workers(request.threads > 0 ? static_cast<unsigned>(request.threads) : 0);
+        const int slots = request.threads ? request.threads : std::min(8, normThreads);
+        const bool overlap = MOSAICRAFT_TRIAL_BUILD_AHEAD && !inputIsOutput && !portableRequested &&
+                             slots >= 4 && pixelsPerImage <= pixelBudget / 2 && files.size() > batchLimit;
+        if (overlap)
+        {
+            batchLimit = std::min(batchLimit, pixelBudget / 2 / pixelsPerImage);
+        }
+        const int producers = overlap ? slots / 2 : normThreads;
+        WorkerPool workers(overlap ? slots - producers - 1 : request.threads);
         std::unique_ptr<WorkerPool> normalizers;
         if (!inputIsOutput)
         {
-            normalizers = std::make_unique<WorkerPool>(static_cast<unsigned>(normThreads));
+            normalizers = std::make_unique<WorkerPool>(static_cast<unsigned>(producers));
         }
         compute::FeatureWorkspace portableFeatures(portableDevice);
         cuda::CompatibleFeatureWorkspace compatible;
@@ -792,6 +833,25 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
             std::cout << "  Generic CUDA resources unavailable; using CPU before extraction." << std::endl;
         }
         runtime.backends(portableReady ? backendName(portableDevice.backend) : compatibleReady ? "compatible_cuda" : "cpu", "none");
+        PendingNormalized pending{normalizers.get(), outPaths, okFlags};
+        const auto startNext = [&](size_t first)
+        {
+            pending.first = first;
+            const auto count = std::min(batchLimit, files.size() - first);
+            pending.images.resize(count);
+            pending.records.resize(count);
+            normalizers->start(count, [&, first](size_t i)
+            {
+                if (normalizeOne(first + i, &pending.images[i]) && MOSAICRAFT_TRIAL_BUILD_HASH)
+                {
+                    pending.records[i].fileHash = hashMatForBuild(pending.images[i]);
+                }
+            });
+        };
+        if (overlap)
+        {
+            startNext(0);
+        }
         for (size_t first = 0; first < files.size(); first += batchLimit)
         {
             const size_t count = std::min(batchLimit, files.size() - first);
@@ -807,7 +867,22 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                     records[i].fileHash = hashMatForBuild(images[i]);
                 }
             };
-            if (normalizers)
+            if (overlap)
+            {
+                const auto waiting = std::chrono::steady_clock::now();
+                normalizers->wait();
+                // 仅统计未被本批其他工作掩盖的等待，避免墙钟重复计入。
+                batchNormalization += std::chrono::steady_clock::now() - waiting;
+                images.swap(pending.images);
+                records.swap(pending.records);
+                pending.images.clear();
+                pending.records.clear();
+                if (first + count < files.size())
+                {
+                    startNext(first + count);
+                }
+            }
+            else if (normalizers)
             {
                 // 只保留当前有界批次的落盘像素，让顺序去重和提交继续使用原路径。
                 const auto started = std::chrono::steady_clock::now();

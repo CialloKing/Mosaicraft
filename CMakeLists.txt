@@ -273,8 +273,10 @@ set_property(SOURCE core/MosaicOutput.cpp APPEND PROPERTY COMPILE_DEFINITIONS
 option(MOSAICRAFT_TRIAL_LIBRARY_PATHS "Reuse the validated root for simple relative library paths" OFF)
 set_property(SOURCE core/LibraryPaths.cpp core/FeaturePack.cpp core/Database.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     MOSAICRAFT_TRIAL_LIBRARY_PATHS=$<BOOL:${MOSAICRAFT_TRIAL_LIBRARY_PATHS}>)
+option(MOSAICRAFT_TRIAL_BUILD_AHEAD "Benchmark bounded build normalization lookahead" OFF)
 option(MOSAICRAFT_TRIAL_BUILD_HASH "Hash decoded build inputs in producer slots" OFF)
 set_property(SOURCE core/BuildService.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+    MOSAICRAFT_TRIAL_BUILD_AHEAD=$<BOOL:${MOSAICRAFT_TRIAL_BUILD_AHEAD}>
     MOSAICRAFT_TRIAL_BUILD_HASH=$<BOOL:${MOSAICRAFT_TRIAL_BUILD_HASH}>)
 option(MOSAICRAFT_TRIAL_HOT_ANN "Retain a validated ANN graph across Web UI jobs" OFF)
 set_property(SOURCE core/JobManager.cpp APPEND PROPERTY COMPILE_DEFINITIONS
