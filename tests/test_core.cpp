@@ -2051,6 +2051,28 @@ TEST_CASE("CUDA pipeline preserves features and drains failed work")
         CHECK(pipeline.pipelineInput() == input);
         CHECK_THROWS_AS(pipeline.extract(0, 1, lab.data(), grid.data(), tiny.data(), edge.data(), lbp.data()),
                         std::invalid_argument);
+        if (size.width == 180 && size.height == 320)
+        {
+            config.orderedGrid = true;
+            REQUIRE(pipeline.preparePipeline(config));
+            std::copy(images.begin(), images.end(), pipeline.pipelineInput());
+            pipeline.beginBatch(3);
+            pipeline.extract(0, 3, lab.data(), grid.data(), tiny.data(), edge.data(), lbp.data());
+            const auto orderedGrid = grid;
+            const auto orderedLab = lab;
+            pipeline.beginBatch(3);
+            pipeline.extract(0, 3, lab.data(), grid.data(), tiny.data(), edge.data(), lbp.data());
+            CHECK(grid == orderedGrid);
+            CHECK(lab == orderedLab);
+            CHECK(edge == expectedEdge);
+            CHECK(lbp == expectedLbp);
+            CHECK(tiny == expectedTiny);
+            for (size_t i = 0; i < grid.size(); ++i)
+            {
+                CHECK(std::abs(grid[i] - expectedGrid[i]) < 0.001f);
+            }
+            config.orderedGrid = false;
+        }
         config.hostBudget = bytes;
         CHECK_FALSE(pipeline.preparePipeline(config));
         CHECK(pipeline.pinnedBytes() == 0);

@@ -49,6 +49,7 @@ struct FeaturePipelineConfig
     unsigned workers = 0;
     WorkerPool *sharedWorkers = nullptr; // 借用生成任务的池，生命周期覆盖管线。
     bool deviceCanny = false;
+    bool orderedGrid = false;
 };
 
 struct DeviceFeatureState;

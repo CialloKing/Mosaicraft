@@ -1312,6 +1312,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 options.maxTiles = static_cast<int>(batchRows);
                 options.width = featW;
                 options.workers = cfg.threads;
+                options.orderedGrid = MOSAICRAFT_TRIAL_CUDA_ORDERED_GRID && fastScore && !m_previewWorkspace;
                 options.sharedWorkers = shareWorkers ? &featureWorkers : nullptr;
                 if (MOSAICRAFT_TRIAL_CUDA_TARGET && fastScore && !m_previewWorkspace && !m_preview &&
                     !m_selectionOptions.expand &&

@@ -16,6 +16,7 @@
 #include <cstring>
 #include <fstream>
 #include <vector>
+#include <type_traits>
 
 namespace mosaicraft
 {
@@ -266,7 +267,7 @@ __device__ float rgb2gray(float r, float g, float b)
 // 主 kernel：模板化，每个 block 处理一张图片
 // 模板参数 W, H = 图像宽高
 // ============================================================
-template <int W, int H>
+template <int W, int H, bool Ordered = false>
 __global__ void featureKernel(const uint8_t *__restrict__ d_images, float *__restrict__ d_grid,
                               uint8_t *__restrict__ d_tiny, float *__restrict__ d_lbp, double *__restrict__ d_avgLAB,
                               double *__restrict__ d_brightness, double *__restrict__ d_contrast,
@@ -315,6 +316,8 @@ __global__ void featureKernel(const uint8_t *__restrict__ d_images, float *__res
     }
     __syncthreads();
 
+    __shared__ float3 columns[Ordered ? W : 1];
+    float colL = 0, colA = 0, colB = 0;
     float localGrayAcc = 0, localGraySq = 0;
     int localEdge = 0;
 
@@ -334,20 +337,51 @@ __global__ void featureKernel(const uint8_t *__restrict__ d_images, float *__res
         float lv, av, bv;
         rgb2lab(r, g, b, lv, av, bv);
 
-        int cellX = x / GRID_CW;
-        int cellY = y / GRID_CH;
-        if (cellX >= 8)
+        if constexpr (Ordered)
         {
-            cellX = 7;
+            // One writer per column, then one per cell: the sum cannot depend on warp arrival order.
+            colL += lv;
+            colA += av;
+            colB += bv;
+            if ((y + 1) % GRID_CH == 0 || y + 1 == H)
+            {
+                columns[x] = make_float3(colL, colA, colB);
+                __syncthreads();
+                if (tx < 8)
+                {
+                    float3 sum = make_float3(0, 0, 0);
+                    for (int i = tx * GRID_CW; i < min((tx + 1) * GRID_CW, W); ++i)
+                    {
+                        sum.x += columns[i].x;
+                        sum.y += columns[i].y;
+                        sum.z += columns[i].z;
+                    }
+                    const int c = (y / GRID_CH * 8 + tx) * 3;
+                    s_gridLab[c] = sum.x;
+                    s_gridLab[c + 1] = sum.y;
+                    s_gridLab[c + 2] = sum.z;
+                }
+                __syncthreads();
+                colL = colA = colB = 0;
+            }
         }
-        if (cellY >= 8)
+        else
         {
-            cellY = 7;
+            int cellX = x / GRID_CW;
+            int cellY = y / GRID_CH;
+            if (cellX >= 8)
+            {
+                cellX = 7;
+            }
+            if (cellY >= 8)
+            {
+                cellY = 7;
+            }
+            int cellIdx = cellY * 8 + cellX;
+            atomicAdd(&s_gridLab[cellIdx * 3 + 0], lv);
+            atomicAdd(&s_gridLab[cellIdx * 3 + 1], av);
+            atomicAdd(&s_gridLab[cellIdx * 3 + 2], bv);
         }
-        int cellIdx = cellY * 8 + cellX;
-        atomicAdd(&s_gridLab[cellIdx * 3 + 0], lv);
-        atomicAdd(&s_gridLab[cellIdx * 3 + 1], av);
-        atomicAdd(&s_gridLab[cellIdx * 3 + 2], bv);
 
         float gray = rgb2gray(r, g, b);
         localGrayAcc += gray;
@@ -897,9 +931,28 @@ void extractPipelined(FeaturePipeline &p, int first, int count, double *lab, flo
             double(cfg.tileW) / W, double(cfg.tileH) / H, p.firstTile + first, stripeY);
         requireCuda(cudaGetLastError());
     }
-    featureKernel<W, H><<<count, W, 0, transfer.stream>>>(
-        p.images.get(), p.grid.get() + first * 192, p.tiny.get() + first * 256,
-        p.lbp.get() + first * 256, p.lab.get(), p.bright.get(), p.contrast.get(), p.edge.get(), count);
+    auto launch = [&](auto ordered)
+    {
+        featureKernel<W, H, decltype(ordered)::value><<<count, W, 0, transfer.stream>>>(
+            p.images.get(), p.grid.get() + first * 192, p.tiny.get() + first * 256,
+            p.lbp.get() + first * 256, p.lab.get(), p.bright.get(), p.contrast.get(), p.edge.get(), count);
+    };
+    // Limit this diagnostic to the size with observed same-seed divergence.
+    if constexpr (W == 180 && H == 320)
+    {
+        if (p.config.orderedGrid)
+        {
+            launch(std::true_type{});
+        }
+        else
+        {
+            launch(std::false_type{});
+        }
+    }
+    else
+    {
+        launch(std::false_type{});
+    }
     requireCuda(cudaGetLastError());
     if (p.cannyRows)
     {
