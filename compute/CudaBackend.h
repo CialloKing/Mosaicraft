@@ -66,7 +66,7 @@ class FeatureWorkspace
   public:
     struct Impl;
     std::unique_ptr<Impl> buffers;
-    FeatureWorkspace();
+    explicit FeatureWorkspace(WorkerPool *fallbackWorkers = nullptr);
     ~FeatureWorkspace();
     FeatureWorkspace(const FeatureWorkspace &) = delete;
     FeatureWorkspace &operator=(const FeatureWorkspace &) = delete;

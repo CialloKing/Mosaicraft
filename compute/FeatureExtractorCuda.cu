@@ -50,11 +50,13 @@ struct FeatureWorkspace::Impl
     std::vector<uint8_t> h_images, h_tiny;
     std::vector<float> h_grid, h_lbp;
     std::vector<double> h_lab, h_bright, h_contrast, h_edge;
+    WorkerPool *fallbackWorkers = nullptr;
     std::unique_ptr<WorkerPool> cpuWorkers;
     std::unique_ptr<FeaturePipeline> pipeline;
 };
-FeatureWorkspace::FeatureWorkspace() : buffers(std::make_unique<Impl>())
+FeatureWorkspace::FeatureWorkspace(WorkerPool *fallbackWorkers) : buffers(std::make_unique<Impl>())
 {
+    buffers->fallbackWorkers = fallbackWorkers;
 }
 FeatureWorkspace::~FeatureWorkspace() = default;
 
@@ -794,11 +796,12 @@ int launchKernel(const uint8_t *h_images, int N, double *h_avgLAB, float *h_grid
     }
     // 查询特征必须与建库使用相同的 Canny 双阈值，不能把近似梯度计数混入同一列。
     PhaseTimer cannyTimer(timings ? &timings->cannyMs : nullptr);
-    if (!buffers.cpuWorkers)
+    if (!buffers.fallbackWorkers && !buffers.cpuWorkers)
     {
         buffers.cpuWorkers = std::make_unique<WorkerPool>();
     }
-    buffers.cpuWorkers->run(N,
+    auto &cannyWorkers = buffers.fallbackWorkers ? *buffers.fallbackWorkers : *buffers.cpuWorkers;
+    cannyWorkers.run(N,
                             [&](size_t i)
                             {
                                 cv::Mat bgr(H, W, CV_8UC3,

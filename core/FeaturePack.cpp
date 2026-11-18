@@ -345,7 +345,7 @@ bool readSource(const std::string &path, const Stamp &source, void *data, size_t
 bool loadFeatures(const std::string &directory, const std::vector<ImageRecord> &records, const std::vector<int> &needed,
                   std::vector<uint8_t> &tiny, std::vector<float> &lbp, std::vector<uint8_t> &tinyValid,
                   std::vector<uint8_t> &lbpValid, std::vector<Metadata> &current,
-                  FeaturePack::Reader::ReadStats *readStats = nullptr)
+                  FeaturePack::Reader::ReadStats *readStats, unsigned limit)
 {
     const size_t count = needed.size();
     std::atomic<size_t> sourceReads{0};
@@ -373,7 +373,7 @@ bool loadFeatures(const std::string &directory, const std::vector<ImageRecord> &
     lbpValid.assign(count, 0);
     current.resize(count);
     const StampSampler sampler(records, needed);
-    WorkerPool workers(static_cast<unsigned>(std::max<size_t>(1, std::min<size_t>(count, 8))));
+    WorkerPool workers(static_cast<unsigned>(std::max<size_t>(1, std::min<size_t>({count, 8, limit ? limit : 8}))));
     workers.run(count,
                 [&](size_t i)
                 {
@@ -970,13 +970,13 @@ std::optional<uint64_t> FeaturePack::sourceVersion(const std::string &directory,
 
 bool FeaturePack::load(const std::string &directory, const std::vector<ImageRecord> &records,
                        const std::vector<int> &needed, std::vector<uint8_t> &tiny, std::vector<float> &lbp,
-                       std::vector<uint8_t> &tinyValid, std::vector<uint8_t> &lbpValid, Reader::ReadStats *readStats)
+                       std::vector<uint8_t> &tinyValid, std::vector<uint8_t> &lbpValid, Reader::ReadStats *readStats, unsigned workers)
 {
     std::vector<Metadata> metadata;
-    return loadFeatures(directory, records, needed, tiny, lbp, tinyValid, lbpValid, metadata, readStats);
+    return loadFeatures(directory, records, needed, tiny, lbp, tinyValid, lbpValid, metadata, readStats, workers);
 }
 
-bool FeaturePack::buildCache(const std::string &directory, const std::vector<ImageRecord> &records, Stats *stats)
+bool FeaturePack::buildCache(const std::string &directory, const std::vector<ImageRecord> &records, Stats *stats, unsigned workers)
 {
     const auto start = Clock::now();
     std::vector<uint8_t> tiny, tinyValid, lbpValid;
@@ -984,7 +984,7 @@ bool FeaturePack::buildCache(const std::string &directory, const std::vector<Ima
     std::vector<Metadata> metadata;
     std::vector<int> needed(records.size());
     std::iota(needed.begin(), needed.end(), 0);
-    const bool reused = loadFeatures(directory, records, needed, tiny, lbp, tinyValid, lbpValid, metadata);
+    const bool reused = loadFeatures(directory, records, needed, tiny, lbp, tinyValid, lbpValid, metadata, nullptr, workers);
     const auto writeStart = Clock::now();
     if (stats)
     {

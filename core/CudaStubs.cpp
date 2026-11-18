@@ -79,7 +79,9 @@ void CompatibleFeatureWorkspace::extract(const std::vector<cv::Mat> &, std::vect
 struct FeatureWorkspace::Impl
 {
 };
-FeatureWorkspace::FeatureWorkspace() = default;
+FeatureWorkspace::FeatureWorkspace(WorkerPool *)
+{
+}
 FeatureWorkspace::~FeatureWorkspace() = default;
 
 bool FeatureWorkspace::preparePipeline(const FeaturePipelineConfig &, GpuTimings *)

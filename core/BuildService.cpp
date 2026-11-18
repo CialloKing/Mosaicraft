@@ -1175,7 +1175,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
     tCacheStart = std::chrono::steady_clock::now();
     std::cout << "Building feature cache..." << std::flush;
     FeaturePack::Stats cacheStats;
-    if (FeaturePack::buildCache(featDir, db.allRecords(), &cacheStats))
+    if (FeaturePack::buildCache(featDir, db.allRecords(), &cacheStats, request.threads))
     {
         if (!cacheStats.reused)
         {

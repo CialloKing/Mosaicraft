@@ -674,7 +674,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         std::vector<uint8_t> tinyValid, lbpValid;
         const auto packStart = Clock::now();
         const bool cacheLoaded = FeaturePack::load(featDirCache, allRecords, needed, h_tiny, h_lbp, tinyValid, lbpValid,
-                                                   cfg.benchmark ? &metrics.libraryReadStats : nullptr);
+                                                   cfg.benchmark ? &metrics.libraryReadStats : nullptr, cfg.threads);
         if (cfg.benchmark)
         {
             runtime.metric("libraryReadPackMs", Ms(Clock::now() - packStart).count());
@@ -1282,7 +1282,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             m_previewWorkspace->tileFeatureKey == tileFeatureKey(backends.features);
         if (templateCuda)
         {
-            workspace = std::make_unique<cuda::FeatureWorkspace>();
+            workspace = std::make_unique<cuda::FeatureWorkspace>(cfg.threads ? &featureWorkers : nullptr);
             scoreWorkspace = std::make_unique<cuda::ScoreWorkspace>();
             // 先预算并准备全部可选资源；计算开始后不能用同步重算掩盖异步错误。
             const size_t scoreRowBytes = 9 * sizeof(double) + checkedMatchProduct(N, sizeof(int) + scalarBytes);
