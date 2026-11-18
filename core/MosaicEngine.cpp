@@ -1279,6 +1279,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     !m_selectionOptions.expand &&
                     cfg.tileW <= featW && cfg.tileH <= featH)
                 {
+                    options.deviceCanny = MOSAICRAFT_TRIAL_CUDA_CANNY;
                     options.target = target.data;
                     options.targetStep = target.step;
                     options.cols = target.cols;
@@ -1581,16 +1582,19 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     const int limit = std::min(256, count - piece);
                     const int pieceCount = pipeline ? workspace->pieceSize(first + piece, limit) : limit;
                     auto *input = pipeline ? workspace->pipelineInput() : buffers.images.data();
-                    featureWorkers.run(
-                        pieceCount,
-                        [&](size_t local)
-                        {
-                            const int ti = first + piece + static_cast<int>(local);
-                            cv::Mat roi = target(
-                                cv::Rect((ti % tilesX) * cfg.tileW, (ti / tilesX) * cfg.tileH, cfg.tileW, cfg.tileH));
-                            cv::Mat resized(featH, featW, CV_8UC3, input + local * featBytes);
-                            cv::resize(roi, resized, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
-                        });
+                    if (!pipeline || workspace->needsHostPixels())
+                    {
+                        featureWorkers.run(
+                            pieceCount,
+                            [&](size_t local)
+                            {
+                                const int ti = first + piece + static_cast<int>(local);
+                                cv::Mat roi = target(
+                                    cv::Rect((ti % tilesX) * cfg.tileW, (ti / tilesX) * cfg.tileH, cfg.tileW, cfg.tileH));
+                                cv::Mat resized(featH, featW, CV_8UC3, input + local * featBytes);
+                                cv::resize(roi, resized, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
+                            });
+                    }
                     if (pipeline)
                     {
                         workspace->extract(piece, pieceCount, buffers.lab.data() + piece * 3, allGrid[piece].data(),

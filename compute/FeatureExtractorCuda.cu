@@ -10,6 +10,8 @@
 #include <cuda_runtime.h>
 #include <opencv2/imgproc.hpp>
 
+#include "TileCanny.cuh"
+
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -30,6 +32,8 @@ struct FeaturePipeline
     FeaturePipelineConfig config;
     PinnedBuffer input, download;
     DeviceBuffer<uint8_t> target, images, tiny;
+    DeviceBuffer<int> canny;
+    int cannyRows = 0;
     int stripeRows = 0, loadedStripe = -1, firstTile = 0;
     DeviceBuffer<float> grid, lbp;
     DeviceBuffer<double> lab, bright, contrast, edge;
@@ -105,9 +109,19 @@ bool FeatureWorkspace::preparePipeline(const FeaturePipelineConfig &config, GpuT
             if (stripes && optionalCudaAllocation(p->target.allocate(stripes * row)))
             {
                 p->stripeRows = static_cast<int>(stripes);
+                const size_t plane = size_t(config.width) * config.height * 4 * sizeof(int);
+                const auto slots = std::min<size_t>({chunk, 16, (ceiling - used - stripes * row) / plane});
+                if (config.deviceCanny && slots && optionalCudaAllocation(p->canny.allocate(slots * plane)))
+                {
+                    p->cannyRows = static_cast<int>(slots);
+                    p->input.reset();
+                }
             }
         }
-        p->workers = std::make_unique<WorkerPool>(config.workers);
+        if (!p->cannyRows)
+        {
+            p->workers = std::make_unique<WorkerPool>(config.workers);
+        }
         p->state->grid = p->grid.get();
         p->state->lbp = p->lbp.get();
         p->state->tiny = p->tiny.get();
@@ -145,7 +159,13 @@ size_t FeatureWorkspace::pinnedBytes() const
 
 size_t FeatureWorkspace::residentBytes() const
 {
-    return buffers->pipeline ? buffers->pipeline->state->bytes + buffers->pipeline->target.capacityBytes() : 0;
+    return buffers->pipeline ? buffers->pipeline->state->bytes + buffers->pipeline->target.capacityBytes() +
+        buffers->pipeline->canny.capacityBytes() : 0;
+}
+
+bool FeatureWorkspace::needsHostPixels() const
+{
+    return !buffers->pipeline || !buffers->pipeline->cannyRows;
 }
 
 int FeatureWorkspace::pieceSize(int tile, int requested) const
@@ -868,6 +888,24 @@ void extractPipelined(FeaturePipeline &p, int first, int count, double *lab, flo
         p.images.get(), p.grid.get() + first * 192, p.tiny.get() + first * 256,
         p.lbp.get() + first * 256, p.lab.get(), p.bright.get(), p.contrast.get(), p.edge.get(), count);
     requireCuda(cudaGetLastError());
+    if (p.cannyRows)
+    {
+        const int n = W * H, stride = p.cannyRows * n;
+        int *gray = p.canny.get(), *grad = gray + stride, *map = grad + stride, *queue = map + stride;
+        for (int k = 0; k < count; k += p.cannyRows)
+        {
+            const int part = std::min(p.cannyRows, count - k);
+            const dim3 blocks((n + 255) / 256, part);
+            tileGray<<<blocks, 256, 0, transfer.stream>>>(p.images.get() + size_t(k) * imgBytes, gray, n);
+            requireCuda(cudaGetLastError());
+            tileGradient<<<blocks, 256, 0, transfer.stream>>>(gray, grad, W, H);
+            requireCuda(cudaGetLastError());
+            tileMaxima<<<blocks, 256, 0, transfer.stream>>>(grad, map, W, H);
+            requireCuda(cudaGetLastError());
+            tileHysteresis<<<part, 256, 0, transfer.stream>>>(map, queue, p.edge.get() + k, W, H);
+            requireCuda(cudaGetLastError());
+        }
+    }
     transfer.mark(2);
     auto *hostLab = reinterpret_cast<double *>(p.download.get());
     auto *hostGrid = reinterpret_cast<float *>(hostLab + rows * 3);
@@ -887,7 +925,12 @@ void extractPipelined(FeaturePipeline &p, int first, int count, double *lab, flo
         requireCuda(cudaMemcpyAsync(hostTiny, p.tiny.get() + first * 256, rows * 256,
                                     cudaMemcpyDeviceToHost, transfer.stream));
     }
+    if (p.cannyRows)
+    {
+        requireCuda(cudaMemcpyAsync(edge, p.edge.get(), rows * sizeof(double), cudaMemcpyDeviceToHost, transfer.stream));
+    }
     transfer.mark(3);
+    if (!p.cannyRows)
     {
         PhaseTimer timer(timings ? &timings->cannyMs : nullptr);
         // CPU 与 DMA 只读同一份锁页 BGR。run 收束所有任务（包括异常），随后再等待 GPU。
@@ -923,7 +966,7 @@ void extractPipelined(FeaturePipeline &p, int first, int count, double *lab, flo
     if (timings)
     {
         timings->uploadBytes += uploaded;
-        timings->downloadBytes += rows * (3 * sizeof(double) + 192 * sizeof(float) +
+        timings->downloadBytes += rows * ((p.cannyRows ? 4 : 3) * sizeof(double) + 192 * sizeof(float) +
                                           (p.config.downloadLbp ? 256 * sizeof(float) : 0) +
                                           (p.config.downloadTiny ? 256 : 0));
     }

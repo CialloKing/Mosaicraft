@@ -46,6 +46,7 @@ struct FeaturePipelineConfig
     std::size_t targetStep = 0;
     int cols = 0, rows = 0, tileW = 0, tileH = 0;
     unsigned workers = 0;
+    bool deviceCanny = false;
 };
 
 struct DeviceFeatureState;
@@ -74,6 +75,7 @@ class FeatureWorkspace
     std::size_t pinnedBytes() const;
     std::size_t residentBytes() const;
     void beginBatch(int count, int firstTile = 0);
+    bool needsHostPixels() const;
     int pieceSize(int tile, int requested) const;
     void extract(int first, int count, double *lab, float *grid, std::uint8_t *tiny, double *edge, float *lbp,
                  GpuTimings *timings = nullptr);

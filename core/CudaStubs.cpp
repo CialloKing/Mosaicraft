@@ -101,6 +101,10 @@ std::size_t FeatureWorkspace::residentBytes() const
 {
     return 0;
 }
+bool FeatureWorkspace::needsHostPixels() const
+{
+    return true;
+}
 int FeatureWorkspace::pieceSize(int, int requested) const
 {
     return requested;
