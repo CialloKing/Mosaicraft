@@ -256,7 +256,7 @@ option(MOSAICRAFT_TRIAL_CUDA_TARGET "Benchmark tile-local resizing on the CUDA d
 option(MOSAICRAFT_TRIAL_SCHEDULE "Share the explicit worker budget across matching stages" OFF)
 option(MOSAICRAFT_TRIAL_ANN_ROWS "Benchmark direct ANN batch rows" OFF)
 option(MOSAICRAFT_TRIAL_CUDA_CANNY "Benchmark end-to-end CUDA target features" OFF)
-option(MOSAICRAFT_TRIAL_CPU_TILES "Benchmark reusable CPU tile features" OFF)
+option(MOSAICRAFT_TRIAL_CPU_TILES "Use verified reusable features for fast CPU tiles" ON)
 option(MOSAICRAFT_TRIAL_LBP_SIMD "Vectorize LBP in the CPU tile trial" ON)
 set_property(SOURCE core/MosaicEngine.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     MOSAICRAFT_TRIAL_CUDA_CANNY=$<BOOL:${MOSAICRAFT_TRIAL_CUDA_CANNY}>
