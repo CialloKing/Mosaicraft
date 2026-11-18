@@ -612,16 +612,16 @@ struct FeaturePack::Reader::Impl
         {
             return;
         }
-        int previous = -1;
+        int previousId = -1;
         for (size_t i = 0; i < metadata.size(); ++i)
         {
             const auto &entry = metadata[i];
             const auto index = ids.find(entry.id);
-            if (entry.id <= previous || index == ids.end() || entry.tinyValid > 1 || entry.lbpValid > 1)
+            if (entry.id <= previousId || index == ids.end() || entry.tinyValid > 1 || entry.lbpValid > 1)
             {
                 return;
             }
-            previous = entry.id;
+            previousId = entry.id;
             positions[index->second] = static_cast<int>(i);
         }
         const auto tinyPath = generationPath(directory, manifest, ".tiny.bin");
