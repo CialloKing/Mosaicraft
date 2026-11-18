@@ -147,7 +147,15 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
                 cache.finishUse(recordAt(i).id, tileW, tileH);
             }
         };
-        WorkerPool pool(workers);
+        OutputBudget budget{};
+        if (config.outputMode != OutputMode::Tiles && config.outputMode != OutputMode::DeepZoom)
+        {
+            budget = outputBudget(config, plan, stats.overlayReferenceBytes, stats.overlayWorkingBytes);
+        }
+        const bool reserveEncoder = MOSAICRAFT_TRIAL_STREAM && budget.stream && config.threads > 1 &&
+                                    (plan.format == "png" || plan.format == "jpg");
+        // 生产者仅协调；编码占一个执行位，显式单线程仍然顺序写出。
+        WorkerPool pool(reserveEncoder ? std::min<unsigned>(workers, config.threads - 1) : workers);
         std::atomic<int> failures{0};
         std::atomic<int64_t> loadingNs{0};
         std::atomic<int64_t> samplingNs{0}, blendingNs{0};
@@ -267,7 +275,6 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         }
 
         const auto &format = plan.format;
-        const auto budget = outputBudget(config, plan, stats.overlayReferenceBytes, stats.overlayWorkingBytes);
         const int rgbRows = budget.rgbRows;
         const bool stream = budget.stream;
         const bool rgbStream = stream && format == "png";
@@ -384,7 +391,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
                 }
             }
         };
-        if (stream && config.threads > 0)
+        if (stream && config.threads > 0 && !reserveEncoder)
         {
             // 显式线程预算下分阶段合成和编码，编码器不额外占用一个并行工作线程。
             openWriter();
