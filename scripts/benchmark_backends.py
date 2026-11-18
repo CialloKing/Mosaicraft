@@ -103,6 +103,9 @@ def main():
     parser.add_argument("--warmups", type=int, default=3)
     parser.add_argument("--prepared-run", type=Path, help="reuse a completed run's private library and caches")
     parser.add_argument("--explore", action="store_true", help="scale probe only; allow unbalanced counts, no confidence intervals")
+    parser.add_argument("--resume", action="store_true", help="resume an incomplete output directory after verifying inputs")
+    parser.add_argument("--record-variation", action="append", default=[], metavar="VARIANT",
+                        help="record output differences for this variant instead of stopping; never ignores execution failures")
     options = parser.parse_args()
     specification = json.loads(options.manifest.read_text(encoding="utf-8-sig"))
     variants = specification["variants"]
@@ -117,13 +120,15 @@ def main():
                 "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for c in name) for name in names):
             parser.error("case/variant ids must be unique safe filenames")
     reference = specification.get("reference", "cpu")
+    if any(name not in [variant["id"] for variant in variants] for name in options.record_variation):
+        parser.error("record-variation must name a configured variant")
     if reference not in [variant["id"] for variant in variants]:
         parser.error("reference must name a variant")
     base = options.manifest.resolve().parent
     source = (base / specification["source"]).resolve()
     cases = [dict(item, input=str((base / item["input"]).resolve())) for item in specification["cases"]]
     root = options.output.resolve()
-    root.mkdir(parents=True, exist_ok=False)
+    root.mkdir(parents=True, exist_ok=options.resume)
     benchmark, quality = options.benchmark.resolve(), options.quality.resolve()
     report = dict(complete=False, started_utc=datetime.now(timezone.utc).isoformat(),
         source_sha256=digest(source), benchmark_sha256=digest(benchmark), quality_sha256=digest(quality),
@@ -136,8 +141,24 @@ def main():
                "paired-round bootstrap percentile CI (10000 resamples); not a cold-disk or energy benchmark.")
     if options.explore:
         report["method"] = "Exploratory scale probe only; no confidence intervals or statistical ranking. " + report["method"].split("paired-round")[0]
+    if options.resume:
+        previous = json.loads((root / "report.json").read_text(encoding="utf-8"))
+        keys = ("source_sha256", "benchmark_sha256", "quality_sha256", "cases", "variants", "reference",
+                "rounds", "warmups", "common_request", "exploratory")
+        if previous["complete"] or any(previous[key] != report[key] for key in keys):
+            raise ValueError("resume requires an incomplete run with identical binaries, inputs and parameters")
+        previous.setdefault("resumptions", []).append(dict(at_utc=datetime.now(timezone.utc).isoformat(),
+            source_commit=report["source_commit"], completed_samples=len(previous["samples"])))
+        report = previous
+    report["record_variation"] = options.record_variation
     save(root / "report.json", report)
-    if options.prepared_run:
+    if options.resume:
+        snapshot = Path(report["library_snapshot"])
+        if digest(snapshot) != report["snapshot_sha256"]:
+            raise ValueError("prepared snapshot changed before resume")
+        count = report["library_rows"]
+        print(f"Resuming after {len(report['samples'])} saved samples...", flush=True)
+    elif options.prepared_run:
         prepared = options.prepared_run.resolve()
         previous = json.loads((prepared / "report.json").read_text(encoding="utf-8"))
         if not previous["complete"] or previous["source_sha256"] != report["source_sha256"]:
@@ -159,11 +180,23 @@ def main():
     report["library_snapshot"] = str(snapshot)
     report["snapshot_sha256"] = digest(snapshot)
     # Keep relative asset paths intact without overwriting an earlier run's database.
-    database = snapshot.with_name("run-" + uuid.uuid4().hex + ".db")
+    database = Path(report["working_database"]) if options.resume else snapshot.with_name("run-" + uuid.uuid4().hex + ".db")
     report["working_database"] = str(database)
     first_selections = {}
+    for row in report["samples"]:
+        key = (row["case"], row["variant"])
+        if key not in first_selections:
+            prefix = root / Path(row["log"]).stem
+            selection = Path(str(prefix) + ".png.indices.bin")
+            hashes = (digest(selection), digest(Path(str(prefix) + ".png")))
+            if hashes != (row["selection_sha256"], row["output_sha256"]):
+                raise ValueError("saved baseline output changed before resume")
+            selected = array.array("i")
+            selected.frombytes(selection.read_bytes())
+            first_selections[key] = dict(hashes=hashes, indices=list(selected))
+    completed = {(row["phase"], row["round"], row["case"], row["variant"]) for row in report["samples"]}
     rng = random.Random(20261118)
-    plans = {case["id"]: balanced_orders(len(variants), options.rounds, rng) for case in cases}
+    plans = report.get("orders") or {case["id"]: balanced_orders(len(variants), options.rounds, rng) for case in cases}
     report["orders"] = plans
     for phase, rounds in (("warmup", options.warmups), ("measured", options.rounds)):
         for iteration in range(rounds):
@@ -172,6 +205,8 @@ def main():
                 order = plans[case["id"]][iteration % options.rounds]
                 for position, variant_index in enumerate(order):
                     variant = variants[variant_index]
+                    if (phase, iteration, case["id"], variant["id"]) in completed:
+                        continue
                     tag = f"{phase}-{iteration:02d}-{case['id']}-{variant['id']}"
                     with readonly_database(snapshot) as original, closing(sqlite3.connect(database)) as target:
                         original.backup(target)
@@ -203,17 +238,20 @@ def main():
                         raise RuntimeError(f"{tag}: requested backend did not run")
                     key = (case["id"], variant["id"])
                     hashes = (digest(selection_path), digest(output))
-                    if key in first_selections and first_selections[key]["hashes"] != hashes:
+                    varied = key in first_selections and first_selections[key]["hashes"] != hashes
+                    difference = sum(a != b for a, b in zip(selected, first_selections[key]["indices"])) if varied else 0
+                    if varied and variant["id"] not in options.record_variation:
                         raise RuntimeError(f"{tag}: fixed-input selection/output changed between repetitions")
                     first_selections.setdefault(key, dict(hashes=hashes, indices=list(selected)))
                     report["samples"].append(dict(phase=phase, round=iteration, position=position,
                         case=case["id"], variant=variant["id"], metrics=dict(summary["metrics"], processWallMs=wall),
                         feature_backend=summary["feature_backend"], score_backend=summary["score_backend"],
                         device=summary["device"], selected_count=len(selected), selection_sha256=hashes[0],
-                        output_sha256=hashes[1], log=tag + ".log"))
+                        output_sha256=hashes[1], log=tag + ".log", output_varied=varied, different_from_first=difference))
                     save(root / "report.json", report)
                     print(f"{phase} {iteration + 1}/{rounds} {case['id']} {variant['id']}: "
-                          f"match={summary['metrics']['matchingMs']:.0f}ms total={summary['metrics']['totalMs']:.0f}ms", flush=True)
+                          f"match={summary['metrics']['matchingMs']:.0f}ms total={summary['metrics']['totalMs']:.0f}ms"
+                          + (f" OUTPUT VARIATION: {difference} tiles" if varied else ""), flush=True)
     report["selection_differences"] = {}
     for case in cases:
         baseline = first_selections[(case["id"], reference)]["indices"]
@@ -224,6 +262,8 @@ def main():
         raise RuntimeError("source database changed during benchmark")
     if digest(snapshot) != report["snapshot_sha256"]:
         raise RuntimeError("prepared snapshot changed during benchmark")
+    if any(digest(case["input"]) != case["sha256"] for case in report["cases"]):
+        raise RuntimeError("target input changed during benchmark")
     report["summary"] = summarize(report)
     report["complete"] = True
     report["finished_utc"] = datetime.now(timezone.utc).isoformat()
