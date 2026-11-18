@@ -161,8 +161,15 @@ size_t FeatureWorkspace::pinnedBytes() const
 
 size_t FeatureWorkspace::residentBytes() const
 {
-    return buffers->pipeline ? buffers->pipeline->state->bytes + buffers->pipeline->target.capacityBytes() +
-        buffers->pipeline->canny.capacityBytes() : 0;
+    const auto *p = buffers->pipeline.get();
+    if (!p)
+    {
+        return 0;
+    }
+    // 原图路径的评分工作区和像素、Canny 暂存同时存活，必须从同一显存上限扣除。
+    const size_t scratch = p->stripeRows ? p->images.capacityBytes() + p->lab.capacityBytes() +
+        p->bright.capacityBytes() + p->contrast.capacityBytes() + p->edge.capacityBytes() : 0;
+    return p->state->bytes + p->target.capacityBytes() + p->canny.capacityBytes() + scratch;
 }
 
 bool FeatureWorkspace::needsHostPixels() const
@@ -184,7 +191,8 @@ int FeatureWorkspace::pieceSize(int tile, int requested) const
 void FeatureWorkspace::beginBatch(int count, int firstTile)
 {
     auto *p = buffers->pipeline.get();
-    if (!p || count <= 0 || count > p->config.maxTiles)
+    if (!p || firstTile < 0 || count <= 0 || count > p->config.maxTiles || (p->stripeRows &&
+        int64_t(firstTile) + count > int64_t(p->config.cols / p->config.tileW) * (p->config.rows / p->config.tileH)))
     {
         throw std::invalid_argument("invalid CUDA feature batch");
     }
@@ -984,7 +992,7 @@ void FeatureWorkspace::extract(int first, int count, double *lab, float *grid, u
 {
     auto *p = buffers->pipeline.get();
     if (!p || count <= 0 || count > 256 || first != p->state->ready ||
-        count > p->state->count - first || !lab || !grid || !edge ||
+        count > p->state->count - first || count != pieceSize(p->firstTile + first, count) || !lab || !grid || !edge ||
         (p->config.downloadTiny && !tiny) || (p->config.downloadLbp && !lbp))
     {
         throw std::invalid_argument("invalid CUDA feature extraction range");

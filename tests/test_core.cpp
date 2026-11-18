@@ -2483,4 +2483,14 @@ TEST_CASE("CUDA device Canny returns CPU edge counts without host-side tile imag
         CHECK(edge[i] == mosaicraft::computeEdgeDensity(roi(cv::Rect(i * 180, 0, 180, 320))));
     }
     CHECK(timings.downloadBytes == 3 * (4 * sizeof(double) + 192 * sizeof(float)));
+    CHECK_THROWS_AS(pipeline.beginBatch(1, 3), std::invalid_argument);
+    for (auto fault : {PipelineFault::AfterUpload, PipelineFault::BeforeWait})
+    {
+        cfg.testFault = fault;
+        REQUIRE(pipeline.preparePipeline(cfg));
+        REQUIRE_FALSE(pipeline.needsHostPixels());
+        pipeline.beginBatch(3);
+        CHECK_THROWS_AS(pipeline.extract(0, 3, lab, grid.data(), nullptr, edge, nullptr), std::runtime_error);
+        CHECK_THROWS_AS(pipeline.deviceView(0, 1), std::invalid_argument);
+    }
 }

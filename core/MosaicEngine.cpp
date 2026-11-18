@@ -1306,7 +1306,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             const size_t hostRows = gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze, true);
             const size_t scoreHost = batchRows * scoreRowBytes;
             if (!templateFeatureHit && m_limits.cudaPipeline && hostRows + scratch + scoreHost < hostBudget &&
-                scoreRowBytes < 256ULL * 1024 * 1024)
+                scoreRowBytes + expansionDeviceReserve < deviceBudget)
             {
                 cuda::FeaturePipelineConfig options;
                 options.maxTiles = static_cast<int>(batchRows);
@@ -1330,14 +1330,14 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 options.downloadTiny = cfg.analyze || cacheTileFeatures;
                 options.downloadLbp = cfg.analyze || cfg.adaptiveWeights || cacheTileFeatures;
                 options.hostBudget = hostBudget - hostRows - scratch - scoreHost;
-                options.deviceBudget -= scoreRowBytes + expansionDeviceReserve;
+                options.deviceBudget = deviceBudget - scoreRowBytes - expansionDeviceReserve;
                 pipeline = workspace->preparePipeline(options, cfg.benchmark ? &metrics.featureTimings : nullptr);
                 if (pipeline)
                 {
                     const auto allocationStart = Clock::now();
                     pipeline = scoreWorkspace->preparePipeline(static_cast<int>(batchRows), N, scoreHost,
                                                                  workspace->residentBytes(),
-                                                                 256ULL * 1024 * 1024 - expansionDeviceReserve,
+                                                                 deviceBudget - expansionDeviceReserve,
                                                                  cuda::PipelineFault::None, fastScore);
                     metrics.scoreTimings.allocationMs += Ms(Clock::now() - allocationStart).count();
                 }
