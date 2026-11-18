@@ -2446,3 +2446,41 @@ TEST_CASE("CUDA compact target honors stride, tile boundaries and one-row budget
     }
     CHECK(timings.uploadBytes == 18 * 32 * 3);
 }
+TEST_CASE("CUDA device Canny returns CPU edge counts without host-side tile images")
+{
+    using namespace mosaicraft::cuda;
+    if (!isCudaAvailable())
+    {
+        return;
+    }
+    cv::Mat parent(320, 545, CV_8UC3);
+    auto roi = parent(cv::Rect(1, 0, 540, 320));
+    roi.setTo(cv::Scalar::all(61));
+    auto pattern = roi(cv::Rect(180, 0, 180, 320));
+    cv::RNG(42).fill(pattern, cv::RNG::UNIFORM, 0, 256);
+    cv::line(roi, {370, 2}, {537, 315}, cv::Scalar(12, 150, 230), 4);
+    FeaturePipelineConfig cfg;
+    cfg.maxTiles = 3;
+    cfg.tileW = cfg.width;
+    cfg.tileH = cfg.height;
+    cfg.cols = roi.cols;
+    cfg.rows = roi.rows;
+    cfg.target = roi.data;
+    cfg.targetStep = roi.step;
+    cfg.deviceCanny = true;
+    cfg.downloadTiny = cfg.downloadLbp = false;
+    FeatureWorkspace pipeline;
+    REQUIRE(pipeline.preparePipeline(cfg));
+    REQUIRE_FALSE(pipeline.needsHostPixels());
+    CHECK(pipeline.pipelineInput() == nullptr);
+    pipeline.beginBatch(3, 0);
+    double lab[9], edge[3];
+    std::array<float, 3 * 192> grid;
+    GpuTimings timings;
+    pipeline.extract(0, 3, lab, grid.data(), nullptr, edge, nullptr, &timings);
+    for (int i = 0; i < 3; ++i)
+    {
+        CHECK(edge[i] == mosaicraft::computeEdgeDensity(roi(cv::Rect(i * 180, 0, 180, 320))));
+    }
+    CHECK(timings.downloadBytes == 3 * (4 * sizeof(double) + 192 * sizeof(float)));
+}
