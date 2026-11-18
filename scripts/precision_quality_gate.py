@@ -51,10 +51,34 @@ def assess(rows, groups):
     return result
 
 
+def finish(folder, study, evaluation, snapshot, snapshot_sha, prepared_report, match, quality):
+    rows = {r['id']: r['quality'] for r in evaluation['runs']}
+    if not evaluation['complete'] or len(rows) != len(study['runs']):
+        raise ValueError('incomplete quality evaluation')
+    groups = {}
+    for expected in study['runs']:
+        actual = rows[expected['id']]
+        if any(actual[key] != expected[key] for key in ('matched', 'missing')):
+            raise ValueError(f"{expected['id']}: captured grid does not match reported coverage")
+        if digest(expected['selection']) != expected['selection_sha256']:
+            raise ValueError(f"{expected['id']}: captured selections changed after evaluation")
+        group, mode = expected['id'].rsplit('-', 2)[0], expected['id'].rsplit('-', 1)[1]
+        groups.setdefault(group, {key: [] for key in ('compatible', 'fast')})[mode].append(expected['id'])
+    if digest(snapshot) != snapshot_sha:
+        raise RuntimeError('private source snapshot changed')
+    results = assess(rows, groups)
+    save(folder / 'gate.json', dict(passed=all(row['passed'] for row in results), groups=results,
+        snapshot_sha256=snapshot_sha, prepared_report_sha256=digest(prepared_report),
+        match_sha256=digest(match), quality_sha256=digest(quality)))
+    return all(row['passed'] for row in results)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for field in ('prepared-run','match','quality','inputs','output'):
         parser.add_argument('--'+field, required=True, type=Path)
+    parser.add_argument('--finish-existing', action='store_true',
+                        help='validate saved selections and finish an already completed evaluation')
     parser.add_argument('--device', action='append', required=True, help='cpu or a discovered cuda/vulkan/metal device ID')
     args = parser.parse_args()
     previous = json.loads((args.prepared_run / 'report.json').read_bytes())
@@ -63,6 +87,12 @@ def main():
     if not previous['complete'] or snapshot_sha != previous.get('snapshot_sha256', snapshot_sha):
         raise ValueError('need an unchanged, completed private snapshot')
     folder = args.output.resolve()
+    if args.finish_existing:
+        study = json.loads((folder / 'study.json').read_bytes())
+        evaluation = json.loads((folder / 'evaluation.json').read_bytes())
+        passed = finish(folder, study, evaluation, snapshot, snapshot_sha, args.prepared_run / 'report.json',
+                        args.match, args.quality)
+        return 0 if passed else 2
     folder.mkdir(parents=True, exist_ok=False)
     database = snapshot.with_name('quality-' + uuid.uuid4().hex + '.db')
     with readonly_database(snapshot) as src, closing(sqlite3.connect(database)) as dest:
@@ -103,20 +133,9 @@ def main():
     save(folder/'study.json',study)
     run([args.quality,folder/'study.json',folder/'evaluation.json'],folder/'evaluation.log')
     evaluation=json.loads((folder/'evaluation.json').read_bytes())
-    rows = {r['id']: r['quality'] for r in evaluation['runs']}
-    if not evaluation['complete'] or len(rows) != len(study['runs']):
-        raise ValueError('incomplete quality evaluation')
-    for expected in study['runs']:
-        actual = rows[expected['id']]
-        if any(actual[key] != expected[key] for key in ('matched', 'missing')):
-            raise ValueError(f"{expected['id']}: captured grid does not match reported coverage")
-    groups = assess(rows, groups)
-    if digest(snapshot)!=previous['snapshot_sha256']:
-        raise RuntimeError('private source snapshot changed')
-    save(folder/'gate.json',dict(passed=all(row['passed'] for row in groups), groups=groups,
-        snapshot_sha256=digest(snapshot),prepared_report_sha256=digest(args.prepared_run/'report.json'),
-        match_sha256=digest(args.match),quality_sha256=digest(args.quality)))
-    return 0 if all(row['passed'] for row in groups) else 2
+    passed = finish(folder, study, evaluation, snapshot, snapshot_sha, args.prepared_run / 'report.json',
+                    args.match, args.quality)
+    return 0 if passed else 2
 
 
 if __name__ == '__main__':
