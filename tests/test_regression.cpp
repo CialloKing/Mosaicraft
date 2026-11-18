@@ -521,6 +521,29 @@ TEST_CASE("output adaptation preserves fixed seed selections and committed usage
     CHECK(result.diagnostic.code == "output_write_failed");
 }
 
+TEST_CASE("fast history preserves count differences and bounds near-equal rankings")
+{
+    std::vector<ImageRecord> records(2);
+    records[0].useCount = INT_MAX - 1;
+    records[1].useCount = INT_MAX;
+    const int indices[]{0, -1, 1};
+    RowHistory ordinary(indices, 3, records, 0.25);
+    CHECK_FALSE(ordinary.wide);
+    CHECK(ordinary.combine(0.125f, INT_MAX, 0.25) == 0.375);
+    records[0].useCount = 0;
+    RowHistory wide(indices, 3, records, 1);
+    REQUIRE(wide.wide);
+    CHECK(wide.combine(0.125f, INT_MAX, 1) == double(INT_MAX) + 0.125);
+    CHECK_THROWS(wide.combine(std::numeric_limits<float>::infinity(), INT_MAX, 1));
+    detail::RankBound bound(2);
+    bound.observe(1.0);
+    bound.observe(2.0);
+    CHECK_FALSE(bound.excludes(2.0));
+    CHECK(bound.excludes(std::nextafter(2.0, 3.0)));
+    bound.reset();
+    CHECK_FALSE(bound.excludes(3.0));
+}
+
 TEST_CASE("compatible CUDA scores are exact and failures never publish partial results")
 {
     using namespace mosaicraft::cuda;

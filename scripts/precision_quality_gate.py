@@ -88,7 +88,10 @@ def main():
                         run([args.match,req,'--match-only','--seed',seed,'--no-detail','--summary',summary],folder/(tag+'.log'))
                         actual = json.loads(summary.read_bytes())
                         scorer = 'cpu' if mode=='compatible' and backend in ('metal','vulkan') else backend
-                        if actual['failed'] or actual['warnings'] or actual['device']!=device or scorer not in actual['score_backend'] or actual['score_mode']!=mode:
+                        # match-only 的 failed 是未匹配格数，不是退出状态；稀缺场景由逐种子覆盖率门槛验收。
+                        if (actual['failed'] and case['id'] != 'scarce') or actual['warnings'] or (
+                                actual['device'] != device or scorer not in actual['score_backend'] or
+                                actual['score_mode'] != mode or backend not in actual['feature_backend']):
                             raise ValueError(f'{tag}: unexpected execution path')
                         selection = Path(str(output)+'.indices.bin')
                         study['runs'].append(dict(id=tag,case=case['id'],selection=str(selection),selection_sha256=digest(selection)))

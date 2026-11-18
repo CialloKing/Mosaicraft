@@ -23,7 +23,7 @@ API **1.5** adds device discovery, Vulkan/Metal and compatible/fast scoring. Exi
 
 建库、追加和生成请求的 `backend` 支持 `auto|cpu|cuda|vulkan|metal`，`device` 缺省 `auto`，也可使用设备发现返回的标识（例如 `vulkan:1`）。后端、设备与 `useGpu` 冲突会拒绝请求。显式 GPU 请求不切换到其他 GPU 后端。
 
-生成和预览增加 `scoreMode=compatible|fast`，缺省 `compatible`。Vulkan/Metal 的兼容评分在 CPU FP64 执行，快速评分在 GPU FP32 计算五种距离，由 CPU 使用现有双精度权重和惩罚合成。CPU/CUDA 首期保留已有精度行为。新后端暂不进入 `auto`。
+生成和预览增加 `scoreMode=compatible|fast`，缺省 `compatible`。Vulkan/Metal 的兼容评分在 CPU FP64 执行，快速模式在所选计算后端计算 FP32 加权基础分，再由 CPU 顺序执行历史和邻域规则。新后端暂不进入 `auto`。
 
 运行结果 `runtime` 新增实际 `device`、`scoreMode`、`kernelVersion`。`gpuComputeWaitMs` 是主机提交、执行及等待的合计，不能当作纯内核事件时间；其他便携 GPU 指标包括分配、上传、下载、库常驻及峰值缓冲。`gpuSharedMemoryBytes` 是共享 GPU 缓冲的同一份分配，不应再次加到 CPU RSS 作为物理内存总量。NVML 指标只适用于实际 CUDA 设备，其他不可取得值继续使用不可用语义。
 
