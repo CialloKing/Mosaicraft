@@ -89,10 +89,15 @@ def main():
     for field in ('prepared-run','match','quality','inputs','output'):
         parser.add_argument('--'+field, required=True, type=Path)
     parser.add_argument('--baseline-match', type=Path, help='compare baseline fast vs candidate fast with strict per-group gates')
+    parser.add_argument('--require-device-canny', action='store_true',
+                        help='verify that every candidate tile ran template CUDA Canny, not the budget fallback')
     parser.add_argument('--finish-existing', action='store_true',
                         help='validate saved selections and finish an already completed evaluation')
     parser.add_argument('--device', action='append', required=True, help='cpu or a discovered cuda/vulkan/metal device ID')
     args = parser.parse_args()
+    if args.require_device_canny and (not args.baseline_match or args.finish_existing or
+                                      any(not d.startswith('cuda:') for d in args.device)):
+        parser.error('device Canny verification requires a new CUDA fast/fast comparison')
     previous = json.loads((args.prepared_run / 'report.json').read_bytes())
     snapshot = Path(previous.get('library_snapshot', args.prepared_run / 'library/snapshot.db')).resolve()
     snapshot_sha = digest(snapshot)
@@ -141,7 +146,8 @@ def main():
                         req, summary = folder/(tag+'.request.json'), folder/(tag+'.summary.json')
                         save(req, request)
                         flags = ['--allow-unmatched'] if case['id'] == 'scarce' else []
-                        run([binary,req,'--match-only',*flags,'--seed',seed,'--no-detail','--summary',summary],folder/(tag+'.log'))
+                        detail = [] if args.require_device_canny else ['--no-detail']
+                        run([binary,req,'--match-only',*flags,'--seed',seed,*detail,'--summary',summary],folder/(tag+'.log'))
                         actual = json.loads(summary.read_bytes())
                         scorer = 'cpu' if mode=='compatible' and backend in ('metal','vulkan') else backend
                         # match-only 的 failed 是未匹配格数，不是退出状态；稀缺场景由逐种子覆盖率门槛验收。
@@ -149,6 +155,11 @@ def main():
                                 actual['device'] != device or scorer not in actual['score_backend'] or
                                 actual['score_mode'] != mode or not actual['kernel'] or backend not in actual['feature_backend']):
                             raise ValueError(f'{tag}: unexpected execution path')
+                        if args.require_device_canny:
+                            tiles = actual['width'] * actual['height']
+                            observed = actual['metrics'].get('deviceCannyTiles', 0 if label == 'baseline' else None)
+                            if not tiles or observed != (tiles if label == 'candidate' else 0):
+                                raise ValueError(f'{tag}: unexpected number of device Canny tiles: {observed}')
                         selection = Path(str(output)+'.indices.bin')
                         study['runs'].append(dict(id=tag,case=case['id'],selection=str(selection),selection_sha256=digest(selection),
                             matched=actual['matched'], missing=actual['failed'], kernel=actual['kernel']))

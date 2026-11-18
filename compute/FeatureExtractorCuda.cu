@@ -1021,6 +1021,7 @@ void extractPipelined(FeaturePipeline &p, int first, int count, double *lab, flo
     p.state->ready += count;
     if (timings)
     {
+        timings->deviceCannyTiles += p.cannyRows ? rows : 0;
         timings->uploadBytes += uploaded;
         timings->downloadBytes += rows * ((p.cannyRows ? 4 : 3) * sizeof(double) + 192 * sizeof(float) +
                                           (p.config.downloadLbp ? 256 * sizeof(float) : 0) +

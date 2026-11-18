@@ -18,7 +18,7 @@ struct GpuTimings
     // Event 时间是设备时间；上面的同步路径计时保持原有主机墙钟口径。
     double eventUploadMs = 0, eventComputeMs = 0, eventDownloadMs = 0;
     std::size_t uploadBytes = 0, downloadBytes = 0, pinnedBytes = 0, residentBytes = 0, pixelBytes = 0;
-    std::size_t peakTemporaryBytes = 0;
+    std::size_t peakTemporaryBytes = 0, deviceCannyTiles = 0;
 };
 
 // 仅内部回归注入；生产配置不暴露故障或流水线开关。

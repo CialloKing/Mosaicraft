@@ -2732,6 +2732,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             runtime.metric("identicalTileHits", identicalHits);
             runtime.metric("identicalTileProbeMs", identicalProbeMs);
         }
+        if (templateCuda && cfg.benchmark)
+        {
+            // 已处理的格数，而非请求的开关：预算不足仍可能使用主机 Canny。
+            runtime.metric("deviceCannyTiles", double(metrics.featureTimings.deviceCannyTiles));
+        }
         if (featureReader)
         {
             metrics.featureReadStats = featureReader->stats();
