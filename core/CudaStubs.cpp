@@ -44,7 +44,7 @@ void CompatibleScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &, F
 {
     throw std::runtime_error("CUDA is not available");
 }
-void CompatibleScoreWorkspace::score(const MatchingBuffers &, int, double, double *, GpuTimings *)
+void CompatibleScoreWorkspace::score(const MatchingBuffers &, int, double, double *, GpuTimings *, float *)
 {
     throw std::runtime_error("CUDA is not available");
 }
@@ -133,7 +133,7 @@ std::size_t ScoreWorkspace::pinnedBytes() const
 }
 bool scoreDeviceBatch(const DeviceFeatureView &, const double *, const double *, const double *, const double *,
                       const int *, int, const GpuLibrary &, const double *, const double *, const double *,
-                      const double *, const double *, double, double *, ScoreWorkspace &, GpuTimings *, std::size_t)
+                      const double *, const double *, double, double *, ScoreWorkspace &, GpuTimings *, std::size_t, float *)
 {
     return false;
 }
@@ -185,7 +185,7 @@ int matchWithIndices(double, double, double, const float *, const std::uint8_t *
 bool scoreBatch(int, const double *, const double *, const double *, const float *, const std::uint8_t *,
                 const double *, const float *, const int *, int, const GpuLibrary &, const double *, const double *,
                 const double *, const double *, const double *, double, double *, GpuTimings *, std::size_t,
-                ScoreWorkspace *)
+                ScoreWorkspace *, float *)
 {
     return false;
 }

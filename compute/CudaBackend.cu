@@ -3,6 +3,7 @@
 
 #include <cuda_runtime.h>
 #include "DeviceBuffer.cuh"
+#include "FastScore.cuh"
 
 #include <cfloat>
 #include <algorithm>
@@ -804,20 +805,23 @@ bool scoreBatch(int totalTiles, const double *h_tileL, const double *h_tileA, co
                 const int *h_indices,           // [totalTiles * N]，-1 表示无效候选
                 int N, const GpuLibrary &lib, const double *h_labW, const double *h_gridW, const double *h_tinyW,
                 const double *h_edgeW, const double *h_lbpW, double usePenalty, double *outScores, GpuTimings *timings,
-                std::size_t temporaryBudget, ScoreWorkspace *workspace)
+                std::size_t temporaryBudget, ScoreWorkspace *workspace, float *fastScores)
 {
     if (timings)
     {
         *timings = {};
     }
     if (totalTiles <= 0 || N <= 0 || totalTiles > std::numeric_limits<int>::max() / N
-        || !outScores || !h_indices || !h_tileL || !h_tileA || !h_tileB || !h_tileGrid
+        || (!outScores && !fastScores) || !h_indices || !h_tileL || !h_tileA || !h_tileB || !h_tileGrid
         || !h_tileTiny || !h_tileEdge || !h_tileLBP || !h_labW || !h_gridW
         || !h_tinyW || !h_edgeW || !h_lbpW || !hasValidLibrary(lib))
     {
         return false;
     }
-    fillFailedScores(outScores, totalTiles * N);
+    if (!fastScores)
+    {
+        fillFailedScores(outScores, totalTiles * N);
+    }
     std::size_t freeBytes = 0, totalBytes = 0;
     if (!CUDA_OK(cudaMemGetInfo(&freeBytes, &totalBytes)))
     {
@@ -863,7 +867,7 @@ bool scoreBatch(int totalTiles, const double *h_tileL, const double *h_tileA, co
     {
         timings->peakTemporaryBytes = storage.capacityBytes();
         timings->uploadBytes = static_cast<std::size_t>(totalTiles) * (bytesPerTile - N * sizeof(double));
-        timings->downloadBytes = static_cast<std::size_t>(totalTiles) * N * sizeof(double);
+        timings->downloadBytes = static_cast<std::size_t>(totalTiles) * N * (fastScores ? sizeof(float) : sizeof(double));
     }
     for (int first = 0; first < totalTiles; first += batchSize)
     {
@@ -956,10 +960,19 @@ bool scoreBatch(int totalTiles, const double *h_tileL, const double *h_tileA, co
             PhaseTimer timer(timings ? &timings->computeMs : nullptr);
             const int blockSize = 256;
             const int gridSize = static_cast<int>((work + blockSize - 1) / blockSize);
-            scoreBatchKernel<<<gridSize, blockSize>>>(
-                count, d_tileL, d_tileA, d_tileB, d_tileGrid, d_tileTiny, d_tileEdge, d_tileLBP, d_indices, N,
-                lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use, lib.d_tinyValid, lib.d_lbpValid,
-                lib.count, d_labW, d_gridW, d_tinyW, d_edgeW, d_lbpW, usePenalty, d_scores);
+            if (fastScores)
+            {
+                const FastTileView view{d_tileL, d_tileA, d_tileB, d_tileEdge, d_tileGrid, d_tileLBP, d_tileTiny,
+                                        d_labW, d_gridW, d_tinyW, d_edgeW, d_lbpW};
+                fastScoreKernel<<<gridSize, blockSize>>>(view, lib, d_indices, N, work, reinterpret_cast<float *>(d_scores));
+            }
+            else
+            {
+                scoreBatchKernel<<<gridSize, blockSize>>>(
+                    count, d_tileL, d_tileA, d_tileB, d_tileGrid, d_tileTiny, d_tileEdge, d_tileLBP, d_indices, N,
+                    lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use, lib.d_tinyValid, lib.d_lbpValid,
+                    lib.count, d_labW, d_gridW, d_tinyW, d_edgeW, d_lbpW, usePenalty, d_scores);
+            }
             if (!CUDA_OK(cudaGetLastError()) || !CUDA_OK(cudaDeviceSynchronize()))
             {
                 return false;
@@ -967,8 +980,9 @@ bool scoreBatch(int totalTiles, const double *h_tileL, const double *h_tileA, co
         }
         {
             PhaseTimer timer(timings ? &timings->downloadMs : nullptr);
-            if (!CUDA_OK(cudaMemcpy(outScores + static_cast<std::size_t>(first) * N,
-                d_scores, work * sizeof(double), cudaMemcpyDeviceToHost)))
+            const size_t offset = size_t(first) * N;
+            void *dest = fastScores ? static_cast<void *>(fastScores + offset) : static_cast<void *>(outScores + offset);
+            if (!CUDA_OK(cudaMemcpy(dest, d_scores, work * (fastScores ? sizeof(float) : sizeof(double)), cudaMemcpyDeviceToHost)))
             {
                 return false;
             }
@@ -984,7 +998,7 @@ bool scoreDeviceBatch(const DeviceFeatureView &features, const double *l, const 
                       const double *edge, const int *indices, int N, const GpuLibrary &lib, const double *labW,
                       const double *gridW, const double *tinyW, const double *edgeW, const double *lbpW,
                       double usePenalty, double *scores, ScoreWorkspace &workspace, GpuTimings *timings,
-                      size_t temporaryBudget)
+                      size_t temporaryBudget, float *fastScores)
 {
     if (timings)
     {
@@ -995,7 +1009,7 @@ bool scoreDeviceBatch(const DeviceFeatureView &features, const double *l, const 
     if (!state || !p || state->generation != features.generation || features.first < 0 || features.count <= 0 ||
         features.first > state->ready || features.count > state->ready - features.first ||
         N != p->candidates || features.count > std::numeric_limits<int>::max() / N ||
-        !l || !a || !b || !edge || !indices || !labW || !gridW || !tinyW || !edgeW || !lbpW || !scores ||
+        !l || !a || !b || !edge || !indices || !labW || !gridW || !tinyW || !edgeW || !lbpW || (!scores && !fastScores) ||
         !hasValidLibrary(lib) || state->bytes > p->residentBytes)
     {
         return false;
@@ -1056,15 +1070,27 @@ bool scoreDeviceBatch(const DeviceFeatureView &features, const double *l, const 
         }
         transfer.mark(1);
         const int blockSize = 256;
-        scoreBatchKernel<<<static_cast<int>((work + blockSize - 1) / blockSize), blockSize, 0, transfer.stream>>>(
-            count, device, device + count, device + count * 2, state->grid + featureFirst * 192,
-            state->tiny + featureFirst * 256, device + count * 3, state->lbp + featureFirst * 256, deviceIndices, N,
-            lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use, lib.d_tinyValid, lib.d_lbpValid,
-            lib.count, device + count * 4, device + count * 5, device + count * 6, device + count * 7,
-            device + count * 8, usePenalty, deviceScores);
+        if (fastScores)
+        {
+            const FastTileView view{device, device + count, device + count*2, device + count*3,
+                state->grid + featureFirst*192, state->lbp + featureFirst*256, state->tiny + featureFirst*256,
+                device + count*4, device + count*5, device + count*6, device + count*7, device + count*8};
+            fastScoreKernel<<<static_cast<int>((work + 255)/256), 256, 0, transfer.stream>>>(
+                view, lib, deviceIndices, N, work, reinterpret_cast<float *>(deviceScores));
+        }
+        else
+        {
+            scoreBatchKernel<<<static_cast<int>((work + blockSize - 1) / blockSize), blockSize, 0, transfer.stream>>>(
+                count, device, device + count, device + count * 2, state->grid + featureFirst * 192,
+                state->tiny + featureFirst * 256, device + count * 3, state->lbp + featureFirst * 256, deviceIndices, N,
+                lib.d_lab, lib.d_grid, lib.d_tiny, lib.d_edge, lib.d_lbp, lib.d_use, lib.d_tinyValid, lib.d_lbpValid,
+                lib.count, device + count * 4, device + count * 5, device + count * 6, device + count * 7,
+                device + count * 8, usePenalty, deviceScores);
+        }
         requireCuda(cudaGetLastError());
         transfer.mark(2);
-        requireCuda(cudaMemcpyAsync(hostScores, deviceScores, work * sizeof(double), cudaMemcpyDeviceToHost,
+        const size_t bytes = work * (fastScores ? sizeof(float) : sizeof(double));
+        requireCuda(cudaMemcpyAsync(hostScores, deviceScores, bytes, cudaMemcpyDeviceToHost,
                                     transfer.stream));
         transfer.mark(3);
         if (p->testFault == PipelineFault::BeforeWait)
@@ -1072,11 +1098,13 @@ bool scoreDeviceBatch(const DeviceFeatureView &features, const double *l, const 
             throw std::runtime_error("injected score failure before completion");
         }
         transfer.finish(timings);
-        std::memcpy(scores + static_cast<size_t>(first) * N, hostScores, work * sizeof(double));
+        const size_t offset = size_t(first) * N;
+        void *dest = fastScores ? static_cast<void *>(fastScores + offset) : static_cast<void *>(scores + offset);
+        std::memcpy(dest, hostScores, bytes);
         if (timings)
         {
             timings->uploadBytes += count * 9 * sizeof(double) + work * sizeof(int);
-            timings->downloadBytes += work * sizeof(double);
+            timings->downloadBytes += bytes;
         }
     }
     drain.complete();

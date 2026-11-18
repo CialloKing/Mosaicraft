@@ -139,14 +139,15 @@ bool scoreBatch(int totalTiles, const double *h_tileL, const double *h_tileA, co
                 const float *h_tileLBP, const int *h_indices, int N, const GpuLibrary &lib, const double *h_labW,
                 const double *h_gridW, const double *h_tinyW, const double *h_edgeW, const double *h_lbpW,
                 double usePenalty, double *outScores, GpuTimings *timings = nullptr,
-                std::size_t temporaryBudget = 256ULL * 1024 * 1024, ScoreWorkspace *workspace = nullptr);
+                std::size_t temporaryBudget = 256ULL * 1024 * 1024, ScoreWorkspace *workspace = nullptr, float *fastScores = nullptr);
 
 // Grid/Tiny/LBP 只引用当前批设备特征；弱引用和 generation 校验生命周期，不改变 kernel 算术。
 bool scoreDeviceBatch(const DeviceFeatureView &features, const double *l, const double *a, const double *b,
                       const double *edge, const int *indices, int candidates, const GpuLibrary &library,
                       const double *labW, const double *gridW, const double *tinyW, const double *edgeW,
                       const double *lbpW, double usePenalty, double *scores, ScoreWorkspace &workspace,
-                      GpuTimings *timings = nullptr, std::size_t temporaryBudget = 256ULL * 1024 * 1024);
+                      GpuTimings *timings = nullptr, std::size_t temporaryBudget = 256ULL * 1024 * 1024,
+                      float *fastScores = nullptr);
 
 int matchOnGpu(double tL, double tA, double tB, const float *tileGrid, const std::uint8_t *tileTiny, double tileEdge,
                const float *tileLBP, const CandidateData &candidates, double labW, double gridW, double tinyW,

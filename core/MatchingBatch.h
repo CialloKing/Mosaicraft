@@ -84,7 +84,8 @@ struct MatchingBuffers
     std::vector<uint8_t> images;
     std::vector<std::vector<float>> grid4;
 
-    void resize(size_t count, size_t imageBytes, int candidates, bool gpu, bool analyze, bool pinnedInput = false)
+    void resize(size_t count, size_t imageBytes, int candidates, bool gpu, bool analyze, bool pinnedInput = false,
+                bool fast = false)
     {
         l.resize(count);
         a.resize(count);
@@ -107,7 +108,10 @@ struct MatchingBuffers
                 images.resize(checkedMatchProduct(std::min<size_t>(count, 256), imageBytes));
             }
             lab.resize(count * 3);
-            scores.resize(checkedMatchProduct(count, candidates));
+            if (!fast)
+            {
+                scores.resize(checkedMatchProduct(count, candidates));
+            }
             if (analyze)
             {
                 grid4.resize(count);

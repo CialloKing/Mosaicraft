@@ -1,5 +1,6 @@
 #include "CudaPreflight.cuh"
 #include "CompatibleScoring.h"
+#include "FastScore.cuh"
 #include "DeviceBuffer.cuh"
 #include <algorithm>
 #include <cfloat>
@@ -358,9 +359,9 @@ void CompatibleScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &rec
 }
 
 void CompatibleScoreWorkspace::score(const MatchingBuffers &tiles, int count, double usePenalty, double *scores,
-                                     GpuTimings *timings)
+                                     GpuTimings *timings, float *fastScores)
 {
-    if (!m_impl || !m_impl->ready || m_impl->failed || count < 1 || count > capacity() || !scores ||
+    if (!m_impl || !m_impl->ready || m_impl->failed || count < 1 || count > capacity() || (!scores && !fastScores) ||
         tiles.l.size() < size_t(count) || tiles.indices.size() < size_t(count) * m_impl->candidates)
     {
         throw std::invalid_argument("invalid compatible CUDA score batch");
@@ -369,7 +370,7 @@ void CompatibleScoreWorkspace::score(const MatchingBuffers &tiles, int count, do
     const auto host = scoreLayout(p.staging.get(), count, p.candidates);
     const auto device = scoreLayout(p.temporary.get(), count, p.candidates);
     const size_t inputBytes = reinterpret_cast<uint8_t *>(host.scores) - p.staging.get();
-    const size_t outputBytes = size_t(count) * p.candidates * sizeof(double);
+    const size_t outputBytes = size_t(count) * p.candidates * (fastScores ? sizeof(float) : sizeof(double));
     {
         PhaseTimer timer(timings ? &timings->uploadMs : nullptr);
         const std::vector<double> *sources[] = {&tiles.l, &tiles.a, &tiles.b, &tiles.edge, &tiles.labW,
@@ -397,7 +398,17 @@ void CompatibleScoreWorkspace::score(const MatchingBuffers &tiles, int count, do
         }
         p.transfer.mark(1);
         const unsigned blocks = static_cast<unsigned>((size_t(count) * p.candidates + 255) / 256);
-        compatibleScoreKernel<<<blocks, 256, 0, p.transfer.stream>>>(device, count, p.candidates, p.library, usePenalty);
+        if (fastScores)
+        {
+            const FastTileView view{device.l, device.a, device.b, device.edge, device.grid, device.lbp, device.tiny,
+                device.labW, device.gridW, device.tinyW, device.edgeW, device.lbpW};
+            fastScoreKernel<<<blocks, 256, 0, p.transfer.stream>>>(view, p.library, device.indices, p.candidates,
+                size_t(count)*p.candidates, reinterpret_cast<float *>(device.scores));
+        }
+        else
+        {
+            compatibleScoreKernel<<<blocks, 256, 0, p.transfer.stream>>>(device, count, p.candidates, p.library, usePenalty);
+        }
         requireCuda(cudaGetLastError());
         if (p.fault == CompatibleScoreFault::Kernel)
         {
@@ -421,7 +432,7 @@ void CompatibleScoreWorkspace::score(const MatchingBuffers &tiles, int count, do
     // 只在整批成功后公布分数，异常时调用方看不到部分下载结果。
     {
         PhaseTimer timer(timings ? &timings->downloadMs : nullptr);
-        std::memcpy(scores, host.scores, outputBytes);
+        std::memcpy(fastScores ? static_cast<void *>(fastScores) : static_cast<void *>(scores), host.scores, outputBytes);
     }
     if (timings)
     {

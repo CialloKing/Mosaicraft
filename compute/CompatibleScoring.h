@@ -28,7 +28,7 @@ class CompatibleScoreWorkspace
                        GpuTimings *timings = nullptr);
     // MatchingBuffers 中仅使用固定维度特征、候选索引及权重，与图像宽高无关。
     void score(const MatchingBuffers &tiles, int count, double usePenalty, double *scores,
-               GpuTimings *timings = nullptr);
+               GpuTimings *timings = nullptr, float *fastScores = nullptr);
 
   private:
     struct Impl;

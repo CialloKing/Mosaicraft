@@ -1441,7 +1441,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             runtime.metric("previewCandidatesReused", reuseCandidates ? 1 : 0);
         }
-        const bool fastScore = cfg.scoreMode == ScoreMode::Fast && !selection && backends.scoring == ScoreBackend::Cpu;
+        const bool fastScore = cfg.scoreMode == ScoreMode::Fast && !selection && !portableScoreReady;
+        std::vector<double> fastSelectionRow(templateCuda && fastScore ? N : 0);
         size_t wideHistoryRows = 0;
         const auto fastDistance = [&](const MatchingBuffers &batch, size_t tile, const ImageRecord &record,
                                       const FeaturePack::Reader::Row &features)
@@ -1473,8 +1474,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             {
                 return runtime.fail("preview_canceled", "preview canceled");
             }
-            buffers.resize(count, featBytes, N, templateCuda, cfg.analyze, pipeline);
-            if (fastScore && parallelBase)
+            buffers.resize(count, featBytes, N, templateCuda, cfg.analyze, pipeline, fastScore);
+            if (fastScore && (parallelBase || backends.scoring != ScoreBackend::Cpu))
             {
                 buffers.fastScores.resize(size_t(count) * N);
             }
@@ -1903,12 +1904,14 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                              allEdge.data(), allIndices.data(), N, gpuLib, tileLabW.data(),
                                              tileGridW.data(), tileTinyW.data(), tileEdgeW.data(), tileLbpW.data(),
                                              scoreUsePenalty, allScores.data(), *scoreWorkspace,
-                                             cfg.benchmark ? &batchTimings : nullptr)
+                                             cfg.benchmark ? &batchTimings : nullptr, 256ULL * 1024 * 1024,
+                                             fastScore ? buffers.fastScores.data() : nullptr)
                     : cuda::scoreBatch(count, allTL.data(), allTA.data(), allTB.data(), allGrid.data(), allTiny.data(),
                                       allEdge.data(), allLBP.data(), allIndices.data(), N, gpuLib, tileLabW.data(),
                                       tileGridW.data(), tileTinyW.data(), tileEdgeW.data(), tileLbpW.data(),
                                       scoreUsePenalty, allScores.data(), cfg.benchmark ? &batchTimings : nullptr,
-                                      256ULL * 1024 * 1024, scoreWorkspace.get());
+                                      256ULL * 1024 * 1024, scoreWorkspace.get(),
+                                      fastScore ? buffers.fastScores.data() : nullptr);
                 if (!scoredOnGpu)
                 {
                     {
@@ -1932,7 +1935,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 metrics.scoreTimings.peakTemporaryBytes =
                     std::max(metrics.scoreTimings.peakTemporaryBytes, batchTimings.peakTemporaryBytes);
                 metrics.msGPUScore += Ms(Clock::now() - scoreStart).count();
-                if (newScores)
+                if (newScores && !fastScore)
                 {
                     std::copy(allScores.begin(), allScores.end(), newScores->values.begin() + scoreOffset);
                 }
@@ -1958,8 +1961,22 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 {
                     const int ti = first + local;
                     const size_t rowOffset = static_cast<size_t>(local) * static_cast<size_t>(N);
-                    double *scores = &allScores[rowOffset];
                     const int *indices = &allIndices[rowOffset];
+                    double *scores = fastScore ? fastSelectionRow.data() : &allScores[rowOffset];
+                    if (fastScore)
+                    {
+                        const RowHistory history(indices, N, allRecords, scoreUsePenalty);
+                        wideHistoryRows += history.wide;
+                        for (int j = 0; j < N; ++j)
+                        {
+                            scores[j] = indices[j] < 0 ? std::numeric_limits<double>::max()
+                                : history.combine(buffers.fastScores[rowOffset + j], allRecords[indices[j]].useCount, scoreUsePenalty);
+                        }
+                        if (newScores)
+                        {
+                            std::copy_n(scores, N, newScores->values.begin() + scoreOffset + rowOffset);
+                        }
+                    }
                     if (selection)
                     {
                         selection->clear();
@@ -2207,7 +2224,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     }
                     else
                     {
-                        compatibleScore.score(buffers, count, scoreUsePenalty, allScores.data(), &metrics.scoreTimings);
+                        compatibleScore.score(buffers, count, scoreUsePenalty, allScores.data(), &metrics.scoreTimings,
+                                              fastScore ? buffers.fastScores.data() : nullptr);
                     }
                     metrics.msGPUScore += Ms(Clock::now() - scoreStart).count();
                     m_compatibleScoreTiles += count;

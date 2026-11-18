@@ -143,7 +143,7 @@ add_custom_command(
         ${NVCC_INCLUDE_FLAGS}
         ${NVCC_EXTRA_FLAGS}
     VERBATIM
-    DEPENDS "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.cu" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh" "${CMAKE_SOURCE_DIR}/compute/CudaPreflight.cuh"
+    DEPENDS "${CMAKE_SOURCE_DIR}/compute/FastScore.cuh" "${CMAKE_SOURCE_DIR}/core/GridWeights.inc" "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.cu" "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh" "${CMAKE_SOURCE_DIR}/compute/CudaPreflight.cuh"
     COMMENT "Compiling CudaBackend.cu (${CUDA_ARCH})..."
 )
 
@@ -194,7 +194,7 @@ add_custom_command(
         ${NVCC_INCLUDE_FLAGS}
         ${NVCC_EXTRA_FLAGS}
     VERBATIM
-    DEPENDS "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/CompatibleScoring.cu" "${CMAKE_SOURCE_DIR}/compute/CompatibleScoring.h"
+    DEPENDS "${CMAKE_SOURCE_DIR}/compute/FastScore.cuh" "${CMAKE_BINARY_DIR}/cuda-architectures.txt" "${CMAKE_SOURCE_DIR}/compute/CompatibleScoring.cu" "${CMAKE_SOURCE_DIR}/compute/CompatibleScoring.h"
         "${CMAKE_SOURCE_DIR}/compute/CudaBackend.h" "${CMAKE_SOURCE_DIR}/compute/DeviceBuffer.cuh" "${CMAKE_SOURCE_DIR}/compute/CudaPreflight.cuh"
         "${CMAKE_SOURCE_DIR}/core/MatchingBatch.h" "${CMAKE_SOURCE_DIR}/core/GridWeights.inc"
     COMMENT "Compiling CPU-compatible CUDA scoring..."
