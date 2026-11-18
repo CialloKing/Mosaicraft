@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -27,10 +28,14 @@ public:
     {
     }
 
-    // 流式模式：ROWSPERSTRIP=1，每行独立可写（超大图免全图 Mat）
-    BigTiffWriter(const std::string& path, int width, int height, bool streaming)
-        : m_w(width), m_h(height)
+    // 仍逐行交给 libtiff；顺序流允许多行共用一个有界 strip。
+    BigTiffWriter(const std::string& path, int width, int height, bool streaming, bool grouped = false)
+        : m_w(width), m_h(height), m_grouped(grouped)
     {
+        if (width <= 0 || height <= 0)
+        {
+            throw std::invalid_argument("invalid TIFF dimensions");
+        }
         int64_t rawSize = static_cast<int64_t>(width) * height * 3;
         const char* mode = (rawSize > 3500LL * 1024 * 1024) ? "w8" : "w";
 #ifdef _WIN32
@@ -39,7 +44,10 @@ public:
 #else
         m_tif = TIFFOpen(path.c_str(), mode);
 #endif
-        if (!m_tif) throw std::runtime_error("BigTiffWriter: cannot open " + path);
+        if (!m_tif)
+        {
+            throw std::runtime_error("BigTiffWriter: cannot open " + path);
+        }
         TIFFSetField(m_tif, TIFFTAG_IMAGEWIDTH,      width);
         TIFFSetField(m_tif, TIFFTAG_IMAGELENGTH,     height);
         TIFFSetField(m_tif, TIFFTAG_BITSPERSAMPLE,   8);
@@ -53,7 +61,8 @@ public:
         TIFFSetField(m_tif, TIFFTAG_RESOLUTIONUNIT, RESUNIT_INCH);
         TIFFSetField(m_tif, TIFFTAG_COMPRESSION,
                      rawSize < 400LL * 1024 * 1024 ? COMPRESSION_LZW : COMPRESSION_NONE);
-        TIFFSetField(m_tif, TIFFTAG_ROWSPERSTRIP, streaming ? 1 : height);
+        const auto stripRows = std::clamp<uint64_t>((256 * 1024) / (uint64_t(width) * 3), 1, height);
+        TIFFSetField(m_tif, TIFFTAG_ROWSPERSTRIP, streaming ? (grouped ? uint32_t(stripRows) : 1u) : uint32_t(height));
     }
 
     ~BigTiffWriter() { if (m_tif) TIFFClose(m_tif); }
@@ -81,7 +90,8 @@ public:
     bool writeRow(int y, const uint8_t* bgrRow)
     {
         if (!m_tif || !bgrRow || y < 0 || y >= m_h) return false;
-        cv::Mat rowRGB;
+        cv::Mat temporary;
+        cv::Mat &rowRGB = m_grouped ? m_rgb : temporary;
         cv::Mat rowBGR(1, m_w, CV_8UC3, const_cast<uint8_t*>(bgrRow));
         cv::cvtColor(rowBGR, rowRGB, cv::COLOR_BGR2RGB);
         int rc = TIFFWriteScanline(m_tif, rowRGB.data, y, 0);
@@ -90,11 +100,24 @@ public:
         return rc >= 0;
     }
 
-    void close() { if (m_tif) { TIFFClose(m_tif); m_tif = nullptr; } }
+    bool close()
+    {
+        if (!m_tif)
+        {
+            return true;
+        }
+        // 最后一个不完整 strip 和目录也可能写盘失败，不能等到无返回值的析构才刷新。
+        const bool ok = TIFFFlush(m_tif) == 1;
+        TIFFClose(m_tif);
+        m_tif = nullptr;
+        return ok;
+    }
 
 private:
     TIFF* m_tif = nullptr;
+    cv::Mat m_rgb;
     int m_w = 0, m_h = 0;
+    bool m_grouped = false;
 };
 
 } // namespace mosaicraft

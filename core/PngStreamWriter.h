@@ -20,7 +20,7 @@ class PngStreamWriter
     PngStreamWriter &operator=(const PngStreamWriter &) = delete;
 
     PngStreamWriter(const std::string &path, int w, int h, int compressionLevel = 1,
-                    int filters = PNG_ALL_FILTERS) : m_w(w), m_h(h)
+                    int filters = PNG_ALL_FILTERS, bool finalFlushOnly = false) : m_w(w), m_h(h), m_finalFlushOnly(finalFlushOnly)
     {
 #ifdef _WIN32
         std::wstring wp = std::filesystem::u8path(path).wstring();
@@ -82,8 +82,8 @@ class PngStreamWriter
         std::array<png_bytep, 64> pointers;
         for (int first = 0; first < count;)
         {
-            // 与逐行接口保持相同的第 1000 行刷新边界及压缩数据顺序。
-            const int batch = std::min({count - first, 64, 1000 - m_rowsWritten % 1000});
+            // 已暂存的单图直到 close 成功才发布，不依赖中途强制刷新。
+            const int batch = std::min({count - first, 64, m_finalFlushOnly ? 64 : 1000 - m_rowsWritten % 1000});
             for (int i = 0; i < batch; ++i)
             {
                 pointers[i] = const_cast<png_bytep>(rgb + static_cast<size_t>(first + i) * stride);
@@ -91,7 +91,7 @@ class PngStreamWriter
             png_write_rows(m_png, pointers.data(), batch);
             first += batch;
             m_rowsWritten += batch;
-            if (m_rowsWritten % 1000 == 0)
+            if (!m_finalFlushOnly && m_rowsWritten % 1000 == 0)
             {
                 png_write_flush(m_png);
             }
@@ -150,6 +150,7 @@ class PngStreamWriter
     png_structp m_png = nullptr;
     png_infop m_info = nullptr;
     int m_w, m_h;
+    const bool m_finalFlushOnly;
     int m_rowsWritten = 0;
     bool m_closeSucceeded = true;
 };

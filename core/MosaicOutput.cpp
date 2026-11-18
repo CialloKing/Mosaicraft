@@ -340,7 +340,8 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
             {
                 // 默认一级压缩优先速度；显式提高压缩级别时保留自适应滤波以优先文件大小。
                 png = std::make_unique<PngStreamWriter>(stats.path, width, height, config.pngCompressionLevel,
-                    stream && MOSAICRAFT_TRIAL_PNG_SUB && config.pngCompressionLevel == 1 ? PNG_FILTER_SUB : PNG_ALL_FILTERS);
+                    stream && MOSAICRAFT_TRIAL_PNG_SUB && config.pngCompressionLevel == 1 ? PNG_FILTER_SUB : PNG_ALL_FILTERS,
+                    stream && MOSAICRAFT_TRIAL_PNG_FINAL_FLUSH);
             }
             else if (format == "jpg")
             {
@@ -348,7 +349,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
             }
             else
             {
-                tiff = std::make_unique<BigTiffWriter>(stats.path, width, height, true);
+                tiff = std::make_unique<BigTiffWriter>(stats.path, width, height, true, MOSAICRAFT_TRIAL_TIFF_STRIPS);
             }
         };
         auto writeRows = [&](const cv::Mat &rows, int offset)
@@ -521,7 +522,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
             else if (format == "tiff")
             {
                 BigTiffWriter writer(stats.path, width, height);
-                if (!writer.writeMat(canvas.data, static_cast<int>(canvas.step)))
+                if (!writer.writeMat(canvas.data, static_cast<int>(canvas.step)) || !writer.close())
                 {
                     throw std::runtime_error("TIFF write failed");
                 }
@@ -535,7 +536,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
             stats.encodingMs = elapsed(encodeStart);
         }
         const auto closeStart = now();
-        if ((png && !png->close()) || (jpg && !jpg->close()))
+        if ((png && !png->close()) || (jpg && !jpg->close()) || (tiff && !tiff->close()))
         {
             throw std::runtime_error("image close failed");
         }
