@@ -32,11 +32,11 @@ fast 不改变图库或 FeaturePack 格式，无须重建现有版本 1 图库�
 
 ## 当前验收结论
 
-RTX 4060 Laptop 的 CUDA/Vulkan 与 Radeon 780M 的 Vulkan 已有本机记录。当前真实图库样本中 Vulkan 未达到自动选择性能门槛，因此继续显式启用。Intel、Linux GPU 和 Apple GPU 实机结果为 not-run；编译覆盖不等于硬件验收。
+RTX 4060 Laptop 的 CUDA/Vulkan 与 Radeon 780M 的 Vulkan 已有本机记录。原固定验收集未达到 Vulkan 自动选择性能门槛；后续重负载复测显示优势会随任务组成和设备变化，尚未形成跨任务的自动选择准入结论，因此继续显式启用。Intel、Linux GPU 和 Apple GPU 实机结果为 not-run；编译覆盖不等于硬件验收。
 
 任务和预览界面显示实际后端、设备与评分路径，兼容模式的 CPU 评分属于正常执行。详见[实现、验收与性能数据](../development/portable-gpu.md)。
 
-CPU、CUDA、RTX 4060 Laptop 和 Radeon 780M 的最新固定场景性能比较见 [2026-11-18 多轮复测](../development/backend-retest-20261118.md)，包含两种任务规模、Vulkan 的两种评分模式及运行波动。
+CPU、CUDA、RTX 4060 Laptop 和 Radeon 780M 的性能比较见 [2026-11-18 小任务多轮复测](../development/backend-retest-20261118.md)与[重负载复测](../development/backend-scale-20261118.md)，分别覆盖 900 / 3,600 格，以及 14,400 / 57,600 格和更高候选评分负载。报告保留运行波动及输出差异，不能用单一场景代替所有任务。
 
 ## CUDA 尺寸模板
 
