@@ -19,7 +19,8 @@ class PngStreamWriter
     PngStreamWriter(const PngStreamWriter &) = delete;
     PngStreamWriter &operator=(const PngStreamWriter &) = delete;
 
-    PngStreamWriter(const std::string &path, int w, int h, int compressionLevel = 1) : m_w(w), m_h(h)
+    PngStreamWriter(const std::string &path, int w, int h, int compressionLevel = 1,
+                    int filters = PNG_ALL_FILTERS) : m_w(w), m_h(h)
     {
 #ifdef _WIN32
         std::wstring wp = std::filesystem::u8path(path).wstring();
@@ -53,8 +54,8 @@ class PngStreamWriter
         png_init_io(m_png, m_fp);
         // 压缩级别：1=最快 9=最小，默认 1
         png_set_compression_level(m_png, compressionLevel);
-        // 全部 5 种过滤器：马赛克 tile 边界处 Up/Average/Paeth 能显著提升压缩率
-        png_set_filter(m_png, PNG_FILTER_TYPE_BASE, PNG_ALL_FILTERS);
+        // 滤波器只改变编码成本和文件大小；不改变 RGB 像素。
+        png_set_filter(m_png, PNG_FILTER_TYPE_BASE, filters);
         png_set_IHDR(m_png, m_info, w, h, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT,
                      PNG_FILTER_TYPE_DEFAULT);
         png_write_info(m_png, m_info);

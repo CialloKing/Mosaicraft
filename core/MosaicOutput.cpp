@@ -331,7 +331,8 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         {
             if (format == "png")
             {
-                png = std::make_unique<PngStreamWriter>(stats.path, width, height, config.pngCompressionLevel);
+                png = std::make_unique<PngStreamWriter>(stats.path, width, height, config.pngCompressionLevel,
+                    MOSAICRAFT_TRIAL_PNG_SUB ? PNG_FILTER_SUB : PNG_ALL_FILTERS);
             }
             else if (format == "jpg")
             {
