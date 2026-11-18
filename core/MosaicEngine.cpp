@@ -10,6 +10,7 @@
 #include "FeatureMatrix.h"
 #include "FeaturePack.h"
 #include "FeatureUtils.h"
+#include "TileFeatures.h"
 #include "MatchInspection.h"
 #include "MatchingScore.h"
 #include "MosaicMetrics.h"
@@ -1622,7 +1623,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                        int ty = ti / tilesX, tx = ti % tilesX;
                                        cv::Mat roi =
                                            target(cv::Rect(tx * cfg.tileW, ty * cfg.tileH, cfg.tileW, cfg.tileH));
-                                       cv::Mat roiNative;
+                                       const bool trial = MOSAICRAFT_TRIAL_CPU_TILES && fastScore;
+                                       // 线程随本次任务收束；复用暂存但不缓存任何目标像素的计算结果。
+                                       thread_local cv::Mat nativeScratch, labScratch, grayScratch, edgeScratch;
+                                       cv::Mat nativeLocal, labLocal, grayLocal;
+                                       auto &roiNative = trial ? nativeScratch : nativeLocal;
                                        auto t0 = cfg.benchmark ? Clock::now() : Clock::time_point{};
                                        cv::resize(roi, roiNative, cv::Size(featW, featH), 0, 0, cv::INTER_LINEAR);
                                        auto t1 = cfg.benchmark ? Clock::now() : Clock::time_point{};
@@ -1630,9 +1635,9 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                        {
                                            metrics.opResizeNs += std::chrono::duration_cast<Ns>(t1 - t0).count();
                                        }
-                                       cv::Mat lab;
+                                       auto &lab = trial ? labScratch : labLocal;
                                        cv::cvtColor(roiNative, lab, cv::COLOR_BGR2Lab);
-                                       cv::Scalar m = cv::mean(lab);
+                                       cv::Scalar m = trial ? detail::gridAndMean(lab, allGrid[local].data()) : cv::mean(lab);
                                        allTL[local] = m[0];
                                        allTA[local] = m[1];
                                        allTB[local] = m[2];
@@ -1641,27 +1646,53 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                        {
                                            metrics.opLabNs += std::chrono::duration_cast<Ns>(t2 - t1).count();
                                        }
-                                       allGrid[local] = computeGrid8x8FromLab(lab);
+                                       if (!trial)
+                                       {
+                                           allGrid[local] = computeGrid8x8FromLab(lab);
+                                       }
                                        auto t3 = cfg.benchmark ? Clock::now() : Clock::time_point{};
                                        if (cfg.benchmark)
                                        {
                                            metrics.opGridNs += std::chrono::duration_cast<Ns>(t3 - t2).count();
                                        }
-                                       cv::Mat gray;
+                                       auto &gray = trial ? grayScratch : grayLocal;
                                        cv::cvtColor(roiNative, gray, cv::COLOR_BGR2GRAY);
-                                       allTiny[local] = computeTinyImageFromGray(gray);
+                                       if (trial)
+                                       {
+                                           cv::Mat tiny(16, 16, CV_8UC1, allTiny[local].data());
+                                           cv::resize(gray, tiny, tiny.size(), 0, 0, cv::INTER_AREA);
+                                       }
+                                       else
+                                       {
+                                           allTiny[local] = computeTinyImageFromGray(gray);
+                                       }
                                        auto t4 = cfg.benchmark ? Clock::now() : Clock::time_point{};
                                        if (cfg.benchmark)
                                        {
                                            metrics.opTinyNs += std::chrono::duration_cast<Ns>(t4 - t3).count();
                                        }
-                                       allEdge[local] = computeEdgeDensityFromGray(gray);
+                                       if (trial)
+                                       {
+                                           cv::Canny(gray, edgeScratch, 60, 120);
+                                           allEdge[local] = static_cast<double>(cv::countNonZero(edgeScratch)) / gray.total();
+                                       }
+                                       else
+                                       {
+                                           allEdge[local] = computeEdgeDensityFromGray(gray);
+                                       }
                                        auto t5 = cfg.benchmark ? Clock::now() : Clock::time_point{};
                                        if (cfg.benchmark)
                                        {
                                            metrics.opEdgeNs += std::chrono::duration_cast<Ns>(t5 - t4).count();
                                        }
-                                       allLBP[local] = computeLBPHistogramFromGray(gray);
+                                       if (trial)
+                                       {
+                                           detail::lbpInto(gray, allLBP[local].data(), MOSAICRAFT_TRIAL_LBP_SIMD);
+                                       }
+                                       else
+                                       {
+                                           allLBP[local] = computeLBPHistogramFromGray(gray);
+                                       }
                                        auto t6 = cfg.benchmark ? Clock::now() : Clock::time_point{};
                                        if (cfg.benchmark)
                                        {

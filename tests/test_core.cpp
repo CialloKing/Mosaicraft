@@ -20,6 +20,7 @@
 #include "../core/ColorOrder.h"
 #include "../core/ExecutablePath.h"
 #include "../core/FeatureUtils.h"
+#include "../core/TileFeatures.h"
 #include "../core/JobManager.h"
 #include "../core/LibraryPaths.h"
 #include "../core/NeighborhoodState.h"
@@ -2358,3 +2359,28 @@ TEST_CASE("ZIP64 counts and large offsets use a bounded counting sink")
     }
 }
 #include "test_portable.inc"
+
+TEST_CASE("target feature scratch matches reference on strided tiles and SIMD tails")
+{
+    for (int width : {1, 9, 17, 18, 33, 180})
+    {
+        cv::Mat parent(33, width + 4, CV_8UC3);
+        cv::randu(parent, 0, 256);
+        const auto roi = parent(cv::Rect(2, 1, width, 31));
+        std::array<float, 192> grid;
+        const auto mean = mosaicraft::detail::gridAndMean(roi, grid.data());
+        CHECK(cv::norm(mean - cv::mean(roi)) == 0.0);
+        const auto ref = mosaicraft::computeGrid8x8FromLab(roi);
+        CHECK(std::equal(grid.begin(), grid.end(), ref.begin()));
+        cv::Mat grayParent;
+        cv::cvtColor(parent, grayParent, cv::COLOR_BGR2GRAY);
+        const auto gray = grayParent(cv::Rect(2, 1, width, 31));
+        const auto hist = mosaicraft::computeLBPHistogramFromGray(gray);
+        for (bool simd : {false, true})
+        {
+            std::array<float, 256> result;
+            mosaicraft::detail::lbpInto(gray, result.data(), simd);
+            CHECK(std::equal(result.begin(), result.end(), hist.begin()));
+        }
+    }
+}
