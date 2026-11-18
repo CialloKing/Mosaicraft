@@ -270,6 +270,9 @@ set_property(SOURCE core/LibraryPaths.cpp APPEND PROPERTY COMPILE_DEFINITIONS
 option(MOSAICRAFT_TRIAL_BUILD_HASH "Hash decoded build inputs in producer slots" OFF)
 set_property(SOURCE core/BuildService.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     MOSAICRAFT_TRIAL_BUILD_HASH=$<BOOL:${MOSAICRAFT_TRIAL_BUILD_HASH}>)
+option(MOSAICRAFT_TRIAL_HTML_ASSETS "Verify independent project assets concurrently" OFF)
+set_property(SOURCE core/ProjectService.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+    MOSAICRAFT_TRIAL_HTML_ASSETS=$<BOOL:${MOSAICRAFT_TRIAL_HTML_ASSETS}>)
 include(cmake/PortableCompute.cmake)
 
 target_compile_definitions(mosaicraft_core PRIVATE

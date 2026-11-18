@@ -1,5 +1,6 @@
 #include "ProjectService.h"
 #include "ExecutionScope.h"
+#include "WorkerPool.h"
 #include "MosaicPlanning.h"
 #include "OutputPublication.h"
 #include "OutputPlan.h"
@@ -339,60 +340,113 @@ bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &dir
             {"resources", json::array()}};
         std::unordered_map<std::string, int> hashes;
         std::unordered_map<int, int> remap;
-        const auto addResource = [&](const std::string &name, const cv::Size &dimensions = cv::Size())
+        const auto addResource = [&](const std::string &name, const cv::Size &dimensions = cv::Size(),
+                                     const std::string &verifiedHash = {})
         {
             const auto path = resourcePath(root, name);
             manifest["resources"].push_back({{"path", name},
                                              {"bytes", fs::file_size(path)},
-                                             {"sha256", sha256File(path)},
+                                             {"sha256", verifiedHash.empty() ? sha256File(path) : verifiedHash},
                                              {"width", dimensions.width},
                                              {"height", dimensions.height}});
         };
-        size_t processed = 0;
-        for (int index : selection)
+        const auto copyAsset = [&](int index, int id, const std::string &hash)
         {
-            if (index < 0)
+            const auto source = u8path(library.at(index).filePath);
+            const std::string name = "assets/" + std::to_string(id) + "/" + pathToUtf8(source.filename());
+            const auto dest = resourcePath(root, name);
+            fs::create_directories(dest.parent_path());
+            fs::copy_file(source, dest);
+            if (sha256File(dest) != hash)
             {
-                manifest["layout"].push_back(-1);
-                continue;
+                throw std::runtime_error("asset changed while being copied");
             }
-            if (size_t(index) >= library.size())
+            const auto image = imreadUnicode(pathToUtf8(dest));
+            if (image.empty())
             {
-                throw std::invalid_argument("selection asset index out of range");
+                throw std::runtime_error("selected asset cannot be decoded: " + pathToUtf8(source));
             }
-            if (!remap.count(index))
+            return json{{"path", name}, {"sha256", hash}, {"width", image.cols}, {"height", image.rows}};
+        };
+        const auto appendAsset = [&](json asset)
+        {
+            addResource(asset.at("path").get<std::string>(),
+                        cv::Size(asset.at("width").get<int>(), asset.at("height").get<int>()),
+                        MOSAICRAFT_TRIAL_HTML_ASSETS ? asset.at("sha256").get<std::string>() : std::string());
+            manifest["assets"].push_back(std::move(asset));
+            runtime.advance("assets", manifest["assets"].size(), -1, "assets");
+        };
+        if (MOSAICRAFT_TRIAL_HTML_ASSETS)
+        {
+            std::vector<int> unique, owners;
+            for (int index : selection)
             {
-                const auto source = u8path(library.at(index).filePath);
-                const auto hash = sha256File(source);
-                if (!hashes.count(hash))
+                if (index >= 0 && size_t(index) >= library.size())
                 {
-                    const int id = static_cast<int>(manifest["assets"].size());
-                    // 独立素材目录避免跨平台同名/大小写冲突，文件名和文件字节均保持原样。
-                    const std::string original =
-                        "assets/" + std::to_string(id) + "/" + pathToUtf8(source.filename());
-                    fs::create_directories(resourcePath(root, original).parent_path());
-                    fs::copy_file(source, resourcePath(root, original));
-                    if (sha256File(root / u8path(original)) != hash)
-                    {
-                        throw std::runtime_error("asset changed while being copied");
-                    }
-                    const auto image = imreadUnicode(pathToUtf8(root / u8path(original)));
-                    if (image.empty())
-                    {
-                        throw std::runtime_error("selected asset cannot be decoded: " + pathToUtf8(source));
-                    }
-                    json asset{{"path", original},
-                               {"sha256", hash},
-                               {"width", image.cols},
-                               {"height", image.rows}};
-                    addResource(original, image.size());
-                    hashes.emplace(hash, id);
-                    manifest["assets"].push_back(std::move(asset));
-                    runtime.advance("assets", ++processed, -1, "assets");
+                    throw std::invalid_argument("selection asset index out of range");
                 }
-                remap[index] = hashes.at(hash);
+                if (index >= 0 && remap.emplace(index, -1).second)
+                {
+                    unique.push_back(index);
+                }
             }
-            manifest["layout"].push_back(remap.at(index));
+            WorkerPool pool(static_cast<unsigned>(std::max<size_t>(1, std::min<size_t>(unique.size(),
+                config.threads > 0 ? std::min(config.threads, 4) : 4))));
+            std::vector<std::string> digests(unique.size());
+            pool.run(unique.size(), [&](size_t i)
+            {
+                digests[i] = sha256File(u8path(library.at(unique[i]).filePath));
+            });
+            // 编号只取决于第一次出现的位置，不能依赖复制完成的顺序。
+            for (size_t i = 0; i < unique.size(); ++i)
+            {
+                const auto entry = hashes.emplace(digests[i], static_cast<int>(owners.size()));
+                if (entry.second)
+                {
+                    owners.push_back(static_cast<int>(i));
+                }
+                remap.at(unique[i]) = entry.first->second;
+            }
+            std::vector<json> assets(owners.size());
+            pool.run(owners.size(), [&](size_t id)
+            {
+                const int owner = owners[id];
+                assets[id] = copyAsset(unique[owner], static_cast<int>(id), digests[owner]);
+            });
+            for (auto &asset : assets)
+            {
+                appendAsset(std::move(asset));
+            }
+            for (int index : selection)
+            {
+                manifest["layout"].push_back(index < 0 ? -1 : remap.at(index));
+            }
+        }
+        else
+        {
+            for (int index : selection)
+            {
+                if (index < 0)
+                {
+                    manifest["layout"].push_back(-1);
+                    continue;
+                }
+                if (size_t(index) >= library.size())
+                {
+                    throw std::invalid_argument("selection asset index out of range");
+                }
+                if (!remap.count(index))
+                {
+                    const auto hash = sha256File(u8path(library.at(index).filePath));
+                    const auto entry = hashes.emplace(hash, static_cast<int>(hashes.size()));
+                    if (entry.second)
+                    {
+                        appendAsset(copyAsset(index, entry.first->second, hash));
+                    }
+                    remap[index] = entry.first->second;
+                }
+                manifest["layout"].push_back(remap.at(index));
+            }
         }
         if (copyTarget)
         {
