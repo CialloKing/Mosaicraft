@@ -248,8 +248,9 @@ void JobManager::runPreview(const std::shared_ptr<PreviewJob> &job)
         else
         {
             selection = std::make_shared<MosaicSelection>();
-            result = MosaicService().preview(job->snapshot.request, job->snapshot.seed, m_previewWorkspace, job->canceled, *selection,
-                                             *job->runtime);
+            MosaicService service(MOSAICRAFT_TRIAL_HOT_ANN ? &m_libraryIndex : nullptr);
+            result = service.preview(job->snapshot.request, job->snapshot.seed, m_previewWorkspace, job->canceled,
+                                     *selection, *job->runtime);
         }
     }
     catch (const std::exception &error)

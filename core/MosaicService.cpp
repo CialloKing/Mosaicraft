@@ -170,7 +170,7 @@ ServiceResult MosaicService::preview(const MosaicRequest &request, uint32_t seed
     {
         std::lock_guard<std::mutex> lock(pipelineMutex());
         ExecutionScope scope;
-        const bool ok = MosaicEngine().preview(request.inputPath, resolveDbPathForService(request.dbPath),
+        const bool ok = MosaicEngine(m_session).preview(request.inputPath, resolveDbPathForService(request.dbPath),
                                                request.config, seed, workspace, canceled, selection, runtime);
         const auto diagnostic = runtime.snapshot().diagnostic;
         const int code = diagnostic.code.rfind("gpu_", 0) == 0 || diagnostic.code.rfind("cuda_", 0) == 0 ? 4 : 1;

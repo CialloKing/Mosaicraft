@@ -209,7 +209,7 @@ bool MosaicEngine::preview(const std::string &targetPath, const std::string &dbP
                            uint32_t seed, PreviewWorkspace &workspace, const std::atomic_bool &canceled,
                            MosaicSelection &result, RuntimeContext &runtime)
 {
-    MosaicEngine engine;
+    MosaicEngine engine(m_indexSession);
     engine.m_preview = &result;
     engine.m_previewWorkspace = &workspace;
     engine.m_cancelPreview = &canceled;
@@ -1148,13 +1148,13 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             {
                 *m_indexSession = {};
             }
-            if (retainIndex && m_indexSession->index)
+            if (retainIndex && !reuseIndex && m_indexSession->index)
             {
                 annIndex = std::move(m_indexSession->index);
             }
         }
         const auto indexStart = Clock::now();
-        bool loaded = reuseIndex || annIndex->load(annPath, FeatureIndex::kDimension, allRecords,
+        bool loaded = (reuseIndex && !m_indexSession) || annIndex->load(annPath, FeatureIndex::kDimension, allRecords,
                                                    retainIndex ? &hotIndex : nullptr);
         metrics.msANNLoad = Ms(Clock::now() - indexStart).count();
         if (!loaded)
@@ -1195,7 +1195,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             m_previewWorkspace->index = dbCount <= 100000 ? annIndex : nullptr;
             m_previewWorkspace->libraryPath = db.path();
             m_previewWorkspace->libraryVersion = libraryVersion;
-            runtime.metric("previewIndexReused", reuseIndex ? 1 : 0);
+            runtime.metric("previewIndexReused", m_indexSession ? hotIndex : reuseIndex);
         }
         runtime.stage("matching");
         if (m_preview)
