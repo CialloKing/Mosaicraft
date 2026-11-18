@@ -48,6 +48,7 @@ struct ScoreInput
     int *indices;
     double *scores;
     float *fastScores;
+    size_t inputBytes;
 };
 
 size_t scoreBytes(size_t count, int candidates, bool compactOnly)
@@ -71,6 +72,7 @@ ScoreInput scoreLayout(uint8_t *start, int count, int candidates, bool compactOn
     result.tiny = take<uint8_t>(cursor, size_t(count) * 256);
     result.indices = take<int>(cursor, size_t(count) * candidates);
     const size_t offset = (size_t(cursor - start) + 7) & ~size_t(7);
+    result.inputBytes = offset;
     if (compactOnly)
     {
         result.fastScores = reinterpret_cast<float *>(start + offset);
@@ -379,7 +381,7 @@ void CompatibleScoreWorkspace::score(const MatchingBuffers &tiles, int count, do
     auto &p = *m_impl;
     const auto host = scoreLayout(p.staging.get(), count, p.candidates, p.compactOnly);
     const auto device = scoreLayout(p.temporary.get(), count, p.candidates, p.compactOnly);
-    const size_t inputBytes = reinterpret_cast<uint8_t *>(host.scores) - p.staging.get();
+    const size_t inputBytes = host.inputBytes;
     const size_t outputBytes = size_t(count) * p.candidates * (fastScores ? sizeof(float) : sizeof(double));
     {
         PhaseTimer timer(timings ? &timings->uploadMs : nullptr);
