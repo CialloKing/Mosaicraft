@@ -47,6 +47,7 @@ struct ScoreInput
     uint8_t *tiny;
     int *indices;
     double *scores;
+    float *fastScores;
 };
 
 size_t scoreBytes(size_t count, int candidates, bool compactOnly)
@@ -56,7 +57,7 @@ size_t scoreBytes(size_t count, int candidates, bool compactOnly)
     return ((inputs + 7) & ~size_t(7)) + checkedMatchProduct(count, size_t(candidates) * (compactOnly ? sizeof(float) : sizeof(double)));
 }
 
-ScoreInput scoreLayout(uint8_t *start, int count, int candidates)
+ScoreInput scoreLayout(uint8_t *start, int count, int candidates, bool compactOnly)
 {
     auto *cursor = start;
     ScoreInput result;
@@ -70,7 +71,14 @@ ScoreInput scoreLayout(uint8_t *start, int count, int candidates)
     result.tiny = take<uint8_t>(cursor, size_t(count) * 256);
     result.indices = take<int>(cursor, size_t(count) * candidates);
     const size_t offset = (size_t(cursor - start) + 7) & ~size_t(7);
-    result.scores = reinterpret_cast<double *>(start + offset);
+    if (compactOnly)
+    {
+        result.fastScores = reinterpret_cast<float *>(start + offset);
+    }
+    else
+    {
+        result.scores = reinterpret_cast<double *>(start + offset);
+    }
     return result;
 }
 
@@ -369,8 +377,8 @@ void CompatibleScoreWorkspace::score(const MatchingBuffers &tiles, int count, do
         throw std::invalid_argument("invalid compatible CUDA score batch");
     }
     auto &p = *m_impl;
-    const auto host = scoreLayout(p.staging.get(), count, p.candidates);
-    const auto device = scoreLayout(p.temporary.get(), count, p.candidates);
+    const auto host = scoreLayout(p.staging.get(), count, p.candidates, p.compactOnly);
+    const auto device = scoreLayout(p.temporary.get(), count, p.candidates, p.compactOnly);
     const size_t inputBytes = reinterpret_cast<uint8_t *>(host.scores) - p.staging.get();
     const size_t outputBytes = size_t(count) * p.candidates * (fastScores ? sizeof(float) : sizeof(double));
     {
@@ -405,7 +413,7 @@ void CompatibleScoreWorkspace::score(const MatchingBuffers &tiles, int count, do
             const FastTileView view{device.l, device.a, device.b, device.edge, device.grid, device.lbp, device.tiny,
                 device.labW, device.gridW, device.tinyW, device.edgeW, device.lbpW};
             fastScoreKernel<<<blocks, 256, 0, p.transfer.stream>>>(view, p.library, device.indices, p.candidates,
-                size_t(count)*p.candidates, reinterpret_cast<float *>(device.scores));
+                size_t(count)*p.candidates, device.fastScores);
         }
         else
         {
@@ -417,7 +425,10 @@ void CompatibleScoreWorkspace::score(const MatchingBuffers &tiles, int count, do
             throw std::runtime_error("injected compatible score kernel failure");
         }
         p.transfer.mark(2);
-        requireCuda(cudaMemcpyAsync(host.scores, device.scores, outputBytes, cudaMemcpyDeviceToHost, p.transfer.stream));
+        requireCuda(cudaMemcpyAsync(p.compactOnly ? static_cast<void *>(host.fastScores) : static_cast<void *>(host.scores),
+                                    p.compactOnly ? static_cast<const void *>(device.fastScores) :
+                                                    static_cast<const void *>(device.scores),
+                                    outputBytes, cudaMemcpyDeviceToHost, p.transfer.stream));
         p.transfer.mark(3);
         if (p.fault == CompatibleScoreFault::Synchronize)
         {
@@ -434,7 +445,9 @@ void CompatibleScoreWorkspace::score(const MatchingBuffers &tiles, int count, do
     // 只在整批成功后公布分数，异常时调用方看不到部分下载结果。
     {
         PhaseTimer timer(timings ? &timings->downloadMs : nullptr);
-        std::memcpy(fastScores ? static_cast<void *>(fastScores) : static_cast<void *>(scores), host.scores, outputBytes);
+        std::memcpy(fastScores ? static_cast<void *>(fastScores) : static_cast<void *>(scores),
+                    p.compactOnly ? static_cast<const void *>(host.fastScores) : static_cast<const void *>(host.scores),
+                    outputBytes);
     }
     if (timings)
     {
