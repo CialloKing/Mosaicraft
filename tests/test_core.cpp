@@ -857,6 +857,11 @@ TEST_CASE("library paths are database relative and reject root escape")
     CHECK(paths.store((root / "features" / "a.tiny").u8string()) == "features/a.tiny");
     CHECK(paths.store((aliasRoot / "features" / "a.tiny").u8string()) == "features/a.tiny");
     CHECK(paths.resolve("features/a.tiny") == (root / "features" / "a.tiny").u8string());
+    for (const auto &name : {"images/id_1.png", "features/./a.tiny", "features//a.tiny", u8"images/中文.png"})
+    {
+        CHECK(paths.resolve(name) == (root / std::filesystem::u8path(name)).lexically_normal().u8string());
+    }
+    CHECK_THROWS_AS(paths.resolve("images/../outside.png"), std::invalid_argument);
     CHECK(paths.store("features/a.tiny") == "features/a.tiny");
     CHECK(paths.store("").empty());
     CHECK_THROWS_AS(paths.store((root.parent_path() / "outside.png").u8string()), std::invalid_argument);
@@ -1952,18 +1957,26 @@ TEST_CASE("ANN cache validates features and parallel queries preserve ordering")
     FeatureIndex loaded;
     REQUIRE(loaded.load(cache, 196, records));
     CHECK(loaded.queryBatch(queries, 8, 2) == index.queryBatch(queries, 8, 1));
+    // 使用次数重排数据库行后，命中常驻图也必须翻译到本次任务的行号。
+    bool hot = false;
+    std::reverse(records.begin(), records.end());
+    REQUIRE(loaded.load(cache, 196, records, &hot));
+    CHECK(hot);
+    FeatureIndex fresh;
+    REQUIRE(fresh.load(cache, 196, records));
+    CHECK(loaded.queryBatch(queries, 8, 1) == fresh.queryBatch(queries, 8, 1));
     CHECK_FALSE(loaded.load(cache, 708, records));
     records[0].avgL += 1;
-    CHECK_FALSE(loaded.load(cache, 196, records));
+    CHECK_FALSE(loaded.load(cache, 196, records, &hot));
     records[0].avgL -= 1;
     records[0].id += 1000;
-    CHECK_FALSE(loaded.load(cache, 196, records));
+    CHECK_FALSE(loaded.load(cache, 196, records, &hot));
     records[0].id -= 1000;
     {
         std::ofstream corrupt(path, std::ios::binary | std::ios::app);
         corrupt << 'x';
     }
-    CHECK_FALSE(loaded.load(cache, 196, records));
+    CHECK_FALSE(loaded.load(cache, 196, records, &hot));
     std::filesystem::remove(path);
     std::filesystem::remove(std::filesystem::u8path(cache + ".meta"));
     std::filesystem::remove(directory);
