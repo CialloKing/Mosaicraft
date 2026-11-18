@@ -35,7 +35,7 @@ def targets(inputs, folder):
     return cases
 
 
-def assess(rows, groups):
+def assess(rows, groups, modes_pair):
     result = []
     for key, modes in groups.items():
         def med(mode, field):
@@ -43,11 +43,13 @@ def assess(rows, groups):
             return statistics.median(v['neighborhood']['3']['same_pair_rate'] if field == 'repeat' else v[field]
                                      for v in values)
         fields = ('mean', 'p90', 'p99', 'repeat', 'unique_images')
-        old, new = ({k: med(mode, k) for k in fields} for mode in ('compatible', 'fast'))
-        missing = all(rows[b]['missing'] <= rows[a]['missing'] for a,b in zip(modes['compatible'], modes['fast']))
+        old, new = ({k: med(mode, k) for k in fields} for mode in modes_pair)
+        missing = all(rows[b]['missing'] <= rows[a]['missing'] for a,b in zip(modes[modes_pair[0]], modes[modes_pair[1]]))
         passed = missing and all(new[k] <= 1.03*old[k]+1e-6 for k in fields[:3]) and (
             new['repeat'] <= old['repeat'] + 0.02 and new['unique_images'] >= 0.90*old['unique_images'])
-        result.append(dict(group=key, passed=passed, compatible=old, fast=new, coverage_ok=missing))
+        if modes_pair[0] == 'baseline':
+            passed = missing and all(new[k] <= old[k]+1e-12 for k in fields[:4]) and new['unique_images'] >= old['unique_images']
+        result.append(dict(group=key, passed=passed, coverage_ok=missing, **dict(zip(modes_pair,(old,new)))))
     return result
 
 
@@ -55,6 +57,7 @@ def finish(folder, study, evaluation, snapshot, snapshot_sha, prepared_report, m
     rows = {r['id']: r['quality'] for r in evaluation['runs']}
     if not evaluation['complete'] or len(rows) != len(study['runs']):
         raise ValueError('incomplete quality evaluation')
+    modes_pair = ('baseline','candidate') if 'baseline_sha256' in study else ('compatible','fast')
     groups = {}
     for expected in study['runs']:
         actual = rows[expected['id']]
@@ -63,13 +66,13 @@ def finish(folder, study, evaluation, snapshot, snapshot_sha, prepared_report, m
         if digest(expected['selection']) != expected['selection_sha256']:
             raise ValueError(f"{expected['id']}: captured selections changed after evaluation")
         group, mode = expected['id'].rsplit('-', 2)[0], expected['id'].rsplit('-', 1)[1]
-        groups.setdefault(group, {key: [] for key in ('compatible', 'fast')})[mode].append(expected['id'])
+        groups.setdefault(group, {key: [] for key in modes_pair})[mode].append(expected['id'])
     if digest(snapshot) != snapshot_sha:
         raise RuntimeError('private source snapshot changed')
-    results = assess(rows, groups)
+    results = assess(rows, groups, modes_pair)
     save(folder / 'gate.json', dict(passed=all(row['passed'] for row in results), groups=results,
         snapshot_sha256=snapshot_sha, prepared_report_sha256=digest(prepared_report),
-        match_sha256=digest(match), quality_sha256=digest(quality)))
+        match_sha256=digest(match), baseline_sha256=study.get('baseline_sha256'), quality_sha256=digest(quality)))
     return all(row['passed'] for row in results)
 
 
@@ -77,6 +80,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for field in ('prepared-run','match','quality','inputs','output'):
         parser.add_argument('--'+field, required=True, type=Path)
+    parser.add_argument('--baseline-match', type=Path, help='compare baseline fast vs candidate fast with strict per-group gates')
     parser.add_argument('--finish-existing', action='store_true',
                         help='validate saved selections and finish an already completed evaluation')
     parser.add_argument('--device', action='append', required=True, help='cpu or a discovered cuda/vulkan/metal device ID')
@@ -98,16 +102,21 @@ def main():
     with readonly_database(snapshot) as src, closing(sqlite3.connect(database)) as dest:
         src.backup(dest)
     study = dict(snapshot=str(database), oracle=False, cases=targets(args.inputs,folder), runs=[])
+    labels = ('baseline','candidate') if args.baseline_match else ('compatible','fast')
+    if args.baseline_match:
+        study['baseline_sha256'] = digest(args.baseline_match)
     groups = {}
     for device in args.device:
         backend = device.split(':')[0]
         for case in study['cases']:
             for top in (1,10):
                 group = f"{device.replace(':','-')}-{case['id']}-top{top}"
-                groups[group] = {mode: [] for mode in ('compatible','fast')}
+                groups[group] = {label: [] for label in labels}
                 for seed in (42, 20261110, 20261111):
-                    for mode in ('compatible','fast'):
-                        tag = f'{group}-{seed}-{mode}'
+                    for label in labels:
+                        mode = 'fast' if args.baseline_match else label
+                        binary = args.baseline_match if label == 'baseline' else args.match
+                        tag = f'{group}-{seed}-{label}'
                         output = folder / (tag+'.png')
                         request = dict(inputPath=case['input'], dbPath=str(database), outputPath=str(output),
                             outW=case['width'],outH=case['height'], tileW=9,tileH=16,nativeTileW=9,nativeTileH=16,
@@ -117,7 +126,7 @@ def main():
                         req, summary = folder/(tag+'.request.json'), folder/(tag+'.summary.json')
                         save(req, request)
                         flags = ['--allow-unmatched'] if case['id'] == 'scarce' else []
-                        run([args.match,req,'--match-only',*flags,'--seed',seed,'--no-detail','--summary',summary],folder/(tag+'.log'))
+                        run([binary,req,'--match-only',*flags,'--seed',seed,'--no-detail','--summary',summary],folder/(tag+'.log'))
                         actual = json.loads(summary.read_bytes())
                         scorer = 'cpu' if mode=='compatible' and backend in ('metal','vulkan') else backend
                         # match-only 的 failed 是未匹配格数，不是退出状态；稀缺场景由逐种子覆盖率门槛验收。
@@ -128,7 +137,7 @@ def main():
                         selection = Path(str(output)+'.indices.bin')
                         study['runs'].append(dict(id=tag,case=case['id'],selection=str(selection),selection_sha256=digest(selection),
                             matched=actual['matched'], missing=actual['failed'], kernel=actual['kernel']))
-                        groups[group][mode].append(tag)
+                        groups[group][label].append(tag)
                 print(group,flush=True)
     save(folder/'study.json',study)
     run([args.quality,folder/'study.json',folder/'evaluation.json'],folder/'evaluation.log')
