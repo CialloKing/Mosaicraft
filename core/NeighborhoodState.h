@@ -1,11 +1,11 @@
 #pragma once
 #include "GridDuplicateCache.h"
+#include <algorithm>
 #include <deque>
 #include <vector>
 
 namespace mosaicraft::detail
 {
-// 整个任务共用一个窗口；批次切换和无候选的小块不会重置状态。
 // 保存已算完的前 K 个分数；门槛只能下降，平分必须继续走原来的排序规则。
 class RankBound
 {
@@ -41,6 +41,7 @@ class RankBound
     std::vector<double> m_best;
 };
 
+// 整个任务共用一个窗口；批次切换和无候选的小块不会重置状态。
 class NeighborhoodState
 {
   public:

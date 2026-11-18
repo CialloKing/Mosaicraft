@@ -1,6 +1,7 @@
 #include "../compute/CudaBackend.h"
 #include "../compute/CompatibleScoring.h"
 #include "../core/MatchingScore.h"
+#include "../core/NeighborhoodState.h"
 #include "../core/AnalysisTiles.h"
 #include "../core/BrightnessAdjustment.h"
 #include "../core/CandidateFeatures.h"

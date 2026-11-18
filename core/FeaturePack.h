@@ -21,7 +21,7 @@ class FeaturePack
         double validationMs = 0;
         double writingMs = 0;
     };
-    // 仅由顺序选图线程调用；返回的行引用在下一次 get/prepare 前有效。
+    // get/prepare 由单个线程调用；并行读取仅限已冻结批次的 preparedRow。
     class Reader
     {
       public:
