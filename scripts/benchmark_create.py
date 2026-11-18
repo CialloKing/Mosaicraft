@@ -1,6 +1,7 @@
 """Time the installed create command, not an instrumented MosaicEngine invocation."""
 import argparse
 import json
+import os
 import random
 import shutil
 import sqlite3
@@ -17,6 +18,23 @@ CASES = {900: (270, 480, 150), 3600: (540, 960, 150),
          57600: (2160, 3840, 150), 14400: (1080, 1920, 600)}
 
 
+# Isolate the paired children: an exported setting must never silently affect both variants.
+SETTINGS = {
+    'kernel': ('scalar', 'avx2', 'avx512', 'neon'),
+    'batch': ('1024', '2048'), 'host_mib': ('256', '512', '1024'),
+    'feature_mib': ('256', '512', '1024'), 'slots': ('65536', '262144', '1048576'),
+    'score_grain': ('1', '4', '8', '16'), 'prefetch': ('0', '1'),
+}
+PREFIX = 'MOSAICRAFT_BENCH_'
+
+
+def setting(text):
+    key, _, value = text.partition('=')
+    if value not in SETTINGS.get(key, ()):
+        raise argparse.ArgumentTypeError(f'invalid trial setting {text!r}; choices: {SETTINGS}')
+    return key, value
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ('baseline', 'candidate', 'prepared', 'input', 'output'):
@@ -28,7 +46,17 @@ def main():
     p.add_argument('--rounds', type=int, default=8)
     p.add_argument('--warmups', type=int, default=2)
     p.add_argument('--extend', type=Path, help='completed paired report; --rounds is the combined measured count')
+    for side in ('baseline', 'candidate'):
+        p.add_argument('--' + side + '-setting', type=setting, action='append', default=[], metavar='KEY=VALUE')
     a = p.parse_args()
+    settings = {}; environments = {}
+    for side in ('baseline', 'candidate'):
+        pairs = getattr(a, side + '_setting'); cfg = dict(pairs)
+        if len(cfg) != len(pairs) or (cfg and a.backend != 'cpu'):
+            p.error('CPU trial settings must be unique and used with --backend cpu')
+        settings[side] = cfg
+        environments[side] = {k:v for k,v in os.environ.items() if not k.upper().startswith(PREFIX)}
+        environments[side].update({PREFIX+k.upper():v for k,v in cfg.items()})
     if a.rounds < 1 or a.warmups < 0 or len(set(a.tiles)) != len(a.tiles):
         p.error('invalid sample counts or duplicate cases')
     candidate_threads = a.threads if a.candidate_threads is None else a.candidate_threads
@@ -47,6 +75,8 @@ def main():
     data = dict(reference='baseline', variants=[dict(id=k, sha256=digest(v)) for k,v in bins.items()],
                 cases=[dict(id=str(n)) for n in a.tiles], samples=[], backend=a.backend, threads=a.threads,
                 input_sha256=digest(a.input), snapshot_sha256=digest(src), complete=False, exploratory=a.rounds < 8 or a.warmups < 2)
+    if any(settings.values()):
+        data['cpu_settings'] = settings
     if candidate_threads != a.threads:
         data['candidate_threads'] = candidate_threads
     if manifest.get('snapshot_sha256', data['snapshot_sha256']) != data['snapshot_sha256']:
@@ -77,7 +107,7 @@ def main():
                                '--random-top',10,'--candidates',c,'--overwrite','--json']
                         with (out/f'{tag}.json').open('wb') as stdout, (out/f'{tag}.log').open('wb') as stderr:
                             start = time.perf_counter()
-                            subprocess.run(list(map(str,cmd)), stdout=stdout, stderr=stderr, check=True)
+                            subprocess.run(list(map(str,cmd)), stdout=stdout, stderr=stderr, env=environments[name], check=True)
                             wall = (time.perf_counter()-start)*1000
                         res = json.loads((out/f'{tag}.json').read_bytes()); rt = res['runtime']
                         if (not res['ok'] or res['warningCount'] or rt['matched'] != n or rt['failed'] or
@@ -86,6 +116,11 @@ def main():
                         if (rt['fallbackReason'] or a.backend not in rt['featureBackend'] or
                                 a.backend not in rt['scoreBackend'] or not rt['kernelVersion']):
                             raise RuntimeError(tag+': selected device did not run both stages')
+                        for key, value in settings[name].items():
+                            accepted = (rt['kernelVersion'].endswith('-' + value) if key == 'kernel'
+                                        else rt['metrics'].get('trial_' + key) == int(value))
+                            if not accepted:
+                                raise RuntimeError(f'{tag}: executable did not confirm {key}={value}')
                         sha = digest(image)
                         # 同种子未必同图；只在墙钟之外保存每种内容一次，下一轮不得覆盖异常样本。
                         witness = out/'outputs'/(sha+'.png')
