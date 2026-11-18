@@ -14,4 +14,7 @@ using ReduceDistances = DistanceSums (*)(const float *, const float *, const flo
 DistanceSums vectorDistanceSums(const float *grid, const float *otherGrid, const float *lbp,
                                 const float *otherLbp, const uint8_t *tiny, const uint8_t *otherTiny,
                                 const float *weights);
+DistanceSums avx512DistanceSums(const float *grid, const float *otherGrid, const float *lbp,
+                                const float *otherLbp, const uint8_t *tiny, const uint8_t *otherTiny,
+                                const float *weights);
 } // namespace mosaicraft::compute

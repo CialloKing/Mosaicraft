@@ -4,6 +4,9 @@
 #include "core/FeatureUtils.h"
 #include <algorithm>
 #include <cstring>
+#include <cstdlib>
+#include <stdexcept>
+#include <string_view>
 #include <limits>
 #include <numeric>
 
@@ -44,33 +47,47 @@ void pack(uint32_t *to, double l, double a, double b, double edge, const Grid &g
     to[516] = tinyValid;
     to[517] = lbpValid;
 }
-ReduceDistances fastReducer()
+struct Kernel
 {
+    ReduceDistances reduce;
+    const char *revision;
+};
+
+const Kernel &fastKernel()
+{
+    static const Kernel selected = []() -> Kernel
+    {
+        const char *setting = std::getenv("MOSAICRAFT_BENCH_KERNEL");
+        const std::string_view name = setting ? setting : "auto";
 #if defined(MOSAICRAFT_AVX2_DISTANCE)
-    static const auto impl = cv::checkHardwareSupport(CV_CPU_AVX2) ? vectorDistanceSums : nullptr;
+        // OpenCV 同时检查 CPUID 与 OS 保存的寄存器状态；未通过端到端验收不改变 auto。
+        if (name == "avx512" && cv::checkHardwareSupport(CV_CPU_AVX2) && cv::checkHardwareSupport(CV_CPU_AVX512_SKX))
+        {
+            return {avx512DistanceSums, ":fp32-v3-avx512"};
+        }
+        if ((name == "auto" || name == "avx2") && cv::checkHardwareSupport(CV_CPU_AVX2))
+        {
+            return {vectorDistanceSums, ":fp32-v3-avx2"};
+        }
 #elif defined(MOSAICRAFT_NEON_DISTANCE)
-    static const auto impl = cv::checkHardwareSupport(CV_CPU_NEON) ? vectorDistanceSums : nullptr;
-#else
-    constexpr ReduceDistances impl = nullptr;
+        if ((name == "auto" || name == "neon") && cv::checkHardwareSupport(CV_CPU_NEON))
+        {
+            return {vectorDistanceSums, ":fp32-v3-neon"};
+        }
 #endif
-    return impl;
+        if (name == "auto" || name == "scalar")
+        {
+            return {nullptr, ":fp32-v3-scalar"};
+        }
+        throw std::invalid_argument("Unavailable CPU fast score kernel: " + std::string(name));
+    }();
+    return selected;
 }
 } // namespace
 
 const char *fastScoreRevision()
 {
-#if defined(MOSAICRAFT_AVX2_DISTANCE)
-    if (fastReducer())
-    {
-        return ":fp32-v3-avx2";
-    }
-#elif defined(MOSAICRAFT_NEON_DISTANCE)
-    if (fastReducer())
-    {
-        return ":fp32-v3-neon";
-    }
-#endif
-    return ":fp32-v3-scalar";
+    return fastKernel().revision;
 }
 
 std::array<float, 5> fp32Distances(const MatchingBuffers &tiles, size_t tile, const ImageRecord &record,
@@ -88,7 +105,7 @@ std::array<float, 5> fp32Distances(const MatchingBuffers &tiles, size_t tile, co
     const auto lbp = tiles.lbp[tile].data();
     const auto tiny = tiles.tiny[tile].data();
     DistanceSums sums{};
-    if (const auto reduce = fastReducer())
+    if (const auto reduce = fastKernel().reduce)
     {
         sums = reduce(grid, record.gridLab.data(), lbp, payload.lbp.data(), tiny, payload.tiny.data(), weights);
     }
