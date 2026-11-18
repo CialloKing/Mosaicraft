@@ -5,7 +5,7 @@ layout(std430, binding = 0) readonly buffer Library { uint library[]; };
 layout(std430, binding = 1) readonly buffer Tiles { uint tiles[]; };
 layout(std430, binding = 2) readonly buffer Indices { int indices[]; };
 layout(std430, binding = 3) writeonly buffer Distances { float distances[]; };
-layout(push_constant) uniform Parameters { uint count; uint candidates; uint libraryCount; uint unused; } p;
+layout(push_constant) uniform Parameters { uint count; uint candidates; uint libraryCount; uint compact; } p;
 const float weights[64] = float[64](
 #include "GridWeights.inc"
 );
@@ -19,13 +19,18 @@ void main()
     int index = indices[position];
     if (index < 0 || uint(index) >= p.libraryCount)
     {
+        if (p.compact != 0)
+        {
+            distances[position] = 0;
+            return;
+        }
         for (uint i = 0; i < 5; ++i)
         {
             distances[position * 5 + i] = 0;
         }
         return;
     }
-    uint a = (position / p.candidates) * 518, b = uint(index) * 518;
+    uint a = (position / p.candidates) * (p.compact != 0 ? 523u : 518u), b = uint(index) * 518;
     precise float dl = uintBitsToFloat(tiles[a]) - uintBitsToFloat(library[b]);
     precise float da = uintBitsToFloat(tiles[a + 1]) - uintBitsToFloat(library[b + 1]);
     precise float db = uintBitsToFloat(tiles[a + 2]) - uintBitsToFloat(library[b + 2]);
@@ -46,6 +51,15 @@ void main()
                      float((library[b + 196 + bin / 4] >> shift) & 255);
         tiny += diff * diff;
         lbp += abs(uintBitsToFloat(tiles[a + 260 + bin]) - uintBitsToFloat(library[b + 260 + bin]));
+    }
+    if (p.compact != 0)
+    {
+        distances[position] = uintBitsToFloat(tiles[a + 518]) * (lab) +
+            uintBitsToFloat(tiles[a + 519]) * (grid / 64.0 / 100.0) +
+            uintBitsToFloat(tiles[a + 520]) * (library[b + 516] != 0 ? tiny / (256.0 * 255.0 * 255.0) : 1.0) +
+            uintBitsToFloat(tiles[a + 521]) * (abs(uintBitsToFloat(tiles[a + 3]) - uintBitsToFloat(library[b + 3]))) +
+            uintBitsToFloat(tiles[a + 522]) * (library[b + 517] != 0 ? lbp / 2.0 : 1.0);
+        return;
     }
     distances[position * 5] = lab;
     distances[position * 5 + 1] = grid / 64.0 / 100.0;

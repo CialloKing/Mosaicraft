@@ -1367,7 +1367,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     ? deviceBudget - portableFeatures.deviceBytes() : 0;
                 portableScoreReady = portableScores.prepare(static_cast<int>(batchRows), N, dbCount,
                     hostBudget > portableFeatures.hostBytes() + reserved ? hostBudget - portableFeatures.hostBytes() - reserved : 0,
-                    remaining);
+                    remaining, !selection);
                 if (!portableScoreReady)
                 {
                     return runtime.fail("gpu_required", "required GPU scoring resources unavailable", "backend");
@@ -1441,7 +1441,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             runtime.metric("previewCandidatesReused", reuseCandidates ? 1 : 0);
         }
-        const bool fastScore = cfg.scoreMode == ScoreMode::Fast && !selection && !portableScoreReady;
+        const bool fastScore = cfg.scoreMode == ScoreMode::Fast && !selection;
         std::vector<double> fastSelectionRow(templateCuda && fastScore ? N : 0);
         size_t wideHistoryRows = 0;
         const auto fastDistance = [&](const MatchingBuffers &batch, size_t tile, const ImageRecord &record,
@@ -2220,7 +2220,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     const auto scoreStart = Clock::now();
                     if (portableScoreReady)
                     {
-                        portableScores.score(buffers, count, scoreUsePenalty, allScores.data());
+                        portableScores.score(buffers, count, scoreUsePenalty, allScores.data(),
+                                             fastScore ? buffers.fastScores.data() : nullptr);
                     }
                     else
                     {

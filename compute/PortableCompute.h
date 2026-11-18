@@ -48,12 +48,13 @@ class ScoreWorkspace
     int rows = 0, candidates = 0;
     size_t library = 0, temporary = 0;
     size_t uploadRows = 0;
+    bool compact = false;
 
   public:
     explicit ScoreWorkspace(Device description) : device(std::move(description))
     {
     }
-    bool prepare(int maximum, int count, size_t libraryCount, size_t hostBudget, size_t deviceBudget);
+    bool prepare(int maximum, int count, size_t libraryCount, size_t hostBudget, size_t deviceBudget, bool singleScore = false);
     int capacity() const
     {
         return rows;
@@ -63,7 +64,7 @@ class ScoreWorkspace
         return library;
     }
     void uploadLibrary(const std::vector<ImageRecord> &images, FeaturePack::Reader &reader);
-    void score(const MatchingBuffers &tiles, int count, double penalty, double *scores);
+    void score(const MatchingBuffers &tiles, int count, double penalty, double *scores, float *fastScores = nullptr);
     Timings timings() const;
 };
 } // namespace mosaicraft::compute

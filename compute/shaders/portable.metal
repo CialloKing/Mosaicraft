@@ -66,13 +66,18 @@ kernel void scoring(device const uint *library [[buffer(0)]], device const uint 
     int index = indices[position];
     if (index < 0 || uint(index) >= p.z)
     {
+        if (p.w != 0)
+        {
+            distances[position] = 0;
+            return;
+        }
         for (uint i = 0; i < 5; ++i)
         {
             distances[position * 5 + i] = 0;
         }
         return;
     }
-    uint a = (position / p.y) * 518, b = uint(index) * 518;
+    uint a = (position / p.y) * (p.w != 0 ? 523u : 518u), b = uint(index) * 518;
     float dl = as_type<float>(tiles[a]) - as_type<float>(library[b]);
     float da = as_type<float>(tiles[a + 1]) - as_type<float>(library[b + 1]);
     float db = as_type<float>(tiles[a + 2]) - as_type<float>(library[b + 2]);
@@ -93,6 +98,15 @@ kernel void scoring(device const uint *library [[buffer(0)]], device const uint 
                      float((library[b + 196 + bin / 4] >> shift) & 255);
         tiny += diff * diff;
         lbp += abs(as_type<float>(tiles[a + 260 + bin]) - as_type<float>(library[b + 260 + bin]));
+    }
+    if (p.w != 0)
+    {
+        distances[position] = as_type<float>(tiles[a + 518]) * (lab) +
+            as_type<float>(tiles[a + 519]) * (grid / 64.0f / 100.0f) +
+            as_type<float>(tiles[a + 520]) * (library[b + 516] != 0 ? tiny / (256.0f * 255.0f * 255.0f) : 1.0f) +
+            as_type<float>(tiles[a + 521]) * (abs(as_type<float>(tiles[a + 3]) - as_type<float>(library[b + 3]))) +
+            as_type<float>(tiles[a + 522]) * (library[b + 517] != 0 ? lbp / 2.0f : 1.0f);
+        return;
     }
     distances[position * 5] = lab;
     distances[position * 5 + 1] = grid / 64.0f / 100.0f;

@@ -209,8 +209,9 @@ Timings FeatureWorkspace::timings() const
     return session ? session->timings : Timings{};
 }
 
-bool ScoreWorkspace::prepare(int maximum, int count, size_t libraryCount, size_t hostBudget, size_t deviceBudget)
+bool ScoreWorkspace::prepare(int maximum, int count, size_t libraryCount, size_t hostBudget, size_t deviceBudget, bool singleScore)
 {
+    compact = singleScore;
     session.reset();
     records = nullptr;
     rows = 0;
@@ -219,7 +220,9 @@ bool ScoreWorkspace::prepare(int maximum, int count, size_t libraryCount, size_t
         throw std::invalid_argument("invalid portable score dimensions");
     }
     library = checkedMatchProduct(libraryCount, stride * sizeof(uint32_t));
-    const size_t perRow = stride * 4 + checkedMatchProduct(size_t(count), sizeof(int) + 5 * sizeof(float));
+    const size_t tileStride = stride + (compact ? 5 : 0);
+    const size_t outputs = compact ? 1 : 5;
+    const size_t perRow = tileStride * 4 + checkedMatchProduct(size_t(count), sizeof(int) + outputs * sizeof(float));
     rows = static_cast<int>(std::min(
         {size_t(maximum), size_t(256), deviceBudget / perRow, hostBudget / (perRow + size_t(count) * sizeof(double))}));
     // 上传阶段还需要候选编号暂存，最多占用与打包行相同的主机空间。
@@ -233,9 +236,9 @@ bool ScoreWorkspace::prepare(int maximum, int count, size_t libraryCount, size_t
     {
         session = open(device);
         session->buffer(0, library);
-        session->buffer(1, size_t(rows) * stride * 4);
+        session->buffer(1, size_t(rows) * tileStride * 4);
         session->buffer(2, size_t(rows) * count * sizeof(int));
-        session->buffer(3, size_t(rows) * count * 5 * sizeof(float), nullptr, true);
+        session->buffer(3, size_t(rows) * count * outputs * sizeof(float), nullptr, true);
     }
     catch (const std::exception &)
     {
@@ -285,24 +288,39 @@ void ScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &images, Featu
     records = &images;
 }
 
-void ScoreWorkspace::score(const MatchingBuffers &tiles, int count, double penalty, double *scores)
+void ScoreWorkspace::score(const MatchingBuffers &tiles, int count, double penalty, double *scores, float *fastScores)
 {
-    if (!session || !records || count < 1 || count > rows)
+    if (!session || !records || count < 1 || count > rows || (compact ? !fastScores : !scores))
     {
         throw std::invalid_argument("portable scoring batch is not prepared");
     }
-    std::vector<uint32_t> packed(size_t(count) * stride);
+    const size_t tileStride = stride + (compact ? 5 : 0);
+    std::vector<uint32_t> packed(size_t(count) * tileStride);
     for (int i = 0; i < count; ++i)
     {
-        pack(packed.data() + size_t(i) * stride, tiles.l[i], tiles.a[i], tiles.b[i], tiles.edge[i], tiles.grid[i],
+        auto *row = packed.data() + size_t(i) * tileStride;
+        pack(row, tiles.l[i], tiles.a[i], tiles.b[i], tiles.edge[i], tiles.grid[i],
              tiles.tiny[i], tiles.lbp[i], true, true);
+        if (compact)
+        {
+            put(row + stride, float(tiles.labW[i]));
+            put(row + stride + 1, float(tiles.gridW[i]));
+            put(row + stride + 2, float(tiles.tinyW[i]));
+            put(row + stride + 3, float(tiles.edgeW[i]));
+            put(row + stride + 4, float(tiles.lbpW[i]));
+        }
     }
     const size_t entries = size_t(count) * candidates;
-    std::vector<float> distances(entries * 5);
     session->buffer(1, packed.size() * 4, packed.data());
     session->buffer(2, entries * sizeof(int), tiles.indices.data());
-    session->dispatch(true, {uint32_t(count), uint32_t(candidates), uint32_t(records->size()), 0},
+    session->dispatch(true, {uint32_t(count), uint32_t(candidates), uint32_t(records->size()), uint32_t(compact)},
                       uint32_t((entries + 127) / 128));
+    if (compact)
+    {
+        session->read(3, entries * sizeof(float), fastScores);
+        return;
+    }
+    std::vector<float> distances(entries * 5);
     session->read(3, distances.size() * sizeof(float), distances.data());
     for (size_t position = 0; position < entries; ++position)
     {
