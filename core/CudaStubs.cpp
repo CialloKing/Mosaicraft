@@ -16,7 +16,7 @@ struct CompatibleScoreWorkspace::Impl
 };
 CompatibleScoreWorkspace::CompatibleScoreWorkspace() = default;
 CompatibleScoreWorkspace::~CompatibleScoreWorkspace() = default;
-bool CompatibleScoreWorkspace::prepare(int, int, int, size_t, size_t, CompatibleScoreFault, const CudaAvailability *)
+bool CompatibleScoreWorkspace::prepare(int, int, int, size_t, size_t, CompatibleScoreFault, const CudaAvailability *, bool)
 {
     return false;
 }
@@ -120,7 +120,7 @@ struct ScoreWorkspace::Impl
 ScoreWorkspace::ScoreWorkspace() = default;
 ScoreWorkspace::~ScoreWorkspace() = default;
 
-bool ScoreWorkspace::preparePipeline(int, int, std::size_t, std::size_t, std::size_t, PipelineFault)
+bool ScoreWorkspace::preparePipeline(int, int, std::size_t, std::size_t, std::size_t, PipelineFault, bool)
 {
     return false;
 }

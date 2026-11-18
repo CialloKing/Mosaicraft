@@ -49,11 +49,11 @@ struct ScoreInput
     double *scores;
 };
 
-size_t scoreBytes(size_t count, int candidates)
+size_t scoreBytes(size_t count, int candidates, bool compactOnly)
 {
     const size_t inputs = checkedMatchProduct(count, tileFeatureBytes +
                                                      checkedMatchProduct(candidates, sizeof(int)));
-    return ((inputs + 7) & ~size_t(7)) + checkedMatchProduct(count, size_t(candidates) * sizeof(double));
+    return ((inputs + 7) & ~size_t(7)) + checkedMatchProduct(count, size_t(candidates) * (compactOnly ? sizeof(float) : sizeof(double)));
 }
 
 ScoreInput scoreLayout(uint8_t *start, int count, int candidates)
@@ -149,7 +149,7 @@ bool probeCompatibleScoring(const cudaDeviceProp &device, CudaAvailability &stat
 struct CompatibleScoreWorkspace::Impl
 {
     int count = 0, candidates = 0, chunk = 0;
-    bool ready = false, failed = false;
+    bool ready = false, failed = false, compactOnly = false;
     CompatibleScoreFault fault = CompatibleScoreFault::None;
     GpuLibrary library;
     DeviceBuffer<uint8_t> resident, temporary;
@@ -163,7 +163,8 @@ CompatibleScoreWorkspace::CompatibleScoreWorkspace() = default;
 CompatibleScoreWorkspace::~CompatibleScoreWorkspace() = default;
 
 bool CompatibleScoreWorkspace::prepare(int maxTiles, int candidates, int libraryCount, size_t hostBudget,
-                                       size_t deviceBudget, CompatibleScoreFault fault, const CudaAvailability *preflight)
+                                       size_t deviceBudget, CompatibleScoreFault fault, const CudaAvailability *preflight,
+                                       bool compactOnly)
 {
     m_impl.reset();
     m_failure = "CUDA resource allocation failed";
@@ -192,8 +193,8 @@ bool CompatibleScoreWorkspace::prepare(int maxTiles, int candidates, int library
     // free 是分配前的余量，只扣一次本次常驻图库；已准备的提取缓冲已反映在 free 中。
     const size_t budget = std::min({deviceBudget, size_t(256ULL * 1024 * 1024), free / 2 - residentBytes});
     int rows = std::min(maxTiles, 256);
-    while (rows > 0 && (scoreBytes(rows, candidates) > budget ||
-                       scoreBytes(rows, candidates) + 3 * sizeof(int) > hostBudget))
+    while (rows > 0 && (scoreBytes(rows, candidates, compactOnly) > budget ||
+                       scoreBytes(rows, candidates, compactOnly) + 3 * sizeof(int) > hostBudget))
     {
         rows /= 2;
     }
@@ -214,7 +215,7 @@ bool CompatibleScoreWorkspace::prepare(int maxTiles, int candidates, int library
         }
         while (rows > 0)
         {
-            const size_t temporary = scoreBytes(rows, candidates);
+            const size_t temporary = scoreBytes(rows, candidates, compactOnly);
             // 一个上传索引数组，另为 Reader 的去重临时索引预留两倍容量。
             while (chunk > 1 && std::max(temporary, size_t(chunk) * libraryRowBytes) +
                                     size_t(chunk) * 3 * sizeof(int) > hostBudget)
@@ -242,6 +243,7 @@ bool CompatibleScoreWorkspace::prepare(int maxTiles, int candidates, int library
             return false;
         }
         impl->count = rows;
+        impl->compactOnly = compactOnly;
         impl->candidates = candidates;
         impl->chunk = chunk;
         impl->needed.resize(chunk);
@@ -361,7 +363,7 @@ void CompatibleScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &rec
 void CompatibleScoreWorkspace::score(const MatchingBuffers &tiles, int count, double usePenalty, double *scores,
                                      GpuTimings *timings, float *fastScores)
 {
-    if (!m_impl || !m_impl->ready || m_impl->failed || count < 1 || count > capacity() || (!scores && !fastScores) ||
+    if (!m_impl || !m_impl->ready || m_impl->failed || (m_impl->compactOnly && !fastScores) || count < 1 || count > capacity() || (!scores && !fastScores) ||
         tiles.l.size() < size_t(count) || tiles.indices.size() < size_t(count) * m_impl->candidates)
     {
         throw std::invalid_argument("invalid compatible CUDA score batch");

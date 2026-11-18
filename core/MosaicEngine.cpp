@@ -1168,7 +1168,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 scores = std::make_unique<cuda::ScoreWorkspace>();
             }
         }
-        const size_t scratch = checkedMatchProduct(N, sizeof(int) + sizeof(std::pair<double, int>)) +
+        const bool fastScore = cfg.scoreMode == ScoreMode::Fast && !selection;
+        const size_t scalarBytes = fastScore ? sizeof(float) : sizeof(double);
+        const size_t rankBytes = pruneGrid ? size_t(rankLimit) * sizeof(double) : 0;
+        const size_t selectionRowBytes = templateCuda && fastScore ? size_t(N) * sizeof(double) : 0;
+        const size_t scratch = rankBytes + selectionRowBytes + checkedMatchProduct(N, sizeof(int) + sizeof(std::pair<double, int>)) +
                                FeatureIndex::kDimension * sizeof(float);
         compute::FeatureWorkspace portableFeatures(portableDevice);
         compute::ScoreWorkspace portableScores(portableDevice);
@@ -1215,7 +1219,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             workspace = std::make_unique<cuda::FeatureWorkspace>();
             scoreWorkspace = std::make_unique<cuda::ScoreWorkspace>();
             // 先预算并准备全部可选资源；计算开始后不能用同步重算掩盖异步错误。
-            const size_t scoreRowBytes = 9 * sizeof(double) + checkedMatchProduct(N, sizeof(int) + sizeof(double));
+            const size_t scoreRowBytes = 9 * sizeof(double) + checkedMatchProduct(N, sizeof(int) + scalarBytes);
             while (batchRows > 1 &&
                    gpuMatchingBufferBytes(batchRows, featBytes, N, cfg.analyze) +
                            std::min<size_t>(batchRows, 256) * 2072 + batchRows * scoreRowBytes + scratch >
@@ -1253,7 +1257,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     const auto allocationStart = Clock::now();
                     pipeline = scoreWorkspace->preparePipeline(static_cast<int>(batchRows), N, scoreHost,
                                                                  workspace->residentBytes(),
-                                                                 256ULL * 1024 * 1024 - expansionDeviceReserve);
+                                                                 256ULL * 1024 * 1024 - expansionDeviceReserve,
+                                                                 cuda::PipelineFault::None, fastScore);
                     metrics.scoreTimings.allocationMs += Ms(Clock::now() - allocationStart).count();
                 }
                 if (!pipeline)
@@ -1294,13 +1299,13 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             const auto allocationStart = Clock::now();
             // 先保留提取工作区；仅在连一行评分都放不下时缩小提取批次。
             const size_t scoreMinimum = 2048 + 9 * sizeof(double) +
-                size_t(N) * (sizeof(int) + sizeof(double)) + 8 + 3 * sizeof(int);
+                size_t(N) * (sizeof(int) + scalarBytes) + 8 + 3 * sizeof(int);
             size_t rows = std::min<size_t>(batchRows, 256);
             bool ready = false;
             for (;;)
             {
                 const size_t hostRows = cpuMatchingBufferBytes(rows, N) +
-                    rows * N * (sizeof(double) + 2 * sizeof(int)) + scratch;
+                    rows * N * (scalarBytes + 2 * sizeof(int)) + scratch;
                 const size_t hostUsed = hostRows + compatible.hostBytes();
                 const size_t remainingHost = hostUsed < hostBudget ? hostBudget - hostUsed : 0;
                 const size_t remainingDevice = compatible.deviceBytes() < deviceBudget
@@ -1308,7 +1313,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 if (remainingHost >= scoreMinimum && remainingDevice >= scoreMinimum)
                 {
                     ready = compatibleScore.prepare(static_cast<int>(rows), N, dbCount, remainingHost,
-                                                     remainingDevice, m_limits.scoreFault, &preflight);
+                                                     remainingDevice, m_limits.scoreFault, &preflight, fastScore);
                     break;
                 }
                 if (rows == 1)
@@ -1447,7 +1452,6 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             runtime.metric("previewCandidatesReused", reuseCandidates ? 1 : 0);
         }
-        const bool fastScore = cfg.scoreMode == ScoreMode::Fast && !selection;
         std::vector<double> fastSelectionRow(templateCuda && fastScore ? N : 0);
         size_t wideHistoryRows = 0;
         const auto fastDistance = [&](const MatchingBuffers &batch, size_t tile, const ImageRecord &record,
@@ -1457,12 +1461,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             return float(batch.labW[tile]) * d[0] + float(batch.gridW[tile]) * d[1] +
                    float(batch.tinyW[tile]) * d[2] + float(batch.edgeW[tile]) * d[3] + float(batch.lbpW[tile]) * d[4];
         };
-        const size_t cpuWorkspace = scratch + compatible.hostBytes() + portableFeatures.hostBytes() +
-                                    (pruneGrid ? size_t(rankLimit) * sizeof(double) : 0);
+        const size_t cpuWorkspace = scratch + compatible.hostBytes() + portableFeatures.hostBytes();
         const auto fitsCpuScores = [&](size_t rows)
         {
             return cpuWorkspace <= hostBudget && cpuMatchingBufferBytes(rows, N) +
-                   checkedMatchProduct(rows * N, sizeof(double)) <= hostBudget - cpuWorkspace;
+                   checkedMatchProduct(checkedMatchProduct(rows, N), scalarBytes + 2 * sizeof(int)) <= hostBudget - cpuWorkspace;
         };
         if (backends.scoring == ScoreBackend::Cpu && !selection && cfg.threads != 1)
         {
@@ -2417,7 +2420,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             const size_t temporary = featureReader ? featureReader->stats().temporaryPeakBytes : 0;
             metrics.matchingPeakBytes = std::max(metrics.matchingPeakBytes, selectionBytes + buffers.capacityBytes() + ahead.capacityBytes() +
-                                                                temporary + pinnedBytes + compatible.hostBytes() +
+                                                                temporary + pinnedBytes + compatible.hostBytes() + rankBytes +
+                                                                fastSelectionRow.capacity() * sizeof(double) +
                                                                 idxs.capacity() * sizeof(int) +
                                                                 scored.capacity() * sizeof(std::pair<double, int>) +
                                                                 tileVector.capacity() * sizeof(float));

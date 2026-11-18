@@ -22,6 +22,7 @@ struct ScorePipeline
     PinnedBuffer staging;
     int maxTiles = 0, candidates = 0;
     size_t residentBytes = 0;
+    bool compactOnly = false;
     PipelineFault testFault = PipelineFault::None;
     TransferStream transfer;
 };
@@ -37,7 +38,7 @@ ScoreWorkspace::ScoreWorkspace() : buffers(std::make_unique<Impl>())
 ScoreWorkspace::~ScoreWorkspace() = default;
 
 bool ScoreWorkspace::preparePipeline(int maxTiles, int candidates, size_t hostBudget, size_t residentBytes,
-                                     size_t temporaryBudget, PipelineFault testFault)
+                                     size_t temporaryBudget, PipelineFault testFault, bool compactOnly)
 {
     resetPipeline();
     if (maxTiles <= 0 || candidates <= 0 || maxTiles > std::numeric_limits<int>::max() / candidates)
@@ -51,7 +52,8 @@ bool ScoreWorkspace::preparePipeline(int maxTiles, int candidates, size_t hostBu
     {
         return false;
     }
-    const size_t rowBytes = 9 * sizeof(double) + static_cast<size_t>(candidates) * (sizeof(int) + sizeof(double));
+    const size_t scalarBytes = compactOnly ? sizeof(float) : sizeof(double);
+    const size_t rowBytes = 9 * sizeof(double) + static_cast<size_t>(candidates) * (sizeof(int) + scalarBytes);
     const size_t budget = std::min({hostBudget, totalBudget - residentBytes, freeBytes / 2});
     const size_t rows = std::min<size_t>(maxTiles, budget / rowBytes);
     if (rows == 0)
@@ -73,6 +75,7 @@ bool ScoreWorkspace::preparePipeline(int maxTiles, int candidates, size_t hostBu
         p->candidates = candidates;
         p->residentBytes = residentBytes;
         p->testFault = testFault;
+        p->compactOnly = compactOnly;
         buffers->pipeline = std::move(p);
         return true;
     }
@@ -828,8 +831,9 @@ bool scoreBatch(int totalTiles, const double *h_tileL, const double *h_tileA, co
         return false;
     }
     // 为驱动和其他工作区保留余量；即使 WDDM 报告较大的可用值，也限制临时评分显存。
+    const size_t scalarBytes = fastScores ? sizeof(float) : sizeof(double);
     const std::size_t bytesPerTile = 9 * sizeof(double) + 192 * sizeof(float)
-        + 256 + 256 * sizeof(float) + static_cast<std::size_t>(N) * (sizeof(int) + sizeof(double));
+        + 256 + 256 * sizeof(float) + static_cast<std::size_t>(N) * (sizeof(int) + scalarBytes);
     const std::size_t budget = std::min<std::size_t>({temporaryBudget, 256ULL * 1024 * 1024, freeBytes / 2});
     int batchSize = static_cast<int>(std::min<std::size_t>(totalTiles, budget / bytesPerTile));
     if (batchSize < 1)
@@ -866,7 +870,7 @@ bool scoreBatch(int totalTiles, const double *h_tileL, const double *h_tileA, co
     if (timings)
     {
         timings->peakTemporaryBytes = storage.capacityBytes();
-        timings->uploadBytes = static_cast<std::size_t>(totalTiles) * (bytesPerTile - N * sizeof(double));
+        timings->uploadBytes = static_cast<std::size_t>(totalTiles) * (bytesPerTile - N * scalarBytes);
         timings->downloadBytes = static_cast<std::size_t>(totalTiles) * N * (fastScores ? sizeof(float) : sizeof(double));
     }
     for (int first = 0; first < totalTiles; first += batchSize)
@@ -884,7 +888,7 @@ bool scoreBatch(int totalTiles, const double *h_tileL, const double *h_tileA, co
         double* d_edgeW = d_tinyW + count;
         double* d_lbpW = d_edgeW + count;
         double* d_scores = d_lbpW + count;
-        float* d_tileGrid = reinterpret_cast<float*>(d_scores + work);
+        float* d_tileGrid = reinterpret_cast<float*>(reinterpret_cast<uint8_t *>(d_scores) + work * scalarBytes);
         float* d_tileLBP = d_tileGrid + static_cast<std::size_t>(count) * 192;
         int* d_indices = reinterpret_cast<int*>(d_tileLBP + static_cast<std::size_t>(count) * 256);
         std::uint8_t* d_tileTiny = reinterpret_cast<std::uint8_t*>(d_indices + work);
@@ -1008,7 +1012,7 @@ bool scoreDeviceBatch(const DeviceFeatureView &features, const double *l, const 
     auto *p = workspace.buffers->pipeline.get();
     if (!state || !p || state->generation != features.generation || features.first < 0 || features.count <= 0 ||
         features.first > state->ready || features.count > state->ready - features.first ||
-        N != p->candidates || features.count > std::numeric_limits<int>::max() / N ||
+        (p->compactOnly && !fastScores) || N != p->candidates || features.count > std::numeric_limits<int>::max() / N ||
         !l || !a || !b || !edge || !indices || !labW || !gridW || !tinyW || !edgeW || !lbpW || (!scores && !fastScores) ||
         !hasValidLibrary(lib) || state->bytes > p->residentBytes)
     {
@@ -1049,7 +1053,9 @@ bool scoreDeviceBatch(const DeviceFeatureView &features, const double *l, const 
         const size_t featureFirst = static_cast<size_t>(features.first + first);
         auto *values = reinterpret_cast<double *>(p->staging.get());
         auto *hostScores = values + count * 9;
-        auto *hostIndices = reinterpret_cast<int *>(hostScores + work);
+        // 准备为 FP32 的槽不能被兼容内核复用；尾批按实际条数布置索引。
+        const size_t scoreBytes = work * (fastScores ? sizeof(float) : sizeof(double));
+        auto *hostIndices = reinterpret_cast<int *>(reinterpret_cast<uint8_t *>(hostScores) + scoreBytes);
         const double *columns[] = {l, a, b, edge, labW, gridW, tinyW, edgeW, lbpW};
         for (int column = 0; column < 9; ++column)
         {
@@ -1058,7 +1064,7 @@ bool scoreDeviceBatch(const DeviceFeatureView &features, const double *l, const 
         std::memcpy(hostIndices, indices + static_cast<size_t>(first) * N, work * sizeof(int));
         auto *device = reinterpret_cast<double *>(storage.get());
         auto *deviceScores = device + count * 9;
-        auto *deviceIndices = reinterpret_cast<int *>(deviceScores + work);
+        auto *deviceIndices = reinterpret_cast<int *>(reinterpret_cast<uint8_t *>(deviceScores) + scoreBytes);
         transfer.mark(0);
         requireCuda(cudaMemcpyAsync(device, values, count * 9 * sizeof(double), cudaMemcpyHostToDevice,
                                     transfer.stream));

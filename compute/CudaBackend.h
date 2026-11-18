@@ -86,7 +86,7 @@ class ScoreWorkspace
     ScoreWorkspace &operator=(const ScoreWorkspace &) = delete;
     bool preparePipeline(int maxTiles, int candidates, std::size_t hostBudget, std::size_t residentBytes,
                          std::size_t temporaryBudget = 256ULL * 1024 * 1024,
-                         PipelineFault testFault = PipelineFault::None);
+                         PipelineFault testFault = PipelineFault::None, bool compactOnly = false);
     void resetPipeline();
     std::size_t pinnedBytes() const;
 };

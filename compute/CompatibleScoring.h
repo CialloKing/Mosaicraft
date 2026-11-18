@@ -18,7 +18,7 @@ class CompatibleScoreWorkspace
     bool prepare(int maxTiles, int candidates, int libraryCount, size_t hostBudget,
                  size_t deviceBudget = 256ULL * 1024 * 1024,
                  CompatibleScoreFault fault = CompatibleScoreFault::None,
-                 const CudaAvailability *preflight = nullptr);
+                 const CudaAvailability *preflight = nullptr, bool compactOnly = false);
     int capacity() const;
     size_t hostBytes() const;
     size_t deviceBytes() const;
