@@ -108,8 +108,14 @@ void lbpInto(const cv::Mat &gray, float *hist, bool vectorize)
                 auto code = cv::v_setzero_u8();
                 for (int k = 0; k < 8; ++k)
                 {
-                    code = cv::v_or(code, cv::v_and(cv::v_ge(cv::v_load(neighbors[k] + x - 1), center),
-                                                     cv::v_setall_u8(static_cast<uint8_t>(1u << k))));
+                    const auto neighbor = cv::v_load(neighbors[k] + x - 1);
+                    const auto bit = cv::v_setall_u8(static_cast<uint8_t>(1u << k));
+                    // OpenCV 4.11 将向量运算符改为具名接口；两种写法产生相同的无符号比较掩码。
+#if CV_VERSION_MAJOR == 4 && CV_VERSION_MINOR < 11
+                    code = code | ((neighbor >= center) & bit);
+#else
+                    code = cv::v_or(code, cv::v_and(cv::v_ge(neighbor, center), bit));
+#endif
                 }
                 uint8_t values[16];
                 cv::v_store(values, code);
