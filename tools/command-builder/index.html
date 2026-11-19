@@ -214,6 +214,8 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 #task-connection { font-size: .8rem; }
 .compute-status { margin: 12px 0; padding: 13px 15px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: .8rem; line-height: 1.7; }
 .compute-status-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 7px; }
+.compute-status > summary { cursor: pointer; }
+.compute-status[open] > summary { margin-bottom: 7px; }
 .compute-status-badge { border-radius: 5px; padding: 1px 7px; background: var(--indigo); color: var(--accent); font-size: .74rem; }
 .compute-status-grid { display: flex; flex-wrap: wrap; gap: 8px 24px; }
 .compute-status-grid span { color: var(--fg2); }
@@ -441,7 +443,10 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
         <label><input type="checkbox" id="live-preview-mark-quality"> 匹配误差</label>
         <button type="button" class="btn btn-secondary" id="live-preview-inspect-tile" aria-pressed="false" disabled>检查单格</button>
       </div>
-      <div id="live-preview-backend" aria-live="polite" aria-atomic="true" hidden></div>
+      <details id="live-preview-backend" class="compute-status" hidden>
+        <summary><strong>实际计算后端</strong> <span id="live-preview-backend-label" class="compute-status-badge" aria-live="polite"></span></summary>
+        <div id="live-preview-backend-details"></div>
+      </details>
       <div class="preview-surface" id="live-preview-surface">
         <canvas id="live-preview-canvas" tabindex="0" aria-label="马赛克预览，方向键平移，加减键缩放，手动模式下回车选择中心格"></canvas>
         <canvas id="live-preview-guides" class="preview-guides" width="1" height="1" aria-hidden="true" hidden></canvas>
@@ -2053,14 +2058,15 @@ function matchingBackendName(value) {
   return {cpu: 'CPU', cuda: 'CUDA', template_cuda: 'CUDA（模板）', compatible_cuda: 'CUDA（兼容）',
     vulkan: 'Vulkan', metal: 'Metal', none: '不适用'}[value] || value || '待确认';
 }
-function renderComputeStatus(runtime, state = 'running') {
-  runtime = runtime || {};
-  const label = !serverAvailable ? '上次状态 · 已断开' :
+function computeStatusLabel(state) {
+  return !serverAvailable ? '上次状态 · 已断开' :
     ({queued:'等待执行',running:'运行中',succeeded:'本次使用',failed:'失败时状态',canceled:'取消时状态',stale:'上次预览'}[state] || '本次使用');
-  let html = '<section class="compute-status" aria-label="实际计算后端"><div class="compute-status-heading"><strong>实际计算后端</strong><span class="compute-status-badge">' + label + '</span></div>';
-  if (state === 'queued') return html + '<p class="hint">等待任务开始，实际后端将在资源准备后确认。</p></section>';
+}
+function renderComputeStatusDetails(runtime, state) {
+  if (state === 'queued') return '<p class="hint">等待任务开始，实际后端将在资源准备后确认。</p>';
+  runtime = runtime || {};
   const features = runtime.featureBackend, scoring = runtime.scoreBackend;
-  html += '<div class="compute-status-grid"><span>特征提取<strong>' + escapeHtml(matchingBackendName(features)) + '</strong></span>' +
+  let html = '<div class="compute-status-grid"><span>特征提取<strong>' + escapeHtml(matchingBackendName(features)) + '</strong></span>' +
     '<span>候选评分<strong>' + escapeHtml(matchingBackendName(scoring)) + '</strong></span></div>';
   const backends = [features, scoring].filter(value => value && value !== 'none');
   const cpuOnly = backends.length && backends.every(value => value === 'cpu');
@@ -2072,7 +2078,11 @@ function renderComputeStatus(runtime, state = 'running') {
   if (mode && scoring && scoring !== 'none') html += '<p>评分模式 · ' + escapeHtml(mode) + '</p>';
   if (!backends.length && !deviceId) html += '<p class="hint">正在确认执行设备与后端…</p>';
   if (runtime.fallbackReason) html += '<p class="hint">CPU 回退 · ' + escapeHtml(runtime.fallbackReason) + '</p>';
-  return html + '</section>';
+  return html;
+}
+function renderComputeStatus(runtime, state = 'running') {
+  return '<section class="compute-status" aria-label="实际计算后端"><div class="compute-status-heading"><strong>实际计算后端</strong><span class="compute-status-badge">' +
+    computeStatusLabel(state) + '</span></div>' + renderComputeStatusDetails(runtime, state) + '</section>';
 }
 function renderTaskDiagnostic(job) {
   let html = '';

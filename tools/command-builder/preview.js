@@ -90,6 +90,8 @@ const interactivePreview = (() => {
   const refreshButton = byId('refresh');
   const status = byId('status');
   const backendStatus = byId('backend');
+  const backendLabel = byId('backend-label');
+  const backendDetails = byId('backend-details');
   const progressBox = byId('progress');
   const progressFill = byId('progress-fill');
   const progressLabel = byId('progress-label');
@@ -332,8 +334,11 @@ const interactivePreview = (() => {
     if (!backendStatus.hidden) {
       const runtime = pending || lastError ? liveRuntime : plan.runtime || plan;
       const state = pending ? liveState : lastError ? 'failed' : planKey === requestKey ? 'succeeded' : 'stale';
-      const html = renderComputeStatus(runtime, state);
-      if (backendStatus.innerHTML !== html) backendStatus.innerHTML = html;
+      const label = computeStatusLabel(state);
+      const html = renderComputeStatusDetails(runtime, state);
+      // Keep the disclosure and its summary in place so live updates do not reset its state or focus.
+      if (backendLabel.textContent !== label) backendLabel.textContent = label;
+      if (backendDetails.innerHTML !== html) backendDetails.innerHTML = html;
     }
     picker.sync(plan, hasPlan && !pending && planKey === requestKey && capable() && hasFeature('preview-editing'),
       tab === 'preview' && !document.hidden);
