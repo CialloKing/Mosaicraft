@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace mosaicraft
@@ -18,7 +19,7 @@ struct PreviewCachePolicy
     static constexpr size_t MiB = 1024 * 1024;
     enum class Tier { Disabled, Standard, Full };
     static PreviewCachePolicy select(uint64_t available, size_t hostBudget, bool largeScores, bool largeFeatures);
-    static PreviewCachePolicy forTask(size_t hostBudget);
+    static PreviewCachePolicy forTask(size_t hostBudget, bool expand);
 
     Tier tier = Tier::Standard;
     std::array<size_t, 3> limits{128 * MiB, 64 * MiB, 64 * MiB};

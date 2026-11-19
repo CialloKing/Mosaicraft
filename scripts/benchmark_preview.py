@@ -50,7 +50,10 @@ def session(a, exe, experiment, db, folder, w, h, c):
     env = os.environ.copy()
     cache_mode, _, stamp_mode = experiment.partition('+')
     env['MOSAICRAFT_BENCH_PREVIEW_CACHE'] = cache_mode
-    env['MOSAICRAFT_BENCH_PREVIEW_STAMPS'] = '1' if stamp_mode == 'stamps' else '0'
+    if cache_mode == 'auto':
+        env.pop('MOSAICRAFT_BENCH_PREVIEW_STAMPS', None)
+    else:
+        env['MOSAICRAFT_BENCH_PREVIEW_STAMPS'] = '1' if stamp_mode == 'stamps' else '0'
     with (folder / 'server.log').open('wb') as log:
         proc = subprocess.Popen([exe, str(port), '--no-open'], cwd=folder, env=env, stdout=log,
                                 stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)

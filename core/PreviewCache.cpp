@@ -30,16 +30,16 @@ bool reserve(std::atomic_size_t &counter, size_t delta, size_t limit)
 PreviewCachePolicy PreviewCachePolicy::select(uint64_t available, size_t hostBudget, bool largeScores, bool largeFeatures)
 {
     PreviewCachePolicy policy;
-    const uint64_t headroom = uint64_t(hostBudget) + 512 * MiB;
+    constexpr uint64_t reserveBytes = 512 * MiB;
     if (available == 0)
     {
         return policy; // 无测量值时沿用旧上限，不自动扩容。
     }
-    if (available <= headroom)
+    if (available <= hostBudget || available - hostBudget <= reserveBytes)
     {
         return {Tier::Disabled, {}, 0, 0};
     }
-    const auto extra = available - headroom;
+    const auto extra = available - hostBudget - reserveBytes;
     const auto fullBytes = (256 + 128 * largeScores + 64 * largeFeatures) * MiB;
     // 已驻留对象已经反映在系统可用内存里，不要从余量中扣两次。
     const size_t live = PreviewCacheReservation::totalBytes();
@@ -51,18 +51,19 @@ PreviewCachePolicy PreviewCachePolicy::select(uint64_t available, size_t hostBud
         policy.totalLimit = fullBytes;
     }
     policy.incrementalLimit = static_cast<size_t>(std::min<uint64_t>(extra, policy.totalLimit));
-    policy.totalLimit = std::min(live, policy.totalLimit) +
-        std::min(policy.totalLimit - std::min(live, policy.totalLimit), policy.incrementalLimit);
+    const auto retained = std::min(live, policy.totalLimit);
+    policy.totalLimit = retained + std::min(policy.totalLimit - retained, policy.incrementalLimit);
     return policy;
 }
 
-PreviewCachePolicy PreviewCachePolicy::forTask(size_t hostBudget)
+PreviewCachePolicy PreviewCachePolicy::forTask(size_t hostBudget, bool expand)
 {
     // 只供私有快照复跑；未验收的扩容不改变服务默认。
     const char *trial = std::getenv("MOSAICRAFT_BENCH_PREVIEW_CACHE");
     const std::string_view variant = trial ? trial : "";
-    return select(availableMemory(), hostBudget, variant == "scores" || variant == "both",
-                  variant == "features" || variant == "both");
+    const bool automatic = variant.empty() || variant == "auto";
+    return select(availableMemory(), hostBudget, (automatic && expand) || variant == "scores" || variant == "both",
+                  (automatic && expand) || variant == "features" || variant == "both");
 }
 
 bool PreviewCacheReservation::grow(size_t bytes, const PreviewCachePolicy &policy, PreviewCacheMiss &miss)

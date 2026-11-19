@@ -16,6 +16,7 @@
 #include <memory>
 #include <numeric>
 #include <stdexcept>
+#include <system_error>
 
 #ifdef _WIN32
 #include <io.h>
@@ -952,15 +953,30 @@ std::optional<uint64_t> FeaturePack::sourceVersion(const std::string &directory,
         add(lbp);
         return true;
     };
+    std::vector<std::array<Stamp, 2>> stamps;
     if (workers > 1 && records.size() >= 4096)
     {
-        // 文件状态可以并行取，哈希仍严格按记录顺序归并；不跨请求信任旧的时间戳。
-        std::vector<std::array<Stamp, 2>> stamps(records.size());
-        WorkerPool pool(workers);
-        pool.runChunks(records.size(), 64, [&](size_t i)
+        try
         {
-            stamps[i] = {stamp(records[i].tinyPath), stamp(records[i].lbpPath)};
-        });
+            // 文件状态可以并行取，哈希仍严格按记录顺序归并；不跨请求信任旧的时间戳。
+            stamps.resize(records.size());
+            WorkerPool pool(workers);
+            pool.runChunks(records.size(), 64, [&](size_t i)
+            {
+                stamps[i] = {stamp(records[i].tinyPath), stamp(records[i].lbpPath)};
+            });
+        }
+        catch (const std::bad_alloc &)
+        {
+            decltype(stamps)().swap(stamps);
+        }
+        catch (const std::system_error &)
+        {
+            decltype(stamps)().swap(stamps);
+        }
+    }
+    if (!stamps.empty())
+    {
         for (const auto &pair : stamps)
         {
             if (!hashStamps(pair[0], pair[1]))

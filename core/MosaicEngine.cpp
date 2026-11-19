@@ -54,6 +54,8 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <string_view>
+#include <thread>
 
 namespace mosaicraft
 {
@@ -621,12 +623,23 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         default: return "cpu";
         }
     };
-    const auto previewCache = m_previewWorkspace ? PreviewCachePolicy::forTask(m_limits.hostBytes) : PreviewCachePolicy{};
+    // 只为配对覆盖的 Windows CPU 快速预览开启扩容；其余后端继续用标准上限。
+#ifdef _WIN32
+    const bool tunedPreview = m_previewWorkspace && !cudaEnabled && !portableRequested &&
+        cfg.scoreMode == ScoreMode::Fast && !cfg.analyze && !cfg.adaptiveWeights && featW == 180 && featH == 320;
+#else
+    const bool tunedPreview = false;
+#endif
+    const bool expandPreview = tunedPreview && totalTiles >= 14400 && cfg.tileW == 9 && cfg.tileH == 16 &&
+        cfg.candidates <= 600 && uint64_t(totalTiles) * cfg.candidates <= 8640000;
+    const auto previewCache = m_previewWorkspace
+        ? PreviewCachePolicy::forTask(m_limits.hostBytes, expandPreview) : PreviewCachePolicy{};
     PreviewCacheMiss scoreMiss{}, featureMiss{}, candidateMiss{};
     double featureVersionMs = 0, featureVerifyMs = 0, referenceEncodeMs = 0;
     const auto sourceStampTrial = m_previewWorkspace ? std::getenv("MOSAICRAFT_BENCH_PREVIEW_STAMPS") : nullptr;
-    const unsigned stampWorkers = sourceStampTrial && std::string_view(sourceStampTrial) == "1"
-        ? (cfg.threads > 0 ? std::min(cfg.threads, 4) : 4) : 1;
+    const bool parallelStamp = sourceStampTrial ? std::string_view(sourceStampTrial) == "1" : tunedPreview;
+    const unsigned stampWorkers = parallelStamp && previewCache.tier != PreviewCachePolicy::Tier::Disabled
+        ? std::clamp(cfg.threads > 0 ? unsigned(cfg.threads) : std::thread::hardware_concurrency(), 1u, 4u) : 1u;
     int workspaceDrops = 0;
     constexpr const char *cacheLayout = "preview1:";
     std::optional<uint64_t> sourceVersion;
