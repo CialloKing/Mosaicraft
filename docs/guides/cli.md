@@ -12,6 +12,16 @@
 CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，全部选项用 `--help-all`。
 `--json` 使 stdout 只输出一个 JSON 结果，进度和诊断写入 stderr；`--quiet` 隐藏普通进度，保留结果和错误。
 
+## 性能诊断
+
+```sh
+./mosaicraft create target.jpg -l library -o result.png --benchmark --json
+./mosaicraft render project.json -o result.png --write-mode stream --benchmark --json
+./mosaicraft library add new_photos -l private_library --benchmark --json
+```
+
+`--benchmark` 默认关闭。`create` 与 `render` 使用相同的图片写出指标名；`library add` 额外报告编码、去重与提交，`library build` 和 `library normalize` 不接受该开关。JSON 指标位于 `runtime.metrics`；结构化错误仍应看 `diagnostic`。线程槽位和 AVX 分派的含义、耗时边界与查重占比的算法见[性能指标说明](../reference/benchmark-metrics.md)。正式比较整条命令的性能时请关闭诊断，用外部计时。
+
 ## 建库与图库管理
 
 ```sh

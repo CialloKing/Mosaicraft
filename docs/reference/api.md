@@ -254,6 +254,8 @@ render 接受 outputMode、format、nativeTileW/H、quality、pngLevel、writeMo
 
 新增 `backend` 字段控制加速策略；`threads: 0` 自动，正数为应用 CPU 工作线程上限。纯归一化使用 `normalizeOnly: true`，不创建数据库，拒绝输入输出重叠。新 CLI `library build` 只建新库、`library add` 继承现有规格，API 保留已有字段。
 
+可选 `benchmark: true` 仅用于 `appendMode: true` 且非 `normalizeOnly` 的请求；其他模式开启时返回 `400`，`diagnostic.field` 为 `benchmark`。默认为 `false`，与 `resourceMonitor` 独立。成功后在 `job.runtime.metrics` 返回[图库追加分段指标](benchmark-metrics.md#图库追加)。
+
 启动异步图库构建任务 / Starts an asynchronous library build job.
 
 默认对全库按平均颜色的 HSV 色相和明暗排序并从 `000000` 连续编号，`appendMode: true` 也会重新排列旧图片。输入与输出同目录时也更改已索引原图的文件名。图片 ID、使用统计和图片内容保持不变；`normalizeOnly: true` 不执行全库重排。
