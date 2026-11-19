@@ -876,12 +876,12 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     }
     NeighborCounters neighborCounters;
     // CUDA 已能与下一批准备重叠，缩短邻域检查未能缩短整次生成，因此仅在 CPU 大单图启用。
-    const bool filterRecentGrids = !cudaEnabled && !portableRequested && !m_preview && !m_renderSelection &&
+    const bool largeFastCpuImage = !cudaEnabled && !portableRequested && !m_preview && !m_renderSelection &&
                                    cfg.scoreMode == ScoreMode::Fast && cfg.outputMode == OutputMode::Image &&
                                    totalTiles >= 14400;
     detail::NeighborhoodState neighborhood(allRecords, tilesX, cfg.neighborWindow, cfg.neighborPenalty,
                                            cfg.benchmark ? &neighborCounters : nullptr, trialOptions.slots,
-                                           trialOptions.ways, filterRecentGrids);
+                                           trialOptions.ways, largeFastCpuImage);
 
     // 权重归一化：将各特征权重转为 tile 评分系数
     double wSum = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight;
@@ -1284,6 +1284,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
         }
         const bool fastScore = cfg.scoreMode == ScoreMode::Fast && !selection;
+        // 高候选的 14,400 格未通过单项墙钟门槛；只在已验证的较大任务及原生特征尺寸启用。
+        const bool columnGrid = MOSAICRAFT_TRIAL_CPU_TILES && largeFastCpuImage && fastScore &&
+                                totalTiles >= 57600 && featW == 180 && featH == 320;
+        const auto cpuGridAndMean = columnGrid ? detail::gridAndMeanByColumns : detail::gridAndMean;
         const size_t scalarBytes = fastScore ? sizeof(float) : sizeof(double);
         const size_t rankBytes = pruneGrid ? size_t(rankLimit) * sizeof(double) : 0;
         const size_t selectionRowBytes = templateCuda && fastScore ? size_t(N) * sizeof(double) : 0;
@@ -1838,7 +1842,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                        }
                                        auto &lab = trial ? labScratch : labLocal;
                                        cv::cvtColor(roiNative, lab, cv::COLOR_BGR2Lab);
-                                       cv::Scalar m = trial ? detail::gridAndMean(lab, allGrid[local].data()) : cv::mean(lab);
+                                       cv::Scalar m = trial ? cpuGridAndMean(lab, allGrid[local].data()) : cv::mean(lab);
                                        allTL[local] = m[0];
                                        allTA[local] = m[1];
                                        allTB[local] = m[2];
@@ -2048,6 +2052,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             runtime.metric("featureReaderBudgetBytes", readerBudget);
             runtime.metric("neighborCacheSlots", trialOptions.slots);
             runtime.metric("neighborGridFilterBytes", neighborhood.filterBytes());
+            runtime.metric("cpuColumnGrid", columnGrid);
         }
         bool preparedNext = false;
         // 池必须在缓冲/prepare 之后创建，错误退出也会先等待预取线程，再销毁它引用的数据。

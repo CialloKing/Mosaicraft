@@ -37,6 +37,52 @@ cv::Scalar gridAndMean(const cv::Mat &lab, float *grid)
     return total * (1.0 / lab.total());
 }
 
+cv::Scalar gridAndMeanByColumns(const cv::Mat &lab, float *grid)
+{
+    // 每列只跨一个 Grid 行累加。8 位 LAB 的列和在 257 行以内可精确装入 16 位；
+    // 横向再按原 ceil 边界汇总，避免为 64 个小 ROI 分别调用通用 sum。
+    constexpr int maxWidth = 512;
+    const int ch = (lab.rows + 7) / 8, cw = (lab.cols + 7) / 8;
+    if (lab.cols < 8 || lab.rows < 8 || lab.cols > maxWidth || ch > 257)
+    {
+        return gridAndMean(lab, grid);
+    }
+    std::array<uint16_t, maxWidth * 3> columns;
+    cv::Scalar total;
+    for (int r = 0; r < 8; ++r)
+    {
+        const int first = r * ch, end = std::min(first + ch, lab.rows);
+        std::fill_n(columns.data(), lab.cols * 3, uint16_t{0});
+        for (int y = first; y < end; ++y)
+        {
+            const auto *row = lab.ptr<uint8_t>(y);
+            for (int i = 0; i < lab.cols * 3; ++i)
+            {
+                columns[i] += row[i];
+            }
+        }
+        for (int c = 0; c < 8; ++c)
+        {
+            const int x0 = c * cw, x1 = std::min(x0 + cw, lab.cols);
+            unsigned sums[3]{};
+            for (int x = x0; x < x1; ++x)
+            {
+                for (int k = 0; k < 3; ++k)
+                {
+                    sums[k] += columns[x * 3 + k];
+                }
+            }
+            const double scale = end > first && x1 > x0 ? 1.0 / ((end - first) * (x1 - x0)) : 0.0;
+            for (int k = 0; k < 3; ++k)
+            {
+                total[k] += sums[k];
+                *grid++ = static_cast<float>(sums[k] * scale);
+            }
+        }
+    }
+    return total * (1.0 / lab.total());
+}
+
 void lbpInto(const cv::Mat &gray, float *hist, bool vectorize)
 {
     if (gray.cols < 3 || gray.rows < 3)

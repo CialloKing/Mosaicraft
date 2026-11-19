@@ -2491,6 +2491,9 @@ TEST_CASE("target feature scratch matches reference on strided tiles and SIMD ta
         const auto roi = parent(cv::Rect(2, 1, width, 31));
         std::array<float, 192> grid;
         const auto mean = mosaicraft::detail::gridAndMean(roi, grid.data());
+        std::array<float, 192> columns;
+        CHECK(cv::norm(mean - mosaicraft::detail::gridAndMeanByColumns(roi, columns.data())) == 0.0);
+        CHECK(columns == grid);
         CHECK(cv::norm(mean - cv::mean(roi)) == 0.0);
         const auto ref = mosaicraft::computeGrid8x8FromLab(roi);
         CHECK(std::equal(grid.begin(), grid.end(), ref.begin()));
@@ -2504,6 +2507,18 @@ TEST_CASE("target feature scratch matches reference on strided tiles and SIMD ta
             mosaicraft::detail::lbpInto(gray, result.data(), simd);
             CHECK(std::equal(result.begin(), result.end(), hist.begin()));
         }
+    }
+}
+
+TEST_CASE("column grid sums are exact at the 16-bit limit and fallback sizes")
+{
+    for (auto size : {cv::Size(512, 2056), cv::Size(513, 9), cv::Size(9, 2057), cv::Size(180, 320)})
+    {
+        const cv::Mat white(size, CV_8UC3, cv::Scalar::all(255));
+        std::array<float, 192> grid, columns;
+        const auto reference = mosaicraft::detail::gridAndMean(white, grid.data());
+        CHECK(cv::norm(reference - mosaicraft::detail::gridAndMeanByColumns(white, columns.data())) == 0.0);
+        CHECK(columns == grid);
     }
 }
 
