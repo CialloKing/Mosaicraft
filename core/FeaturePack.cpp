@@ -933,7 +933,7 @@ const FeaturePack::Reader::ReadStats &FeaturePack::Reader::stats() const
 }
 
 std::optional<uint64_t> FeaturePack::sourceVersion(const std::string &directory,
-                                                    const std::vector<ImageRecord> &records)
+                                                    const std::vector<ImageRecord> &records, unsigned workers)
 {
     uint64_t version = kHashStart;
     const auto add = [&](const Stamp &value)
@@ -942,16 +942,44 @@ std::optional<uint64_t> FeaturePack::sourceVersion(const std::string &directory,
         version = hashBytes(&value.size, sizeof(value.size), version);
         version = hashBytes(&value.time, sizeof(value.time), version);
     };
-    for (const auto &record : records)
+    const auto hashStamps = [&](const Stamp &tiny, const Stamp &lbp)
     {
-        const auto tiny = stamp(record.tinyPath);
-        const auto lbp = stamp(record.lbpPath);
         if (tiny.size == UINT64_MAX || lbp.size == UINT64_MAX)
         {
-            return std::nullopt;
+            return false;
         }
         add(tiny);
         add(lbp);
+        return true;
+    };
+    if (workers > 1 && records.size() >= 4096)
+    {
+        // 文件状态可以并行取，哈希仍严格按记录顺序归并；不跨请求信任旧的时间戳。
+        std::vector<std::array<Stamp, 2>> stamps(records.size());
+        WorkerPool pool(workers);
+        pool.runChunks(records.size(), 64, [&](size_t i)
+        {
+            stamps[i] = {stamp(records[i].tinyPath), stamp(records[i].lbpPath)};
+        });
+        for (const auto &pair : stamps)
+        {
+            if (!hashStamps(pair[0], pair[1]))
+            {
+                return std::nullopt;
+            }
+        }
+    }
+    else
+    {
+        for (const auto &record : records)
+        {
+            const auto tiny = stamp(record.tinyPath);
+            const auto lbp = stamp(record.lbpPath);
+            if (!hashStamps(tiny, lbp))
+            {
+                return std::nullopt;
+            }
+        }
     }
     if (!directory.empty())
     {

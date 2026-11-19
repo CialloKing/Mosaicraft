@@ -66,7 +66,7 @@ class FeaturePack
     static bool buildCache(const std::string &directory, const std::vector<ImageRecord> &records,
                            Stats *stats = nullptr, unsigned workers = 0);
     static std::optional<uint64_t> sourceVersion(const std::string &directory,
-                                                  const std::vector<ImageRecord> &records);
+                                                  const std::vector<ImageRecord> &records, unsigned workers = 1);
     // Only the exclusive build lock may remove generations that another reader could still use.
     static void removeObsolete(const std::string &directory);
 };

@@ -48,7 +48,9 @@ def session(a, exe, experiment, db, folder, w, h, c):
                     outW=w, outH=h, threads=a.threads, candidates=c, topNRandom=10, lRange=255,
                     generatePreview=False, scoreMode='fast', benchmark=a.diagnose)
     env = os.environ.copy()
-    env['MOSAICRAFT_BENCH_PREVIEW_CACHE'] = experiment
+    cache_mode, _, stamp_mode = experiment.partition('+')
+    env['MOSAICRAFT_BENCH_PREVIEW_CACHE'] = cache_mode
+    env['MOSAICRAFT_BENCH_PREVIEW_STAMPS'] = '1' if stamp_mode == 'stamps' else '0'
     with (folder / 'server.log').open('wb') as log:
         proc = subprocess.Popen([exe, str(port), '--no-open'], cwd=folder, env=env, stdout=log,
                                 stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
@@ -64,10 +66,12 @@ def session(a, exe, experiment, db, folder, w, h, c):
             else:
                 raise TimeoutError('server startup')
             rows = []
+            previous = None
             for i, step in enumerate(a.steps):
                 settings.update(STEPS[step])
-                if a.cold_each and i:
-                    call(path, method='DELETE')
+                if a.cold_each and previous:
+                    call(previous, method='DELETE')
+                    previous = None
                 start = time.perf_counter()
                 submitted = call(ENDPOINT, dict(request=settings, seed=42))['preview']
                 path = ENDPOINT + '/' + submitted['id']
@@ -98,6 +102,9 @@ def session(a, exe, experiment, db, folder, w, h, c):
                 row = dict(metrics=dict(state['metrics'], processWallMs=wall), signature=signature,
                            device=state['runtime']['device'], features=state['featureBackend'], scorer=state['scoreBackend'], **rss)
                 rows.append(row)
+                if previous:
+                    call(previous, method='DELETE')
+                previous = path
                 save(folder / f'{step}.json', row)
                 print(folder.name, step, round(wall), [row['metrics'].get(k) for k in
                       ('previewScoresReused', 'previewTileFeaturesReused', 'previewCandidatesReused')], flush=True)
@@ -112,7 +119,7 @@ def main():
     for key in ('baseline', 'candidate', 'prepared', 'input', 'output'):
         parser.add_argument('--' + key, type=Path, required=True)
     parser.add_argument('--backend', choices=('cpu', 'cuda'), default='cpu')
-    parser.add_argument('--variants', nargs='+', choices=('standard', 'scores', 'features', 'both', 'auto'), default=['both'])
+    parser.add_argument('--variants', nargs='+', choices=('standard', 'scores', 'features', 'both', 'standard+stamps', 'both+stamps', 'auto'), default=['both'])
     parser.add_argument('--tiles', nargs='+', type=int, choices=CASES, default=[57600])
     parser.add_argument('--steps', nargs='+', choices=STEPS, default=['cold', 'top', 'neighbor', 'weight'])
     parser.add_argument('--rounds', type=int, default=8)

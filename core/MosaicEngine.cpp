@@ -623,7 +623,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     };
     const auto previewCache = m_previewWorkspace ? PreviewCachePolicy::forTask(m_limits.hostBytes) : PreviewCachePolicy{};
     PreviewCacheMiss scoreMiss{}, featureMiss{}, candidateMiss{};
-    double featureVersionMs = 0, referenceEncodeMs = 0;
+    double featureVersionMs = 0, featureVerifyMs = 0, referenceEncodeMs = 0;
+    const auto sourceStampTrial = m_previewWorkspace ? std::getenv("MOSAICRAFT_BENCH_PREVIEW_STAMPS") : nullptr;
+    const unsigned stampWorkers = sourceStampTrial && std::string_view(sourceStampTrial) == "1"
+        ? (cfg.threads > 0 ? std::min(cfg.threads, 4) : 4) : 1;
     int workspaceDrops = 0;
     constexpr const char *cacheLayout = "preview1:";
     std::optional<uint64_t> sourceVersion;
@@ -643,7 +646,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     {
         {
             BenchmarkTimer timer(cfg.benchmark, featureVersionMs);
-            sourceVersion = FeaturePack::sourceVersion(featDirCache, allRecords);
+            sourceVersion = FeaturePack::sourceVersion(featDirCache, allRecords, stampWorkers);
         }
         if (sourceVersion)
         {
@@ -2855,8 +2858,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
         if (newScores)
         {
-            BenchmarkTimer timer(cfg.benchmark, featureVersionMs);
-            publishScores = sourceVersion == FeaturePack::sourceVersion(featDirCache, allRecords);
+            BenchmarkTimer timer(cfg.benchmark, featureVerifyMs);
+            publishScores = sourceVersion == FeaturePack::sourceVersion(featDirCache, allRecords, stampWorkers);
             if (!publishScores)
             {
                 scoreMiss = PreviewCacheMiss::SourceVersion;
@@ -2978,6 +2981,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
             runtime.metric("previewCacheEvicted", workspaceDrops);
             runtime.metric("previewFeatureSourceVersionMs", featureVersionMs);
+            if (newScores)
+            {
+                runtime.metric("previewFeatureSourceVerifyMs", featureVerifyMs);
+            }
             runtime.metric("previewReferenceEncodeMs", referenceEncodeMs);
         }
         runtime.output(tilesX, tilesY, "selection", totalTiles - noCandidateCount, noCandidateCount);
