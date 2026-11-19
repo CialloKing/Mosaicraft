@@ -15,6 +15,22 @@
 | `cpuFeatureResizeWorkerMs`、`cpuLabConvertWorkerMs`、`cpuGridMeanWorkerMs` 等 | CPU 特征算子的累计工时，不是各自占用的进程墙钟。 |
 | `libraryGpu*`、`featureGpu*`、`scoreGpu*`；`featureCudaEvent*`、`scoreCudaEvent*` | 对应已采集的 CUDA 主机侧操作、等待、传输/缓冲字节与设备事件。设备事件耗时不是主机等待；同步路径未采集的设备事件不返回。 |
 
+## Web UI 交互预览
+
+`POST /api/mosaic/preview` 的 `request.benchmark: true` 在成功结果的 `preview.metrics` 中增加缓存诊断。`previewScoresReused`、`previewTileFeaturesReused` 和 `previewCandidatesReused` 保留原口径：直接重放评分时也会报候选已复用（不访问原始 ANN 缓存），不报告目标特征查找结果。
+
+| 指标 | 含义 |
+| --- | --- |
+| `previewCacheTier` | `0`：内存余量不足，不保留这三类缓存；`1`：标准；`2`：允许扩容。不知道可用内存时使用标准档，不自动扩容。 |
+| `previewCacheBudgetBytes`、`previewCacheReservedBytes` | 本任务可用的合计上限、汇总时进程内三类缓存的预约。仍被 A/B 或推荐列表持有的评分表算在其中；共享引用不重复计费。 |
+| `previewScoresBytes`、`previewTileFeaturesBytes`、`previewCandidatesBytes` | 当前评分对象、工作区内目标特征和原始候选的预约。分配按对象和容器容量核算，不是 RSS，也不包含分配器元数据、图库索引、目标位图和临时匹配缓冲。 |
+| `previewScoresMissReason`、`previewTileFeaturesMissReason`、`previewCandidatesMissReason` | `0` 命中；`1` 物理内存余量不足；`2` 活对象占用进程预算；`3` 单项超限；`4` 特征源版本不可用或变化；`5` 首次/键不同，正常计算；`6` 可选缓存分配失败。不查的缓存不报告原因。 |
+| `previewCacheEvicted` | 本次从工作区移除的三个缓存槽位计数，不保证对象已释放：旧预览可能仍然引用评分表。 |
+| `previewFeatureSourceVersionMs`、`previewFeatureSourceVerifyMs` | 本次查验图库特征源版本的墙钟，以及构建新评分表后复验的墙钟。分别属于准备/匹配的子区间，不与总时长相加。 |
+| `previewReferenceEncodeMs` | 在最终整理阶段缩放并编码参考 JPEG 的墙钟。 |
+
+`totalMs` 不包含客户端轮询、HTTP 响应传输和画布绘制。基准应单列 API 完成时间和浏览器首次绘制，不把两个指标混用。
+
 ## 图库追加
 
 | 指标 | 口径 |
