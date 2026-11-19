@@ -96,13 +96,31 @@ TEST_CASE("job session history is bounded without removing queued jobs")
     CHECK(response.body["diagnostic"]["field"] == "limit");
 }
 
+TEST_CASE("automatic preview cache uses the largest affordable tier")
+{
+    using namespace mosaicraft;
+    constexpr size_t MiB = PreviewCachePolicy::MiB;
+    constexpr size_t reserved = (256 + 512) * MiB;
+    const auto full = PreviewCachePolicy::select(reserved + 1664 * MiB, 256 * MiB, true);
+    CHECK(full.tier == PreviewCachePolicy::Tier::Full);
+    CHECK(full.limits[0] == 1024 * MiB);
+    CHECK(full.limits[1] == 256 * MiB);
+    CHECK(full.limits[2] == 384 * MiB);
+    CHECK(full.totalLimit == 1664 * MiB);
+    CHECK(PreviewCachePolicy::select(reserved + 1664 * MiB - 1, 256 * MiB, true).totalLimit == 832 * MiB);
+    CHECK(PreviewCachePolicy::select(reserved + 832 * MiB - 1, 256 * MiB, true).totalLimit == 448 * MiB);
+    CHECK(PreviewCachePolicy::select(reserved + 448 * MiB - 1, 256 * MiB, true).totalLimit == 256 * MiB);
+    CHECK(PreviewCachePolicy::select(reserved + 1664 * MiB, 256 * MiB, false).totalLimit == 256 * MiB);
+    CHECK(PreviewCachePolicy::select(reserved + 32 * MiB, 256 * MiB, true).totalLimit == 32 * MiB);
+}
+
 TEST_CASE("preview cache budgets include live owners and return failed reservations")
 {
     using namespace mosaicraft;
     constexpr size_t MiB = PreviewCachePolicy::MiB;
-    const auto standard = PreviewCachePolicy::select(0, 256 * MiB, true, true);
-    const auto disabled = PreviewCachePolicy::select(767 * MiB, 256 * MiB, true, true);
-    const auto full = PreviewCachePolicy::select(2 * 1024 * MiB, 256 * MiB, true, true);
+    const auto standard = PreviewCachePolicy::select(0, 256 * MiB, true);
+    const auto disabled = PreviewCachePolicy::select(768 * MiB, 256 * MiB, true);
+    const auto full = PreviewCachePolicy::select((768 + 448) * MiB, 256 * MiB, true);
     CHECK(standard.tier == PreviewCachePolicy::Tier::Standard);
     CHECK(disabled.tier == PreviewCachePolicy::Tier::Disabled);
     CHECK(full.tier == PreviewCachePolicy::Tier::Full);

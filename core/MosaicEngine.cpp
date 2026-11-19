@@ -630,10 +630,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
 #else
     const bool tunedPreview = false;
 #endif
-    const bool expandPreview = tunedPreview && totalTiles >= 14400 && cfg.tileW == 9 && cfg.tileH == 16 &&
-        cfg.candidates <= 600 && uint64_t(totalTiles) * cfg.candidates <= 8640000;
+    // 大网格和高候选数正是扩容受益的场景，交给各项缓存按实际大小约束。
+    const bool allowLargeCache = tunedPreview && totalTiles >= 14400 && cfg.tileW == 9 && cfg.tileH == 16 &&
+        cfg.candidates <= 600;
     const auto previewCache = m_previewWorkspace
-        ? PreviewCachePolicy::forTask(m_limits.hostBytes, expandPreview) : PreviewCachePolicy{};
+        ? PreviewCachePolicy::forTask(m_limits.hostBytes, allowLargeCache) : PreviewCachePolicy{};
     PreviewCacheMiss scoreMiss{}, featureMiss{}, candidateMiss{};
     double featureVersionMs = 0, featureVerifyMs = 0, referenceEncodeMs = 0;
     const auto sourceStampTrial = m_previewWorkspace ? std::getenv("MOSAICRAFT_BENCH_PREVIEW_STAMPS") : nullptr;

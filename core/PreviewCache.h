@@ -27,8 +27,8 @@ struct PreviewCachePolicy
     {
         Disabled, Standard, Full
     };
-    static PreviewCachePolicy select(uint64_t available, size_t hostBudget, bool largeScores, bool largeFeatures);
-    static PreviewCachePolicy forTask(size_t hostBudget, bool expand);
+    static PreviewCachePolicy select(uint64_t available, size_t hostBudget, bool allowLarge);
+    static PreviewCachePolicy forTask(size_t hostBudget, bool allowLarge);
 
     Tier tier = Tier::Standard;
     std::array<size_t, 3> limits{128 * MiB, 64 * MiB, 64 * MiB};

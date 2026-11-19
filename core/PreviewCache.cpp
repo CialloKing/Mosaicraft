@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
+#include <initializer_list>
 #include <string_view>
 
 namespace mosaicraft
@@ -12,6 +13,12 @@ namespace
 {
 std::array<std::atomic_size_t, 3> reserved{};
 std::atomic_size_t total{0};
+
+using CacheLimits = std::array<size_t, 3>;
+constexpr size_t MiB = PreviewCachePolicy::MiB;
+constexpr CacheLimits kExpandedLimits{256 * MiB, 128 * MiB, 64 * MiB};
+constexpr CacheLimits kMediumLimits{512 * MiB, 128 * MiB, 192 * MiB};
+constexpr CacheLimits kLargeLimits{1024 * MiB, 256 * MiB, 384 * MiB};
 
 bool reserve(std::atomic_size_t &counter, size_t delta, size_t limit)
 {
@@ -26,10 +33,10 @@ bool reserve(std::atomic_size_t &counter, size_t delta, size_t limit)
     return true;
 }
 
-PreviewCachePolicy selectLimits(uint64_t available, size_t hostBudget, const std::array<size_t, 3> &preferred)
+PreviewCachePolicy selectLimits(uint64_t available, size_t hostBudget, std::initializer_list<CacheLimits> tiers)
 {
     PreviewCachePolicy policy;
-    constexpr uint64_t reserveBytes = 512 * PreviewCachePolicy::MiB;
+    constexpr uint64_t reserveBytes = 512 * MiB;
     if (available == 0)
     {
         return policy; // 无测量值时沿用旧上限，不自动扩容。
@@ -39,14 +46,18 @@ PreviewCachePolicy selectLimits(uint64_t available, size_t hostBudget, const std
         return {PreviewCachePolicy::Tier::Disabled, {}, 0, 0};
     }
     const auto extra = available - hostBudget - reserveBytes;
-    const auto fullBytes = preferred[0] + preferred[1] + preferred[2];
     // 已驻留对象已经反映在系统可用内存里，不要从余量中扣两次。
     const size_t live = PreviewCacheReservation::totalBytes();
-    if (preferred != policy.limits && extra >= fullBytes - std::min(live, fullBytes))
+    for (const auto &limits : tiers)
     {
-        policy.tier = PreviewCachePolicy::Tier::Full;
-        policy.limits = preferred;
-        policy.totalLimit = fullBytes;
+        const auto fullBytes = limits[0] + limits[1] + limits[2];
+        if (extra >= fullBytes - std::min(live, fullBytes))
+        {
+            policy.tier = PreviewCachePolicy::Tier::Full;
+            policy.limits = limits;
+            policy.totalLimit = fullBytes;
+            break;
+        }
     }
     policy.incrementalLimit = static_cast<size_t>(std::min<uint64_t>(extra, policy.totalLimit));
     const auto retained = std::min(live, policy.totalLimit);
@@ -56,33 +67,49 @@ PreviewCachePolicy selectLimits(uint64_t available, size_t hostBudget, const std
 
 } // namespace
 
-PreviewCachePolicy PreviewCachePolicy::select(uint64_t available, size_t hostBudget, bool largeScores, bool largeFeatures)
+PreviewCachePolicy PreviewCachePolicy::select(uint64_t available, size_t hostBudget, bool allowLarge)
 {
-    return selectLimits(available, hostBudget,
-                        {(largeScores ? 256 : 128) * MiB, (largeFeatures ? 128 : 64) * MiB, 64 * MiB});
+    if (allowLarge)
+    {
+        // 大档放不下时逐级回退，仍尽量保留目标特征和 ANN 候选。
+        return selectLimits(available, hostBudget, {kLargeLimits, kMediumLimits, kExpandedLimits});
+    }
+    return selectLimits(available, hostBudget, {});
 }
 
-PreviewCachePolicy PreviewCachePolicy::forTask(size_t hostBudget, bool expand)
+PreviewCachePolicy PreviewCachePolicy::forTask(size_t hostBudget, bool allowLarge)
 {
-    // 只供私有快照复跑；未验收的扩容不改变服务默认。
+    // 私有基准可固定上限对照；生产不需要设置环境变量。
     const char *trial = std::getenv("MOSAICRAFT_BENCH_PREVIEW_CACHE");
     const std::string_view variant = trial ? trial : "";
     const auto available = availableMemory();
+    if (variant.empty() || variant == "auto")
+    {
+        return select(available, hostBudget, allowLarge);
+    }
     if (variant == "512-128-64")
     {
-        return selectLimits(available, hostBudget, {512 * MiB, 128 * MiB, 64 * MiB});
+        return selectLimits(available, hostBudget, {{512 * MiB, 128 * MiB, 64 * MiB}});
     }
     if (variant == "512-128-192")
     {
-        return selectLimits(available, hostBudget, {512 * MiB, 128 * MiB, 192 * MiB});
+        return selectLimits(available, hostBudget, {kMediumLimits});
     }
     if (variant == "1024-256-384")
     {
-        return selectLimits(available, hostBudget, {1024 * MiB, 256 * MiB, 384 * MiB});
+        return selectLimits(available, hostBudget, {kLargeLimits});
     }
-    const bool automatic = variant.empty() || variant == "auto";
-    return select(available, hostBudget, (automatic && expand) || variant == "scores" || variant == "both",
-                  (automatic && expand) || variant == "features" || variant == "both");
+    if (variant == "both")
+    {
+        return selectLimits(available, hostBudget, {kExpandedLimits});
+    }
+    if (variant == "scores" || variant == "features")
+    {
+        auto limits = PreviewCachePolicy{}.limits;
+        limits[variant == "scores" ? 0 : 1] *= 2;
+        return selectLimits(available, hostBudget, {limits});
+    }
+    return select(available, hostBudget, false);
 }
 
 bool PreviewCacheReservation::grow(size_t bytes, const PreviewCachePolicy &policy, PreviewCacheMiss &miss)
