@@ -1,0 +1,1100 @@
+{
+  "reference": "49bde5f5b16b387aeff6a4027056a4ea00cc700a",
+  "platform": "Windows x64 Release, Ryzen 9 7940H, RTX 4060 Laptop, CUDA+Vulkan build",
+  "library_rows": 45613,
+  "seed": 42,
+  "random_top": 10,
+  "threads": 0,
+  "match_and_output_tile": "9x16",
+  "cases": {
+    "900": {
+      "size": "270x480",
+      "candidates": 150
+    },
+    "57600": {
+      "size": "2160x3840",
+      "candidates": 150
+    },
+    "14400": {
+      "size": "1080x1920",
+      "candidates": 600
+    }
+  },
+  "benchmarks": {
+    "filter-cpu": {
+      "exploratory": false,
+      "raw_report_sha256": "570a195c6704f6c54cceccef1421ec8881f7a5341212506ce7f63261821a7508",
+      "variants": [
+        {
+          "id": "baseline",
+          "sha256": "03e8ab88fccac2ae5973cb70cd5eff9998751cc83fbea8ff8675a98254d65fa5"
+        },
+        {
+          "id": "candidate",
+          "sha256": "e7abb1e8aaa4cf141e7d5c10e84d9b97f09afb7277367ce2401ede20cfb5bfef"
+        }
+      ],
+      "cases": {
+        "57600": {
+          "runtime": [
+            [
+              "cpu",
+              "cpu-v6:fp32-v3-avx2",
+              "cpu",
+              "cpu"
+            ]
+          ],
+          "median_ms": [
+            8755.877,
+            7928.165
+          ],
+          "paired": {
+            "median_ratio": 0.9044931598864396,
+            "p10": 0.874255498279319,
+            "p90": 0.9171556484187138,
+            "bootstrap95": [
+              0.8795775922065773,
+              0.9126254892730953
+            ],
+            "faster_rounds": 8,
+            "rounds": 8
+          },
+          "png_sha256": [
+            "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"
+          ],
+          "pairs": [
+            {"phase":"warmup","round":0,"order":["candidate","baseline"],"wall_ms":{"candidate":8159.481,"baseline":8700.576},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"warmup","round":1,"order":["baseline","candidate"],"wall_ms":{"baseline":8800.026,"candidate":7975.902},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":0,"order":["candidate","baseline"],"wall_ms":{"candidate":7914.876,"baseline":8752.369},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":1,"order":["baseline","candidate"],"wall_ms":{"baseline":8717.374,"candidate":7837.112},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":2,"order":["candidate","baseline"],"wall_ms":{"candidate":7928.264,"baseline":8719.673},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":3,"order":["baseline","candidate"],"wall_ms":{"baseline":8759.384,"candidate":7994.037},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":4,"order":["baseline","candidate"],"wall_ms":{"baseline":9238.871,"candidate":7962.403},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":5,"order":["candidate","baseline"],"wall_ms":{"candidate":7928.065,"baseline":8545.696},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":6,"order":["candidate","baseline"],"wall_ms":{"candidate":7942.374,"baseline":8779.268},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":7,"order":["baseline","candidate"],"wall_ms":{"baseline":9002.798,"candidate":7918.659},"png_index":{"baseline":0,"candidate":0}}
+          ]
+        },
+        "14400": {
+          "runtime": [
+            [
+              "cpu",
+              "cpu-v6:fp32-v3-avx2",
+              "cpu",
+              "cpu"
+            ]
+          ],
+          "median_ms": [
+            4754.73,
+            4524.138
+          ],
+          "paired": {
+            "median_ratio": 0.9520918687301412,
+            "p10": 0.939305665383918,
+            "p90": 0.9768838794542937,
+            "bootstrap95": [
+              0.9397533988881165,
+              0.9644743962361
+            ],
+            "faster_rounds": 7,
+            "rounds": 8
+          },
+          "png_sha256": [
+            "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"
+          ],
+          "pairs": [
+            {"phase":"warmup","round":0,"order":["baseline","candidate"],"wall_ms":{"baseline":4897.864,"candidate":4569.26},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"warmup","round":1,"order":["candidate","baseline"],"wall_ms":{"candidate":4502.901,"baseline":4963.646},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":0,"order":["baseline","candidate"],"wall_ms":{"baseline":4852.502,"candidate":4586.288},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":1,"order":["candidate","baseline"],"wall_ms":{"candidate":4490.239,"baseline":4785.704},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":2,"order":["candidate","baseline"],"wall_ms":{"candidate":4497.191,"baseline":4785.501},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":3,"order":["baseline","candidate"],"wall_ms":{"baseline":4729.143,"candidate":4447.551},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":4,"order":["candidate","baseline"],"wall_ms":{"candidate":4491.965,"baseline":4679.143},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":5,"order":["baseline","candidate"],"wall_ms":{"baseline":4764.026,"candidate":4594.781},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":6,"order":["baseline","candidate"],"wall_ms":{"baseline":4655.32,"candidate":4682.504},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":7,"order":["candidate","baseline"],"wall_ms":{"candidate":4551.084,"baseline":4745.434},"png_index":{"candidate":0,"baseline":0}}
+          ]
+        }
+      }
+    },
+    "filter-cuda": {
+      "exploratory": false,
+      "raw_report_sha256": "8c14db70355c82180f072595a85753ead3fce4bd38a018f8254cb58690f8ab17",
+      "variants": [
+        {
+          "id": "baseline",
+          "sha256": "03e8ab88fccac2ae5973cb70cd5eff9998751cc83fbea8ff8675a98254d65fa5"
+        },
+        {
+          "id": "candidate",
+          "sha256": "e7abb1e8aaa4cf141e7d5c10e84d9b97f09afb7277367ce2401ede20cfb5bfef"
+        }
+      ],
+      "cases": {
+        "57600": {
+          "runtime": [
+            [
+              "cuda:0",
+              "cuda-v6:fp32-v2",
+              "template_cuda",
+              "template_cuda"
+            ]
+          ],
+          "median_ms": [
+            5813.49,
+            5853.851
+          ],
+          "paired": {
+            "median_ratio": 1.0062749521447434,
+            "p10": 0.9827056034602144,
+            "p90": 1.0220408651841628,
+            "bootstrap95": [
+              0.9832631404393496,
+              1.020303430736668
+            ],
+            "faster_rounds": 2,
+            "rounds": 8
+          },
+          "png_sha256": [
+            "864586b4a61af88bba2fd1be3d15d74aa691c16621e8a129d58e8dd3caee8b19"
+          ],
+          "pairs": [
+            {"phase":"warmup","round":0,"order":["candidate","baseline"],"wall_ms":{"candidate":5705.055,"baseline":5956.484},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"warmup","round":1,"order":["baseline","candidate"],"wall_ms":{"baseline":5851.707,"candidate":5716.322},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":0,"order":["candidate","baseline"],"wall_ms":{"candidate":5863.588,"baseline":5714.47},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":1,"order":["baseline","candidate"],"wall_ms":{"baseline":5792.073,"candidate":5798.458},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":2,"order":["candidate","baseline"],"wall_ms":{"candidate":5901.702,"baseline":5834.906},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":3,"order":["baseline","candidate"],"wall_ms":{"baseline":5846.136,"candidate":5847.307},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":4,"order":["baseline","candidate"],"wall_ms":{"baseline":5855.555,"candidate":5757.551},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":5,"order":["candidate","baseline"],"wall_ms":{"candidate":5752.512,"baseline":5861.508},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":6,"order":["candidate","baseline"],"wall_ms":{"candidate":5860.395,"baseline":5791.812},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":7,"order":["baseline","candidate"],"wall_ms":{"baseline":5768.143,"candidate":5885.256},"png_index":{"baseline":0,"candidate":0}}
+          ]
+        },
+        "14400": {
+          "runtime": [
+            [
+              "cuda:0",
+              "cuda-v6:fp32-v2",
+              "template_cuda",
+              "template_cuda"
+            ]
+          ],
+          "median_ms": [
+            3873.353,
+            3851.246
+          ],
+          "paired": {
+            "median_ratio": 0.9988299873875077,
+            "p10": 0.9400991332984432,
+            "p90": 1.0165953383536692,
+            "bootstrap95": [
+              0.9404680391709407,
+              1.012671020021871
+            ],
+            "faster_rounds": 4,
+            "rounds": 8
+          },
+          "png_sha256": [
+            "b37adcede8d5e55795fffec9dc4db4bc64c60fbb8b65224ba991717ed099a33c"
+          ],
+          "pairs": [
+            {"phase":"warmup","round":0,"order":["baseline","candidate"],"wall_ms":{"baseline":3750.215,"candidate":3779.104},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"warmup","round":1,"order":["candidate","baseline"],"wall_ms":{"candidate":3808.369,"baseline":3841.832},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":0,"order":["baseline","candidate"],"wall_ms":{"baseline":4005.685,"candidate":3762.293},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":1,"order":["candidate","baseline"],"wall_ms":{"candidate":3854.829,"baseline":3906.477},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":2,"order":["candidate","baseline"],"wall_ms":{"candidate":3862.607,"baseline":3860.024},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":3,"order":["baseline","candidate"],"wall_ms":{"baseline":3752.887,"candidate":3800.439},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":4,"order":["candidate","baseline"],"wall_ms":{"candidate":3771.021,"baseline":4009.728},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":5,"order":["baseline","candidate"],"wall_ms":{"baseline":3762.407,"candidate":3859.296},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":6,"order":["baseline","candidate"],"wall_ms":{"baseline":3886.681,"candidate":3905.731},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":7,"order":["candidate","baseline"],"wall_ms":{"candidate":3847.662,"baseline":3859.275},"png_index":{"candidate":0,"baseline":0}}
+          ]
+        }
+      }
+    },
+    "columns-explore": {
+      "exploratory": true,
+      "raw_report_sha256": "58be4df00c12e17e0e0ef7a2ea11f80d85ff74be7c31fabc0a8f30b03b8739bf",
+      "variants": [
+        {
+          "id": "baseline",
+          "sha256": "59f8d59224ae575d45be2e5d3360a69ec9b682853ff60d7fda1d7b88554b3db5"
+        },
+        {
+          "id": "candidate",
+          "sha256": "7416bc43bd1ef110ce87e07f4b56621e05f057b12b80dd037d8b6d53eb659c24"
+        }
+      ],
+      "cases": {
+        "57600": {
+          "runtime": [
+            [
+              "cpu",
+              "cpu-v6:fp32-v3-avx2",
+              "cpu",
+              "cpu"
+            ]
+          ],
+          "median_ms": [
+            7928.258,
+            7624.419
+          ],
+          "paired": null,
+          "png_sha256": [
+            "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"
+          ],
+          "pairs": [
+            {"phase":"warmup","round":0,"order":["candidate","baseline"],"wall_ms":{"candidate":7492.177,"baseline":7923.544},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":0,"order":["candidate","baseline"],"wall_ms":{"candidate":7624.419,"baseline":7928.258},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":1,"order":["baseline","candidate"],"wall_ms":{"baseline":7894.397,"candidate":7608.405},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":2,"order":["candidate","baseline"],"wall_ms":{"candidate":7656.552,"baseline":7987.862},"png_index":{"candidate":0,"baseline":0}}
+          ]
+        },
+        "14400": {
+          "runtime": [
+            [
+              "cpu",
+              "cpu-v6:fp32-v3-avx2",
+              "cpu",
+              "cpu"
+            ]
+          ],
+          "median_ms": [
+            4672.541,
+            4505.026
+          ],
+          "paired": null,
+          "png_sha256": [
+            "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"
+          ],
+          "pairs": [
+            {"phase":"warmup","round":0,"order":["baseline","candidate"],"wall_ms":{"baseline":4512.531,"candidate":4431.317},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":0,"order":["baseline","candidate"],"wall_ms":{"baseline":4780.754,"candidate":4494.262},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":1,"order":["candidate","baseline"],"wall_ms":{"candidate":4505.026,"baseline":4602.543},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":2,"order":["candidate","baseline"],"wall_ms":{"candidate":4517.667,"baseline":4672.541},"png_index":{"candidate":0,"baseline":0}}
+          ]
+        }
+      }
+    },
+    "columns-formal": {
+      "exploratory": false,
+      "raw_report_sha256": "f33aadec5006a6c6f0390428c006bb0f2e5371d13c4db8d0a057c737d9a79fcf",
+      "variants": [
+        {
+          "id": "baseline",
+          "sha256": "59f8d59224ae575d45be2e5d3360a69ec9b682853ff60d7fda1d7b88554b3db5"
+        },
+        {
+          "id": "candidate",
+          "sha256": "c1b5e7407527b7aa484b7307d90c84e1e77e5b79c9b6249c165bae90c798cd5e"
+        }
+      ],
+      "cases": {
+        "57600": {
+          "runtime": [
+            [
+              "cpu",
+              "cpu-v6:fp32-v3-avx2",
+              "cpu",
+              "cpu"
+            ]
+          ],
+          "median_ms": [
+            7920.506,
+            7618.456
+          ],
+          "paired": {
+            "median_ratio": 0.9627788414176206,
+            "p10": 0.9363436203854536,
+            "p90": 0.9727030436227628,
+            "bootstrap95": [
+              0.9413852656766287,
+              0.9724795922547425
+            ],
+            "faster_rounds": 8,
+            "rounds": 8
+          },
+          "png_sha256": [
+            "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"
+          ],
+          "pairs": [
+            {"phase":"warmup","round":0,"order":["candidate","baseline"],"wall_ms":{"candidate":7822.895,"baseline":7852.539},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"warmup","round":1,"order":["baseline","candidate"],"wall_ms":{"baseline":7807.226,"candidate":7766.956},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":0,"order":["candidate","baseline"],"wall_ms":{"candidate":7577.769,"baseline":7852.097},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":1,"order":["baseline","candidate"],"wall_ms":{"baseline":7815.774,"candidate":7606.502},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":2,"order":["candidate","baseline"],"wall_ms":{"candidate":7618.928,"baseline":7932.296},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":3,"order":["baseline","candidate"],"wall_ms":{"baseline":7930.518,"candidate":7712.267},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":4,"order":["baseline","candidate"],"wall_ms":{"baseline":7902.72,"candidate":7565.928},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":5,"order":["candidate","baseline"],"wall_ms":{"candidate":7647.854,"baseline":7910.493},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":6,"order":["candidate","baseline"],"wall_ms":{"candidate":7617.985,"baseline":8092.313},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":7,"order":["baseline","candidate"],"wall_ms":{"baseline":8285.33,"candidate":7660.449},"png_index":{"baseline":0,"candidate":0}}
+          ]
+        },
+        "14400": {
+          "runtime": [
+            [
+              "cpu",
+              "cpu-v6:fp32-v3-avx2",
+              "cpu",
+              "cpu"
+            ]
+          ],
+          "median_ms": [
+            4738.985,
+            4610.933
+          ],
+          "paired": {
+            "median_ratio": 0.9683126677588959,
+            "p10": 0.9195342342301233,
+            "p90": 1.0028112677012475,
+            "bootstrap95": [
+              0.9383817933543517,
+              1.00005389158609
+            ],
+            "faster_rounds": 6,
+            "rounds": 8
+          },
+          "png_sha256": [
+            "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"
+          ],
+          "pairs": [
+            {"phase":"warmup","round":0,"order":["baseline","candidate"],"wall_ms":{"baseline":4694.118,"candidate":4644.102},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"warmup","round":1,"order":["candidate","baseline"],"wall_ms":{"candidate":4415.318,"baseline":4609.633},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":0,"order":["baseline","candidate"],"wall_ms":{"baseline":5068.838,"candidate":4919.008},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":1,"order":["candidate","baseline"],"wall_ms":{"candidate":4501.067,"baseline":4696.584},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":2,"order":["candidate","baseline"],"wall_ms":{"candidate":4486.849,"baseline":4509.179},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":3,"order":["baseline","candidate"],"wall_ms":{"baseline":4733.178,"candidate":4573.123},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":4,"order":["candidate","baseline"],"wall_ms":{"candidate":4452.425,"baseline":4744.791},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":5,"order":["baseline","candidate"],"wall_ms":{"baseline":4606.158,"candidate":4648.743},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":6,"order":["baseline","candidate"],"wall_ms":{"baseline":5406.522,"candidate":4733.716},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":7,"order":["candidate","baseline"],"wall_ms":{"candidate":4770.946,"baseline":4770.689},"png_index":{"candidate":0,"baseline":0}}
+          ]
+        }
+      }
+    },
+    "final-cpu": {
+      "exploratory": true,
+      "raw_report_sha256": "57799ba35f1630c46db1292e1a506d513f632ce82dbf534305de7fd795364e48",
+      "variants": [
+        {
+          "id": "baseline",
+          "sha256": "03e8ab88fccac2ae5973cb70cd5eff9998751cc83fbea8ff8675a98254d65fa5"
+        },
+        {
+          "id": "candidate",
+          "sha256": "3f2314e2d0142bea9478e33828e8f286497346db17c315aac0f3a5afa0511fe5"
+        }
+      ],
+      "cases": {
+        "57600": {
+          "runtime": [
+            [
+              "cpu",
+              "cpu-v6:fp32-v3-avx2",
+              "cpu",
+              "cpu"
+            ]
+          ],
+          "median_ms": [
+            8627.721,
+            7726.307
+          ],
+          "paired": null,
+          "png_sha256": [
+            "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"
+          ],
+          "pairs": [
+            {"phase":"warmup","round":0,"order":["candidate","baseline"],"wall_ms":{"candidate":7641.39,"baseline":8670.369},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":0,"order":["candidate","baseline"],"wall_ms":{"candidate":7605.001,"baseline":8627.721},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":1,"order":["baseline","candidate"],"wall_ms":{"baseline":8622.298,"candidate":7726.307},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":2,"order":["candidate","baseline"],"wall_ms":{"candidate":7745.926,"baseline":8899.88},"png_index":{"candidate":0,"baseline":0}}
+          ]
+        },
+        "14400": {
+          "runtime": [
+            [
+              "cpu",
+              "cpu-v6:fp32-v3-avx2",
+              "cpu",
+              "cpu"
+            ]
+          ],
+          "median_ms": [
+            4859.412,
+            4691.73
+          ],
+          "paired": null,
+          "png_sha256": [
+            "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"
+          ],
+          "pairs": [
+            {"phase":"warmup","round":0,"order":["baseline","candidate"],"wall_ms":{"baseline":4756.58,"candidate":4893.157},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":0,"order":["baseline","candidate"],"wall_ms":{"baseline":4838.905,"candidate":4753.761},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":1,"order":["candidate","baseline"],"wall_ms":{"candidate":4625.661,"baseline":5002.769},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":2,"order":["candidate","baseline"],"wall_ms":{"candidate":4691.73,"baseline":4859.412},"png_index":{"candidate":0,"baseline":0}}
+          ]
+        },
+        "900": {
+          "runtime": [
+            [
+              "cpu",
+              "cpu-v6:fp32-v3-avx2",
+              "cpu",
+              "cpu"
+            ]
+          ],
+          "median_ms": [
+            1548.281,
+            1547.71
+          ],
+          "paired": null,
+          "png_sha256": [
+            "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"
+          ],
+          "pairs": [
+            {"phase":"warmup","round":0,"order":["baseline","candidate"],"wall_ms":{"baseline":1547.83,"candidate":1523.698},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":0,"order":["baseline","candidate"],"wall_ms":{"baseline":1548.281,"candidate":1547.71},"png_index":{"baseline":0,"candidate":0}},
+            {"phase":"measured","round":1,"order":["candidate","baseline"],"wall_ms":{"candidate":1554.141,"baseline":1665.448},"png_index":{"candidate":0,"baseline":0}},
+            {"phase":"measured","round":2,"order":["candidate","baseline"],"wall_ms":{"candidate":1528.385,"baseline":1506.218},"png_index":{"candidate":0,"baseline":0}}
+          ]
+        }
+      }
+    },
+    "final-cuda": {
+      "exploratory": true,
+      "raw_report_sha256": "b2b458e4bf9af570a1bd92b4737887f3cb5ae0520aa45353188233d17f206fe6",
+      "variants": [
+        {
+          "id": "baseline",
+          "sha256": "03e8ab88fccac2ae5973cb70cd5eff9998751cc83fbea8ff8675a98254d65fa5"
+        },
+        {
+          "id": "candidate",
+          "sha256": "3f2314e2d0142bea9478e33828e8f286497346db17c315aac0f3a5afa0511fe5"
+        }
+      ],
+      "cases": {
+        "57600": {
+          "runtime": [
+            [
+              "cuda:0",
+              "cuda-v6:fp32-v2",
+              "template_cuda",
+              "template_cuda"
+            ]
+          ],
+          "median_ms": [
+            6006.865,
+            5915.883
+          ],
+          "paired": null,
+          "png_sha256": [
+            "864586b4a61af88bba2fd1be3d15d74aa691c16621e8a129d58e8dd3caee8b19"
+          ],
+          "pairs": [
+            {"phase":"measured","round":0,"order":["candidate","baseline"],"wall_ms":{"candidate":5915.883,"baseline":6006.865},"png_index":{"candidate":0,"baseline":0}}
+          ]
+        },
+        "900": {
+          "runtime": [
+            [
+              "cuda:0",
+              "cuda-v6:fp32-v2",
+              "template_cuda",
+              "template_cuda"
+            ]
+          ],
+          "median_ms": [
+            1764.278,
+            1772.737
+          ],
+          "paired": null,
+          "png_sha256": [
+            "6192a130bbd25a989e730e721f7d45dbaa46a7d9171777ab61d13778ca50b960"
+          ],
+          "pairs": [
+            {"phase":"measured","round":0,"order":["candidate","baseline"],"wall_ms":{"candidate":1772.737,"baseline":1764.278},"png_index":{"candidate":0,"baseline":0}}
+          ]
+        }
+      }
+    }
+  },
+  "diagnostics": {
+    "filter": {
+      "baseline-cpu-57600": {
+        "binary": "c21e433be30f2bf7ab389b4c6797ea4170a3ecf3c679a4f632e5b07d2528e0cf",
+        "input_name": "target3.jpg",
+        "input_sha256": "2034a478fb9adf1e2040499759eb909fbbdce61848c27b1b46aadf97bb8b0037",
+        "top": 10,
+        "output": "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7",
+        "selection": "f1badebf1526cdce64c93e9210fe5cb8c2bce9496cc509e22b60de66cd310ac6",
+        "seed": 42,
+        "device": "cpu",
+        "kernel": "cpu-v6:fp32-v3-avx2",
+        "feature_backend": "cpu",
+        "score_backend": "cpu",
+        "failed": 0,
+        "matched": 57600,
+        "resources": {
+          "cpuPct": 972.6767066551582,
+          "deviceVramBytes": null,
+          "gpuPct": null,
+          "processVramBytes": null,
+          "rssBytes": 260878336.0
+        },
+        "warnings": 0,
+        "metrics": {
+          "annLoadMs": 228.8724,
+          "annQueryMs": 1287.7095999999995,
+          "batchBaseScoreMs": 326.3578999999998,
+          "encodingMs": 968.1428999999999,
+          "featureMs": 2748.4084,
+          "gpuScoreMs": 0.0,
+          "matchingMs": 6748.5729,
+          "neighborCacheSlots": 65536.0,
+          "neighborGridCacheHits": 64089403.0,
+          "neighborGridDistances": 23200522.0,
+          "neighborMs": 1095.010299955821,
+          "neighborPruned": 6852417.0,
+          "placementMs": 678.0771,
+          "prepareMs": 595.2604,
+          "matchingBufferPeakBytes": 4238728.0,
+          "matchingBatchTiles": 1024.0
+        }
+      },
+      "filter-cpu-57600": {
+        "binary": "57ed70d996493833d99c3bc5f5002791ab96a0d89045d54d08a0cc31fb90f07e",
+        "input_name": "target3.jpg",
+        "input_sha256": "2034a478fb9adf1e2040499759eb909fbbdce61848c27b1b46aadf97bb8b0037",
+        "top": 10,
+        "output": "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7",
+        "selection": "f1badebf1526cdce64c93e9210fe5cb8c2bce9496cc509e22b60de66cd310ac6",
+        "seed": 42,
+        "device": "cpu",
+        "kernel": "cpu-v6:fp32-v3-avx2",
+        "feature_backend": "cpu",
+        "score_backend": "cpu",
+        "failed": 0,
+        "matched": 57600,
+        "resources": {
+          "cpuPct": 1087.9686434257003,
+          "deviceVramBytes": null,
+          "gpuPct": null,
+          "processVramBytes": null,
+          "rssBytes": 261218304.0
+        },
+        "warnings": 0,
+        "metrics": {
+          "annLoadMs": 242.3971,
+          "annQueryMs": 1271.2180999999998,
+          "batchBaseScoreMs": 323.87799999999993,
+          "encodingMs": 613.7442,
+          "featureMs": 2735.0988999999995,
+          "gpuScoreMs": 0.0,
+          "matchingMs": 6106.8037,
+          "neighborCacheSlots": 65536.0,
+          "neighborGridCacheHits": 12916291.0,
+          "neighborGridDistances": 1139959.0,
+          "neighborMs": 454.4424999719939,
+          "neighborPruned": 6852417.0,
+          "placementMs": 663.6192,
+          "prepareMs": 618.5144,
+          "matchingBufferPeakBytes": 4238728.0,
+          "matchingBatchTiles": 1024.0
+        },
+        "changed_selection_count": 0,
+        "first_changed_tile": null
+      },
+      "baseline-cpu-14400": {
+        "binary": "c21e433be30f2bf7ab389b4c6797ea4170a3ecf3c679a4f632e5b07d2528e0cf",
+        "input_name": "屏幕测试图.png",
+        "input_sha256": "772a508eedb97173cae75c057b141cd35d824956ea374b3bcb0ee644d9eb82b4",
+        "top": 1,
+        "output": "9f36a7b89d7144fc259a424c0b76fb58683cc086cf4b4425e3854ee95baba841",
+        "selection": "d0a053b8e443147e66e1916f92eaf159af1b1cfcd6e8a2286f5b4de031f26412",
+        "seed": 42,
+        "device": "cpu",
+        "kernel": "cpu-v6:fp32-v3-avx2",
+        "feature_backend": "cpu",
+        "score_backend": "cpu",
+        "failed": 0,
+        "matched": 14400,
+        "resources": {
+          "cpuPct": 789.2994643810746,
+          "deviceVramBytes": null,
+          "gpuPct": null,
+          "processVramBytes": null,
+          "rssBytes": 248188928.0
+        },
+        "warnings": 0,
+        "metrics": {
+          "annLoadMs": 240.9107,
+          "annQueryMs": 562.883,
+          "batchBaseScoreMs": 237.6652,
+          "encodingMs": 161.8346,
+          "featureMs": 739.9861999999999,
+          "gpuScoreMs": 0.0,
+          "matchingMs": 2583.6657,
+          "neighborCacheSlots": 65536.0,
+          "neighborGridCacheHits": 3207462.0,
+          "neighborGridDistances": 395427.0,
+          "neighborMs": 262.1293000050952,
+          "neighborPruned": 8558178.0,
+          "placementMs": 162.4322,
+          "prepareMs": 603.854,
+          "matchingBufferPeakBytes": 7916076.0,
+          "matchingBatchTiles": 1024.0
+        }
+      },
+      "filter-cpu-14400": {
+        "binary": "57ed70d996493833d99c3bc5f5002791ab96a0d89045d54d08a0cc31fb90f07e",
+        "input_name": "屏幕测试图.png",
+        "input_sha256": "772a508eedb97173cae75c057b141cd35d824956ea374b3bcb0ee644d9eb82b4",
+        "top": 1,
+        "output": "9f36a7b89d7144fc259a424c0b76fb58683cc086cf4b4425e3854ee95baba841",
+        "selection": "d0a053b8e443147e66e1916f92eaf159af1b1cfcd6e8a2286f5b4de031f26412",
+        "seed": 42,
+        "device": "cpu",
+        "kernel": "cpu-v6:fp32-v3-avx2",
+        "feature_backend": "cpu",
+        "score_backend": "cpu",
+        "failed": 0,
+        "matched": 14400,
+        "resources": {
+          "cpuPct": 818.8880249671729,
+          "deviceVramBytes": null,
+          "gpuPct": null,
+          "processVramBytes": null,
+          "rssBytes": 248258560.0
+        },
+        "warnings": 0,
+        "metrics": {
+          "annLoadMs": 249.1882,
+          "annQueryMs": 563.0455,
+          "batchBaseScoreMs": 246.19100000000003,
+          "encodingMs": 161.5551,
+          "featureMs": 742.5806000000001,
+          "gpuScoreMs": 0.0,
+          "matchingMs": 2550.8501,
+          "neighborCacheSlots": 65536.0,
+          "neighborGridCacheHits": 148587.0,
+          "neighborGridDistances": 5306.0,
+          "neighborMs": 225.6206000062349,
+          "neighborPruned": 8558178.0,
+          "placementMs": 150.8415,
+          "prepareMs": 635.6429,
+          "matchingBufferPeakBytes": 7916076.0,
+          "matchingBatchTiles": 1024.0
+        },
+        "changed_selection_count": 0,
+        "first_changed_tile": null
+      },
+      "baseline-cuda-57600": {
+        "binary": "c21e433be30f2bf7ab389b4c6797ea4170a3ecf3c679a4f632e5b07d2528e0cf",
+        "input_name": "target3.jpg",
+        "input_sha256": "2034a478fb9adf1e2040499759eb909fbbdce61848c27b1b46aadf97bb8b0037",
+        "top": 10,
+        "output": "864586b4a61af88bba2fd1be3d15d74aa691c16621e8a129d58e8dd3caee8b19",
+        "selection": "9467c5d6e6293a4d7b3b76adfefb196ae4f47d608109f65ad892a0b09956ae07",
+        "seed": 42,
+        "device": "cuda:0",
+        "kernel": "cuda-v6:fp32-v2",
+        "feature_backend": "template_cuda",
+        "score_backend": "template_cuda",
+        "failed": 0,
+        "matched": 57600,
+        "resources": {
+          "cpuPct": 602.9236235097477,
+          "deviceVramBytes": 1885495296.0,
+          "gpuPct": 55.0,
+          "processVramBytes": null,
+          "rssBytes": 351842304.0
+        },
+        "warnings": 0,
+        "metrics": {
+          "annLoadMs": 227.816,
+          "annQueryMs": 1259.7903999999996,
+          "batchBaseScoreMs": 0.0,
+          "encodingMs": 613.3006,
+          "featureMs": 1462.3901999999998,
+          "gpuScoreMs": 145.61490000000003,
+          "matchingMs": 3132.6193,
+          "neighborCacheSlots": 65536.0,
+          "neighborGridCacheHits": 63545473.0,
+          "neighborGridDistances": 22962313.0,
+          "neighborMs": 942.1450000000068,
+          "neighborPruned": 6868307.0,
+          "placementMs": 667.2676,
+          "prepareMs": 1083.063,
+          "matchingBufferPeakBytes": 9964488.0,
+          "matchingBatchTiles": 1024.0
+        }
+      },
+      "filter-cuda-57600": {
+        "binary": "57ed70d996493833d99c3bc5f5002791ab96a0d89045d54d08a0cc31fb90f07e",
+        "input_name": "target3.jpg",
+        "input_sha256": "2034a478fb9adf1e2040499759eb909fbbdce61848c27b1b46aadf97bb8b0037",
+        "top": 10,
+        "output": "e2afdcc915bdb561612a49cb52a8e96e148f6dab009e243b4e6268f2a976d84f",
+        "selection": "0a5f8d42bb91c0e0d695225876249028be828ae9ca4716c6c7bdab6128dd883a",
+        "seed": 42,
+        "device": "cuda:0",
+        "kernel": "cuda-v6:fp32-v2",
+        "feature_backend": "template_cuda",
+        "score_backend": "template_cuda",
+        "failed": 0,
+        "matched": 57600,
+        "resources": {
+          "cpuPct": 594.9108942462598,
+          "deviceVramBytes": 1886609408.0,
+          "gpuPct": 54.0,
+          "processVramBytes": null,
+          "rssBytes": 343924736.0
+        },
+        "warnings": 0,
+        "metrics": {
+          "annLoadMs": 228.8104,
+          "annQueryMs": 1285.1739,
+          "batchBaseScoreMs": 0.0,
+          "encodingMs": 610.2760000000001,
+          "featureMs": 1469.7674000000002,
+          "gpuScoreMs": 145.3502,
+          "matchingMs": 3154.6718,
+          "neighborCacheSlots": 65536.0,
+          "neighborGridCacheHits": 12586454.0,
+          "neighborGridDistances": 1099287.0,
+          "neighborMs": 300.7593999999928,
+          "neighborPruned": 6871229.0,
+          "placementMs": 655.3882,
+          "prepareMs": 1054.8714,
+          "matchingBufferPeakBytes": 9964488.0,
+          "matchingBatchTiles": 1024.0
+        },
+        "changed_selection_count": 16040,
+        "first_changed_tile": 37174
+      }
+    },
+    "columns": {
+      "cpu-default-cpu-57600": {
+        "binary": "416f3cbfd32bc57cfd49bb1bd90574514430dcca8da7bac43de33d65355f0acc",
+        "input_name": "target3.jpg",
+        "input_sha256": "2034a478fb9adf1e2040499759eb909fbbdce61848c27b1b46aadf97bb8b0037",
+        "top": 10,
+        "output": "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7",
+        "selection": "f1badebf1526cdce64c93e9210fe5cb8c2bce9496cc509e22b60de66cd310ac6",
+        "seed": 42,
+        "device": "cpu",
+        "kernel": "cpu-v6:fp32-v3-avx2",
+        "feature_backend": "cpu",
+        "score_backend": "cpu",
+        "failed": 0,
+        "matched": 57600,
+        "resources": {
+          "cpuPct": 1078.2330303605881,
+          "deviceVramBytes": null,
+          "gpuPct": null,
+          "processVramBytes": null,
+          "rssBytes": 260579328.0
+        },
+        "warnings": 0,
+        "metrics": {
+          "annLoadMs": 228.2416,
+          "annQueryMs": 1315.8419000000001,
+          "batchBaseScoreMs": 331.98220000000003,
+          "encodingMs": 609.9428,
+          "featureMs": 2766.4158000000016,
+          "gpuScoreMs": 0.0,
+          "matchingMs": 6195.1701,
+          "neighborCacheSlots": 65536.0,
+          "neighborGridFilterBytes": 792.0,
+          "neighborGridCacheHits": 12916291.0,
+          "neighborGridDistances": 1139959.0,
+          "neighborMs": 470.7513999699624,
+          "neighborPruned": 6852417.0,
+          "placementMs": 667.9801,
+          "prepareMs": 610.7478,
+          "matchingBufferPeakBytes": 4239520.0,
+          "matchingBatchTiles": 1024.0
+        }
+      },
+      "columns-cpu-57600": {
+        "binary": "724ad57413b828dc2172b67879ddeb0b92cb6c065996fc4acdb79ba5ae451767",
+        "input_name": "target3.jpg",
+        "input_sha256": "2034a478fb9adf1e2040499759eb909fbbdce61848c27b1b46aadf97bb8b0037",
+        "top": 10,
+        "output": "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7",
+        "selection": "f1badebf1526cdce64c93e9210fe5cb8c2bce9496cc509e22b60de66cd310ac6",
+        "seed": 42,
+        "device": "cpu",
+        "kernel": "cpu-v6:fp32-v3-avx2",
+        "feature_backend": "cpu",
+        "score_backend": "cpu",
+        "failed": 0,
+        "matched": 57600,
+        "resources": {
+          "cpuPct": 1039.0078721630289,
+          "deviceVramBytes": null,
+          "gpuPct": null,
+          "processVramBytes": null,
+          "rssBytes": 260718592.0
+        },
+        "warnings": 0,
+        "metrics": {
+          "annLoadMs": 232.9068,
+          "annQueryMs": 1353.2550000000003,
+          "batchBaseScoreMs": 338.2710000000001,
+          "encodingMs": 608.1653,
+          "featureMs": 2489.8978,
+          "gpuScoreMs": 0.0,
+          "matchingMs": 5982.3689,
+          "neighborCacheSlots": 65536.0,
+          "neighborGridFilterBytes": 792.0,
+          "neighborGridCacheHits": 12916291.0,
+          "neighborGridDistances": 1139959.0,
+          "neighborMs": 478.87179997000567,
+          "neighborPruned": 6852417.0,
+          "placementMs": 682.2113,
+          "prepareMs": 606.4492,
+          "matchingBufferPeakBytes": 4239520.0,
+          "matchingBatchTiles": 1024.0
+        },
+        "changed_selection_count": 0,
+        "first_changed_tile": null
+      },
+      "cpu-default-cpu-14400": {
+        "binary": "416f3cbfd32bc57cfd49bb1bd90574514430dcca8da7bac43de33d65355f0acc",
+        "input_name": "屏幕测试图.png",
+        "input_sha256": "772a508eedb97173cae75c057b141cd35d824956ea374b3bcb0ee644d9eb82b4",
+        "top": 1,
+        "output": "9f36a7b89d7144fc259a424c0b76fb58683cc086cf4b4425e3854ee95baba841",
+        "selection": "d0a053b8e443147e66e1916f92eaf159af1b1cfcd6e8a2286f5b4de031f26412",
+        "seed": 42,
+        "device": "cpu",
+        "kernel": "cpu-v6:fp32-v3-avx2",
+        "feature_backend": "cpu",
+        "score_backend": "cpu",
+        "failed": 0,
+        "matched": 14400,
+        "resources": {
+          "cpuPct": 775.308227678023,
+          "deviceVramBytes": null,
+          "gpuPct": null,
+          "processVramBytes": null,
+          "rssBytes": 247541760.0
+        },
+        "warnings": 0,
+        "metrics": {
+          "annLoadMs": 226.7706,
+          "annQueryMs": 555.8266,
+          "batchBaseScoreMs": 238.1699,
+          "encodingMs": 166.8708,
+          "featureMs": 747.9963000000001,
+          "gpuScoreMs": 0.0,
+          "matchingMs": 2521.1311,
+          "neighborCacheSlots": 65536.0,
+          "neighborGridFilterBytes": 792.0,
+          "neighborGridCacheHits": 148587.0,
+          "neighborGridDistances": 5306.0,
+          "neighborMs": 223.81700000619028,
+          "neighborPruned": 8558178.0,
+          "placementMs": 157.5937,
+          "prepareMs": 590.0018,
+          "matchingBufferPeakBytes": 7916868.0,
+          "matchingBatchTiles": 1024.0
+        }
+      },
+      "columns-cpu-14400": {
+        "binary": "724ad57413b828dc2172b67879ddeb0b92cb6c065996fc4acdb79ba5ae451767",
+        "input_name": "屏幕测试图.png",
+        "input_sha256": "772a508eedb97173cae75c057b141cd35d824956ea374b3bcb0ee644d9eb82b4",
+        "top": 1,
+        "output": "9f36a7b89d7144fc259a424c0b76fb58683cc086cf4b4425e3854ee95baba841",
+        "selection": "d0a053b8e443147e66e1916f92eaf159af1b1cfcd6e8a2286f5b4de031f26412",
+        "seed": 42,
+        "device": "cpu",
+        "kernel": "cpu-v6:fp32-v3-avx2",
+        "feature_backend": "cpu",
+        "score_backend": "cpu",
+        "failed": 0,
+        "matched": 14400,
+        "resources": {
+          "cpuPct": 752.5393091850178,
+          "deviceVramBytes": null,
+          "gpuPct": null,
+          "processVramBytes": null,
+          "rssBytes": 247431168.0
+        },
+        "warnings": 0,
+        "metrics": {
+          "annLoadMs": 217.4092,
+          "annQueryMs": 579.6074000000001,
+          "batchBaseScoreMs": 245.38920000000002,
+          "encodingMs": 162.4912,
+          "featureMs": 672.8796,
+          "gpuScoreMs": 0.0,
+          "matchingMs": 2461.9853,
+          "neighborCacheSlots": 65536.0,
+          "neighborGridFilterBytes": 792.0,
+          "neighborGridCacheHits": 148587.0,
+          "neighborGridDistances": 5306.0,
+          "neighborMs": 224.90890000622167,
+          "neighborPruned": 8558178.0,
+          "placementMs": 156.0031,
+          "prepareMs": 589.5303,
+          "matchingBufferPeakBytes": 7916868.0,
+          "matchingBatchTiles": 1024.0
+        },
+        "changed_selection_count": 0,
+        "first_changed_tile": null
+      }
+    },
+    "shipped": {
+      "shipped-cpu-57600": {
+        "binary": "551dff19657146638699e8808f813dc200934f3ead68f61781d17bfad0265cb2",
+        "input_name": "target3.jpg",
+        "input_sha256": "2034a478fb9adf1e2040499759eb909fbbdce61848c27b1b46aadf97bb8b0037",
+        "top": 10,
+        "output": "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7",
+        "selection": "f1badebf1526cdce64c93e9210fe5cb8c2bce9496cc509e22b60de66cd310ac6",
+        "seed": 42,
+        "device": "cpu",
+        "kernel": "cpu-v6:fp32-v3-avx2",
+        "feature_backend": "cpu",
+        "score_backend": "cpu",
+        "failed": 0,
+        "matched": 57600,
+        "resources": {
+          "cpuPct": 1060.1932671312009,
+          "deviceVramBytes": null,
+          "gpuPct": null,
+          "processVramBytes": null,
+          "rssBytes": 261165056.0
+        },
+        "warnings": 0,
+        "metrics": {
+          "annLoadMs": 220.4052,
+          "annQueryMs": 1303.5168000000003,
+          "batchBaseScoreMs": 328.4606000000001,
+          "encodingMs": 596.3691,
+          "featureMs": 2433.8758999999995,
+          "gpuScoreMs": 0.0,
+          "matchingMs": 5835.5086,
+          "neighborCacheSlots": 65536.0,
+          "cpuLabConvertWorkerMs": 15353.6396,
+          "cpuGridMeanWorkerMs": 801.8123,
+          "cpuColumnGrid": 1.0,
+          "neighborGridFilterBytes": 792.0,
+          "neighborGridCacheHits": 12916291.0,
+          "neighborGridDistances": 1139959.0,
+          "neighborMs": 471.31719997117153,
+          "neighborPruned": 6852417.0,
+          "placementMs": 676.0172,
+          "prepareMs": 590.7092,
+          "matchingBufferPeakBytes": 4239520.0,
+          "matchingBatchTiles": 1024.0
+        },
+        "changed_selection_count_vs_first_baseline_replay": 0,
+        "first_changed_tile": null
+      },
+      "shipped-cpu-14400": {
+        "binary": "551dff19657146638699e8808f813dc200934f3ead68f61781d17bfad0265cb2",
+        "input_name": "屏幕测试图.png",
+        "input_sha256": "772a508eedb97173cae75c057b141cd35d824956ea374b3bcb0ee644d9eb82b4",
+        "top": 1,
+        "output": "9f36a7b89d7144fc259a424c0b76fb58683cc086cf4b4425e3854ee95baba841",
+        "selection": "d0a053b8e443147e66e1916f92eaf159af1b1cfcd6e8a2286f5b4de031f26412",
+        "seed": 42,
+        "device": "cpu",
+        "kernel": "cpu-v6:fp32-v3-avx2",
+        "feature_backend": "cpu",
+        "score_backend": "cpu",
+        "failed": 0,
+        "matched": 14400,
+        "resources": {
+          "cpuPct": 830.9669552265293,
+          "deviceVramBytes": null,
+          "gpuPct": null,
+          "processVramBytes": null,
+          "rssBytes": 247455744.0
+        },
+        "warnings": 0,
+        "metrics": {
+          "annLoadMs": 227.0765,
+          "annQueryMs": 577.7289,
+          "batchBaseScoreMs": 246.3594,
+          "encodingMs": 164.9013,
+          "featureMs": 749.1076999999999,
+          "gpuScoreMs": 0.0,
+          "matchingMs": 2564.0492,
+          "neighborCacheSlots": 65536.0,
+          "cpuLabConvertWorkerMs": 4880.4828,
+          "cpuGridMeanWorkerMs": 1384.8908,
+          "cpuColumnGrid": 0.0,
+          "neighborGridFilterBytes": 792.0,
+          "neighborGridCacheHits": 148587.0,
+          "neighborGridDistances": 5306.0,
+          "neighborMs": 226.18760000624277,
+          "neighborPruned": 8558178.0,
+          "placementMs": 157.065,
+          "prepareMs": 603.3091,
+          "matchingBufferPeakBytes": 7916868.0,
+          "matchingBatchTiles": 1024.0
+        },
+        "changed_selection_count_vs_first_baseline_replay": 0,
+        "first_changed_tile": null
+      },
+      "shipped-cuda-57600": {
+        "binary": "551dff19657146638699e8808f813dc200934f3ead68f61781d17bfad0265cb2",
+        "input_name": "target3.jpg",
+        "input_sha256": "2034a478fb9adf1e2040499759eb909fbbdce61848c27b1b46aadf97bb8b0037",
+        "top": 10,
+        "output": "864586b4a61af88bba2fd1be3d15d74aa691c16621e8a129d58e8dd3caee8b19",
+        "selection": "9467c5d6e6293a4d7b3b76adfefb196ae4f47d608109f65ad892a0b09956ae07",
+        "seed": 42,
+        "device": "cuda:0",
+        "kernel": "cuda-v6:fp32-v2",
+        "feature_backend": "template_cuda",
+        "score_backend": "template_cuda",
+        "failed": 0,
+        "matched": 57600,
+        "resources": {
+          "cpuPct": 590.6283003499063,
+          "deviceVramBytes": 1964507136.0,
+          "gpuPct": 56.0,
+          "processVramBytes": null,
+          "rssBytes": 323358720.0
+        },
+        "warnings": 0,
+        "metrics": {
+          "annLoadMs": 218.2984,
+          "annQueryMs": 1249.16,
+          "batchBaseScoreMs": 0.0,
+          "encodingMs": 606.4207,
+          "featureMs": 1515.4151,
+          "gpuScoreMs": 149.20350000000008,
+          "matchingMs": 3165.9978,
+          "neighborCacheSlots": 65536.0,
+          "cpuColumnGrid": 0.0,
+          "neighborGridFilterBytes": 0.0,
+          "neighborGridCacheHits": 63545503.0,
+          "neighborGridDistances": 22962370.0,
+          "neighborMs": 914.1056999999997,
+          "neighborPruned": 6868306.0,
+          "placementMs": 662.2455,
+          "prepareMs": 997.816,
+          "matchingBufferPeakBytes": 9964488.0,
+          "matchingBatchTiles": 1024.0
+        },
+        "changed_selection_count_vs_first_baseline_replay": 0,
+        "first_changed_tile": null
+      }
+    }
+  },
+  "input_sha256": "2034a478fb9adf1e2040499759eb909fbbdce61848c27b1b46aadf97bb8b0037",
+  "snapshot_sha256": "2bd3104871fb12fa8d64dc68d15805dfbb428e459b39c36082c2e5d72508f729",
+  "shipped_release_cli_sha256": {
+    "windows-cpu": "f62d5eb796441019043bd6de3e43629ce449df6f5b64d07b4ecf7081c4e77575",
+    "windows-cuda-vulkan": "3f2314e2d0142bea9478e33828e8f286497346db17c315aac0f3a5afa0511fe5"
+  }
+}
