@@ -225,6 +225,10 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 
 .field-error { color: var(--error); font-size: .76rem; margin-top: 5px; }
 [aria-invalid="true"] { border-color: var(--error) !important; }
+.ui-dialog { width: min(440px, calc(100% - 32px)); max-height: calc(100% - 32px); margin: auto; padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--fg); }
+.ui-dialog::backdrop { background: rgb(0 0 0 / .6); }
+.ui-dialog h2 { margin: 0 0 8px; font-size: 1.15rem; }
+.ui-dialog .btns { flex-wrap: wrap; }
 .task-results { border-top: 1px solid var(--border); margin-top: 15px; padding-top: 12px; font-size: .8rem; }
 .task-results h3 { font-size: .9rem; margin-bottom: 8px; }
 .result-preview { display: block; max-width: 100%; max-height: 480px; object-fit: contain; margin-top: 12px; background: var(--bg); border-radius: 6px; }
@@ -433,8 +437,16 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
         <button type="button" class="btn btn-secondary" id="live-preview-fit" disabled>适应窗口</button>
         <button type="button" class="btn btn-secondary" id="live-preview-reset-size" disabled>恢复默认大小</button>
         <button type="button" class="btn btn-secondary" id="live-preview-edit" aria-pressed="false" disabled>手动选图</button>
-        <button type="button" class="btn btn-secondary" data-open-tab="mosaic">返回生成</button>
+        <button type="button" class="btn btn-secondary" id="live-preview-return" data-open-tab="mosaic">返回生成</button>
       </div>
+      <dialog class="ui-dialog" id="live-preview-close-dialog" aria-labelledby="live-preview-close-heading" aria-describedby="live-preview-close-message">
+        <h2 id="live-preview-close-heading">关闭预览？</h2>
+        <p id="live-preview-close-message"></p>
+        <form method="dialog" class="btns">
+          <button class="btn btn-primary" value="keep" autofocus>保留选图并返回</button>
+          <button class="btn btn-secondary" value="discard">丢弃并关闭</button>
+        </form>
+      </dialog>
       <div class="preview-toolbar preview-guide-options" role="group" aria-label="预览对照与标记">
         <button type="button" class="btn btn-secondary" id="live-preview-reference" aria-pressed="false" disabled>目标参考图</button>
         <label class="preview-repeat-label"><input type="checkbox" id="live-preview-mark-repeats" disabled> 框出相邻重复</label>
@@ -485,6 +497,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <div class="preview-toolbar">
         <button type="button" class="btn btn-secondary" id="live-preview-undo" disabled>恢复自动选图</button>
         <button type="button" class="btn btn-secondary" id="live-preview-reset-edits" disabled>清除全部替换</button>
+        <button type="button" class="btn btn-secondary" id="live-preview-undo-clear" hidden>撤销清除</button>
       </div>
       <div id="live-preview-picker-options" hidden>
         <div class="preview-toolbar" role="group" aria-label="素材来源">

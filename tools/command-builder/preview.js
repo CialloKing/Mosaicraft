@@ -87,6 +87,7 @@ const interactivePreview = (() => {
   const repeatColor = guideStyle.getPropertyValue('--warning').trim();
   const editColor = guideStyle.getPropertyValue('--accent2').trim();
   const toggle = byId('toggle');
+  const closeDialog = byId('close-dialog');
   const refreshButton = byId('refresh');
   const status = byId('status');
   const backendStatus = byId('backend');
@@ -145,6 +146,7 @@ const interactivePreview = (() => {
   const painted = new Map();
   let pointer = null;
   const edits = new Map();
+  let clearedEdits = [];
   let editRevision = 0;
   const insights = createPreviewInsights(byId, {
     id: imageIdAt,
@@ -161,6 +163,7 @@ const interactivePreview = (() => {
   });
   const picker = createPreviewPicker(byId, {
     replace(position, image) {
+      clearedEdits = [];
       const before = imageIdAt(position);
       if (plan.imageIds[position] === image.id) edits.delete(position);
       else edits.set(position, {position, imageId: image.id, version: image.version});
@@ -168,17 +171,27 @@ const interactivePreview = (() => {
       editsChanged();
     },
     undo(position) {
+      clearedEdits = [];
       const before = imageIdAt(position);
       edits.delete(position);
       insights.changed([[position, before, imageIdAt(position)]]);
       editsChanged();
     },
     clear() {
+      clearedEdits = [...edits.values()];
       const changes = [...edits].map(([position, edit]) => [position, edit.imageId, plan.imageIds[position]]);
       edits.clear();
       insights.changed(changes);
       editsChanged();
     },
+    undoClear() {
+      if (!clearedEdits.length) return;
+      for (const edit of clearedEdits) edits.set(edit.position, edit);
+      insights.changed(clearedEdits.map(edit => [edit.position, plan.imageIds[edit.position], edit.imageId]));
+      clearedEdits = [];
+      editsChanged();
+    },
+    canUndoClear: () => clearedEdits.length > 0,
     current: position => ({id: edits.get(position)?.imageId ?? plan?.imageIds[position], edited: edits.has(position)}),
     count: () => edits.size,
     paint: requestPaint,
@@ -243,6 +256,7 @@ const interactivePreview = (() => {
     plan = null;
     planKey = '';
     edits.clear();
+    clearedEdits = [];
     insights.setPlan(null, edits);
     scale = 0;
     fitted = true;
@@ -444,6 +458,8 @@ const interactivePreview = (() => {
     plan = next;
     planKey = key;
     if (previous?.editKey !== next.editKey) edits.clear();
+    // A new snapshot may have different assets even when its tile coordinates are reusable.
+    clearedEdits = [];
     insights.setPlan(plan, edits);
     failed.clear();
     updateAspect();
@@ -940,21 +956,36 @@ const interactivePreview = (() => {
     loadImages();
   }
 
-  toggle.addEventListener('click', () => {
-    enabled = !enabled;
+  function closePreview() {
+    enabled = false;
     lastError = '';
-    if (enabled) {
-      seed = previewComparison.seed() ?? crypto.getRandomValues(new Uint32Array(1))[0];
-      canvas.scrollIntoView({block: 'nearest'});
-      sync(tab, 0);
-    } else {
-      cancelPending();
-      discardPlan();
-      request = null;
-      requestKey = '';
-      showStatus();
-    }
+    cancelPending();
+    discardPlan();
+    request = null;
+    requestKey = '';
+    showStatus();
     updateRunButton();
+  }
+
+  toggle.addEventListener('click', () => {
+    if (enabled) {
+      if (edits.size) {
+        byId('close-message').textContent = `关闭预览将丢弃 ${edits.size} 格手动选图。`;
+        closeDialog.returnValue = '';
+        closeDialog.showModal();
+      } else closePreview();
+      return;
+    }
+    enabled = true;
+    lastError = '';
+    seed = previewComparison.seed() ?? crypto.getRandomValues(new Uint32Array(1))[0];
+    canvas.scrollIntoView({block: 'nearest'});
+    sync(tab, 0);
+    updateRunButton();
+  });
+  closeDialog.addEventListener('close', () => {
+    if (closeDialog.returnValue === 'keep') byId('return').click();
+    if (closeDialog.returnValue === 'discard') closePreview();
   });
   refreshButton.addEventListener('click', refresh);
   referenceButton.addEventListener('click', () => {

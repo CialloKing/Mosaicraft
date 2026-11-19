@@ -4,6 +4,7 @@ function createPreviewPicker(byId, actions) {
   const tile = byId('tile');
   const undo = byId('undo');
   const reset = byId('reset-edits');
+  const undoClear = byId('undo-clear');
   const options = byId('picker-options');
   const recommended = byId('recommended');
   const library = byId('library');
@@ -118,6 +119,7 @@ function createPreviewPicker(byId, actions) {
     const current = position < 0 ? null : actions.current(position);
     undo.disabled = !usable || !current?.edited;
     reset.disabled = !usable || actions.count() === 0;
+    undoClear.hidden = !usable || !actions.canUndoClear();
     options.hidden = !usable || !current;
     searchField.hidden = pages.hidden = !browse;
     recommended.setAttribute('aria-pressed', String(!browse));
@@ -151,6 +153,7 @@ function createPreviewPicker(byId, actions) {
   });
   undo.addEventListener('click', () => actions.undo(position));
   reset.addEventListener('click', actions.clear);
+  undoClear.addEventListener('click', actions.undoClear);
   recommended.addEventListener('click', () => chooseSource(false));
   library.addEventListener('click', () => chooseSource(true));
   search.addEventListener('input', () => {
