@@ -1,6 +1,6 @@
 # GPU 后端与精度模式
 
-当前源码提供 CPU、CUDA、Vulkan、Metal。v1.15.8 的五个标准发布包均通过条件编译关闭 Vulkan/Metal。需要 Vulkan 的用户须[自行编译](../development/building.md#vulkan-与-metal)，运行时指定 --backend vulkan 不会为标准包增加 Vulkan 能力。已安装包只包含它构建时启用的后端；先查看包内 `BUILD_INFO.txt` 和设备发现结果。
+当前源码提供 CPU、CUDA、Vulkan、Metal。v1.15.9 在 Windows/Linux x64 提供独立的 Vulkan 包；CPU/CUDA 包不包含 Vulkan，正式包均不包含 Metal。已安装包只支持构建时启用的后端，查看包内 `BUILD_INFO.txt` 和 `mosaicraft devices --json` 确认。
 
 ## 选择后端与设备
 
@@ -16,10 +16,10 @@
 | --- | --- | --- |
 | CPU | 所有原生平台 | GPU 不可用时的默认路径 |
 | CUDA | NVIDIA，需对应 CUDA 包与兼容驱动 | 保留现有优先策略 |
-| Vulkan | 编译启用后，按实际驱动枚举 | 显式候选，未进入 auto |
+| Vulkan | 编译启用后，按实际驱动枚举 | Vulkan 包优先，源码候选默认显式 |
 | Metal | macOS，编译启用后 | 显式候选，实机未验收 |
 
-auto 当前仍为 CUDA → CPU。显式 GPU 请求不可用或准备资源不足时失败，不会切换到另一个 GPU 后端；上传、执行或同步失败会传播。一个任务的 GPU 提取与 GPU 评分使用同一设备。
+`auto` 随发布包而定：Vulkan 包走 Vulkan → CPU（不尝试 CUDA 或软件 Vulkan），CUDA 包走 CUDA → CPU，CPU 包只用 CPU。自动回退只发生在设备不可用或计算资源准备失败时；显式 GPU 请求在相同情况下报错，上传、执行或同步失败也会传播。一个任务的 GPU 提取与 GPU 评分使用同一设备。Vulkan 包动态加载系统 Vulkan 驱动，需要 Vulkan 1.1 和足够的计算能力，不要求安装 SDK。
 
 ## 精度模式
 
@@ -32,7 +32,7 @@ fast 不改变图库或 FeaturePack 格式，无须重建现有版本 1 图库�
 
 ## 当前验收结论
 
-RTX 4060 Laptop 的 CUDA/Vulkan 与 Radeon 780M 的 Vulkan 已有本机记录。原固定验收集未达到 Vulkan 自动选择性能门槛；后续重负载复测显示优势会随任务组成和设备变化，尚未形成跨任务的自动选择准入结论，因此继续显式启用。Intel、Linux GPU 和 Apple GPU 实机结果为 not-run；编译覆盖不等于硬件验收。
+RTX 4060 Laptop 的 CUDA/Vulkan 与 Radeon 780M 的 Vulkan 有本机记录。Vulkan 包优先选择 Vulkan 是按包区分的默认策略，不代表 GPU 在每种任务上都更快。Intel、Linux GPU 和 Apple GPU 实机结果仍为 `not-run`；编译和 CPU 回退通过不等于硬件验收。
 
 任务和预览界面显示实际后端、设备与评分路径，兼容模式的 CPU 评分属于正常执行。详见[实现、验收与性能数据](../development/portable-gpu.md)。
 

@@ -2,19 +2,24 @@
 
 日常 `CI` 在 Windows x64、Linux x64 和 macOS ARM64 上编译 CPU 版 CLI 与 Web UI。Linux 和 macOS 通过 `scripts/build-native.sh` 使用系统依赖，Windows 使用固定的 vcpkg 依赖。推送 `v*` 版本标签会触发 `Native packages`，执行完整 CTest、Web UI/API smoke、打包和独立包验收。维护者使用通过验收的 Actions artifacts 创建 GitHub Release。
 
-| 平台 | runner | CPU 包 | 云端 CUDA 包 |
-| --- | --- | --- | --- |
-| Windows x64 | windows-2025-vs2026 | ZIP | ZIP candidate |
-| Linux x64 | ubuntu-22.04 | tar.gz | tar.gz，正式附件（GPU 未验收） |
-| macOS ARM64 | macos-15 | tar.gz | 无 |
+| 平台 | runner | CPU 包 | 云端 CUDA 包 | Vulkan 包 |
+| --- | --- | --- | --- | --- |
+| Windows x64 | windows-2025-vs2026 | ZIP | ZIP candidate | ZIP |
+| Linux x64 | ubuntu-22.04 | tar.gz | tar.gz，正式附件（GPU 未验收） | tar.gz |
+| macOS ARM64 | macos-15 | tar.gz | 无 | 无 |
 
 支持基线为 Windows 10 22H2 x64、Ubuntu 22.04/glibc 2.35、macOS 13 ARM64。没有安装器、DMG、Universal 2 或 Developer ID 公证。macOS 包使用 ad-hoc 签名；这不等于 Apple 公证。
 
 ## 正式包后端范围
 
-v1.15.8 继续交付 Windows CPU/CUDA、Linux CPU/CUDA、macOS ARM64 CPU 五个包，不添加 Vulkan 或 Metal 附件。标准 presets 默认关闭 MOSAICRAFT_VULKAN 和 MOSAICRAFT_METAL，release.ps1 未收到显式可选后端开关时强制传入 OFF，再检查实际 CMake 缓存。BUILD_INFO.txt 记录 VulkanBackend / MetalBackend 为 disabled。
+v1.15.9 交付七个包。CPU/CUDA 运行时仍关闭 Vulkan 和 Metal；正式 Vulkan 包启用 `MOSAICRAFT_VULKAN_AUTO`，`auto` 优先 Vulkan 并回退 CPU，不编译 CUDA/Metal。`release.ps1` 显式设置这些开关并核对实际 CMake 缓存。
 
-需要 Vulkan 的用户须[从源码编译](building.md#vulkan-与-metal)。Portable GPU candidates 工作流仅用于可选后端构建验证，不将候选二进制纳入此正式 Release。
+```powershell
+./scripts/setup-vulkan.ps1
+./scripts/release.ps1 -BuildDir build/package-vulkan -NoCuda -VulkanRelease -OutputDir build/archives
+```
+
+正式 Vulkan 包不带 `_candidate` 后缀，`BUILD_INFO.txt` 记录 `PortableAutoSelection: vulkan-to-cpu` 和 `PortableGpuValidation: not-run`。独立验收隐藏 Vulkan ICD，验证默认建库和生成自动回退 CPU；实机 GPU 测试另记。原 `-Vulkan`/`-Metal` 参数仍生成仅显式选择的候选包，不得用候选替代正式附件。
 
 ## 固定依赖与缓存
 
@@ -57,7 +62,7 @@ $env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.
 
 ## 独立包验收
 
-CPU 三个平台和 CUDA 两个平台均在独立的新 job 下载附件，不安装项目依赖或 CUDA Toolkit。验证 CLI、API、图片生成、中文与空格路径、依赖加载位置，以及 Unix 执行权限和 macOS 签名。CUDA 候选在无 GPU 环境验证回退运行，仍标记 `not-run`。
+三个 CPU、两个 CUDA 和两个 Vulkan 包均在独立的新 job 下载附件，不安装项目依赖或 CUDA Toolkit。验证 CLI、API、图片生成、中文与空格路径、依赖加载位置，以及 Unix 执行权限和 macOS 签名。CUDA 候选在无 GPU 环境验证回退运行，仍标记 `not-run`。
 
 ```powershell
 ./scripts/verify-release-asset.ps1 -ArchivePath <archive> -RequireStandalone
@@ -66,7 +71,7 @@ CPU 三个平台和 CUDA 两个平台均在独立的新 job 下载附件，不�
 
 `-ZipPath` 保留为 `-ArchivePath` 别名；旧包缺少 GPU 状态时仍可普通验收。多个附件必须指定 `-AssetName`。`release.ps1 -ArchiveFormat auto|zip|tar.gz` 默认 Windows ZIP、Unix tar.gz；包旁生成 `.sha256`，包内记录版本、提交、平台、架构和运行时。
 
-正式发布后，手动运行 `Verify published release` 并传入版本标签，可在三个原生平台下载、验收真实 Release 上的五个正式附件（v1.14.7 的 Linux CUDA 项跳过）。该流程只读取 Release，不上传或修改附件。
+正式发布后，手动运行 `Verify published release` 并传入版本标签，可在三个原生平台下载、验收真实 Release 上的七个正式附件（旧版本跳过尚未提供的附件）。该流程只读取 Release，不上传或修改附件。
 
 历史测量与旧环境说明已移至[CI 与打包历史采样](../archive/performance/packaging-20261108.md)。
 

@@ -7,6 +7,15 @@
 - x64 的 CPU `fast` 评分在 CPU 和操作系统支持时自动优先选择 AVX-512，不支持则继续尝试 AVX2 或标量；ARM64 的 NEON 策略不变。这不改变 `auto` 的设备选择顺序。
 - `--threads 0` 对至少 14,400 格的普通 CPU `fast` 单图，在批次有足够并行工作且访问表内存预算允许时，为 ANN 和基础评分使用更多逻辑线程。手动线程设置、小图、预览和 GPU 路径沿用原线程策略。 详见[分派与线程配对验证](performance/cpu-auto-7940h-20261119.md)。
 
+## v1.15.9
+
+本版共七个原生包：Windows x64 和 Linux x64 各提供 CPU、CUDA、Vulkan，macOS ARM64 继续提供 CPU。归档及 SHA-256 见 [GitHub Release](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.9)。
+
+- 新增 Vulkan 正式包：建库、匹配和 Web UI 预览默认优先使用可用的 Vulkan GPU；无合格设备或预备工作区失败时自动使用 CPU。显式 `--backend vulkan` 仍是强制要求，执行中的 GPU 错误不会静默重试。CUDA 包的 CUDA → CPU 策略不变，Metal 仍不随正式包发布。
+- Windows CPU 快速预览按可用内存选择缓存档，最高 1664 MiB，按需分配并保留低内存回退。改 Top-N 可复用评分表，改权重可复用目标特征和 ANN 候选。详见[预览缓存](guides/web-ui.md#预览缓存)。
+- Windows CPU 快速评分运行时优先选择支持的 AVX-512 路径；增加大图自动匹配并行度、同层 Deep Zoom 写出并行度与运行诊断。图库 PNG 归一化采用最高无损压缩等级；同尺寸 PNG 仅在副本更小时替换。
+- Vulkan 包在无可用驱动的独立环境验证 CPU 回退；`BUILD_INFO.txt` 的包级 GPU 状态 `not-run` 不等同于硬件验收。图库、便携工程及 API 1.5 兼容性不变。
+
 ## v1.15.8
 
 本版主要缩短普通单图生成时间。五个标准包仍为 Windows x64 CPU/CUDA、Linux x64 CPU/CUDA 和 macOS ARM64 CPU；不含 Vulkan/Metal。安装包和 SHA-256 校验值见 [GitHub Release](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.8)。

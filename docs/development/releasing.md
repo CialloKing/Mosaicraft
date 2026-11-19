@@ -31,15 +31,15 @@ node tests/test_command_shell.js
 
 Windows 正式 CUDA 包使用 CUDA 13.5 SDK 与 Required 验收，在实际 GPU 上完整运行，不能跳过 CTest、smoke 或解压验证。云端 BuildOnly 保留 not-run；Linux 的未实机 CUDA 正式附件须按脚本的显式准入流程执行。
 
-Vulkan/Metal 包当前均为候选，自动选择关闭。不得把本机限定场景、其他品牌 GPU 的结果或编译通过写成该平台实机验收。两项 1% 质量门槛、CUDA 5% 回归门槛以及新后端性能准入详见[四后端验收](portable-gpu.md)。
+Windows/Linux x64 正式 Vulkan 包启用 Vulkan → CPU，并在独立无驱动环境验证回退；Metal 及普通 `-Vulkan` 构建仍为候选。不得把本机限定场景、其他品牌 GPU 的结果或编译通过写成该平台实机验收。两项 1% 质量门槛、CUDA 5% 回归门槛以及新后端性能准入详见[四后端验收](portable-gpu.md)。
 
 ```powershell
 # Windows 本机正式 CUDA 包
 ./scripts/release.ps1 -BuildDir build/package-cuda-local -CudaValidation Required -OutputDir build/archives
 # CPU 包
 ./scripts/release.ps1 -BuildDir build/package-cpu -NoCuda -OutputDir build/archives
-# 显式 Vulkan 候选包
-./scripts/release.ps1 -BuildDir build/package-vulkan -NoCuda -Vulkan -OutputDir build/archives
+# 正式 Vulkan 包（先执行 setup-vulkan.ps1）
+./scripts/release.ps1 -BuildDir build/package-vulkan -NoCuda -VulkanRelease -OutputDir build/archives
 ```
 
 使用 CUDA 时先显式设置 CUDAToolkit_ROOT。候选编译工作流和 Apple 未实机状态见[打包说明](packaging.md)。
@@ -59,6 +59,6 @@ Vulkan/Metal 包当前均为候选，自动选择关闭。不得把本机限定�
 
 ## 发布与复核
 
-只有已授权的版本发布才创建并推送 v* 标签，触发 Native packages。检查三平台 CPU 与对应 CUDA 工作流，收集同一提交的附件、SHA256 和日志，再创建 Release。草稿和候选包不能称为稳定发布。
+只有已授权的版本发布才创建并推送 v* 标签，触发 Native packages。检查三平台 CPU 与对应 CUDA、Vulkan 工作流，收集同一提交的附件、SHA256 和日志，再创建 Release。草稿和候选包不能称为稳定发布。
 
 发布后运行 Verify published release 下载真实附件验证，并核对页面的候选、驱动和 not-run 说明。撤下候选时保留真实历史验收记录，更新[版本状态](../releases.md)，不要伪装为从未执行过测试。

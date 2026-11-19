@@ -128,7 +128,7 @@ Use structured `diagnostic.code` and `field`; do not infer them from English mes
 | `message`, `field`, `path` | 技术原因；相关规范请求字段和路径（可为空） |
 | `sequence`, `timestamp` | 任务内递增序号；Unix 毫秒时间 |
 
-主要原因码：`invalid_argument`、`input_unreadable`、`library_unavailable`、`library_incompatible`、`library_write_failed`、`no_candidates`、`cuda_unavailable`、`cuda_resource_fallback`、`cuda_execution_failed`、`out_of_memory`、`source_skipped`、`feature_invalid`、`output_tile_missing`、`output_write_failed`、`preview_write_failed`、`analysis_write_failed`、`usage_commit_failed`。警告保持原有继续执行规则，不代表任务失败。
+主要原因码（Vulkan 包的自动 CPU 回退也会记录 `vulkan_unavailable` 或 `vulkan_resource_fallback`）：`invalid_argument`、`input_unreadable`、`library_unavailable`、`library_incompatible`、`library_write_failed`、`no_candidates`、`cuda_unavailable`、`cuda_resource_fallback`、`cuda_execution_failed`、`out_of_memory`、`source_skipped`、`feature_invalid`、`output_tile_missing`、`output_write_failed`、`preview_write_failed`、`analysis_write_failed`、`usage_commit_failed`。警告保持原有继续执行规则，不代表任务失败。
 
 API 只接受本机服务的 Host（`localhost`、`127.0.0.1` 或 `[::1]` 加当前端口）。浏览器请求的 Origin 必须与该 Host 同源，跨站请求返回 HTTP 403；命令行客户端可以不发送 Origin。结构化请求体必须使用 `Content-Type: application/json`，否则返回 HTTP 415。非法 UTF-8 或包含 NUL 的 query 参数返回 HTTP 400 JSON。
 The API requires a local Host with the current port. Browser Origin must match that Host; cross-site requests return HTTP 403. Non-browser clients may omit Origin. Structured request bodies require `Content-Type: application/json` or return HTTP 415. Invalid UTF-8 or NUL bytes in query parameters return HTTP 400 JSON.

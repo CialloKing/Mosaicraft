@@ -4,15 +4,15 @@
 
 ## 下载与运行
 
-在 [GitHub Releases](https://github.com/CialloKing/Mosaicraft/releases/latest) 的 **Assets** 中，按平台和文件名后缀选择发布包。使用支持 CUDA 13.5 的 NVIDIA 驱动时可选 CUDA 包，其余情况选 CPU 包。
+在 [GitHub Releases](https://github.com/CialloKing/Mosaicraft/releases/latest) 的 **Assets** 中，按平台和文件名后缀选择发布包。NVIDIA 用户可选 CUDA 包；装有兼容 Vulkan 驱动的 Windows/Linux 用户可选 Vulkan 包；只想使用 CPU 则选 CPU 包。
 
-| 平台 | 系统基线 | CPU 包后缀 | CUDA 包后缀 |
-| --- | --- | --- | --- |
-| Windows x64 | Windows 10 22H2 | `_windows-x64_cpu-only.zip` | `_windows-x64_cuda.zip` |
-| Linux x64 | Ubuntu 22.04 / glibc 2.35 | `_linux-x64_cpu-only.tar.gz` | `_linux-x64_cuda.tar.gz` |
-| macOS ARM64 | macOS 13 | `_macos-arm64_cpu-only.tar.gz` | — |
+| 平台 | 系统基线 | CPU 包后缀 | CUDA 包后缀 | Vulkan 包后缀 |
+| --- | --- | --- | --- | --- |
+| Windows x64 | Windows 10 22H2 | `_windows-x64_cpu-only.zip` | `_windows-x64_cuda.zip` | `_windows-x64_vulkan.zip` |
+| Linux x64 | Ubuntu 22.04 / glibc 2.35 | `_linux-x64_cpu-only.tar.gz` | `_linux-x64_cuda.tar.gz` | `_linux-x64_vulkan.tar.gz` |
+| macOS ARM64 | macOS 13 | `_macos-arm64_cpu-only.tar.gz` | — | — |
 
-v1.15.8 保持上述五个包，默认不编译 Vulkan/Metal；需要 Vulkan 须[从源码编译](../development/building.md#vulkan-与-metal)。包内 `BUILD_INFO.txt` 记录构建配置和 GPU 验收状态。Windows CUDA 正式包须通过本机 GPU 验收；Linux CUDA 包进行构建、CPU 回退测试和独立包验收，GPU 实机状态保留为 `not-run`。 [v1.15.8 发布说明与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.8)
+v1.15.9 共七个原生包。Vulkan 包默认优先使用 Vulkan，启动计算前不可用则回退 CPU；CUDA 包仍为 CUDA → CPU。Metal 不随正式包发布。`BUILD_INFO.txt` 记录构建和 GPU 验收状态。 [本版说明与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.9)
 
 ## 图形界面
 

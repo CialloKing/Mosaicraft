@@ -57,7 +57,7 @@ CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，�
 | `--target-blend 0..1` | 目标叠加，默认 0。 |
 | `--brightness-jitter 0..0.5` | LAB 亮度扰动，默认 0；HTML 必须为 0。 |
 | `--seed N` | 无符号 32 位种子；未指定时生成并记录。 |
-| `--backend auto\|cpu\|cuda\|vulkan\|metal` | 建库和匹配后端；显式 GPU 请求不可用时失败；候选后端须显式启用。 |
+| `--backend auto\|cpu\|cuda\|vulkan\|metal` | 建库和匹配后端；显式 GPU 请求不可用时失败；自动优先级由[发布包](gpu-backends.md#选择后端与设备)决定。 |
 | `--device auto\|<设备标识>` | 建库、追加和生成使用同一 GPU；运行 `mosaicraft devices --json` 查看实际设备与不可用原因。 |
 | `--score-mode fast\|compatible` | 默认 fast：CPU、CUDA、Vulkan、Metal 以 FP32 计算热路径，历史与邻域在主机合成。`compatible` 显式恢复各后端原有计算路径。 |
 | `--threads N` | CPU 工作上限，0 自动，各阶段可进一步收缩。 |
