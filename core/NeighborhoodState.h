@@ -2,6 +2,7 @@
 #include "GridDuplicateCache.h"
 #include <algorithm>
 #include <deque>
+#include <memory>
 #include <vector>
 
 namespace mosaicraft::detail
@@ -46,7 +47,10 @@ class NeighborhoodState
 {
   public:
     NeighborhoodState(const std::vector<ImageRecord> &records, int tilesX, int window, double penalty,
-                      NeighborCounters *counters = nullptr, unsigned slots = 65536, unsigned ways = 1);
+                      NeighborCounters *counters = nullptr, unsigned slots = 65536, unsigned ways = 1,
+                      bool filterGrids = false);
+    ~NeighborhoodState();
+    size_t filterBytes() const;
 
     // 只接收已验证的图库索引，不排序、不取随机数，也不改变选图窗口。
     void applyPenalty(double &score, int libraryIndex, int tile, RankBound *bound = nullptr);
@@ -54,6 +58,8 @@ class NeighborhoodState
     void replay(const std::vector<int> &indices, int tile);
 
   private:
+    struct RecentGridFilter;
+    std::unique_ptr<RecentGridFilter> m_filter;
     GridDuplicateCache m_duplicateCache;
     NeighborCounters *m_counters;
     int m_window;

@@ -875,8 +875,13 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         trialOptions.read(limits, runtime);
     }
     NeighborCounters neighborCounters;
+    // CUDA 已能与下一批准备重叠，缩短邻域检查未能缩短整次生成，因此仅在 CPU 大单图启用。
+    const bool filterRecentGrids = !cudaEnabled && !portableRequested && !m_preview && !m_renderSelection &&
+                                   cfg.scoreMode == ScoreMode::Fast && cfg.outputMode == OutputMode::Image &&
+                                   totalTiles >= 14400;
     detail::NeighborhoodState neighborhood(allRecords, tilesX, cfg.neighborWindow, cfg.neighborPenalty,
-                                           cfg.benchmark ? &neighborCounters : nullptr, trialOptions.slots, trialOptions.ways);
+                                           cfg.benchmark ? &neighborCounters : nullptr, trialOptions.slots,
+                                           trialOptions.ways, filterRecentGrids);
 
     // 权重归一化：将各特征权重转为 tile 评分系数
     double wSum = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight;
@@ -900,7 +905,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     }
     std::unique_ptr<detail::SelectionPolicy> selection;
     // 超出原有固定缓存的部分先从匹配预算扣除，再决定可用批次大小。
-    size_t selectionBytes = GridDuplicateCache::extraBytes(trialOptions.slots);
+    size_t selectionBytes = GridDuplicateCache::extraBytes(trialOptions.slots) + neighborhood.filterBytes();
     if (trialOptions.reuseTiles)
     {
         selectionBytes += (256 + std::min<size_t>(totalTiles, limits.maxTiles)) * sizeof(int);
@@ -2042,6 +2047,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             runtime.metric("matchingHostBudgetBytes", hostBudget);
             runtime.metric("featureReaderBudgetBytes", readerBudget);
             runtime.metric("neighborCacheSlots", trialOptions.slots);
+            runtime.metric("neighborGridFilterBytes", neighborhood.filterBytes());
         }
         bool preparedNext = false;
         // 池必须在缓冲/prepare 之后创建，错误退出也会先等待预取线程，再销毁它引用的数据。

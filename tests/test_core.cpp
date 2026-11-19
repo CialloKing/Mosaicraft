@@ -757,6 +757,54 @@ TEST_CASE("neighborhood penalties retain frequency gap and independent window bo
     }
 }
 
+TEST_CASE("bounded grid filter preserves full penalties through wraparound and replay")
+{
+    using namespace mosaicraft;
+    std::vector<ImageRecord> records(18);
+    for (size_t i = 0; i < records.size(); ++i)
+    {
+        // 包含跨桶仍相似、桶内不同、超出字节范围及非有限的 Grid。
+        records[i].gridLab.assign(192, static_cast<float>(int(i / 2) * 32 - 16));
+        records[i].gridLab[0] += i % 2 ? 0.125f : -0.125f;
+    }
+    // 只在开头选一次这条独特记录，确认转过一圈后旧槽位真的失效。
+    records[14].gridLab[81] = 80.0f;
+    records[15].gridLab[191] = std::numeric_limits<float>::infinity();
+    records[16].gridLab[0] = std::numeric_limits<float>::quiet_NaN();
+    records.back().gridLab.clear();
+    detail::NeighborhoodState full(records, 7, 5, 100), filtered(records, 7, 5, 100, nullptr, 65536, 1, true);
+    std::vector<int> history(140, -1);
+    for (int i = 0; i < 140; ++i)
+    {
+        for (int id = 0; id < static_cast<int>(records.size()); ++id)
+        {
+            double a = 1.25, b = a;
+            full.applyPenalty(a, id, i);
+            filtered.applyPenalty(b, id, i);
+            REQUIRE(a == b);
+        }
+        if (i % 7 != 0)
+        {
+            history[i] = static_cast<int>((i * 5) % records.size());
+            if (i == 1 || history[i] == 14)
+            {
+                history[i] = i == 1 ? 14 : 0;
+            }
+            full.recordSelection(history[i], i);
+            filtered.recordSelection(history[i], i);
+        }
+    }
+    detail::NeighborhoodState replay(records, 7, 5, 100, nullptr, 65536, 1, true);
+    replay.replay(history, 140);
+    for (int id = 0; id < static_cast<int>(records.size()); ++id)
+    {
+        double a = 0, b = 0;
+        full.applyPenalty(a, id, 140);
+        replay.applyPenalty(b, id, 140);
+        CHECK(a == b);
+    }
+}
+
 TEST_CASE("quality selection gates pure error and resolves ties by stable IDs")
 {
     using namespace mosaicraft;
