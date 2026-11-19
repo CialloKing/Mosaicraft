@@ -4,6 +4,8 @@
 
 ## 文件索引
 
+- [Windows Web UI 预览缓存扩容与特征源校验](preview-cache-ec28d6912.md)
+
 - [运行性能日志：输出汇总与图库追加开销](runtime-logging-198f2d83b.md)
 
 - [CPU 自动分派与工作线程：Ryzen 9 7940H](cpu-auto-7940h-20261119.md)

@@ -1,0 +1,380 @@
+{
+  "baseline": "ec28d6912",
+  "time_metric": "POST through completed preview API response (Deep Zoom: render process wall)",
+  "sample_columns": [
+    "phase",
+    "pair",
+    "case",
+    "variant",
+    "wall_ms",
+    "selection_or_decoded_pixels_sha256"
+  ],
+  "snapshot_sha256": "2bd3104871fb12fa8d64dc68d15805dfbb428e459b39c36082c2e5d72508f729",
+  "input_sha256": "2034a478fb9adf1e2040499759eb909fbbdce61848c27b1b46aadf97bb8b0037",
+  "cpu": {
+    "variants": [
+      {
+        "id": "baseline",
+        "sha256": "b6e7c17a2db27cc4cf86d99aef54ad7636de6fdaf3521137e2c5704c99bdca91"
+      },
+      {
+        "id": "both+stamps",
+        "sha256": "148707da8badba937d0e7e116c3f7ce7bb4ebb39710380c3c00f93737f4ce40e"
+      }
+    ],
+    "complete": true,
+    "differences": [],
+    "samples": [
+      ["warmup", 0, "57600-cold", "both+stamps", 10801.1, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["warmup", 0, "57600-top", "both+stamps", 5562.17, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["warmup", 0, "57600-weight", "both+stamps", 7478.62, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["warmup", 0, "57600-cold", "baseline", 13041.24, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["warmup", 0, "57600-top", "baseline", 11407.9, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["warmup", 0, "57600-weight", "baseline", 11354.92, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["warmup", 0, "14400-cold", "both+stamps", 7227.6, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["warmup", 0, "14400-top", "both+stamps", 3587.35, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["warmup", 0, "14400-weight", "both+stamps", 5053.44, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["warmup", 0, "14400-cold", "baseline", 8298.15, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["warmup", 0, "14400-top", "baseline", 6195.03, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["warmup", 0, "14400-weight", "baseline", 6579.83, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["warmup", 0, "900-cold", "both+stamps", 4457.96, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["warmup", 0, "900-top", "both+stamps", 2242.04, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["warmup", 0, "900-weight", "both+stamps", 4164.78, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["warmup", 0, "900-cold", "baseline", 7106.55, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["warmup", 0, "900-top", "baseline", 3788.76, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["warmup", 0, "900-weight", "baseline", 6815.71, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["warmup", 1, "57600-cold", "baseline", 13325.22, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["warmup", 1, "57600-top", "baseline", 11800.26, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["warmup", 1, "57600-weight", "baseline", 11255.22, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["warmup", 1, "57600-cold", "both+stamps", 10661.07, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["warmup", 1, "57600-top", "both+stamps", 5802.07, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["warmup", 1, "57600-weight", "both+stamps", 7576.76, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["warmup", 1, "14400-cold", "baseline", 8160.13, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["warmup", 1, "14400-top", "baseline", 6148.43, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["warmup", 1, "14400-weight", "baseline", 6392.07, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["warmup", 1, "14400-cold", "both+stamps", 7431.8, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["warmup", 1, "14400-top", "both+stamps", 3574.86, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["warmup", 1, "14400-weight", "both+stamps", 5019.01, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["warmup", 1, "900-cold", "baseline", 7049.7, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["warmup", 1, "900-top", "baseline", 3576.03, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["warmup", 1, "900-weight", "baseline", 6629.95, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["warmup", 1, "900-cold", "both+stamps", 4398.18, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["warmup", 1, "900-top", "both+stamps", 2454.95, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["warmup", 1, "900-weight", "both+stamps", 4125.41, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 0, "57600-cold", "both+stamps", 10482.38, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 0, "57600-top", "both+stamps", 5621.9, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 0, "57600-weight", "both+stamps", 7325.22, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 0, "57600-cold", "baseline", 12800.31, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 0, "57600-top", "baseline", 11227.49, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 0, "57600-weight", "baseline", 11389.31, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 0, "14400-cold", "both+stamps", 7056.05, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 0, "14400-top", "both+stamps", 3609.81, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 0, "14400-weight", "both+stamps", 5006.94, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 0, "14400-cold", "baseline", 8028.52, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 0, "14400-top", "baseline", 6089.37, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 0, "14400-weight", "baseline", 6416.5, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 0, "900-cold", "both+stamps", 4413.54, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 0, "900-top", "both+stamps", 2245.65, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 0, "900-weight", "both+stamps", 4027.2, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 0, "900-cold", "baseline", 7104.34, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 0, "900-top", "baseline", 3625.8, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 0, "900-weight", "baseline", 6634.63, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 1, "57600-cold", "baseline", 12754.17, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 1, "57600-top", "baseline", 11140.86, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 1, "57600-weight", "baseline", 11444.55, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 1, "57600-cold", "both+stamps", 10515.46, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 1, "57600-top", "both+stamps", 5580.89, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 1, "57600-weight", "both+stamps", 7359.22, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 1, "14400-cold", "baseline", 8172.36, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 1, "14400-top", "baseline", 6116.76, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 1, "14400-weight", "baseline", 6274.36, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 1, "14400-cold", "both+stamps", 7139.28, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 1, "14400-top", "both+stamps", 3621.3, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 1, "14400-weight", "both+stamps", 4905.08, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 1, "900-cold", "baseline", 7085.8, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 1, "900-top", "baseline", 3628.3, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 1, "900-weight", "baseline", 6721.24, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 1, "900-cold", "both+stamps", 4472.58, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 1, "900-top", "both+stamps", 2269.66, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 1, "900-weight", "both+stamps", 4194.12, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 2, "57600-cold", "both+stamps", 10349.56, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 2, "57600-top", "both+stamps", 5639.42, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 2, "57600-weight", "both+stamps", 7478.38, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 2, "57600-cold", "baseline", 12890.83, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 2, "57600-top", "baseline", 11409.13, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 2, "57600-weight", "baseline", 11677.84, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 2, "14400-cold", "both+stamps", 7203.81, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 2, "14400-top", "both+stamps", 3516.64, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 2, "14400-weight", "both+stamps", 4831.94, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 2, "14400-cold", "baseline", 8271.21, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 2, "14400-top", "baseline", 6112.22, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 2, "14400-weight", "baseline", 6309.93, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 2, "900-cold", "both+stamps", 4166.16, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 2, "900-top", "both+stamps", 2148.88, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 2, "900-weight", "both+stamps", 4087.85, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 2, "900-cold", "baseline", 6958.55, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 2, "900-top", "baseline", 3562.01, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 2, "900-weight", "baseline", 6580.12, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 3, "57600-cold", "baseline", 12712.33, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 3, "57600-top", "baseline", 11184.94, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 3, "57600-weight", "baseline", 11445.09, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 3, "57600-cold", "both+stamps", 10541.37, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 3, "57600-top", "both+stamps", 5816.88, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 3, "57600-weight", "both+stamps", 7495.79, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 3, "14400-cold", "baseline", 8162.15, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 3, "14400-top", "baseline", 6097.09, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 3, "14400-weight", "baseline", 6361.84, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 3, "14400-cold", "both+stamps", 7315.16, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 3, "14400-top", "both+stamps", 3782.91, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 3, "14400-weight", "both+stamps", 4898.95, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 3, "900-cold", "baseline", 6996.52, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 3, "900-top", "baseline", 3545.99, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 3, "900-weight", "baseline", 6586.22, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 3, "900-cold", "both+stamps", 4302.78, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 3, "900-top", "both+stamps", 2287.91, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 3, "900-weight", "both+stamps", 3979.76, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 4, "57600-cold", "baseline", 12806.05, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 4, "57600-top", "baseline", 11338.3, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 4, "57600-weight", "baseline", 11405.7, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 4, "57600-cold", "both+stamps", 10636.36, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 4, "57600-top", "both+stamps", 5699.25, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 4, "57600-weight", "both+stamps", 7647.57, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 4, "14400-cold", "baseline", 8348.76, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 4, "14400-top", "baseline", 6479.41, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 4, "14400-weight", "baseline", 6320.5, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 4, "14400-cold", "both+stamps", 7500.94, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 4, "14400-top", "both+stamps", 3682.45, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 4, "14400-weight", "both+stamps", 5008.5, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 4, "900-cold", "baseline", 7069.03, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 4, "900-top", "baseline", 3589.38, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 4, "900-weight", "baseline", 7346.5, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 4, "900-cold", "both+stamps", 4648.68, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 4, "900-top", "both+stamps", 2452.44, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 4, "900-weight", "both+stamps", 4083.01, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 5, "57600-cold", "both+stamps", 10786.83, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 5, "57600-top", "both+stamps", 5699.55, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 5, "57600-weight", "both+stamps", 7479.15, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 5, "57600-cold", "baseline", 12739.54, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 5, "57600-top", "baseline", 11243.68, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 5, "57600-weight", "baseline", 11330.6, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 5, "14400-cold", "both+stamps", 7470.01, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 5, "14400-top", "both+stamps", 3736.52, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 5, "14400-weight", "both+stamps", 4998.77, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 5, "14400-cold", "baseline", 8167.26, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 5, "14400-top", "baseline", 6194.6, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 5, "14400-weight", "baseline", 6321.01, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 5, "900-cold", "both+stamps", 4979.01, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 5, "900-top", "both+stamps", 2574.22, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 5, "900-weight", "both+stamps", 4235.37, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 5, "900-cold", "baseline", 7199.37, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 5, "900-top", "baseline", 3685.78, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 5, "900-weight", "baseline", 6964.8, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 6, "57600-cold", "both+stamps", 11154.23, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 6, "57600-top", "both+stamps", 5869.39, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 6, "57600-weight", "both+stamps", 7605.77, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 6, "57600-cold", "baseline", 13250.35, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 6, "57600-top", "baseline", 11459.46, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 6, "57600-weight", "baseline", 11430.53, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 6, "14400-cold", "both+stamps", 7660.97, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 6, "14400-top", "both+stamps", 3695.31, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 6, "14400-weight", "both+stamps", 5292.69, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 6, "14400-cold", "baseline", 8190.49, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 6, "14400-top", "baseline", 6204.19, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 6, "14400-weight", "baseline", 6420.0, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 6, "900-cold", "both+stamps", 4552.29, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 6, "900-top", "both+stamps", 2467.37, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 6, "900-weight", "both+stamps", 6208.67, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 6, "900-cold", "baseline", 7173.87, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 6, "900-top", "baseline", 4847.34, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 6, "900-weight", "baseline", 9267.62, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 7, "57600-cold", "baseline", 15014.6, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 7, "57600-top", "baseline", 15830.52, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 7, "57600-weight", "baseline", 15772.9, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 7, "57600-cold", "both+stamps", 12225.54, "f894d19fc45bb659e3e966e7c47af8da52479fa5edd4e3df8be434b611b6e606"],
+      ["measured", 7, "57600-top", "both+stamps", 8342.95, "90e3270ecb6bbd4d1c113618020f7b7104cd81f3ecef48c8fcbbfde8e2504d56"],
+      ["measured", 7, "57600-weight", "both+stamps", 10821.9, "00054dfd1115aa326f14d210e8cb0afbc559c01a7b0c6e17a4fc9fb079891e1c"],
+      ["measured", 7, "14400-cold", "baseline", 8498.83, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 7, "14400-top", "baseline", 8528.95, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 7, "14400-weight", "baseline", 8700.49, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 7, "14400-cold", "both+stamps", 7320.65, "aba85e8e641fad101efa09d678ed988604f73a0384de605462aabde9fccf9a8c"],
+      ["measured", 7, "14400-top", "both+stamps", 5412.75, "615a36fb07cada3977185ea460a80909d638e87157ed5909a6381e820e132e76"],
+      ["measured", 7, "14400-weight", "both+stamps", 7257.59, "a92fd2148f8a489b0ebc806eff8368e08ee2d7fba51f103b00e69ff887c3b4e0"],
+      ["measured", 7, "900-cold", "baseline", 7129.72, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 7, "900-top", "baseline", 4778.47, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 7, "900-weight", "baseline", 9059.52, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"],
+      ["measured", 7, "900-cold", "both+stamps", 4525.48, "30d33deac6689e398a730a2c6e940bd4363bdf05243fbd4e2063ca96a26845bf"],
+      ["measured", 7, "900-top", "both+stamps", 2277.3, "8e654c35711599f313649adf732e4c13d55942ad747c1334f5b35015a040177e"],
+      ["measured", 7, "900-weight", "both+stamps", 5656.83, "16fc2e3020d654612fd2a3aa87e26277e5477d69f20e1e9750debcd37491fc60"]
+    ],
+    "wall_summary": {
+      "57600-cold": {
+        "baseline_ms": 12803.18,
+        "trial_ms": 10588.86,
+        "paired_ratio": 0.82685,
+        "bootstrap95": [
+          0.81424,
+          0.84181
+        ]
+      },
+      "57600-top": {
+        "baseline_ms": 11290.99,
+        "trial_ms": 5699.4,
+        "paired_ratio": 0.50478,
+        "bootstrap95": [
+          0.50073,
+          0.52006
+        ]
+      },
+      "57600-weight": {
+        "baseline_ms": 11437.54,
+        "trial_ms": 7487.47,
+        "paired_ratio": 0.65751,
+        "bootstrap95": [
+          0.64303,
+          0.6705
+        ]
+      },
+      "14400-cold": {
+        "baseline_ms": 8181.42,
+        "trial_ms": 7317.91,
+        "paired_ratio": 0.88755,
+        "bootstrap95": [
+          0.87095,
+          0.91463
+        ]
+      },
+      "14400-top": {
+        "baseline_ms": 6155.68,
+        "trial_ms": 3688.88,
+        "paired_ratio": 0.59421,
+        "bootstrap95": [
+          0.57535,
+          0.62045
+        ]
+      },
+      "14400-weight": {
+        "baseline_ms": 6341.43,
+        "trial_ms": 5002.85,
+        "paired_ratio": 0.78629,
+        "bootstrap95": [
+          0.77005,
+          0.82441
+        ]
+      },
+      "900-cold": {
+        "baseline_ms": 7095.07,
+        "trial_ms": 4499.03,
+        "paired_ratio": 0.63288,
+        "bootstrap95": [
+          0.61499,
+          0.65761
+        ]
+      },
+      "900-top": {
+        "baseline_ms": 3627.05,
+        "trial_ms": 2282.6,
+        "paired_ratio": 0.62245,
+        "bootstrap95": [
+          0.50901,
+          0.68325
+        ]
+      },
+      "900-weight": {
+        "baseline_ms": 6843.02,
+        "trial_ms": 4140.98,
+        "paired_ratio": 0.61468,
+        "bootstrap95": [
+          0.60426,
+          0.62441
+        ]
+      }
+    }
+  },
+  "cuda_diagnostic": {
+    "variants": [
+      {
+        "id": "baseline",
+        "sha256": "eea41306c83b4088f6d5ef08fff8ad23e368b8bd445189bbe97d47d8a11e0668"
+      },
+      {
+        "id": "both+stamps",
+        "sha256": "718cfa5ef443099b89fb894d2bdb9fe03a4bb8ff5a062e206386ab5961682214"
+      }
+    ],
+    "complete": true,
+    "differences": [
+      {
+        "case": "57600-top",
+        "round": 0,
+        "variant": "baseline"
+      }
+    ],
+    "samples": [
+      ["measured", 0, "57600-cold", "both+stamps", 11352.57, "bcfede0ec0661ff98d5e0fc2446047ce63595b8fa7c64a483be5c0f4b35131ea"],
+      ["measured", 0, "57600-top", "both+stamps", 11927.75, "7db74c4d8606cf7d479b48f67386666c85760890c0648e0cfaa18bf834b62d53"],
+      ["measured", 0, "57600-weight", "both+stamps", 17077.45, "85063ffe0a45e38c9373eddc815664c12a5a098b47a5dded18362fee04e5d619"],
+      ["measured", 0, "57600-cold", "baseline", 18508.18, "bcfede0ec0661ff98d5e0fc2446047ce63595b8fa7c64a483be5c0f4b35131ea"],
+      ["measured", 0, "57600-top", "baseline", 18073.67, "a68051f10d9b17569cf1db18db3c9f48508797056fd808b95c746189579c9a94"],
+      ["measured", 0, "57600-weight", "baseline", 22158.66, "85063ffe0a45e38c9373eddc815664c12a5a098b47a5dded18362fee04e5d619"]
+    ]
+  },
+  "deepzoom": {
+    "variants": [
+      {
+        "id": "baseline",
+        "sha256": "5210052b6519b7bff60cba42f9e173cec9b5e11195d484c4a99635ff9ca0056e"
+      },
+      {
+        "id": "candidate",
+        "sha256": "1c570704063df0cdf5315f8b2247c993caba041a854099fcb178844844b58ccb"
+      }
+    ],
+    "complete": true,
+    "differences": [],
+    "samples": [
+      ["warmup", 0, "deepzoom", "candidate", 4246.32, "7897a9555bd8583f8c1858b6d6a420c130d189b19cc50368069bc7a2e132ee84"],
+      ["warmup", 0, "deepzoom", "baseline", 4512.44, "7897a9555bd8583f8c1858b6d6a420c130d189b19cc50368069bc7a2e132ee84"],
+      ["measured", 0, "deepzoom", "candidate", 5441.66, "7897a9555bd8583f8c1858b6d6a420c130d189b19cc50368069bc7a2e132ee84"],
+      ["measured", 0, "deepzoom", "baseline", 5527.27, "7897a9555bd8583f8c1858b6d6a420c130d189b19cc50368069bc7a2e132ee84"],
+      ["measured", 1, "deepzoom", "baseline", 5894.52, "7897a9555bd8583f8c1858b6d6a420c130d189b19cc50368069bc7a2e132ee84"],
+      ["measured", 1, "deepzoom", "candidate", 5213.49, "7897a9555bd8583f8c1858b6d6a420c130d189b19cc50368069bc7a2e132ee84"],
+      ["measured", 2, "deepzoom", "candidate", 5486.99, "7897a9555bd8583f8c1858b6d6a420c130d189b19cc50368069bc7a2e132ee84"],
+      ["measured", 2, "deepzoom", "baseline", 5506.96, "7897a9555bd8583f8c1858b6d6a420c130d189b19cc50368069bc7a2e132ee84"]
+    ],
+    "project_sha256": "85fbfbcec47a8d48023da7c11d4f82465b598cf44d0123dfaa7fa42c631ac3a0",
+    "paired_ratio": 0.9845101604140561
+  },
+  "cuda_standard_validation": {
+    "complete": true,
+    "variants": [
+      {
+        "id": "baseline",
+        "sha256": "eea41306c83b4088f6d5ef08fff8ad23e368b8bd445189bbe97d47d8a11e0668"
+      },
+      {
+        "id": "auto",
+        "sha256": "d28030863bc23e260f452a91718fb9e394639399461bcaef0b6f9a36e697e63c"
+      }
+    ],
+    "differences": [
+      {
+        "case": "57600-cold",
+        "round": 0,
+        "variant": "baseline"
+      },
+      {
+        "case": "57600-top",
+        "round": 0,
+        "variant": "baseline"
+      }
+    ],
+    "samples": [
+      ["measured", 0, "57600-cold", "auto", 11785.75, "a1d31b38706b2e41fd0eb197beb317a6ad5cd0aa2efb9166000588ed5ed2f0d6"],
+      ["measured", 0, "57600-top", "auto", 13344.66, "a68051f10d9b17569cf1db18db3c9f48508797056fd808b95c746189579c9a94"],
+      ["measured", 0, "57600-weight", "auto", 13304.07, "85063ffe0a45e38c9373eddc815664c12a5a098b47a5dded18362fee04e5d619"],
+      ["measured", 0, "57600-cold", "baseline", 12135.82, "bcfede0ec0661ff98d5e0fc2446047ce63595b8fa7c64a483be5c0f4b35131ea"],
+      ["measured", 0, "57600-top", "baseline", 13215.98, "7db74c4d8606cf7d479b48f67386666c85760890c0648e0cfaa18bf834b62d53"],
+      ["measured", 0, "57600-weight", "baseline", 13085.67, "85063ffe0a45e38c9373eddc815664c12a5a098b47a5dded18362fee04e5d619"]
+    ]
+  }
+}
