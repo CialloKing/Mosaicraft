@@ -11,6 +11,7 @@ param(
     [ValidateSet('auto', 'zip', 'tar.gz')][string]$ArchiveFormat = 'auto',
     [switch]$NoCuda,
     [switch]$Vulkan,
+    [switch]$VulkanRelease,
     [switch]$Metal,
     [ValidateSet('Required', 'BuildOnly')][string]$CudaValidation = 'Required',
     [switch]$AllowUnvalidatedCudaRelease,
@@ -303,7 +304,7 @@ function Write-BuildInfo
     if ($Vulkan -or $Metal)
     {
         $lines += "PortableGpuValidation: not-run"
-        $lines += "PortableAutoSelection: disabled"
+        $lines += "PortableAutoSelection: $(if ($VulkanRelease) { 'vulkan-to-cpu' } else { 'disabled' })"
         $lines += "PortableKernelVersion: portable-v1"
         $lines += "ScoreModes: compatible;fast"
         $lines += "QualityDegradationLimit: 0.01"
@@ -448,6 +449,14 @@ Assert-ReleaseVersionSummary -RepoRoot $RepoRoot -VersionText $versionText
 $outputPath = if ($OutputDir) { Resolve-RepoPath $OutputDir } else { $RepoRoot }
 $packagePlatform = Normalize-PackageToken -Value $PackagePlatform -Fallback (Get-DefaultPackagePlatform) -Label "platform"
 $packageArch = Normalize-PackageToken -Value $PackageArch -Fallback (Get-DefaultPackageArch) -Label "arch"
+if ($VulkanRelease)
+{
+    if (-not $NoCuda -or $Metal -or $SkipTests -or $SkipSmoke -or $SkipArchiveValidation -or $PackageSuffix)
+    {
+        throw 'VulkanRelease requires NoCuda, no extra backend or suffix, and full test, smoke and archive validation'
+    }
+    $Vulkan = $true
+}
 $packageRuntime = if ($Metal) { 'metal' } elseif ($Vulkan) { if ($NoCuda) { 'vulkan' } else { 'cuda-vulkan' } } elseif ($NoCuda) { 'cpu-only' } else { 'cuda' }
 if ($Vulkan -and $Metal) { throw 'Choose Vulkan or Metal for one platform package' }
 $hostPlatform = Get-DefaultPackagePlatform
@@ -510,7 +519,7 @@ if ($PackageSuffix) {
 }
 $packageName = "Mosaicraft_v${versionText}_${packagePlatform}-${packageArch}_${packageRuntime}${suffix}"
 if (-not $NoCuda -and $CudaValidation -eq 'BuildOnly' -and -not $AllowUnvalidatedCudaRelease -and -not $AllowUntestedRelease) { $packageName += '_candidate' }
-if (($Vulkan -or $Metal) -and -not $packageName.EndsWith('_candidate')) { $packageName += '_candidate' }
+if (($Vulkan -or $Metal) -and -not $VulkanRelease -and -not $packageName.EndsWith('_candidate')) { $packageName += '_candidate' }
 if ($ArchiveFormat -eq 'auto') { $ArchiveFormat = if (Test-IsWindows) { 'zip' } else { 'tar.gz' } }
 $archiveName = "$packageName.$ArchiveFormat"
 $archivePath = Join-Path $outputPath $archiveName
@@ -541,6 +550,7 @@ try {
             $configureArgs = @('--preset', $configurePreset, '-S', $RepoRoot, '-B', $buildPath, '-DMOSAICRAFT_BUNDLE_RUNTIME=ON')
             # A reused developer cache must not enable optional backends in a standard release.
             $configureArgs += "-DMOSAICRAFT_VULKAN:BOOL=$(if ($Vulkan) { 'ON' } else { 'OFF' })"
+            $configureArgs += "-DMOSAICRAFT_VULKAN_AUTO:BOOL=$(if ($VulkanRelease) { 'ON' } else { 'OFF' })"
             $configureArgs += "-DMOSAICRAFT_METAL:BOOL=$(if ($Metal) { 'ON' } else { 'OFF' })"
             if ($ToolchainFile) {
                 $configureArgs += "-DCMAKE_TOOLCHAIN_FILE=$ToolchainFile"
@@ -584,9 +594,10 @@ try {
     {
         throw 'Build directory CUDA configuration does not match the requested package'
     }
-    foreach ($backend in @('VULKAN', 'METAL'))
+    foreach ($backend in @('VULKAN', 'VULKAN_AUTO', 'METAL'))
     {
-        $enabled = if (($backend -eq 'VULKAN' -and $Vulkan) -or ($backend -eq 'METAL' -and $Metal)) { 'ON' } else { 'OFF' }
+        $enabled = if (($backend -eq 'VULKAN' -and $Vulkan) -or ($backend -eq 'VULKAN_AUTO' -and $VulkanRelease) -or
+                       ($backend -eq 'METAL' -and $Metal)) { 'ON' } else { 'OFF' }
         if ($cache -notmatch "(?m)^MOSAICRAFT_${backend}:BOOL=$enabled`r?$")
         {
             throw "Build directory $backend configuration does not match the requested package"

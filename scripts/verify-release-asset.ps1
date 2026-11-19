@@ -423,10 +423,14 @@ function Assert-BuildInfo
         Assert-CudaPackageName $info $PackageName
         if ($info['Runtime'] -in @('vulkan', 'cuda-vulkan', 'metal'))
         {
-            if ($info['PortableGpuValidation'] -ne 'not-run' -or $info['PortableAutoSelection'] -ne 'disabled' -or
-                $PackageName -notmatch '_candidate\.(zip|tar\.gz)$')
+            $stableVulkan = $info['Runtime'] -eq 'vulkan' -and $PackageName -match '_vulkan\.(zip|tar\.gz)$'
+            $expectedAuto = if ($stableVulkan) { 'vulkan-to-cpu' } else { 'disabled' }
+            if ($info['PortableGpuValidation'] -ne 'not-run' -or $info['PortableAutoSelection'] -ne $expectedAuto -or
+                ($stableVulkan -and ($info['VulkanBackend'] -ne 'enabled' -or $info['MetalBackend'] -ne 'disabled' -or
+                                    $info['GpuValidation'] -ne 'not-run')) -or
+                (-not $stableVulkan -and $PackageName -notmatch '_candidate\.(zip|tar\.gz)$'))
             {
-                throw 'Portable GPU packages require honest candidate metadata and disabled auto selection'
+                throw 'Portable GPU package metadata does not match its archive type'
             }
         }
     }
@@ -488,7 +492,8 @@ function Invoke-PackageSmoke
 {
     param(
         [string]$WebUiPath,
-        [int]$Timeout
+        [int]$Timeout,
+        [switch]$VulkanFallback
     )
 
     $powershellCommand = Get-PowerShellCommand
@@ -506,8 +511,25 @@ function Invoke-PackageSmoke
         [string]$Timeout
     )
 
-    # The smoke test must use the extracted Web UI executable so it proves the downloaded package works.
-    Invoke-NativeOutput -FilePath $powershellCommand -Arguments $arguments | Out-Host
+    # Hide ICDs only in the smoke process, never change the user's driver installation.
+    $previousDriver = $env:VK_DRIVER_FILES
+    $previousIcd = $env:VK_ICD_FILENAMES
+    try
+    {
+        if ($VulkanFallback)
+        {
+            $noDriver = Join-Path ([IO.Path]::GetTempPath()) ("mosaicraft-no-icd-" + [Guid]::NewGuid() + '.json')
+            $env:VK_DRIVER_FILES = $noDriver
+            $env:VK_ICD_FILENAMES = $noDriver
+            $arguments += @('-ExpectedAutoBackend', 'cpu')
+        }
+        Invoke-NativeOutput -FilePath $powershellCommand -Arguments $arguments | Out-Host
+    }
+    finally
+    {
+        $env:VK_DRIVER_FILES = $previousDriver
+        $env:VK_ICD_FILENAMES = $previousIcd
+    }
 }
 
 try
@@ -629,7 +651,8 @@ try
             Assert-PackageCommands -CliPath $cliPath -WebUiPath $webUiPath -VersionText $ExpectedVersion
             if (-not $SkipSmoke)
             {
-                Invoke-PackageSmoke -WebUiPath $webUiPath -Timeout $TimeoutSeconds
+                $stableVulkan = (Split-Path -Leaf $zip) -match '_vulkan\.(zip|tar\.gz)$'
+                Invoke-PackageSmoke -WebUiPath $webUiPath -Timeout $TimeoutSeconds -VulkanFallback:$stableVulkan
             }
         }
         finally { Pop-Location }

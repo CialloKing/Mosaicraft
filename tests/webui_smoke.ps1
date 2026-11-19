@@ -2,6 +2,7 @@ param(
     [string]$WebUiExe = "",
     [int]$Port = 0,
     [int]$TimeoutSeconds = 60,
+    [ValidateSet('', 'cpu', 'vulkan')][string]$ExpectedAutoBackend = '',
     [switch]$KeepWorkspace
 )
 
@@ -481,7 +482,13 @@ try {
     }
     Assert-True ($build.ok -eq $true -and $null -ne $build.job) "build job was not accepted"
     Assert-JobSnapshot -Job $build.job -ExpectedType "build" -ExpectedInputPath $inputDir -ExpectedOutputPath $libraryDir
-    Wait-JobSucceeded -JobId $build.job.id -Label "build" -ExpectedType "build" -ExpectedInputPath $inputDir -ExpectedOutputPath $libraryDir | Out-Null
+    $initialBuild = Wait-JobSucceeded -JobId $build.job.id -Label "build" -ExpectedType "build" -ExpectedInputPath $inputDir -ExpectedOutputPath $libraryDir
+    if ($ExpectedAutoBackend) {
+        Assert-True ($initialBuild.runtime.featureBackend -eq $ExpectedAutoBackend) 'default library build chose the wrong backend'
+        if ($ExpectedAutoBackend -eq 'cpu') {
+            Assert-True ($initialBuild.runtime.fallbackReason -match 'Vulkan|vk') 'default library build did not report a Vulkan fallback'
+        }
+    }
 
     $invalidBuild = Invoke-ApiResponse -Method 'POST' -Path '/api/jobs/build' -Body @{inputDir=$inputDir;benchmark=$true}
     Assert-True ($invalidBuild.StatusCode -eq 400 -and $invalidBuild.Json.diagnostic.field -eq 'benchmark') 'benchmark must require append mode'
@@ -800,6 +807,23 @@ try {
     Remove-Item -LiteralPath $preview.path
     $missingArtifact = Invoke-ApiResponse -Method "GET" -Path ("/api/jobs/{0}/artifacts/preview" -f $completed.id)
     Assert-True ($missingArtifact.StatusCode -eq 404) "deleted artifact should return 404"
+
+    if ($ExpectedAutoBackend) {
+        # Omit backend, device and useGpu to verify the shipped defaults, not an explicit request.
+        $autoBody = $mosaicBody.Clone()
+        $autoBody.Remove('useGpu')
+        $autoBody.outputPath = Join-Path $outputDir 'auto-backend.png'
+        $autoJob = Invoke-Api -Method 'POST' -Path '/api/jobs/mosaic' -Body $autoBody
+        $autoMosaic = Wait-JobSucceeded -JobId $autoJob.job.id -Label 'default backend' -ExpectedType 'mosaic' -ExpectedInputPath $targetPath -ExpectedOutputPath $autoBody.outputPath
+        Assert-True ($autoMosaic.runtime.featureBackend -eq $ExpectedAutoBackend -and $autoMosaic.runtime.scoreBackend -eq $ExpectedAutoBackend) 'default mosaic chose the wrong backend'
+        if ($ExpectedAutoBackend -eq 'cpu') {
+            Assert-True ($autoMosaic.runtime.fallbackReason -match 'Vulkan|vk') 'default mosaic did not report a Vulkan fallback'
+            $autoBody.backend = 'vulkan'
+            $autoBody.outputPath = Join-Path $outputDir 'explicit-vulkan-unavailable.png'
+            $requiredGpu = Invoke-ApiResponse -Method 'POST' -Path '/api/mosaic' -Body $autoBody
+            Assert-True ($requiredGpu.Json.ok -eq $false -and $requiredGpu.Json.diagnostic.code -eq 'gpu_required') 'explicit Vulkan unexpectedly fell back to CPU'
+        }
+    }
 
     foreach ($device in @($info.info.devices | Where-Object { $_.available -and $_.backend -in @('vulkan', 'metal') }))
     {
