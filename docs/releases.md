@@ -2,6 +2,11 @@
 
 本页区分当前源码与公开安装包，详细历史记录见[历史档案](archive/README.md)。软件与数据版本的唯一来源是根目录 contracts.json；安装后的实际能力以该包 BUILD_INFO.txt、contracts.json 和 --help-all 为准。
 
+## 未发布的源码变更
+
+- x64 的 CPU `fast` 评分在 CPU 和操作系统支持时自动优先选择 AVX-512，不支持则继续尝试 AVX2 或标量；ARM64 的 NEON 策略不变。这不改变 `auto` 的设备选择顺序。
+- `--threads 0` 对至少 14,400 格的普通 CPU `fast` 单图，在批次有足够并行工作且访问表内存预算允许时，为 ANN 和基础评分使用更多逻辑线程。手动线程设置、小图、预览和 GPU 路径沿用原线程策略。 详见[分派与线程配对验证](performance/cpu-auto-7940h-20261119.md)。
+
 ## v1.15.8
 
 本版主要缩短普通单图生成时间。五个标准包仍为 Windows x64 CPU/CUDA、Linux x64 CPU/CUDA 和 macOS ARM64 CPU；不含 Vulkan/Metal。安装包和 SHA-256 校验值见 [GitHub Release](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.8)。

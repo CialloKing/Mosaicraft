@@ -1,0 +1,228 @@
+{
+  "source_commit": "a10fe6dbb3c22246ad6c192ba0b49fffefc201ab",
+  "date": "2026-11-19",
+  "platform": "Windows CPU Release, Ryzen 9 7940H",
+  "input_sha256": "2034a478fb9adf1e2040499759eb909fbbdce61848c27b1b46aadf97bb8b0037",
+  "snapshot_sha256": "2bd3104871fb12fa8d64dc68d15805dfbb428e459b39c36082c2e5d72508f729",
+  "index_sha256": "1e680b332de311aae41c9e0811d422f535e19abc97263ae23f44d7e795dc74b7",
+  "binaries": [
+    {
+      "id": "baseline",
+      "sha256": "bb885cd3693331a1d26b825b05316d824574d21ab1d916393ae0ccb8276b6248"
+    },
+    {
+      "id": "candidate",
+      "sha256": "81318a6c7e2685edc45963aabecac904207fac77919a2261aecfea1dda08bafe"
+    }
+  ],
+  "kernel": "cpu-v6:fp32-v3-avx512",
+  "screen_report_sha256": "7e35587dc12f8cf681c3002673292ef871ed55268e6185557554c7defbcbf9e7",
+  "paired_report_sha256": "d10d23af966a01749c0b8cec7c7f2593219155940b998b0fc7d431527827012f",
+  "dispatch_report_sha256": "d67b041d517d0ba61d92cf411818d1f3d70725a4165090d1bbad222069956c81",
+  "worker_verification_sha256": "5de33ef5ab8e577c5c94329ff8d1df52f3054a1d86c6a78834b91e80914ecde8",
+  "dispatch": {
+    "auto": {
+      "exit": 0,
+      "kernel": "cpu-v6:fp32-v3-avx512",
+      "png_sha256": "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"
+    },
+    "fallback": {
+      "exit": 0,
+      "kernel": "cpu-v6:fp32-v3-avx2",
+      "png_sha256": "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"
+    },
+    "scalar": {
+      "exit": 0,
+      "kernel": "cpu-v6:fp32-v3-scalar",
+      "png_sha256": "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"
+    },
+    "forced-avx2": {
+      "exit": 0,
+      "kernel": "cpu-v6:fp32-v3-avx2",
+      "png_sha256": "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"
+    },
+    "invalid": {
+      "exit": 1,
+      "rejected_without_output": true
+    }
+  },
+  "worker_verification": {
+    "57600-threads-0": {
+      "matched": 57600,
+      "threads": 0,
+      "kernel": "cpu-v6:fp32-v3-avx512",
+      "png_sha256": "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7",
+      "selection_sha256": "f1badebf1526cdce64c93e9210fe5cb8c2bce9496cc509e22b60de66cd310ac6",
+      "metrics": {
+        "annWorkerSlots": 16.0,
+        "featureWorkerSlots": 16.0,
+        "cpuBaseScoreWorkerSlots": 16.0,
+        "matchingBatchTiles": 1024.0,
+        "featureReaderBudgetBytes": 267705648.0,
+        "matchingPrefetch": 0.0,
+        "annQueryMs": 1137.3107999999997,
+        "batchBaseScoreMs": 275.45889999999997
+      }
+    },
+    "14400-threads-0": {
+      "matched": 14400,
+      "threads": 0,
+      "kernel": "cpu-v6:fp32-v3-avx512",
+      "png_sha256": "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9",
+      "selection_sha256": "10142e9aa0201bd5eaa084b7a6dc7ab1216fc2b95c69d2a046b86a9052ae866b",
+      "metrics": {
+        "annWorkerSlots": 16.0,
+        "featureWorkerSlots": 16.0,
+        "cpuBaseScoreWorkerSlots": 16.0,
+        "matchingBatchTiles": 1024.0,
+        "featureReaderBudgetBytes": 267705648.0,
+        "matchingPrefetch": 0.0,
+        "annQueryMs": 1049.3186,
+        "batchBaseScoreMs": 343.07449999999994
+      }
+    },
+    "900-threads-0": {
+      "matched": 900,
+      "threads": 0,
+      "kernel": "cpu-v6:fp32-v3-avx512",
+      "png_sha256": "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d",
+      "selection_sha256": "539b633402e431c55adfb3aaabf0453413d16641e73b63b69780f82113436bb1",
+      "metrics": {
+        "annWorkerSlots": 8.0,
+        "featureWorkerSlots": 16.0,
+        "cpuBaseScoreWorkerSlots": 8.0,
+        "matchingBatchTiles": 900.0,
+        "featureReaderBudgetBytes": 268435456.0,
+        "matchingPrefetch": 0.0,
+        "annQueryMs": 41.7564,
+        "batchBaseScoreMs": 8.8028
+      }
+    },
+    "900-threads-4": {
+      "matched": 900,
+      "threads": 4,
+      "kernel": "cpu-v6:fp32-v3-avx512",
+      "png_sha256": "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d",
+      "selection_sha256": "539b633402e431c55adfb3aaabf0453413d16641e73b63b69780f82113436bb1",
+      "metrics": {
+        "annWorkerSlots": 4.0,
+        "featureWorkerSlots": 4.0,
+        "cpuBaseScoreWorkerSlots": 4.0,
+        "matchingBatchTiles": 900.0,
+        "featureReaderBudgetBytes": 268435456.0,
+        "matchingPrefetch": 0.0,
+        "annQueryMs": 45.009,
+        "batchBaseScoreMs": 12.2713
+      }
+    }
+  },
+  "summary": {
+    "57600": {
+      "old_wall_ms": 8635.794450000049,
+      "new_wall_ms": 8239.340799999354,
+      "median_ratio": 0.964314769307013,
+      "bootstrap95": [
+        0.8942380153686006,
+        0.9814858711605637
+      ],
+      "faster_pairs": 7
+    },
+    "14400": {
+      "old_wall_ms": 5371.950799999922,
+      "new_wall_ms": 4870.1678500001435,
+      "median_ratio": 0.9184608548893001,
+      "bootstrap95": [
+        0.8924848989227923,
+        0.9304387719719083
+      ],
+      "faster_pairs": 8
+    },
+    "900": {
+      "old_wall_ms": 1670.0137500001802,
+      "new_wall_ms": 1713.9325500002087,
+      "median_ratio": 1.0100635910245812,
+      "bootstrap95": [
+        0.9420349008369865,
+        1.0451990847510957
+      ],
+      "faster_pairs": 4
+    }
+  },
+  "sample_columns": [
+    "phase",
+    "round",
+    "case",
+    "variant",
+    "processWallMs",
+    "matchingMs",
+    "png_sha256"
+  ],
+  "samples": [
+    ["warmup", 0, "57600", "candidate", 7857.6053999995565, 5423.8223, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["warmup", 0, "57600", "baseline", 8232.788899999832, 5801.5453, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["warmup", 0, "14400", "baseline", 5056.26889999985, 3438.8987, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["warmup", 0, "14400", "candidate", 4856.501900000694, 3153.4361, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["warmup", 0, "900", "baseline", 1630.667899999935, 632.8272, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["warmup", 0, "900", "candidate", 1779.15479999956, 609.6075, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 0, "57600", "candidate", 8348.079000000325, 5728.0334, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["measured", 0, "57600", "baseline", 8580.08880000034, 5972.8966, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["measured", 0, "14400", "baseline", 5221.493500000179, 3529.1914, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 0, "14400", "candidate", 4858.279999999468, 3257.9862, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 0, "900", "baseline", 1661.303500000031, 653.4495, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 0, "900", "candidate", 1730.2780999998504, 640.3794, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 1, "900", "candidate", 1777.4288999999044, 678.8929, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 1, "900", "baseline", 1820.3376999999819, 660.5948, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 1, "14400", "candidate", 4812.161900000319, 3118.7911, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 1, "14400", "baseline", 5374.411300000247, 3561.7175, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 1, "57600", "baseline", 8691.500099999757, 6066.9048, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["measured", 1, "57600", "candidate", 7772.269799999776, 5304.5921, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["measured", 2, "57600", "candidate", 8303.819399999156, 5605.9672, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["measured", 2, "57600", "baseline", 7891.856500000358, 5531.5954, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["measured", 2, "14400", "candidate", 4298.764799999844, 2761.2487, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 2, "14400", "baseline", 4623.792200000025, 3112.0199, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 2, "900", "candidate", 1670.9950000004028, 660.5016, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 2, "900", "baseline", 1598.7336999996842, 597.8587, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["warmup", 1, "900", "baseline", 1731.719699999303, 627.8963, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["warmup", 1, "900", "candidate", 1718.2953999999881, 710.2657, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["warmup", 1, "14400", "baseline", 5306.088799999998, 3503.8145, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["warmup", 1, "14400", "candidate", 4953.2538000003115, 3277.9877, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["warmup", 1, "57600", "baseline", 8733.748999999989, 6045.8882, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["warmup", 1, "57600", "candidate", 8112.165300000015, 5560.9209, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["warmup", 2, "57600", "candidate", 8154.49929999977, 5641.0809, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["warmup", 2, "57600", "baseline", 8947.886900000412, 6149.5443, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["warmup", 2, "14400", "candidate", 4944.552599999952, 3250.952, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["warmup", 2, "14400", "baseline", 5313.819400000284, 3512.9621, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["warmup", 2, "900", "candidate", 1803.397199999381, 676.8393, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["warmup", 2, "900", "baseline", 1842.4432000001616, 644.9348, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 3, "900", "baseline", 1776.5190000000075, 619.3137, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 3, "900", "candidate", 1673.5429000000295, 631.8891, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 3, "14400", "baseline", 5369.4902999995975, 3612.0878, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 3, "14400", "candidate", 4776.622299999872, 3170.7265, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 3, "57600", "baseline", 8869.15080000017, 6133.1807, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["measured", 3, "57600", "candidate", 8113.698500000282, 5566.0241, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["measured", 4, "57600", "candidate", 7745.348299999932, 5300.3685, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["measured", 4, "57600", "baseline", 9117.172899999787, 6240.4917, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["measured", 4, "14400", "candidate", 5035.159299999577, 3329.2617, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 4, "14400", "baseline", 5424.96250000022, 3725.3299, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 4, "900", "candidate", 1782.529600000089, 685.0591, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 4, "900", "baseline", 1628.4641999991436, 615.9149, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 5, "900", "baseline", 1678.7240000003294, 597.7441, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 5, "900", "candidate", 1579.2122000002564, 599.4082, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 5, "14400", "candidate", 4894.416200000705, 3240.8834, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 5, "14400", "baseline", 5385.727400000178, 3646.6829, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 5, "57600", "candidate", 8666.989000000285, 5982.6574, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["measured", 5, "57600", "baseline", 8830.47760000045, 6067.418, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["measured", 6, "57600", "baseline", 8554.063600000518, 5950.6233, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["measured", 6, "57600", "candidate", 8174.862199999552, 5683.3866, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["measured", 6, "14400", "baseline", 5477.05440000027, 3616.768, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 6, "14400", "candidate", 4882.055700000819, 3185.2281, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 6, "900", "candidate", 1767.5596999997651, 710.8674, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 6, "900", "baseline", 1787.7521000000343, 692.6121, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 7, "900", "candidate", 1697.587000000567, 627.8531, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 7, "900", "baseline", 1645.8703999996942, 648.3152, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+    ["measured", 7, "14400", "candidate", 5089.900300000409, 3379.2108, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 7, "14400", "baseline", 5335.173299999951, 3627.6367, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+    ["measured", 7, "57600", "candidate", 8349.606099999619, 5747.6595, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+    ["measured", 7, "57600", "baseline", 8542.739299999994, 5853.3197, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"]
+  ]
+}

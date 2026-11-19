@@ -4,6 +4,8 @@
 
 ## 文件索引
 
+- [CPU 自动分派与工作线程：Ryzen 9 7940H](cpu-auto-7940h-20261119.md)
+
 - [CPU AVX-512 复测：Ryzen 9 7940H](avx512-7940h-20261119.md)
 
 - [相对 82d3a274e：导出、LAB、ANN 与图库追加](next-82d3a274e.md)
