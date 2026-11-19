@@ -124,6 +124,19 @@ main:has(#panel-preview.active) { max-width: 1660px; }
 .chk-row label:hover { color: var(--fg); }
 .output-area { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-top: 20px; }
 .output-area .cmd { font-family: 'Cascadia Code', 'Consolas', 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--accent); white-space: pre-wrap; word-break: break-all; line-height: 1.7; background: var(--input-bg); padding: 14px; border-radius: 6px; min-height: 3em; }
+.mosaic-setup { padding: clamp(16px, 3vw, 26px); }
+.mosaic-setup h2 { margin-bottom: 16px; font-size: 1.18rem; }
+.mosaic-paths { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 16px; }
+.mosaic-paths .field { min-width: 0; }
+.mosaic-summary { margin-top: 12px; font-size: .86rem; overflow-wrap: anywhere; }
+.mosaic-summary strong { color: var(--accent2); font-variant-numeric: tabular-nums; }
+.mosaic-summary .hint { margin-top: 3px; }
+.mosaic-form-error { margin-top: 8px; color: var(--error); font-size: .82rem; }
+.mosaic-fold { padding-block: 13px; }
+.mosaic-fold > summary, #command-area > summary { cursor: pointer; color: var(--accent2); font-weight: 600; }
+.mosaic-fold[open] > summary, #command-area[open] > summary { margin-bottom: 14px; }
+.changed-settings { margin-inline-start: 8px; color: var(--fg2); font-size: .78rem; font-weight: 400; }
+@media (max-width: 600px) { .mosaic-paths { grid-template-columns: minmax(0, 1fr); } }
 .cmd-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .command-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 12px; margin-bottom: 10px; }
 .cmd-bar span { color: var(--fg2); font-size: 0.8rem; }
@@ -334,31 +347,49 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 
 <!-- ============ MOSAIC ============ -->
 <div class="panel active" id="panel-mosaic">
-  <div class="card">
-    <h3>📂 必需路径（支持绝对路径与相对路径）</h3>
-    <div class="row">
+  <section class="card mosaic-setup" aria-labelledby="mosaic-heading">
+    <h2 id="mosaic-heading">生成马赛克</h2>
+    <div class="mosaic-paths">
       <div class="field field-full"><label>目标图片（必填）</label><input type="text" id="m-input" placeholder="填写要拼成的图片路径"></div>
       <div class="field field-full"><label>图库 --library（默认 ./library/mosaicraft.db）</label><input type="text" id="m-db" placeholder="留空使用默认值，或粘贴目录路径如 D:\my_library"></div>
       <div class="field field-full"><label>输出路径 -o（单图为文件，HTML / Deep Zoom / 分块为完整目录）</label><input type="text" id="m-output" value="output/output.png" placeholder="留空使用默认文件名，或粘贴文件路径如 D:\results\mosaic.jpg"><p class="hint">显式选择输出格式时，实际文件后缀以所选格式为准。</p></div>
+      <div class="field"><label>输出模式</label><select id="m-mode"><option value="image">单图</option><option value="html">HTML 便携工程</option><option value="deepzoom">Deep Zoom</option><option value="tiles">分块</option></select></div>
     </div>
-    <div class="preview-toolbar">
-      <button type="button" class="btn btn-secondary" data-open-tab="preview">打开预览页</button>
-      <span class="hint" id="live-preview-generation-note"></span>
+    <div class="mosaic-summary" id="m-plan-summary" role="status" hidden></div>
+    <div class="btns" id="mosaic-actions">
+      <button type="button" class="btn btn-secondary" data-open-tab="preview" id="m-preview-start">打开预览页</button>
+      <button type="button" class="btn btn-primary" id="m-copy-command" onclick="copyCommand(this)" disabled>复制命令</button>
     </div>
-  </div>
-  <div class="card">
-    <h3>🎨 格式与质量</h3>
+    <p class="hint" id="live-preview-generation-note" role="status"></p>
+    <p class="mosaic-form-error" id="m-form-validation" role="status" hidden></p>
+    <div id="mosaic-run-status"></div>
+  </section>
+  <details class="card mosaic-fold" data-mosaic-settings>
+    <summary>输出与画面<span class="changed-settings" hidden></span></summary>
     <div class="row">
-      <div class="field"><label>输出模式 --mode</label><select id="m-mode"><option value="image">单图</option><option value="html">HTML 便携工程</option><option value="deepzoom">Deep Zoom</option><option value="tiles">分块</option></select></div>
       <div class="field"><label>输出格式 --format</label><select id="m-format" title="自动：输出后缀优先，否则使用输入后缀"><option value="">自动：输出后缀优先，否则使用输入后缀</option><option value="jpg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option><option value="tiff">TIFF</option></select></div>
       <div class="field"><label>JPEG/WebP 质量 --quality</label><input type="number" id="m-quality" value="100" min="1" max="100"></div>
       <div class="field"><label>PNG 压缩级别 --png-compression</label><select id="m-pnglevel"><option value="">默认(1)</option><option value="1">1 最快</option><option value="3">3 平衡</option><option value="6">6 较小</option><option value="9">9 最小</option></select></div>
       <div class="field"><label>写入模式 --write-mode</label><select id="m-writemode"><option value="">auto(自动)</option><option value="stream">stream(流式低内存)</option><option value="batch">batch(全量缓冲)</option></select></div>
     </div>
     <p class="hint" id="format-policy-hint">自动推导的 JPG/WebP 超限时改存 PNG，保留完整尺寸；显式选择 JPG/WebP 时缩小输出 Tile。</p>
-  </div>
-  <div class="card">
-    <h3>📐 Tile 参数</h3>
+    <div class="row">
+      <div class="field"><label>匹配前目标宽度 --target-size WxH</label><input type="number" id="m-outw" min="0" max="1000000" placeholder="0=自动；单轴保持比例"></div>
+      <div class="field"><label>匹配前目标高度 --target-size WxH</label><input type="number" id="m-outh" min="0" max="1000000" placeholder="0=自动；单轴保持比例"></div>
+      <div class="field"><label>输出 Tile 尺寸 --output-tile</label><input type="text" id="m-otile" value="180x320" placeholder="180x320"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>亮度扰动幅度 --brightness-jitter</label><input type="number" id="m-colorstr" value="0" min="0" max="0.5" step="0.01"><div class="hint">0 关闭，0.04 表示 L 通道最多 ±4%。HTML 工程要求为 0。</div></div>
+      <div class="field"><label>基础图叠加强度 --target-blend</label><input type="number" id="m-overlaystr" value="0" min="0" max="1" step="0.05"><div class="hint">0 关闭，0.2 表示 80% 素材与 20% 基础图。</div></div>
+    </div>
+    <div class="chk-row">
+      <label><input type="checkbox" id="m-overwrite"> 覆盖已有 Mosaicraft 输出 --overwrite</label>
+      <label><input type="checkbox" id="m-preview" aria-describedby="preview-hint"> 生成结果预览 --thumbnail</label>
+    </div>
+    <p class="hint" id="preview-hint">生成结果预览默认关闭，勾选后额外保存一张用于快速查看的 JPEG 预览图。</p>
+  </details>
+  <details class="card mosaic-fold" data-mosaic-settings>
+    <summary>匹配与选图<span class="changed-settings" hidden></span></summary>
     <div class="row">
       <div class="field"><label>Tile 宽度 --match-tile (宽)</label><input type="number" id="m-tilew" value="9" min="4"></div>
       <div class="field"><label>Tile 高度 --match-tile (高)</label><input type="number" id="m-tileh" value="16" min="4"></div>
@@ -372,13 +403,9 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <div class="field"><label>上采样 --target-upscale</label><input type="number" id="m-upscale" min="1" placeholder="1× (不放大)"></div>
     </div>
     <div class="row">
-      <div class="field"><label>匹配前目标宽度 --target-size WxH</label><input type="number" id="m-outw" min="0" max="1000000" placeholder="0=自动；单轴保持比例"></div>
-      <div class="field"><label>匹配前目标高度 --target-size WxH</label><input type="number" id="m-outh" min="0" max="1000000" placeholder="0=自动；单轴保持比例"></div>
-      <div class="field"><label>输出 Tile 尺寸 --output-tile</label><input type="text" id="m-otile" value="180x320" placeholder="180x320"></div>
+      <div class="field"><label>随机种子 --seed</label><input id="m-seed" type="number" min="0" max="4294967295" placeholder="自动生成并记录"></div>
+      <div class="field"><label>复用惩罚 --reuse-penalty</label><input type="number" id="m-penalty" value="0.01" step="0.01"></div>
     </div>
-  </div>
-  <div class="card">
-    <h3>⚖️ 特征权重</h3>
     <div class="row">
       <div class="field"><label>LAB --lab-weight</label><input type="number" id="m-labw" value="0.20" step="0.01"></div>
       <div class="field"><label>Grid --grid-weight</label><input type="number" id="m-gridw" value="0.45" step="0.01"></div>
@@ -386,32 +413,27 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <div class="field"><label>Edge --edge-weight</label><input type="number" id="m-edgew" value="0.05" step="0.01"></div>
       <div class="field"><label>LBP --lbp-weight</label><input type="number" id="m-lbpw" value="0.05" step="0.01"></div>
     </div>
-    <div class="row">
-      <div class="field"><label>复用惩罚 --reuse-penalty</label><input type="number" id="m-penalty" value="0.01" step="0.01"></div>
-    </div>
-  </div>
-  <div class="card">
-    <h3>🔘 开关选项</h3>
     <div class="chk-row">
-      <label hidden><input type="checkbox" id="m-tiled"> 旧草稿分块状态</label>
-      <label hidden><input type="checkbox" id="m-deepzoom"> 旧草稿 Deep Zoom 状态</label>
       <label><input type="checkbox" id="m-analyze"> 质量分析 --analyze</label>
       <label><input type="checkbox" id="m-adaptive"> 自适应权重 --adaptive-weights</label>
+    </div>
+  </details>
+  <details class="card mosaic-fold" data-mosaic-settings>
+    <summary>性能<span class="changed-settings" hidden></span></summary>
+    <div class="row">
+      <div class="field"><label>CPU 线程上限 --threads</label><input id="m-threads" type="number" min="0" max="256" value="0"></div>
+      <div class="field"><label>后端 --backend</label><select id="m-backend"><option value="auto">自动回退</option><option value="cpu">CPU</option><option value="cuda">必须使用 CUDA</option><option value="vulkan">必须使用 Vulkan</option><option value="metal">Metal（未实机验收）</option></select></div>
+      <div class="field"><label>GPU 设备 --device</label><select id="m-device"><option value="auto">自动选择</option></select></div>
+      <div class="field"><label>评分精度 --score-mode</label><select id="m-score-mode"><option value="fast">快速（FP32 评分）</option><option value="compatible">兼容（FP64 评分）</option></select><small>快速模式允许素材排名变化；需要复现旧路径时请选择兼容模式。</small></div>
+    </div>
+    <div class="chk-row">
       <label><input type="checkbox" id="m-benchmark"> 性能分析 --benchmark</label>
       <label><input type="checkbox" id="m-monitor"> 资源监控</label>
-      <label><input type="checkbox" id="m-overwrite"> 覆盖已有 Mosaicraft 输出 --overwrite</label><label hidden><input type="checkbox" id="m-cpu"> 旧草稿 CPU 状态</label>
-      <label><input type="checkbox" id="m-preview" aria-describedby="preview-hint"> 生成结果预览 --thumbnail</label>
     </div>
-    <p class="hint" id="preview-hint">生成结果预览默认关闭，勾选后额外保存一张用于快速查看的 JPEG 预览图。</p>
-    <a class="help-link" href="#help-switches" data-open-help="help-switches">了解预览及其他开关的作用</a>
-    <div class="row" style="margin-top:8px">
-      <div class="field"><label>亮度扰动幅度 --brightness-jitter</label><input type="number" id="m-colorstr" value="0" min="0" max="0.5" step="0.01" style="max-width:150px"><div class="hint">0 关闭；0.04 表示 L 通道最多 ±4%。HTML 工程要求为 0。</div></div>
-      <div class="field"><label>CPU 线程上限 --threads</label><input id="m-threads" type="number" min="0" max="256" value="0"></div><div class="field"><label>后端 --backend</label><select id="m-backend"><option value="auto">自动回退</option><option value="cpu">CPU</option><option value="cuda">必须使用 CUDA</option><option value="vulkan">必须使用 Vulkan</option><option value="metal">Metal（未实机验收）</option></select></div><div class="field"><label>GPU 设备 --device</label><select id="m-device"><option value="auto">自动选择</option></select></div><div class="field"><label>评分精度 --score-mode</label><select id="m-score-mode"><option value="fast">快速（FP32 评分）</option><option value="compatible">兼容（FP64 评分）</option></select><small>快速模式允许素材排名变化；需要复现旧路径时请选择兼容模式。</small></div><div class="field"><label>随机种子 --seed</label><input id="m-seed" type="number" min="0" max="4294967295" placeholder="自动生成并记录"></div>
-      <div class="field"><label>基础图叠加强度 --target-blend</label><input type="number" id="m-overlaystr" value="0" min="0" max="1" step="0.05" style="max-width:150px"><div class="hint">0 关闭；0.2 表示 80% 素材 + 20% 基础图。使用缩放、放大和补边后的基础图，强度越高，小图细节越弱。</div></div>
-    </div>
-  </div>
-  <section class="card" id="m-output-plan" hidden>
-    <h3>生成前输出规划</h3>
+  </details>
+  <div hidden><input type="checkbox" id="m-tiled"><input type="checkbox" id="m-deepzoom"><input type="checkbox" id="m-cpu"></div>
+  <details class="card mosaic-fold" id="m-output-plan" hidden>
+    <summary>输出规划详情</summary>
     <p class="hint" id="m-plan-status" role="status"></p>
     <div id="m-plan-result"></div>
     <div class="btns">
@@ -421,7 +443,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <p class="hint" id="m-plan-sample-status" role="status"></p>
     <button type="button" class="btn btn-secondary" id="m-coverage-run">比较目标与图库覆盖</button>
     <div id="m-coverage-result" aria-live="polite"></div>
-  </section>
+  </details>
 </div>
 
 <!-- ============ PREVIEW ============ -->
@@ -813,7 +835,12 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 </article>
 
 <!-- ============ OUTPUT ============ -->
-<div class="output-area" id="command-area">
+<div id="other-run" hidden>
+  <div class="btns" id="other-actions"><button class="btn btn-primary" id="btn-run" onclick="runCommand()" style="display:none" disabled>运行</button></div>
+  <div id="other-run-status"><div id="run-status" role="status" style="margin-top:10px;font-size:0.82rem;color:var(--fg2);display:none"></div></div>
+</div>
+<details class="output-area" id="command-area">
+  <summary>查看与复制命令</summary>
   <div class="cmd-bar">
     <span id="command-title">生成的命令</span>
     <span id="copy-feedback" style="color:var(--accent2);display:none">✅ 已复制!</span>
@@ -839,13 +866,10 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="cmd" id="cmd-output" aria-label="生成的命令"></div>
   <p class="hint" id="command-validation" role="status"></p>
   <div class="btns">
-    <button class="btn btn-primary" onclick="generateCommand()">🔄 生成命令</button>
-    <button class="btn btn-secondary" id="btn-copy-command" onclick="copyCommand()" disabled>📋 复制到剪贴板</button>
-    <button class="btn btn-primary" id="btn-run" onclick="runCommand()" style="display:none">▶ 运行</button>
+    <button class="btn btn-primary" id="btn-copy-command" onclick="copyCommand()" disabled>复制到剪贴板</button>
     <button class="btn btn-secondary" onclick="clearRecentPaths()">清空最近路径</button>
   </div>
-  <div id="run-status" style="margin-top:10px;font-size:0.82rem;color:var(--fg2);display:none"></div>
-</div>
+</details>
 
 
 <section class="task-section" id="task-section" aria-label="任务与结果" hidden>
@@ -936,8 +960,22 @@ function generateCommand() {
   syncPreviewOption();
   const tab = document.querySelector('.tab.active').dataset.cmd;
   interactivePreview.sync(tab);
-  document.getElementById('command-area').hidden = tab === 'help' || tab === 'preview';
-  if (tab === 'help' || tab === 'preview') {
+  const hasForm = tab !== 'help' && tab !== 'preview';
+  const area = document.getElementById('command-area');
+  area.hidden = !hasForm;
+  const mosaic = tab === 'mosaic';
+  const actions = document.getElementById(mosaic ? 'mosaic-actions' : 'other-actions');
+  const run = document.getElementById('btn-run');
+  if (run.parentElement !== actions) {
+    actions.prepend(run);
+    document.getElementById(mosaic ? 'mosaic-run-status' : 'other-run-status').append(document.getElementById('run-status'));
+  }
+  document.getElementById('other-run').hidden = mosaic || !hasForm;
+  const validation = document.getElementById('m-form-validation');
+  validation.hidden = true;
+  validation.textContent = '';
+  if (mosaic) updateMosaicSettings();
+  if (!hasForm) {
     formModel = {valid:false, tab, payload:null};
     updateRunButton();
     persistDraft();
@@ -952,7 +990,11 @@ function generateCommand() {
     document.getElementById('cmd-output').textContent = '';
     document.getElementById('btn-copy-command').disabled = true;
     const showError = error.field !== 'm-input' || mosaicTargetTouched;
-    document.getElementById('command-validation').textContent = showError ? error.message : '';
+    document.getElementById('command-validation').textContent = !mosaic && showError ? error.message : '';
+    if (mosaic && showError) {
+      validation.textContent = error.message;
+      validation.hidden = false;
+    }
     if (showError) highlightDiagnostic({code:'invalid_argument', field:error.field, message:error.message});
   }
   outputPlanning.sync();
@@ -1015,10 +1057,14 @@ function initializeCommandShell() {
   updateCommandShellHint();
 }
 
-function copyCommand()
+function copyCommand(trigger)
 {
   if (!formModel.valid || document.getElementById('btn-copy-command').disabled) return;
   const cmd = document.getElementById('cmd-output').textContent;
+  if (trigger) {
+    copyTextFromButton(cmd, trigger);
+    return;
+  }
   copyTextToClipboard(cmd).then(() =>
   {
     const fb = document.getElementById('copy-feedback');
@@ -1131,6 +1177,7 @@ async function checkServer() {
         document.getElementById('run-status').innerHTML = '<span style="color:var(--error)">⚠ API 合约不兼容</span> — 当前 API ' +
           escapeHtml(api.contractVersion || 'unknown') + ' / ' + escapeHtml(api.compatibility || 'unknown') +
           '，此界面支持 v' + SUPPORTED_API_MAJOR + '.x stable';
+        updateRunButton();
         return;
       }
       const endpoints = await getJson('/api/endpoints');
@@ -1147,6 +1194,7 @@ async function checkServer() {
         document.getElementById('run-status').style.display = '';
         document.getElementById('run-status').innerHTML = '<span style="color:var(--error)">⚠ API 端点不完整</span> — 缺少 ' +
           escapeHtml(missing.join(', '));
+        updateRunButton();
         return;
       }
       serverAvailable = true;
@@ -1171,6 +1219,7 @@ async function checkServer() {
   document.getElementById('btn-clear-jobs').style.display = 'none';
   document.getElementById('run-status').style.display = '';
   document.getElementById('run-status').innerHTML = '<span style="color:var(--error)">⚠ 独立模式</span> — 请通过 Web UI (<code>MosaicraftWebUI.exe</code>) 访问以使用运行功能，或复制命令手动执行';
+  updateRunButton();
   if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
     document.getElementById('task-section').hidden = false;
     taskStore.failures++;
@@ -1870,8 +1919,13 @@ function hasFeature(name) {
 }
 function updateRunButton() {
   const button = document.getElementById('btn-run');
+  const mosaic = formModel.tab === 'mosaic';
+  const offlineCopy = document.getElementById('m-copy-command');
+  offlineCopy.hidden = serverAvailable;
+  offlineCopy.disabled = !mosaic || !formModel.valid;
+  document.getElementById('m-preview-start').hidden = !serverAvailable || !hasFeature('interactive-preview');
   button.disabled = submitting || !serverAvailable || !formModel.valid || interactivePreview.blocksRun(formModel.tab);
-  button.textContent = submitting ? '提交中…' : '▶ 运行';
+  button.textContent = submitting ? '提交中…' : mosaic ? (interactivePreview.hasManualEdits() ? '使用当前选图生成' : '生成马赛克') : '运行';
 }
 function setCurrentJob(id) {
   id = id || '';
@@ -2255,6 +2309,27 @@ function restoreRequestParameters(job) {
 let formModel = { valid: false, payload: null };
 let restoringDraft = false;
 let mosaicTargetTouched = false;
+const mosaicSettings = [...document.querySelectorAll('[data-mosaic-settings]')].map(group => ({
+  count: group.querySelector('.changed-settings'),
+  fields: [...group.querySelectorAll('input, select')].map(element => [element, mosaicSettingValue(element)])
+}));
+
+function mosaicSettingValue(element) {
+  if (element.type === 'checkbox') return element.checked;
+  const value = element.value.trim();
+  return element.type === 'number' && value !== '' ? Number(value) : value;
+}
+
+function updateMosaicSettings() {
+  for (const {count, fields} of mosaicSettings) {
+    const changes = fields.filter(([element, initial]) => {
+      const current = mosaicSettingValue(element);
+      return current !== '' && current !== initial;
+    }).length;
+    count.textContent = changes ? `已修改 ${changes} 项` : '';
+    count.hidden = !changes;
+  }
+}
 const PATH_FIELDS = {
   'm-input': 'images', 'i-input': 'images', 'm-db': 'databases',
   'i-db': 'databases', 's-db': 'databases', 'h-db': 'databases', 'p-db': 'databases', 'u-db': 'databases',
@@ -2272,6 +2347,8 @@ function highlightDiagnostic(diagnostic) {
   const field = diagnostic.field || '';
   const element = document.getElementById(maps[field] || field);
   if (!element || !element.closest('.panel.active')) return;
+  const group = element.closest('[data-mosaic-settings]');
+  if (group) group.open = true;
   element.setAttribute('aria-invalid', 'true');
   const parent = element.closest('.field') || element.parentElement;
   let message = parent.querySelector('.field-error');

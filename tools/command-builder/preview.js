@@ -374,6 +374,7 @@ const interactivePreview = (() => {
   function editsChanged() {
     ++editRevision;
     showStatus();
+    updateRunButton();
     requestPaint();
   }
 
@@ -1054,6 +1055,7 @@ const interactivePreview = (() => {
   return {
     sync,
     refresh,
+    hasManualEdits: () => enabled && plan && planKey === requestKey && !pending && edits.size > 0,
     outputSampleKey() {
       return enabled && plan && !pending && planKey === requestKey ? `${plan.id}:${editRevision}` : '';
     },

@@ -1,5 +1,6 @@
 const outputPlanning = (() => {
   const panel = document.getElementById('m-output-plan');
+  const summary = document.getElementById('m-plan-summary');
   const status = document.getElementById('m-plan-status');
   const result = document.getElementById('m-plan-result');
   const sampleButton = document.getElementById('m-plan-sample');
@@ -29,6 +30,10 @@ const outputPlanning = (() => {
   const range = value => value ? `${bytes(value.low)}–${bytes(value.high)}` : '不可用';
 
   function render(plan) {
+    const format = plan.mode === 'deepzoom' ? 'Deep Zoom / JPEG' : plan.format.toUpperCase();
+    const adjustment = plan.warnings.find(code => code === 'output_scaled' || code === 'output_format_changed');
+    summary.innerHTML = `<strong>${escapeHtml(`${plan.width} × ${plan.height} px · ${plan.columns} × ${plan.rows} 格 · ${format}`)}</strong>` +
+      (adjustment ? `<p class="hint">${warningLabels[adjustment]}</p>` : '');
     const rows = [
       ['工作图', `${plan.workingWidth} × ${plan.workingHeight}`],
       ['匹配网格', `${plan.columns} × ${plan.rows} · ${plan.tileCount.toLocaleString()} 格`],
@@ -65,6 +70,7 @@ const outputPlanning = (() => {
   function sync() {
     if (formModel.tab !== 'mosaic') return;
     panel.hidden = !serverAvailable || !hasFeature('mosaic-plan');
+    summary.hidden = panel.hidden || !formModel.valid;
     const payload = !panel.hidden && formModel.valid ? formModel.payload : null;
     const key = payload ? JSON.stringify(payload) : '';
     if (key === requestKey) {
@@ -78,12 +84,14 @@ const outputPlanning = (() => {
     cancelSample();
     result.replaceChildren();
     status.textContent = key ? '正在读取输出规划…' : '填写目标图片和图库后显示。';
+    summary.textContent = key ? '正在读取输出规划…' : '';
     if (!key) return;
     timer = setTimeout(async () => {
       const data = await postJson('/api/mosaic/plan', payload);
       if (key !== requestKey) return;
       if (!data.ok || !data.plan) {
         status.textContent = data.message || '无法读取输出规划。';
+        summary.textContent = status.textContent;
         return;
       }
       render(data.plan);
