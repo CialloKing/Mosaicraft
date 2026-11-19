@@ -11,13 +11,22 @@ namespace mosaicraft
 {
 class RuntimeContext;
 
-enum class PreviewCacheKind { Scores, Features, Candidates };
-enum class PreviewCacheMiss { None, Memory, ProcessBudget, Size, SourceVersion, Key, Allocation };
+enum class PreviewCacheKind
+{
+    Scores, Features, Candidates
+};
+enum class PreviewCacheMiss
+{
+    None, Memory, ProcessBudget, Size, SourceVersion, Key, Allocation
+};
 
 struct PreviewCachePolicy
 {
     static constexpr size_t MiB = 1024 * 1024;
-    enum class Tier { Disabled, Standard, Full };
+    enum class Tier
+    {
+        Disabled, Standard, Full
+    };
     static PreviewCachePolicy select(uint64_t available, size_t hostBudget, bool largeScores, bool largeFeatures);
     static PreviewCachePolicy forTask(size_t hostBudget, bool expand);
 
@@ -30,13 +39,18 @@ struct PreviewCachePolicy
 class PreviewCacheReservation
 {
   public:
-    explicit PreviewCacheReservation(PreviewCacheKind kind) : m_kind(kind) {}
+    explicit PreviewCacheReservation(PreviewCacheKind kind) : m_kind(kind)
+    {
+    }
     ~PreviewCacheReservation();
     PreviewCacheReservation(const PreviewCacheReservation &) = delete;
     PreviewCacheReservation &operator=(const PreviewCacheReservation &) = delete;
 
     bool grow(size_t bytes, const PreviewCachePolicy &policy, PreviewCacheMiss &miss);
-    size_t bytes() const { return m_bytes; }
+    size_t bytes() const
+    {
+        return m_bytes;
+    }
     static size_t totalBytes();
 
   private:
@@ -46,7 +60,9 @@ class PreviewCacheReservation
 
 template <typename T> struct PreviewCacheRows
 {
-    explicit PreviewCacheRows(PreviewCacheKind kind) : storage(kind) {}
+    explicit PreviewCacheRows(PreviewCacheKind kind) : storage(kind)
+    {
+    }
     PreviewCacheReservation storage;
     std::vector<T> data;
 

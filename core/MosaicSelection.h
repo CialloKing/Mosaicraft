@@ -38,7 +38,10 @@ struct PreviewScores
     std::vector<double> values;
     std::vector<ImageRecord> records;
 
-    size_t bytes() const { return storage.bytes(); }
+    size_t bytes() const
+    {
+        return storage.bytes();
+    }
 };
 
 struct PreviewTileFeatures
