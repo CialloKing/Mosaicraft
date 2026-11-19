@@ -22,10 +22,10 @@ install_dependencies()
             if command -v apt-get >/dev/null 2>&1; then
                 as_root apt-get update
                 as_root apt-get install -y --no-install-recommends build-essential cmake ninja-build \
-                    libopencv-dev libsqlite3-dev libtiff-dev libpng-dev libjpeg-dev
+                    libopencv-dev libsqlite3-dev libtiff-dev libpng-dev libjpeg-dev zlib1g-dev
             elif command -v dnf >/dev/null 2>&1; then
                 as_root dnf install -y gcc-c++ cmake ninja-build opencv-devel sqlite-devel \
-                    libtiff-devel libpng-devel libjpeg-turbo-devel
+                    libtiff-devel libpng-devel libjpeg-turbo-devel zlib-devel
             else
                 printf '%s\n' 'Install the compiler, CMake, Ninja and libraries with your distribution package manager.' >&2
                 exit 1

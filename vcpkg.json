@@ -8,6 +8,6 @@
       "default-features": false,
       "features": ["jpeg", "png", "tiff", "webp", "intrinsics", "thread"]
     },
-    "sqlite3", "tiff", "libpng", "libjpeg-turbo"
+    "sqlite3", "tiff", "libpng", "libjpeg-turbo", "zlib"
   ]
 }

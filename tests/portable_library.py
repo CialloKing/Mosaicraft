@@ -10,9 +10,11 @@ import tempfile
 import zlib
 
 
+def chunk(kind, value):
+    return struct.pack('>I', len(value)) + kind + value + struct.pack('>I', zlib.crc32(kind + value))
+
+
 def png(path, color):
-    def chunk(kind, value):
-        return struct.pack('>I', len(value)) + kind + value + struct.pack('>I', zlib.crc32(kind + value))
     pixels = b''.join(b'\0' + bytes(color) * 32 for _ in range(32))
     path.write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 32, 32, 8, 2, 0, 0, 0)) +
                      chunk(b'IDAT', zlib.compress(pixels)) + chunk(b'IEND', b''))
@@ -45,6 +47,24 @@ def main():
         assert writer.execute('SELECT use_count FROM images').fetchone()[0] == 9
         writer.close()
         assert not (root / '.mosaicraft-backups').exists()
+
+        # A palette PNG must stay indexed and keep transparency and metadata on both sides of IDAT.
+        raw = (b'\0' + bytes(range(2)) * 16) * 32
+        head = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 32, 32, 8, 3, 0, 0, 0)) +
+                chunk(b'PLTE', bytes(range(6))) + chunk(b'tRNS', b'\0\xff'))
+        tail = chunk(b'tEXt', b'Author\0Mosaicraft') + chunk(b'IEND', b'')
+        data = zlib.compress(raw, 0)
+        original = head + chunk(b'IDAT', data[:1]) + chunk(b'IDAT', data[1:]) + tail
+        palette = root / 'palette'
+        palette.mkdir()
+        (palette / 'input.PNG').write_bytes(original)
+        run(['library', 'normalize', 'palette', '-o', 'compact', '--size', '32x32'])
+        packed = next((root / 'compact').iterdir()).read_bytes()
+        assert len(packed) < len(original) and packed.startswith(head) and packed.endswith(tail)
+        assert zlib.decompress(packed[len(head) + 8:-len(tail) - 4]) == raw
+        run(['library', 'normalize', 'compact', '-o', 'again', '--size', '32x32'])
+        assert next((root / 'again').iterdir()).read_bytes() == packed
+        assert (palette / 'input.PNG').read_bytes() == original
 
         source = root / 'source'
         source.mkdir()

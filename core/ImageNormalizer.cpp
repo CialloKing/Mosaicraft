@@ -1,4 +1,5 @@
 ﻿#include "ImageNormalizer.h"
+#include "LibraryPng.h"
 #include "UnicodeIO.h"
 #include "RequestValidation.h"
 
@@ -45,6 +46,12 @@ ImageNormalizer::ImageNormalizer(int targetWidth, int targetHeight)
 bool ImageNormalizer::process(const std::string& inputPath, const std::string& outputPath,
                               const std::vector<int>& writeParams, cv::Mat* storedPixels)
 {
+    return processImpl(inputPath, outputPath, writeParams, storedPixels, false);
+}
+
+bool ImageNormalizer::processImpl(const std::string& inputPath, const std::string& outputPath,
+                                  const std::vector<int>& writeParams, cv::Mat* storedPixels, bool compactPng)
+{
     if (storedPixels)
     {
         storedPixels->release();
@@ -62,6 +69,10 @@ bool ImageNormalizer::process(const std::string& inputPath, const std::string& o
         {
             std::error_code ec;
             const bool sameFile = std::filesystem::equivalent(u8path(inputPath), u8path(outputPath), ec);
+            if (!sameFile && compactPng)
+            {
+                compactLibraryPng(encoded, src.total());
+            }
             if (!sameFile && !writeBytesUnicode(outputPath, encoded))
             {
                 throw std::runtime_error("cannot save original bytes");
@@ -105,8 +116,7 @@ bool ImageNormalizer::processLibraryImage(const std::string& inputPath, const st
     const auto format = imageFormat(outputPath);
     if (format == ".png")
     {
-        // 素材只在入库时编码，优先节省长期存储空间；同尺寸同格式仍由 process 保留原字节。
-        return process(inputPath, outputPath, {cv::IMWRITE_PNG_COMPRESSION, 9}, storedPixels);
+        return processImpl(inputPath, outputPath, {cv::IMWRITE_PNG_COMPRESSION, 9}, storedPixels, true);
     }
     if (format == ".jpg")
     {

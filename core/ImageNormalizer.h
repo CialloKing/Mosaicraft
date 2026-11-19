@@ -34,6 +34,8 @@ public:
     cv::Mat centerCrop(const cv::Mat& src);
 
 private:
+    bool processImpl(const std::string& inputPath, const std::string& outputPath,
+                     const std::vector<int>& writeParams, cv::Mat* storedPixels, bool compactPng);
     cv::Mat normalize(const cv::Mat& src);
     int m_targetWidth;
     int m_targetHeight;

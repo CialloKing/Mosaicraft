@@ -76,6 +76,7 @@ if(NOT unofficial-sqlite3_FOUND)
 endif()
 find_package(TIFF REQUIRED)
 find_package(PNG REQUIRED)
+find_package(ZLIB REQUIRED)
 find_package(JPEG REQUIRED)
 find_package(Threads REQUIRED)
 # ============================================================
@@ -220,6 +221,7 @@ add_library(mosaicraft_core STATIC
     core/ApiMetadata.cpp
     core/ApiRequestParser.cpp
     core/ImageNormalizer.cpp
+    core/LibraryPng.cpp
     core/BatchProcessor.cpp
     core/NormalizeService.cpp
     core/BuildService.cpp
@@ -308,6 +310,7 @@ target_link_libraries(mosaicraft_core PUBLIC
     ${OpenCV_LIBS}
     ${TIFF_LIBRARIES}
     PNG::PNG
+    ZLIB::ZLIB
     JPEG::JPEG
     Threads::Threads
 )

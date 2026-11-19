@@ -1370,7 +1370,9 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
         const auto png = utf8(workspace.inputDir() / u8path(u8"原图.png"));
         const auto resized = utf8(workspace.inputDir() / (size.width == 180 ? "resize.jpg" : "resize.JPEG"));
         REQUIRE(imwriteUnicode(jpeg, exact, {cv::IMWRITE_JPEG_QUALITY, 97}));
-        REQUIRE(imwriteUnicode(png, exact, {cv::IMWRITE_PNG_COMPRESSION, 1}));
+        const cv::Mat rgba(size, CV_16UC4, cv::Scalar(1234, 5678, 9012, 34567));
+        REQUIRE(imwriteUnicode(png, rgba, {cv::IMWRITE_PNG_COMPRESSION, 0}));
+        const auto originalPng = readBytesUnicode(png);
         REQUIRE(imwriteUnicode(resized, larger, {cv::IMWRITE_JPEG_QUALITY, 97}));
         REQUIRE(writeBytesUnicode(utf8(workspace.inputDir() / "duplicate.jpeg"), readBytesUnicode(jpeg)));
         REQUIRE(writeBytesUnicode(utf8(workspace.inputDir() / "broken.jpg"), {1, 2, 3}));
@@ -1399,7 +1401,20 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
                 CHECK(pixels.size() == size);
                 CHECK(record.featureVersion == FeatureExtractor::featureVersion());
                 REQUIRE(expected.count(record.fileHash) == 1);
-                CHECK(readBytesUnicode(record.filePath) == expected.at(record.fileHash));
+                if (u8path(record.filePath).extension() == ".png")
+                {
+                    const auto full = imreadUnicode(record.filePath, cv::IMREAD_UNCHANGED);
+                    REQUIRE(full.type() == rgba.type());
+                    CHECK(cv::norm(full, rgba, cv::NORM_INF) == 0);
+                    const auto packed = readBytesUnicode(record.filePath);
+                    REQUIRE(packed.size() < originalPng.size());
+                    CHECK(readBytesUnicode(png) == originalPng);
+                    expected.at(record.fileHash) = packed; // 后续追加与 normalize 应得到相同文件。
+                }
+                else
+                {
+                    CHECK(readBytesUnicode(record.filePath) == expected.at(record.fileHash));
+                }
                 CHECK(fs::exists(u8path(record.tinyPath)));
                 CHECK(fs::exists(u8path(record.lbpPath)));
                 for (const auto& path : {record.tinyPath, record.lbpPath})
