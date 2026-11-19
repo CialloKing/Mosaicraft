@@ -60,8 +60,9 @@ const Kernel &fastKernel()
         const char *setting = std::getenv("MOSAICRAFT_BENCH_KERNEL");
         const std::string_view name = setting ? setting : "auto";
 #if defined(MOSAICRAFT_AVX2_DISTANCE)
-        // OpenCV 同时检查 CPUID 与 OS 保存的寄存器状态；未通过端到端验收不改变 auto。
-        if (name == "avx512" && cv::checkHardwareSupport(CV_CPU_AVX2) && cv::checkHardwareSupport(CV_CPU_AVX512_SKX))
+        // 自动分派只在 CPU 和操作系统都支持所需寄存器状态时选择独立的 AVX-512 内核。
+        if ((name == "auto" || name == "avx512") && cv::checkHardwareSupport(CV_CPU_AVX2) &&
+            cv::checkHardwareSupport(CV_CPU_AVX512_SKX))
         {
             return {avx512DistanceSums<false>, avx512DistanceSums<true>, ":fp32-v3-avx512"};
         }
