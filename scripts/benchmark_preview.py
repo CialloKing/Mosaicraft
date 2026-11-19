@@ -15,10 +15,13 @@ from benchmark_backends import balanced_orders, save, summarize
 from benchmark_create import CASES
 from study_paths import digest
 
+CASES = {**CASES, 102400: (2880, 5120, 150)}
+MODES = ('standard', 'scores', 'features', 'both', 'standard+stamps', 'both+stamps', 'auto',
+         '512-128-64+stamps', '512-128-192+stamps', '1024-256-384+stamps')
 ENDPOINT = '/api/mosaic/preview'
 STEPS = {
     'cold': {}, 'top': {'topNRandom': 5}, 'neighbor': {'neighborPenalty': 60, 'neighborWindow': 100},
-    'weight': {'labWeight': .50}, 'candidate': {'candidates': 100}, 'brightness': {'lRange': 30},
+    'weight': {'labWeight': .50}, 'weight-top': {'topNRandom': 8}, 'candidate': {'candidates': 100}, 'brightness': {'lRange': 30},
     'grid': {'tileW': 12},
 }
 
@@ -129,7 +132,9 @@ def main():
     for key in ('baseline', 'candidate', 'prepared', 'input', 'output'):
         parser.add_argument('--' + key, type=Path, required=True)
     parser.add_argument('--backend', choices=('cpu', 'cuda'), default='cpu')
-    parser.add_argument('--variants', nargs='+', choices=('standard', 'scores', 'features', 'both', 'standard+stamps', 'both+stamps', 'auto'), default=['both'])
+    parser.add_argument('--baseline-mode', choices=MODES, default='standard')
+    parser.add_argument('--variants', nargs='+', choices=MODES, default=['both'])
+    parser.add_argument('--candidates', type=int, help='override the ANN count for each grid')
     parser.add_argument('--tiles', nargs='+', type=int, choices=CASES, default=[57600])
     parser.add_argument('--steps', nargs='+', choices=STEPS, default=['cold', 'top', 'neighbor', 'weight'])
     parser.add_argument('--rounds', type=int, default=8)
@@ -144,6 +149,8 @@ def main():
         parser.error('--pin-first requires diagnostics and a shared session')
     if a.rounds < 1 or a.warmups < 0 or a.steps[0] != 'cold' or len(set(a.steps)) != len(a.steps):
         parser.error('invalid sampling configuration')
+    if a.candidates is not None and not 1 <= a.candidates <= 600:
+        parser.error('--candidates must be between 1 and 600')
     root = a.prepared.resolve()
     db = root / 'library/snapshot.db'
     snapshot = digest(db)
@@ -153,7 +160,11 @@ def main():
     output = a.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     variants = dict(baseline=a.baseline.resolve(), **{k: a.candidate.resolve() for k in a.variants})
-    report = dict(complete=False, reference='baseline', variants=[dict(id=k, sha256=digest(v)) for k, v in variants.items()],
+    modes = {name: name if name != 'baseline' else a.baseline_mode for name in variants}
+    counts = {n: a.candidates or CASES[n][2] for n in a.tiles}
+    report = dict(complete=False, reference='baseline',
+                  variants=[dict(id=k, cache_mode=modes[k], sha256=digest(v)) for k, v in variants.items()],
+                  candidate_counts=counts,
                   cases=[dict(id=f'{n}-{s}') for n in a.tiles for s in a.steps], samples=[], differences=[],
                   backend=a.backend, threads=a.threads, input_sha256=digest(a.input), snapshot_sha256=snapshot,
                   exploratory=a.rounds < 8 or a.warmups < 2, diagnose=a.diagnose, cold_each=a.cold_each, pin_first=a.pin_first)
@@ -166,7 +177,8 @@ def main():
                     name, exe = list(variants.items())[index]
                     folder = output / f'{phase}-{r}-{n}-{name}'
                     folder.mkdir()
-                    for step, row in zip(a.steps, session(a, exe, name, db, folder, *CASES[n])):
+                    w, h, _ = CASES[n]
+                    for step, row in zip(a.steps, session(a, exe, modes[name], db, folder, w, h, counts[n])):
                         case = f'{n}-{step}'
                         row.update(phase=phase, round=r, case=case, variant=name)
                         report['samples'].append(row)

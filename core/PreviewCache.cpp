@@ -25,29 +25,27 @@ bool reserve(std::atomic_size_t &counter, size_t delta, size_t limit)
     } while (!counter.compare_exchange_weak(used, used + delta, std::memory_order_relaxed));
     return true;
 }
-} // namespace
 
-PreviewCachePolicy PreviewCachePolicy::select(uint64_t available, size_t hostBudget, bool largeScores, bool largeFeatures)
+PreviewCachePolicy selectLimits(uint64_t available, size_t hostBudget, const std::array<size_t, 3> &preferred)
 {
     PreviewCachePolicy policy;
-    constexpr uint64_t reserveBytes = 512 * MiB;
+    constexpr uint64_t reserveBytes = 512 * PreviewCachePolicy::MiB;
     if (available == 0)
     {
         return policy; // 无测量值时沿用旧上限，不自动扩容。
     }
     if (available <= hostBudget || available - hostBudget <= reserveBytes)
     {
-        return {Tier::Disabled, {}, 0, 0};
+        return {PreviewCachePolicy::Tier::Disabled, {}, 0, 0};
     }
     const auto extra = available - hostBudget - reserveBytes;
-    const auto fullBytes = (256 + 128 * largeScores + 64 * largeFeatures) * MiB;
+    const auto fullBytes = preferred[0] + preferred[1] + preferred[2];
     // 已驻留对象已经反映在系统可用内存里，不要从余量中扣两次。
     const size_t live = PreviewCacheReservation::totalBytes();
-    if ((largeScores || largeFeatures) && extra >= fullBytes - std::min(live, fullBytes))
+    if (preferred != policy.limits && extra >= fullBytes - std::min(live, fullBytes))
     {
-        policy.tier = Tier::Full;
-        policy.limits[0] += largeScores ? 128 * MiB : 0;
-        policy.limits[1] += largeFeatures ? 64 * MiB : 0;
+        policy.tier = PreviewCachePolicy::Tier::Full;
+        policy.limits = preferred;
         policy.totalLimit = fullBytes;
     }
     policy.incrementalLimit = static_cast<size_t>(std::min<uint64_t>(extra, policy.totalLimit));
@@ -56,13 +54,34 @@ PreviewCachePolicy PreviewCachePolicy::select(uint64_t available, size_t hostBud
     return policy;
 }
 
+} // namespace
+
+PreviewCachePolicy PreviewCachePolicy::select(uint64_t available, size_t hostBudget, bool largeScores, bool largeFeatures)
+{
+    return selectLimits(available, hostBudget,
+                        {(largeScores ? 256 : 128) * MiB, (largeFeatures ? 128 : 64) * MiB, 64 * MiB});
+}
+
 PreviewCachePolicy PreviewCachePolicy::forTask(size_t hostBudget, bool expand)
 {
     // 只供私有快照复跑；未验收的扩容不改变服务默认。
     const char *trial = std::getenv("MOSAICRAFT_BENCH_PREVIEW_CACHE");
     const std::string_view variant = trial ? trial : "";
+    const auto available = availableMemory();
+    if (variant == "512-128-64")
+    {
+        return selectLimits(available, hostBudget, {512 * MiB, 128 * MiB, 64 * MiB});
+    }
+    if (variant == "512-128-192")
+    {
+        return selectLimits(available, hostBudget, {512 * MiB, 128 * MiB, 192 * MiB});
+    }
+    if (variant == "1024-256-384")
+    {
+        return selectLimits(available, hostBudget, {1024 * MiB, 256 * MiB, 384 * MiB});
+    }
     const bool automatic = variant.empty() || variant == "auto";
-    return select(availableMemory(), hostBudget, (automatic && expand) || variant == "scores" || variant == "both",
+    return select(available, hostBudget, (automatic && expand) || variant == "scores" || variant == "both",
                   (automatic && expand) || variant == "features" || variant == "both");
 }
 
