@@ -343,6 +343,10 @@ Cancels a queued job. Running jobs are not interrupted and return HTTP 409.
 
 ## 马赛克 / Mosaic
 
+### `POST /api/local/paths`
+
+发现 `local-path-browser` 后，提交 `kind`（`image` 或 `directory`），可选 `path` 和 `offset`。省略路径时从服务工作目录开始。返回 `paths.directory`、`parent`、`roots`、每页最多 100 条 `entries`、`offset` 和 `more`。`image` 包含子目录和支持的图片文件，`directory` 只包含子目录。每条记录包含 `name`、`path` 和 `directory`。
+
 ### `POST /api/mosaic/plan` 与 `POST /api/mosaic/sample-size`
 
 规划接受标准生成参数，返回 `plan` 中的工作图、网格、成品尺寸、有效 Tile、实际格式、路径、文件数量上界及警告。`rawBytes` 为未压缩 RGB 体积，`matchingRam`、`matchingVram`、`writingRam`、`fileBytes` 为 `{low, high}` 字节估算。CPU 构建或强制 CPU 时显存项为空。规划不执行匹配或写入输出。

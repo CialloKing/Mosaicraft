@@ -17,6 +17,7 @@ enum class ApiOperation
     Endpoints,
     Info,
     Ping,
+    BrowseLocalPaths,
 
     Mosaic,
     PlanMosaic,

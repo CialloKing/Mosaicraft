@@ -242,6 +242,14 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 .ui-dialog::backdrop { background: rgb(0 0 0 / .6); }
 .ui-dialog h2 { margin: 0 0 8px; font-size: 1.15rem; }
 .ui-dialog .btns { flex-wrap: wrap; }
+.path-field { display: flex; gap: 6px; }
+.path-field input { min-width: 0; flex: 1; }
+.path-field .btn { padding-inline: 10px; }
+.path-dialog { width: min(620px, calc(100% - 32px)); }
+.path-dialog form { margin-top: 12px; }
+.path-entries { max-height: 38vh; overflow: auto; margin-top: 12px; }
+.path-entries button { width: 100%; text-align: left; overflow-wrap: anywhere; margin-bottom: 4px; }
+.path-dialog .btns { align-items: center; }
 .task-results { border-top: 1px solid var(--border); margin-top: 15px; padding-top: 12px; font-size: .8rem; }
 .task-results h3 { font-size: .9rem; margin-bottom: 8px; }
 .result-preview { display: block; max-width: 100%; max-height: 480px; object-fit: contain; margin-top: 12px; background: var(--bg); border-radius: 6px; }
@@ -350,7 +358,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <section class="card mosaic-setup" aria-labelledby="mosaic-heading">
     <h2 id="mosaic-heading">生成马赛克</h2>
     <div class="mosaic-paths">
-      <div class="field field-full"><label>目标图片（必填）</label><input type="text" id="m-input" placeholder="填写要拼成的图片路径"></div>
+      <div class="field field-full"><label>目标图片（必填）</label><div class="path-field"><input type="text" id="m-input" placeholder="填写要拼成的图片路径"><button type="button" class="btn btn-secondary" data-browse-path="m-input" aria-label="浏览目标图片" hidden>浏览</button></div></div>
       <div class="field field-full"><label>图库 --library（默认 ./library/mosaicraft.db）</label><input type="text" id="m-db" placeholder="留空使用默认值，或粘贴目录路径如 D:\my_library"></div>
       <div class="field field-full"><label>输出路径 -o（单图为文件，HTML / Deep Zoom / 分块为完整目录）</label><input type="text" id="m-output" value="output/output.png" placeholder="留空使用默认文件名，或粘贴文件路径如 D:\results\mosaic.jpg"><p class="hint">显式选择输出格式时，实际文件后缀以所选格式为准。</p></div>
       <div class="field"><label>输出模式</label><select id="m-mode"><option value="image">单图</option><option value="html">HTML 便携工程</option><option value="deepzoom">Deep Zoom</option><option value="tiles">分块</option></select></div>
@@ -550,7 +558,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>📂 必需路径</h3>
     <div class="row">
-      <div class="field field-full"><label>图片目录（必填位置参数）</label><input type="text" id="b-input" placeholder="粘贴文件夹路径，如 D:\photos"></div>
+      <div class="field field-full"><label>图片目录（必填位置参数）</label><div class="path-field"><input type="text" id="b-input" placeholder="粘贴文件夹路径，如 D:\photos"><button type="button" class="btn btn-secondary" data-browse-path="b-input" aria-label="浏览素材目录" hidden>浏览</button></div></div>
       <div class="field field-full"><label>图库 / 输出目录（默认 ./library）</label><input type="text" id="b-output" placeholder="粘贴目录路径，如 D:\mylib"><p class="hint">新建与归一化使用 --output；追加使用 --library，并继承该目录的图库规格。</p></div>
     </div>
   </div>
@@ -906,6 +914,27 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 
 </main>
 <footer>💡 在文件管理器使用“复制文件地址 / 复制为路径”，再粘贴到输入框；外层双引号会自动去除。</footer>
+
+<dialog class="ui-dialog path-dialog" id="local-path-dialog" aria-labelledby="local-path-heading">
+  <h2 id="local-path-heading">浏览本地路径</h2>
+  <form class="field" id="local-path-form">
+    <label for="local-path-address">目录路径</label>
+    <div class="path-field"><input type="text" id="local-path-address" autofocus><button class="btn btn-secondary">前往</button></div>
+  </form>
+  <div class="btns">
+    <button type="button" class="btn btn-secondary" id="local-path-parent" disabled>上一级</button>
+    <button type="button" class="btn btn-secondary" id="local-path-home">服务目录</button>
+    <select id="local-path-root" aria-label="切换磁盘" hidden></select>
+  </div>
+  <div class="path-entries" id="local-path-entries" aria-label="可选路径"></div>
+  <p class="hint" id="local-path-status" role="status"></p>
+  <div class="btns">
+    <button type="button" class="btn btn-secondary" id="local-path-previous" hidden>上一页</button>
+    <button type="button" class="btn btn-secondary" id="local-path-next" hidden>下一页</button>
+    <button type="button" class="btn btn-primary" id="local-path-select" hidden>使用此目录</button>
+    <button type="button" class="btn btn-secondary" id="local-path-cancel">取消</button>
+  </div>
+</dialog>
 
 <script>
 @commandShellUiScript@
@@ -1923,6 +1952,7 @@ function hasFeature(name) {
   return !!(serviceInfo && Array.isArray(serviceInfo.features) && serviceInfo.features.includes(name));
 }
 function updateRunButton() {
+  localPathBrowser.update();
   const button = document.getElementById('btn-run');
   const mosaic = formModel.tab === 'mosaic';
   const offlineCopy = document.getElementById('m-copy-command');
@@ -2598,6 +2628,7 @@ document.addEventListener('click', event => {
 @mosaicOutputPlanningScript@
 @libraryVisualsUiScript@
 @comparisonUiScript@
+@localPathUiScript@
 
 // Restore form state before generating or submitting any request.
 initializeCommandShell();

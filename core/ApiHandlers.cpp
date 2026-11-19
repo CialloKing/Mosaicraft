@@ -1,6 +1,7 @@
 #include "ApiHandlers.h"
 
 #include "ApiJson.h"
+#include "BatchProcessor.h"
 #include "MosaicPlanning.h"
 #include "LibraryVisuals.h"
 #include "PreviewEvaluation.h"
@@ -15,6 +16,7 @@
 #endif
 
 #include <algorithm>
+#include <cctype>
 #include <exception>
 #include <charconv>
 #include <climits>
@@ -101,6 +103,105 @@ ApiResponse mosaicCoverageResponse(const std::string &body)
 ApiResponse badRequest(const std::string& error)
 {
     return resultResponse(400, ServiceResult::failure(1, error));
+}
+
+ApiResponse browseLocalPaths(const std::string &body)
+{
+    const auto payload = nlohmann::json::parse(body, nullptr, false);
+    if (!payload.is_object() || !payload.contains("kind") || !payload["kind"].is_string() ||
+        (payload["kind"] != "image" && payload["kind"] != "directory") ||
+        (payload.contains("path") && !payload["path"].is_string()) ||
+        (payload.contains("offset") && !payload["offset"].is_number_unsigned()))
+    {
+        return badRequest("Expected a path, an image or directory kind, and an optional nonnegative offset.");
+    }
+    const auto path = payload.value("path", std::string());
+    if (path.find('\0') != std::string::npos)
+    {
+        return badRequest("Invalid directory path.");
+    }
+    const bool images = payload["kind"] == "image";
+    std::error_code error;
+    auto directory = path.empty() ? std::filesystem::current_path(error)
+                                  : std::filesystem::weakly_canonical(u8path(path), error);
+    if (error)
+    {
+        return badRequest("Cannot resolve the directory.");
+    }
+    if (images && std::filesystem::is_regular_file(directory, error))
+    {
+        directory = directory.parent_path();
+    }
+    // Keep the full directory ordering stable between pages and only serialize the requested page.
+    struct Entry
+    {
+        std::filesystem::path path;
+        bool directory;
+    };
+    std::vector<Entry> entries;
+    std::filesystem::directory_iterator it(directory, error), end;
+    for (; !error && it != end; it.increment(error))
+    {
+        std::error_code statusError;
+        const auto status = it->status(statusError);
+        const bool folder = std::filesystem::is_directory(status);
+        if (!folder)
+        {
+            if (!images || !std::filesystem::is_regular_file(status))
+            {
+                continue;
+            }
+            auto extension = pathToUtf8(it->path().extension());
+            std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c)
+            {
+                return static_cast<char>(std::tolower(c));
+            });
+            const auto &supported = BatchProcessor::supportedExtensions();
+            if (std::find(supported.begin(), supported.end(), extension) == supported.end())
+            {
+                continue;
+            }
+        }
+        entries.push_back(
+        {it->path().filename(), folder});
+    }
+    if (error)
+    {
+        return badRequest("Cannot read the directory.");
+    }
+    std::sort(entries.begin(), entries.end(), [](const Entry &left, const Entry &right)
+    {
+        if (left.directory != right.directory)
+        {
+            return left.directory;
+        }
+        return left.path < right.path;
+    });
+    const auto offset = static_cast<std::size_t>(std::min<uint64_t>(entries.size(), payload.value("offset", uint64_t(0))));
+    const auto last = offset + std::min<std::size_t>(100, entries.size() - offset);
+    auto page = nlohmann::json::array();
+    for (auto index = offset; index < last; ++index)
+    {
+        const auto &entry = entries[index];
+        page.push_back(
+        {{"name", pathToUtf8(entry.path)}, {"path", pathToUtf8(directory / entry.path)}, {"directory", entry.directory}});
+    }
+    auto roots = nlohmann::json::array();
+#ifdef _WIN32
+    const auto drives = GetLogicalDrives();
+    for (unsigned index = 0; index < 26; ++index)
+    {
+        if (drives & (1UL << index))
+        {
+            roots.push_back(std::string(1, static_cast<char>('A' + index)) + ":\\");
+        }
+    }
+#endif
+    const auto parent = directory.parent_path();
+    return
+    {200, apiOkJson("paths",
+        {{"directory", pathToUtf8(directory)}, {"parent", parent == directory ? "" : pathToUtf8(parent)},
+         {"roots", roots}, {"entries", page}, {"offset", offset}, {"more", last < entries.size()}})};
 }
 
 ApiResponse badRequest(const RequestError &error)
@@ -964,6 +1065,8 @@ ApiResponse handleApiRequest(const ApiRequest& request, JobManager& jobs)
     }
     case ApiOperation::Ping:
         return apiPing();
+    case ApiOperation::BrowseLocalPaths:
+        return browseLocalPaths(request.body);
     case ApiOperation::Mosaic:
         return apiMosaic(request.body, jobs);
     case ApiOperation::PlanMosaic:

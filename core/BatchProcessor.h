@@ -20,12 +20,12 @@ public:
     // 返回成功处理的数量；threadCount=0 表示自动检测 CPU 核数
     int process(const std::string& inputDir, const std::string& outputDir);
 
+    // 供扫描和路径选择共用，避免同一种图片只在一个入口可见。
+    static const std::vector<std::string>& supportedExtensions();
+
 private:
     ImageNormalizer& m_normalizer;
     int m_threadCount;
-
-    // 支持的图片扩展名（小写）
-    static const std::vector<std::string>& supportedExtensions();
 
     // 收集目录下所有匹配的图片路径
     std::vector<std::string> collectFiles(const std::string& dir);

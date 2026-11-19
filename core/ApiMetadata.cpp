@@ -86,6 +86,7 @@ std::vector<std::string> endpointQueryKeys(ApiOperation operation)
     case ApiOperation::Endpoints:
     case ApiOperation::Info:
     case ApiOperation::Ping:
+    case ApiOperation::BrowseLocalPaths:
     case ApiOperation::Mosaic:
     case ApiOperation::PinComparison:
     case ApiOperation::SubmitComparison:
@@ -153,6 +154,7 @@ int endpointSuccessStatus(ApiOperation operation)
     case ApiOperation::Endpoints:
     case ApiOperation::Info:
     case ApiOperation::Ping:
+    case ApiOperation::BrowseLocalPaths:
     case ApiOperation::Mosaic:
     case ApiOperation::PinComparison:
     case ApiOperation::ListHistory:
@@ -209,6 +211,7 @@ std::string endpointResponseKey(ApiOperation operation)
     case ApiOperation::Endpoints: return "endpoints";
     case ApiOperation::Info: return "info";
     case ApiOperation::Ping: return "message";
+    case ApiOperation::BrowseLocalPaths: return "paths";
     case ApiOperation::PlanMosaic: return "plan";
     case ApiOperation::MosaicCoverage: return "coverage";
     case ApiOperation::PreviewQuality: return "quality";
@@ -344,6 +347,7 @@ void populateEndpointErrors(ApiEndpointMetadata& info)
         addErrorContract(info, 500, "serviceResult", "purge");
         break;
     case ApiOperation::ProjectInfo:
+    case ApiOperation::BrowseLocalPaths:
     case ApiOperation::Inspect:
         addErrorContract(info, 400, "serviceResult");
         break;
@@ -404,6 +408,7 @@ const char* apiOperationName(ApiOperation operation)
     case ApiOperation::Endpoints: return "endpoints";
     case ApiOperation::Info: return "info";
     case ApiOperation::Ping: return "ping";
+    case ApiOperation::BrowseLocalPaths: return "browseLocalPaths";
     case ApiOperation::Mosaic: return "mosaic";
     case ApiOperation::PlanMosaic: return "planMosaic";
     case ApiOperation::MosaicCoverage: return "mosaicCoverage";
@@ -553,6 +558,8 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata()
             endpoint("GET", "/api/info", "service version and capability summary", "discovery", ApiOperation::Info,
                      ApiRequestShape::None),
             endpoint("GET", "/api/ping", "health check", "health", ApiOperation::Ping, ApiRequestShape::None),
+            endpoint("POST", "/api/local/paths", "browse local image files or directories", "local",
+                     ApiOperation::BrowseLocalPaths, ApiRequestShape::Body, {"kind", "path", "offset"}, {"kind"}),
             endpoint("POST", "/api/mosaic", "run mosaic synchronously", "mosaic", ApiOperation::Mosaic,
                      ApiRequestShape::Body, mosaicFields, {"inputPath"}, true, true),
             endpoint("POST", "/api/mosaic/plan", "resolve the mosaic geometry and estimate resources", "mosaic",
@@ -799,7 +806,7 @@ std::vector<std::string> apiFeatureList()
             "preview-editing",      "inspect",          "database-stats",
             "database-health",      "database-usage",   "database-maintenance",
             "output-format-policy", "portable-project", "project-render",
-            "project-check",        "project-pack"};
+            "project-check",        "project-pack",     "local-path-browser"};
 }
 
 std::vector<ApiEntryPointMetadata> apiEntryPointMetadata()
