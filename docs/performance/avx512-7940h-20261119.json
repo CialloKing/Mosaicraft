@@ -1,0 +1,217 @@
+{
+  "source_commit": "4a766225564470d34078ac7753a46c0987e5e81f",
+  "date": "2026-11-19",
+  "platform": "Windows 10 x64 build 19045; CPU Release; Ryzen 9 7940H (8C/16T); balanced",
+  "snapshot_rows": 45613,
+  "snapshot_sha256": "2bd3104871fb12fa8d64dc68d15805dfbb428e459b39c36082c2e5d72508f729",
+  "index_sha256": "1e680b332de311aae41c9e0811d422f535e19abc97263ae23f44d7e795dc74b7",
+  "match_sha256": "a19272608537381165db631159dd774c05ec80159d64d78da06f829e648ef2b4",
+  "cli_sha256": "a80370bde8f38a8ea9ab2e33e5491094f3fc8cac2a7b734a7befd25fdae41f8e",
+  "verification_sha256": "7ffc3cc314f24d81e7ca906577cf9ae3e758ad9c8804686271994f2244dd8b29",
+  "verification": {
+    "57600": {
+      "avx2": {
+        "kernel": "cpu-v6:fp32-v3-avx2",
+        "selected_count": 57600,
+        "selection_sha256": "f1badebf1526cdce64c93e9210fe5cb8c2bce9496cc509e22b60de66cd310ac6",
+        "png_sha256": "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7",
+        "same_png_as_cli": true,
+        "batch_base_score_ms": 346.28619999999995
+      },
+      "avx512": {
+        "kernel": "cpu-v6:fp32-v3-avx512",
+        "selected_count": 57600,
+        "selection_sha256": "f1badebf1526cdce64c93e9210fe5cb8c2bce9496cc509e22b60de66cd310ac6",
+        "png_sha256": "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7",
+        "same_png_as_cli": true,
+        "batch_base_score_ms": 348.58869999999996
+      }
+    },
+    "14400": {
+      "avx2": {
+        "kernel": "cpu-v6:fp32-v3-avx2",
+        "selected_count": 14400,
+        "selection_sha256": "10142e9aa0201bd5eaa084b7a6dc7ab1216fc2b95c69d2a046b86a9052ae866b",
+        "png_sha256": "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9",
+        "same_png_as_cli": true
+      },
+      "avx512": {
+        "kernel": "cpu-v6:fp32-v3-avx512",
+        "selected_count": 14400,
+        "selection_sha256": "10142e9aa0201bd5eaa084b7a6dc7ab1216fc2b95c69d2a046b86a9052ae866b",
+        "png_sha256": "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9",
+        "same_png_as_cli": true
+      }
+    },
+    "900": {
+      "avx2": {
+        "kernel": "cpu-v6:fp32-v3-avx2",
+        "selected_count": 900,
+        "selection_sha256": "539b633402e431c55adfb3aaabf0453413d16641e73b63b69780f82113436bb1",
+        "png_sha256": "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d",
+        "same_png_as_cli": true
+      },
+      "avx512": {
+        "kernel": "cpu-v6:fp32-v3-avx512",
+        "selected_count": 900,
+        "selection_sha256": "539b633402e431c55adfb3aaabf0453413d16641e73b63b69780f82113436bb1",
+        "png_sha256": "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d",
+        "same_png_as_cli": true
+      }
+    }
+  },
+  "dispatch": {
+    "auto": {
+      "exit": 0,
+      "kernel": "cpu-v6:fp32-v3-avx2",
+      "png_sha256": "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"
+    },
+    "masked-auto": {
+      "exit": 0,
+      "kernel": "cpu-v6:fp32-v3-avx2",
+      "png_sha256": "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"
+    },
+    "masked-avx512": {
+      "exit": 1,
+      "explicit_rejection": true,
+      "output_exists": false
+    }
+  },
+  "paired": {
+    "main-screen": {
+      "report_sha256": "21ac21a22fe6e57644697da3fd209db719b617465a98e02702cc9790c3b3e9e9",
+      "threads": 0,
+      "exploratory": true,
+      "cpu_settings": {
+        "baseline": {
+          "kernel": "avx2"
+        },
+        "candidate": {
+          "kernel": "avx512"
+        }
+      },
+      "sample_columns": [
+        "phase",
+        "round",
+        "case",
+        "variant",
+        "kernel",
+        "processWallMs",
+        "matchingMs",
+        "png_sha256"
+      ],
+      "samples": [
+        ["warmup", 0, "57600", "candidate", "cpu-v6:fp32-v3-avx512", 8212.517499999194, 5832.7309, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+        ["warmup", 0, "57600", "baseline", "cpu-v6:fp32-v3-avx2", 8322.493900000154, 5757.6891, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+        ["measured", 0, "57600", "candidate", "cpu-v6:fp32-v3-avx512", 8030.209800000193, 5673.5312, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+        ["measured", 0, "57600", "baseline", "cpu-v6:fp32-v3-avx2", 7891.990500000247, 5563.0017, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+        ["measured", 1, "57600", "baseline", "cpu-v6:fp32-v3-avx2", 8314.04140000086, 5908.544, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+        ["measured", 1, "57600", "candidate", "cpu-v6:fp32-v3-avx512", 8178.953599999659, 5812.956, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+        ["measured", 2, "57600", "candidate", "cpu-v6:fp32-v3-avx512", 8318.758600000365, 5726.0958, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"],
+        ["measured", 2, "57600", "baseline", "cpu-v6:fp32-v3-avx2", 8576.475399999254, 5894.1669, "5e8734c04fff25ef21884a6be4c089e092afc8dbf752768aebdc6c63214495f7"]
+      ],
+      "summary": {
+        "57600": {
+          "avx2_ms": 8314.04140000086,
+          "avx512_ms": 8178.953599999659,
+          "median_ratio": 0.9837518490103757,
+          "rounds": 3
+        }
+      }
+    },
+    "controls": {
+      "report_sha256": "c07264a8d20620e028fe164db6a89c24483a0aad98003757c15ed0d57c79dc50",
+      "threads": 16,
+      "exploratory": false,
+      "cpu_settings": {
+        "baseline": {
+          "kernel": "avx2"
+        },
+        "candidate": {
+          "kernel": "avx512"
+        }
+      },
+      "sample_columns": [
+        "phase",
+        "round",
+        "case",
+        "variant",
+        "kernel",
+        "processWallMs",
+        "matchingMs",
+        "png_sha256"
+      ],
+      "samples": [
+        ["warmup", 0, "14400", "candidate", "cpu-v6:fp32-v3-avx512", 4898.718700000245, 3371.9721, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["warmup", 0, "14400", "baseline", "cpu-v6:fp32-v3-avx2", 4538.551300000108, 3078.5182, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["warmup", 0, "900", "baseline", "cpu-v6:fp32-v3-avx2", 1627.0517000002656, 651.9983, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["warmup", 0, "900", "candidate", "cpu-v6:fp32-v3-avx512", 1604.4013999999152, 622.5959, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["warmup", 1, "900", "candidate", "cpu-v6:fp32-v3-avx512", 1592.117899999721, 584.0807, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["warmup", 1, "900", "baseline", "cpu-v6:fp32-v3-avx2", 1584.7358999999415, 601.6685, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["warmup", 1, "14400", "baseline", "cpu-v6:fp32-v3-avx2", 4725.02809999969, 3129.7917, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["warmup", 1, "14400", "candidate", "cpu-v6:fp32-v3-avx512", 4595.302400000037, 3030.9964, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 0, "14400", "candidate", "cpu-v6:fp32-v3-avx512", 4454.756799999814, 3034.2286, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 0, "14400", "baseline", "cpu-v6:fp32-v3-avx2", 4635.085599999911, 3060.1306, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 0, "900", "baseline", "cpu-v6:fp32-v3-avx2", 1533.4259000001111, 616.2686, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 0, "900", "candidate", "cpu-v6:fp32-v3-avx512", 1508.2976000003327, 596.1384, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 1, "900", "candidate", "cpu-v6:fp32-v3-avx512", 1584.9718999998004, 606.9588, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 1, "900", "baseline", "cpu-v6:fp32-v3-avx2", 1541.483399999379, 613.9217, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 1, "14400", "baseline", "cpu-v6:fp32-v3-avx2", 4543.009400000301, 3076.0778, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 1, "14400", "candidate", "cpu-v6:fp32-v3-avx512", 4387.329600000157, 2983.1664, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 2, "14400", "candidate", "cpu-v6:fp32-v3-avx512", 4651.176499999565, 3257.5904, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 2, "14400", "baseline", "cpu-v6:fp32-v3-avx2", 4430.25630000011, 3029.66, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 2, "900", "candidate", "cpu-v6:fp32-v3-avx512", 1561.606400000528, 650.2276, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 2, "900", "baseline", "cpu-v6:fp32-v3-avx2", 1570.585100000244, 622.3277, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 3, "900", "baseline", "cpu-v6:fp32-v3-avx2", 1570.2828000003137, 631.8348, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 3, "900", "candidate", "cpu-v6:fp32-v3-avx512", 1516.0986000000776, 583.6212, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 3, "14400", "baseline", "cpu-v6:fp32-v3-avx2", 4528.799900000195, 3112.2512, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 3, "14400", "candidate", "cpu-v6:fp32-v3-avx512", 4533.888699999807, 3131.6683, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 4, "14400", "baseline", "cpu-v6:fp32-v3-avx2", 4324.812500000007, 2949.4965, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 4, "14400", "candidate", "cpu-v6:fp32-v3-avx512", 4477.563299999929, 2929.1851, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 4, "900", "candidate", "cpu-v6:fp32-v3-avx512", 1553.7610999999742, 639.9465, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 4, "900", "baseline", "cpu-v6:fp32-v3-avx2", 1645.4678999998578, 636.6371, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 5, "900", "baseline", "cpu-v6:fp32-v3-avx2", 1780.2578000000722, 658.1038, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 5, "900", "candidate", "cpu-v6:fp32-v3-avx512", 1782.6441000006525, 620.9257, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 5, "14400", "candidate", "cpu-v6:fp32-v3-avx512", 4672.327799999948, 3190.0838, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 5, "14400", "baseline", "cpu-v6:fp32-v3-avx2", 4630.090000000564, 3153.6694, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 6, "14400", "candidate", "cpu-v6:fp32-v3-avx512", 4493.606299999556, 3061.197, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 6, "14400", "baseline", "cpu-v6:fp32-v3-avx2", 4282.692599999791, 2880.2125, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 6, "900", "baseline", "cpu-v6:fp32-v3-avx2", 1571.0942000005161, 626.8538, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 6, "900", "candidate", "cpu-v6:fp32-v3-avx512", 1559.4276000001628, 593.1533, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 7, "900", "candidate", "cpu-v6:fp32-v3-avx512", 1515.0261000007959, 570.6429, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 7, "900", "baseline", "cpu-v6:fp32-v3-avx2", 1561.0512000002927, 589.3854, "067d5c6b64f747c95a4e60d1586dea4a85eee119471f387f674e33e235b3aa7d"],
+        ["measured", 7, "14400", "baseline", "cpu-v6:fp32-v3-avx2", 4559.575100000075, 3016.1394, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"],
+        ["measured", 7, "14400", "candidate", "cpu-v6:fp32-v3-avx512", 4673.161700000492, 3147.703, "b7d9589ae7787c57b06ade199a069adf8a920c00ac83474e70c75671c72ae0a9"]
+      ],
+      "summary": {
+        "14400": {
+          "avx2_ms": 4535.904650000248,
+          "avx512_ms": 4513.747499999681,
+          "median_ratio": 1.0170170605162263,
+          "p10": 0.9643408556681379,
+          "p90": 1.0494334139636425,
+          "bootstrap95": [
+            0.9657320101516556,
+            1.0492479194046695
+          ],
+          "faster_rounds": 2,
+          "rounds": 8
+        },
+        "900": {
+          "avx2_ms": 1570.4339500002789,
+          "avx512_ms": 1556.5943500000685,
+          "median_ratio": 0.9880935937339164,
+          "p10": 0.9591259017146693,
+          "p90": 1.0094019298368393,
+          "bootstrap95": [
+            0.9654939861786518,
+            1.0013404238423111
+          ],
+          "faster_rounds": 6,
+          "rounds": 8
+        }
+      }
+    }
+  },
+  "input_sha256": "2034a478fb9adf1e2040499759eb909fbbdce61848c27b1b46aadf97bb8b0037"
+}
