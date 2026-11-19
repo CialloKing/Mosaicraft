@@ -66,7 +66,7 @@ def session(a, exe, experiment, db, folder, w, h, c):
             else:
                 raise TimeoutError('server startup')
             rows = []
-            previous = None
+            previous = pinned = None
             for i, step in enumerate(a.steps):
                 settings.update(STEPS[step])
                 if a.cold_each and previous:
@@ -102,9 +102,16 @@ def session(a, exe, experiment, db, folder, w, h, c):
                 row = dict(metrics=dict(state['metrics'], processWallMs=wall), signature=signature,
                            device=state['runtime']['device'], features=state['featureBackend'], scorer=state['scoreBackend'], **rss)
                 rows.append(row)
-                if previous:
+                if previous and previous != pinned:
                     call(previous, method='DELETE')
                 previous = path
+                if a.pin_first and not i:
+                    call(ENDPOINT + '/pin', dict(slot='A', previewId=state['id']))
+                    pinned = path
+                if pinned and i:
+                    saved = call(pinned)['preview']
+                    if hash_json(saved['imageIds']) != rows[0]['signature']['selection']:
+                        raise ValueError('pinned preview changed')
                 save(folder / f'{step}.json', row)
                 print(folder.name, step, round(wall), [row['metrics'].get(k) for k in
                       ('previewScoresReused', 'previewTileFeaturesReused', 'previewCandidatesReused')], flush=True)
@@ -128,7 +135,10 @@ def main():
     parser.add_argument('--diagnose', action='store_true', help='enable benchmark metrics and sample server memory (psutil)')
     parser.add_argument('--verify-artifacts', action='store_true', help='untimed reference JPEG and representative recommendations')
     parser.add_argument('--cold-each', action='store_true', help='close each previous preview before submitting the next')
+    parser.add_argument('--pin-first', action='store_true', help='diagnostic: retain the cold selection in A')
     a = parser.parse_args()
+    if a.pin_first and (not a.diagnose or a.cold_each):
+        parser.error('--pin-first requires diagnostics and a shared session')
     if a.rounds < 1 or a.warmups < 0 or a.steps[0] != 'cold' or len(set(a.steps)) != len(a.steps):
         parser.error('invalid sampling configuration')
     root = a.prepared.resolve()
@@ -143,7 +153,7 @@ def main():
     report = dict(complete=False, reference='baseline', variants=[dict(id=k, sha256=digest(v)) for k, v in variants.items()],
                   cases=[dict(id=f'{n}-{s}') for n in a.tiles for s in a.steps], samples=[], differences=[],
                   backend=a.backend, threads=a.threads, input_sha256=digest(a.input), snapshot_sha256=snapshot,
-                  exploratory=a.rounds < 8 or a.warmups < 2, diagnose=a.diagnose, cold_each=a.cold_each)
+                  exploratory=a.rounds < 8 or a.warmups < 2, diagnose=a.diagnose, cold_each=a.cold_each, pin_first=a.pin_first)
     expected = {}
     orders = balanced_orders(len(variants), a.rounds, random.Random(29))
     for phase, count in [('warmup', a.warmups), ('measured', a.rounds)]:

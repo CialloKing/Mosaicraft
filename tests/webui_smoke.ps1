@@ -649,6 +649,7 @@ try {
     $interactiveBody.topNRandom = 3
     $interactiveBody.lRange = 255
     $interactiveBody.analyze = $true
+    $interactiveBody.benchmark = $true
     $interactive = Invoke-Api -Method 'POST' -Path '/api/mosaic/preview' -Body @{ request = $interactiveBody; seed = 42 }
     $interactivePath = '/api/mosaic/preview/' + $interactive.preview.id
     $previewDeadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
@@ -660,6 +661,8 @@ try {
     Assert-True ($grid.state -eq 'succeeded' -and $grid.imageIds.Count -eq 4) "interactive preview grid is missing"
     Assert-True ($grid.featureBackend -eq 'cpu' -and $grid.scoreBackend -eq 'cpu') "preview did not report the active CPU backend"
     Assert-True (-not (Test-Path -LiteralPath $interactiveBody.outputPath)) "interactive preview wrote a mosaic"
+    Assert-True ($null -ne $grid.metrics.previewCacheReservedBytes -and
+                 $grid.metrics.previewCacheReservedBytes -eq $grid.runtime.metrics.previewCacheReservedBytes) 'preview cache diagnostics are missing or inconsistent'
     Assert-True ($grid.runtime.featureBackend -eq $grid.featureBackend -and $grid.runtime.scoreBackend -eq $grid.scoreBackend -and $grid.runtime.device -eq 'cpu') 'preview runtime differs from the completed execution plan'
     $thumb = Invoke-WebRequest -Uri ($script:BaseUrl + $interactivePath + '/image/' + $grid.imageIds[0] + '-64') -TimeoutSec $TimeoutSeconds
     Assert-True (($thumb.Headers['Content-Type'] -join ',') -match 'image/jpeg') "interactive thumbnail is not JPEG"
