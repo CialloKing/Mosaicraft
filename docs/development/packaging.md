@@ -12,7 +12,7 @@
 
 ## 正式包后端范围
 
-v1.15.7 继续交付 Windows CPU/CUDA、Linux CPU/CUDA、macOS ARM64 CPU 五个包，不添加 Vulkan 或 Metal 附件。标准 presets 默认关闭 MOSAICRAFT_VULKAN 和 MOSAICRAFT_METAL，release.ps1 未收到显式可选后端开关时强制传入 OFF，再检查实际 CMake 缓存。BUILD_INFO.txt 记录 VulkanBackend / MetalBackend 为 disabled。
+v1.15.8 继续交付 Windows CPU/CUDA、Linux CPU/CUDA、macOS ARM64 CPU 五个包，不添加 Vulkan 或 Metal 附件。标准 presets 默认关闭 MOSAICRAFT_VULKAN 和 MOSAICRAFT_METAL，release.ps1 未收到显式可选后端开关时强制传入 OFF，再检查实际 CMake 缓存。BUILD_INFO.txt 记录 VulkanBackend / MetalBackend 为 disabled。
 
 需要 Vulkan 的用户须[从源码编译](building.md#vulkan-与-metal)。Portable GPU candidates 工作流仅用于可选后端构建验证，不将候选二进制纳入此正式 Release。
 
