@@ -328,7 +328,7 @@ const interactivePreview = (() => {
     referenceButton.setAttribute('aria-pressed', String(showReference));
     placeholder.hidden = hasPlan;
     placeholder.textContent = enabled ? '等待预览画面。' : '在生成页填写目标图片后开启预览。';
-    byId('color').hidden = !enabled || !val('m-coloradj');
+    byId('color').hidden = !enabled || !(Number(val('m-colorstr')) > 0);
     let message = '';
     if (!capable()) message = '实时预览需要支持此功能的本地 Web UI 服务。';
     else if (enabled && pending) message = previewStageLabel(progress?.stage) + '…';

@@ -337,7 +337,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
   <div class="card">
     <h3>📂 必需路径（支持绝对路径与相对路径）</h3>
     <div class="row">
-      <div class="field field-full"><label>目标图片（必填位置参数）</label><input type="text" id="m-input" placeholder="粘贴绝对路径，如 D:\photos\target.jpg"></div>
+      <div class="field field-full"><label>目标图片（必填）</label><input type="text" id="m-input" placeholder="填写要拼成的图片路径"></div>
       <div class="field field-full"><label>图库 --library（默认 ./library/mosaicraft.db）</label><input type="text" id="m-db" placeholder="留空使用默认值，或粘贴目录路径如 D:\my_library"></div>
       <div class="field field-full"><label>输出路径 -o（单图为文件，HTML / Deep Zoom / 分块为完整目录）</label><input type="text" id="m-output" value="output/output.png" placeholder="留空使用默认文件名，或粘贴文件路径如 D:\results\mosaic.jpg"><p class="hint">显式选择输出格式时，实际文件后缀以所选格式为准。</p></div>
     </div>
@@ -951,8 +951,9 @@ function generateCommand() {
     formModel = {valid:false, tab, payload:null};
     document.getElementById('cmd-output').textContent = '';
     document.getElementById('btn-copy-command').disabled = true;
-    document.getElementById('command-validation').textContent = error.message;
-    highlightDiagnostic({code:'invalid_argument', field:error.field, message:error.message});
+    const showError = error.field !== 'm-input' || mosaicTargetTouched;
+    document.getElementById('command-validation').textContent = showError ? error.message : '';
+    if (showError) highlightDiagnostic({code:'invalid_argument', field:error.field, message:error.message});
   }
   outputPlanning.sync();
   updateRunButton();
@@ -1190,6 +1191,7 @@ function missingRequiredOperations(endpoints) {
 async function runCommand() {
   const tab = document.querySelector('.tab.active').dataset.cmd;
   if (tab === 'help' || tab === 'preview') return;
+  if (tab === 'mosaic') mosaicTargetTouched = true;
   const status = document.getElementById('run-status');
   status.style.display = '';
   status.textContent = '正在提交任务...';
@@ -1716,7 +1718,7 @@ function buildMosaicPayload(previewOnly = false) {
   setIfChecked(payload, 'analyze', 'm-analyze');
   setIfChecked(payload, 'adaptiveWeights', 'm-adaptive');
   if (!previewOnly) {
-    payload.outputPath = requireValue('m-output', '输出路径');
+    payload.outputPath = val('m-output') || 'output/output';
     payload.outputMode = val('m-mode');
     setIfChecked(payload, 'overwrite', 'm-overwrite');
     setIfValue(payload, 'format', 'm-format');
@@ -2252,6 +2254,7 @@ function restoreRequestParameters(job) {
 
 let formModel = { valid: false, payload: null };
 let restoringDraft = false;
+let mosaicTargetTouched = false;
 const PATH_FIELDS = {
   'm-input': 'images', 'i-input': 'images', 'm-db': 'databases',
   'i-db': 'databases', 's-db': 'databases', 'h-db': 'databases', 'p-db': 'databases', 'u-db': 'databases',
@@ -2434,6 +2437,7 @@ function initializeFormUi() {
   if (tab) tab.click();
   restoringDraft = false;
   updateRecentLists(); syncPreviewOption();
+  document.getElementById('m-input').addEventListener('input', () => { mosaicTargetTouched = true; });
   document.querySelectorAll('.panel:not(#panel-preview) input, .panel select').forEach(element => {
     element.addEventListener('input', generateCommand);
     element.addEventListener('change', () => {
