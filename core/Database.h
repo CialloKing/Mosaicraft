@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <array>
+#include <functional>
 #include <memory>
 #include <limits>
 #include <string>
@@ -147,10 +148,11 @@ public:
                                        bool sortByUse = true);
 
     // 全库读取不能使用匹配亮度范围，CUDA 的黑白端点可能有微小浮点尾差。
-    std::vector<ImageRecord> allRecords()
+    using RecordReadProgress = std::function<void(std::size_t completed)>;
+    std::vector<ImageRecord> allRecords(const RecordReadProgress &progress = {})
     {
-        return queryByLRange(std::numeric_limits<double>::lowest(),
-                             std::numeric_limits<double>::max(), totalCount() + 1);
+        return readRange(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max(),
+                         totalCount() + 1, nullptr, progress);
     }
 
     // 获取图库总数
@@ -186,7 +188,8 @@ private:
     bool openConnection(bool create, bool readOnly = false);
     bool validateSchema(std::vector<ImageRecord> *matchingRows, double *readMs);
     bool readMatchingRows(std::vector<ImageRecord> &out);
-    std::vector<ImageRecord> readRange(double minL, double maxL, int limit, bool *validated);
+    std::vector<ImageRecord> readRange(double minL, double maxL, int limit, bool *validated,
+                                       const RecordReadProgress &progress = {});
     void closeConnection();
     bool validateStoredPaths();
 

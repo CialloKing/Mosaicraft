@@ -253,6 +253,7 @@ const interactivePreview = (() => {
     queued: '排队中',
     validating: '检查参数',
     reading_library: '读取图库',
+    preparing_library: '准备图库特征',
     building_index: '准备索引',
     matching: '匹配画面',
     finalizing: '整理预览'
@@ -274,9 +275,11 @@ const interactivePreview = (() => {
       progressLabel.textContent = '';
       return;
     }
-    const matching = (progress?.activities ?? []).find(item => item.id === 'matching');
-    const total = Number(matching?.total);
-    const completed = Number(matching?.completed);
+    const reading = progress?.stage === 'reading_library';
+    const activityId = reading ? 'reading_library' : 'matching';
+    const activity = progress?.activities?.find(item => item.id === activityId);
+    const total = Number(activity?.total);
+    const completed = Number(activity?.completed ?? 0);
     const determinate = Number.isFinite(total) && total > 0;
     if (!determinate) {
       progressBox.classList.add('is-indeterminate');
@@ -287,14 +290,17 @@ const interactivePreview = (() => {
       progressLabel.textContent = previewStageLabel(progress?.stage) + '…';
       return;
     }
-    const percent = Math.max(0, Math.min(100, Math.round((Number.isFinite(completed) ? completed : 0) * 100 / total)));
+    const ratio = (Number.isFinite(completed) ? completed : 0) * 100 / total;
+    const percent = Math.max(0, Math.min(100, reading ? Math.floor(ratio) : Math.round(ratio)));
+    const count = `${completed} / ${total} ${reading ? '张' : '格'}`;
+    const speed = reading ? null : taskMetrics.rate(pendingId || 'preview', progress);
+    const speedText = Number.isFinite(speed) ? ` · ${speed.toFixed(1)} 格/秒` : '';
     progressBox.classList.remove('is-indeterminate');
     progressBox.setAttribute('aria-valuenow', String(percent));
-    progressBox.setAttribute('aria-valuetext', '正在匹配预览，' + percent + '%');
-    const speed = taskMetrics.rate(pendingId || 'preview', progress);
-    progressBox.title = completed + ' / ' + total + ' 格' + (Number.isFinite(speed) ? ` · ${speed.toFixed(1)} 格/秒` : '');
+    progressBox.setAttribute('aria-valuetext', reading ? `读取图库，${percent}%，${count}` : `正在匹配预览，${percent}%`);
+    progressBox.title = count + speedText;
     progressFill.style.width = percent + '%';
-    progressLabel.textContent = '匹配 ' + percent + '%' + (Number.isFinite(speed) ? ` · ${speed.toFixed(1)} 格/秒` : '');
+    progressLabel.textContent = reading ? `读取图库 ${percent}% · ${count}` : `匹配 ${percent}%${speedText}`;
   }
 
   function showStatus() {

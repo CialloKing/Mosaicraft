@@ -547,7 +547,21 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
     const auto recordsStart = Clock::now();
     if (!readOnce)
     {
-        allRecords = db.allRecords();  // 全量记录，GPU 路径需连续索引
+        if (m_preview)
+        {
+            const auto reportRead = [&](std::size_t completed)
+            {
+                runtime.advance("reading_library", completed, dbCount, "images", true);
+            };
+            reportRead(0);
+            allRecords = db.allRecords(reportRead);
+            // 后续的特征校验及准备仍需耗时，读完记录后显示对应阶段。
+            runtime.stage("preparing_library");
+        }
+        else
+        {
+            allRecords = db.allRecords();  // 全量记录，GPU 路径需连续索引
+        }
         dbCount = static_cast<int>(allRecords.size());
         for (const auto& record : allRecords)
         {

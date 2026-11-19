@@ -577,7 +577,8 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
     return readRange(minL, maxL, limit, nullptr);
 }
 
-std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit, bool *validated)
+std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit, bool *validated,
+                                             const RecordReadProgress &progress)
 {
     std::vector<ImageRecord> results;
     if (!m_db)
@@ -610,6 +611,8 @@ std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit
     {
         results.reserve(static_cast<size_t>(limit - 1));
     }
+    // 每批约占全量记录的百分之一，限制通知次数并保留快速读取时的中间进度。
+    const auto progressBatch = static_cast<std::size_t>(std::max(1, limit / 100));
     int rc;
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW)
     {
@@ -707,8 +710,16 @@ std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit
         {
             results.push_back(rec);
         }
+        if (progress && results.size() % progressBatch == 0)
+        {
+            progress(results.size());
+        }
     }
 
+    if (progress && rc == SQLITE_DONE && results.size() % progressBatch != 0)
+    {
+        progress(results.size());
+    }
     if (validated)
     {
         *validated = rc == SQLITE_DONE;
