@@ -139,6 +139,8 @@ public:
                                  const Config &config, const MosaicSelection &selection);
 
   private:
+    bool generateAttempt(const std::string &targetPath, const std::string &dbPath, const std::string &outputPath,
+                         const Config &config, RuntimeContext &runtime, const char *&vulkanFallback);
     friend struct MatchingAccess;
     MatchingLimits m_limits;
     bool m_fixedSeed = false;

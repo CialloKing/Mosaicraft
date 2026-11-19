@@ -52,9 +52,37 @@ std::vector<Device> devices()
     return result;
 }
 
+bool automaticVulkan(BackendPolicy backend, const std::string &id)
+{
+#ifdef MOSAICRAFT_VULKAN_AUTO
+    return backend == BackendPolicy::Auto && id == "auto";
+#else
+    (void)backend;
+    (void)id;
+    return false;
+#endif
+}
+
 Device select(BackendPolicy backend, const std::string &id)
 {
-    // 未建立性能准入表前，新后端只接受显式选择，不能冒称 auto 已验收。
+    if (automaticVulkan(backend, id))
+    {
+        auto fallback = cpuDevice();
+        fallback.reason = "No eligible Vulkan compute GPU";
+        for (const auto &device : vulkanDevices())
+        {
+            // 软件 Vulkan 不比原生 CPU 路径更合适，仍允许显式请求该设备。
+            if (device.available && !device.software)
+            {
+                return device;
+            }
+            if (!device.reason.empty())
+            {
+                fallback.reason = device.reason;
+            }
+        }
+        return fallback;
+    }
     if (backend == BackendPolicy::Auto && id == "auto")
     {
         const auto cuda = cudaDevice();

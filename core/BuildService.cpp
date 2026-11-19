@@ -463,7 +463,9 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
     FeatureExtractor extractor;
     compute::Device portableDevice;
     bool portableRequested = false;
-    if (!request.normalizeOnly && (request.backend == BackendPolicy::Vulkan || request.backend == BackendPolicy::Metal || request.device != "auto"))
+    const bool autoVulkan = !request.normalizeOnly && compute::automaticVulkan(request.backend, request.device);
+    if (!request.normalizeOnly && (autoVulkan || request.backend == BackendPolicy::Vulkan ||
+                                   request.backend == BackendPolicy::Metal || request.device != "auto"))
     {
         try
         {
@@ -475,7 +477,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
             return runtimeFailure(runtime, 4, error.what(), "gpu_required", "device");
         }
     }
-    const auto preflight = portableRequested || request.normalizeOnly || request.backend == BackendPolicy::Cpu || request.device == "cpu"
+    const auto preflight = autoVulkan || portableRequested || request.normalizeOnly || request.backend == BackendPolicy::Cpu || request.device == "cpu"
         ? cuda::CudaAvailability{} : cuda::queryCudaAvailability();
     if (request.backend == BackendPolicy::Cuda && !preflight.available)
     {
@@ -488,8 +490,10 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
     }
     if (!portableRequested && !request.normalizeOnly && request.backend != BackendPolicy::Cpu && request.device != "cpu" && !preflight.available)
     {
-        runtime.emit("warning", "cuda_unavailable", preflight.reason);
-        std::cout << "CUDA unavailable; using CPU before extraction: " << preflight.reason << std::endl;
+        const auto &reason = autoVulkan ? portableDevice.reason : preflight.reason;
+        runtime.emit("warning", autoVulkan ? "vulkan_unavailable" : "cuda_unavailable", reason);
+        runtime.backends("cpu", "none", reason);
+        std::cout << (autoVulkan ? "Vulkan" : "CUDA") << " unavailable; using CPU before extraction: " << reason << std::endl;
     }
     runtime.computeIdentity(portableRequested ? portableDevice.id
         : preflight.available ? "cuda:" + std::to_string(preflight.device) : "cpu", "compatible",
@@ -507,7 +511,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
     runtime.backends(request.normalizeOnly ? "none"
                      : gpuOk               ? "template_cuda"
                                            : "cpu",
-                     "none", preflight.available ? "" : preflight.reason);
+                     "none");
     constexpr int GPU_BATCH = 256;
     if (request.appendMode && !request.normalizeOnly)
     {
@@ -903,16 +907,25 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
             !cuda::hasTemplateFeatures(request.normalizeWidth, request.normalizeHeight);
         const bool portableReady = portableRequested && portableFeatures.prepare(request.normalizeWidth,
             request.normalizeHeight, static_cast<int>(batchLimit), pixelBudget, 256ULL * 1024 * 1024);
+        if (portableRequested && !portableReady)
+        {
+            if (!autoVulkan)
+            {
+                return runtimeFailure(runtime, 4, "required GPU feature resources unavailable", "gpu_required", "backend");
+            }
+            // 此时尚未提取特征或提交批次，继续原有有序 CPU 流水线。
+            const char *reason = "Vulkan feature resources unavailable; using CPU before extraction";
+            runtime.emit("warning", "vulkan_resource_fallback", reason);
+            runtime.backends("cpu", "none", reason);
+            runtime.computeIdentity("cpu", "compatible", "cpu-v6");
+            portableRequested = false;
+        }
         // 正式对照只证明新建 CPU 图库获益；追加及其他后端保持原先的哈希位置。
         const bool producerHash = MOSAICRAFT_TRIAL_BUILD_HASH && !request.appendMode &&
                                   !inputIsOutput && !compatibleRequested && !portableRequested;
         const bool compatibleReady = portableReady || (compatibleRequested &&
             compatible.prepare(request.normalizeWidth, request.normalizeHeight, static_cast<int>(batchLimit),
                                pixelBudget, true));
-        if (portableRequested && !portableReady)
-        {
-            return runtimeFailure(runtime, 4, "required GPU feature resources unavailable", "gpu_required", "backend");
-        }
         if (compatibleReady)
         {
             batchLimit = static_cast<size_t>(portableReady ? portableFeatures.capacity() : compatible.capacity());

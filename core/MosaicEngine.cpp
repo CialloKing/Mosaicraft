@@ -239,11 +239,25 @@ bool MosaicEngine::renderSelection(const std::string &targetPath, const std::str
 bool MosaicEngine::generate(const std::string &targetPath, const std::string &dbPath, const std::string &outputPath,
                             const Config &config, RuntimeContext &runtime)
 {
+    const char *vulkanFallback = nullptr;
+    const bool ok = generateAttempt(targetPath, dbPath, outputPath, config, runtime, vulkanFallback);
+    if (!vulkanFallback)
+    {
+        return ok;
+    }
+    // 第一次尝试已释放工作区。只在计算开始前重试，保留请求和预览的原始参数键。
+    runtime.emit("warning", "vulkan_resource_fallback", vulkanFallback);
+    runtime.backends("cpu", "cpu", vulkanFallback);
+    return generateAttempt(targetPath, dbPath, outputPath, config, runtime, vulkanFallback);
+}
+
+bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::string &dbPath, const std::string &outputPath,
+                                   const Config &config, RuntimeContext &runtime, const char *&vulkanFallback)
+{
     runtime.stage("validating");
     m_compatibleFeatureImages = 0;
     m_compatibleScoreTiles = 0;
     m_compatibleTemporaryBytes = 0;
-    // 检查 CUDA 可用性，GPU 不可用时默认回退 CPU
     MosaicRequest validated{targetPath, dbPath, outputPath, config};
     std::string validationError, validationField;
     if (!validateMosaicRequest(validated, validationError, &validationField))
@@ -292,10 +306,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     {
         return m_cancelPreview && m_cancelPreview->load(std::memory_order_relaxed);
     };
-    const bool useGpu = cfg.useGpu && cfg.backend != BackendPolicy::Cpu && cfg.device != "cpu" && !m_renderSelection;
+    const bool useGpu = !vulkanFallback && cfg.useGpu && cfg.backend != BackendPolicy::Cpu && cfg.device != "cpu" && !m_renderSelection;
+    const bool autoVulkan = useGpu && compute::automaticVulkan(cfg.backend, cfg.device);
     compute::Device portableDevice;
     bool portableRequested = false;
-    if (useGpu && (cfg.backend == BackendPolicy::Vulkan || cfg.backend == BackendPolicy::Metal || cfg.device != "auto"))
+    if (useGpu && (autoVulkan || cfg.backend == BackendPolicy::Vulkan || cfg.backend == BackendPolicy::Metal || cfg.device != "auto"))
     {
         try
         {
@@ -307,7 +322,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             return runtime.fail("gpu_required", error.what(), "device");
         }
     }
-    const auto preflight = useGpu && !portableRequested ? cuda::queryCudaAvailability() : cuda::CudaAvailability{};
+    const auto preflight = useGpu && !autoVulkan && !portableRequested ? cuda::queryCudaAvailability() : cuda::CudaAvailability{};
     const bool cudaEnabled = useGpu && preflight.available;
     if (cfg.backend == BackendPolicy::Cuda && !cudaEnabled && !m_renderSelection)
     {
@@ -334,9 +349,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     std::cout << "Compute device: " << actualDevice << "; score mode: " << scoreModeName(cfg.scoreMode) << std::endl;
     if (useGpu && !cudaEnabled && !portableRequested)
     {
-        runtime.emit("warning", "cuda_unavailable", preflight.reason);
-        runtime.backends("cpu", "cpu", preflight.reason);
-        std::cout << "  CUDA unavailable; using CPU before computation: " << preflight.reason << std::endl;
+        const auto &reason = autoVulkan ? portableDevice.reason : preflight.reason;
+        runtime.emit("warning", autoVulkan ? "vulkan_unavailable" : "cuda_unavailable", reason);
+        runtime.backends("cpu", "cpu", reason);
+        std::cout << "  " << (autoVulkan ? "Vulkan" : "CUDA")
+                  << " unavailable; using CPU before computation: " << reason << std::endl;
     }
     if (cfg.benchmark && useGpu)
     {
@@ -1620,6 +1637,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 static_cast<int>(std::min<size_t>(batchRows, 256)), hostBudget - reserved, deviceBudget);
             if (!portableFeatureReady)
             {
+                if (autoVulkan)
+                {
+                    vulkanFallback = "Vulkan feature resources unavailable; using CPU before computation";
+                    return false;
+                }
                 return runtime.fail("gpu_required", "required GPU feature resources unavailable", "backend");
             }
             batchRows = std::min(batchRows, size_t(portableFeatures.capacity()));
@@ -1632,6 +1654,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     remaining, !selection);
                 if (!portableScoreReady)
                 {
+                    if (autoVulkan)
+                    {
+                        vulkanFallback = "Vulkan scoring resources unavailable; using CPU before computation";
+                        return false;
+                    }
                     return runtime.fail("gpu_required", "required GPU scoring resources unavailable", "backend");
                 }
                 batchRows = std::min(batchRows, size_t(portableScores.capacity()));

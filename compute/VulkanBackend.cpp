@@ -472,6 +472,7 @@ std::vector<Device> vulkanDevices()
             api.GetPhysicalDeviceProperties(physicals[i], &p);
             Device device{BackendPolicy::Vulkan, "vulkan:" + std::to_string(i), p.deviceName};
             device.integrated = p.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+            device.software = p.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU;
             device.maxBufferBytes = p.limits.maxStorageBufferRange;
             device.available = p.apiVersion >= VK_API_VERSION_1_1 && p.limits.maxComputeWorkGroupInvocations >= 128 &&
                                p.limits.maxComputeSharedMemorySize >= 451 * sizeof(uint32_t) &&

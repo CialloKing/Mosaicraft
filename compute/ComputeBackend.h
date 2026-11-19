@@ -15,6 +15,7 @@ struct Device
     std::string id, name, reason;
     bool available = false, integrated = false, validated = false;
     uint64_t maxBufferBytes = 0;
+    bool software = false;
 };
 
 struct Timings
@@ -36,6 +37,7 @@ class Session
 };
 
 std::vector<Device> devices();
+bool automaticVulkan(BackendPolicy backend, const std::string &id);
 Device select(BackendPolicy backend, const std::string &id);
 std::unique_ptr<Session> open(const Device &device);
 std::vector<Device> vulkanDevices();

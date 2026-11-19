@@ -1,5 +1,12 @@
 option(MOSAICRAFT_VULKAN "Build optional dynamically loaded Vulkan compute backend" OFF)
 option(MOSAICRAFT_METAL "Build candidate Metal backend on macOS" OFF)
+option(MOSAICRAFT_VULKAN_AUTO "Prefer Vulkan for automatic selection in Vulkan-only packages" OFF)
+if(MOSAICRAFT_VULKAN_AUTO)
+    if(NOT MOSAICRAFT_VULKAN OR MOSAICRAFT_CUDA OR MOSAICRAFT_METAL)
+        message(FATAL_ERROR "Vulkan automatic selection requires a Vulkan-only GPU build")
+    endif()
+    target_compile_definitions(mosaicraft_core PRIVATE MOSAICRAFT_VULKAN_AUTO)
+endif()
 target_sources(mosaicraft_core PRIVATE compute/ComputeBackend.cpp compute/PortableCompute.cpp)
 # ISA 选项只用于各自的归约文件，分派本身必须能在基线 CPU 上运行。
 set(_score_arch "${CMAKE_SYSTEM_PROCESSOR};${CMAKE_GENERATOR_PLATFORM}")
