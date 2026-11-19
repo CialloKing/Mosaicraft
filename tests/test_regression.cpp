@@ -34,6 +34,7 @@
 #include "../core/LibraryColorOrder.h"
 #include "../core/LibraryAccess.h"
 #include "../core/OutputPublication.h"
+#include "../core/DeepZoomWriter.h"
 #include "../core/json.hpp"
 #include <sqlite3.h>
 #include <cmath>
@@ -1848,6 +1849,36 @@ TEST_CASE("preview accumulator area averages independently of strip boundaries")
     CHECK(cv::norm(whole.image(), expected, cv::NORM_INF) <= 1);
     CHECK(cv::norm(whole.image(), strips.image(), cv::NORM_INF) == 0);
     CHECK(cv::norm(source, original, cv::NORM_INF) == 0);
+}
+
+TEST_CASE("parallel Deep Zoom drains the failing level before discarding unpublished output")
+{
+    TempWorkspace workspace;
+    const auto destination = workspace.outputDir() / "deepzoom";
+    {
+        OutputPublication publication(utf8(destination), true, false);
+        const auto stage = u8path(publication.workPath());
+        const auto source = stage / "index_files" / "0";
+        REQUIRE(fs::create_directories(source));
+        const cv::Mat image(257, 257, CV_8UC3, cv::Scalar(20, 60, 90));
+        requireWriteImage(source / "0_0.jpg", image);
+        WorkerPool pool(4);
+        RuntimeContext runtime(false);
+        // 4×4 切片达到并行门槛；模拟其中一个顶层文件不能写入。
+        auto write = +[](const std::string &path, const cv::Mat &tile, const std::vector<int> &params)
+        {
+            return u8path(path).filename() != "0_0.jpg" && imwriteUnicode(path, tile, params);
+        };
+        CHECK_FALSE(DeepZoomWriter::buildPyramid(utf8(source), 257, 257, 3, 3, 95, pool, false, &runtime, write));
+        const auto diagnostic = runtime.snapshot().diagnostic;
+        CHECK(diagnostic.code == "output_write_failed");
+        CHECK(u8path(diagnostic.path).filename() == "0_0.jpg");
+        CHECK(fs::is_regular_file(stage / "index_files" / "_source_tiles" / "0_0.jpg"));
+        CHECK_FALSE(fs::exists(stage / "index.dzi"));
+        CHECK_FALSE(fs::exists(stage / "index.html"));
+        CHECK_FALSE(fs::exists(destination));
+    }
+    CHECK_FALSE(fs::exists(destination));
 }
 
 TEST_CASE("optional preview uses final pixels and agrees across formats and output modes")

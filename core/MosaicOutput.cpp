@@ -258,7 +258,8 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
                 {
                     runtime->stage("building_pyramid");
                 }
-                if (!DeepZoomWriter::buildPyramid(folder, tileW, tileH, tilesX, tilesY, config.jpegQuality, runtime))
+                if (!DeepZoomWriter::buildPyramid(folder, tileW, tileH, tilesX, tilesY, config.jpegQuality,
+                                                   pool, config.benchmark, runtime))
                 {
                     throw std::runtime_error("DeepZoom pyramid or manifest could not be written");
                 }

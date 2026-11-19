@@ -3,11 +3,13 @@
 #include "DeepZoomLayout.h"
 #include "UnicodeIO.h"
 #include "RuntimeContext.h"
+#include "WorkerPool.h"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -19,10 +21,13 @@ namespace mosaicraft
 class DeepZoomWriter
 {
 public:
+    using WriteImage = decltype(&imwriteUnicode);
+
     static bool buildPyramid(const std::string& level0Dir,
                              int tileW, int tileH,
                              int cols, int rows,
-                             int quality, RuntimeContext *runtime = nullptr)
+                             int quality, WorkerPool &workers, bool benchmark, RuntimeContext *runtime = nullptr,
+                             WriteImage writeImage = imwriteUnicode)
     {
         namespace fs = std::filesystem;
         auto fail = [&](const std::string &message, const std::string &path)
@@ -151,79 +156,79 @@ public:
                   << " mosaic tiles (" << tileW << "x" << tileH << ")"
                   << std::endl;
 
-        int fullCols = DeepZoomLevel::tiles(totalW);
-        int fullRows = DeepZoomLevel::tiles(totalH);
-        std::cout << "  DZI level " << maxLevel << ": " << fullCols << "x" << fullRows
-                  << " tiles (" << totalW << "x" << totalH << ")" << std::flush;
-
-        int written = 0;
-        for (int r = 0; r < fullRows; ++r)
+        struct TileWriteFailure
         {
-            for (int c = 0; c < fullCols; ++c)
-            {
-                int x = c * dziTileSize;
-                int y = r * dziTileSize;
-                int w = std::min(dziTileSize, totalW - x);
-                int h = std::min(dziTileSize, totalH - y);
-                cv::Mat tile = renderFullRegion(x, y, w, h);
-                fs::path dst = pyramidDir / std::to_string(maxLevel) /
-                               (std::to_string(c) + "_" + std::to_string(r) + ".jpg");
-                if (imwriteUnicode(pathToUtf8(dst), tile,
-                                   {cv::IMWRITE_JPEG_QUALITY, quality}))
-                    ++written;
-                else
-                {
-                    return fail("DeepZoom failed to write tile", pathToUtf8(dst));
-                }
-            }
-        }
-        std::cout << " (" << written << " tiles)" << std::endl;
-
-        for (int level = maxLevel - 1; level >= 0; --level)
+            std::string path;
+        };
+        using Clock = std::chrono::steady_clock;
+        for (int level = maxLevel; level >= 0; --level)
         {
             const auto &current = levels[maxLevel - level];
-            const auto &previous = levels[maxLevel - level - 1];
-            int levelW = current.width;
-            int levelH = current.height;
-            int prevW = previous.width;
-            int prevH = previous.height;
-            int levelCols = DeepZoomLevel::tiles(levelW);
-            int levelRows = DeepZoomLevel::tiles(levelH);
-
-            std::cout << "  DZI level " << level << ": " << levelCols << "x" << levelRows
-                      << " tiles (" << levelW << "x" << levelH << ")" << std::flush;
-            written = 0;
-
-            for (int r = 0; r < levelRows; ++r)
+            const int columns = DeepZoomLevel::tiles(current.width);
+            const int rows = DeepZoomLevel::tiles(current.height);
+            const size_t count = current.files();
+            std::cout << "  DZI level " << level << ": " << columns << "x" << rows
+                      << " tiles (" << current.width << "x" << current.height << ")" << std::flush;
+            const auto started = benchmark ? Clock::now() : Clock::time_point{};
+            auto writeTile = [&](size_t i)
             {
-                for (int c = 0; c < levelCols; ++c)
+                const int c = static_cast<int>(i % columns), r = static_cast<int>(i / columns);
+                const int x = c * dziTileSize, y = r * dziTileSize;
+                const int w = std::min(dziTileSize, current.width - x);
+                const int h = std::min(dziTileSize, current.height - y);
+                cv::Mat tile;
+                if (level == maxLevel)
                 {
-                    int x = c * dziTileSize;
-                    int y = r * dziTileSize;
-                    int w = std::min(dziTileSize, levelW - x);
-                    int h = std::min(dziTileSize, levelH - y);
-                    int srcX = x * 2;
-                    int srcY = y * 2;
-                    int srcW = std::min(w * 2, prevW - srcX);
-                    int srcH = std::min(h * 2, prevH - srcY);
-
-                    cv::Mat high = renderLevelRegion(level + 1, srcX, srcY, srcW, srcH);
-                    cv::Mat tile;
+                    tile = renderFullRegion(x, y, w, h);
+                }
+                else
+                {
+                    const auto &previous = levels[maxLevel - level - 1];
+                    const int srcX = x * 2, srcY = y * 2;
+                    cv::Mat high = renderLevelRegion(level + 1, srcX, srcY,
+                        std::min(w * 2, previous.width - srcX), std::min(h * 2, previous.height - srcY));
                     cv::resize(high, tile, cv::Size(w, h), 0, 0, cv::INTER_AREA);
-
-                    fs::path dst = pyramidDir / std::to_string(level) /
-                                   (std::to_string(c) + "_" + std::to_string(r) + ".jpg");
-                    if (imwriteUnicode(pathToUtf8(dst), tile,
-                                       {cv::IMWRITE_JPEG_QUALITY, quality}))
-                        ++written;
-                    else
+                }
+                const auto dst = pathToUtf8(pyramidDir / std::to_string(level) /
+                                           (std::to_string(c) + "_" + std::to_string(r) + ".jpg"));
+                try
+                {
+                    if (writeImage(dst, tile, {cv::IMWRITE_JPEG_QUALITY, quality}))
                     {
-                        return fail("DeepZoom failed to write tile", pathToUtf8(dst));
+                        return;
+                    }
+                }
+                catch (const cv::Exception &)
+                {
+                    // 编码异常与落盘失败走同一条路径，保留失败切片的文件名。
+                }
+                throw TileWriteFailure{dst};
+            };
+            try
+            {
+                if (count >= 16 && workers.size() > 1)
+                {
+                    // run 等到本层所有写入收束，下一层才能安全读取。
+                    workers.run(count, writeTile);
+                }
+                else
+                {
+                    for (size_t i = 0; i < count; ++i)
+                    {
+                        writeTile(i);
                     }
                 }
             }
-
-            std::cout << " (" << written << " tiles)" << std::endl;
+            catch (const TileWriteFailure &error)
+            {
+                return fail("DeepZoom failed to write tile", error.path);
+            }
+            if (benchmark && runtime)
+            {
+                runtime->metric("deepZoomLevel" + std::to_string(level) + "Ms",
+                    std::chrono::duration<double, std::milli>(Clock::now() - started).count());
+            }
+            std::cout << " (" << count << " tiles)" << std::endl;
         }
 
         // 所有层、manifest 和 viewer 均成功后才清理原始小块，失败时可从 _source_tiles 恢复。
