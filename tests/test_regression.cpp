@@ -1762,6 +1762,36 @@ TEST_CASE("interactive selection is read-only and pins the exported tiles and an
         CHECK(cached.recommendationsAt(position) == fresh.recommendationsAt(position));
     }
 
+    auto weighted = different;
+    weighted.config.labWeight += 0.1;
+    weighted.config.benchmark = true;
+    MosaicSelection afterWeight, freshWeight;
+    const auto weightResult = MosaicService().preview(weighted, 42, cache, canceled, afterWeight);
+    REQUIRE(weightResult.ok);
+    CHECK(weightResult.runtime.metrics.at("previewScoresReused") == 0);
+    CHECK(weightResult.runtime.metrics.at("previewTileFeaturesReused") == 1);
+    CHECK(weightResult.runtime.metrics.at("previewCandidatesReused") == 1);
+    CHECK(weightResult.runtime.metrics.at("previewCacheReservedBytes") > 0);
+    PreviewWorkspace empty;
+    REQUIRE(MosaicService().preview(weighted, 42, empty, canceled, freshWeight).ok);
+    CHECK(afterWeight.imageIds == freshWeight.imageIds);
+    CHECK(afterWeight.referenceJpeg == freshWeight.referenceJpeg);
+    REQUIRE(cache.candidates);
+    REQUIRE(empty.candidates);
+    CHECK(cache.candidates->data == empty.candidates->data);
+    REQUIRE(cache.scores);
+    REQUIRE(empty.scores);
+    CHECK(cache.scores->indices == empty.scores->indices);
+    CHECK(cache.scores->values == empty.scores->values);
+
+    const auto reserved = PreviewCacheReservation::totalBytes();
+    canceled = true;
+    PreviewWorkspace canceledWorkspace;
+    MosaicSelection canceledSelection;
+    CHECK_FALSE(MosaicService().preview(weighted, 42, canceledWorkspace, canceled, canceledSelection).ok);
+    CHECK(PreviewCacheReservation::totalBytes() == reserved);
+    canceled = false;
+
     const auto original = readBytesUnicode(request.inputPath);
     requireWriteImage(workspace.targetPath(), cv::Mat(64, 36, CV_8UC3, cv::Scalar(40, 90, 140)));
     CHECK_FALSE(MosaicEngine::selectionCurrent(request.inputPath, request.dbPath, request.config, selection));
