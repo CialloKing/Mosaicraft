@@ -54,8 +54,14 @@ void reportOutputBenchmark(const OutputStats &stats, const MosaicEngine::Config 
     metric(runtime, "placementMs", "Placement", stats.placementMs);
     if (config.outputMode == OutputMode::Image)
     {
-        metric(runtime, "decodeWorkerMs", "Decode (worker sum)", stats.decodeMs);
-        metric(runtime, "resizeWorkerMs", "Resize (worker sum)", stats.resizeMs);
+        if (legacyRenderKeys || stats.decodeMs > 0)
+        {
+            metric(runtime, "decodeWorkerMs", "Decode (worker sum)", stats.decodeMs);
+        }
+        if (legacyRenderKeys || stats.resizeMs > 0)
+        {
+            metric(runtime, "resizeWorkerMs", "Resize (worker sum)", stats.resizeMs);
+        }
         metric(runtime, "encodingMs", "Encoding", stats.encodingMs);
     }
     if (stats.rowCodec)
