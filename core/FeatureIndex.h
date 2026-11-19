@@ -361,6 +361,12 @@ class FeatureIndex
         }
     }
 
+    // 并行搜索各持有一份访问表，按索引容量而不是候选数计费。
+    size_t visitedTableBytes() const
+    {
+        return m_index ? m_index->getMaxElements() * sizeof(hnswlib::vl_type) : 0;
+    }
+
     int dimension() const
     {
         return m_dim;

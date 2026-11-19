@@ -2011,6 +2011,7 @@ TEST_CASE("ANN cache validates features and parallel queries preserve ordering")
     FeatureIndex index;
     REQUIRE(index.build(records));
     CHECK(index.dimension() == 196);
+    CHECK(index.visitedTableBytes() == records.size() * sizeof(hnswlib::vl_type));
     std::vector<float> query;
     buildTileVector(10, 0, 0, records[2].gridLab, {}, 0, {}, query);
     std::vector<float> queries;
@@ -2036,6 +2037,7 @@ TEST_CASE("ANN cache validates features and parallel queries preserve ordering")
     REQUIRE(index.save(cache));
     FeatureIndex loaded;
     REQUIRE(loaded.load(cache, 196, records));
+    CHECK(loaded.visitedTableBytes() == index.visitedTableBytes());
     CHECK(loaded.queryBatch(queries, 8, 2) == index.queryBatch(queries, 8, 1));
     // 使用次数重排数据库行后，命中常驻图也必须翻译到本次任务的行号。
     bool hot = false;

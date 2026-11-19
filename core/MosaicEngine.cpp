@@ -1251,22 +1251,44 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         // 单线程时特征、Canny、ANN 与评分依次运行，不为闲置阶段另开线程池。
         const bool sharedSchedule = trialOptions.share < 0 ? bool(MOSAICRAFT_TRIAL_SCHEDULE) : trialOptions.share != 0;
         const bool wantPrefetch = trialOptions.prefetch < 0 ? bool(MOSAICRAFT_TRIAL_SCHEDULE) : trialOptions.prefetch != 0;
-        const bool shareWorkers = cfg.threads == 1 || ((sharedSchedule || wantPrefetch) && cfg.threads > 0 && !portableRequested);
+        bool shareWorkers = cfg.threads == 1 || ((sharedSchedule || wantPrefetch) && cfg.threads > 0 && !portableRequested);
         // 顺序选图和预取协调各占一个执行位。少于四个执行位时不启动预取。
         const bool overlap = wantPrefetch && shareWorkers && cfg.threads >= 4 && !selection && !m_preview && !cfg.analyze &&
                              !m_previewWorkspace && (templateCuda ? preflight.device == 0 : !cudaEnabled);
-        std::unique_ptr<WorkerPool> separateQueries;
-        if (!shareWorkers)
-        {
-            separateQueries = std::make_unique<WorkerPool>(cfg.threads > 0 ? static_cast<unsigned>(cfg.threads) : 0);
-        }
-        unsigned featureThreads = templateCuda ? std::min(8u, std::max(1u, std::thread::hardware_concurrency()))
-                                             : std::max(2u, std::thread::hardware_concurrency());
+        const unsigned hardwareThreads = std::max(1u, std::thread::hardware_concurrency());
+        const unsigned defaultQueryThreads = std::min(8u, hardwareThreads);
+        unsigned queryThreads = cfg.threads > 0 ? static_cast<unsigned>(cfg.threads) : defaultQueryThreads;
+        unsigned featureThreads = templateCuda ? defaultQueryThreads : std::max(2u, hardwareThreads);
         if (cfg.threads > 0)
         {
             featureThreads = std::min(featureThreads, static_cast<unsigned>(cfg.threads - (overlap ? 2 : 0)));
         }
-        WorkerPool featureWorkers(static_cast<unsigned>(std::min<size_t>(batchRows, featureThreads)));
+        const auto featureSlots = static_cast<unsigned>(std::min<size_t>(batchRows, featureThreads));
+        if (cfg.threads == 0 && largeFastCpuImage && !selection && !cfg.analyze && !m_previewWorkspace)
+        {
+            constexpr size_t rowsPerWorker = 16;
+            const size_t tableBytes = annIndex->visitedTableBytes();
+            if (tableBytes > 0)
+            {
+                // 只扩有足够独立行的批次，额外访问表从特征预算中预留，避免大图库放大每线程开销。
+                const size_t extraBudget = std::min<size_t>(readerBudget / 16, 16 * 1024 * 1024);
+                const size_t wide = std::min<size_t>(
+                    {hardwareThreads, 256, batchRows / rowsPerWorker, defaultQueryThreads + extraBudget / tableBytes});
+                if (wide > defaultQueryThreads)
+                {
+                    queryThreads = static_cast<unsigned>(wide);
+                    readerBudget -= (queryThreads - defaultQueryThreads) * tableBytes;
+                    // CPU 特征、ANN 和基础评分是串行阶段，同尺寸时不留两套常驻池。
+                    shareWorkers = queryThreads == featureSlots;
+                }
+            }
+        }
+        WorkerPool featureWorkers(featureSlots);
+        std::unique_ptr<WorkerPool> separateQueries;
+        if (!shareWorkers)
+        {
+            separateQueries = std::make_unique<WorkerPool>(queryThreads);
+        }
         WorkerPool &queryWorkers = separateQueries ? *separateQueries : featureWorkers;
         std::unique_ptr<cuda::FeatureWorkspace> workspace;
         std::unique_ptr<cuda::ScoreWorkspace> scoreWorkspace;
