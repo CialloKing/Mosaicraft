@@ -4,6 +4,8 @@
 
 ## 文件索引
 
+- [相对 82d3a274e：导出、LAB、ANN 与图库追加](next-82d3a274e.md)
+
 - [相对 49bde5f5b：CPU 大图邻域去重与特征实验](create-49bde5f5b.md)
 
 - [相对 182a41ebb：CPU 小图、AVX-512 与 Ada 大图设备 Canny](create-182a41ebb.md)
