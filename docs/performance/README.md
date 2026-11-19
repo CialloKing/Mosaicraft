@@ -4,6 +4,8 @@
 
 ## 文件索引
 
+- [Windows CPU 预览：更大内存上限对照](preview-memory-scale-dbbc7d7e1.md)
+
 - [Windows Web UI 预览缓存扩容与特征源校验](preview-cache-ec28d6912.md)
 
 - [运行性能日志：输出汇总与图库追加开销](runtime-logging-198f2d83b.md)
