@@ -1842,15 +1842,16 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                                        }
                                        auto &lab = trial ? labScratch : labLocal;
                                        cv::cvtColor(roiNative, lab, cv::COLOR_BGR2Lab);
-                                       cv::Scalar m = trial ? cpuGridAndMean(lab, allGrid[local].data()) : cv::mean(lab);
-                                       allTL[local] = m[0];
-                                       allTA[local] = m[1];
-                                       allTB[local] = m[2];
+                                       // 快速路径把整图均值与 Grid 合算，因此应在颜色转换结束处切分计时。
                                        auto t2 = cfg.benchmark ? Clock::now() : Clock::time_point{};
                                        if (cfg.benchmark)
                                        {
                                            metrics.opLabNs += std::chrono::duration_cast<Ns>(t2 - t1).count();
                                        }
+                                       cv::Scalar m = trial ? cpuGridAndMean(lab, allGrid[local].data()) : cv::mean(lab);
+                                       allTL[local] = m[0];
+                                       allTA[local] = m[1];
+                                       allTB[local] = m[2];
                                        if (!trial)
                                        {
                                            allGrid[local] = computeGrid8x8FromLab(lab);
@@ -2886,6 +2887,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         runtime.metric("prepareMs", metrics.msPrep);
         runtime.metric("matchingMs", metrics.matchingWallMs);
         runtime.metric("featureMs", metrics.msFeat);
+        if (metrics.opResizeNs > 0)
+        {
+            runtime.metric("cpuLabConvertWorkerMs", metrics.opLabNs / 1e6);
+            runtime.metric("cpuGridMeanWorkerMs", metrics.opGridNs / 1e6);
+        }
         runtime.metric("annQueryMs", metrics.msANNQuery);
         runtime.metric("selectionMs", metrics.msSelect);
         runtime.metric("matchingPrefetch", metrics.matchingPrefetch ? 1 : 0);
@@ -2905,6 +2911,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         runtime.metric("totalMs", Ms(Clock::now() - tStart).count());
         runtime.metric("matchingMs", metrics.matchingWallMs);
         runtime.metric("featureMs", metrics.msFeat);
+        if (metrics.opResizeNs > 0)
+        {
+            runtime.metric("cpuLabConvertWorkerMs", metrics.opLabNs / 1e6);
+            runtime.metric("cpuGridMeanWorkerMs", metrics.opGridNs / 1e6);
+        }
         runtime.metric("annQueryMs", metrics.msANNQuery);
         runtime.metric("selectionMs", metrics.msSelect);
         runtime.metric("matchingBufferPeakBytes", metrics.matchingPeakBytes);
@@ -3040,6 +3051,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         runtime.metric("sortMs", metrics.msSort);
         runtime.metric("matchingMs", metrics.matchingWallMs);
         runtime.metric("featureMs", metrics.msFeat);
+        if (metrics.opResizeNs > 0)
+        {
+            runtime.metric("cpuLabConvertWorkerMs", metrics.opLabNs / 1e6);
+            runtime.metric("cpuGridMeanWorkerMs", metrics.opGridNs / 1e6);
+        }
         runtime.metric("annQueryMs", metrics.msANNQuery);
         runtime.metric("selectionMs", metrics.msSelect);
         runtime.metric("placementMs", metrics.msPlace);

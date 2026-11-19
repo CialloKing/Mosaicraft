@@ -23,9 +23,10 @@ void printMosaicBenchmark(const MosaicMetrics &metrics, const MosaicBenchmarkCon
         {
             return ns / 1000000.0;
         };
+        std::cout << "  CPU feature worker times (overlapping, not wall time):\n";
         std::cout << "    Resize:   " << std::setprecision(1) << toMs(metrics.opResizeNs) << " ms\n";
-        std::cout << "    LAB:      " << std::setprecision(1) << toMs(metrics.opLabNs) << " ms\n";
-        std::cout << "    Grid:     " << std::setprecision(1) << toMs(metrics.opGridNs) << " ms\n";
+        std::cout << "    BGR to LAB: " << std::setprecision(1) << toMs(metrics.opLabNs) << " ms\n";
+        std::cout << "    Grid + mean: " << std::setprecision(1) << toMs(metrics.opGridNs) << " ms\n";
         std::cout << "    Tiny:     " << std::setprecision(1) << toMs(metrics.opTinyNs) << " ms\n";
         std::cout << "    Edge:     " << std::setprecision(1) << toMs(metrics.opEdgeNs) << " ms\n";
         std::cout << "    LBP:      " << std::setprecision(1) << toMs(metrics.opLbpNs) << " ms\n";
@@ -76,6 +77,7 @@ void printMosaicBenchmark(const MosaicMetrics &metrics, const MosaicBenchmarkCon
             return ns / 1000000.0;
         };
         std::cout << "    Decode:   " << std::setprecision(1) << toMs(metrics.opPlaceDecodeNs) << " ms\n";
+        std::cout << "  CPU feature worker times (overlapping, not wall time):\n";
         std::cout << "    Resize:   " << std::setprecision(1) << toMs(metrics.opPlaceResizeNs) << " ms\n";
         std::cout << "    Copy:     " << std::setprecision(1) << toMs(metrics.opPlaceCopyNs) << " ms\n";
     }
