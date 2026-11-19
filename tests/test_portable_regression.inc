@@ -37,6 +37,20 @@ TEST_CASE("portable scoring and selection meet FP64 quality and ID gates")
             request.config.candidates = 150;
             request.config.lRange = 255;
             request.config.threads = 2;
+            if (size.width == 31 && compute::automaticVulkan(BackendPolicy::Auto, "auto") &&
+                compute::select(BackendPolicy::Auto, "auto").id == device.id)
+            {
+                // Device discovery succeeds, but the working set cannot even hold one Vulkan batch.
+                MatchingLimits limited;
+                limited.deviceBytes = 1;
+                MosaicEngine engine;
+                MatchingAccess::configure(engine, limited, true, 42);
+                MatchingAccess::matchOnly(engine);
+                RuntimeContext runtime(false);
+                REQUIRE(engine.generate(request.inputPath, request.dbPath, request.outputPath, request.config, runtime));
+                CHECK(runtime.snapshot().computeDevice == "cpu");
+                CHECK(runtime.snapshot().fallbackReason.find("Vulkan feature resources") != std::string::npos);
+            }
             Database database(utf8(workspace.dbPath()), Database::OpenMode::Existing);
             const auto records = database.allRecords();
             FeaturePack::Reader reader(utf8(workspace.libraryDir() / "features"), records, 64 * 1024 * 1024);

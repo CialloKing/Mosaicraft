@@ -1,3 +1,4 @@
+#include "../compute/ComputeBackend.h"
 #include "../compute/CudaBackend.h"
 #include "../compute/CompatibleScoring.h"
 #include "../core/MatchingScore.h"
@@ -713,6 +714,12 @@ TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encode
     build.normalizeWidth = 255;
     build.normalizeHeight = 257;
     build.threads = 3;
+    // This fixture injects CUDA faults; a Vulkan-only build must use the CPU reference instead.
+    const bool vulkanOnlyAuto = compute::automaticVulkan(BackendPolicy::Auto, "auto");
+    if (vulkanOnlyAuto)
+    {
+        build.backend = BackendPolicy::Cpu;
+    }
     REQUIRE(BuildService().run(build).ok);
     auto bytes = [](const fs::path &path)
     {
@@ -751,6 +758,10 @@ TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encode
         }
     }
     auto request = makeMosaicRequest(workspace);
+    if (vulkanOnlyAuto)
+    {
+        request.config.backend = BackendPolicy::Cpu;
+    }
     request.config.outW = 41;
     request.config.outH = 73;
     request.config.lRange = 255;
