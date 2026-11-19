@@ -21,6 +21,10 @@ public:
     bool process(const std::string& inputPath, const std::string& outputPath,
                  const std::vector<int>& writeParams = {}, cv::Mat* storedPixels = nullptr);
 
+    // 建库、追加和独立归一化共享编码策略；不影响成品图的输出设置。
+    bool processLibraryImage(const std::string& inputPath, const std::string& outputPath,
+                             cv::Mat* storedPixels = nullptr);
+
     // 返回归一化后的 cv::Mat（不写磁盘），供流水线使用
     cv::Mat processToMat(const std::string& inputPath);
 

@@ -74,18 +74,7 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
                 {
                     ImageNormalizer normalizer(request.normalizeWidth, request.normalizeHeight);
                     const auto destination = output / (std::to_string(index) + pathToUtf8(files[index].extension()));
-                    auto extension = pathToUtf8(destination.extension());
-                    std::transform(extension.begin(), extension.end(), extension.begin(),
-                                   [](unsigned char c)
-                                   {
-                                       return static_cast<char>(std::tolower(c));
-                                   });
-                    // 与正式建库保持同样的编码质量，不因拆出纯归一化改变素材像素。
-                    const auto parameters = extension == ".png" ? std::vector<int>{cv::IMWRITE_PNG_COMPRESSION, 9}
-                                            : extension == ".jpg" || extension == ".jpeg"
-                                                ? std::vector<int>{cv::IMWRITE_JPEG_QUALITY, 100}
-                                                : std::vector<int>{};
-                    if (!normalizer.process(pathToUtf8(files[index]), pathToUtf8(destination), parameters))
+                    if (!normalizer.processLibraryImage(pathToUtf8(files[index]), pathToUtf8(destination)))
                     {
                         ++failed;
                     }

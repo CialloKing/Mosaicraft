@@ -99,6 +99,22 @@ bool ImageNormalizer::process(const std::string& inputPath, const std::string& o
     }
 }
 
+bool ImageNormalizer::processLibraryImage(const std::string& inputPath, const std::string& outputPath,
+                                          cv::Mat* storedPixels)
+{
+    const auto format = imageFormat(outputPath);
+    if (format == ".png")
+    {
+        // 素材只在入库时编码，优先节省长期存储空间；同尺寸同格式仍由 process 保留原字节。
+        return process(inputPath, outputPath, {cv::IMWRITE_PNG_COMPRESSION, 9}, storedPixels);
+    }
+    if (format == ".jpg")
+    {
+        return process(inputPath, outputPath, {cv::IMWRITE_JPEG_QUALITY, 100}, storedPixels);
+    }
+    return process(inputPath, outputPath, {}, storedPixels);
+}
+
 cv::Mat ImageNormalizer::processToMat(const std::string& inputPath)
 {
     cv::Mat src = imreadUnicode(inputPath, cv::IMREAD_COLOR);

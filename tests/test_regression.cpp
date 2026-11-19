@@ -1653,16 +1653,16 @@ TEST_CASE("normalization retains resized encoding conversion and failure behavio
     cv::RNG(17).fill(source, cv::RNG::UNIFORM, 0, 256);
     const auto input = utf8(workspace.inputDir() / "input.png");
     requireWriteImage(u8path(input), source);
-    for (const std::string extension : {"jpg", "png"})
+    for (const std::string extension : {"jpg", "PNG"})
     {
-        const std::vector<int> params = extension == "jpg" ? std::vector<int>{cv::IMWRITE_JPEG_QUALITY, 90}
+        const std::vector<int> params = extension == "jpg" ? std::vector<int>{cv::IMWRITE_JPEG_QUALITY, 100}
                                                            : std::vector<int>{cv::IMWRITE_PNG_COMPRESSION, 9};
         const auto baseline = utf8(workspace.outputDir() / ("baseline." + extension));
         const auto output = utf8(workspace.outputDir() / ("output." + extension));
         const cv::Mat normalized = normalizer.centerCrop(normalizer.resizeToCover(source));
         REQUIRE(imwriteUnicode(baseline, normalized, params));
         cv::Mat saved;
-        REQUIRE(normalizer.process(input, output, params, &saved));
+        REQUIRE(normalizer.processLibraryImage(input, output, &saved));
         CHECK(readBytesUnicode(output) == readBytesUnicode(baseline));
         CHECK(cv::norm(saved, imreadUnicode(output), cv::NORM_INF) == 0);
         CHECK(cv::norm(normalizer.processToMat(input), normalized, cv::NORM_INF) == 0);

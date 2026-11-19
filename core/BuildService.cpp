@@ -356,23 +356,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
         bool saved = false;
         try
         {
-            auto extension = pathToUtf8(u8path(output).extension());
-            // 扫描支持大小写后缀，编码参数也应按同一种格式统一选择。
-            std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c)
-            {
-                return static_cast<char>(std::tolower(c));
-            });
-            std::vector<int> writeParams;
-            if (extension == ".jpg" || extension == ".jpeg")
-            {
-                writeParams = {cv::IMWRITE_JPEG_QUALITY, 100};
-            }
-            else if (extension == ".png")
-            {
-                // 无损像素决定身份与特征；只为确需缩放的图库 PNG 选择较快压缩，同尺寸仍复制原字节。
-                writeParams = {cv::IMWRITE_PNG_COMPRESSION, 3};
-            }
-            saved = normalizer.process(input, output, writeParams, pixels);
+            saved = normalizer.processLibraryImage(input, output, pixels);
             if (!saved)
             {
                 runtime.emit("warning", "source_skipped", "normalization failed", "inputDir", input);
