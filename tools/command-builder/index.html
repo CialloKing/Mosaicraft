@@ -525,6 +525,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <div class="chk-row">
       <label><input type="checkbox" id="b-recursive"> 递归扫描子目录 -r</label>
       <label><input type="checkbox" id="b-monitor"> 资源监控</label>
+      <label><input type="checkbox" id="b-benchmark" disabled> 追加性能分析 --benchmark</label>
     </div>
     <p class="hint">建库默认按图片整体色调排列全库，从 000000 连续编号。追加后旧编号可能改变；输入与输出同目录时，也会更改原文件名。可在 Windows 资源管理器中按名称升序查看颜色渐变。仅归一化模式不重排图库。</p>
   </div>
@@ -1795,6 +1796,7 @@ function buildBuildPayload() {
   setIfNumber(payload, 'threads', 'b-threads', '线程数', { integer: true, min: 0, max:256 });
   const normSize = setIfSize(payload, 'normalizeSize', 'b-normsize', '归一化尺寸');
   payload.appendMode = val('b-mode') === 'add';
+  if (payload.appendMode) setIfChecked(payload, 'benchmark', 'b-benchmark');
   setIfChecked(payload, 'recursive', 'b-recursive');
   payload.normalizeOnly = val('b-mode') === 'normalize';
   if (!payload.normalizeOnly) { payload.backend = val('b-backend'); payload.device = val('b-device'); }
@@ -2212,6 +2214,7 @@ function restoreRequestParameters(job) {
   } else {
     document.getElementById('b-normsize').value = (request.normalizeWidth || 180) + 'x' + (request.normalizeHeight || 320);
     document.getElementById('b-monitor').checked = !!request.resourceMonitor;
+    document.getElementById('b-benchmark').checked = !!request.benchmark;
     if (request.appendMode && request.dbPath && request.dbPath !== 'mosaicraft.db')
       document.getElementById('b-output').value = libraryDirectory(request.dbPath);
     document.getElementById('b-mode').value = request.normalizeOnly ? 'normalize' : request.appendMode ? 'add' : 'build';
@@ -2254,6 +2257,7 @@ function clearFieldErrors() {
 }
 function syncPreviewOption() {
   document.getElementById('b-normsize').disabled = val('b-mode') === 'add';
+  document.getElementById('b-benchmark').disabled = val('b-mode') !== 'add';
   document.getElementById('b-backend').disabled = val('b-mode') === 'normalize';
   document.getElementById('b-device').disabled = val('b-mode') === 'normalize';
   const preview = document.getElementById('m-preview');

@@ -865,6 +865,10 @@ bool parseBuildRequestJson(const std::string &body, BuildRequest &request, Reque
     {
         request.resourceMonitor = boolValue;
     }
+    if (getBoolField(values, keysFor("benchmark"), boolValue, error))
+    {
+        request.benchmark = boolValue;
+    }
 
     request.allowPrompt = false;
     if (getStringField(values, {"backend"}, text, error))

@@ -483,6 +483,15 @@ try {
     Assert-JobSnapshot -Job $build.job -ExpectedType "build" -ExpectedInputPath $inputDir -ExpectedOutputPath $libraryDir
     Wait-JobSucceeded -JobId $build.job.id -Label "build" -ExpectedType "build" -ExpectedInputPath $inputDir -ExpectedOutputPath $libraryDir | Out-Null
 
+    $invalidBuild = Invoke-ApiResponse -Method 'POST' -Path '/api/jobs/build' -Body @{inputDir=$inputDir;benchmark=$true}
+    Assert-True ($invalidBuild.StatusCode -eq 400 -and $invalidBuild.Json.diagnostic.field -eq 'benchmark') 'benchmark must require append mode'
+    $append = Invoke-Api -Method 'POST' -Path '/api/jobs/build' -Body @{
+        inputDir=$inputDir;outputDir=$libraryDir;dbPath=$dbPath;appendMode=$true;benchmark=$true;threads=1
+    }
+    $appended = Wait-JobSucceeded -JobId $append.job.id -Label 'append benchmark' -ExpectedType 'build' -ExpectedInputPath $inputDir -ExpectedOutputPath $libraryDir
+    Assert-True ($appended.runtime.metrics.sqlLookupCount -eq 10 -and $appended.runtime.metrics.committedBatchCount -eq 0) 'append metrics were not published'
+    Assert-True ($appended.request.benchmark -eq $true) 'append benchmark was lost from the saved request'
+
     $stats = Invoke-Api -Method "POST" -Path "/api/db/stats" -Body @{ dbPath = $dbPath }
     Assert-True ($stats.ok -eq $true) "database stats failed"
     Assert-True ([int]$stats.stats.total -eq 10) "database stats total should be 10"
@@ -728,9 +737,10 @@ try {
     $checkSubmitted = Invoke-Api -Method 'POST' -Path '/api/jobs/project-check' -Body @{projectPath=$projectPath;deep=$true}
     $checked = Wait-JobSucceeded -JobId $checkSubmitted.job.id -Label 'project check' -ExpectedType 'project-check' -ExpectedInputPath $projectPath -ExpectedOutputPath ''
     $renderPath = Join-Path $outputDir 'project-render.png'
-    $renderSubmitted = Invoke-Api -Method 'POST' -Path '/api/jobs/render' -Body @{projectPath=$projectPath;outputPath=$renderPath;brightnessJitter=0.04;seed=12;threads=2}
+    $renderSubmitted = Invoke-Api -Method 'POST' -Path '/api/jobs/render' -Body @{projectPath=$projectPath;outputPath=$renderPath;brightnessJitter=0.04;seed=12;threads=2;benchmark=$true}
     $rendered = Wait-JobSucceeded -JobId $renderSubmitted.job.id -Label 'project render' -ExpectedType 'render' -ExpectedInputPath $projectPath -ExpectedOutputPath $renderPath
     Assert-True ($rendered.runtime.featureBackend -eq 'none' -and $rendered.runtime.scoreBackend -eq 'none') 'project render executed matching'
+    Assert-True ($rendered.runtime.metrics.threadsRequested -eq 2 -and $rendered.runtime.metrics.cacheDecodes -gt 0) 'render metrics were not published'
     $zipPath = Join-Path $outputDir 'portable-artwork.zip'
     $packSubmitted = Invoke-Api -Method 'POST' -Path '/api/jobs/project-pack' -Body @{projectPath=$projectPath;outputPath=$zipPath}
     $packed = Wait-JobSucceeded -JobId $packSubmitted.job.id -Label 'project pack' -ExpectedType 'project-pack' -ExpectedInputPath $projectPath -ExpectedOutputPath $zipPath

@@ -3,6 +3,7 @@
 #include "NormalizeService.h"
 #include "ExecutionScope.h"
 
+#include "BenchmarkTimer.h"
 #include "Database.h"
 #include "FeatureExtractor.h"
 #include "FeaturePack.h"
@@ -59,6 +60,54 @@ namespace
 {
 
 constexpr int EXIT_ERR_DB = 2;
+
+struct AppendBenchmark
+{
+    ImageNormalizer::LibraryTimings normalization;
+    BenchmarkSample hash, sql, batchDedup, transaction, commit, producerWait, consumerWait;
+    size_t sqlHits = 0, batchDuplicates = 0, normalizeSlots = 0, featureSlots = 0;
+
+    void report(RuntimeContext &runtime, int threads) const
+    {
+        std::cout << "  Library append benchmark (overlapping worker times are not wall time):\n";
+        const auto emit = [&](const char *key, double value)
+        {
+            runtime.metric(key, value);
+            std::cout << "    " << key << ": " << value << '\n';
+        };
+        const auto timing = [&](const char *key, const BenchmarkSample &sample)
+        {
+            if (sample.calls)
+            {
+                emit(key, sample.ms);
+            }
+        };
+        emit("threadsRequested", threads);
+        if (normalizeSlots)
+        {
+            emit("normalizeWorkerSlots", normalizeSlots);
+        }
+        if (featureSlots)
+        {
+            emit("libraryFeatureWorkerSlots", featureSlots);
+        }
+        timing("normalizeWorkerMs", normalization.normalize);
+        timing("assetEncodeWorkerMs", normalization.encode);
+        timing("pngCompactWorkerMs", normalization.compactPng);
+        timing("assetWriteWorkerMs", normalization.write);
+        timing("pixelHashMs", hash);
+        timing("sqlLookupMs", sql);
+        timing("batchDedupMs", batchDedup);
+        timing("batchTransactionMs", transaction);
+        timing("batchCommitMs", commit);
+        timing("normalizeQueueProducerWaitWorkerMs", producerWait);
+        timing("normalizeQueueConsumerWaitMs", consumerWait);
+        emit("sqlLookupCount", sql.calls);
+        emit("sqlDuplicateCount", sqlHits);
+        emit("batchDuplicateCount", batchDuplicates);
+        emit("committedBatchCount", commit.calls);
+    }
+};
 
 static std::string hashMatForBuild(const cv::Mat& mat)
 {
@@ -343,8 +392,10 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
         : static_cast<int>(std::thread::hardware_concurrency());
     if (request.threads <= 0 && normThreads < 2) normThreads = 2;
 
+    AppendBenchmark benchmark;
+    auto *profile = request.benchmark ? &benchmark : nullptr;
     std::mutex singleWorkerBudget;
-    const auto normalizeOne = [&](size_t index, cv::Mat *pixels)
+    const auto normalizeOne = [&](size_t index, cv::Mat *pixels, ImageNormalizer::LibraryTimings *timings = nullptr)
     {
         std::unique_lock<std::mutex> budget(singleWorkerBudget, std::defer_lock);
         if (request.threads == 1)
@@ -356,7 +407,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
         bool saved = false;
         try
         {
-            saved = normalizer.processLibraryImage(input, output, pixels);
+            saved = normalizer.processLibraryImage(input, output, pixels, timings);
             if (!saved)
             {
                 runtime.emit("warning", "source_skipped", "normalization failed", "inputDir", input);
@@ -397,6 +448,16 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
     constexpr int MAX_QUEUE = 512;
     std::atomic<bool> normPhaseDone{false};
     std::atomic<int> gpuDone{0};
+    const auto waitForQueueSpace = [&](std::unique_lock<std::mutex> &lock, BenchmarkSample *timing)
+    {
+        const auto ready = [&]()
+        {
+            return normQueue.size() < MAX_QUEUE || normPhaseDone.load();
+        };
+        // 不计已就绪的检查或取锁；这里只观察队列背压。
+        BenchmarkTimer timer(timing && !ready() ? timing : nullptr);
+        queueFullCV.wait(lock, ready);
+    };
 
     runtime.stage("preparing_images");
     FeatureExtractor extractor;
@@ -455,11 +516,49 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
     visuals.scanned = files.size();
     int inserted = 0;
     int skipped = 0;
+    const auto pixelHash = [&](const cv::Mat &image)
+    {
+        BenchmarkTimer timer(profile ? &profile->hash : nullptr);
+        return hashMatForBuild(image);
+    };
+    const auto isDuplicate = [&](const std::string &hash, std::set<std::string> &pendingHashes)
+    {
+        const bool existing = [&]()
+        {
+            BenchmarkTimer timer(profile ? &profile->sql : nullptr);
+            return db.existsByHash(hash);
+        }();
+        if (existing)
+        {
+            if (profile)
+            {
+                ++profile->sqlHits;
+            }
+            return true;
+        }
+        // 保持短路：图库中已有的哈希不进入本批的集合。
+        BenchmarkTimer timer(profile ? &profile->batchDedup : nullptr);
+        const bool duplicate = !pendingHashes.insert(hash).second;
+        if (profile && duplicate)
+        {
+            ++profile->batchDuplicates;
+        }
+        return duplicate;
+    };
+    const auto commitBatch = [&]()
+    {
+        BenchmarkTimer timer(profile ? &profile->commit : nullptr);
+        return db.commitTransaction();
+    };
 
     std::thread gpuThread;
     std::exception_ptr gpuError;
     if (gpuOk && !request.normalizeOnly)
     {
+        if (profile)
+        {
+            profile->featureSlots = 1; // 主机端单消费者，不是 CUDA 执行单元数量。
+        }
         std::cout << "Normalizing + Features: template CUDA (batch " << GPU_BATCH << ", pipelined)" << std::endl;
         gpuThread = std::thread(
             [&]()
@@ -515,31 +614,34 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                                 extractor.compute(imgs[bi], recs[bi], featDir, stems[bi]);
                             }
                         }
-                        if (!db.beginTransaction())
                         {
-                            runtime.fail("library_write_failed", "cannot begin build transaction", "dbPath", dbPath);
-                            throw std::runtime_error("cannot begin build transaction");
-                        }
-                        for (size_t bi = 0; bi < recs.size(); ++bi)
-                        {
-                            if (recs[bi].filePath.empty())
+                            BenchmarkTimer timer(profile ? &profile->transaction : nullptr);
+                            if (!db.beginTransaction())
                             {
-                                continue;
+                                runtime.fail("library_write_failed", "cannot begin build transaction", "dbPath", dbPath);
+                                throw std::runtime_error("cannot begin build transaction");
                             }
-                            if (db.insertImage(recs[bi]))
+                            for (size_t bi = 0; bi < recs.size(); ++bi)
                             {
-                                inserted++;
+                                if (recs[bi].filePath.empty())
+                                {
+                                    continue;
+                                }
+                                if (db.insertImage(recs[bi]))
+                                {
+                                    inserted++;
+                                }
+                                else
+                                {
+                                    runtime.fail("library_write_failed", "cannot insert image into library", "dbPath", dbPath);
+                                    throw std::runtime_error("cannot insert image into library");
+                                }
                             }
-                            else
+                            if (!commitBatch())
                             {
-                                runtime.fail("library_write_failed", "cannot insert image into library", "dbPath", dbPath);
-                                throw std::runtime_error("cannot insert image into library");
+                                runtime.fail("library_write_failed", "cannot commit build transaction", "dbPath", dbPath);
+                                throw std::runtime_error("cannot commit build transaction");
                             }
-                        }
-                        if (!db.commitTransaction())
-                        {
-                            runtime.fail("library_write_failed", "cannot commit build transaction", "dbPath", dbPath);
-                            throw std::runtime_error("cannot commit build transaction");
                         }
                         gpuDone += static_cast<int>(imgs.size());
                         int gd = gpuDone.load();
@@ -557,11 +659,14 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                         NormItem item;
                         {
                             std::unique_lock<std::mutex> lk(queueMtx);
-                            queueCV.wait(lk,
-                                         [&]
-                                         {
-                                             return !normQueue.empty() || normPhaseDone.load();
-                                         });
+                            {
+                                const auto ready = [&]()
+                                {
+                                    return !normQueue.empty() || normPhaseDone.load();
+                                };
+                                BenchmarkTimer timer(profile && !ready() ? &profile->consumerWait : nullptr);
+                                queueCV.wait(lk, ready);
+                            }
                             if (normQueue.empty() && normPhaseDone.load())
                             {
                                 std::unique_lock<std::mutex> budget(singleWorkerBudget, std::defer_lock);
@@ -590,8 +695,8 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                         {
                             budget.lock();
                         }
-                        std::string hash = hashMatForBuild(item.img);
-                        if (db.existsByHash(hash) || !pendingHashes.insert(hash).second)
+                        std::string hash = pixelHash(item.img);
+                        if (isDuplicate(hash, pendingHashes))
                         {
                             ++visuals.duplicates;
                             if (!inputIsOutput)
@@ -655,9 +760,11 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
         }
         std::atomic<size_t> nextFileIdx{0};
         std::vector<std::thread> workers;
+        std::vector<ImageNormalizer::LibraryTimings> timings(profile ? normThreads : 0);
+        std::vector<BenchmarkSample> waits(profile ? normThreads : 0);
         for (int t = 0; t < normThreads; ++t)
         {
-            workers.emplace_back([&]()
+            workers.emplace_back([&, t]()
             {
                 for (;;)
                 {
@@ -668,15 +775,12 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                     }
                     cv::Mat result;
                     const bool needPixels = gpuOk && !request.normalizeOnly;
-                    if (normalizeOne(fi, needPixels ? &result : nullptr) && needPixels)
+                    if (normalizeOne(fi, needPixels ? &result : nullptr, profile ? &timings[t] : nullptr) && needPixels)
                     {
                         try
                         {
                             std::unique_lock<std::mutex> lock(queueMtx);
-                            queueFullCV.wait(lock, [&]
-                            {
-                                return normQueue.size() < MAX_QUEUE || normPhaseDone.load();
-                            });
+                            waitForQueueSpace(lock, profile ? &waits[t] : nullptr);
                             if (normPhaseDone.load())
                             {
                                 break;
@@ -696,6 +800,15 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
         for (auto& w : workers)
         {
             w.join();
+        }
+        if (profile)
+        {
+            profile->normalizeSlots = workers.size();
+            for (size_t i = 0; i < timings.size(); ++i)
+            {
+                profile->normalization.merge(timings[i]);
+                profile->producerWait.merge(waits[i]);
+            }
         }
         tNormEnd = std::chrono::steady_clock::now();
         std::cout << std::endl;
@@ -728,11 +841,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                     continue;
                 }
                 std::unique_lock<std::mutex> lock(queueMtx);
-                queueFullCV.wait(lock,
-                                 [&]
-                                 {
-                                     return normQueue.size() < MAX_QUEUE || normPhaseDone.load();
-                                 });
+                waitForQueueSpace(lock, profile ? &profile->producerWait : nullptr);
                 if (normPhaseDone.load())
                 {
                     break;
@@ -821,16 +930,40 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
             std::cout << "  Generic CUDA resources unavailable; using CPU before extraction." << std::endl;
         }
         runtime.backends(portableReady ? backendName(portableDevice.backend) : compatibleReady ? "compatible_cuda" : "cpu", "none");
+        std::vector<ImageNormalizer::LibraryTimings> timings;
         PendingNormalized pending{normalizers.get(), outPaths, okFlags};
+        // 归一化最多保留一批独占写槽；wait/run 完成后才汇总或复用。
+        const auto mergeTimings = [&]()
+        {
+            if (profile)
+            {
+                for (const auto &item : timings)
+                {
+                    profile->normalization.merge(item);
+                }
+            }
+        };
+        if (profile)
+        {
+            profile->featureSlots = workers.size();
+            if (normalizers)
+            {
+                profile->normalizeSlots = normalizers->size();
+            }
+        }
         const auto startNext = [&](size_t first)
         {
             pending.first = first;
             const auto count = std::min(batchLimit, files.size() - first);
             pending.images.resize(count);
             pending.records.resize(count);
+            if (profile)
+            {
+                timings.assign(count, {});
+            }
             normalizers->start(count, [&, first](size_t i)
             {
-                if (normalizeOne(first + i, &pending.images[i]) && producerHash)
+                if (normalizeOne(first + i, &pending.images[i], profile ? &timings[i] : nullptr) && producerHash)
                 {
                     pending.records[i].fileHash = hashMatForBuild(pending.images[i]);
                 }
@@ -861,6 +994,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                 normalizers->wait();
                 // 仅统计未被本批其他工作掩盖的等待，避免墙钟重复计入。
                 batchNormalization += std::chrono::steady_clock::now() - waiting;
+                mergeTimings();
                 images.swap(pending.images);
                 records.swap(pending.records);
                 pending.images.clear();
@@ -874,12 +1008,17 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
             {
                 // 只保留当前有界批次的落盘像素，让顺序去重和提交继续使用原路径。
                 const auto started = std::chrono::steady_clock::now();
+                if (profile)
+                {
+                    timings.assign(count, {});
+                }
                 normalizers->run(count, [&](size_t i)
                 {
-                    normalizeOne(first + i, &images[i]);
+                    normalizeOne(first + i, &images[i], profile ? &timings[i] : nullptr);
                     hashReady(i);
                 });
                 batchNormalization += std::chrono::steady_clock::now() - started;
+                mergeTimings();
             }
             else
             {
@@ -918,10 +1057,10 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                 auto &record = records[i];
                 if (!producerHash)
                 {
-                    record.fileHash = hashMatForBuild(images[i]);
+                    record.fileHash = pixelHash(images[i]);
                 }
                 const auto &hash = record.fileHash;
-                if (db.existsByHash(hash) || !pendingHashes.insert(hash).second)
+                if (isDuplicate(hash, pendingHashes))
                 {
                     ++visuals.duplicates;
                     if (!inputIsOutput)
@@ -1052,6 +1191,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
             if (batchCount > 0)
             {
                 // SQL 只在调用线程执行；失败回滚整批，提交后才增加已入库数量。
+                BenchmarkTimer timer(profile ? &profile->transaction : nullptr);
                 if (!db.beginTransaction())
                 {
                     return runtimeFailure(runtime, 2, "cannot begin CPU build transaction", "library_write_failed",
@@ -1066,7 +1206,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                         break;
                     }
                 }
-                if (!written || !db.commitTransaction())
+                if (!written || !commitBatch())
                 {
                     db.rollbackTransaction();
                     return runtimeFailure(runtime, 2, "cannot commit CPU build batch; transaction rolled back",
@@ -1213,6 +1353,10 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
     runtime.buildVisuals(std::move(visuals));
     runtime.artifact("library", "database", resolveDbPathForService(dbPath), "application/vnd.sqlite3");
     runtime.artifact("library-directory", "directory", outputDir);
+    if (profile)
+    {
+        profile->report(runtime, request.threads);
+    }
     return ServiceResult::success("build completed");
 }
 

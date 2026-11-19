@@ -643,7 +643,7 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata()
             endpoint("POST", "/api/jobs/build", "start library build job", "jobs", ApiOperation::SubmitBuildJob,
                      ApiRequestShape::Body,
                      {"inputDir", "outputDir", "dbPath", "threads", "normalizeWidth", "normalizeHeight", "appendMode",
-                      "recursive", "normalizeOnly", "forceMode", "resourceMonitor", "backend", "device"},
+                      "recursive", "normalizeOnly", "forceMode", "resourceMonitor", "benchmark", "backend", "device"},
                      {"inputDir"}, true, true),
             endpoint("GET", "/api/jobs", "list jobs", "jobs", ApiOperation::ListJobs, ApiRequestShape::None),
             endpoint("DELETE", "/api/jobs", "clear finished jobs", "jobs", ApiOperation::ClearFinishedJobs,

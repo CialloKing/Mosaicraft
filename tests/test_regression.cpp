@@ -1519,10 +1519,23 @@ TEST_CASE("default color build and append keep bytes IDs usage and feature refer
         }
     }
     requireWriteImage(input / "new_black.png", cv::Mat(64, 36, CV_8UC3, cv::Scalar(0, 0, 0)));
+    requireWriteImage(input / "new_black_duplicate.png", cv::Mat(64, 36, CV_8UC3, cv::Scalar(0, 0, 0)));
     request.appendMode = true;
+    request.benchmark = true;
     const auto appended = BuildService().run(request);
     REQUIRE_MESSAGE(appended.ok, appended.message);
-    REQUIRE(BuildService().run(request).ok);
+    const auto &metrics = appended.runtime.metrics;
+    CHECK(metrics.at("sqlLookupCount") == 5);
+    CHECK(metrics.at("sqlDuplicateCount") == 3);
+    CHECK(metrics.at("batchDuplicateCount") == 1);
+    CHECK(metrics.at("committedBatchCount") == 1);
+    CHECK(metrics.at("batchTransactionMs") >= metrics.at("batchCommitMs"));
+    CHECK(metrics.at("normalizeWorkerMs") >= metrics.at("assetEncodeWorkerMs"));
+    CHECK(metrics.count("pngCompactWorkerMs") == 0);
+    request.benchmark = false;
+    const auto repeated = BuildService().run(request);
+    REQUIRE(repeated.ok);
+    CHECK(repeated.runtime.metrics.count("sqlLookupCount") == 0);
     auto emptyAppend = request;
     emptyAppend.inputDir = utf8(workspace.emptyInputDir());
     REQUIRE(BuildService().run(emptyAppend).ok);

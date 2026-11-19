@@ -344,7 +344,8 @@ nlohmann::json buildRequestToJson(const BuildRequest &request)
             {"recursive", request.recursive},
             {"normalizeWidth", request.normalizeWidth},
             {"normalizeHeight", request.normalizeHeight},
-            {"resourceMonitor", request.resourceMonitor}};
+            {"resourceMonitor", request.resourceMonitor},
+            {"benchmark", request.benchmark}};
 }
 
 nlohmann::json databaseStatsToJson(const DatabaseStats& stats)

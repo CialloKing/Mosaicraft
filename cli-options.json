@@ -310,7 +310,7 @@
     "short": "",
     "type": "bool",
     "field": "benchmark",
-    "commands": "create render",
+    "commands": "create render add",
     "help": "Record phase timings",
     "advanced": true
   },

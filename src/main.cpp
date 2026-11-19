@@ -424,6 +424,7 @@ ServiceResult execute(const Arguments &args, json &data, RuntimeContext &runtime
         request.normalizeOnly = cmd == "normalize";
         request.recursive = args.has("recursive");
         request.resourceMonitor = args.has("resource-monitor");
+        request.benchmark = args.has("benchmark");
         request.threads = integer(args.get("threads", "0"));
         request.backend = parseBackend(args.get("backend", "auto"));
         request.device = args.get("device", "auto");

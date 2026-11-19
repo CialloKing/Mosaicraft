@@ -50,7 +50,8 @@ bool ImageNormalizer::process(const std::string& inputPath, const std::string& o
 }
 
 bool ImageNormalizer::processImpl(const std::string& inputPath, const std::string& outputPath,
-                                  const std::vector<int>& writeParams, cv::Mat* storedPixels, bool compactPng)
+                                  const std::vector<int>& writeParams, cv::Mat* storedPixels, bool compactPng,
+                                  LibraryTimings *timings)
 {
     if (storedPixels)
     {
@@ -58,6 +59,11 @@ bool ImageNormalizer::processImpl(const std::string& inputPath, const std::strin
     }
     try
     {
+        const auto write = [&](const std::vector<uint8_t> &bytes)
+        {
+            BenchmarkTimer timer(timings ? &timings->write : nullptr);
+            return writeBytesUnicode(outputPath, bytes);
+        };
         // 保存与解码共用同一份字节，源文件随后变化也不会使特征与图库副本错配。
         auto encoded = readBytesUnicode(inputPath);
         cv::Mat src = encoded.empty() ? cv::Mat() : cv::imdecode(encoded, cv::IMREAD_COLOR);
@@ -71,9 +77,10 @@ bool ImageNormalizer::processImpl(const std::string& inputPath, const std::strin
             const bool sameFile = std::filesystem::equivalent(u8path(inputPath), u8path(outputPath), ec);
             if (!sameFile && compactPng)
             {
+                BenchmarkTimer timer(timings ? &timings->compactPng : nullptr);
                 compactLibraryPng(encoded, src.total());
             }
-            if (!sameFile && !writeBytesUnicode(outputPath, encoded))
+            if (!sameFile && !write(encoded))
             {
                 throw std::runtime_error("cannot save original bytes");
             }
@@ -87,7 +94,12 @@ bool ImageNormalizer::processImpl(const std::string& inputPath, const std::strin
         std::vector<uint8_t>().swap(encoded);
         const cv::Mat normalized = normalize(src);
         const auto extension = u8path(outputPath).extension().string();
-        if (!cv::imencode(extension, normalized, encoded, writeParams) || !writeBytesUnicode(outputPath, encoded))
+        const bool encodedOk = [&]()
+        {
+            BenchmarkTimer timer(timings ? &timings->encode : nullptr);
+            return cv::imencode(extension, normalized, encoded, writeParams);
+        }();
+        if (!encodedOk || !write(encoded))
         {
             throw std::runtime_error("cannot save normalized image");
         }
@@ -111,18 +123,19 @@ bool ImageNormalizer::processImpl(const std::string& inputPath, const std::strin
 }
 
 bool ImageNormalizer::processLibraryImage(const std::string& inputPath, const std::string& outputPath,
-                                          cv::Mat* storedPixels)
+                                          cv::Mat* storedPixels, LibraryTimings *timings)
 {
+    BenchmarkTimer timer(timings ? &timings->normalize : nullptr);
     const auto format = imageFormat(outputPath);
     if (format == ".png")
     {
-        return processImpl(inputPath, outputPath, {cv::IMWRITE_PNG_COMPRESSION, 9}, storedPixels, true);
+        return processImpl(inputPath, outputPath, {cv::IMWRITE_PNG_COMPRESSION, 9}, storedPixels, true, timings);
     }
     if (format == ".jpg")
     {
-        return process(inputPath, outputPath, {cv::IMWRITE_JPEG_QUALITY, 100}, storedPixels);
+        return processImpl(inputPath, outputPath, {cv::IMWRITE_JPEG_QUALITY, 100}, storedPixels, false, timings);
     }
-    return process(inputPath, outputPath, {}, storedPixels);
+    return processImpl(inputPath, outputPath, {}, storedPixels, false, timings);
 }
 
 cv::Mat ImageNormalizer::processToMat(const std::string& inputPath)

@@ -44,6 +44,15 @@ inline bool validateDevice(BackendPolicy backend, const std::string &device, boo
 
 inline bool validateBuildRequest(const BuildRequest &request, std::string &error, std::string *field = nullptr)
 {
+    if (request.benchmark && (!request.appendMode || request.normalizeOnly))
+    {
+        if (field)
+        {
+            *field = "benchmark";
+        }
+        error = "library benchmark is only available in append mode";
+        return false;
+    }
     if (!validateDevice(request.backend, request.device, true, error, field))
     {
         return false;

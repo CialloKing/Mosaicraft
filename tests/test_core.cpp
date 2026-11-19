@@ -1396,6 +1396,18 @@ TEST_CASE("API request parser rejects aliases unknown fields duplicates and inco
     }
 }
 
+TEST_CASE("library benchmark request requires append mode")
+{
+    std::string error;
+    BuildRequest request;
+    CHECK_FALSE(parseBuildRequestJson(R"({"inputDir":"photos","benchmark":true})", request, error));
+    CHECK(error == "library benchmark is only available in append mode");
+    error.clear();
+    REQUIRE(parseBuildRequestJson(R"({"inputDir":"photos","appendMode":true,"benchmark":true})", request, error));
+    CHECK(request.benchmark);
+    CHECK_FALSE(request.resourceMonitor);
+}
+
 TEST_CASE("API request parser reports invalid fields")
 {
     MosaicRequest request;

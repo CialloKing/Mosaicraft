@@ -23,6 +23,7 @@ struct BuildRequest
     int normalizeWidth = 180;
     int normalizeHeight = 320;
     bool resourceMonitor = false;
+    bool benchmark = false;
 };
 
 class BuildService
