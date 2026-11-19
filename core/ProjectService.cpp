@@ -2,6 +2,7 @@
 #include "ExecutionScope.h"
 #include "WorkerPool.h"
 #include "MosaicPlanning.h"
+#include "MosaicMetrics.h"
 #include "OutputPublication.h"
 #include "OutputPlan.h"
 #include "PortableViewer.h"
@@ -774,16 +775,10 @@ ServiceResult ProjectService::render(const ProjectRequest &request, RuntimeConte
             return runtimeResult(ServiceResult::failure(1, "project rendering failed"), runtime);
         }
         publication.commit(runtime);
-        if (config.benchmark && config.outputMode == OutputMode::Image)
+        if (config.benchmark)
         {
-            // Decode/resize sum worker time and overlap placement; do not sum these with the process wall time.
-            runtime.metric("decodeWorkerMs", stats.decodeMs);
-            runtime.metric("resizeWorkerMs", stats.resizeMs);
-            runtime.metric("placementMs", stats.placementMs);
-            runtime.metric("encodingMs", stats.encodingMs);
-            runtime.metric("codecWriteMs", stats.codecMs);
-            runtime.metric("cacheDecodes", double(stats.cacheDecodes));
-            runtime.metric("cachePeakBytes", double(stats.cachePeakBytes));
+            runtime.metric("threadsRequested", config.threads);
+            detail::reportOutputBenchmark(stats, config, runtime, true);
         }
         return runtimeResult(ServiceResult::success("project rendered without matching"), runtime);
     }

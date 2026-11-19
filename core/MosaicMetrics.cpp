@@ -1,15 +1,102 @@
 #include "MosaicMetrics.h"
+#include "RuntimeContext.h"
 #include <iomanip>
 #include <iostream>
 
 namespace mosaicraft::detail
 {
-void printMosaicBenchmark(const MosaicMetrics &metrics, const MosaicBenchmarkContext &context, const char *label)
+namespace
 {
-    const auto &cfg = context.config;
-    const auto &backends = context.backends;
-    const bool templateCuda = backends.scoring == ScoreBackend::TemplateCuda;
-    std::cout << "\n=== Benchmark " << label << " ===\n";
+void metric(RuntimeContext &runtime, const std::string &key, const char *label, double value, const char *unit = " ms")
+{
+    runtime.metric(key, value);
+    std::cout << "  " << label << ": " << value << unit << '\n';
+}
+
+void gpuBenchmark(RuntimeContext &runtime, const char *role, const cuda::GpuTimings &t)
+{
+    // 同步路径未采集设备事件；只发布已有观测，不把未采集的字段写成零。
+    const auto emit = [&](const char *key, const char *label, double value, const char *unit = " ms")
+    {
+        if (value > 0)
+        {
+            const std::string name = std::string(role) + " " + label;
+            metric(runtime, std::string(role) + key, name.c_str(), value, unit);
+        }
+    };
+    emit("GpuAllocationMs", "GPU allocation", t.allocationMs);
+    emit("GpuUploadMs", "GPU upload", t.uploadMs);
+    emit("GpuComputeMs", "GPU compute", t.computeMs);
+    emit("GpuDownloadMs", "GPU download", t.downloadMs);
+    emit("GpuWaitMs", "GPU host wait", t.waitMs);
+    emit("CpuCannyMs", "CPU Canny", t.cannyMs);
+    emit("CudaEventUploadMs", "CUDA event upload", t.eventUploadMs);
+    emit("CudaEventComputeMs", "CUDA event compute", t.eventComputeMs);
+    emit("CudaEventDownloadMs", "CUDA event download", t.eventDownloadMs);
+    emit("GpuUploadBytes", "upload bytes", t.uploadBytes, "");
+    emit("GpuDownloadBytes", "download bytes", t.downloadBytes, "");
+    emit("GpuPinnedBytes", "pinned bytes", t.pinnedBytes, "");
+    emit("GpuResidentBytes", "resident bytes", t.residentBytes, "");
+    emit("GpuPixelBytes", "device pixel bytes", t.pixelBytes, "");
+    emit("GpuPeakTemporaryBytes", "peak temporary bytes", t.peakTemporaryBytes, "");
+}
+} // namespace
+
+void reportOutputBenchmark(const OutputStats &stats, const MosaicEngine::Config &config,
+                           RuntimeContext &runtime, bool legacyRenderKeys)
+{
+    if (!stats.workerSlots)
+    {
+        return; // HTML uses the project writer, not this image/tile pipeline.
+    }
+    std::cout << "  Output benchmark:\n" << std::fixed << std::setprecision(1);
+    metric(runtime, "outputWorkerSlots", "Output worker slots", stats.workerSlots, "");
+    metric(runtime, "placementMs", "Placement", stats.placementMs);
+    if (config.outputMode == OutputMode::Image)
+    {
+        metric(runtime, "decodeWorkerMs", "Decode (worker sum)", stats.decodeMs);
+        metric(runtime, "resizeWorkerMs", "Resize (worker sum)", stats.resizeMs);
+        metric(runtime, "encodingMs", "Encoding", stats.encodingMs);
+    }
+    if (stats.rowCodec)
+    {
+        metric(runtime, "codecWriteMs", "Row encoding", stats.codecMs);
+    }
+    else if (legacyRenderKeys && config.outputMode == OutputMode::Image)
+    {
+        runtime.metric("codecWriteMs", stats.codecMs);
+    }
+    if (stats.rowColorConversion)
+    {
+        metric(runtime, "outputColorMs", "Output color conversion", stats.colorMs);
+    }
+    if (stats.parallelStream)
+    {
+        metric(runtime, "outputProducerWaitMs", "Producer wait (free stripe)", stats.producerWaitMs);
+        metric(runtime, "outputConsumerWaitMs", "Consumer wait (ready stripe)", stats.consumerWaitMs);
+    }
+    if (!stats.previewPath.empty())
+    {
+        metric(runtime, "outputPreviewMs", "Preview (included in encoding)", stats.previewMs);
+    }
+    if (stats.overlayReferenceBytes)
+    {
+        metric(runtime, "overlaySamplingWorkerMs", "Overlay sampling (worker sum)", stats.overlaySamplingMs);
+        metric(runtime, "overlayBlendWorkerMs", "Overlay blending (worker sum)", stats.overlayBlendMs);
+        metric(runtime, "overlayReferenceBytes", "Overlay reference bytes", stats.overlayReferenceBytes, "");
+        metric(runtime, "overlayWorkingBudgetBytes", "Overlay worker budget bytes", stats.overlayWorkingBytes, "");
+    }
+    metric(runtime, "outputLoadingWorkerMs", "Output loading (worker sum)", stats.loadingMs);
+    metric(runtime, "cacheHits", "Image cache hits", stats.cacheHits, "");
+    metric(runtime, "cacheDecodes", "Image decodes", stats.cacheDecodes, "");
+    metric(runtime, "cachePeakBytes", "Image cache peak bytes", stats.cachePeakBytes, "");
+    metric(runtime, "cacheSharedLoads", "Image shared loads", stats.cacheSharedLoads, "");
+}
+
+void reportMosaicBenchmark(const MosaicMetrics &metrics, const MosaicBenchmarkContext &context,
+                           RuntimeContext &runtime)
+{
+    std::cout << "\n=== Benchmark single ===\n";
     std::cout << "  Total tiles:     " << context.totalTiles << "\n";
     std::cout << "  Candidates/tile: " << context.candidates << "\n";
     if (metrics.msPrep > 0)
@@ -19,17 +106,22 @@ void printMosaicBenchmark(const MosaicMetrics &metrics, const MosaicBenchmarkCon
     std::cout << "  Features:    " << std::fixed << std::setprecision(1) << metrics.msFeat << " ms\n";
     if (metrics.opResizeNs > 0)
     {
-        auto toMs = [](int64_t ns)
-        {
-            return ns / 1000000.0;
-        };
         std::cout << "  CPU feature worker times (overlapping, not wall time):\n";
-        std::cout << "    Resize:   " << std::setprecision(1) << toMs(metrics.opResizeNs) << " ms\n";
-        std::cout << "    BGR to LAB: " << std::setprecision(1) << toMs(metrics.opLabNs) << " ms\n";
-        std::cout << "    Grid + mean: " << std::setprecision(1) << toMs(metrics.opGridNs) << " ms\n";
-        std::cout << "    Tiny:     " << std::setprecision(1) << toMs(metrics.opTinyNs) << " ms\n";
-        std::cout << "    Edge:     " << std::setprecision(1) << toMs(metrics.opEdgeNs) << " ms\n";
-        std::cout << "    LBP:      " << std::setprecision(1) << toMs(metrics.opLbpNs) << " ms\n";
+        metric(runtime, "cpuFeatureResizeWorkerMs", "CPU feature resize", metrics.opResizeNs / 1e6);
+        metric(runtime, "cpuLabConvertWorkerMs", "BGR to Lab", metrics.opLabNs / 1e6);
+        metric(runtime, "cpuGridMeanWorkerMs", "Grid + mean", metrics.opGridNs / 1e6);
+        if (metrics.opTinyNs > 0)
+        {
+            metric(runtime, "cpuTinyWorkerMs", "Tiny", metrics.opTinyNs / 1e6);
+        }
+        if (metrics.opEdgeNs > 0)
+        {
+            metric(runtime, "cpuEdgeWorkerMs", "Edge", metrics.opEdgeNs / 1e6);
+        }
+        if (metrics.opLbpNs > 0)
+        {
+            metric(runtime, "cpuLbpWorkerMs", "LBP", metrics.opLbpNs / 1e6);
+        }
     }
     if (metrics.msANNBuild > 0)
     {
@@ -51,81 +143,13 @@ void printMosaicBenchmark(const MosaicMetrics &metrics, const MosaicBenchmarkCon
     std::cout << "  Neighbor penalties: " << metrics.msNeighbor << " ms\n";
     std::cout << "  Candidate sorting: " << metrics.msSort << " ms\n";
     std::cout << "  Analysis: " << metrics.msAnalysis << " ms\n";
-    std::cout << "  Output loading (worker sum): " << metrics.outputStats.loadingMs << " ms\n";
-    std::cout << "  Overlay sampling (worker sum): " << metrics.outputStats.overlaySamplingMs << " ms\n"
-              << "  Overlay blending (worker sum): " << metrics.outputStats.overlayBlendMs << " ms\n"
-              << "  Overlay reference bytes: " << metrics.outputStats.overlayReferenceBytes << "\n"
-              << "  Overlay worker budget bytes: " << metrics.outputStats.overlayWorkingBytes << "\n";
-    std::cout << "  Color conversion: " << metrics.outputStats.colorMs << " ms\n";
-    std::cout << "  Row encoding: " << metrics.outputStats.codecMs << " ms\n";
-    if (cfg.generatePreview)
+    reportOutputBenchmark(metrics.outputStats, context.config, runtime);
+    gpuBenchmark(runtime, "library", metrics.libraryTimings);
+    gpuBenchmark(runtime, "feature", metrics.featureTimings);
+    gpuBenchmark(runtime, "score", metrics.scoreTimings);
+    if (context.compatibleTemporaryBytes > 0)
     {
-        std::cout << "  Preview (included in encoding): " << metrics.outputStats.previewMs << " ms\n";
-    }
-    std::cout << "  Producer wait: " << metrics.outputStats.producerWaitMs << " ms\n";
-    std::cout << "  Consumer wait: " << metrics.outputStats.consumerWaitMs << " ms\n";
-    std::cout << "  Image cache hits: " << metrics.outputStats.cacheHits << "\n"
-              << "  Image decodes: " << metrics.outputStats.cacheDecodes << "\n"
-              << "  Image cache peak bytes: " << metrics.outputStats.cachePeakBytes << "\n"
-              << "  Image shared loads: " << metrics.outputStats.cacheSharedLoads << "\n";
-    std::cout << "  Placement:   " << metrics.msPlace << " ms\n";
-    std::cout << "  Encoding:    " << metrics.msEncode << " ms\n";
-    if (metrics.opPlaceDecodeNs > 0)
-    {
-        auto toMs = [](int64_t ns)
-        {
-            return ns / 1000000.0;
-        };
-        std::cout << "    Decode:   " << std::setprecision(1) << toMs(metrics.opPlaceDecodeNs) << " ms\n";
-        std::cout << "  CPU feature worker times (overlapping, not wall time):\n";
-        std::cout << "    Resize:   " << std::setprecision(1) << toMs(metrics.opPlaceResizeNs) << " ms\n";
-        std::cout << "    Copy:     " << std::setprecision(1) << toMs(metrics.opPlaceCopyNs) << " ms\n";
-    }
-    if (templateCuda)
-    {
-        std::cout << "  Library GPU allocation: " << metrics.libraryTimings.allocationMs << " ms\n"
-                  << "  Library GPU upload: " << metrics.libraryTimings.uploadMs << " ms\n"
-                  << "  Library device bytes: " << metrics.libraryTimings.residentBytes << "\n"
-                  << "  Feature GPU allocation: " << metrics.featureTimings.allocationMs << " ms\n"
-                  << "  Feature GPU upload: " << metrics.featureTimings.uploadMs << " ms\n"
-                  << "  Feature GPU compute: " << metrics.featureTimings.computeMs << " ms\n"
-                  << "  Feature GPU download: " << metrics.featureTimings.downloadMs << " ms\n"
-                  << "  Feature CPU Canny: " << metrics.featureTimings.cannyMs << " ms\n"
-                  << "  Feature GPU wait: " << metrics.featureTimings.waitMs << " ms\n"
-                  << "  Feature CUDA event upload: " << metrics.featureTimings.eventUploadMs << " ms\n"
-                  << "  Feature CUDA event compute: " << metrics.featureTimings.eventComputeMs << " ms\n"
-                  << "  Feature CUDA event download: " << metrics.featureTimings.eventDownloadMs << " ms\n"
-                  << "  Feature upload bytes: " << metrics.featureTimings.uploadBytes << "\n"
-                  << "  Feature download bytes: " << metrics.featureTimings.downloadBytes << "\n"
-                  << "  Feature pinned bytes: " << metrics.featureTimings.pinnedBytes << "\n"
-                  << "  Feature resident bytes: " << metrics.featureTimings.residentBytes << "\n"
-                  << "  Feature device pixel bytes: " << metrics.featureTimings.pixelBytes << "\n"
-                  << "  Score GPU allocation: " << metrics.scoreTimings.allocationMs << " ms\n"
-                  << "  Score GPU upload: " << metrics.scoreTimings.uploadMs << " ms\n"
-                  << "  Score GPU compute: " << metrics.scoreTimings.computeMs << " ms\n"
-                  << "  Score GPU download: " << metrics.scoreTimings.downloadMs << " ms\n"
-                  << "  Score GPU wait: " << metrics.scoreTimings.waitMs << " ms\n"
-                  << "  Score CUDA event upload: " << metrics.scoreTimings.eventUploadMs << " ms\n"
-                  << "  Score CUDA event compute: " << metrics.scoreTimings.eventComputeMs << " ms\n"
-                  << "  Score CUDA event download: " << metrics.scoreTimings.eventDownloadMs << " ms\n"
-                  << "  Score upload bytes: " << metrics.scoreTimings.uploadBytes << "\n"
-                  << "  Score download bytes: " << metrics.scoreTimings.downloadBytes << "\n"
-                  << "  Score pinned bytes: " << metrics.scoreTimings.pinnedBytes << "\n"
-                  << "  Score temporary bytes: " << metrics.scoreTimings.peakTemporaryBytes << "\n";
-    }
-    if (backends.scoring == ScoreBackend::CompatibleCuda)
-    {
-        std::cout << "  Library GPU upload: " << metrics.libraryTimings.uploadMs << " ms\n"
-                  << "  Library device bytes: " << metrics.libraryTimings.residentBytes << "\n"
-                  << "  Score GPU allocation: " << metrics.scoreTimings.allocationMs << " ms\n"
-                  << "  Score packing and copy: " << metrics.scoreTimings.uploadMs + metrics.scoreTimings.downloadMs
-                  << " ms\n"
-                  << "  Score CUDA event upload: " << metrics.scoreTimings.eventUploadMs << " ms\n"
-                  << "  Score CUDA event compute: " << metrics.scoreTimings.eventComputeMs << " ms\n"
-                  << "  Score CUDA event download: " << metrics.scoreTimings.eventDownloadMs << " ms\n"
-                  << "  Score pinned bytes: " << metrics.scoreTimings.pinnedBytes << "\n"
-                  << "  Score temporary bytes: " << metrics.scoreTimings.peakTemporaryBytes << "\n"
-                  << "  Matching combined device temporary bytes: " << context.compatibleTemporaryBytes << "\n";
+        std::cout << "  Matching combined device temporary bytes: " << context.compatibleTemporaryBytes << '\n';
     }
     std::cout << "  Matching batches: " << metrics.matchingBatches << "\n"
               << "  Matching prefetch: " << metrics.matchingPrefetch << "\n"

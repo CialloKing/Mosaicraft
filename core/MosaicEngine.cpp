@@ -2083,6 +2083,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         if (prefetch)
         {
             prefetchWorkers = std::make_unique<WorkerPool>(1);
+            if (cfg.benchmark)
+            {
+                runtime.metric("matchingPrefetchWorkerSlots", prefetchWorkers->size());
+            }
         }
         if (canceled())
         {
@@ -3055,8 +3059,9 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     runtime.metric("totalMs", totalMs);
     if (cfg.benchmark)
     {
-        detail::printMosaicBenchmark(metrics, {outputConfig, backends, totalTiles, N, m_compatibleTemporaryBytes, totalMs},
-                                     "single");
+        runtime.metric("threadsRequested", cfg.threads);
+        detail::reportMosaicBenchmark(metrics, {outputConfig, totalTiles, N, m_compatibleTemporaryBytes, totalMs},
+                                      runtime);
         runtime.metric("annLoadMs", metrics.msANNLoad);
         runtime.metric("annBuildMs", metrics.msANNBuild);
         runtime.metric("cpuScoreMs", metrics.msCPUScore);
@@ -3073,15 +3078,16 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         runtime.metric("sortMs", metrics.msSort);
         runtime.metric("matchingMs", metrics.matchingWallMs);
         runtime.metric("featureMs", metrics.msFeat);
-        if (metrics.opResizeNs > 0)
-        {
-            runtime.metric("cpuLabConvertWorkerMs", metrics.opLabNs / 1e6);
-            runtime.metric("cpuGridMeanWorkerMs", metrics.opGridNs / 1e6);
-        }
         runtime.metric("annQueryMs", metrics.msANNQuery);
         runtime.metric("selectionMs", metrics.msSelect);
-        runtime.metric("placementMs", metrics.msPlace);
-        runtime.metric("encodingMs", metrics.msEncode);
+        if (cfg.outputMode != OutputMode::Image)
+        {
+            runtime.metric("encodingMs", metrics.msEncode); // Preserve the legacy key outside image mode.
+        }
+        if (cfg.outputMode == OutputMode::Html)
+        {
+            runtime.metric("placementMs", metrics.msPlace);
+        }
         runtime.metric("analysisMs", metrics.msAnalysis);
         runtime.metric("matchingBufferPeakBytes", metrics.matchingPeakBytes);
         runtime.metric("featureCachePeakBytes", metrics.featureReadStats.peakBytes);

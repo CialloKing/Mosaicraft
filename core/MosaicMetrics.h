@@ -31,9 +31,6 @@ struct MosaicMetrics
     std::atomic<int64_t> opTinyNs{0};
     std::atomic<int64_t> opEdgeNs{0};
     std::atomic<int64_t> opLbpNs{0};
-    std::atomic<int64_t> opPlaceDecodeNs{0};
-    std::atomic<int64_t> opPlaceResizeNs{0};
-    std::atomic<int64_t> opPlaceCopyNs{0};
 
     OutputStats outputStats;
     cuda::GpuTimings featureTimings, scoreTimings, libraryTimings;
@@ -45,12 +42,14 @@ struct MosaicMetrics
 struct MosaicBenchmarkContext
 {
     const MosaicEngine::Config &config;
-    const MatchingBackends &backends;
     int totalTiles;
     int candidates;
     size_t compatibleTemporaryBytes;
     double totalMs;
 };
 
-void printMosaicBenchmark(const MosaicMetrics &metrics, const MosaicBenchmarkContext &context, const char *label);
+void reportOutputBenchmark(const OutputStats &stats, const MosaicEngine::Config &config,
+                           RuntimeContext &runtime, bool legacyRenderKeys = false);
+void reportMosaicBenchmark(const MosaicMetrics &metrics, const MosaicBenchmarkContext &context,
+                           RuntimeContext &runtime);
 } // namespace mosaicraft::detail

@@ -156,6 +156,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
                                     (plan.format == "png" || plan.format == "jpg");
         // 生产者仅协调；编码占一个执行位，显式单线程仍然顺序写出。
         WorkerPool pool(reserveEncoder ? std::min<unsigned>(workers, config.threads - 1) : workers);
+        stats.workerSlots = pool.size();
         std::atomic<int> failures{0};
         std::atomic<int64_t> loadingNs{0}, decodeNs{0}, resizeNs{0};
         std::atomic<int64_t> samplingNs{0}, blendingNs{0};
@@ -420,6 +421,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         }
         else if (stream)
         {
+            stats.parallelStream = true;
             openWriter();
             std::array<cv::Mat, 2> rows{cv::Mat(tileH, width, CV_8UC3), cv::Mat(tileH, width, CV_8UC3)};
             std::array<bool, 2> ready{false, false};
@@ -536,6 +538,8 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
             }
             stats.encodingMs = elapsed(encodeStart);
         }
+        stats.rowCodec = png || jpg || tiff;
+        stats.rowColorConversion = (png && !rgbStream) || jpg;
         const auto closeStart = now();
         if ((png && !png->close()) || (jpg && !jpg->close()) || (tiff && !tiff->close()))
         {

@@ -34,6 +34,8 @@ struct OutputStats
     uint64_t overlayReferenceBytes = 0, overlayWorkingBytes = 0; // 后者为工作线程临时缓冲预算。
     double producerWaitMs = 0, consumerWaitMs = 0;
     size_t cacheHits = 0, cacheDecodes = 0, cachePeakBytes = 0, cacheSharedLoads = 0;
+    size_t workerSlots = 0;
+    bool rowCodec = false, rowColorConversion = false, parallelStream = false;
     std::string path;
     std::string previewPath;
 };
