@@ -968,21 +968,25 @@ const interactivePreview = (() => {
     updateRunButton();
   }
 
-  toggle.addEventListener('click', () => {
-    if (enabled) {
-      if (edits.size) {
-        byId('close-message').textContent = `关闭预览将丢弃 ${edits.size} 格手动选图。`;
-        closeDialog.returnValue = '';
-        closeDialog.showModal();
-      } else closePreview();
-      return;
+  function startPreview() {
+    if (!capable()) return;
+    if (!enabled) {
+      enabled = true;
+      seed = previewComparison.seed() ?? crypto.getRandomValues(new Uint32Array(1))[0];
     }
-    enabled = true;
     lastError = '';
-    seed = previewComparison.seed() ?? crypto.getRandomValues(new Uint32Array(1))[0];
     canvas.scrollIntoView({block: 'nearest'});
     sync(tab, 0);
     updateRunButton();
+  }
+
+  toggle.addEventListener('click', () => {
+    if (!enabled) startPreview();
+    else if (edits.size) {
+      byId('close-message').textContent = `关闭预览将丢弃 ${edits.size} 格手动选图。`;
+      closeDialog.returnValue = '';
+      closeDialog.showModal();
+    } else closePreview();
   });
   closeDialog.addEventListener('close', () => {
     if (closeDialog.returnValue === 'keep') byId('return').click();
@@ -1055,6 +1059,15 @@ const interactivePreview = (() => {
   return {
     sync,
     refresh,
+    start: startPreview,
+    canStart() {
+      try {
+        buildMosaicPayload(true);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    },
     hasManualEdits: () => enabled && plan && planKey === requestKey && !pending && edits.size > 0,
     outputSampleKey() {
       return enabled && plan && !pending && planKey === requestKey ? `${plan.id}:${editRevision}` : '';

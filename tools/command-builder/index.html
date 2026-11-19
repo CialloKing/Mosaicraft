@@ -357,7 +357,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     </div>
     <div class="mosaic-summary" id="m-plan-summary" role="status" hidden></div>
     <div class="btns" id="mosaic-actions">
-      <button type="button" class="btn btn-secondary" data-open-tab="preview" id="m-preview-start">打开预览页</button>
+      <button type="button" class="btn btn-secondary" data-open-tab="preview" data-start-preview id="m-preview-start" hidden disabled>预览并选图</button>
       <button type="button" class="btn btn-primary" id="m-copy-command" onclick="copyCommand(this)" disabled>复制命令</button>
     </div>
     <p class="hint" id="live-preview-generation-note" role="status"></p>
@@ -649,8 +649,8 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <h3 id="help-start-title">第一次使用：建库 → 生成 → 查看结果</h3>
     <ol class="help-steps">
       <li><strong>准备素材图库。</strong>在“建库”页填写素材所在的图片目录和图库输出目录，点击“运行”。生成会从这些素材中挑选图片，拼成你的目标图片。</li>
-      <li><strong>复用建好的图库。</strong>等建库任务完成，在下方结果区点击“使用此图库”，数据库路径会自动填入生成和查询页面。</li>
-      <li><strong>生成或先预览。</strong>在“生成马赛克”页填写目标图片、数据库和主图输出路径，可直接运行；也可先打开“预览”、点击“开启预览”，用“手动选图”替换格子。预览完成且保持开启时，正式生成会沿用当前排列。</li>
+      <li><strong>复用建好的图库。</strong>建库完成后点击“使用此图库生成”，页面会带着图库路径打开生成页。</li>
+      <li><strong>生成或先预览。</strong>填写目标图片后可以生成，也可以点“预览并选图”查看和替换格子。预览完成且保持开启时，正式生成会沿用当前排列。</li>
       <li><strong>到“任务与结果”查看。</strong>点击任务可查看阶段、警告和结果。完成后复制实际路径或下载主图；已生成的预览图会直接显示在页面中。</li>
     </ol>
     <div class="btns">
@@ -735,7 +735,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 
   <section class="card" id="help-live-preview" aria-labelledby="help-live-preview-title">
     <h3 id="help-live-preview-title">实时预览与手动选图</h3>
-    <p>先在生成页填写目标图片和数据库，再打开“预览”并点击“开启预览”。实时预览用于查看、调整选图，本身不保存正式主图；需要另外保存小尺寸 JPEG 时，在生成页勾选“生成结果预览”。</p>
+    <p>在生成页填写目标图片和数据库，再点“预览并选图”查看和调整选图。需要随正式结果保存小尺寸 JPEG 时，在生成页的“输出与画面”勾选“生成结果预览”。</p>
     <div class="help-table-wrap"><table class="help-table">
       <thead><tr><th scope="col">操作</th><th scope="col">作用与使用方式</th></tr></thead><tbody>
         <tr><td>开启 / 关闭预览</td><td>开启后计算当前参数的选图；调整相关参数后等待预览更新。关闭会释放当前预览和手动选图；不需要沿用预览时可关闭后直接生成。</td></tr>
@@ -745,7 +745,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
         <tr><td>调整预览窗口大小</td><td>拖动画布右下角手柄改变窗口大小；手柄获得焦点后可用方向键调整，按住 Shift 加大步长。“恢复默认大小”恢复窗口尺寸，不改变生成图片尺寸。</td></tr>
         <tr><td>手动选图 / 替换素材</td><td>点击“手动选图”后选择画布格子，再从“推荐候选”或“整个图库”点选可用素材。也可让画布获得焦点并按回车选择中心格。灰色素材不可选；手动选图适合修正局部重复或不合适的画面。</td></tr>
         <tr><td>整个图库 / 搜索 / 页码</td><td>可按文件名包含内容或素材 ID 搜索；每页 24 张，使用上一页、下一页，或输入页码后按回车 / 点击“跳转”。搜索结果重新从第一页开始，总页数随筛选变化。</td></tr>
-        <tr><td>恢复自动选图 / 清除全部替换</td><td>前者撤销当前格的手动替换，后者撤销所有手动替换。预览可用且参数未过期时，返回生成页运行会沿用当前选图及手动替换；目标、图库或影响网格的参数变化后，应按提示更新预览。</td></tr>
+        <tr><td>恢复自动选图 / 清除全部替换</td><td>前者撤销当前格的手动替换，后者清除所有手动替换，并提供一次“撤销清除”。预览可用时，返回生成页会保留当前选图。</td></tr>
       </tbody>
     </table></div>
     <p>实时预览会先匹配整张图，再按可见区域加载缩略图。可视窗口内超过 16,000 格时会提示可能卡顿。随机亮度扰动在正式输出时应用。</p>
@@ -785,7 +785,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <p>以下路径和参数仅用于说明，请替换成自己电脑上的实际位置。路径中的素材、图库和结果目录分别存放，便于管理。</p>
     <div class="help-table-wrap"><table class="help-table">
       <thead><tr><th scope="col">场景</th><th scope="col">操作建议</th></tr></thead><tbody>
-        <tr><td>第一次建立图库</td><td>在“建库”页把图片目录设为 <code>D:\mosaic\photos</code>，输出目录设为 <code>D:\mosaic\library</code>，数据库留空，选择适合素材方向的归一化尺寸后运行。完成后使用 <code>D:\mosaic\library\mosaicraft.db</code>，或在结果区点击“使用此图库”。</td></tr>
+        <tr><td>第一次建立图库</td><td>在“建库”页把图片目录设为 <code>D:\mosaic\photos</code>，输出目录设为 <code>D:\mosaic\library</code>，选择适合素材方向的归一化尺寸后运行。完成后点击“使用此图库生成”。</td></tr>
         <tr><td>制作并预览拼图</td><td>在“生成马赛克”页选择目标图、图库和输出路径，例如 <code>D:\mosaic\results\mosaic.png</code>，先确保输出父目录存在。可直接运行，也可先打开实时预览、手动替换素材，再返回生成页运行。</td></tr>
         <tr><td>使用横屏素材拼画面</td><td>使用横屏图库时，可从匹配 Tile <code>16 × 9</code>、输出 Tile <code>320x180</code> 开始；想缩小主图可把输出 Tile 改为同一比例的 <code>32x18</code>。先用预览确认素材块数量与效果。</td></tr>
         <tr><td>向现有图库添加素材</td><td>图片目录选择新增素材所在文件夹，输出目录和数据库选择原有图库，归一化尺寸保持一致，勾选“增量模式”后运行。完成后全库可能重新按颜色编号；此前从图库删除的图片，如仍在来源目录中，可能重新入库。</td></tr>
@@ -813,7 +813,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 
   <section class="card" id="help-results" aria-labelledby="help-results-title">
     <h3 id="help-results-title">任务进度、诊断与结果怎么读</h3>
-    <p><strong>生成命令</strong>根据当前功能页、表单参数和所选 Shell 更新下方命令；可选择 Windows PowerShell 5.1、PowerShell 7.3+、CMD、Bash、Zsh 或 POSIX sh，并填写 mosaicraft 程序路径。选择保存在当前浏览器。<strong>复制到剪贴板</strong>便于在终端执行。连接本地 Web UI 服务后也可直接点击<strong>运行</strong>；仅打开 HTML 时可查看帮助和复制命令，但页面不能替代服务运行任务。<strong>清空最近路径</strong>只清除路径候选，不删除文件或清空表单。</p>
+    <p>命令随表单参数自动更新。展开<strong>查看与复制命令</strong>可选择 Windows PowerShell 5.1、PowerShell 7.3+、CMD、Bash、Zsh 或 POSIX sh，并填写 mosaicraft 程序路径。选择保存在当前浏览器。独立 HTML 可以直接从生成页复制命令，到终端执行。<strong>清空最近路径</strong>会清除路径候选。</p>
     <p><strong>排队</strong>表示等待执行，只有排队任务可取消；<strong>运行中</strong>显示当前阶段和已完成数量，计数是阶段进度。读取索引、单次编码等阶段可能只有阶段名称与运行时间。</p>
     <p><strong>警告</strong>可能表示 CUDA 回退、跳过素材或缺失小块，结合实际后端和最终状态判断结果。<strong>失败</strong>区会给出原因、相关路径及处理建议，技术详情可展开查看，也可复制或导出诊断 JSON。</p>
     <p>主图保存后仍可能进行预览、分析和统计提交。后续阶段失败时，已经有效保存的主图仍显示在结果区。下载以登记的实际产物为准；文件已被改写或删除时会提示不可用。</p>
@@ -924,13 +924,18 @@ document.querySelectorAll('.tab').forEach(t => {
   });
 });
 
+function openTab(command, scroll = true) {
+  const tab = Array.from(document.querySelectorAll('.tab')).find(item => item.dataset.cmd === command);
+  if (!tab) return;
+  tab.click();
+  if (scroll) document.getElementById('panel-' + command).scrollIntoView({block:'start'});
+}
+
 document.addEventListener('click', event => {
   const shortcut = event.target.closest && event.target.closest('[data-open-tab], [data-open-help]');
   if (!shortcut) return;
-  const command = shortcut.dataset.openTab || 'help';
-  const tab = Array.from(document.querySelectorAll('.tab')).find(item => item.dataset.cmd === command);
-  if (tab) tab.click();
-  if (tab && shortcut.dataset.openTab) document.getElementById('panel-' + command).scrollIntoView({block:'start'});
+  openTab(shortcut.dataset.openTab || 'help', !!shortcut.dataset.openTab);
+  if (shortcut.hasAttribute('data-start-preview')) interactivePreview.start();
   if (shortcut.dataset.openHelp) {
     const section = document.getElementById(shortcut.dataset.openHelp);
     if (section && section.tagName === 'DETAILS') section.open = true;
@@ -1923,7 +1928,9 @@ function updateRunButton() {
   const offlineCopy = document.getElementById('m-copy-command');
   offlineCopy.hidden = serverAvailable;
   offlineCopy.disabled = !mosaic || !formModel.valid;
-  document.getElementById('m-preview-start').hidden = !serverAvailable || !hasFeature('interactive-preview');
+  const preview = document.getElementById('m-preview-start');
+  preview.hidden = !serverAvailable || !hasFeature('interactive-preview');
+  preview.disabled = !mosaic || preview.hidden || !interactivePreview.canStart();
   button.disabled = submitting || !serverAvailable || !formModel.valid || interactivePreview.blocksRun(formModel.tab);
   button.textContent = submitting ? '提交中…' : mosaic ? (interactivePreview.hasManualEdits() ? '使用当前选图生成' : '生成马赛克') : '运行';
 }
@@ -2528,7 +2535,9 @@ function useTaskLibrary() {
   const artifact = job && (job.artifacts || []).find(item => item.id === 'library');
   if (!artifact) return;
   for (const id of ['m-db','i-db','s-db','h-db','p-db','u-db']) document.getElementById(id).value = artifact.path;
-  rememberPath('m-db'); generateCommand();
+  rememberPath('m-db');
+  openTab('mosaic');
+  document.getElementById('m-input').focus();
   taskStore.note = '已将此图库填入生成、查询和图库管理表单。'; renderTaskArea();
 }
 function artifactUrl(jobId, id) { return '/api/jobs/' + encodeURIComponent(jobId) + '/artifacts/' + encodeURIComponent(id); }
@@ -2548,7 +2557,7 @@ function renderTaskArtifacts(job) {
   }
   const project = job.artifacts.find(item => item.id === 'project');
   if (project) html += '<p><button class="btn btn-secondary" data-use-project="' + escapeAttr(project.path) + '">回导此工程</button> <button class="btn btn-secondary" data-pack-project="' + escapeAttr(project.path) + '">打包完整工程</button></p><p class="hint">HTML 工程请下载完整 ZIP，解压后打开 index.html。</p>';
-  if (library) html += '<p><button class="btn btn-secondary" onclick="useTaskLibrary()">使用此图库</button></p>';
+  if (library) html += '<p><button class="btn btn-secondary" onclick="useTaskLibrary()">使用此图库生成</button></p>';
   if (preview) html += '<img data-preview="true" class="result-preview" src="' + artifactUrl(job.id, preview.id) + '" alt="马赛克结果预览" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><p class="hint" hidden>预览文件不可用，可能已删除或改写。</p>';
   else if (job.type === 'mosaic' && !['tiled','deepzoom','html'].includes(job.runtime && job.runtime.format)) {
     const requested = job.request && job.request.generatePreview;
