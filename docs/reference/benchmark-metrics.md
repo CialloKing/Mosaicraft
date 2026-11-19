@@ -21,7 +21,7 @@
 
 | 指标 | 含义 |
 | --- | --- |
-| `previewCacheTier` | `0`：内存余量不足，不保留这三类缓存；`1`：标准；`2`：允许扩容。不知道可用内存时使用标准档，不自动扩容。 |
+| `previewCacheTier` | `0`：内存余量不足，不保留这三类缓存；`1`：标准；`2`：采用[扩容档](../guides/web-ui.md#预览缓存)，具体档位看合计上限。不知道可用内存时使用标准档，不自动扩容。 |
 | `previewCacheBudgetBytes`、`previewCacheReservedBytes` | 本任务可用的合计上限、汇总时进程内三类缓存的预约。仍被 A/B 或推荐列表持有的评分表算在其中；共享引用不重复计费。 |
 | `previewScoresBytes`、`previewTileFeaturesBytes`、`previewCandidatesBytes` | 当前评分对象、工作区内目标特征和原始候选的预约。分配按对象和容器容量核算，不是 RSS，也不包含分配器元数据、图库索引、目标位图和临时匹配缓冲。 |
 | `previewScoresMissReason`、`previewTileFeaturesMissReason`、`previewCandidatesMissReason` | `0` 命中；`1` 物理内存余量不足；`2` 活对象占用进程预算；`3` 单项超限；`4` 特征源版本不可用或变化；`5` 首次/键不同，正常计算；`6` 可选缓存分配失败。不查的缓存不报告原因。 |
