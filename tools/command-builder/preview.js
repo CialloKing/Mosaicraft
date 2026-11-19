@@ -1059,7 +1059,8 @@ const interactivePreview = (() => {
     },
     comparisonInput() {
       if (!enabled || !plan || pending || planKey !== requestKey) return null;
-      return {previewId: plan.id, previewEdits: Array.from(edits.values()), editKey: plan.editKey, seed: plan.seed,
+      return {previewId: plan.id, previewEdits: Array.from(edits.values()), editKey: plan.editKey,
+        seed: plan.effectiveSeed ?? plan.metrics?.seed ?? plan.seed,
         columns: plan.columns, rows: plan.rows, featureBackend: plan.featureBackend, scoreBackend: plan.scoreBackend,
         metrics: plan.metrics || {}};
     },

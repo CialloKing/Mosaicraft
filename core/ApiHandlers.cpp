@@ -318,6 +318,7 @@ ApiResponse getPreview(const std::string &id, JobManager &jobs)
     nlohmann::json body{{"id", snapshot.id},
                         {"state", jobStateName(snapshot.state)},
                         {"seed", snapshot.seed},
+                        {"effectiveSeed", snapshot.effectiveSeed()},
                         {"progress", progressToJson(snapshot.progress)}};
     body["runtime"] = runtimeSnapshotToJson(snapshot.result.runtime).at("runtime");
     if (snapshot.state == JobState::Failed)
@@ -834,9 +835,13 @@ ApiResponse submitComparison(const std::string &body, JobManager &jobs)
     }
     if (a.selection->editKey != b.selection->editKey || a.selection->dbPath != b.selection->dbPath ||
         a.selection->targetVersion != b.selection->targetVersion || a.selection->libraryVersion != b.selection->libraryVersion ||
-        a.selection->columns != b.selection->columns || a.selection->rows != b.selection->rows || a.seed != b.seed)
+        a.selection->columns != b.selection->columns || a.selection->rows != b.selection->rows)
     {
-        return previewConflict("comparison needs the same target, library, grid and random seed");
+        return previewConflict("comparison needs the same target, library and grid");
+    }
+    if (a.effectiveSeed() != b.effectiveSeed())
+    {
+        return previewConflict("comparison needs the same effective random seed");
     }
     if (payload["a"].contains("previewEdits"))
     {

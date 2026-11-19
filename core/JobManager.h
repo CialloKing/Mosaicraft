@@ -56,6 +56,12 @@ struct PreviewSnapshot
     std::shared_ptr<const PreviewComparison> comparison;
     MosaicRequest request;
     uint32_t seed = 0;
+
+    // A request seed overrides the session seed used when the user leaves the field blank.
+    uint32_t effectiveSeed() const
+    {
+        return request.config.seed.value_or(seed);
+    }
 };
 
 class JobManager

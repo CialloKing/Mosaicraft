@@ -249,7 +249,7 @@ void JobManager::runPreview(const std::shared_ptr<PreviewJob> &job)
         {
             selection = std::make_shared<MosaicSelection>();
             MosaicService service(MOSAICRAFT_TRIAL_HOT_ANN ? &m_libraryIndex : nullptr);
-            result = service.preview(job->snapshot.request, job->snapshot.seed, m_previewWorkspace, job->canceled,
+            result = service.preview(job->snapshot.request, job->snapshot.effectiveSeed(), m_previewWorkspace, job->canceled,
                                      *selection, *job->runtime);
         }
     }

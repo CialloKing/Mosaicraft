@@ -18,7 +18,7 @@ const previewComparison = (() => {
   let pinBusy = false;
 
   const jobPath = id => '/api/mosaic/preview/' + encodeURIComponent(id);
-  const present = () => slots.map((slot, index) => `${index ? 'B' : 'A'} ${slot ? '已保存' : '待保存'}`).join(' · ');
+  const present = () => slots.map((slot, index) => `${index ? 'B' : 'A'} ${slot ? `已保存（种子 ${slot.seed}）` : '待保存'}`).join(' · ');
 
   function update() {
     const server = serviceInfo?.runtime?.sessionId;
@@ -54,6 +54,7 @@ const previewComparison = (() => {
     };
     result.innerHTML = `<p>选图变化 ${data.changed} / ${total} 格 · 共同评分 ${data.compared} 格</p>
       ${comparisonTable([
+        ['实际随机种子', left.seed, right.seed],
         ['固定权重平均误差', fixed(data.a.mean), fixed(data.b.mean)], ['固定权重 P90', fixed(data.a.p90), fixed(data.b.p90)],
         ['匹配覆盖率', percent(data.a.matched), percent(data.b.matched)], ['唯一素材数', data.a.unique, data.b.unique],
         ['重复占比（按匹配格）', data.a.matched ? `${(100 * (1 - data.a.unique / data.a.matched)).toFixed(1)}%` : null,
@@ -133,8 +134,12 @@ const previewComparison = (() => {
   run.addEventListener('click', async () => {
     const [left, right] = slots;
     if (!left || !right) return;
-    if (left.editKey !== right.editKey || left.seed !== right.seed) {
-      status.textContent = '请选择同一目标、图库、网格与随机种子的两个预览。';
+    if (left.editKey !== right.editKey) {
+      status.textContent = '请选择同一目标、图库和网格的两个预览。';
+      return;
+    }
+    if (left.seed !== right.seed) {
+      status.textContent = `两组的实际随机种子不同（A ${left.seed}，B ${right.seed}）。请用相同的种子重新预览后保存。`;
       return;
     }
     const fields = slot => ({previewId: slot.previewId, previewEdits: slot.previewEdits});

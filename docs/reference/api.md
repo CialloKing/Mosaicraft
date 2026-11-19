@@ -383,7 +383,7 @@ Preview polling also returns `preview.runtime` while queued or running, includin
 
 `POST /api/mosaic/preview/quality` 接受 `previewId` 和最多 512 条 `positions`。每条包含零起始 `position`，手动替换额外带 `imageId/version`。`explain: true` 限单格，并返回裁块 JPEG、入选和候选的五项特征误差，以及可用的原始排名、Top-N 和惩罚。预览误差由服务重新评价，源文件变更返回 409。
 
-发现 `preview-comparison` 后，使用 `POST /api/mosaic/preview/pin` 提交 `{ "slot": "A", "previewId": "…" }` 保留已完成的预览。槽位为 `A` 或 `B`，传入空 ID 可释放槽位。`POST /api/mosaic/preview/compare` 接受 `{ "a": { "previewId": "…" }, "b": { "previewId": "…" } }`，各侧可附上 `previewEdits`。目标、图库版本、网格和随机种子必须相同。返回 202，可通过预览 GET/DELETE 查询和取消。
+发现 `preview-comparison` 后，使用 `POST /api/mosaic/preview/pin` 提交 `{ "slot": "A", "previewId": "…" }` 保留已完成的预览。槽位为 `A` 或 `B`，传入空 ID 可释放槽位。`POST /api/mosaic/preview/compare` 接受 `{ "a": { "previewId": "…" }, "b": { "previewId": "…" } }`，各侧可附上 `previewEdits`。目标、图库版本、网格和实际随机种子 `preview.effectiveSeed` 必须相同。显式请求种子优先于会话种子 `preview.seed`。返回 202，可通过预览 GET/DELETE 查询和取消。
 
 完成后 `preview.comparison` 包含各侧的 `matched`、`unique`、`mean`、`p90` 和概览 JPEG（`image`），以及 `compared`、`changed`、`mapColumns`、`mapRows` 和行优先的 `changedMap`。均值和 P90 在双方均匹配且评分可用的格子上用默认五特征权重计算。
 
