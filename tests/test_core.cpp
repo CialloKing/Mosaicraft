@@ -96,6 +96,41 @@ TEST_CASE("job session history is bounded without removing queued jobs")
     CHECK(response.body["diagnostic"]["field"] == "limit");
 }
 
+TEST_CASE("preview cache budgets include live owners and return failed reservations")
+{
+    using namespace mosaicraft;
+    constexpr size_t MiB = PreviewCachePolicy::MiB;
+    const auto standard = PreviewCachePolicy::select(0, 256 * MiB, true, true);
+    const auto disabled = PreviewCachePolicy::select(767 * MiB, 256 * MiB, true, true);
+    const auto full = PreviewCachePolicy::select(2 * 1024 * MiB, 256 * MiB, true, true);
+    CHECK(standard.tier == PreviewCachePolicy::Tier::Standard);
+    CHECK(disabled.tier == PreviewCachePolicy::Tier::Disabled);
+    CHECK(full.tier == PreviewCachePolicy::Tier::Full);
+    CHECK(full.totalLimit == 448 * MiB);
+    const auto before = PreviewCacheReservation::totalBytes();
+    PreviewCacheMiss miss{};
+    {
+        auto old = std::make_shared<PreviewCacheReservation>(PreviewCacheKind::Scores);
+        CHECK_FALSE(old->grow(140 * MiB, standard, miss));
+        CHECK(miss == PreviewCacheMiss::Size);
+        CHECK_FALSE(old->grow(MiB, disabled, miss));
+        CHECK(miss == PreviewCacheMiss::Memory);
+        REQUIRE(old->grow(140 * MiB, full, miss));
+        auto pinned = old;
+        old.reset();
+        PreviewCacheReservation next(PreviewCacheKind::Scores);
+        CHECK_FALSE(next.grow(140 * MiB, full, miss));
+        CHECK(miss == PreviewCacheMiss::ProcessBudget);
+        CHECK(PreviewCacheReservation::totalBytes() == before + 140 * MiB);
+        pinned.reset();
+        REQUIRE(next.grow(140 * MiB, full, miss));
+        auto rows = PreviewCacheRows<int>::create(1024, PreviewCacheKind::Candidates, full, miss);
+        REQUIRE(rows);
+        CHECK(PreviewCacheReservation::totalBytes() == before + next.bytes() + rows->storage.bytes());
+    }
+    CHECK(PreviewCacheReservation::totalBytes() == before);
+}
+
 TEST_CASE("preview snapshots expose queued progress")
 {
     using namespace mosaicraft;

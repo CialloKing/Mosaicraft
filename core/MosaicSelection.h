@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AnalysisTiles.h"
+#include "PreviewCache.h"
 #include <opencv2/core/mat.hpp>
 
 #include <array>
@@ -19,8 +20,14 @@ class PreviewRecommendationCache;
 
 struct PreviewScores
 {
+  private:
+    // 在所有数据成员析构后才退还预算。
+    PreviewCacheReservation storage{PreviewCacheKind::Scores};
+
+  public:
     static std::shared_ptr<PreviewScores> create(size_t tiles, int candidates,
-                                                 const std::vector<ImageRecord> &records);
+                                                 const std::vector<ImageRecord> &records,
+                                                 const PreviewCachePolicy &policy, PreviewCacheMiss &miss);
     PreviewScores();
     ~PreviewScores();
     PreviewScores(const PreviewScores &) = delete;
@@ -31,8 +38,7 @@ struct PreviewScores
     std::vector<double> values;
     std::vector<ImageRecord> records;
 
-  private:
-    size_t reservedBytes = 0;
+    size_t bytes() const { return storage.bytes(); }
 };
 
 struct PreviewTileFeatures
@@ -109,9 +115,9 @@ struct PreviewWorkspace
     std::shared_ptr<FeatureIndex> index;
     std::shared_ptr<const PreviewCatalog> catalog;
     uint64_t libraryVersion = 0;
-    std::vector<int> candidates;
+    std::unique_ptr<PreviewCacheRows<int>> candidates;
     std::string tileFeatureKey, scoreKey;
-    std::vector<PreviewTileFeatures> tileFeatures;
+    std::unique_ptr<PreviewCacheRows<PreviewTileFeatures>> tileFeatures;
     std::shared_ptr<const PreviewScores> scores;
 };
 

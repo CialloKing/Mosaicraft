@@ -621,6 +621,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         default: return "cpu";
         }
     };
+    const auto previewCache = m_previewWorkspace ? PreviewCachePolicy::forTask(m_limits.hostBytes) : PreviewCachePolicy{};
+    PreviewCacheMiss scoreMiss{}, featureMiss{}, candidateMiss{};
+    double featureVersionMs = 0, referenceEncodeMs = 0;
+    int workspaceDrops = 0;
+    constexpr const char *cacheLayout = "preview1:";
     std::optional<uint64_t> sourceVersion;
     std::string scoreKeyPrefix;
     const auto scoreKey = [&](const MatchingBackends &active)
@@ -630,13 +635,16 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     };
     const auto tileFeatureKey = [&](FeatureBackend backend)
     {
-        return preparedKey + ':' + std::to_string(cfg.tileW) + ':' + std::to_string(cfg.tileH) + ':' +
+        return cacheLayout + preparedKey + ':' + std::to_string(cfg.tileW) + ':' + std::to_string(cfg.tileH) + ':' +
             std::to_string(featW) + ':' + std::to_string(featH) + ':' + backendName(backend) + ':' + actualDevice + ":kernel1";
     };
     std::shared_ptr<const PreviewScores> reusedScores;
     if (m_previewWorkspace)
     {
-        sourceVersion = FeaturePack::sourceVersion(featDirCache, allRecords);
+        {
+            BenchmarkTimer timer(cfg.benchmark, featureVersionMs);
+            sourceVersion = FeaturePack::sourceVersion(featDirCache, allRecords);
+        }
         if (sourceVersion)
         {
             auto scoring = cfg;
@@ -644,17 +652,31 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             scoring.neighborWindow = 0;
             scoring.neighborPenalty = 0;
             scoring.analyze = false;
-            scoreKeyPrefix = preparedKey + ':' + db.path() + ':' + std::to_string(libraryVersion) + ':' +
+            scoreKeyPrefix = cacheLayout + preparedKey + ':' + db.path() + ':' + std::to_string(libraryVersion) + ':' +
                 std::to_string(*sourceVersion) + ':' + matchingKey(scoring);
-            if (!cfg.analyze && m_previewWorkspace->scoreKey == scoreKey(backends))
+            if (previewCache.tier != PreviewCachePolicy::Tier::Disabled && !cfg.analyze &&
+                m_previewWorkspace->scoreKey == scoreKey(backends))
             {
                 reusedScores = m_previewWorkspace->scores;
             }
         }
         if (!reusedScores)
         {
+            workspaceDrops += bool(m_previewWorkspace->scores);
             m_previewWorkspace->scores.reset();
             m_previewWorkspace->scoreKey.clear();
+        }
+        if (!sourceVersion)
+        {
+            scoreMiss = PreviewCacheMiss::SourceVersion;
+        }
+        if (previewCache.tier == PreviewCachePolicy::Tier::Disabled)
+        {
+            workspaceDrops += bool(m_previewWorkspace->tileFeatures) + bool(m_previewWorkspace->candidates);
+            m_previewWorkspace->tileFeatures.reset();
+            m_previewWorkspace->tileFeatureKey.clear();
+            m_previewWorkspace->candidates.reset();
+            m_previewWorkspace->candidateKey.clear();
         }
     }
     if (templateCuda)
@@ -897,7 +919,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
     // 每个 tile 的最终选择结果：GPU 路径预分配，CPU 路径后续填充
     std::vector<int> bestLibIdx(totalTiles, -1);
     auto newScores = m_preview && sourceVersion && !reusedScores
-        ? PreviewScores::create(totalTiles, N, allRecords) : nullptr;
+        ? PreviewScores::create(totalTiles, N, allRecords, previewCache, scoreMiss) : nullptr;
+    std::unique_ptr<PreviewCacheRows<PreviewTileFeatures>> newTileFeatures;
+    std::unique_ptr<PreviewCacheRows<int>> newCandidates;
+    std::string featureKey, candidateKey;
+    bool reuseTileFeatures = false, reuseCandidates = false, publishScores = false;
     double recommendationSortMs = 0;
     if (m_preview && !reusedScores && !newScores)
     {
@@ -1350,11 +1376,25 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
         bool pipeline = false;
         size_t pinnedBytes = 0;
-        constexpr size_t tileFeatureBudget = 64ULL * 1024 * 1024;
-        const bool cacheTileFeatures = m_previewWorkspace &&
-            static_cast<size_t>(totalTiles) <= tileFeatureBudget / sizeof(PreviewTileFeatures);
-        const bool templateFeatureHit = cacheTileFeatures && templateCuda &&
-            m_previewWorkspace->tileFeatureKey == tileFeatureKey(backends.features);
+        const auto prepareTileCache = [&]()
+        {
+            featureKey = tileFeatureKey(backends.features);
+            reuseTileFeatures = m_previewWorkspace->tileFeatures && m_previewWorkspace->tileFeatureKey == featureKey;
+            if (!reuseTileFeatures)
+            {
+                workspaceDrops += bool(m_previewWorkspace->tileFeatures);
+                m_previewWorkspace->tileFeatures.reset();
+                m_previewWorkspace->tileFeatureKey.clear();
+                newTileFeatures = PreviewCacheRows<PreviewTileFeatures>::create(totalTiles, PreviewCacheKind::Features,
+                                                                                 previewCache, featureMiss);
+            }
+        };
+        if (m_previewWorkspace && templateCuda)
+        {
+            // 先预约完整特征，再决定 GPU 流水线是否额外下载 Tiny/LBP。
+            prepareTileCache();
+        }
+        const bool templateFeatureHit = templateCuda && reuseTileFeatures;
         if (templateCuda)
         {
             workspace = std::make_unique<cuda::FeatureWorkspace>(cfg.threads ? &featureWorkers : nullptr);
@@ -1407,8 +1447,8 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                 }
                 options.height = featH;
                 // 调整权重时，主机缓存需要完整特征以复用同步评分。
-                options.downloadTiny = cfg.analyze || cacheTileFeatures;
-                options.downloadLbp = cfg.analyze || cfg.adaptiveWeights || cacheTileFeatures;
+                options.downloadTiny = cfg.analyze || bool(newTileFeatures);
+                options.downloadLbp = cfg.analyze || cfg.adaptiveWeights || bool(newTileFeatures);
                 options.hostBudget = hostBudget - hostRows - scratch - scoreHost;
                 options.deviceBudget = deviceBudget - scoreRowBytes - expansionDeviceReserve;
                 auto prepare = [&]()
@@ -1590,20 +1630,12 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         }
         identifyScorer(backends.scoring == ScoreBackend::Cpu);
         runtime.backends(backendName(backends.features), backendName(backends.scoring));
-        const std::string featureKey = tileFeatureKey(backends.features);
-        const bool reuseTileFeatures = cacheTileFeatures && m_previewWorkspace->tileFeatureKey == featureKey;
-        std::vector<PreviewTileFeatures> newTileFeatures;
-        if (m_previewWorkspace && !reuseTileFeatures)
-        {
-            std::vector<PreviewTileFeatures>().swap(m_previewWorkspace->tileFeatures);
-            m_previewWorkspace->tileFeatureKey.clear();
-            if (cacheTileFeatures)
-            {
-                newTileFeatures.resize(totalTiles);
-            }
-        }
         if (m_previewWorkspace)
         {
+            if (!templateCuda)
+            {
+                prepareTileCache();
+            }
             runtime.metric("previewTileFeaturesReused", reuseTileFeatures ? 1 : 0);
         }
         if (m_selectionOptions.expand && backends.scoring == ScoreBackend::CompatibleCuda)
@@ -1626,23 +1658,24 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
         scored.reserve(N);
         bool hasCandidates = false;
         MatchingBuffers ahead;
-        std::string candidateKey;
-        bool reuseCandidates = false;
-        std::vector<int> newCandidates;
         if (m_previewWorkspace)
         {
-            candidateKey = preparedKey + ":" + db.path() + ":" + std::to_string(libraryVersion) + ":" +
-                std::to_string(cfg.tileW) + ":" + std::to_string(cfg.tileH) + ":" + std::to_string(N) +
-                ":" + std::to_string(static_cast<int>(backends.features));
-            reuseCandidates = m_previewWorkspace->candidateKey == candidateKey;
-            const auto entries = static_cast<uint64_t>(totalTiles) * N;
+            candidateKey = featureKey + ":" + db.path() + ":" + std::to_string(libraryVersion) + ":" + std::to_string(N);
+            reuseCandidates = m_previewWorkspace->candidates && m_previewWorkspace->candidateKey == candidateKey;
             if (!reuseCandidates)
             {
-                std::vector<int>().swap(m_previewWorkspace->candidates);
+                workspaceDrops += bool(m_previewWorkspace->candidates);
+                m_previewWorkspace->candidates.reset();
                 m_previewWorkspace->candidateKey.clear();
-                if (entries <= 64ULL * 1024 * 1024 / sizeof(int))
+                const auto entries = static_cast<uint64_t>(totalTiles) * N;
+                if (entries > SIZE_MAX)
                 {
-                    newCandidates.resize(static_cast<size_t>(entries));
+                    candidateMiss = PreviewCacheMiss::Size;
+                }
+                else
+                {
+                    newCandidates = PreviewCacheRows<int>::create(static_cast<size_t>(entries),
+                                                                  PreviewCacheKind::Candidates, previewCache, candidateMiss);
                 }
             }
             runtime.metric("previewCandidatesReused", reuseCandidates ? 1 : 0);
@@ -1738,7 +1771,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             {
                 for (int local = 0; local < count; ++local)
                 {
-                    const auto &row = m_previewWorkspace->tileFeatures[first + local];
+                    const auto &row = m_previewWorkspace->tileFeatures->data[first + local];
                     allTL[local] = row.l;
                     allTA[local] = row.a;
                     allTB[local] = row.b;
@@ -1950,11 +1983,11 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     transposeGrid(allGrid[local].data(), buffers.planar[local].data());
                 }
             }
-            if (!newTileFeatures.empty())
+            if (newTileFeatures)
             {
                 for (int local = 0; local < count; ++local)
                 {
-                    auto &row = newTileFeatures[first + local];
+                    auto &row = newTileFeatures->data[first + local];
                     row.l = allTL[local];
                     row.a = allTA[local];
                     row.b = allTB[local];
@@ -1974,7 +2007,7 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             const size_t candidateCount = static_cast<size_t>(count) * N;
             if (reuseCandidates)
             {
-                std::copy_n(m_previewWorkspace->candidates.begin() + candidateOffset, candidateCount,
+                std::copy_n(m_previewWorkspace->candidates->data.begin() + candidateOffset, candidateCount,
                             allIndices.begin());
             }
             else
@@ -1994,10 +2027,10 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                     }
                 }
                 annIndex->queryBatch(buffers.queries, N, allIndices, queryWorkers, MOSAICRAFT_TRIAL_ANN_ROWS, owners);
-                if (!newCandidates.empty())
+                if (newCandidates)
                 {
                     // 亮度阈值会变，缓存必须在原地过滤之前保存。
-                    std::copy_n(allIndices.begin(), candidateCount, newCandidates.begin() + candidateOffset);
+                    std::copy_n(allIndices.begin(), candidateCount, newCandidates->data.begin() + candidateOffset);
                 }
             }
             for (int local = 0; local < count; ++local)
@@ -2820,20 +2853,14 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
                       << metrics.scoreTimings.eventComputeMs << "/" << metrics.scoreTimings.eventDownloadMs << " ms"
                       << std::endl;
         }
-        if (!newCandidates.empty())
+        if (newScores)
         {
-            m_previewWorkspace->candidateKey = std::move(candidateKey);
-            m_previewWorkspace->candidates = std::move(newCandidates);
-        }
-        if (!newTileFeatures.empty())
-        {
-            m_previewWorkspace->tileFeatureKey = featureKey;
-            m_previewWorkspace->tileFeatures = std::move(newTileFeatures);
-        }
-        if (newScores && sourceVersion == FeaturePack::sourceVersion(featDirCache, allRecords))
-        {
-            m_previewWorkspace->scoreKey = scoreKey(backends);
-            m_previewWorkspace->scores = newScores;
+            BenchmarkTimer timer(cfg.benchmark, featureVersionMs);
+            publishScores = sourceVersion == FeaturePack::sourceVersion(featDirCache, allRecords);
+            if (!publishScores)
+            {
+                scoreMiss = PreviewCacheMiss::SourceVersion;
+            }
         }
         if (!hasCandidates && !m_preview)
         {
@@ -2896,18 +2923,63 @@ bool MosaicEngine::generate(const std::string &targetPath, const std::string &db
             }
         }
         m_preview->indices = std::move(bestLibIdx);
+        m_preview->analysis = std::move(diagnostics);
+        {
+            BenchmarkTimer timer(cfg.benchmark, referenceEncodeMs);
+            const double scale = std::min(1.0, 1400.0 / std::max(target.cols, target.rows));
+            cv::Mat reference;
+            cv::resize(target, reference, {std::max(1, static_cast<int>(target.cols * scale)),
+                                          std::max(1, static_cast<int>(target.rows * scale))},
+                       0, 0, cv::INTER_AREA);
+            cv::imencode(".jpg", reference, m_preview->referenceJpeg, {cv::IMWRITE_JPEG_QUALITY, 85});
+        }
+        if (canceled())
+        {
+            return runtime.fail("preview_canceled", "preview canceled");
+        }
         if (reusedScores || newScores)
         {
-            m_preview->deferRecommendations(reusedScores ? reusedScores : std::move(newScores),
-                                            cfg.neighborWindow, cfg.neighborPenalty);
+            m_preview->deferRecommendations(reusedScores ? reusedScores : newScores, cfg.neighborWindow, cfg.neighborPenalty);
         }
-        m_preview->analysis = std::move(diagnostics);
-        const double scale = std::min(1.0, 1400.0 / std::max(target.cols, target.rows));
-        cv::Mat reference;
-        cv::resize(target, reference, {std::max(1, static_cast<int>(target.cols * scale)),
-                                      std::max(1, static_cast<int>(target.rows * scale))},
-                   0, 0, cv::INTER_AREA);
-        cv::imencode(".jpg", reference, m_preview->referenceJpeg, {cv::IMWRITE_JPEG_QUALITY, 85});
+        if (publishScores)
+        {
+            m_previewWorkspace->scoreKey = scoreKey(backends);
+            m_previewWorkspace->scores = newScores;
+        }
+        if (newCandidates)
+        {
+            m_previewWorkspace->candidateKey = std::move(candidateKey);
+            m_previewWorkspace->candidates = std::move(newCandidates);
+        }
+        if (newTileFeatures)
+        {
+            m_previewWorkspace->tileFeatureKey = std::move(featureKey);
+            m_previewWorkspace->tileFeatures = std::move(newTileFeatures);
+        }
+        if (cfg.benchmark)
+        {
+            const auto &space = *m_previewWorkspace;
+            const auto activeScores = reusedScores ? reusedScores : newScores;
+            const auto miss = [](PreviewCacheMiss reason, bool hit)
+            {
+                return static_cast<double>(reason == PreviewCacheMiss::None && !hit ? PreviewCacheMiss::Key : reason);
+            };
+            runtime.metric("previewCacheTier", static_cast<double>(previewCache.tier));
+            runtime.metric("previewCacheBudgetBytes", static_cast<double>(previewCache.totalLimit));
+            runtime.metric("previewCacheReservedBytes", static_cast<double>(PreviewCacheReservation::totalBytes()));
+            runtime.metric("previewScoresBytes", activeScores ? static_cast<double>(activeScores->bytes()) : 0);
+            runtime.metric("previewTileFeaturesBytes", space.tileFeatures ? static_cast<double>(space.tileFeatures->storage.bytes()) : 0);
+            runtime.metric("previewCandidatesBytes", space.candidates ? static_cast<double>(space.candidates->storage.bytes()) : 0);
+            runtime.metric("previewScoresMissReason", miss(scoreMiss, bool(reusedScores)));
+            if (!reusedScores)
+            {
+                runtime.metric("previewTileFeaturesMissReason", miss(featureMiss, reuseTileFeatures));
+                runtime.metric("previewCandidatesMissReason", miss(candidateMiss, reuseCandidates));
+            }
+            runtime.metric("previewCacheEvicted", workspaceDrops);
+            runtime.metric("previewFeatureSourceVersionMs", featureVersionMs);
+            runtime.metric("previewReferenceEncodeMs", referenceEncodeMs);
+        }
         runtime.output(tilesX, tilesY, "selection", totalTiles - noCandidateCount, noCandidateCount);
         runtime.metric("totalMs", Ms(Clock::now() - tStart).count());
         runtime.metric("prepareMs", metrics.msPrep);

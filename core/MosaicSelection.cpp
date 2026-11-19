@@ -3,7 +3,6 @@
 #include "NeighborhoodState.h"
 #include "UnicodeIO.h"
 
-#include <atomic>
 #include <list>
 #include <mutex>
 
@@ -11,9 +10,6 @@ namespace mosaicraft
 {
 namespace
 {
-constexpr size_t scoreBudget = 128ULL * 1024 * 1024;
-std::atomic_size_t reservedScoreBytes{0};
-
 class Fingerprint
 {
     uint64_t m_hash = 14695981039346656037ULL;
@@ -62,43 +58,53 @@ PreviewAsset assetVersion(const std::string &path, const std::string &hash)
 
 PreviewScores::PreviewScores() = default;
 
-PreviewScores::~PreviewScores()
-{
-    reservedScoreBytes.fetch_sub(reservedBytes, std::memory_order_relaxed);
-}
+PreviewScores::~PreviewScores() = default;
 
 std::shared_ptr<PreviewScores> PreviewScores::create(size_t tiles, int candidates,
-                                                     const std::vector<ImageRecord> &records)
+                                                     const std::vector<ImageRecord> &records,
+                                                     const PreviewCachePolicy &policy, PreviewCacheMiss &miss)
 {
-    const size_t cells = tiles * candidates;
-    const size_t bytes = sizeof(PreviewScores) + cells * (sizeof(int) + sizeof(double)) +
-                         records.size() * (sizeof(ImageRecord) + 192 * sizeof(float));
-    if (bytes > scoreBudget)
+    constexpr size_t cellBytes = sizeof(int) + sizeof(double);
+    constexpr size_t rowBytes = sizeof(ImageRecord) + 192 * sizeof(float);
+    const size_t limit = policy.limits[static_cast<size_t>(PreviewCacheKind::Scores)];
+    if (policy.tier == PreviewCachePolicy::Tier::Disabled)
     {
+        miss = PreviewCacheMiss::Memory;
         return {};
     }
-    auto scores = std::make_shared<PreviewScores>();
-    size_t used = reservedScoreBytes.load(std::memory_order_relaxed);
-    do
+    if (limit < sizeof(PreviewScores) || records.size() > (limit - sizeof(PreviewScores)) / rowBytes ||
+        candidates <= 0 || tiles > (limit - sizeof(PreviewScores) - records.size() * rowBytes) / cellBytes / candidates)
     {
-        if (bytes > scoreBudget - used)
+        miss = PreviewCacheMiss::Size;
+        return {};
+    }
+    const size_t cells = tiles * candidates;
+    try
+    {
+        auto scores = std::make_shared<PreviewScores>();
+        if (!scores->storage.grow(sizeof(PreviewScores) + cells * cellBytes + records.size() * rowBytes, policy, miss))
         {
             return {};
         }
-    } while (!reservedScoreBytes.compare_exchange_weak(used, used + bytes, std::memory_order_relaxed));
-
-    // 完成的预览和工作区可能同时持有数据，最后一个所有者释放预算。
-    scores->reservedBytes = bytes;
-    scores->candidates = candidates;
-    scores->indices.resize(cells);
-    scores->values.resize(cells);
-    scores->records.resize(records.size());
-    for (size_t i = 0; i < records.size(); ++i)
-    {
-        scores->records[i].id = records[i].id;
-        scores->records[i].gridLab = records[i].gridLab;
+        scores->candidates = candidates;
+        scores->indices.resize(cells);
+        scores->values.resize(cells);
+        scores->records.resize(records.size());
+        size_t bytes = sizeof(PreviewScores) + scores->indices.capacity() * sizeof(int) +
+            scores->values.capacity() * sizeof(double) + scores->records.capacity() * sizeof(ImageRecord);
+        for (size_t i = 0; i < records.size(); ++i)
+        {
+            scores->records[i].id = records[i].id;
+            scores->records[i].gridLab = records[i].gridLab;
+            bytes += scores->records[i].gridLab.capacity() * sizeof(float);
+        }
+        return scores->storage.grow(bytes, policy, miss) ? scores : nullptr;
     }
-    return scores;
+    catch (const std::bad_alloc &)
+    {
+        miss = PreviewCacheMiss::Allocation;
+        return {};
+    }
 }
 
 class PreviewRecommendationCache

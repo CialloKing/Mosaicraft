@@ -248,6 +248,7 @@ add_library(mosaicraft_core STATIC
     core/TileFeatures.cpp
     core/MosaicEngine.cpp
     core/MosaicSelection.cpp
+    core/PreviewCache.cpp
     core/MosaicService.cpp
 )
 if (NOT MOSAICRAFT_CUDA)
