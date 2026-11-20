@@ -126,7 +126,7 @@ def main():
         png(original_path, (2, 3, 4))
         original_bytes = original_path.read_bytes()
         build_inplace = ['library', 'build', './inplace', '-o', 'inplace/', '--backend', 'cpu', '--size']
-        run([*build_inplace, '16x24'], False, b'is 32x32, expected 16x24')
+        run([*build_inplace, '16x24'], False, b'use a separate output directory')
         assert original_path.read_bytes() == original_bytes and not (inplace / 'mosaicraft.db').exists()
         run([*build_inplace, '32x32'])
         assert not original_path.exists() and (inplace / '000000.png').read_bytes() == original_bytes
