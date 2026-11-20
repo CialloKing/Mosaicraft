@@ -22,13 +22,11 @@
 #endif
 
 #include <opencv2/core.hpp>
-#include <opencv2/imgcodecs.hpp>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <cctype>
 #include <cstdio>
 #include <filesystem>
 #include <iomanip>
@@ -95,7 +93,6 @@ struct AppendBenchmark
         }
         timing("normalizeWorkerMs", normalization.normalize);
         timing("assetEncodeWorkerMs", normalization.encode);
-        timing("pngCompactWorkerMs", normalization.compactPng);
         timing("assetWriteWorkerMs", normalization.write);
         timing("pixelHashMs", hash);
         timing("sqlLookupMs", sql);
@@ -242,15 +239,10 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                 {
                     continue;
                 }
-                auto ext = pathToUtf8(entry.path().extension());
-                std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char ch)
+                auto path = pathToUtf8(entry.path());
+                if (!ImageNormalizer::libraryOutputExtension(path).empty())
                 {
-                    return static_cast<char>(std::tolower(ch));
-                });
-                if (ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp" || ext == ".bmp" ||
-                    ext == ".tiff" || ext == ".tif")
-                {
-                    files.push_back(pathToUtf8(entry.path()));
+                    files.push_back(std::move(path));
                 }
             }
         };
@@ -278,20 +270,57 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     std::error_code ec;
     const bool inputIsOutput = fs::equivalent(input, output, ec);
     const cv::Size requestedSize(request.normalizeWidth, request.normalizeHeight);
+    std::set<fs::path> reservedPaths;
+    const auto reserveExistingPaths = [&](Database &db)
+    {
+        for (const auto &record : db.allRecords(false))
+        {
+            reservedPaths.insert(fs::absolute(u8path(record.filePath)).lexically_normal());
+        }
+    };
     if (inputIsOutput)
     {
-        // 原地建库复用原文件，必须在写入任何新记录或改名前确认无需缩放。
-        for (const auto &file : files)
+        if (!database && fs::exists(u8path(dbPath)))
         {
-            const auto image = imreadUnicode(file, cv::IMREAD_COLOR);
-            if (!image.empty() && image.size() != requestedSize)
+            database.emplace(dbPath, Database::OpenMode::Build);
+            if (!database->isOpen())
             {
-                std::ostringstream detail;
-                detail << "in-place library image " << file << " is " << image.cols << 'x' << image.rows << ", expected "
-                       << requestedSize.width << 'x' << requestedSize.height << "; use a separate output directory";
-                return runtimeFailure(runtime, 1, detail.str(), "invalid_argument", "inputDir", file);
+                return openError();
             }
         }
+        if (database)
+        {
+            reserveExistingPaths(*database);
+        }
+        // 历史素材已入库。只检查新文件，避免重新导入旧格式或在检查失败前改名。
+        auto next = files.begin();
+        for (auto file = files.begin(); file != files.end(); ++file)
+        {
+            const auto path = u8path(*file);
+            if (reservedPaths.count(path.lexically_normal()))
+            {
+                continue;
+            }
+            const auto image = ImageNormalizer::readLibrarySource(*file);
+            if (image.empty())
+            {
+                runtime.emit("warning", "source_skipped", "cannot decode source or signature does not match",
+                             "inputDir", *file);
+                continue;
+            }
+            if (ImageNormalizer::libraryOutputExtension(*file) != pathToUtf8(path.extension()) ||
+                image.size() != requestedSize)
+            {
+                return runtimeFailure(runtime, 1, "in-place library image requires conversion or resizing: " + *file +
+                                      "; use a separate output directory", "invalid_argument", "inputDir", *file);
+            }
+            if (next != file)
+            {
+                *next = std::move(*file);
+            }
+            ++next;
+        }
+        files.erase(next, files.end());
     }
 
     ec.clear();
@@ -365,10 +394,9 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     std::vector<std::string> outPaths(files.size());
     std::vector<uint8_t> okFlags(files.size(), 0);
     // 新图片先用临时名字，避免失败文件和旧编号阻碍最终全库颜色排序。
-    std::set<fs::path> reservedPaths;
-    for (const auto& record : db.allRecords())
+    if (!inputIsOutput)
     {
-        reservedPaths.insert(fs::absolute(u8path(record.filePath)).lexically_normal());
+        reserveExistingPaths(db);
     }
     size_t nameIndex = 0;
     for (size_t i = 0; i < files.size(); ++i)
@@ -382,8 +410,8 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         do
         {
             char name[64];
-            auto extension = pathToUtf8(u8path(files[i]).extension());
-            snprintf(name, sizeof(name), request.normalizeOnly ? "%06zu%s" : ".mosaicraft-new-%06zu%s",
+            const auto extension = ImageNormalizer::libraryOutputExtension(files[i]);
+            snprintf(name, sizeof(name), ".mosaicraft-new-%06zu%s",
                      nameIndex++, extension.c_str());
             candidate = u8path(outputDir) / name;
         } while (fs::exists(candidate) || reservedPaths.count(fs::absolute(candidate).lexically_normal()));
@@ -412,7 +440,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         bool saved = false;
         try
         {
-            saved = normalizer.processLibraryImage(input, output, pixels, timings);
+            saved = normalizer.processLibraryImage(input, output, request.encoding, pixels, timings);
             if (!saved)
             {
                 runtime.emit("warning", "source_skipped", "normalization failed", "inputDir", input);
@@ -838,7 +866,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                     {
                         budget.lock();
                     }
-                    image = imreadUnicode(files[i], cv::IMREAD_COLOR);
+                    image = ImageNormalizer::readLibrarySource(files[i]);
                 }
                 if (image.empty())
                 {
@@ -1054,7 +1082,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                     }
                     try
                     {
-                        images[i] = imreadUnicode(outPaths[first + i], cv::IMREAD_COLOR);
+                        images[i] = ImageNormalizer::readLibrarySource(outPaths[first + i]);
                         if (images[i].empty())
                         {
                             throw std::runtime_error("cannot decode saved image");

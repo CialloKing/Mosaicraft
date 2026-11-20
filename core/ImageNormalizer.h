@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "BenchmarkTimer.h"
+#include "LibraryEncodingOptions.h"
 #include <opencv2/core.hpp>
 #include <string>
 #include <vector>
@@ -22,21 +23,24 @@ public:
     bool process(const std::string& inputPath, const std::string& outputPath,
                  const std::vector<int>& writeParams = {}, cv::Mat* storedPixels = nullptr);
 
-    // 建库、追加和独立归一化共享编码策略；不影响成品图的输出设置。
+    // 建库和追加共用输出格式与签名校验。
     struct LibraryTimings
     {
-        BenchmarkSample normalize, encode, compactPng, write;
+        BenchmarkSample normalize, encode, write;
 
         void merge(const LibraryTimings &other)
         {
             normalize.merge(other.normalize);
             encode.merge(other.encode);
-            compactPng.merge(other.compactPng);
             write.merge(other.write);
         }
     };
+    static std::string libraryOutputExtension(const std::string& inputPath);
+    static cv::Mat readLibrarySource(const std::string& inputPath);
     bool processLibraryImage(const std::string& inputPath, const std::string& outputPath,
-                             cv::Mat* storedPixels = nullptr, LibraryTimings *timings = nullptr);
+                             const LibraryEncodingOptions& encoding, cv::Mat* storedPixels, LibraryTimings* timings);
+    bool processStandaloneImage(const std::string& inputPath, const std::string& outputPath,
+                                cv::Mat* storedPixels = nullptr);
 
     // 返回归一化后的 cv::Mat（不写磁盘），供流水线使用
     cv::Mat processToMat(const std::string& inputPath);
@@ -48,7 +52,8 @@ public:
 
 private:
     bool processImpl(const std::string& inputPath, const std::string& outputPath,
-                     const std::vector<int>& writeParams, cv::Mat* storedPixels, bool compactPng, LibraryTimings *timings = nullptr);
+                     const std::vector<int>& writeParams, cv::Mat* storedPixels, bool compactPng,
+                     const LibraryEncodingOptions* encoding = nullptr, LibraryTimings* timings = nullptr);
     cv::Mat normalize(const cv::Mat& src);
     int m_targetWidth;
     int m_targetHeight;

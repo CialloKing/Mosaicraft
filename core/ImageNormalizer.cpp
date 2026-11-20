@@ -10,6 +10,7 @@
 #include <cctype>
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace mosaicraft
@@ -35,7 +36,90 @@ std::string imageFormat(const std::string& path)
     }
     return extension;
 }
+
+std::string_view signedImageFormat(const std::vector<uint8_t>& bytes)
+{
+    if (bytes.empty())
+    {
+        return {};
+    }
+    const std::string_view header(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    const auto starts = [&](std::string_view signature)
+    {
+        return header.substr(0, signature.size()) == signature;
+    };
+    if (starts("\xff\xd8\xff"))
+    {
+        return ".jpg";
+    }
+    if (starts("\x89PNG\r\n\x1a\n"))
+    {
+        return ".png";
+    }
+    if (header.size() >= 12 && starts("RIFF") && header.substr(8, 4) == "WEBP")
+    {
+        return ".webp";
+    }
+    if (starts("BM"))
+    {
+        return ".bmp";
+    }
+    if (starts({"II\x2a\0", 4}) || starts({"MM\0\x2a", 4}) ||
+        starts({"II\x2b\0", 4}) || starts({"MM\0\x2b", 4}))
+    {
+        return ".tiff";
+    }
+    return {};
+}
+
+std::vector<int> libraryWriteParams(const std::string& format, const LibraryEncodingOptions& encoding)
+{
+    if (format == ".jpg")
+    {
+        return {cv::IMWRITE_JPEG_QUALITY, encoding.jpgQuality};
+    }
+    if (format == ".png")
+    {
+        return {cv::IMWRITE_PNG_COMPRESSION, encoding.pngLevel};
+    }
+    if (format == ".webp" && encoding.webpQuality)
+    {
+        return {cv::IMWRITE_WEBP_QUALITY, *encoding.webpQuality};
+    }
+    return {};
+}
 } // namespace
+
+std::string ImageNormalizer::libraryOutputExtension(const std::string& inputPath)
+{
+    const auto format = imageFormat(inputPath);
+    if (format == ".jpg" || format == ".png" || format == ".webp")
+    {
+        return pathToUtf8(u8path(inputPath).extension());
+    }
+    if (format == ".bmp" || format == ".tiff")
+    {
+        return ".png";
+    }
+    return {};
+}
+
+cv::Mat ImageNormalizer::readLibrarySource(const std::string& inputPath)
+{
+    const auto bytes = readBytesUnicode(inputPath);
+    if (bytes.empty() || signedImageFormat(bytes) != imageFormat(inputPath))
+    {
+        return {};
+    }
+    try
+    {
+        return cv::imdecode(bytes, cv::IMREAD_COLOR);
+    }
+    catch (const cv::Exception&)
+    {
+        return {};
+    }
+}
 
 ImageNormalizer::ImageNormalizer(int targetWidth, int targetHeight)
     : m_targetWidth(targetWidth)
@@ -51,7 +135,7 @@ bool ImageNormalizer::process(const std::string& inputPath, const std::string& o
 
 bool ImageNormalizer::processImpl(const std::string& inputPath, const std::string& outputPath,
                                   const std::vector<int>& writeParams, cv::Mat* storedPixels, bool compactPng,
-                                  LibraryTimings *timings)
+                                  const LibraryEncodingOptions* encoding, LibraryTimings* timings)
 {
     if (storedPixels)
     {
@@ -66,18 +150,23 @@ bool ImageNormalizer::processImpl(const std::string& inputPath, const std::strin
         };
         // 保存与解码共用同一份字节，源文件随后变化也不会使特征与图库副本错配。
         auto encoded = readBytesUnicode(inputPath);
+        const auto inputFormat = imageFormat(inputPath);
+        const auto outputFormat = imageFormat(outputPath);
+        if (encoding && (encoded.empty() || signedImageFormat(encoded) != inputFormat))
+        {
+            throw std::runtime_error("input signature does not match the file extension");
+        }
         cv::Mat src = encoded.empty() ? cv::Mat() : cv::imdecode(encoded, cv::IMREAD_COLOR);
         if (src.empty())
         {
             throw std::runtime_error("cannot decode input");
         }
-        if (src.cols == m_targetWidth && src.rows == m_targetHeight && imageFormat(inputPath) == imageFormat(outputPath))
+        if (src.cols == m_targetWidth && src.rows == m_targetHeight && inputFormat == outputFormat)
         {
             std::error_code ec;
             const bool sameFile = std::filesystem::equivalent(u8path(inputPath), u8path(outputPath), ec);
             if (!sameFile && compactPng)
             {
-                BenchmarkTimer timer(timings ? &timings->compactPng : nullptr);
                 compactLibraryPng(encoded, src.total());
             }
             if (!sameFile && !write(encoded))
@@ -97,7 +186,8 @@ bool ImageNormalizer::processImpl(const std::string& inputPath, const std::strin
         const bool encodedOk = [&]()
         {
             BenchmarkTimer timer(timings ? &timings->encode : nullptr);
-            return cv::imencode(extension, normalized, encoded, writeParams);
+            return cv::imencode(extension, normalized, encoded,
+                                encoding ? libraryWriteParams(outputFormat, *encoding) : writeParams);
         }();
         if (!encodedOk || !write(encoded))
         {
@@ -106,7 +196,7 @@ bool ImageNormalizer::processImpl(const std::string& inputPath, const std::strin
         if (storedPixels)
         {
             // PNG 对三通道八位像素无损；其他格式解码实际写出的同一份字节。
-            cv::Mat saved = imageFormat(outputPath) == ".png" ? normalized : cv::imdecode(encoded, cv::IMREAD_COLOR);
+            cv::Mat saved = outputFormat == ".png" ? normalized : cv::imdecode(encoded, cv::IMREAD_COLOR);
             if (saved.empty())
             {
                 throw std::runtime_error("cannot decode saved image");
@@ -123,19 +213,26 @@ bool ImageNormalizer::processImpl(const std::string& inputPath, const std::strin
 }
 
 bool ImageNormalizer::processLibraryImage(const std::string& inputPath, const std::string& outputPath,
-                                          cv::Mat* storedPixels, LibraryTimings *timings)
+                                          const LibraryEncodingOptions& encoding, cv::Mat* storedPixels,
+                                          LibraryTimings* timings)
 {
     BenchmarkTimer timer(timings ? &timings->normalize : nullptr);
+    return processImpl(inputPath, outputPath, {}, storedPixels, false, &encoding, timings);
+}
+
+bool ImageNormalizer::processStandaloneImage(const std::string& inputPath, const std::string& outputPath,
+                                             cv::Mat* storedPixels)
+{
     const auto format = imageFormat(outputPath);
     if (format == ".png")
     {
-        return processImpl(inputPath, outputPath, {cv::IMWRITE_PNG_COMPRESSION, 9}, storedPixels, true, timings);
+        return processImpl(inputPath, outputPath, {cv::IMWRITE_PNG_COMPRESSION, 9}, storedPixels, true);
     }
     if (format == ".jpg")
     {
-        return processImpl(inputPath, outputPath, {cv::IMWRITE_JPEG_QUALITY, 100}, storedPixels, false, timings);
+        return processImpl(inputPath, outputPath, {cv::IMWRITE_JPEG_QUALITY, 100}, storedPixels, false);
     }
-    return processImpl(inputPath, outputPath, {}, storedPixels, false, timings);
+    return processImpl(inputPath, outputPath, {}, storedPixels, false);
 }
 
 cv::Mat ImageNormalizer::processToMat(const std::string& inputPath)

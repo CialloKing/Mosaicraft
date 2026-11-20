@@ -74,7 +74,7 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
                 {
                     ImageNormalizer normalizer(request.normalizeWidth, request.normalizeHeight);
                     const auto destination = output / (std::to_string(index) + pathToUtf8(files[index].extension()));
-                    if (!normalizer.processLibraryImage(pathToUtf8(files[index]), pathToUtf8(destination)))
+                    if (!normalizer.processStandaloneImage(pathToUtf8(files[index]), pathToUtf8(destination)))
                     {
                         ++failed;
                     }

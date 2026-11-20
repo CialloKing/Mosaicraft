@@ -1466,6 +1466,9 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
         request.normalizeWidth = size.width;
         request.normalizeHeight = size.height;
         request.threads = 2;
+        request.encoding.jpgQuality = 84;
+        request.encoding.webpQuality = 10;
+        request.encoding.pngLevel = 9;
         cv::Mat exact(size, CV_8UC3), larger(size.height + 3, size.width + 2, CV_8UC3);
         cv::RNG(12).fill(exact, cv::RNG::UNIFORM, 0, 256);
         cv::RNG(34).fill(larger, cv::RNG::UNIFORM, 0, 256);
@@ -1476,19 +1479,26 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
         const cv::Mat rgba(size, CV_16UC4, cv::Scalar(1234, 5678, 9012, 34567));
         REQUIRE(imwriteUnicode(png, rgba, {cv::IMWRITE_PNG_COMPRESSION, 0}));
         const auto originalPng = readBytesUnicode(png);
+        const auto webp = utf8(workspace.inputDir() / "tile.WeBp");
+        REQUIRE(imwriteUnicode(webp, cv::Mat(size, CV_8UC3, cv::Scalar(22, 150, 225)),
+                               {cv::IMWRITE_WEBP_QUALITY, 93}));
         REQUIRE(imwriteUnicode(resized, larger, {cv::IMWRITE_JPEG_QUALITY, 97}));
         REQUIRE(writeBytesUnicode(utf8(workspace.inputDir() / "duplicate.jpeg"), readBytesUnicode(jpeg)));
         REQUIRE(writeBytesUnicode(utf8(workspace.inputDir() / "broken.jpg"), {1, 2, 3}));
+        const auto mislabeled = workspace.inputDir() / "mislabeled.jpg";
+        REQUIRE(writeBytesUnicode(utf8(mislabeled), originalPng));
         ImageNormalizer normalizer(size.width, size.height);
         const cv::Mat oldPixels = normalizer.centerCrop(normalizer.resizeToCover(imreadUnicode(resized)));
         std::vector<uint8_t> resizedBytes;
-        REQUIRE(cv::imencode(".jpg", oldPixels, resizedBytes, {cv::IMWRITE_JPEG_QUALITY, 100}));
+        REQUIRE(cv::imencode(".jpg", oldPixels, resizedBytes, {cv::IMWRITE_JPEG_QUALITY, request.encoding.jpgQuality}));
         std::unordered_map<std::string, std::vector<uint8_t>> expected;
-        for (const auto& bytes : {readBytesUnicode(jpeg), readBytesUnicode(png), resizedBytes})
+        for (const auto& bytes : {readBytesUnicode(jpeg), originalPng, readBytesUnicode(webp), resizedBytes})
         {
             expected.emplace(pixelHash(cv::imdecode(bytes, cv::IMREAD_COLOR)), bytes);
         }
-        REQUIRE(expected.size() == 3);
+        REQUIRE(expected.size() == 4);
+        const auto webpHash = pixelHash(imreadUnicode(webp));
+        const auto resizedHash = pixelHash(cv::imdecode(resizedBytes, cv::IMREAD_COLOR));
         const auto build = BuildService().run(request);
         REQUIRE_MESSAGE(build.ok, build.message);
         std::vector<ImageRecord> before;
@@ -1504,19 +1514,21 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
                 CHECK(pixels.size() == size);
                 CHECK(record.featureVersion == FeatureExtractor::featureVersion());
                 REQUIRE(expected.count(record.fileHash) == 1);
+                CHECK(readBytesUnicode(record.filePath) == expected.at(record.fileHash));
+                if (record.fileHash == webpHash)
+                {
+                    CHECK(u8path(record.filePath).extension() == ".WeBp");
+                }
+                if (record.fileHash == resizedHash)
+                {
+                    CHECK(u8path(record.filePath).extension() == u8path(resized).extension());
+                }
                 if (u8path(record.filePath).extension() == ".png")
                 {
                     const auto full = imreadUnicode(record.filePath, cv::IMREAD_UNCHANGED);
                     REQUIRE(full.type() == rgba.type());
                     CHECK(cv::norm(full, rgba, cv::NORM_INF) == 0);
-                    const auto packed = readBytesUnicode(record.filePath);
-                    REQUIRE(packed.size() < originalPng.size());
                     CHECK(readBytesUnicode(png) == originalPng);
-                    expected.at(record.fileHash) = packed; // 后续追加与 normalize 应得到相同文件。
-                }
-                else
-                {
-                    CHECK(readBytesUnicode(record.filePath) == expected.at(record.fileHash));
                 }
                 CHECK(fs::exists(u8path(record.tinyPath)));
                 CHECK(fs::exists(u8path(record.lbpPath)));
@@ -1536,6 +1548,25 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
         inPlace.inputDir = inPlace.outputDir;
         REQUIRE(writeBytesUnicode(utf8(u8path(inPlace.inputDir) / "broken.jpg"), {1, 2, 3}));
         REQUIRE(BuildService().run(inPlace).ok);
+        const auto rejectedPath = u8path(inPlace.inputDir) / "new.bmp";
+        for (const auto& extension : {".bmp", ".png"})
+        {
+            auto unindexed = rejectedPath;
+            unindexed.replace_extension(extension);
+            if (unindexed == rejectedPath)
+            {
+                requireWriteImage(unindexed, exact);
+            }
+            else
+            {
+                requireWriteImage(unindexed, larger);
+            }
+            const auto result = BuildService().run(inPlace);
+            CHECK_FALSE(result.ok);
+            CHECK(result.message.find("use a separate output directory") != std::string::npos);
+            CHECK(fs::exists(unindexed));
+            CHECK(fs::remove(unindexed));
+        }
         {
             Database database(request.dbPath);
             const auto records = database.allRecords();
@@ -1552,6 +1583,7 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
                                                  return previous.id == record.id;
                                              });
                 REQUIRE(old != before.end());
+                CHECK(record.filePath == old->filePath);
                 CHECK(record.fileHash == old->fileHash);
                 CHECK(record.gridLab == old->gridLab);
                 CHECK(record.tinyPath == old->tinyPath);
@@ -1561,24 +1593,41 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
                 CHECK(readBytesUnicode(record.filePath) == expected.at(record.fileHash));
             }
         }
+        REQUIRE(fs::remove(mislabeled));
         auto normalizeOnly = request;
         normalizeOnly.outputDir = utf8(workspace.root / "normalize-only");
         normalizeOnly.dbPath = utf8(u8path(normalizeOnly.outputDir) / "mosaicraft.db");
         normalizeOnly.normalizeOnly = true;
         REQUIRE(BuildService().run(normalizeOnly).ok);
+        std::vector<uint8_t> normalizedJpeg;
+        REQUIRE(cv::imencode(".jpg", oldPixels, normalizedJpeg, {cv::IMWRITE_JPEG_QUALITY, 100}));
+        const auto normalizedJpegHash = pixelHash(cv::imdecode(normalizedJpeg, cv::IMREAD_COLOR));
         int outputs = 0;
         for (const auto& entry : fs::directory_iterator(u8path(normalizeOnly.outputDir)))
         {
-            if (entry.path().extension() == ".jpg" || entry.path().extension() == ".jpeg" ||
-                entry.path().extension() == ".JPEG" || entry.path().extension() == ".png")
+            const auto path = utf8(entry.path());
+            const auto pixels = imreadUnicode(path);
+            REQUIRE_FALSE(pixels.empty());
+            const auto bytes = readBytesUnicode(path);
+            const auto hash = pixelHash(pixels);
+            if (entry.path().extension() == ".png")
             {
-                const auto pixels = imreadUnicode(utf8(entry.path()));
-                REQUIRE_FALSE(pixels.empty());
-                CHECK(readBytesUnicode(utf8(entry.path())) == expected.at(pixelHash(pixels)));
-                ++outputs;
+                CHECK(bytes.size() < originalPng.size());
+                const auto full = imreadUnicode(path, cv::IMREAD_UNCHANGED);
+                REQUIRE(full.type() == rgba.type());
+                CHECK(cv::norm(full, rgba, cv::NORM_INF) == 0);
             }
+            else if (hash == normalizedJpegHash)
+            {
+                CHECK(bytes == normalizedJpeg);
+            }
+            else
+            {
+                CHECK(bytes == expected.at(hash));
+            }
+            ++outputs;
         }
-        CHECK(outputs == 4);
+        CHECK(outputs == 5);
         CHECK_FALSE(fs::exists(u8path(normalizeOnly.dbPath)));
     }
 }
@@ -1597,7 +1646,7 @@ TEST_CASE("default color build and append keep bytes IDs usage and feature refer
     request.normalizeWidth = 180;
     request.normalizeHeight = 320;
     requireWriteImage(input / "a_blue.png", cv::Mat(64, 36, CV_8UC3, cv::Scalar(255, 0, 0)));
-    requireWriteImage(input / "b_green.bmp", cv::Mat(64, 36, CV_8UC3, cv::Scalar(0, 255, 0)));
+    requireWriteImage(input / "b_green.bmp", cv::Mat(320, 180, CV_8UC3, cv::Scalar(0, 255, 0)));
     requireWriteImage(input / "z_red.jpg", cv::Mat(64, 36, CV_8UC3, cv::Scalar(0, 0, 255)));
     REQUIRE(BuildService().run(request).ok);
     auto bytes = [](const std::string& path)
@@ -1612,7 +1661,7 @@ TEST_CASE("default color build and append keep bytes IDs usage and feature refer
         original = database.allRecords();
         REQUIRE(original.size() == 3);
         CHECK(fs::exists(u8path(request.outputDir) / "000000.jpg"));
-        CHECK(fs::exists(u8path(request.outputDir) / "000001.bmp"));
+        CHECK(fs::exists(u8path(request.outputDir) / "000001.png"));
         CHECK(fs::exists(u8path(request.outputDir) / "000002.png"));
         REQUIRE(database.recordRunUsage({{original[0].id, 5}}, "target", "target.png"));
         for (const auto& record : original)
@@ -1647,7 +1696,7 @@ TEST_CASE("default color build and append keep bytes IDs usage and feature refer
         REQUIRE(records.size() == 4);
         CHECK(fs::exists(u8path(request.outputDir) / "000000.png"));
         CHECK(fs::exists(u8path(request.outputDir) / "000001.jpg"));
-        CHECK(fs::exists(u8path(request.outputDir) / "000002.bmp"));
+        CHECK(fs::exists(u8path(request.outputDir) / "000002.png"));
         CHECK(fs::exists(u8path(request.outputDir) / "000003.png"));
         CHECK(database.imageColorOrders().size() == 4);
         const auto usage = database.topUsedImages();
@@ -1793,7 +1842,7 @@ TEST_CASE("normalization retains resized encoding conversion and failure behavio
         const cv::Mat normalized = normalizer.centerCrop(normalizer.resizeToCover(source));
         REQUIRE(imwriteUnicode(baseline, normalized, params));
         cv::Mat saved;
-        REQUIRE(normalizer.processLibraryImage(input, output, &saved));
+        REQUIRE(normalizer.processStandaloneImage(input, output, &saved));
         CHECK(readBytesUnicode(output) == readBytesUnicode(baseline));
         CHECK(cv::norm(saved, imreadUnicode(output), cv::NORM_INF) == 0);
         CHECK(cv::norm(normalizer.processToMat(input), normalized, cv::NORM_INF) == 0);

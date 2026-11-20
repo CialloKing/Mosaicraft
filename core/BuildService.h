@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include "LibraryEncodingOptions.h"
 #include "MosaicService.h"
 
 #include <string>
@@ -24,6 +25,7 @@ struct BuildRequest
     int normalizeHeight = 320;
     bool resourceMonitor = false;
     bool benchmark = false;
+    LibraryEncodingOptions encoding;
 };
 
 class BuildService
