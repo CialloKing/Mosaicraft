@@ -12,7 +12,7 @@
 
 ## 正式包后端范围
 
-v1.15.9 交付七个包。CPU/CUDA 运行时仍关闭 Vulkan 和 Metal；正式 Vulkan 包启用 `MOSAICRAFT_VULKAN_AUTO`，`auto` 优先 Vulkan 并回退 CPU，不编译 CUDA/Metal。`release.ps1` 显式设置这些开关并核对实际 CMake 缓存。
+v1.15.10 交付七个包。CPU/CUDA 运行时仍关闭 Vulkan 和 Metal；正式 Vulkan 包启用 `MOSAICRAFT_VULKAN_AUTO`，`auto` 优先 Vulkan 并回退 CPU，不编译 CUDA/Metal。`release.ps1` 显式设置这些开关并核对实际 CMake 缓存。
 
 ```powershell
 ./scripts/setup-vulkan.ps1

@@ -12,7 +12,7 @@
 | Linux x64 | Ubuntu 22.04 / glibc 2.35 | `_linux-x64_cpu-only.tar.gz` | `_linux-x64_cuda.tar.gz` | `_linux-x64_vulkan.tar.gz` |
 | macOS ARM64 | macOS 13 | `_macos-arm64_cpu-only.tar.gz` | — | — |
 
-v1.15.9 共七个原生包。Vulkan 包默认优先使用 Vulkan，启动计算前不可用则回退 CPU；CUDA 包仍为 CUDA → CPU。Metal 不随正式包发布。`BUILD_INFO.txt` 记录构建和 GPU 验收状态。 [本版说明与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.9)
+v1.15.10 共七个原生包。Vulkan 包默认优先使用 Vulkan，启动计算前不可用则回退 CPU；CUDA 包仍为 CUDA → CPU。Metal 不随正式包发布。`BUILD_INFO.txt` 记录构建和 GPU 验收状态。 [本版说明与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.10)
 
 ## 图形界面
 

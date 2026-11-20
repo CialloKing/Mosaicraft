@@ -2,8 +2,14 @@
 
 本页区分当前源码与公开安装包，详细历史记录见[历史档案](archive/README.md)。软件与数据版本的唯一来源是根目录 contracts.json；安装后的实际能力以该包 BUILD_INFO.txt、contracts.json 和 --help-all 为准。
 
-## 未发布的源码变更
+## v1.15.10
 
+本版提供七个原生包：Windows x64 与 Linux x64 各提供 CPU、CUDA、Vulkan，macOS ARM64 提供 CPU。归档及 SHA-256 见 [GitHub Release](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.10)。
+
+- 建库和追加对同尺寸的 JPG/JPEG、PNG、WebP 逐字节直拷，保留原格式和后缀拼写。BMP 和 TIFF 输入统一转为 PNG，历史图库仍可使用。原地输入需要转换或缩放时，使用独立输出目录。
+- CLI、API 和 Web UI 支持设置建库编码。JPG 质量默认 100，WebP 默认无损，PNG 压缩默认 9，范围为 0–9。编码设置只作用于重新编码的素材。见[命令行指南](guides/cli.md)。
+- `--reuse-penalty` 默认 0。关闭时匹配跳过读取图库历史使用计数，生成仍更新使用统计。
+- Web UI 显示预览的图库读取进度，改进建库到生成的操作流程、路径选择和手动换图撤销，并在 Deep Zoom 查看器加载失败时给出提示。
 - x64 的 CPU `fast` 评分在 CPU 和操作系统支持时自动优先选择 AVX-512，不支持则继续尝试 AVX2 或标量；ARM64 的 NEON 策略不变。这不改变 `auto` 的设备选择顺序。
 - `--threads 0` 对至少 14,400 格的普通 CPU `fast` 单图，在批次有足够并行工作且访问表内存预算允许时，为 ANN 和基础评分使用更多逻辑线程。手动线程设置、小图、预览和 GPU 路径沿用原线程策略。 详见[分派与线程配对验证](performance/cpu-auto-7940h-20261119.md)。
 

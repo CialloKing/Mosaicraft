@@ -16,7 +16,7 @@ Mosaicraft 用图库里的照片拼出一张目标图，提供本地 Web UI 和�
 | Linux x64 | Ubuntu 22.04 / glibc 2.35 | `_linux-x64_cpu-only.tar.gz` | `_linux-x64_cuda.tar.gz` | `_linux-x64_vulkan.tar.gz` |
 | macOS ARM64 | macOS 13 | `_macos-arm64_cpu-only.tar.gz` | — | — |
 
-v1.15.9 共七个原生包。Vulkan 包默认优先使用 Vulkan，启动计算前不可用则回退 CPU；CUDA 包仍为 CUDA → CPU。Metal 不随正式包发布。`BUILD_INFO.txt` 记录构建和 GPU 验收状态。 详见[版本状态](docs/releases.md)与[GPU 后端](docs/guides/gpu-backends.md)。
+v1.15.10 共七个原生包。Vulkan 包默认优先使用 Vulkan，启动计算前不可用则回退 CPU；CUDA 包仍为 CUDA → CPU。Metal 不随正式包发布。`BUILD_INFO.txt` 记录构建和 GPU 验收状态。 详见[版本状态](docs/releases.md)与[GPU 后端](docs/guides/gpu-backends.md)。
 
 ## 快速开始
 
