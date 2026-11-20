@@ -325,26 +325,25 @@ DatabaseUsageExportResult DatabaseService::exportUsage(const DatabaseUsageExport
         return out;
     }
     auto allUsed = db.topUsedImages(0, true);
-    std::unordered_set<int> usedIds;
-    for (const auto &[id, runs, tiles] : allUsed)
-    {
-        usedIds.insert(id);
-    }
     if (request.selection != "used")
     {
-        allUsed.clear();
+        std::unordered_set<int> usedIds;
+        for (const auto &entry : allUsed)
+        {
+            usedIds.insert(std::get<0>(entry));
+        }
+        if (request.selection == "unused")
+        {
+            allUsed.clear();
+        }
         for (const auto &rec : allRecs)
         {
-            if (request.selection == "all" || !usedIds.count(rec.id))
+            if (!usedIds.count(rec.id))
             {
                 allUsed.emplace_back(rec.id, 0, 0);
             }
         }
     }
-    std::sort(allUsed.begin(), allUsed.end(),
-        [](const auto& a, const auto& b) {
-            return std::get<2>(a) > std::get<2>(b);
-        });
     out.exportInfo.usedCount = static_cast<int>(allUsed.size());
 
     try

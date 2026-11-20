@@ -28,6 +28,7 @@
 #include "compute/CompatibleScoring.h"
 #include "compute/CudaBackend.h"
 #include "compute/TemplateFeatureSizes.h"
+#include "third_party/picosha2/picosha2.h"
 #include <locale>
 #include <numeric>
 
@@ -72,6 +73,21 @@ static void adjustColor(cv::Mat& img, double strength)
 
 namespace
 {
+std::string targetUsageHash(const cv::Mat &image)
+{
+    picosha2::hash256_one_by_one hash;
+    const auto dimensions = std::to_string(image.cols) + 'x' + std::to_string(image.rows) + '\n';
+    hash.process(dimensions.begin(), dimensions.end());
+    const auto rowBytes = static_cast<size_t>(image.cols) * image.elemSize();
+    for (int y = 0; y < image.rows; ++y)
+    {
+        const auto *row = image.ptr<uint8_t>(y);
+        hash.process(row, row + rowBytes);
+    }
+    hash.finish();
+    return "pixels-v2:" + picosha2::get_hash_hex_string(hash);
+}
+
 SelectionAnalysis analyzeEditedTiles(const cv::Mat &target, const MosaicEngine::Config &cfg,
                                      cv::Size featureSize, int columns, const std::string &featureDir,
                                      const std::vector<ImageRecord> &records, const std::vector<int> &indices,
@@ -426,23 +442,8 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
         return false;
     }
 
-    // 计算目标图哈希，用于分析报告关联和数据库使用记录
-    std::string targetHash;
-    {
-        // 每 10000 像素采样 1 个字节，约 10KB 数据量，兼顾速度与碰撞率
-        int64_t totalPixels = static_cast<int64_t>(target.rows) * target.cols;
-        int step = std::max<int64_t>(int64_t{1}, totalPixels / 10000);
-        uint64_t h = 0x9e3779b97f4a7c15ULL;
-        const uint8_t* data = target.data;
-        int64_t totalBytes = totalPixels * 3;
-        for (int64_t i = 0; i < totalBytes; i += step * 3)
-        {
-            h ^= static_cast<uint64_t>(data[i]) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
-        }
-        std::stringstream ss;
-        ss << std::hex << h;
-        targetHash = ss.str();
-    }
+    // 统计按原图像素去重；缩放、补边及输出方式不应改变目标身份。
+    const auto targetHash = m_preview || m_matchOnly ? std::string{} : targetUsageHash(target);
 
     TargetGeometry geometry;
     if (!reusedTarget)

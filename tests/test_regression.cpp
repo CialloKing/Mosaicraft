@@ -987,7 +987,6 @@ TEST_CASE("successful output records usage independently of analysis")
     }
     SUBCASE("usage transaction fails after output is saved")
     {
-        REQUIRE(Database(request.dbPath).initUsageStats());
         sqlite3 *connection = nullptr;
         REQUIRE(sqlite3_open(request.dbPath.c_str(), &connection) == SQLITE_OK);
         const auto result = sqlite3_exec(connection,

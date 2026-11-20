@@ -440,7 +440,7 @@ Returns database size, LAB ranges, brightness buckets, and coverage gaps.
 
 返回已记录使用统计 / Returns recorded usage statistics. 浏览、检查、打包和回导不计数。
 
-`sort: "targets"`（默认）按独立目标数 runs 排序，`sort: "tiles"` 按累计格数排序；limit 为 0 返回全部。同一目标图仅首次统计时增加 `runs`，后续任务仍累计 `tiles`（填充格数）。
+`sort: "targets"`（默认）按每张素材的独立目标数 `runs` 排序，`sort: "tiles"` 按累计格数排序；limit 为 0 返回全部。每张素材首次用于某目标时增加一次 `runs`；后续任务仍累计 `tiles`。目标由原图宽高及解码颜色像素确定，与文件名、无损编码和生成参数无关。旧库无需重建：旧值保留，显示的 `runs` 只计升级后的关系，`tiles` 继续累计。
 
 常用 JSON 字段 / Common JSON fields:
 

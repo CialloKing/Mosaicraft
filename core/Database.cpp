@@ -523,7 +523,7 @@ bool Database::removeImage(int id)
 
 bool Database::removeImages(const std::vector<int> &ids)
 {
-    if (!m_db || !initUsageStats() || !exec("BEGIN IMMEDIATE"))
+    if (!m_db || !beginImmediateTransaction())
     {
         return false;
     }
@@ -828,12 +828,6 @@ bool Database::exec(const std::string& sql)
 // 使用统计
 // ============================================================
 
-bool Database::initUsageStats()
-{
-    // 使用统计表属于完整图库结构，打开时已经验证，读取不能顺便建表。
-    return m_db != nullptr;
-}
-
 std::vector<std::array<double, 3>> Database::averageColors()
 {
     sqlite3_stmt *statement = nullptr;
@@ -851,124 +845,105 @@ std::vector<std::array<double, 3>> Database::averageColors()
     return result;
 }
 
-bool Database::recordRunUsage(const std::unordered_map<int, int>& imageUseCount,
-                              const std::string& targetHash,
-                              const std::string& targetPath)
+bool Database::recordRunUsage(const std::unordered_map<int, int> &imageUseCount,
+                              const std::string &targetHash, const std::string &targetPath)
 {
-    if (!m_db || !initUsageStats() || !exec("BEGIN IMMEDIATE"))
+    if (imageUseCount.empty())
+    {
+        return true;
+    }
+    if (!m_db || targetHash.empty() || !beginImmediateTransaction())
     {
         return false;
     }
 
-    // 检查目标图内容哈希是否已存在（改名去重）
-    bool isNewTarget = true;
-    if (!targetHash.empty() && m_db) {
-        const char* checkSql = "SELECT 1 FROM target_runs WHERE target_hash = ?";
-        sqlite3_stmt* stmt = nullptr;
-        if (sqlite3_prepare_v2(m_db, checkSql, -1, &stmt, nullptr) == SQLITE_OK) {
-            sqlite3_bind_text(stmt, 1, targetHash.c_str(), -1, SQLITE_TRANSIENT);
-            isNewTarget = (sqlite3_step(stmt) != SQLITE_ROW);
-            sqlite3_finalize(stmt);
-        }
-    }
-    // 更新图片使用统计
-    bool ok = true;
-    if (!targetHash.empty() && m_db) {
-        if (isNewTarget) {
-            const char* insSql = "INSERT INTO target_runs (target_hash, first_path, run_count, last_used) "
-                                 "VALUES (?, ?, 1, datetime('now'))";
-            sqlite3_stmt* stmt = nullptr;
-            if (sqlite3_prepare_v2(m_db, insSql, -1, &stmt, nullptr) == SQLITE_OK) {
-                sqlite3_bind_text(stmt, 1, targetHash.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt, 2, targetPath.c_str(), -1, SQLITE_TRANSIENT);
-                ok = (sqlite3_step(stmt) == SQLITE_DONE) && ok;
-                sqlite3_finalize(stmt);
-            } else {
-                ok = false;
-            }
-        } else {
-            const char* updSql = "UPDATE target_runs SET run_count = run_count + 1, "
-                                 "last_used = datetime('now') WHERE target_hash = ?";
-            sqlite3_stmt* stmt = nullptr;
-            if (sqlite3_prepare_v2(m_db, updSql, -1, &stmt, nullptr) == SQLITE_OK) {
-                sqlite3_bind_text(stmt, 1, targetHash.c_str(), -1, SQLITE_TRANSIENT);
-                ok = (sqlite3_step(stmt) == SQLITE_DONE) && ok;
-                sqlite3_finalize(stmt);
-            } else {
-                ok = false;
-            }
-        }
-    }
-    if (MOSAICRAFT_TRIAL_LIBRARY_PATHS && !imageUseCount.empty())
+    // 旧库没有素材与目标的对应关系。仅增加新关系，保留旧计数和已累计的格数。
+    const bool wrote = [&]()
     {
-        // 整次提交只编译一次。保留每素材一次 upsert、原事务边界和首见目标计数。
-        const char *sql = "INSERT INTO usage_stats(image_id,total_runs,total_tiles,last_used) "
-                          "VALUES(?1,?2,?3,datetime('now')) ON CONFLICT(image_id) DO UPDATE SET "
-                          "total_runs=CASE WHEN ?2 THEN total_runs+1 ELSE total_runs END,"
-                          "total_tiles=total_tiles+?3,last_used=datetime('now')";
-        sqlite3_stmt *stmt = nullptr;
-        ok = ok && sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) == SQLITE_OK;
-        const std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> cleanup(stmt, sqlite3_finalize);
+        if (!exec("CREATE TABLE IF NOT EXISTS image_target_runs ("
+                  "image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE, "
+                  "target_hash TEXT NOT NULL REFERENCES target_runs(target_hash), "
+                  "PRIMARY KEY(image_id, target_hash)) WITHOUT ROWID"))
+        {
+            return false;
+        }
+        const auto prepare = [&](const char *sql)
+        {
+            sqlite3_stmt *statement = nullptr;
+            sqlite3_prepare_v2(m_db, sql, -1, &statement, nullptr);
+            return std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)>(statement, sqlite3_finalize);
+        };
+        const auto target = prepare("INSERT INTO target_runs(target_hash,first_path,run_count,last_used) "
+                                    "VALUES(?1,?2,1,datetime('now')) ON CONFLICT(target_hash) DO UPDATE SET "
+                                    "run_count=run_count+1,last_used=datetime('now')");
+        const auto pair = prepare("INSERT INTO image_target_runs(image_id,target_hash) VALUES(?1,?2) "
+                                  "ON CONFLICT(image_id,target_hash) DO NOTHING");
+        const auto usage = prepare("INSERT INTO usage_stats(image_id,total_tiles,last_used) "
+                                   "VALUES(?1,?2,datetime('now')) ON CONFLICT(image_id) DO UPDATE SET "
+                                   "total_tiles=total_tiles+?2,last_used=datetime('now')");
+        const auto bindHash = [&](sqlite3_stmt *stmt, int index)
+        {
+            return sqlite3_bind_text(stmt, index, targetHash.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK;
+        };
+        if (!target || !pair || !usage || !bindHash(target.get(), 1) || !bindHash(pair.get(), 2) ||
+            sqlite3_bind_text(target.get(), 2, targetPath.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+            sqlite3_step(target.get()) != SQLITE_DONE)
+        {
+            return false;
+        }
         for (const auto &[id, tiles] : imageUseCount)
         {
-            if (!ok)
+            if (sqlite3_bind_int(pair.get(), 1, id) != SQLITE_OK || sqlite3_step(pair.get()) != SQLITE_DONE ||
+                sqlite3_reset(pair.get()) != SQLITE_OK || sqlite3_bind_int(usage.get(), 1, id) != SQLITE_OK ||
+                sqlite3_bind_int(usage.get(), 2, tiles) != SQLITE_OK || sqlite3_step(usage.get()) != SQLITE_DONE ||
+                sqlite3_reset(usage.get()) != SQLITE_OK)
             {
-                break;
+                return false;
             }
-            ok = sqlite3_bind_int(stmt, 1, id) == SQLITE_OK && sqlite3_bind_int(stmt, 2, isNewTarget) == SQLITE_OK &&
-                 sqlite3_bind_int(stmt, 3, tiles) == SQLITE_OK && sqlite3_step(stmt) == SQLITE_DONE &&
-                 sqlite3_reset(stmt) == SQLITE_OK;
         }
-    }
-    else
+        return true;
+    }();
+    if (wrote && commitTransaction())
     {
-        for (const auto& [imgId, tileCount] : imageUseCount)
-        {
-            std::string runsExpr = isNewTarget ? "total_runs + 1" : "total_runs";
-            std::string sql = "INSERT INTO usage_stats (image_id, total_runs, total_tiles, last_used) "
-                              "VALUES (" + std::to_string(imgId) + ", "
-                              + (isNewTarget ? "1" : "0") + ", "
-                              + std::to_string(tileCount)
-                              + ", datetime('now')) "
-                              "ON CONFLICT(image_id) DO UPDATE SET "
-                              "total_runs = " + runsExpr + ", "
-                              "total_tiles = total_tiles + " + std::to_string(tileCount)
-                              + ", last_used = datetime('now')";
-            ok = exec(sql) && ok;
-        }
+        return true;
     }
-    if (!ok)
-    {
-        exec("ROLLBACK");
-        return false;
-    }
-    if (!exec("COMMIT"))
-    {
-        exec("ROLLBACK");
-        return false;
-    }
-    return true;
+    rollbackTransaction();
+    return false;
 }
 
 std::vector<std::tuple<int, int, int>> Database::topUsedImages(int limit, bool sortByTiles)
 {
     std::vector<std::tuple<int, int, int>> result;
-    if (!m_db) return result;
-    initUsageStats();
-    // 使用 exec 回调模式
-    std::string sql = "SELECT image_id, total_runs, total_tiles FROM usage_stats "
-                      "JOIN images ON images.id=usage_stats.image_id "
-                      + std::string("ORDER BY ") + (sortByTiles ? "total_tiles DESC, total_runs DESC" : "total_runs DESC, total_tiles DESC") +
-                      ", image_id ASC" + (limit > 0 ? " LIMIT " + std::to_string(limit) : "");
-    char* errMsg = nullptr;
-    auto callback = [](void* data, int argc, char** argv, char**) -> int {
-        auto* vec = static_cast<std::vector<std::tuple<int,int,int>>*>(data);
-        if (argc >= 3)
-            vec->emplace_back(std::atoi(argv[0]), std::atoi(argv[1]), std::atoi(argv[2]));
+    if (!m_db || !beginTransaction())
+    {
+        return result;
+    }
+    bool tracksTargets = false;
+    const auto markFound = [](void *data, int, char **, char **)
+    {
+        *static_cast<bool *>(data) = true;
         return 0;
     };
-    sqlite3_exec(m_db, sql.c_str(), callback, &result, &errMsg);
-    if (errMsg) { sqlite3_free(errMsg); }
+    // 读旧库不能隐式建表；探测与查询共享快照，避免并发首次写入时读到混合口径。
+    const auto found = sqlite3_exec(m_db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='image_target_runs'",
+                                    markFound, &tracksTargets, nullptr);
+    const auto runs = tracksTargets ? "(SELECT count(*) FROM image_target_runs WHERE image_id=usage_stats.image_id)"
+                                    : "0";
+    const std::string sql = std::string("SELECT usage_stats.image_id, ") + runs + " AS tracked_runs,total_tiles "
+                            "FROM usage_stats JOIN images ON images.id=usage_stats.image_id ORDER BY " +
+                            (sortByTiles ? "total_tiles DESC, tracked_runs DESC" : "tracked_runs DESC, total_tiles DESC") +
+                            ", usage_stats.image_id ASC" + (limit > 0 ? " LIMIT " + std::to_string(limit) : "");
+    const auto append = [](void *data, int, char **values, char **)
+    {
+        auto &rows = *static_cast<std::vector<std::tuple<int, int, int>> *>(data);
+        rows.emplace_back(std::atoi(values[0]), std::atoi(values[1]), values[2] ? std::atoi(values[2]) : 0);
+        return 0;
+    };
+    if (found != SQLITE_OK || sqlite3_exec(m_db, sql.c_str(), append, &result, nullptr) != SQLITE_OK || !commitTransaction())
+    {
+        rollbackTransaction();
+        result.clear();
+    }
     return result;
 }
 

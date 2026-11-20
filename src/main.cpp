@@ -470,7 +470,8 @@ ServiceResult execute(const Arguments &args, json &data, RuntimeContext &runtime
             request.showUnused = args.has("unused");
             const auto result = service.usage(request);
             data = databaseUsageToJson(result.usage);
-            data["meaning"] = "runs counts distinct recorded targets; unused means absent from recorded history";
+            data["meaning"] = "runs counts distinct targets per image since the statistics upgrade; "
+                              "unused means absent from recorded history";
             return result.status;
         }
         if (cmd == "export")
