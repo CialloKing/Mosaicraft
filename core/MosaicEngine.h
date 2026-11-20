@@ -45,6 +45,7 @@ public:
         // 原生 tile 尺寸（每个 tile 的输出像素尺寸，默认与图库归一化规格 180×320 一致）
         int nativeTileW = 180;   // 输出 tile 尺寸（与图库归一化尺寸匹配）
         int nativeTileH = 320;
+        bool outputTileExplicit = false; // 即使显式值恰好等于默认值，也不按图库方向旋转。
 
         // 五特征权重（Grid4x4 最重，结构匹配核心；Edge 辅助过滤纹理）
         double labWeight  = 0.20;

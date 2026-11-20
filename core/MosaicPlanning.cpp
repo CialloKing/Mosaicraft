@@ -68,14 +68,16 @@ cv::Size sourceSize(const std::string &input)
     return image.size();
 }
 
-void estimateFileRange(MosaicPlan &plan, const MosaicEngine::Config &config)
+void estimateFileRange(MosaicPlan &plan, const MosaicEngine::Config &config, bool ownershipMarker)
 {
     uint64_t width = plan.output.width, height = plan.output.height;
     long double pixels = static_cast<long double>(width) * height;
+    uint64_t metadataFiles = ownershipMarker ? 1 : 0;
     plan.files = plan.mode == "single" ? 1 : uint64_t(plan.output.tilesX) * plan.output.tilesY;
     if (plan.mode == "deepzoom")
     {
-        plan.files = 2; // DZI 清单和查看页。
+        metadataFiles += 2; // DZI 清单和查看页。
+        plan.files = 0;
         pixels = 0;
         for (const auto &level : deepZoomLevels(plan.output.width, plan.output.height))
         {
@@ -83,6 +85,7 @@ void estimateFileRange(MosaicPlan &plan, const MosaicEngine::Config &config)
             pixels += static_cast<long double>(level.width) * level.height;
         }
     }
+    plan.files += metadataFiles;
     if (config.generatePreview)
     {
         ++plan.files;
@@ -118,7 +121,7 @@ void estimateFileRange(MosaicPlan &plan, const MosaicEngine::Config &config)
         low = 0.015;
         high = 4.7;
     }
-    const uint64_t jpegFiles = format == "jpg" ? plan.files - (plan.mode == "deepzoom" ? 2 : config.generatePreview) : 0;
+    const uint64_t jpegFiles = format == "jpg" ? plan.files - metadataFiles - config.generatePreview : 0;
     const long double headers = 700.0L * jpegFiles + 512.0L * (plan.files - jpegFiles) +
                                 (plan.mode == "deepzoom" ? 4096.0L : 0);
     const long double preview = config.generatePreview ? 8.0L * MiB : 0;
@@ -197,7 +200,7 @@ bool readLibraryDimensions(Database &database, int &width, int &height)
 
 bool orientOutputTile(MosaicEngine::Config &config, int libraryWidth, int libraryHeight)
 {
-    if (config.nativeTileW == 180 && config.nativeTileH == 320 && libraryWidth > libraryHeight)
+    if (!config.outputTileExplicit && config.nativeTileW == 180 && config.nativeTileH == 320 && libraryWidth > libraryHeight)
     {
         config.nativeTileW = 320;
         config.nativeTileH = 180;
@@ -247,10 +250,12 @@ ServiceResult planMosaic(MosaicRequest request, MosaicPlan &plan)
     }
     orientOutputTile(config, plan.libraryWidth, plan.libraryHeight);
     const bool single = config.outputMode == OutputMode::Image;
+    const bool directoryPublication = request.atomicOutput && request.directoryOutput;
+    const auto base = detail::mosaicOutputBase(request.outputPath, directoryPublication, config.outputMode);
     detail::OutputFormat format;
     if (!detail::resolveOutputFormat(request.inputPath, request.outputPath, config.outputFormat, config.formatExplicit,
                                      single, format, error, &field) ||
-        !detail::makeOutputPlan(format, request.outputPath, plan.target.columns, plan.target.rows,
+        !detail::makeOutputPlan(format, base, plan.target.columns, plan.target.rows,
                                 config.nativeTileW, config.nativeTileH, single, plan.output, error))
     {
         return ServiceResult::failure(1, error, "invalid_argument", field.empty() ? "format" : field);
@@ -340,7 +345,7 @@ ServiceResult planMosaic(MosaicRequest request, MosaicPlan &plan)
     plan.writingRam = single ? ByteRange{budget.stream ? budget.rowBytes : budget.rawBytes,
                                          budget.stream ? budget.streamBytes : budget.batchBytes}
                              : ByteRange{uint64_t(plan.output.tileWidth) * plan.output.tileHeight * 3, budget.streamBytes};
-    estimateFileRange(plan, config);
+    estimateFileRange(plan, config, directoryPublication);
     return ServiceResult::success();
 }
 } // namespace mosaicraft

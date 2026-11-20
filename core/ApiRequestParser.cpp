@@ -536,6 +536,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
             return false;
         }
         cfg.nativeTileW = intValue;
+        cfg.outputTileExplicit = true;
     }
     if (getIntField(values, keysFor("nativeTileH"), intValue, error))
     {
@@ -544,6 +545,7 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
             return false;
         }
         cfg.nativeTileH = intValue;
+        cfg.outputTileExplicit = true;
     }
     if (getIntField(values, keysFor("candidates"), intValue, error))
     {

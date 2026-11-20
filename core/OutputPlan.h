@@ -5,6 +5,8 @@
 
 namespace mosaicraft
 {
+enum class OutputMode;
+
 namespace detail
 {
 struct OutputFormat
@@ -28,6 +30,7 @@ bool resolveOutputFormat(const std::string &inputPath, const std::string &output
                          const std::string &requestedFormat, bool explicitFormat, bool singleImage,
                          OutputFormat &result, std::string &error, std::string *field = nullptr);
 std::string outputPathForFormat(const std::string &path, const std::string &format);
+std::string mosaicOutputBase(const std::string &path, bool directoryOutput, OutputMode mode);
 bool makeOutputPlan(const OutputFormat &format, const std::string &path, int tilesX, int tilesY,
                     int tileWidth, int tileHeight, bool singleImage, OutputPlan &result, std::string &error);
 

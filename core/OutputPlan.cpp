@@ -1,4 +1,5 @@
 #include "OutputPlan.h"
+#include "ExecutionOptions.h"
 #include "UnicodeIO.h"
 #include <algorithm>
 #include <cctype>
@@ -83,6 +84,16 @@ std::string outputPathForFormat(const std::string &path, const std::string &form
     auto result = u8path(path);
     result.replace_extension("." + format);
     return pathToUtf8(result);
+}
+
+std::string mosaicOutputBase(const std::string &path, bool directoryOutput, OutputMode mode)
+{
+    if (directoryOutput && (mode == OutputMode::Tiles || mode == OutputMode::DeepZoom))
+    {
+        // 目录是发布单元；图块和查看页共享其中的 index 基名。
+        return pathToUtf8(u8path(path) / "index");
+    }
+    return path;
 }
 
 bool makeOutputPlan(const OutputFormat &format, const std::string &path, int tilesX, int tilesY,

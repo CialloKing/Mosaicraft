@@ -167,7 +167,12 @@ def main():
         with zipfile.ZipFile(root / 'artwork.zip') as archive:
             assert len({Path(name).parts[0] for name in archive.namelist()}) == 1
             assert archive.testzip() is None
+            entries = archive.namelist()
             archive.extractall(root / 'unpacked')
+        for argument, name in ((str(project) + '/', 'trailing.zip'), (project / 'project.json', 'manifest.zip')):
+            run('project', 'pack', argument, '-o', name)
+            with zipfile.ZipFile(root / name) as archive:
+                assert archive.namelist() == entries and archive.testzip() is None
         run('project', 'check', root / 'unpacked' / project.name, '--deep')
         run('render', root / 'unpacked' / project.name, '-o', 'unpacked.png')
         assert (root / 'unpacked.png').read_bytes() == (root / 'relocated.png').read_bytes()

@@ -1,6 +1,7 @@
 #include "MosaicService.h"
 
 #include "ExecutionScope.h"
+#include "OutputPlan.h"
 #include "OutputPublication.h"
 #include "RequestValidation.h"
 #include "UnicodeIO.h"
@@ -72,11 +73,7 @@ static ServiceResult runMosaic(const MosaicRequest &request, RuntimeContext &run
             publication = std::make_unique<OutputPublication>(
                 path, request.directoryOutput, request.overwrite,
                 std::vector<std::string>{request.inputPath, pathToUtf8(u8path(dbPath).parent_path())});
-            path = publication->workPath();
-            if (request.directoryOutput && validated.config.outputMode != OutputMode::Html)
-            {
-                path += "/index";
-            }
+            path = detail::mosaicOutputBase(publication->workPath(), request.directoryOutput, validated.config.outputMode);
             validated.config.deferUsage = true;
         }
         const bool ok =

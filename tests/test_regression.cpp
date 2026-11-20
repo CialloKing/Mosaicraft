@@ -27,6 +27,9 @@
 
 #include "../core/BuildService.h"
 #include "../core/ApiHandlers.h"
+#include "../core/ApiJson.h"
+#include "../core/ApiRequestParser.h"
+#include "../core/MosaicPlanning.h"
 #include "../core/DatabaseService.h"
 #include "../core/InspectService.h"
 #include "../core/MosaicService.h"
@@ -461,6 +464,71 @@ TEST_CASE("oversized single images use the planned format tile and actual path")
             REQUIRE(main != snapshot.artifacts.end());
             CHECK(u8path(main->path).extension() == "." + actualFormat);
         }
+    }
+}
+
+TEST_CASE("output plans match explicit tiles and published directory files")
+{
+    TempWorkspace workspace;
+    const cv::Mat pixels(16, 16, CV_8UC3, cv::Scalar(70, 110, 150));
+    requireWriteImage(workspace.inputDir() / "asset.png", pixels);
+    requireWriteImage(workspace.targetPath(), pixels);
+    auto build = makeBuildRequest(workspace);
+    build.backend = BackendPolicy::Cpu;
+    build.normalizeWidth = 36;
+    build.normalizeHeight = 24;
+    REQUIRE(BuildService().run(build).ok);
+    nlohmann::json fields = {{"inputPath", utf8(workspace.targetPath())}, {"dbPath", utf8(workspace.dbPath())},
+                             {"tileW", 16}, {"tileH", 16}, {"backend", "cpu"}, {"threads", 1}, {"seed", 1}};
+    for (bool explicitSize : {false, true})
+    {
+        const auto output = workspace.outputDir() / (explicitSize ? "explicit.png" : "default.png");
+        fields["outputPath"] = utf8(output);
+        fields["outputMode"] = "image";
+        if (explicitSize)
+        {
+            fields["nativeTileW"] = 180;
+            fields["nativeTileH"] = 320;
+        }
+        MosaicRequest request;
+        RequestError error;
+        REQUIRE(parseMosaicRequestJson(fields.dump(), request, error));
+        CHECK(mosaicRequestToJson(request).contains("nativeTileW") == explicitSize);
+        MosaicPlan plan;
+        REQUIRE(planMosaic(request, plan).ok);
+        const auto size = explicitSize ? cv::Size(180, 320) : cv::Size(320, 180);
+        CHECK(cv::Size(plan.output.width, plan.output.height) == size);
+        REQUIRE(MosaicService().run(request).ok);
+        CHECK(imreadUnicode(utf8(output)).size() == size);
+    }
+    for (const std::string mode : {"deepzoom", "tiles"})
+    {
+        const auto output = workspace.outputDir() / mode;
+        fields["outputPath"] = utf8(output);
+        fields["outputMode"] = mode;
+        fields["nativeTileW"] = 24;
+        fields["nativeTileH"] = 16;
+        MosaicRequest request;
+        RequestError error;
+        REQUIRE(parseMosaicRequestJson(fields.dump(), request, error));
+        MosaicPlan plan;
+        REQUIRE(planMosaic(request, plan).ok);
+        CHECK(u8path(plan.output.path) == output / (mode == "deepzoom" ? "index.dzi" : "index_files/0"));
+        REQUIRE(MosaicService().run(request).ok);
+        CHECK(fs::exists(u8path(plan.output.path)));
+        CHECK(fs::exists(output / ".mosaicraft-output.json"));
+        const auto files = std::count_if(fs::recursive_directory_iterator(output), fs::recursive_directory_iterator(),
+                                         [](const auto &entry)
+                                         {
+                                             return entry.is_regular_file();
+                                         });
+        CHECK(plan.files == files);
+        request.directoryOutput = request.atomicOutput = false;
+        request.outputPath = utf8(workspace.outputDir() / "legacy");
+        MosaicPlan legacy;
+        REQUIRE(planMosaic(request, legacy).ok);
+        CHECK(u8path(legacy.output.path).filename() == (mode == "deepzoom" ? "legacy.dzi" : "0"));
+        CHECK(legacy.files + 1 == plan.files);
     }
 }
 

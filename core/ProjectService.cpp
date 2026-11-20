@@ -87,6 +87,11 @@ Project loadProject(const std::string &input)
         }
         path = path.parent_path();
     }
+    // 尾斜杠会保留空的 filename()，不能用作 ZIP 根目录名。
+    while (path.has_relative_path() && (path.filename().empty() || path.filename() == "."))
+    {
+        path = path.parent_path();
+    }
     const auto manifestPath = resourcePath(path, "project.json");
     if (fs::file_size(manifestPath) > manifestLimit)
     {
@@ -756,14 +761,15 @@ ServiceResult ProjectService::render(const ProjectRequest &request, RuntimeConte
         protectOutput(request.outputPath, {pathToUtf8(project.root)});
         OutputPublication publication(request.outputPath, config.outputMode != OutputMode::Image, request.overwrite,
                                       {pathToUtf8(project.root)});
-        const auto path = publication.workPath();
+        const auto path = detail::mosaicOutputBase(publication.workPath(), config.outputMode != OutputMode::Image,
+                                                  config.outputMode);
         OutputStats stats;
         runtime.metric("seed", *config.seed);
         runtime.backends("none", "none");
         const bool ok = config.outputMode == OutputMode::Html
                             ? writeHtmlProject(config, path, targetPath, columns, rows, assets, selection, stats, runtime)
                             : writeIndexedMosaicOutput(
-                                  config, config.outputMode == OutputMode::Image ? path : path + "/index", columns,
+                                  config, path, columns,
                                   rows, config.nativeTileW, config.nativeTileH, assets, selection,
                                   [](cv::Mat &, double)
                                   {

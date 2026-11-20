@@ -223,8 +223,11 @@ nlohmann::json mosaicRequestToJson(const MosaicRequest &request)
     value["usePenalty"] = cfg.usePenalty;
     value["outW"] = cfg.outW;
     value["outH"] = cfg.outH;
-    value["nativeTileW"] = cfg.nativeTileW;
-    value["nativeTileH"] = cfg.nativeTileH;
+    if (cfg.outputTileExplicit)
+    {
+        value["nativeTileW"] = cfg.nativeTileW;
+        value["nativeTileH"] = cfg.nativeTileH;
+    }
     value["labWeight"] = cfg.labWeight;
     value["gridWeight"] = cfg.gridWeight;
     value["tinyWeight"] = cfg.tinyWeight;
