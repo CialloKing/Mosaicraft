@@ -6,6 +6,69 @@ const os = require('node:os');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
 
+async function checkMosaicForm(page, server, target) {
+  let discovery = Promise.resolve();
+  await page.route('**/api/info', async route => {
+    await discovery;
+    const response = await route.fetch();
+    const body = await response.json();
+    if (!body.info.devices.some(item => item.id === 'cuda:0' && item.available)) {
+      body.info.devices = body.info.devices.filter(item => item.id !== 'cuda:0');
+      body.info.devices.push({id:'cuda:0', backend:'cuda', available:true, name:'Test GPU'});
+    }
+    await route.fulfill({response, json:body});
+  });
+  await page.goto(server);
+  await page.waitForFunction(() => serverAvailable);
+  await page.locator('#m-device option[value="cuda:0"]:not([disabled])').waitFor({state:'attached'});
+  await page.locator('#m-input').fill(target);
+  const state = await page.evaluate(() => {
+    const set = (id, value) => {
+      const element = document.getElementById(id);
+      element.value = value;
+      element.dispatchEvent(new Event('change', {bubbles:true}));
+    };
+    set('m-device', 'cuda:0');
+    set('m-tilew', ''); set('m-tileh', '20');
+    const implicit = readFormPayload('mosaic');
+    const command = commandFromPayload('mosaic', implicit);
+    set('m-otile', '180x320');
+    const explicit = readFormPayload('mosaic');
+    set('m-quality', '101');
+    const rejected = !formModel.valid;
+    set('m-mode', 'html');
+    const html = readFormPayload('mosaic');
+    set('m-mode', 'image');
+    const reenabled = !formModel.valid && document.getElementById('m-quality').value === '101';
+    set('m-quality', '100');
+    document.activeElement.blur();
+    const key = 'mosaicraft-form-v1';
+    const saved = JSON.parse(localStorage.getItem(key));
+    saved.fields['m-writemode'] = 'invalid-choice';
+    saved.fields['b-device'] = 'cuda:99';
+    localStorage.setItem(key, JSON.stringify(saved));
+    return {implicit, command, explicit, rejected, html, reenabled};
+  });
+  assert.deepEqual([state.implicit.tileW, state.implicit.tileH], [9, 20]);
+  assert.match(state.command, /--match-tile\s+9x20/);
+  assert.equal(state.implicit.nativeTileW, undefined);
+  assert.deepEqual([state.explicit.nativeTileW, state.explicit.nativeTileH], [180, 320]);
+  assert(state.rejected && state.reenabled && state.html.quality === undefined);
+  let resume;
+  discovery = new Promise(resolve => { resume = resolve; });
+  try {
+    await page.reload({waitUntil:'domcontentloaded'});
+    assert.equal(await page.locator('#m-input').inputValue(), target);
+    assert.equal(await page.locator('#m-device').inputValue(), 'cuda:0');
+    assert.equal(await page.locator('#b-device').inputValue(), 'cuda:99');
+    assert.match(await page.locator('#m-device option:checked').textContent(), /等待设备探测/);
+  } finally { resume(); }
+  await page.waitForFunction(() => serverAvailable);
+  assert.equal(await page.locator('#m-device').inputValue(), 'cuda:0');
+  assert.equal(await page.locator('#b-device').inputValue(), 'cuda:99');
+  assert(await page.locator('#b-device option:checked').isDisabled());
+}
+
 (async () => {
   const project = path.resolve(process.argv[2]);
   const server = process.argv[3];
@@ -184,8 +247,7 @@ const {pathToFileURL} = require('node:url');
         assert.deepEqual(errors, []);
         if (server) {
           await page.context().setOffline(false);
-          await page.goto(server);
-          await page.waitForFunction(() => document.querySelector('#run-status').textContent.includes('连接'));
+          await checkMosaicForm(page, server, path.join(project, 'target.png'));
           await page.locator('[data-cmd="preview"]').click();
           const surface = page.locator('#live-preview-surface');
           const before = await surface.boundingBox();
@@ -195,10 +257,13 @@ const {pathToFileURL} = require('node:url');
           await page.locator('[data-cmd="build"]').click();
           await page.locator('#b-input').fill(path.join(project, '..', 'photos'));
           await page.locator('#b-output').fill(path.join(project, '..', 'library'));
+          await page.locator('#b-normsize').fill('invalid');
           await page.locator('#b-mode').selectOption('add');
           assert(await page.locator('#b-normsize').isDisabled());
           assert((await page.evaluate(() => commandFromPayload('build', buildBuildPayload()))).includes('library add'));
           await page.locator('#b-mode').selectOption('normalize');
+          assert(await page.evaluate(() => !formModel.valid));
+          await page.locator('#b-normsize').fill('180x320');
           assert(await page.locator('#b-backend').isDisabled());
           assert((await page.evaluate(() => commandFromPayload('build', buildBuildPayload()))).includes('library normalize'));
           await page.locator('[data-cmd="project"]').click();

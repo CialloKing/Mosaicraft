@@ -389,7 +389,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <div class="row">
       <div class="field"><label>匹配前目标宽度 --target-size WxH</label><input type="number" id="m-outw" min="0" max="1000000" placeholder="0=自动；单轴保持比例"></div>
       <div class="field"><label>匹配前目标高度 --target-size WxH</label><input type="number" id="m-outh" min="0" max="1000000" placeholder="0=自动；单轴保持比例"></div>
-      <div class="field"><label>输出 Tile 尺寸 --output-tile</label><input type="text" id="m-otile" value="180x320" placeholder="180x320"></div>
+      <div class="field"><label>输出 Tile 尺寸 --output-tile</label><input type="text" id="m-otile" placeholder="自动（通常 180x320）"></div>
     </div>
     <div class="row">
       <div class="field"><label>亮度扰动幅度 --brightness-jitter</label><input type="number" id="m-colorstr" value="0" min="0" max="0.5" step="0.01"><div class="hint">0 关闭，0.04 表示 L 通道最多 ±4%。HTML 工程要求为 0。</div></div>
@@ -693,7 +693,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
           <tr><td>Tile 宽度 / 高度<br><code>--match-tile</code></td><td>每个匹配区域在处理后目标图中占用的宽高，默认 <code>9 × 16</code>，各轴至少 4。缩小可得到更多素材块和更细的整体轮廓，但匹配和输出成本更高；放大适合先快速试图或减少素材块数。尽量让宽高比与图库素材、输出 Tile 接近，以免最终画面比例改变。</td></tr>
           <tr><td>输出宽度 / 高度<br><code>--target-size</code></td><td>切块前把目标图缩放到指定像素。留空或 0 不指定；只填一轴时另一轴按原比例推导，两轴都填则按填写尺寸缩放，可能拉伸画面。原图很大或实时预览格数过多时，可先缩小一轴来减少网格数量；原始目标图本身也须满足尺寸上限。</td></tr>
           <tr><td>上采样<br><code>--target-upscale</code></td><td>在上述目标缩放之后、切块之前按整数倍放大，默认 1，范围 1～64。2 倍通常约产生 4 倍网格；需要更密的拼图时使用，代价是更长耗时、更大输出和内存开销，放大不会创造原图细节。</td></tr>
-          <tr><td>输出 Tile 尺寸<br><code>--output-tile</code></td><td>每个入选素材在最终图中占用的像素，写成 <code>宽x高</code>，默认 <code>180x320</code>；横向图库遇到该默认值时使用 <code>320x180</code>。需要较小文件时可按相同比例缩小，如 <code>32x18</code>；放大会使素材更易看清，但不会增加匹配块数。比例与匹配 Tile 不同时，整体画面比例也会改变。</td></tr>
+          <tr><td>输出 Tile 尺寸<br><code>--output-tile</code></td><td>每个入选素材在最终图中占用的像素，写成 <code>宽x高</code>。留空时默认 <code>180x320</code>，横向图库使用 <code>320x180</code>；手动填写的尺寸不自动旋转。需要较小文件时可按相同比例缩小，如 <code>32x18</code>；放大会使素材更易看清，但不会增加匹配块数。比例与匹配 Tile 不同时，整体画面比例也会改变。</td></tr>
           <tr><td>输出格式<br><code>--format</code></td><td>默认自动：先看输出文件后缀，再看目标图后缀，否则用 PNG；显式选择优先，并调整不一致的输出后缀。JPG 适合照片和较小文件，PNG 适合无损保存，WebP 适合需要该格式的场景，TIFF 适合支持它的后续流程。不支持的输出后缀会报错，除非显式选择支持的格式。</td></tr>
           <tr><td>格式尺寸上限</td><td>JPG 单轴最多 65,500 像素，WebP 为 16,383。自动推导的 JPG/WebP 超限时改存 PNG 并保留尺寸；显式选定时缩小输出 Tile 以适配。若网格某轴的块数本身超限，需改用 PNG/TIFF 或分块输出。任务“输出计划”显示适配，结果区显示实际文件。</td></tr>
           <tr><td>JPEG/WebP 质量<br><code>--quality</code></td><td>默认 100，范围 1～100；数值较低通常减小文件，但压缩损失更明显。照片输出过大时可适当降低并检查画质；不控制 PNG、TIFF 或单独保存的结果预览。分块 JPEG 也使用此质量。</td></tr>
@@ -1197,7 +1197,9 @@ async function checkServer() {
           }
         }
         if (previous && ![...selector.options].some(option => option.value === previous)) {
-          selector.add(new Option(previous + '（当前不可用）', previous));
+          const option = new Option(previous === 'cpu' ? 'CPU' : previous + '（当前不可用）', previous);
+          option.disabled = previous !== 'cpu';
+          selector.add(option);
         }
         selector.value = previous || 'auto';
       }
@@ -1788,6 +1790,11 @@ function buildMosaicPayload(previewOnly = false) {
   setIfValue(payload, 'dbPath', 'm-db');
   setIfNumber(payload, 'tileW', 'm-tilew', 'Tile 宽度', { integer: true, min: 4 });
   setIfNumber(payload, 'tileH', 'm-tileh', 'Tile 高度', { integer: true, min: 4 });
+  // CLI 的尺寸参数必须成对；两种入口共用补齐后的宽高。
+  if (payload.tileW !== undefined || payload.tileH !== undefined) {
+    payload.tileW ??= CLI_DEFAULTS.mosaic.tileW;
+    payload.tileH ??= CLI_DEFAULTS.mosaic.tileH;
+  }
   setIfNumber(payload, 'candidates', 'm-candidates', '候选数', { integer: true, min: 10, max:10000 });
   setIfNumber(payload, 'topNRandom', 'm-topn', 'TopN 随机', { integer: true, min: 1, max:10000 });
   setIfNumber(payload, 'lRange', 'm-lrange', 'L 亮度范围', {min:0,max:255});
@@ -1809,29 +1816,29 @@ function buildMosaicPayload(previewOnly = false) {
     payload.outputPath = val('m-output') || 'output/output';
     payload.outputMode = val('m-mode');
     setIfChecked(payload, 'overwrite', 'm-overwrite');
-    setIfValue(payload, 'format', 'm-format');
-    setIfValue(payload, 'writeMode', 'm-writemode');
-    setIfNumber(payload, 'quality', 'm-quality', 'JPEG/WebP 质量', { integer: true, min: 1, max: 100 });
-    setIfNumber(payload, 'pngLevel', 'm-pnglevel', 'PNG 压缩级别', { integer: true, min: 1, max: 9 });
+    if (payload.outputMode === 'image') {
+      setIfValue(payload, 'format', 'm-format');
+      setIfValue(payload, 'writeMode', 'm-writemode');
+      setIfNumber(payload, 'pngLevel', 'm-pnglevel', 'PNG 压缩级别', { integer: true, min: 1, max: 9 });
+      if (!document.getElementById('m-preview').disabled) setIfChecked(payload, 'generatePreview', 'm-preview');
+    }
+    if (payload.outputMode !== 'html') {
+      setIfNumber(payload, 'quality', 'm-quality', 'JPEG/WebP 质量', { integer: true, min: 1, max: 100 });
+    }
     setIfNumber(payload, 'colorStrength', 'm-colorstr', '亮度扰动幅度', { min: 0, max: 0.5 });
     setIfNumber(payload, 'overlayStrength', 'm-overlaystr', '基础图叠加强度', { min: 0, max: 1 });
 
     setIfChecked(payload, 'benchmark', 'm-benchmark');
     if (hasFeature('task-resources')) setIfChecked(payload, 'resourceMonitor', 'm-monitor');
     payload.colorAdjust = (payload.colorStrength || 0) > 0;
-    setIfChecked(payload, 'generatePreview', 'm-preview');
   }
   payload.backend = val('m-backend');
   payload.device = val('m-device');
   payload.scoreMode = val('m-score-mode');
   setIfNumber(payload, 'threads', 'm-threads', '线程上限', {integer:true,min:0,max:256});
   setIfNumber(payload, 'seed', 'm-seed', '种子', {integer:true,min:0,max:4294967295});
-  if (!previewOnly && payload.outputMode === 'html') {
-    if (payload.colorAdjust && payload.colorStrength > 0) throw uiFieldError('m-colorstr', 'HTML 首版不支持非零亮度扰动，请设置为 0。');
-    for (const key of ['format','quality','pngLevel','writeMode','generatePreview']) delete payload[key];
-  }
-  if (!previewOnly && ['deepzoom','tiles'].includes(payload.outputMode)) {
-    for (const key of ['format','pngLevel','writeMode','generatePreview']) delete payload[key];
+  if (payload.outputMode === 'html' && payload.colorAdjust && payload.colorStrength > 0) {
+    throw uiFieldError('m-colorstr', 'HTML 首版不支持非零亮度扰动，请设置为 0。');
   }
 
   const weights = ['labWeight','gridWeight','tinyWeight','edgeWeight','lbpWeight'];
@@ -1902,8 +1909,8 @@ function buildBuildPayload() {
   payload.inputDir = requireValue('b-input', '图片目录');
   setIfValue(payload, 'outputDir', 'b-output');
   setIfNumber(payload, 'threads', 'b-threads', '线程数', { integer: true, min: 0, max:256 });
-  const normSize = setIfSize(payload, 'normalizeSize', 'b-normsize', '归一化尺寸');
   payload.appendMode = val('b-mode') === 'add';
+  const normSize = payload.appendMode ? null : setIfSize(payload, 'normalizeSize', 'b-normsize', '归一化尺寸');
   if (payload.appendMode) setIfChecked(payload, 'benchmark', 'b-benchmark');
   setIfChecked(payload, 'recursive', 'b-recursive');
   payload.normalizeOnly = val('b-mode') === 'normalize';
@@ -1911,7 +1918,7 @@ function buildBuildPayload() {
 
   if (hasFeature('task-resources')) setIfChecked(payload, 'resourceMonitor', 'b-monitor');
 
-  if (normSize && !payload.appendMode) {
+  if (normSize) {
     payload.normalizeWidth = normSize.w;
     payload.normalizeHeight = normSize.h;
   }
@@ -2291,9 +2298,11 @@ delete FORM_FIELDS.build.normalizeOnly;
 FORM_FIELDS.project = {projectPath:'r-project',outputPath:'r-output',outputMode:'r-mode',format:'r-format',overlayStrength:'r-blend',brightnessJitter:'r-jitter',seed:'r-seed',threads:'r-threads',quality:'r-quality',pngLevel:'r-png',writeMode:'r-write',generatePreview:'r-thumbnail',overwrite:'r-overwrite',deep:'r-deep'};
 function restoreDevice(id, value) {
   const selector = document.getElementById(id);
-  value = value || 'auto';
+  if (typeof value !== 'string' || !/^(auto|cpu|(cuda|vulkan|metal):[0-9]+)$/.test(value)) value = 'auto';
   if (![...selector.options].some(option => option.value === value)) {
-    selector.add(new Option(value + '（等待设备探测）', value));
+    const option = new Option(value === 'cpu' ? 'CPU' : value + (serviceInfo ? '（当前不可用）' : '（等待设备探测）'), value);
+    option.disabled = value !== 'cpu' && !!serviceInfo;
+    selector.add(option);
   }
   selector.value = value;
 }
@@ -2323,7 +2332,8 @@ function restoreRequestParameters(job) {
     else element.value = request[key] === undefined ? '' : request[key];
   }
   if (tab === 'mosaic') {
-    document.getElementById('m-otile').value = (request.nativeTileW || 180) + 'x' + (request.nativeTileH || 320);
+    document.getElementById('m-otile').value = request.nativeTileW || request.nativeTileH
+      ? (request.nativeTileW || 180) + 'x' + (request.nativeTileH || 320) : '';
     document.getElementById('m-mode').value = request.outputMode || (request.deepZoom ? 'deepzoom' : request.tiled ? 'tiles' : 'image');
     document.getElementById('m-backend').value = request.backend || (request.useGpu === false ? 'cpu' : 'auto');
     restoreDevice('m-device', request.device);
@@ -2337,7 +2347,7 @@ function restoreRequestParameters(job) {
     document.getElementById('b-normsize').value = (request.normalizeWidth || 180) + 'x' + (request.normalizeHeight || 320);
     document.getElementById('b-monitor').checked = !!request.resourceMonitor;
     document.getElementById('b-benchmark').checked = !!request.benchmark;
-    if (request.appendMode && request.dbPath && request.dbPath !== 'mosaicraft.db')
+    if (request.appendMode && request.dbPath)
       document.getElementById('b-output').value = libraryDirectory(request.dbPath);
     document.getElementById('b-mode').value = request.normalizeOnly ? 'normalize' : request.appendMode ? 'add' : 'build';
     document.getElementById('b-backend').value = request.backend || 'auto';
@@ -2409,7 +2419,7 @@ function syncPreviewOption() {
   const preview = document.getElementById('m-preview');
   const incompatible = val('m-mode') !== 'image';
   const html = val('m-mode') === 'html';
-  for (const id of ['m-format','m-quality','m-pnglevel','m-writemode']) document.getElementById(id).disabled = html;
+  document.getElementById('m-quality').disabled = html;
   const projectMode = val('r-mode'), action = val('r-action');
   for (const id of ['r-format','r-png','r-write','r-thumbnail']) document.getElementById(id).disabled = projectMode !== 'image' || action !== 'render';
   document.getElementById('r-quality').disabled = projectMode === 'html' || action !== 'render';
@@ -2421,7 +2431,6 @@ function syncPreviewOption() {
     ? '当前服务使用旧版格式规则；新格式优先级与超限适配需要更新服务。'
     : '自动推导的 JPG/WebP 超限时改存 PNG，保留完整尺寸；显式选择 JPG/WebP 时缩小输出 Tile。';
   preview.disabled = incompatible || unsupported;
-  if (preview.disabled) preview.checked = false;
   document.getElementById('preview-hint').textContent = incompatible
     ? 'HTML、分块和 Deep Zoom 模式不生成附加单图缩略图。' : unsupported
     ? '此服务未提供预览能力，可升级服务或复制命令执行。' : '生成结果预览默认关闭，勾选后额外保存一张用于快速查看的 JPEG 预览图。';
@@ -2523,7 +2532,9 @@ function initializeFormUi() {
   });
   restoringDraft = true;
   const draft = storedJson('mosaicraft-form-v1', {});
-  if (draft.fields) {
+  const validDraft = draft?.version === UI_STATE_VERSION && draft.fields && typeof draft.fields === 'object' &&
+    !Array.isArray(draft.fields);
+  if (validDraft) {
     if ('m-coloradj' in draft.fields) {
       if (!draft.fields['m-coloradj']) draft.fields['m-colorstr'] = '0';
       delete draft.fields['m-coloradj'];
@@ -2532,24 +2543,20 @@ function initializeFormUi() {
     delete draft.fields['b-append']; delete draft.fields['b-normonly'];
     if (draft.fields['b-db']) draft.fields['b-output'] = libraryDirectory(draft.fields['b-db']);
     delete draft.fields['b-db']; delete draft.fields['b-force'];
-  }
-  if (draft.fields && !draft.fields['m-mode']) {
-    draft.fields['m-mode'] = draft.fields['m-deepzoom'] ? 'deepzoom' : draft.fields['m-tiled'] ? 'tiles' : 'image';
-    draft.fields['m-backend'] = draft.fields['m-cpu'] ? 'cpu' : 'auto';
-  }
-  const validDraft = draft.version === UI_STATE_VERSION && draft.fields && typeof draft.fields === 'object' &&
-    !Array.isArray(draft.fields) && Object.entries(draft.fields).every(([id, value]) => {
-      const element = document.getElementById(id);
-      return element && element.closest('.panel') &&
-        (element.type === 'checkbox' ? typeof value === 'boolean' : typeof value === 'string' &&
-          (element.tagName !== 'SELECT' || Array.from(element.options).some(option => option.value === value)));
-    });
-  if (validDraft) {
+    if (!draft.fields['m-mode']) {
+      draft.fields['m-mode'] = draft.fields['m-deepzoom'] ? 'deepzoom' : draft.fields['m-tiled'] ? 'tiles' : 'image';
+      if (!draft.fields['m-backend']) draft.fields['m-backend'] = draft.fields['m-cpu'] ? 'cpu' : 'auto';
+    }
     for (const [id, value] of Object.entries(draft.fields)) {
       const element = document.getElementById(id);
       if (!element || !element.closest('.panel')) continue;
-      if (element.type === 'checkbox') element.checked = value === true;
-      else if (typeof value === 'string') element.value = value;
+      if (element.type === 'checkbox') {
+        if (typeof value === 'boolean') element.checked = value;
+      } else if (typeof value === 'string') {
+        // 动态设备列表还没加载，待探测完成再标记设备是否可用。
+        if (id === 'm-device' || id === 'b-device') restoreDevice(id, value);
+        else if (element.tagName !== 'SELECT' || [...element.options].some(option => option.value === value)) element.value = value;
+      }
     }
   }
   const tab = validDraft && Array.from(document.querySelectorAll('.tab')).find(item => item.dataset.cmd === draft.tab);
