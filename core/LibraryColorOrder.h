@@ -16,7 +16,7 @@ struct ColorOrderResult
     double writingMs = 0;
 };
 
-// 调用者须以 Database::OpenMode::Build 持有独占图库锁。
+// 调用者须以 Build 或 Recover 模式持有独占图库锁。
 bool recoverLibraryColorOrder(Database& database, std::string& error);
 bool reorderLibraryByColor(Database& database, const std::string& outputDir,
                            ColorOrderResult& result, std::string& error);

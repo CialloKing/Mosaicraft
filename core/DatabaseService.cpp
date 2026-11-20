@@ -422,7 +422,8 @@ DatabasePurgeResult DatabaseService::purge(const DatabasePurgeRequest& request) 
     DatabasePurgeResult out;
     out.purge.dryRun = request.dryRun;
 
-    Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Build);
+    Database db(resolveDbPathForService(request.dbPath),
+                request.dryRun ? Database::OpenMode::ReadOnly : Database::OpenMode::ExclusiveExisting);
     if (!db.isOpen())
     {
         out.status = ServiceResult::failure(2, db.error(), db.errorCode(), "dbPath");

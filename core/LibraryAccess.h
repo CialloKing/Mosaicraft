@@ -7,6 +7,7 @@ namespace mosaicraft
 {
 
 std::filesystem::path libraryJournalPath(const std::string& dbPath);
+std::filesystem::file_status libraryJournalStatus(const std::filesystem::path &path);
 
 // 多个读取者可并行；建库持有独占锁，覆盖归一化、重命名及崩溃恢复。
 class LibraryAccess

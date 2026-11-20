@@ -32,18 +32,44 @@ Database::Database(const std::string &dbPath, OpenMode mode, std::vector<ImageRe
         m_error = "cannot resolve database: " + dbPath;
         return;
     }
-    m_new = !std::filesystem::exists(u8path(m_path));
-    m_exclusive = mode == OpenMode::Build;
-    if ((m_new && (mode == OpenMode::Existing || mode == OpenMode::ReadOnly)) ||
-        (m_new && std::filesystem::exists(libraryJournalPath(m_path))))
+    const bool allowCreate = mode == OpenMode::Create || mode == OpenMode::Build;
+    m_new = !std::filesystem::exists(u8path(m_path), error);
+    m_exclusive = mode == OpenMode::Build || mode == OpenMode::ExclusiveExisting || mode == OpenMode::Recover;
+    if (error || (m_new && !allowCreate))
     {
-        m_error = "database missing or has an orphaned reorder journal: " + dbPath;
+        m_error = "database missing or cannot be inspected: " + dbPath;
         return;
     }
-    m_access = std::make_unique<LibraryAccess>(m_path, m_exclusive || m_new, 5000);
+    const bool exclusiveLock = m_exclusive || m_new;
+    m_access = std::make_unique<LibraryAccess>(m_path, exclusiveLock, 5000);
     if (!m_access->acquired())
     {
         m_error = "library is busy or its operation lock cannot be opened: " + dbPath;
+        m_access.reset();
+        return;
+    }
+    try
+    {
+        // 等锁期间另一个进程可能已经建库或开始重排，必须在锁内重新判断。
+        m_new = !std::filesystem::exists(u8path(m_path));
+        if (m_new && (!allowCreate || !exclusiveLock))
+        {
+            m_error = "database missing: " + dbPath;
+        }
+        else if (mode != OpenMode::Recover &&
+                 std::filesystem::exists(libraryJournalStatus(libraryJournalPath(m_path))))
+        {
+            m_error = m_new ? "database missing but a color reorder journal remains: " + dbPath :
+                "unfinished color reorder; retain the journal and staging directory, then run "
+                "library add <input-directory> -l <library>: " + dbPath;
+        }
+    }
+    catch (const std::filesystem::filesystem_error &exception)
+    {
+        m_error = exception.what();
+    }
+    if (!m_error.empty())
+    {
         m_access.reset();
         return;
     }
@@ -54,11 +80,6 @@ Database::Database(const std::string &dbPath, OpenMode mode, std::vector<ImageRe
         // 在只读连接的同一快照内校验并取走匹配行；损坏库仍在打开可写连接前拒绝。
         valid = (!matchingRows || beginTransaction()) && validateSchema(matchingRows, readMs) &&
                 (!matchingRows || commitTransaction());
-        if (valid && !m_exclusive && std::filesystem::exists(libraryJournalPath(m_path)))
-        {
-            m_error = "unfinished color reorder; run build to recover: " + dbPath;
-            valid = false;
-        }
         if (valid && mode != OpenMode::ReadOnly)
         {
             closeConnection();

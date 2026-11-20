@@ -92,7 +92,9 @@ public:
         Create,
         Existing,
         ReadOnly,
-        Build
+        Build,
+        ExclusiveExisting,
+        Recover
     };
     explicit Database(const std::string& dbPath, OpenMode mode = OpenMode::Create,
                       std::vector<ImageRecord> *matchingRows = nullptr, double *readMs = nullptr);

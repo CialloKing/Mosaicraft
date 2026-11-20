@@ -264,7 +264,7 @@ Builds order the entire library by mean-color HSV hue and lightness and number f
 排序复用数据库平均 LAB，色度 `C < 0.5` 的图片按灰度亮度排列，彩色每 15° 分段并从 345° 开始。CPU/CUDA 独立建库可能因均值精度不同产生顺序差异，同一数据库重复排序保持稳定。
 Ordering reuses stored mean LAB: chroma below 0.5 enters the grayscale group; colors use 15-degree hue bands starting at 345 degrees. Independent CPU/CUDA builds may differ because their mean-color extraction differs. Reordering the same database is stable.
 
-同一图库的建库与读取、生成、维护通过文件锁协调。图库忙或存在未恢复的重命名清单时，数据库操作返回失败；用建库任务恢复后继续。目标被未索引文件占用或旧图库图片需要跨卷移动时，建库失败并保留已有图片。
+同一图库的建库与读取、生成、维护通过文件锁协调。存在未恢复的重排日志时，普通操作和清理预览、执行均返回失败；`appendMode: true` 在独占锁内先恢复，再继续追加。目标被未索引文件占用或旧图库图片需要跨卷移动时，建库失败并保留已有图片。
 An operation lock coordinates builds with library readers and maintenance. Busy libraries and pending rename journals fail database operations; a build recovers pending renames. Unindexed destination conflicts and cross-volume moves of indexed images fail without overwriting existing images.
 
 ### `GET /api/jobs`

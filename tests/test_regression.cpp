@@ -1160,6 +1160,11 @@ TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
         Database database(request.dbPath);
         records = database.allRecords();
     }
+    std::vector<std::vector<uint8_t>> imageBytes;
+    for (const auto &record : records)
+    {
+        imageBytes.push_back(readBytesUnicode(record.filePath));
+    }
     const std::string token = "112233";
     const auto staging = workspace.libraryDir() / (".mosaicraft-color-order-" + token);
     fs::create_directory(staging);
@@ -1173,7 +1178,6 @@ TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
             {"temporary", utf8(staging / (std::to_string(records[i].id) + ".stage"))},
             {"hash", records[i].fileHash}, {"size", fs::file_size(u8path(records[i].filePath))}});
     }
-    bool committed = false;
     SUBCASE("interrupted staging")
     {
         fs::rename(u8path(records[0].filePath), u8path(journal["entries"][0]["temporary"].get<std::string>()));
@@ -1224,7 +1228,6 @@ TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
         REQUIRE(database.setMeta("color_order_batch", token));
         REQUIRE(database.commitTransaction());
         journal["phase"] = "publishing";
-        committed = true;
     }
     {
         std::ofstream output(libraryJournalPath(request.dbPath));
@@ -1250,11 +1253,32 @@ TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
         CHECK_FALSE(blocked.isOpen());
         CHECK(blocked.error().find("unfinished color reorder") != std::string::npos);
     }
-    std::string error;
+    const auto journalPath = utf8(libraryJournalPath(request.dbPath));
+    const auto journalBytes = readBytesUnicode(journalPath);
+    const auto databaseBytes = readBytesUnicode(request.dbPath);
+    for (bool dryRun : {true, false})
     {
-        Database database(request.dbPath, Database::OpenMode::Build);
+        const auto result = DatabaseService().purge({request.dbPath, dryRun, !dryRun});
+        CHECK_FALSE(result.status.ok);
+        CHECK(result.status.message.find("library add") != std::string::npos);
+        CHECK(result.purge.orphanCount == 0);
+        CHECK(result.purge.removedCount == 0);
+        CHECK(readBytesUnicode(journalPath) == journalBytes);
+        CHECK(readBytesUnicode(request.dbPath) == databaseBytes);
+        for (const auto &record : records)
+        {
+            CHECK(fs::is_regular_file(u8path(record.tinyPath)));
+            CHECK(fs::is_regular_file(u8path(record.lbpPath)));
+        }
+    }
+    auto append = request;
+    append.appendMode = true;
+    append.inputDir = utf8(workspace.emptyInputDir());
+    const auto recovered = BuildService().run(append);
+    REQUIRE_MESSAGE(recovered.ok, recovered.message);
+    {
+        Database database(request.dbPath, Database::OpenMode::ReadOnly);
         REQUIRE(database.isOpen());
-        REQUIRE_MESSAGE(recoverLibraryColorOrder(database, error), error);
         const auto restored = database.allRecords();
         REQUIRE(restored.size() == records.size());
         for (size_t i = 0; i < restored.size(); ++i)
@@ -1262,10 +1286,8 @@ TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
             CHECK(restored[i].id == records[i].id);
             CHECK(restored[i].fileHash == records[i].fileHash);
             CHECK(restored[i].tinyPath == records[i].tinyPath);
-            const auto imagePath = u8path(restored[i].filePath);
-            CHECK(fs::exists(imagePath.is_absolute() ? imagePath : workspace.root / imagePath));
-            const auto originalIndex = committed && i < 2 ? 1 - i : i;
-            CHECK(restored[i].filePath == records[originalIndex].filePath);
+            CHECK(restored[i].lbpPath == records[i].lbpPath);
+            CHECK(readBytesUnicode(restored[i].filePath) == imageBytes[i]);
         }
     }
     CHECK_FALSE(fs::exists(staging));

@@ -10,6 +10,7 @@
 #include "FeatureUtils.h"
 #include "ImageNormalizer.h"
 #include "LibraryColorOrder.h"
+#include "MosaicPlanning.h"
 #include "RequestValidation.h"
 #include "UnicodeIO.h"
 #include "WorkerPool.h"
@@ -171,26 +172,7 @@ static bool stdinIsTty()
 
 } // namespace
 
-static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContext &runtime);
-
-static ServiceResult runBuild(const BuildRequest &original, RuntimeContext &runtime)
-{
-    BuildRequest request = original;
-    if (request.appendMode && !request.normalizeOnly)
-    {
-        auto path = request.dbPath == "mosaicraft.db" ? request.outputDir + "/mosaicraft.db" : resolveDbPathForService(request.dbPath);
-        Database existing(path, Database::OpenMode::ReadOnly);
-        if (!existing.isOpen())
-        {
-            return runtimeFailure(runtime, 2, existing.error(), existing.errorCode(), "dbPath");
-        }
-        request.normalizeWidth = std::stoi(existing.getMeta("feature_w"));
-        request.normalizeHeight = std::stoi(existing.getMeta("feature_h"));
-    }
-    return runBuildResolved(request, runtime);
-}
-
-static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContext &runtime)
+static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
 {
     runtime.stage("validating");
     if (request.normalizeOnly)
@@ -230,7 +212,7 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                               "outputDir", outputDir);
     }
 
-    Database db(resolveDbPathForService(dbPath), Database::OpenMode::Build);
+    Database db(resolveDbPathForService(dbPath), request.appendMode ? Database::OpenMode::Recover : Database::OpenMode::Build);
     BuildVisuals visuals;
     if (!db.isOpen())
     {
@@ -238,17 +220,26 @@ static ServiceResult runBuildResolved(const BuildRequest &request, RuntimeContex
                               db.errorCode(), "dbPath", dbPath);
     }
 
-    if (!db.createTables(request.normalizeWidth, request.normalizeHeight))
+    if (request.appendMode)
+    {
+        // 恢复、读取库尺寸和追加共用同一把独占锁，期间不能让其他任务看到暂存路径。
+        std::string recoveryError;
+        if (!recoverLibraryColorOrder(db, recoveryError))
+        {
+            return runtimeFailure(runtime, EXIT_ERR_DB, recoveryError, "library_unavailable", "dbPath", dbPath);
+        }
+        if (!readLibraryDimensions(db, request.normalizeWidth, request.normalizeHeight))
+        {
+            return runtimeFailure(runtime, EXIT_ERR_DB, "invalid library feature dimensions", "library_incompatible",
+                                  "dbPath", dbPath);
+        }
+    }
+    else if (!db.createTables(request.normalizeWidth, request.normalizeHeight))
     {
         return runtimeFailure(runtime, EXIT_ERR_DB, "cannot create database tables", "library_unavailable", "dbPath",
                               dbPath);
     }
 
-    std::string recoveryError;
-    if (!recoverLibraryColorOrder(db, recoveryError))
-    {
-        return runtimeFailure(runtime, EXIT_ERR_DB, recoveryError, "operation_failed", "");
-    }
     if (!fs::is_directory(u8path(request.inputDir), ec))
     {
         return runtimeFailure(runtime, 1, "cannot read input directory: " + request.inputDir, "input_unreadable",

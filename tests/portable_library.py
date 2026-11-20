@@ -2,6 +2,7 @@
 import argparse
 import concurrent.futures
 import hashlib
+import json
 from pathlib import Path
 import sqlite3
 import struct
@@ -34,11 +35,11 @@ def main():
         writer.commit()
         before = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (old, Path(str(old) + '-wal'))}
 
-        def run(arguments, success=True):
-            result = subprocess.run([str(executable), *arguments], cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        def run(arguments, success=True, error=b'library_incompatible', cwd=root):
+            result = subprocess.run([str(executable), *arguments], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             assert (result.returncode == 0) == success, result.stdout.decode('utf8', errors='replace')
             if not success:
-                assert b'library_incompatible' in result.stdout
+                assert error in result.stdout, result.stdout.decode('utf8', errors='replace')
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as workers:
             list(workers.map(lambda _: run(['library', 'report', str(old), '--json'], False), range(4)))
@@ -79,8 +80,42 @@ def main():
         try:
             assert connection.execute('PRAGMA user_version').fetchone()[0] == 1
             assert all(not Path(p).is_absolute() for row in connection.execute('SELECT file_path,tiny_path,lbp_path FROM images') for p in row)
+            material, old, digest, tiny, lbp = connection.execute(
+                'SELECT id,file_path,file_hash,tiny_path,lbp_path FROM images ORDER BY id LIMIT 1').fetchone()
         finally:
             connection.close()
+
+        for flags in ([], ['--apply']):
+            run(['library', 'purge', 'typo.db', *flags, '--json'], False, b'library_unavailable')
+            assert not (root / 'typo.db').exists()
+
+        contracts = json.loads((Path(__file__).resolve().parents[1] / 'contracts.json').read_text(encoding='utf-8'))
+        token = '1234'
+        staging = library / ('.mosaicraft-color-order-' + token)
+        staging.mkdir()
+        staged = staging / f'{material}.stage'
+        (library / old).rename(staged)
+        journal = Path(str(database) + '.color-order.json')
+        empty = root / 'empty'
+        empty.mkdir()
+        add = ['library', 'add', str(empty), '-l', str(database), '--backend', 'cpu']
+        journal.write_text('{', encoding='utf-8')
+        run(add, False, b'color reorder recovery failed')
+        assert staged.is_file() and journal.read_text(encoding='utf-8') == '{'
+        data = dict(version=contracts['journalVersion'], library_version=contracts['libraryVersion'],
+                    feature_version=contracts['featureVersion'], token=token, database=database.name,
+                    output='.', staging=staging.name, phase='staging', entries=[dict(
+                        id=material, old_db_path=old, original=old, final='999999.png',
+                        temporary=staged.relative_to(library).as_posix(), hash=digest, size=staged.stat().st_size)])
+        journal.write_text(json.dumps(data), encoding='utf-8')
+        protected = (database, journal, staged, library / tiny, library / lbp)
+        before = [path.read_bytes() for path in protected]
+        for flags in ([], ['--apply']):
+            run(['library', 'purge', str(database), *flags], False, b'unfinished color reorder')
+            assert [path.read_bytes() for path in protected] == before
+        run(add)
+        assert not journal.exists() and not staging.exists() and (library / old).read_bytes() == before[2]
+
         # Include a character that cannot be represented by a Windows legacy code page.
         moved = root / '图库 𠮷 B'
         library.rename(moved)

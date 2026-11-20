@@ -18,6 +18,19 @@ std::filesystem::path libraryJournalPath(const std::string& dbPath)
     return u8path(pathToUtf8(std::filesystem::weakly_canonical(u8path(dbPath))) + ".color-order.json");
 }
 
+std::filesystem::file_status libraryJournalStatus(const std::filesystem::path &path)
+{
+    // 即使链接目标已丢失，日志路径仍被占用；只有确认不存在才能继续。
+    std::error_code error;
+    const auto status = std::filesystem::symlink_status(path, error);
+    if ((error && error != std::errc::no_such_file_or_directory) ||
+        !std::filesystem::status_known(status))
+    {
+        throw std::filesystem::filesystem_error("cannot inspect color reorder journal", path, error);
+    }
+    return status;
+}
+
 LibraryAccess::LibraryAccess(const std::string& dbPath, bool exclusive, int waitMilliseconds)
 {
     std::error_code error;

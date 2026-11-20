@@ -278,9 +278,14 @@ bool recoverLibraryColorOrder(Database& database, std::string& error)
     try
     {
         const auto path = libraryJournalPath(database.path());
-        if (!fs::exists(path))
+        const auto status = libraryJournalStatus(path);
+        if (!fs::exists(status))
         {
             return true;
+        }
+        if (!fs::is_regular_file(status))
+        {
+            throw std::runtime_error("color reorder journal is not a regular file");
         }
         std::ifstream input(path, std::ios::binary);
         Json journal;

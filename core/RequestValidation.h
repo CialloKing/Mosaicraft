@@ -57,8 +57,9 @@ inline bool validateBuildRequest(const BuildRequest &request, std::string &error
     {
         return false;
     }
-    if (request.threads < 0 || request.threads > 256 || request.normalizeWidth > 8192 ||
-        request.normalizeHeight > 8192 || !validImageSize(request.normalizeWidth, request.normalizeHeight))
+    if (request.threads < 0 || request.threads > 256 ||
+        (!request.appendMode && (request.normalizeWidth > 8192 || request.normalizeHeight > 8192 ||
+                                 !validImageSize(request.normalizeWidth, request.normalizeHeight))))
     {
         if (field)
         {
