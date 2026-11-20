@@ -23,7 +23,7 @@ std::string resolveDbPathForService(const std::string& rawPath)
     std::error_code ec;
     if (std::filesystem::is_directory(u8path(rawPath), ec))
     {
-        return rawPath + "/mosaicraft.db";
+        return pathToUtf8(u8path(rawPath) / "mosaicraft.db");
     }
     return rawPath;
 }

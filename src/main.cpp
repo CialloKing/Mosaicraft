@@ -430,16 +430,11 @@ ServiceResult execute(const Arguments &args, json &data, RuntimeContext &runtime
         request.device = args.get("device", "auto");
         if (request.appendMode)
         {
-            request.dbPath = resolveDbPathForService(args.get("library", "library"));
-            request.outputDir = pathToUtf8(u8path(request.dbPath).parent_path());
+            request.dbPath = args.get("library", "library");
         }
         else if (args.has("size") && !parseSize(args.get("size"), request.normalizeWidth, request.normalizeHeight))
         {
             throw std::invalid_argument("--size requires positive WxH");
-        }
-        if (cmd == "build" && std::filesystem::exists(u8path(request.outputDir) / "mosaicraft.db"))
-        {
-            throw std::invalid_argument("library already exists; use library add or choose a new directory");
         }
         return BuildService().run(request, runtime);
     }

@@ -11,7 +11,7 @@ struct BuildRequest
 {
     std::string inputDir;
     std::string outputDir = "library";
-    std::string dbPath = "mosaicraft.db";
+    std::string dbPath;
     int threads = 0;
     BackendPolicy backend = BackendPolicy::Auto;
     std::string device = "auto";

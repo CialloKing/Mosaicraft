@@ -36,6 +36,7 @@
 #include <sstream>
 #include <iostream>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <string>
 #include <system_error>
@@ -194,149 +195,164 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     std::lock_guard<std::mutex> pipelineLock(pipelineMutex());
     ExecutionScope scope;
 
-    std::string outputDir = request.outputDir.empty() ? "library" : request.outputDir;
-    std::string dbPath = request.dbPath.empty() ? "mosaicraft.db" : request.dbPath;
-    if (dbPath == "mosaicraft.db")
+    auto output = u8path(request.outputDir.empty() ? "library" : request.outputDir);
+    auto databasePath = request.dbPath.empty() ? output / "mosaicraft.db"
+                                               : u8path(resolveDbPathForService(request.dbPath));
+    const auto dbPath = pathToUtf8(fs::absolute(databasePath).lexically_normal());
+    std::optional<Database> database;
+    const auto openError = [&]()
     {
-        dbPath = outputDir + "/mosaicraft.db";
+        return runtimeFailure(runtime, EXIT_ERR_DB, "cannot open database: " + dbPath + "; " + database->error(),
+                              database->errorCode(), "dbPath", dbPath);
+    };
+    if (request.appendMode)
+    {
+        database.emplace(dbPath, Database::OpenMode::Recover);
+        if (!database->isOpen())
+        {
+            return openError();
+        }
+        // 恢复、读取库尺寸和追加共用同一把独占锁，期间不能让其他任务看到暂存路径。
+        std::string recoveryError;
+        if (!recoverLibraryColorOrder(*database, recoveryError))
+        {
+            return runtimeFailure(runtime, EXIT_ERR_DB, recoveryError, "library_unavailable", "dbPath", dbPath);
+        }
+        if (!readLibraryDimensions(*database, request.normalizeWidth, request.normalizeHeight))
+        {
+            return runtimeFailure(runtime, EXIT_ERR_DB, "invalid library feature dimensions", "library_incompatible",
+                                  "dbPath", dbPath);
+        }
+        output = u8path(database->path()).parent_path();
+    }
+    output = fs::weakly_canonical(fs::absolute(output));
+    const auto outputDir = pathToUtf8(output);
+
+    runtime.stage("scanning");
+    std::vector<std::string> files;
+    fs::path input;
+    try
+    {
+        input = fs::canonical(u8path(request.inputDir));
+        const auto collect = [&](const auto &entries)
+        {
+            for (const auto &entry : entries)
+            {
+                if (!entry.is_regular_file())
+                {
+                    continue;
+                }
+                auto ext = pathToUtf8(entry.path().extension());
+                std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char ch)
+                {
+                    return static_cast<char>(std::tolower(ch));
+                });
+                if (ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp" || ext == ".bmp" ||
+                    ext == ".tiff" || ext == ".tif")
+                {
+                    files.push_back(pathToUtf8(entry.path()));
+                }
+            }
+        };
+        if (request.recursive)
+        {
+            collect(fs::recursive_directory_iterator(input));
+        }
+        else
+        {
+            collect(fs::directory_iterator(input));
+        }
+    }
+    catch (const fs::filesystem_error &error)
+    {
+        return runtimeFailure(runtime, 1, "cannot scan input directory: " + std::string(error.what()),
+                              "input_unreadable", "inputDir", request.inputDir);
+    }
+    std::sort(files.begin(), files.end());
+    std::cout << "Found " << files.size() << " image(s) in " << request.inputDir << std::endl;
+    if (files.empty() && (!database || database->totalCount() == 0))
+    {
+        return runtimeFailure(runtime, 1, "no supported images found", "input_unreadable", "inputDir", request.inputDir);
     }
 
-    // 统一内部写入绝对位置，数据库负责转换为相对库根的持久路径。
-    outputDir = pathToUtf8(fs::absolute(u8path(outputDir)).lexically_normal());
-    dbPath = pathToUtf8(fs::absolute(u8path(dbPath)).lexically_normal());
     std::error_code ec;
-    fs::create_directories(u8path(outputDir), ec);
+    const bool inputIsOutput = fs::equivalent(input, output, ec);
+    const cv::Size requestedSize(request.normalizeWidth, request.normalizeHeight);
+    if (inputIsOutput)
+    {
+        // 原地建库复用原文件，必须在写入任何新记录或改名前确认无需缩放。
+        for (const auto &file : files)
+        {
+            const auto image = imreadUnicode(file, cv::IMREAD_COLOR);
+            if (!image.empty() && image.size() != requestedSize)
+            {
+                std::ostringstream detail;
+                detail << "in-place library image " << file << " is " << image.cols << 'x' << image.rows << ", expected "
+                       << requestedSize.width << 'x' << requestedSize.height << "; use a separate output directory";
+                return runtimeFailure(runtime, 1, detail.str(), "invalid_argument", "inputDir", file);
+            }
+        }
+    }
+
+    ec.clear();
+    fs::create_directories(output, ec);
     if (ec)
     {
         return runtimeFailure(runtime, 1, "cannot create output directory: " + outputDir, "output_write_failed",
                               "outputDir", outputDir);
     }
-
-    Database db(resolveDbPathForService(dbPath), request.appendMode ? Database::OpenMode::Recover : Database::OpenMode::Build);
+    if (!database)
+    {
+        database.emplace(dbPath, Database::OpenMode::Build);
+        if (!database->isOpen())
+        {
+            return openError();
+        }
+    }
+    Database &db = *database;
     BuildVisuals visuals;
-    if (!db.isOpen())
+    const auto existingCount = db.totalCount();
+    if (!request.appendMode && !request.forceMode && existingCount > 0)
     {
-        return runtimeFailure(runtime, EXIT_ERR_DB, "cannot open database: " + dbPath + "; " + db.error(),
-                              db.errorCode(), "dbPath", dbPath);
-    }
-
-    if (request.appendMode)
-    {
-        // 恢复、读取库尺寸和追加共用同一把独占锁，期间不能让其他任务看到暂存路径。
-        std::string recoveryError;
-        if (!recoverLibraryColorOrder(db, recoveryError))
+        if (!request.allowPrompt || !stdinIsTty())
         {
-            return runtimeFailure(runtime, EXIT_ERR_DB, recoveryError, "library_unavailable", "dbPath", dbPath);
+            return runtimeFailure(runtime, 1, "library already exists; use library add or choose a new directory",
+                                  "operation_failed", "dbPath", dbPath);
         }
-        if (!readLibraryDimensions(db, request.normalizeWidth, request.normalizeHeight))
+        std::cout << "Database has " << existingCount
+                  << " records. Continue building and renumber the entire library by color? [y/N] " << std::flush;
+        const char answer = static_cast<char>(std::getchar());
+        if (answer != 'y' && answer != 'Y')
         {
-            return runtimeFailure(runtime, EXIT_ERR_DB, "invalid library feature dimensions", "library_incompatible",
-                                  "dbPath", dbPath);
+            return ServiceResult::success("aborted");
         }
     }
-    else if (!db.createTables(request.normalizeWidth, request.normalizeHeight))
+    if (!request.appendMode && !db.createTables(request.normalizeWidth, request.normalizeHeight))
     {
         return runtimeFailure(runtime, EXIT_ERR_DB, "cannot create database tables", "library_unavailable", "dbPath",
                               dbPath);
     }
 
-    if (!fs::is_directory(u8path(request.inputDir), ec))
-    {
-        return runtimeFailure(runtime, 1, "cannot read input directory: " + request.inputDir, "input_unreadable",
-                              "inputDir", request.inputDir);
-    }
-
-    if (!request.appendMode && !request.normalizeOnly)
-    {
-        int existingCount = db.totalCount();
-        if (existingCount > 0 && !request.forceMode)
-        {
-            if (!request.allowPrompt || !stdinIsTty())
-            {
-                return runtimeFailure(runtime, 1,
-                                      "DB has " + std::to_string(existingCount) +
-                                          " records. Use appendMode or forceMode to continue building.",
-                                      "operation_failed", "");
-            }
-            std::cout << "Database has " << existingCount
-                      << " records. Continue building and renumber the entire library by color? [y/N] " << std::flush;
-            char answer = static_cast<char>(std::getchar());
-            if (answer != 'y' && answer != 'Y')
-            {
-                return ServiceResult::success("aborted");
-            }
-        }
-    }
-
-    std::string featDir = outputDir + "/features";
+    const auto featDir = pathToUtf8(output / "features");
     fs::create_directories(u8path(featDir), ec);
-    auto existingRecords = db.allRecords();
-    if (!existingRecords.empty() && !request.normalizeOnly)
+    if (ec)
     {
-        if (db.getMeta("feature_w") != std::to_string(request.normalizeWidth) ||
-            db.getMeta("feature_h") != std::to_string(request.normalizeHeight))
-        {
-            return runtimeFailure(runtime, 1, "feature dimensions differ; use a new library directory/database",
-                                  "library_incompatible", "dbPath", dbPath);
-        }
-
+        return runtimeFailure(runtime, 1, "cannot create feature directory: " + featDir, "output_write_failed",
+                              "outputDir", outputDir);
+    }
+    if (existingCount > 0 &&
+        (db.getMeta("feature_w") != std::to_string(request.normalizeWidth) ||
+         db.getMeta("feature_h") != std::to_string(request.normalizeHeight)))
+    {
+        return runtimeFailure(runtime, 1, "feature dimensions differ; use a new library directory/database",
+                              "library_incompatible", "dbPath", dbPath);
     }
 
     // 入库前持久化尺寸；首次建库被中断后，已有记录仍可用同样尺寸继续追加。
-    if (!request.normalizeOnly &&
-        (!db.setMeta("feature_w", std::to_string(request.normalizeWidth)) ||
-         !db.setMeta("feature_h", std::to_string(request.normalizeHeight))))
+    if (!db.setMeta("feature_w", std::to_string(request.normalizeWidth)) ||
+        !db.setMeta("feature_h", std::to_string(request.normalizeHeight)))
     {
         return runtimeFailure(runtime, EXIT_ERR_DB, "cannot save library dimensions", "operation_failed", "");
-    }
-
-    const std::vector<std::string> exts = {
-        ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".tif"
-    };
-
-    runtime.stage("scanning");
-    std::vector<std::string> files;
-    auto addEntry = [&](const auto& entry) {
-        if (!entry.is_regular_file()) return;
-        std::string ext = entry.path().extension().string();
-        for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        bool supported = false;
-        for (const auto& e : exts) {
-            if (ext == e) {
-                supported = true;
-                break;
-            }
-        }
-        if (supported) files.push_back(pathToUtf8(entry.path()));
-    };
-
-    if (request.recursive)
-    {
-        for (const auto& entry : fs::recursive_directory_iterator(u8path(request.inputDir), ec))
-        {
-            addEntry(entry);
-        }
-    }
-    else
-    {
-        for (const auto& entry : fs::directory_iterator(u8path(request.inputDir), ec))
-        {
-            addEntry(entry);
-        }
-    }
-
-    if (ec)
-    {
-        return runtimeFailure(runtime, 1, "cannot scan input directory: " + ec.message(), "input_unreadable",
-                              "inputDir", request.inputDir);
-    }
-    std::sort(files.begin(), files.end());
-    std::cout << "Found " << files.size() << " image(s) in " << request.inputDir << std::endl;
-
-    if (files.empty() && (existingRecords.empty() || request.normalizeOnly))
-    {
-        return runtimeFailure(runtime, 1, "no supported images found", "input_unreadable", "inputDir",
-                              request.inputDir);
     }
 
     auto tBuildStart = std::chrono::steady_clock::now();
@@ -348,8 +364,6 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     ImageNormalizer normalizer(request.normalizeWidth, request.normalizeHeight);
     std::vector<std::string> outPaths(files.size());
     std::vector<uint8_t> okFlags(files.size(), 0);
-    bool inputIsOutput = fs::equivalent(u8path(request.inputDir), u8path(outputDir), ec);
-    ec.clear();
     // 新图片先用临时名字，避免失败文件和旧编号阻碍最终全库颜色排序。
     std::set<fs::path> reservedPaths;
     for (const auto& record : db.allRecords())
@@ -835,6 +849,12 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                     }
                     continue;
                 }
+                if (image.size() != requestedSize)
+                {
+                    runtime.emit("warning", "source_skipped", "image dimensions changed after in-place validation",
+                                 "inputDir", files[i]);
+                    continue;
+                }
                 std::unique_lock<std::mutex> lock(queueMtx);
                 waitForQueueSpace(lock, profile ? &profile->producerWait : nullptr);
                 if (normPhaseDone.load())
@@ -1038,6 +1058,10 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                         if (images[i].empty())
                         {
                             throw std::runtime_error("cannot decode saved image");
+                        }
+                        if (inputIsOutput && images[i].size() != requestedSize)
+                        {
+                            throw std::runtime_error("image dimensions changed after in-place validation");
                         }
                         hashReady(i);
                     }

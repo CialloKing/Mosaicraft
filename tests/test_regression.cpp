@@ -1037,6 +1037,8 @@ TEST_CASE("rebuilding preserves indexed files and source files")
     }
     request.outputDir = request.inputDir;
     request.dbPath = utf8(workspace.root / "same.db");
+    request.normalizeWidth = 72;
+    request.normalizeHeight = 128;
     const auto nested = workspace.inputDir() / u8path("递归子目录");
     fs::create_directory(nested);
     fs::rename(workspace.inputDir() / "tile_00.png", nested / "tile_00.png");

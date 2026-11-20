@@ -252,14 +252,14 @@ render 接受 outputMode、format、nativeTileW/H、quality、pngLevel、writeMo
 
 ### `POST /api/jobs/build`
 
-新增 `backend` 字段控制加速策略；`threads: 0` 自动，正数为应用 CPU 工作线程上限。纯归一化使用 `normalizeOnly: true`，不创建数据库，拒绝输入输出重叠。新 CLI `library build` 只建新库、`library add` 继承现有规格，API 保留已有字段。
+`backend` 控制加速策略；`threads: 0` 自动，正数为应用 CPU 工作线程上限。纯归一化使用 `normalizeOnly: true`，不创建数据库，拒绝输入输出重叠。CLI `library build` 不覆盖已有素材，可重试结构有效且不含记录和重排日志的图库。`library add` 继承现有尺寸；显式 `dbPath` 指定图库，追加文件写在该数据库所在目录。未指定 `dbPath` 时使用 `outputDir` 下的 `mosaicraft.db`。
 
 可选 `benchmark: true` 仅用于 `appendMode: true` 且非 `normalizeOnly` 的请求；其他模式开启时返回 `400`，`diagnostic.field` 为 `benchmark`。默认为 `false`，与 `resourceMonitor` 独立。成功后在 `job.runtime.metrics` 返回[图库追加分段指标](benchmark-metrics.md#图库追加)。
 
 启动异步图库构建任务 / Starts an asynchronous library build job.
 
-默认对全库按平均颜色的 HSV 色相和明暗排序并从 `000000` 连续编号，`appendMode: true` 也会重新排列旧图片。输入与输出同目录时也更改已索引原图的文件名。图片 ID、使用统计和图片内容保持不变；`normalizeOnly: true` 不执行全库重排。
-Builds order the entire library by mean-color HSV hue and lightness and number files consecutively from `000000`, including append and same-directory builds. Image IDs, usage statistics and bytes are preserved. `normalizeOnly: true` skips reordering. No new request fields are required.
+默认对全库按平均颜色的 HSV 色相和明暗排序并从 `000000` 连续编号，`appendMode: true` 也会重新排列旧图片。输入与输出同目录时，原图尺寸必须与图库尺寸相同，否则须改用独立输出目录。符合尺寸的原图仍会改名，保持字节不变。图片 ID、使用统计保持不变；`normalizeOnly: true` 不执行全库重排。
+Builds order the entire library by mean-color HSV hue and lightness and number files consecutively from `000000`, including append and same-directory builds. In-place inputs must already match the library dimensions. Their names can change, but their bytes, IDs and prior usage are preserved. `normalizeOnly: true` skips reordering.
 
 排序复用数据库平均 LAB，色度 `C < 0.5` 的图片按灰度亮度排列，彩色每 15° 分段并从 345° 开始。CPU/CUDA 独立建库可能因均值精度不同产生顺序差异，同一数据库重复排序保持稳定。
 Ordering reuses stored mean LAB: chroma below 0.5 enters the grayscale group; colors use 15-degree hue bands starting at 345 degrees. Independent CPU/CUDA builds may differ because their mean-color extraction differs. Reordering the same database is stable.

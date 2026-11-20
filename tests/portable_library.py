@@ -67,6 +67,29 @@ def main():
         assert next((root / 'again').iterdir()).read_bytes() == packed
         assert (palette / 'input.PNG').read_bytes() == original
 
+        retry = ['library', 'build', 'not-ready', '-o', 'retry', '--size', '32x32', '--backend', 'cpu', '--json']
+        run(retry, False, b'input_unreadable')
+        assert not (root / 'retry/mosaicraft.db').exists()
+        (root / 'not-ready').mkdir()
+        bad = root / 'not-ready/material.png'
+        bad.write_bytes(b'not a PNG')
+        run(retry, False, b'input_unreadable')
+        assert (root / 'retry/mosaicraft.db').is_file()
+        png(bad, (1, 2, 3))
+        run(retry)
+        run(retry, False, b'library already exists')
+
+        inplace = root / 'inplace'
+        inplace.mkdir()
+        original_path = inplace / 'original.png'
+        png(original_path, (2, 3, 4))
+        original_bytes = original_path.read_bytes()
+        build_inplace = ['library', 'build', './inplace', '-o', 'inplace/', '--backend', 'cpu', '--size']
+        run([*build_inplace, '16x24'], False, b'is 32x32, expected 16x24')
+        assert original_path.read_bytes() == original_bytes and not (inplace / 'mosaicraft.db').exists()
+        run([*build_inplace, '32x32'])
+        assert not original_path.exists() and (inplace / '000000.png').read_bytes() == original_bytes
+
         source = root / 'source'
         source.mkdir()
         for number, color in enumerate(((30, 60, 90), (100, 130, 160), (170, 200, 230))):
@@ -115,6 +138,7 @@ def main():
             assert [path.read_bytes() for path in protected] == before
         run(add)
         assert not journal.exists() and not staging.exists() and (library / old).read_bytes() == before[2]
+        run(['library', 'add', str(empty), '-l', 'mosaicraft.db', '--backend', 'cpu'], cwd=library)
 
         # Include a character that cannot be represented by a Windows legacy code page.
         moved = root / '图库 𠮷 B'
