@@ -71,6 +71,25 @@ inline bool validateBuildRequest(const BuildRequest &request, std::string &error
         error = "invalid build dimensions or thread count (dimensions <=8192, threads 0..256)";
         return false;
     }
+    if (!request.normalizeOnly)
+    {
+        const auto validLevel = [&](const char *name, int value, int min, int max)
+        {
+            if (value >= min && value <= max)
+            {
+                return true;
+            }
+            if (field)
+            {
+                *field = name;
+            }
+            error = std::string(name) + " must be between " + std::to_string(min) + " and " + std::to_string(max);
+            return false;
+        };
+        return validLevel("jpgQuality", request.encoding.jpgQuality, 1, 100) &&
+               (!request.encoding.webpQuality || validLevel("webpQuality", *request.encoding.webpQuality, 1, 100)) &&
+               validLevel("pngLevel", request.encoding.pngLevel, 0, 9);
+    }
     return true;
 }
 

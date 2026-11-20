@@ -479,6 +479,8 @@ try {
         forceMode = $true
         normalizeWidth = 36
         normalizeHeight = 64
+        jpgQuality = 82
+        pngLevel = 0
     }
     Assert-True ($build.ok -eq $true -and $null -ne $build.job) "build job was not accepted"
     Assert-JobSnapshot -Job $build.job -ExpectedType "build" -ExpectedInputPath $inputDir -ExpectedOutputPath $libraryDir
@@ -850,6 +852,9 @@ try {
     }
 
     $history = (Invoke-Api -Method 'GET' -Path '/api/history').history
+    $savedBuild = $history | Where-Object id -eq $build.job.id
+    Assert-True ($savedBuild.request.jpgQuality -eq 82 -and $savedBuild.request.pngLevel -eq 0) 'build history lost explicit encoding options'
+    Assert-True ('webpQuality' -notin $savedBuild.request.PSObject.Properties.Name) 'build history should omit default lossless WebP quality'
     $saved = $history | Where-Object id -eq $pinned.id
     Assert-True ($saved.runtime.quality.scored -eq 4 -and $saved.request.inputPath -eq $targetPath) "history omitted the job summary"
     $cleared = Invoke-Api -Method 'DELETE' -Path '/api/history'

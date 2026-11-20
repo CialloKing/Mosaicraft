@@ -422,6 +422,18 @@ ServiceResult execute(const Arguments &args, json &data, RuntimeContext &runtime
         request.outputDir = args.get("output", "library");
         request.appendMode = cmd == "add";
         request.normalizeOnly = cmd == "normalize";
+        if (args.has("jpg-quality"))
+        {
+            request.encoding.jpgQuality = integer(args.get("jpg-quality"));
+        }
+        if (args.has("webp-quality"))
+        {
+            request.encoding.webpQuality = integer(args.get("webp-quality"));
+        }
+        if (args.has("png-compression"))
+        {
+            request.encoding.pngLevel = integer(args.get("png-compression"));
+        }
         request.recursive = args.has("recursive");
         request.resourceMonitor = args.has("resource-monitor");
         request.benchmark = args.has("benchmark");

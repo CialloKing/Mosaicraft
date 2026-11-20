@@ -162,12 +162,30 @@
     "advanced": true
   },
   {
+    "name": "jpg-quality",
+    "short": "",
+    "type": "int",
+    "field": "jpgQuality",
+    "commands": "build add",
+    "help": "Library JPEG encoding quality 1..100 (default 100)",
+    "advanced": true
+  },
+  {
+    "name": "webp-quality",
+    "short": "",
+    "type": "int",
+    "field": "webpQuality",
+    "commands": "build add",
+    "help": "Library WebP lossy quality 1..100 (omit for lossless)",
+    "advanced": true
+  },
+  {
     "name": "png-compression",
     "short": "",
     "type": "int",
     "field": "pngLevel",
-    "commands": "create render",
-    "help": "PNG compression 1..9 (default 1)",
+    "commands": "create render build add",
+    "help": "PNG compression: build/add 0..9 (default 9), create/render 1..9 (default 1)",
     "advanced": true
   },
   {

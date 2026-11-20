@@ -335,20 +335,30 @@ nlohmann::json projectRequestToJson(const ProjectRequest &request)
 
 nlohmann::json buildRequestToJson(const BuildRequest &request)
 {
-    return {{"inputDir", request.inputDir},
-            {"outputDir", request.outputDir},
-            {"dbPath", request.dbPath},
-            {"threads", request.threads},
-            {"backend", backendName(request.backend)},
-            {"device", request.device},
-            {"appendMode", request.appendMode},
-            {"normalizeOnly", request.normalizeOnly},
-            {"forceMode", request.forceMode},
-            {"recursive", request.recursive},
-            {"normalizeWidth", request.normalizeWidth},
-            {"normalizeHeight", request.normalizeHeight},
-            {"resourceMonitor", request.resourceMonitor},
-            {"benchmark", request.benchmark}};
+    nlohmann::json value = {{"inputDir", request.inputDir},
+                            {"outputDir", request.outputDir},
+                            {"dbPath", request.dbPath},
+                            {"threads", request.threads},
+                            {"backend", backendName(request.backend)},
+                            {"device", request.device},
+                            {"appendMode", request.appendMode},
+                            {"normalizeOnly", request.normalizeOnly},
+                            {"forceMode", request.forceMode},
+                            {"recursive", request.recursive},
+                            {"normalizeWidth", request.normalizeWidth},
+                            {"normalizeHeight", request.normalizeHeight},
+                            {"resourceMonitor", request.resourceMonitor},
+                            {"benchmark", request.benchmark}};
+    if (!request.normalizeOnly)
+    {
+        value["jpgQuality"] = request.encoding.jpgQuality;
+        value["pngLevel"] = request.encoding.pngLevel;
+        if (request.encoding.webpQuality)
+        {
+            value["webpQuality"] = *request.encoding.webpQuality;
+        }
+    }
+    return value;
 }
 
 nlohmann::json databaseStatsToJson(const DatabaseStats& stats)

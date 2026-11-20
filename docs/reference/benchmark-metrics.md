@@ -36,7 +36,7 @@
 | 指标 | 口径 |
 | --- | --- |
 | `normalizeWorkerMs` | 素材读取、解码、归一化及其编码和写入子区间的工作线程工时。 |
-| `assetEncodeWorkerMs`、`pngCompactWorkerMs`、`assetWriteWorkerMs` | 新编码、同尺寸 PNG 重压缩**尝试**、素材文件写入，三项分开。直接复用同目录素材不计编码或素材写入。 |
+| `assetEncodeWorkerMs`、`assetWriteWorkerMs` | 分别统计重新编码和素材文件写入。同尺寸支持格式的副本只计文件写入，原地复用省去这两项工作。 |
 | `pixelHashMs`、`sqlLookupMs`、`batchDedupMs` | 依次为像素哈希、SQLite 查重调用、批内集合查重；SQL 已命中的素材不进入批内集合。 |
 | `sqlLookupCount`、`sqlDuplicateCount`、`batchDuplicateCount`、`committedBatchCount` | SQL 查询与命中、本批重复、成功提交的批次数。无对应事件时计数可以为零。 |
 | `batchTransactionMs`、`batchCommitMs` | 批事务从 `BEGIN` 到结束；`COMMIT` 是其中的子区间。两者均不包含全库重排的其它事务。 |

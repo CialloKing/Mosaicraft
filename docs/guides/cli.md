@@ -36,7 +36,17 @@ CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，�
 ./mosaicraft library normalize photos -o normalized --size 180x320
 ```
 
-建库归一化尺寸默认 180×320，每轴 1～8192；`build`、`add` 和 `normalize` 对 PNG 使用最高无损压缩等级 9。同尺寸 PNG 也会尝试重压图像数据：只有整份文件变小时才采用，保留原位深、透明度和元数据；其他同尺寸同格式素材仍直接复制。已有素材不会被重新压缩；成品 PNG 仍由 `--png-compression` 控制。
+建库归一化尺寸默认 180×320，每轴 1～8192。`library build` 和 `library add` 保留 JPG/JPEG、PNG、WebP 的格式及后缀拼写，将 BMP 和 TIFF/TIF 转为 PNG。同尺寸的 JPG/JPEG、PNG、WebP 直接复制原字节。原地建库要求新素材已经符合目标尺寸及格式，需要转换或缩放时请使用独立输出目录。历史图库素材继续可读。
+
+下列参数用于建库和追加时的重新编码。压缩和质量设置不影响直接复制的素材。
+
+| 参数 | 取值和默认值 |
+| --- | --- |
+| `--jpg-quality` | `1–100`，默认 `100` |
+| `--webp-quality` | 省略时无损，指定 `1–100` 时有损 |
+| `--png-compression` | `0–9`，默认 `9`，`0` 为不压缩 |
+
+独立 `library normalize` 使用原有编码策略，包括在输出更小时采用同尺寸 PNG 的无损重压结果。成品 `create` / `render` 的 `--png-compression` 范围为 `1–9`，默认 `1`。
 
 `build` 只创建新图库，`add` 继承已有规格，保持素材 ID 和统计，并沿用颜色排序。改变规格请新建目录。`normalize` 只复制和归一化，不创建数据库，输入输出目录不得重叠。
 

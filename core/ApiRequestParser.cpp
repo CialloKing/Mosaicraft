@@ -855,6 +855,30 @@ bool parseBuildRequestJson(const std::string &body, BuildRequest &request, Reque
     {
         request.normalizeOnly = boolValue;
     }
+    if (request.normalizeOnly && error.empty())
+    {
+        for (const auto *key : {"jpgQuality", "webpQuality", "pngLevel"})
+        {
+            if (values.contains(key))
+            {
+                error.field = key;
+                error = std::string(key) + " is only available for library build or add";
+                return false;
+            }
+        }
+    }
+    if (getIntField(values, {"jpgQuality"}, intValue, error))
+    {
+        request.encoding.jpgQuality = intValue;
+    }
+    if (getIntField(values, {"webpQuality"}, intValue, error))
+    {
+        request.encoding.webpQuality = intValue;
+    }
+    if (getIntField(values, {"pngLevel"}, intValue, error))
+    {
+        request.encoding.pngLevel = intValue;
+    }
     if (getBoolField(values, keysFor("forceMode"), boolValue, error))
     {
         request.forceMode = boolValue;

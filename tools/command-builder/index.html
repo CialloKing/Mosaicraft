@@ -580,6 +580,12 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <label><input type="checkbox" id="b-monitor"> 资源监控</label>
       <label><input type="checkbox" id="b-benchmark" disabled> 追加性能分析 --benchmark</label>
     </div>
+    <div class="row" id="b-encoding">
+      <div class="field"><label for="b-jpg-quality">JPG 质量 --jpg-quality</label><input type="number" id="b-jpg-quality" min="1" max="100" placeholder="默认 100"></div>
+      <div class="field"><label for="b-webp-quality">WebP 质量 --webp-quality</label><input type="number" id="b-webp-quality" min="1" max="100" placeholder="留空无损，1～100 有损"></div>
+      <div class="field"><label for="b-png-level">PNG 压缩 --png-compression</label><input type="number" id="b-png-level" min="0" max="9" placeholder="默认 9，0 不压缩"></div>
+    </div>
+    <p id="b-encoding-hint" class="hint">编码设置仅用于需要缩放或转换格式的素材。同尺寸 JPG、PNG、WebP 保留原字节，BMP 和 TIFF 转为 PNG。</p>
     <p class="hint">建库默认按图片整体色调排列全库，从 000000 连续编号。追加后旧编号可能改变；输入与输出同目录时，也会更改原文件名。可在 Windows 资源管理器中按名称升序查看颜色渐变。仅归一化模式不重排图库。</p>
   </div>
 </div>
@@ -1914,7 +1920,13 @@ function buildBuildPayload() {
   if (payload.appendMode) setIfChecked(payload, 'benchmark', 'b-benchmark');
   setIfChecked(payload, 'recursive', 'b-recursive');
   payload.normalizeOnly = val('b-mode') === 'normalize';
-  if (!payload.normalizeOnly) { payload.backend = val('b-backend'); payload.device = val('b-device'); }
+  if (!payload.normalizeOnly) {
+    payload.backend = val('b-backend');
+    payload.device = val('b-device');
+    setIfNumber(payload, 'jpgQuality', 'b-jpg-quality', 'JPG 质量', {integer:true,min:1,max:100});
+    setIfNumber(payload, 'webpQuality', 'b-webp-quality', 'WebP 质量', {integer:true,min:1,max:100});
+    setIfNumber(payload, 'pngLevel', 'b-png-level', 'PNG 压缩', {integer:true,min:0,max:9});
+  }
 
   if (hasFeature('task-resources')) setIfChecked(payload, 'resourceMonitor', 'b-monitor');
 
@@ -2292,7 +2304,8 @@ const FORM_FIELDS = {"mosaic": {"inputPath": "m-input", "dbPath": "m-db", "outpu
 
 Object.assign(FORM_FIELDS.mosaic, {outputMode:'m-mode',backend:'m-backend',device:'m-device',scoreMode:'m-score-mode',threads:'m-threads',seed:'m-seed',overwrite:'m-overwrite'});
 delete FORM_FIELDS.mosaic.colorAdjust;
-Object.assign(FORM_FIELDS.build, {backend:'b-backend',device:'b-device'});
+Object.assign(FORM_FIELDS.build, {backend:'b-backend',device:'b-device',jpgQuality:'b-jpg-quality',
+  webpQuality:'b-webp-quality',pngLevel:'b-png-level'});
 delete FORM_FIELDS.build.appendMode;
 delete FORM_FIELDS.build.normalizeOnly;
 FORM_FIELDS.project = {projectPath:'r-project',outputPath:'r-output',outputMode:'r-mode',format:'r-format',overlayStrength:'r-blend',brightnessJitter:'r-jitter',seed:'r-seed',threads:'r-threads',quality:'r-quality',pngLevel:'r-png',writeMode:'r-write',generatePreview:'r-thumbnail',overwrite:'r-overwrite',deep:'r-deep'};
@@ -2414,8 +2427,11 @@ function clearFieldErrors() {
 function syncPreviewOption() {
   document.getElementById('b-normsize').disabled = val('b-mode') === 'add';
   document.getElementById('b-benchmark').disabled = val('b-mode') !== 'add';
-  document.getElementById('b-backend').disabled = val('b-mode') === 'normalize';
-  document.getElementById('b-device').disabled = val('b-mode') === 'normalize';
+  const normalizeOnly = val('b-mode') === 'normalize';
+  document.getElementById('b-backend').disabled = normalizeOnly;
+  document.getElementById('b-device').disabled = normalizeOnly;
+  document.getElementById('b-encoding').style.display = normalizeOnly ? 'none' : '';
+  document.getElementById('b-encoding-hint').hidden = normalizeOnly;
   const preview = document.getElementById('m-preview');
   const incompatible = val('m-mode') !== 'image';
   const html = val('m-mode') === 'html';

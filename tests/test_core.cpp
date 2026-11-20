@@ -1461,6 +1461,40 @@ TEST_CASE("library benchmark request requires append mode")
     CHECK_FALSE(request.resourceMonitor);
 }
 
+TEST_CASE("library encoding request keeps defaults and explicit zero compression")
+{
+    BuildRequest defaults;
+    std::string error;
+    REQUIRE(parseBuildRequestJson(R"({"inputDir":"photos"})", defaults, error));
+    CHECK(defaults.encoding.jpgQuality == 100);
+    CHECK_FALSE(defaults.encoding.webpQuality.has_value());
+    CHECK(defaults.encoding.pngLevel == 9);
+    CHECK_FALSE(buildRequestToJson(defaults).contains("webpQuality"));
+
+    BuildRequest explicitOptions;
+    REQUIRE(parseBuildRequestJson(R"({"inputDir":"photos","appendMode":true,"jpgQuality":1,"webpQuality":100,"pngLevel":0})",
+                                  explicitOptions, error));
+    const auto saved = buildRequestToJson(explicitOptions);
+    CHECK(saved.at("jpgQuality") == 1);
+    CHECK(saved.at("webpQuality") == 100);
+    CHECK(saved.at("pngLevel") == 0);
+    BuildRequest restored;
+    REQUIRE(parseBuildRequestJson(saved.dump(), restored, error));
+    CHECK(restored.encoding.pngLevel == 0);
+    CHECK(restored.encoding.webpQuality == 100);
+
+    for (const auto& body : {R"({"inputDir":"photos","jpgQuality":101})",
+                              R"({"inputDir":"photos","webpQuality":0})",
+                              R"({"inputDir":"photos","pngLevel":10})",
+                              R"({"inputDir":"photos","normalizeOnly":true,"pngLevel":0})"})
+    {
+        RequestError invalid;
+        BuildRequest request;
+        CHECK_FALSE(parseBuildRequestJson(body, request, invalid));
+        CHECK_FALSE(invalid.field.empty());
+    }
+}
+
 TEST_CASE("API request parser reports invalid fields")
 {
     MosaicRequest request;
