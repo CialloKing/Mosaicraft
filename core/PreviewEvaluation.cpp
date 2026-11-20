@@ -127,9 +127,11 @@ ServiceResult prepareEvaluation(const MosaicRequest &request, const MosaicSelect
     {
         return ServiceResult::failure(1, database.error(), database.errorCode());
     }
-    cache->records = database.allRecords();
+    const bool includeUseCounts = request.config.usePenalty > 0;
+    cache->records = database.allRecords(includeUseCounts);
     if (cache->records.empty() ||
-        previewLibraryVersion(cache->records, selection.featureWidth, selection.featureHeight) != selection.libraryVersion)
+        previewLibraryVersion(cache->records, selection.featureWidth, selection.featureHeight, includeUseCounts) !=
+            selection.libraryVersion)
     {
         return ServiceResult::failure(1, "library changed", "preview_stale");
     }

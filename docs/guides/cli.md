@@ -73,6 +73,6 @@ CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，�
 
 单图 `--format` 优先于后缀；JPG/WebP 超限时继续使用既有策略：推导格式转等尺寸 PNG，显式格式缩小输出图块。JPEG/WebP `--quality` 默认 100，PNG `--png-compression` 默认 1、范围 1～9。`--overwrite` 允许替换已有文件；目录只允许覆盖可识别且没有额外文件的 Mosaicraft 输出。工程与 ZIP 先暂存后发布，失败保留旧输出。
 
-匹配策略与默认权重保持不变。`--random-top` 默认 10、`--reuse-penalty` 默认 0.01；`--candidates`、`--l-range`、邻域与权重参数仍可用。`inspect <target> -l library` 分别提供整图特征和按正式预处理计算的网格覆盖。
+`--random-top` 默认 10。`--reuse-penalty` 默认 0（关闭），匹配不读取图库的历史使用计数；设为正数才启用历史复用惩罚。邻域惩罚与生成后的使用统计不受影响。`--candidates`、`--l-range`、邻域与权重参数仍可用。`inspect <target> -l library` 分别提供整图特征和按正式预处理计算的网格覆盖。
 
 完整选项以 `cli-options.json` 生成的 --help-all 为准。设备与精度见[GPU 后端](gpu-backends.md)，离线 HTML 和回导见[便携工程](portable-projects.md)，图库复制见[搬移图库](portable-libraries.md)。

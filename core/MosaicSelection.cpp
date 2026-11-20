@@ -193,20 +193,25 @@ uint64_t previewFileVersion(const std::vector<unsigned char> &bytes)
     return version.value();
 }
 
-uint64_t previewLibraryVersion(const std::vector<ImageRecord> &records, int width, int height)
+uint64_t previewLibraryVersion(const std::vector<ImageRecord> &records, int width, int height,
+                               bool includeUseCounts)
 {
     Fingerprint version;
     version.add(width);
     version.add(height);
     version.add(records.size());
-    // 绑定实际参与匹配的记录顺序和历史惩罚，避免重建后复用旧的下标。
+    // 绑定实际记录顺序，避免库重建后复用旧下标；区分含历史计数与省略计数的预览缓存。
+    version.add(includeUseCounts);
     for (const auto &record : records)
     {
         version.add(record.id);
         version.add(record.filePath);
         version.add(record.fileHash);
         version.add(record.featureVersion);
-        version.add(record.useCount);
+        if (includeUseCounts)
+        {
+            version.add(record.useCount);
+        }
         version.add(record.avgL);
         version.add(record.avgA);
         version.add(record.avgB);

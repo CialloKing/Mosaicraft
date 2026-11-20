@@ -97,7 +97,8 @@ public:
         Recover
     };
     explicit Database(const std::string& dbPath, OpenMode mode = OpenMode::Create,
-                      std::vector<ImageRecord> *matchingRows = nullptr, double *readMs = nullptr);
+                      std::vector<ImageRecord> *matchingRows = nullptr, double *readMs = nullptr,
+                      bool includeUseCounts = true);
     ~Database();
 
     // 禁止拷贝（sqlite3* 独占所有权）
@@ -151,10 +152,10 @@ public:
 
     // 全库读取不能使用匹配亮度范围，CUDA 的黑白端点可能有微小浮点尾差。
     using RecordReadProgress = std::function<void(std::size_t completed)>;
-    std::vector<ImageRecord> allRecords(const RecordReadProgress &progress = {})
+    std::vector<ImageRecord> allRecords(bool includeUseCounts = true, const RecordReadProgress &progress = {})
     {
         return readRange(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max(),
-                         totalCount() + 1, nullptr, progress);
+                         totalCount() + 1, nullptr, includeUseCounts, progress);
     }
 
     // 获取图库总数
@@ -186,10 +187,10 @@ private:
     std::string m_error;
     bool m_exclusive = false, m_new = false;
     bool openConnection(bool create, bool readOnly = false);
-    bool validateSchema(std::vector<ImageRecord> *matchingRows, double *readMs);
-    bool readMatchingRows(std::vector<ImageRecord> &out);
+    bool validateSchema(std::vector<ImageRecord> *matchingRows, double *readMs, bool includeUseCounts);
+    bool readMatchingRows(std::vector<ImageRecord> &out, bool includeUseCounts);
     std::vector<ImageRecord> readRange(double minL, double maxL, int limit, bool *validated,
-                                       const RecordReadProgress &progress = {});
+                                       bool includeUseCounts, const RecordReadProgress &progress = {});
     void closeConnection();
     bool validateStoredPaths();
 

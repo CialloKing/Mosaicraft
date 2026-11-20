@@ -125,7 +125,8 @@ struct PreviewWorkspace
 };
 
 uint64_t previewFileVersion(const std::vector<unsigned char> &bytes);
-uint64_t previewLibraryVersion(const std::vector<ImageRecord> &records, int width, int height);
+uint64_t previewLibraryVersion(const std::vector<ImageRecord> &records, int width, int height,
+                               bool includeUseCounts = true);
 PreviewAsset previewAsset(const ImageRecord &record);
 PreviewAsset previewAsset(const PreviewCatalogEntry &entry);
 std::shared_ptr<const PreviewCatalog> makePreviewCatalog(const std::vector<ImageRecord> &records);

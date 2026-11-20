@@ -417,7 +417,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     </div>
     <div class="row">
       <div class="field"><label>随机种子 --seed</label><input id="m-seed" type="number" min="0" max="4294967295" placeholder="自动生成并记录"></div>
-      <div class="field"><label>复用惩罚 --reuse-penalty</label><input type="number" id="m-penalty" value="0.01" step="0.01"></div>
+      <div class="field"><label>复用惩罚 --reuse-penalty</label><input type="number" id="m-penalty" value="0" step="0.01"></div>
     </div>
     <div class="row">
       <div class="field"><label>LAB --lab-weight</label><input type="number" id="m-labw" value="0.20" step="0.01"></div>
@@ -714,7 +714,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
           <tr><td>L 亮度范围<br><code>--l-range</code></td><td>候选与目标小块的平均 L 亮度差上限，默认 20，范围 0～255。缺少候选或有空格时可尝试增大；缩小会更严格地限制亮度，但可能排除可用素材。</td></tr>
           <tr><td>邻域窗口<br><code>--neighbor-window</code></td><td>考虑本次选图中附近重复的窗口，0 为自动，界面最大 1000000。局部重复明显时可与邻域惩罚一起调整；窗口越大并不保证完全不重复，效果取决于候选与图库。</td></tr>
           <tr><td>邻域惩罚<br><code>--neighbor-penalty</code></td><td>默认 100，非负。提高会增加邻域内重复素材的评分成本，适合减轻相邻重复；代价可能是选用相似度较低的素材。它影响本次布局，与历史使用计数的复用惩罚不同。</td></tr>
-          <tr><td>复用惩罚<br><code>--reuse-penalty</code></td><td>默认 0.01，非负；按图片记录中的使用计数增加评分成本，0 不施加这项惩罚。该计数与“使用记录”页的最终排列统计分开；新建图库的计数通常为 0，调高后不一定产生变化。排查本次相邻重复时优先查看邻域选项。</td></tr>
+          <tr><td>复用惩罚<br><code>--reuse-penalty</code></td><td>默认 0（关闭），匹配不读取历史使用计数；设为正数后，按图片记录中的使用计数增加评分成本。该计数与“使用记录”页的最终排列统计分开；新建图库的计数通常为 0，调高后不一定产生变化。排查本次相邻重复时优先查看邻域选项。</td></tr>
           <tr><td>LAB 权重<br><code>--lab-weight</code></td><td>默认 0.20，比较整体平均颜色与亮度。整体色调不够贴合时可尝试提高。</td></tr>
           <tr><td>Grid 权重<br><code>--grid-weight</code></td><td>默认 0.45，比较 8×8 区域的颜色布局。希望素材内部明暗、色块位置更接近目标块时可尝试提高。</td></tr>
           <tr><td>Tiny 权重<br><code>--tiny-weight</code></td><td>默认 0.25，比较缩略灰度图的明暗结构。整体轮廓和明暗分布比色彩更重要时可尝试提高。</td></tr>
@@ -2454,7 +2454,7 @@ function readFormPayload(tab) {
 const CLI_OPTION_DEFINITIONS = @mosaicCliOptionsJson@;
 const CLI_DEFAULTS = { mosaic: { quality:100, pngLevel:1, writeMode:'auto', tileW:9, tileH:16, candidates:150,
   topNRandom:10, lRange:20, neighborWindow:0, neighborPenalty:100, upscale:1, outW:0, outH:0, outputTile:'180x320',
-  labWeight:.2, gridWeight:.45, tinyWeight:.25, edgeWeight:.05, lbpWeight:.05, usePenalty:.01, colorStrength:.04, overlayStrength:0 },
+  labWeight:.2, gridWeight:.45, tinyWeight:.25, edgeWeight:.05, lbpWeight:.05, usePenalty:0, colorStrength:.04, overlayStrength:0 },
   build: {threads:0,normalizeSize:'180x320'}, dbusage:{limit:50} };
 function commandFromPayload(tab, payload, shell = document.getElementById('command-shell').value,
                             executable = normalizePath(document.getElementById('command-executable').value) || 'mosaicraft') {

@@ -87,7 +87,7 @@ bool Database::validateStoredPaths()
     return valid && rc == SQLITE_DONE;
 }
 
-bool Database::validateSchema(std::vector<ImageRecord> *matchingRows, double *readMs)
+bool Database::validateSchema(std::vector<ImageRecord> *matchingRows, double *readMs, bool includeUseCounts)
 {
     auto incompatible = [&](const std::string &reason)
     {
@@ -172,7 +172,7 @@ bool Database::validateSchema(std::vector<ImageRecord> *matchingRows, double *re
     {
         using Clock = std::chrono::steady_clock;
         const auto start = readMs ? Clock::now() : Clock::time_point{};
-        rowsValid = readMatchingRows(*matchingRows);
+        rowsValid = readMatchingRows(*matchingRows, includeUseCounts);
         if (readMs)
         {
             *readMs = std::chrono::duration<double, std::milli>(Clock::now() - start).count();

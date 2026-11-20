@@ -1918,9 +1918,17 @@ TEST_CASE("interactive selection is read-only and pins the exported tiles and an
         REQUIRE(image.size() == region.size());
         CHECK(cv::norm(output(region), image, cv::NORM_INF) == 0);
     }
-    // 分析报告写入独立的使用统计表，直接修改参与评分的记录来验证图库代际。
-    REQUIRE(fixtureSql(workspace.dbPath(), "UPDATE images SET use_count = use_count + 1") == SQLITE_OK);
-    CHECK_FALSE(MosaicEngine::selectionCurrent(request.inputPath, request.dbPath, request.config, selection));
+    CHECK(request.config.usePenalty == 0);
+    auto penalized = request;
+    penalized.config.usePenalty = 0.01;
+    MosaicSelection withHistory;
+    REQUIRE(MosaicService().preview(penalized, 42, cache, canceled, withHistory).ok);
+    CHECK(MosaicEngine::selectionCurrent(penalized.inputPath, penalized.dbPath, penalized.config, withHistory));
+    // 只提高首条记录的历史计数，验证关闭惩罚时连候选行序也不受影响。
+    REQUIRE(fixtureSql(workspace.dbPath(),
+                       "UPDATE images SET use_count = 100 WHERE id = (SELECT MIN(id) FROM images)") == SQLITE_OK);
+    CHECK(MosaicEngine::selectionCurrent(request.inputPath, request.dbPath, request.config, selection));
+    CHECK_FALSE(MosaicEngine::selectionCurrent(penalized.inputPath, penalized.dbPath, penalized.config, withHistory));
 }
 
 TEST_CASE("interactive preview returns the full selection above 160000 tiles")

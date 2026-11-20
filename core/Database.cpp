@@ -23,7 +23,7 @@ namespace mosaicraft
 // ============================================================
 
 Database::Database(const std::string &dbPath, OpenMode mode, std::vector<ImageRecord> *matchingRows,
-                   double *readMs) : m_db(nullptr)
+                   double *readMs, bool includeUseCounts) : m_db(nullptr)
 {
     std::error_code error;
     m_path = pathToUtf8(std::filesystem::weakly_canonical(u8path(dbPath), error));
@@ -78,7 +78,7 @@ Database::Database(const std::string &dbPath, OpenMode mode, std::vector<ImageRe
     if (valid && !m_new)
     {
         // 在只读连接的同一快照内校验并取走匹配行；损坏库仍在打开可写连接前拒绝。
-        valid = (!matchingRows || beginTransaction()) && validateSchema(matchingRows, readMs) &&
+        valid = (!matchingRows || beginTransaction()) && validateSchema(matchingRows, readMs, includeUseCounts) &&
                 (!matchingRows || commitTransaction());
         if (valid && mode != OpenMode::ReadOnly)
         {
@@ -570,7 +570,7 @@ bool Database::existsByHash(const std::string& hash)
     return exists;
 }
 
-bool Database::readMatchingRows(std::vector<ImageRecord> &out)
+bool Database::readMatchingRows(std::vector<ImageRecord> &out, bool includeUseCounts)
 {
     sqlite3_stmt *count = nullptr;
     const bool counted = sqlite3_prepare_v2(m_db, "SELECT COUNT(*) FROM images", -1, &count, nullptr) == SQLITE_OK &&
@@ -582,9 +582,9 @@ bool Database::readMatchingRows(std::vector<ImageRecord> &out)
         return false;
     }
     bool valid = false;
-    // 保持既有查询及平分行序；计数覆盖被 BETWEEN 排除的 NULL、无穷或非法亮度。
+    // 计数覆盖被 BETWEEN 排除的 NULL、无穷或非法亮度。
     auto rows = readRange(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max(),
-                          static_cast<int>(size) + 1, &valid);
+                          static_cast<int>(size) + 1, &valid, includeUseCounts);
     if (!valid || rows.size() != static_cast<size_t>(size))
     {
         return false;
@@ -595,11 +595,11 @@ bool Database::readMatchingRows(std::vector<ImageRecord> &out)
 
 std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int limit)
 {
-    return readRange(minL, maxL, limit, nullptr);
+    return readRange(minL, maxL, limit, nullptr, true);
 }
 
 std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit, bool *validated,
-                                             const RecordReadProgress &progress)
+                                             bool includeUseCounts, const RecordReadProgress &progress)
 {
     std::vector<ImageRecord> results;
     if (!m_db)
@@ -608,16 +608,24 @@ std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit
     }
 
     // 完整读接口仍返回归一化/分析元数据；匹配路径不从 SQLite 复制不用的列。
-    static const std::string matchingColumns = "SELECT id,file_path,file_hash,avg_l,avg_a,avg_b,grid_lab,"
-        "tiny_path,edge_density,lbp_path,use_count,feature_version";
-    static const std::string range = " FROM images WHERE avg_l BETWEEN ? AND ? ORDER BY use_count ASC LIMIT ?";
-    static const std::string matchSql = matchingColumns + range;
-    static const std::string fullSql = matchingColumns + ",format,src_width,src_height,aspect_ratio,file_size,"
-        "mean_brightness,std_brightness,contrast,saturation,color_variance" + range;
-    const char *sql = (validated ? matchSql : fullSql).c_str();
+    std::string sql = "SELECT id,file_path,file_hash,avg_l,avg_a,avg_b,grid_lab,"
+        "tiny_path,edge_density,lbp_path,feature_version";
+    if (includeUseCounts)
+    {
+        sql += ",use_count";
+    }
+    if (!validated)
+    {
+        sql += ",format,src_width,src_height,aspect_ratio,file_size,"
+            "mean_brightness,std_brightness,contrast,saturation,color_variance";
+    }
+    // 省略计数的路径读取全库；按主键直接扫表，避免亮度索引回表和临时排序。
+    sql += includeUseCounts
+        ? " FROM images WHERE avg_l BETWEEN ? AND ? ORDER BY use_count ASC LIMIT ?"
+        : " FROM images NOT INDEXED WHERE avg_l BETWEEN ? AND ? ORDER BY id ASC LIMIT ?";
 
     sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK)
+    if (sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
     {
         return results;
     }
@@ -638,7 +646,7 @@ std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW)
     {
         if (validated && (sqlite3_column_type(stmt, 6) != SQLITE_BLOB || sqlite3_column_bytes(stmt, 6) != 768 ||
-                          sqlite3_column_type(stmt, 11) != SQLITE_INTEGER || sqlite3_column_int64(stmt, 11) != kFeatureVersion))
+                          sqlite3_column_type(stmt, 10) != SQLITE_INTEGER || sqlite3_column_int64(stmt, 10) != kFeatureVersion))
         {
             return {};
         }
@@ -686,8 +694,11 @@ std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit
                        ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, col)) : "";
         col++;
 
-        rec.useCount       = sqlite3_column_int(stmt, col++);
         rec.featureVersion = sqlite3_column_int(stmt, col++);
+        if (includeUseCounts)
+        {
+            rec.useCount = sqlite3_column_int(stmt, col++);
+        }
 
         if (!validated)
         {

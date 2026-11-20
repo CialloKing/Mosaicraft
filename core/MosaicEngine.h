@@ -36,7 +36,7 @@ public:
         int tileH = 16;
         int candidates = 150;  // 105K图库 sweep: 150≈200≈300, 最佳平衡点
         double lRange = 20.0;
-        double usePenalty = 0.01;
+        double usePenalty = 0.0;
 
         // 输出尺寸（0 = 用原始目标图分辨率；>0 则将目标图缩放到指定尺寸，输出 tile 尺寸由 nativeTileW×H 决定）
         int outW = 0;

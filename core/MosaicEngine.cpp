@@ -217,11 +217,13 @@ bool MosaicEngine::selectionCurrent(const std::string &targetPath, const std::st
     {
         return false;
     }
+    const bool includeUseCounts = config.usePenalty > 0;
     Database db(dbPath, Database::OpenMode::ReadOnly);
     return db.isOpen() && db.path() == selection.dbPath &&
            db.getMeta("feature_w") == std::to_string(selection.featureWidth) &&
            db.getMeta("feature_h") == std::to_string(selection.featureHeight) &&
-           previewLibraryVersion(db.allRecords(), selection.featureWidth, selection.featureHeight) ==
+           previewLibraryVersion(db.allRecords(includeUseCounts), selection.featureWidth, selection.featureHeight,
+                                 includeUseCounts) ==
                selection.libraryVersion && previewAssetsCurrent(selection);
 }
 
@@ -489,10 +491,11 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
     const bool readOnce = MOSAICRAFT_TRIAL_MATCH_READ && !cudaEnabled && !portableRequested &&
                           cfg.scoreMode == ScoreMode::Fast && totalTiles <= 3600 && !m_preview &&
                           !m_renderSelection && cfg.outputMode == OutputMode::Image;
+    const bool includeUseCounts = cfg.usePenalty > 0;
     std::vector<ImageRecord> allRecords;
     double snapshotReadMs = 0;
     Database db(dbPath, m_preview ? Database::OpenMode::ReadOnly : Database::OpenMode::Existing,
-                readOnce ? &allRecords : nullptr, cfg.benchmark ? &snapshotReadMs : nullptr);
+                readOnce ? &allRecords : nullptr, cfg.benchmark ? &snapshotReadMs : nullptr, includeUseCounts);
     if (!db.isOpen())
     {
         {
@@ -555,13 +558,13 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
                 runtime.advance("reading_library", completed, dbCount, "images", true);
             };
             reportRead(0);
-            allRecords = db.allRecords(reportRead);
+            allRecords = db.allRecords(includeUseCounts, reportRead);
             // 后续的特征校验及准备仍需耗时，读完记录后显示对应阶段。
             runtime.stage("preparing_library");
         }
         else
         {
-            allRecords = db.allRecords();  // 全量记录，GPU 路径需连续索引
+            allRecords = db.allRecords(includeUseCounts);  // 全量记录，GPU 路径需连续索引
         }
         dbCount = static_cast<int>(allRecords.size());
         for (const auto& record : allRecords)
@@ -589,7 +592,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
         runtime.metric("databaseReadRecordsMs", readOnce ? snapshotReadMs : Ms(Clock::now() - recordsStart).count());
     }
     const uint64_t libraryVersion = m_preview || m_renderSelection
-        ? previewLibraryVersion(allRecords, featW, featH) : 0;
+        ? previewLibraryVersion(allRecords, featW, featH, includeUseCounts) : 0;
     if (m_renderSelection &&
         (m_renderSelection->dbPath != db.path() || m_renderSelection->libraryVersion != libraryVersion ||
          m_renderSelection->columns != tilesX || m_renderSelection->rows != tilesY ||

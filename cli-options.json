@@ -203,7 +203,7 @@
     "type": "double",
     "field": "usePenalty",
     "commands": "create",
-    "help": "Reuse penalty (default 0.01)",
+    "help": "Reuse penalty (default 0; disabled)",
     "advanced": true
   },
   {
