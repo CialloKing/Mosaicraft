@@ -69,9 +69,33 @@ async function checkMosaicForm(page, server, target) {
   assert(await page.locator('#b-device option:checked').isDisabled());
 }
 
+async function checkDeepZoomFallback(browser, entry) {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(String(error)));
+  let openFails = false;
+  await page.route('https://unpkg.com/**', route => openFails ? route.fulfill({
+    contentType:'application/javascript',
+    body:'window.OpenSeadragon=()=>({addHandler(event,fn){this.fail=fn},open(){this.fail()}});'
+  }) : route.abort());
+  try {
+    await page.goto(pathToFileURL(path.resolve(entry)).href);
+    await page.getByRole('alert').waitFor({state:'visible'});
+    assert.match(await page.locator('#fallback-message').textContent(), /CDN/);
+    assert(await page.locator('#fallback-local').isHidden());
+    openFails = true;
+    await page.reload();
+    await page.getByRole('alert').waitFor({state:'visible'});
+    assert.match(await page.locator('#fallback-message').textContent(), /Could not open/);
+    assert(await page.locator('#fallback-local').isVisible());
+    assert.deepEqual(errors, []);
+  } finally { await page.close(); }
+}
+
 (async () => {
   const project = path.resolve(process.argv[2]);
   const server = process.argv[3];
+  const deepZoom = process.argv[4];
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'mosaicraft-browser-'));
   try {
     fs.cpSync(project, temporary, {recursive:true});
@@ -287,7 +311,8 @@ async function checkMosaicForm(page, server, target) {
           assert(fs.existsSync(path.join(project, '..', 'browser-render.png')));
           assert.deepEqual(errors, []);
         }
-        console.log(`${name}: offline viewer, million-cell source drawing, viewport loading, unbounded cache${server ? ', Web UI project form' : ''} passed`);
+        if (deepZoom) await checkDeepZoomFallback(browser, deepZoom);
+        console.log(`${name}: offline viewer, million-cell source drawing, viewport loading, unbounded cache${server ? ', Web UI form' : ''}${deepZoom ? ', Deep Zoom error states' : ''} passed`);
       } finally { await browser.close(); }
     }
   } finally { fs.rmSync(temporary, {recursive:true,force:true}); }

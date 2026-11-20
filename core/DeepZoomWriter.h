@@ -289,42 +289,57 @@ public:
 <body>
 <div id="viewer"></div>
 <div id="info">)" << totalW << " x " << totalH << R"( px  |  Levels: <span>)" << (maxLevel + 1) << R"(</span>  |  Scroll to zoom</div>
-<div id="fallback">
-  <p>OpenSeadragon failed to load.</p>
-  <p>Run a local server in the output directory:</p>
-  <p><code>python -m http.server 8080</code></p>
-  <p>then open <code>http://localhost:8080/)" << stem << R"(.html</code></p>
+<div id="fallback" role="alert">
+  <p id="fallback-message"></p>
+  <div id="fallback-local" hidden>
+    <p>Run a local server in the output directory:</p>
+    <p><code>python -m http.server 8080</code></p>
+    <p>then open <code>http://localhost:8080/)" << stem << R"(.html</code></p>
+  </div>
 </div>
 <script src="https://unpkg.com/openseadragon@4.1.1/build/openseadragon/openseadragon.min.js"></script>
 <script>
-  var viewer = OpenSeadragon({
-    id: "viewer",
-    prefixUrl: "https://unpkg.com/openseadragon@4.1.1/build/openseadragon/images/",
-    tileSources: {
-      Image: {
+  (() => {
+    const fail = (message, local = false) => {
+      document.getElementById("fallback-message").textContent = message;
+      document.getElementById("fallback-local").hidden = !local;
+      document.getElementById("fallback").style.display = "block";
+    };
+    // A local HTTP server cannot fix a blocked CDN; check the script first.
+    if (typeof window.OpenSeadragon !== "function") {
+      fail("OpenSeadragon could not load from the CDN. Check the network connection and reload.");
+      return;
+    }
+    const openFailed = () => fail("Could not open the Deep Zoom image.", location.protocol === "file:");
+    try {
+      const viewer = window.OpenSeadragon({
+        id: "viewer",
+        prefixUrl: "https://unpkg.com/openseadragon@4.1.1/build/openseadragon/images/",
+        showNavigator: true,
+        navigatorPosition: "BOTTOM_RIGHT",
+        navigatorHeight: 140,
+        navigatorWidth: 180,
+        showZoomControl: true,
+        showHomeControl: true,
+        showFullPageControl: true,
+        homeFillsViewer: true,
+        visibilityRatio: 0.5,
+        minZoomImageRatio: 0.1,
+        maxZoomPixelRatio: 4
+      });
+      viewer.addHandler("open-failed", openFailed);
+      viewer.open({ Image: {
         xmlns: "http://schemas.microsoft.com/deepzoom/2008",
         Url: ")" << filesDir << R"(/",
         Format: "jpg",
         Overlap: "0",
         TileSize: )" << dziTileSize << R"(,
         Size: { Width: ")" << totalW << R"(", Height: ")" << totalH << R"(" }
-      }
-    },
-    showNavigator: true,
-    navigatorPosition: "BOTTOM_RIGHT",
-    navigatorHeight: 140,
-    navigatorWidth: 180,
-    showZoomControl: true,
-    showHomeControl: true,
-    showFullPageControl: true,
-    homeFillsViewer: true,
-    visibilityRatio: 0.5,
-    minZoomImageRatio: 0.1,
-    maxZoomPixelRatio: 4
-  });
-  viewer.addHandler("open-failed", function() {
-    document.getElementById("fallback").style.display = "block";
-  });
+      } });
+    } catch (error) {
+      openFailed();
+    }
+  })();
 </script>
 </body>
 </html>
