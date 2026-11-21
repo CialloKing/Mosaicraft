@@ -138,6 +138,83 @@
   ],
   "buildPresets": [
     {
+      "name": "test-targets",
+      "hidden": true,
+      "targets": [
+        "mosaicraft_test_targets"
+      ]
+    },
+    {
+      "name": "windows-cpu-tests",
+      "inherits": [
+        "test-targets",
+        "windows-cpu"
+      ]
+    },
+    {
+      "name": "windows-cuda-tests",
+      "inherits": [
+        "test-targets",
+        "windows-cuda"
+      ]
+    },
+    {
+      "name": "linux-cpu-tests",
+      "inherits": [
+        "test-targets",
+        "linux-cpu"
+      ]
+    },
+    {
+      "name": "linux-cuda-tests",
+      "inherits": [
+        "test-targets",
+        "linux-cuda"
+      ]
+    },
+    {
+      "name": "macos-cpu-tests",
+      "inherits": [
+        "test-targets",
+        "macos-cpu"
+      ]
+    },
+    {
+      "name": "macos-arm64-cpu-tests",
+      "inherits": [
+        "test-targets",
+        "macos-arm64-cpu"
+      ]
+    },
+    {
+      "name": "windows-vulkan-tests",
+      "inherits": [
+        "test-targets",
+        "windows-vulkan"
+      ]
+    },
+    {
+      "name": "windows-cuda-vulkan-tests",
+      "inherits": [
+        "test-targets",
+        "windows-cuda-vulkan"
+      ]
+    },
+    {
+      "name": "linux-vulkan-tests",
+      "inherits": [
+        "test-targets",
+        "linux-vulkan"
+      ]
+    },
+    {
+      "name": "macos-metal-tests",
+      "inherits": [
+        "test-targets",
+        "macos-metal"
+      ]
+    },
+    {
       "name": "windows-cpu",
       "configurePreset": "windows-cpu",
       "configuration": "Release"

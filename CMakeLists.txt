@@ -434,6 +434,8 @@ target_include_directories(mosaicraft_regression_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME mosaicraft_regression_tests COMMAND mosaicraft_regression_tests)
+add_custom_target(mosaicraft_test_targets DEPENDS mosaicraft MosaicraftWebUI
+    mosaicraft_tests mosaicraft_regression_tests)
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
     add_test(NAME documentation COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/check-docs.py")
