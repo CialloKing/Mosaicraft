@@ -76,6 +76,33 @@ $env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.
 
 新包另记录 `CudaToolkit`（编译器组件版本 13.5.37）、`CudaRuntimeMode`（Windows `hybrid` / Linux `shared`）和 `GpuValidationRuntime`（实机运行时 API 版本，未验收为 `not-run`）。Driver 字段同样是 CUDA API 版本整数，均不是 nvidia-smi 的驱动包版本。Windows hybrid 从显示驱动加载运行时，包内不分发显示驱动或盲目复制 SDK DLL；Linux 仍收集实际共享运行库并设置相对 RPATH。历史包缺少这组字段仍可普通验收。迁移验证与成本见 [CUDA 13.5 迁移报告](../archive/gpu/cuda-13-5-migration.md)。
 
+## Qt 桌面发布包
+
+`Native packages` 保留七个 Web UI 包，另外构建三个 **CPU 版 Qt 桌面包**。两种包可以同时发布，安装互不依赖。
+
+| 平台 | 附件 | 解压后启动 |
+| --- | --- | --- |
+| Windows x64 | `Mosaicraft_v<version>_windows-x64_qt.zip` | `bin/MosaicraftDesktop.exe` |
+| Linux x64 | `Mosaicraft_v<version>_linux-x64_qt.tar.gz` | `./bin/MosaicraftDesktop` |
+| macOS ARM64 | `Mosaicraft_v<version>_macos-arm64_qt.tar.gz` | `MosaicraftDesktop.app` |
+
+三包均用 [锁定的 Qt SDK](../../cmake/qt-sdk.json)，随包部署 Qt 共享库、平台插件、SQLite、WebP、TIFF、CLI、桌面匹配程序及后端依赖。保持解压后的目录结构，无需安装系统 Qt 或 CUDA。Linux 以 Ubuntu 24.04 上的构建为基线，仍需要操作系统的显示服务和驱动；macOS `.app` 为临时签名（ad-hoc），未公证。
+
+Qt 打包任务不运行 GUI、CLI 或冒烟测试；它核对归档中应有的可执行文件、Qt 库、插件及许可证，并生成 `.sha256`。可对下载的桌面附件重做静态验包：
+
+```powershell
+./scripts/verify-desktop-asset.ps1 -ArchivePath <archive> -ExpectedSha256 <sha256>
+```
+
+本机构建先按[源码构建](building.md)准备对应平台的锁定 vcpkg 依赖，设置 `VCPKG_ROOT`，Linux 另装工作流中列出的链接/显示依赖，再运行：
+
+```powershell
+$qtRoot = ./scripts/setup-qt.ps1 -InstallDir build/tools/qt-sdk
+./scripts/release-desktop.ps1 -QtRoot $qtRoot
+```
+
+产物位于 `build/archives-qt/`。对外分发时保留包内许可证和源码来源说明，并随发布提供与锁定 Qt 版本对应的源码获取方式。
+
 ## 独立包验收
 
 三个 CPU、两个 CUDA 和两个 Vulkan 包均在独立的新 job 下载附件，不安装项目依赖或 CUDA Toolkit。验证 CLI、API、图片生成、中文与空格路径、依赖加载位置，以及 Unix 执行权限和 macOS 签名。CUDA 候选在无 GPU 环境验证回退运行，仍标记 `not-run`。

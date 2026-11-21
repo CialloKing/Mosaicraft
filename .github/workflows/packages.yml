@@ -207,3 +207,48 @@ jobs:
           if ($archive.Count -ne 1) { throw 'Expected exactly one CUDA package with the platform release policy' }
           $hash = ((Get-Content "$($archive[0].FullName).sha256" -Raw) -split '\s+')[0]
           ./scripts/verify-release-asset.ps1 -ArchivePath $archive[0].FullName -ExpectedSha256 $hash -ExpectedCommit '${{ github.sha }}' -ExpectedRuntime cuda -ExpectedGpuValidation not-run -RequireStandalone
+  qt-package:
+    name: Package ${{ matrix.platform }} Qt Desktop
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            runner: windows-2025-vs2026
+            triplet: x64-windows-release
+          - platform: linux-x64
+            runner: ubuntu-24.04
+            triplet: x64-linux-release
+          - platform: macos-arm64
+            runner: macos-26
+            triplet: arm64-osx-release
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/dependencies
+        with:
+          triplet: ${{ matrix.triplet }}
+      - name: Install Linux linker and display libraries (no system Qt)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends patchelf libgl-dev libegl-dev libopengl-dev \
+            libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-render-util0 libxcb-xkb1 libxcb-xinerama0 libxcb-xinput0 \
+            libwayland-client0 libwayland-cursor0 libwayland-egl1
+      - name: Prepare locked Qt SDK
+        run: ./scripts/setup-qt.ps1 -InstallDir (Join-Path $env:RUNNER_TEMP 'mosaicraft-qt')
+      - name: Build and package Qt Desktop with its runtime
+        run: ./scripts/release-desktop.ps1 -QtRoot $env:MOSAICRAFT_QT_ROOT
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: qt-${{ matrix.platform }}
+          path: build/archives-qt/*
+          compression-level: 0
+          if-no-files-found: error
