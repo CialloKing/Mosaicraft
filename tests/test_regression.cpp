@@ -3036,3 +3036,4 @@ TEST_CASE("PNG multirow writing preserves refresh boundaries and encoded bytes")
     CHECK(std::string(std::istreambuf_iterator<char>(a), {}) == std::string(std::istreambuf_iterator<char>(b), {}));
 }
 #include "test_portable_regression.inc"
+#include "test_release_regression.inc"

@@ -1,0 +1,190 @@
+#include "../core/NormalizeService.h"
+#include "../core/ProjectService.h"
+#include <future>
+#include <memory>
+#include <png.h>
+#include <zlib.h>
+#define MINIZ_NO_ZLIB_COMPATIBLE_NAMES
+#include <miniz.h>
+
+TEST_CASE("concurrent readers reject an old WAL library without changing it")
+{
+    TempWorkspace workspace;
+    const auto db = utf8(workspace.root / "old.db");
+    const auto wal = db + "-wal";
+    sqlite3 *raw = nullptr;
+    const int rc = sqlite3_open(db.c_str(), &raw);
+    const std::unique_ptr<sqlite3, decltype(&sqlite3_close)> writer(raw, sqlite3_close);
+    REQUIRE(rc == SQLITE_OK);
+    REQUIRE(sqlite3_exec(writer.get(), "PRAGMA journal_mode=WAL; CREATE TABLE images(use_count);"
+        "INSERT INTO images VALUES (9)", nullptr, nullptr, nullptr) == SQLITE_OK);
+    const auto databaseBytes = readBytesUnicode(db);
+    const auto walBytes = readBytesUnicode(wal);
+    REQUIRE_FALSE(walBytes.empty());
+    std::vector<std::future<std::string>> readers;
+    for (int i = 0; i < 4; ++i)
+    {
+        readers.push_back(std::async(std::launch::async, [&db]
+        {
+            return DatabaseService().stats({db}).status.runtime.diagnostic.code;
+        }));
+    }
+    for (auto &reader : readers)
+    {
+        CHECK(reader.get() == "library_incompatible");
+    }
+    CHECK(readBytesUnicode(db) == databaseBytes);
+    CHECK(readBytesUnicode(wal) == walBytes);
+    CHECK_FALSE(fs::exists(workspace.root / ".mosaicraft-backups"));
+}
+
+TEST_CASE("same-size PNG normalization preserves indexed pixels and ancillary chunks")
+{
+    TempWorkspace workspace;
+    using Bytes = std::vector<uint8_t>;
+    auto append32 = [](Bytes &out, uint32_t value)
+    {
+        for (int shift = 24; shift >= 0; shift -= 8)
+        {
+            out.push_back(static_cast<uint8_t>(value >> shift));
+        }
+    };
+    auto chunk = [&](Bytes &out, const char (&type)[5], const Bytes &data)
+    {
+        append32(out, static_cast<uint32_t>(data.size()));
+        const size_t start = out.size();
+        out.insert(out.end(), type, type + 4);
+        out.insert(out.end(), data.begin(), data.end());
+        append32(out, crc32(0, out.data() + start, static_cast<uInt>(4 + data.size())));
+    };
+    Bytes head{137, 80, 78, 71, 13, 10, 26, 10}, tail;
+    chunk(head, "IHDR", {0, 0, 0, 32, 0, 0, 0, 32, 8, 3, 0, 0, 0});
+    chunk(head, "PLTE", {0, 1, 2, 3, 4, 5});
+    chunk(head, "tRNS", {0, 255});
+    chunk(tail, "tEXt", {'A', 'u', 't', 'h', 'o', 'r', 0, 'M'});
+    chunk(tail, "IEND", {});
+    Bytes scanlines(33 * 32, 0);
+    for (size_t row = 0; row < 32; ++row)
+    {
+        for (size_t x = 1; x < 33; x += 2)
+        {
+            scanlines[row * 33 + x] = 1;
+        }
+    }
+    uLongf length = compressBound(static_cast<uLongf>(scanlines.size()));
+    Bytes data(length);
+    REQUIRE(compress2(data.data(), &length, scanlines.data(), static_cast<uLong>(scanlines.size()), 0) == Z_OK);
+    auto original = head;
+    chunk(original, "IDAT", {data.front()});
+    chunk(original, "IDAT", Bytes(data.begin() + 1, data.begin() + length));
+    original.insert(original.end(), tail.begin(), tail.end());
+    const auto source = utf8(workspace.inputDir() / "input.PNG");
+    REQUIRE(writeBytesUnicode(source, original));
+    auto request = makeBuildRequest(workspace);
+    request.outputDir = utf8(workspace.outputDir());
+    request.normalizeWidth = request.normalizeHeight = 32;
+    RuntimeContext runtime(false);
+    REQUIRE(normalizeImages(request, runtime).ok);
+    const auto packed = readBytesUnicode(utf8(fs::directory_iterator(workspace.outputDir())->path()));
+    REQUIRE(packed.size() >= head.size() + tail.size() + 12);
+    CHECK(packed.size() < original.size());
+    CHECK(std::equal(head.begin(), head.end(), packed.begin()));
+    CHECK(std::equal(tail.rbegin(), tail.rend(), packed.rbegin()));
+    const auto *idat = packed.data() + head.size();
+    const auto compressed = packed.size() - head.size() - tail.size() - 12;
+    REQUIRE(png_get_uint_32(idat) == compressed);
+    Bytes restored(scanlines.size());
+    length = static_cast<uLongf>(restored.size());
+    REQUIRE(uncompress(restored.data(), &length, idat + 8, static_cast<uLong>(compressed)) == Z_OK);
+    CHECK(length == scanlines.size());
+    CHECK(restored == scanlines);
+    CHECK(readBytesUnicode(source) == original);
+}
+
+TEST_CASE("portable HTML stays renderable after relocation and rejects corrupt manifests")
+{
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    writeTargetImage(workspace.targetPath());
+    auto build = makeBuildRequest(workspace);
+    REQUIRE(BuildService().run(build).ok);
+    auto mosaic = makeMosaicRequest(workspace);
+    const auto original = workspace.outputDir() / "artwork";
+    mosaic.outputPath = utf8(original);
+    mosaic.config.outputMode = OutputMode::Html;
+    mosaic.config.formatExplicit = false;
+    RuntimeContext create(false);
+    const auto created = MosaicService().run(mosaic, create);
+    INFO(created.runtime.diagnostic.message);
+    REQUIRE(created.ok);
+    const auto relocated = workspace.root / u8path(u8"移动 后的作品");
+    fs::rename(original, relocated);
+    fs::rename(workspace.libraryDir(), workspace.root / "offline");
+    ProjectService project;
+    ProjectRequest request;
+    request.projectPath = utf8(relocated);
+    request.outputPath = utf8(workspace.root / "portable.zip");
+    request.deep = true;
+    auto run = [&](auto method)
+    {
+        RuntimeContext runtime(false);
+        return (project.*method)(request, runtime).ok;
+    };
+    REQUIRE(run(&ProjectService::check));
+    REQUIRE(run(&ProjectService::pack));
+    const auto archive = readBytesUnicode(request.outputPath);
+    CHECK_FALSE(run(&ProjectService::pack));
+    CHECK(readBytesUnicode(request.outputPath) == archive);
+    mz_zip_archive zip{};
+    REQUIRE(mz_zip_reader_init_mem(&zip, archive.data(), archive.size(), 0));
+    const std::unique_ptr<mz_zip_archive, decltype(&mz_zip_reader_end)> reader(&zip, mz_zip_reader_end);
+    const auto extracted = workspace.root / "unpacked";
+    const std::string top = utf8(relocated.filename()) + "/";
+    for (mz_uint index = 0; index < mz_zip_reader_get_num_files(&zip); ++index)
+    {
+        mz_zip_archive_file_stat file{};
+        REQUIRE(mz_zip_reader_file_stat(&zip, index, &file));
+        const std::string name = file.m_filename;
+        REQUIRE(name.rfind(top, 0) == 0);
+        REQUIRE(name.find("..") == std::string::npos);
+        REQUIRE_FALSE(file.m_is_directory);
+        std::vector<uint8_t> contents(static_cast<size_t>(file.m_uncomp_size));
+        REQUIRE(mz_zip_reader_extract_to_mem(&zip, index, contents.data(), contents.size(), 0));
+        const auto path = extracted / u8path(name);
+        fs::create_directories(path.parent_path());
+        REQUIRE(writeBytesUnicode(utf8(path), contents));
+    }
+    request.outputPath = utf8(workspace.mosaicPath());
+    REQUIRE(run(&ProjectService::render));
+    auto rendered = readBytesUnicode(request.outputPath);
+    REQUIRE_FALSE(rendered.empty());
+    request.projectPath = utf8(extracted / relocated.filename());
+    request.outputPath = utf8(workspace.root / "unpacked.png");
+    REQUIRE(run(&ProjectService::check));
+    REQUIRE(run(&ProjectService::render));
+    CHECK(readBytesUnicode(request.outputPath) == rendered);
+    request.projectPath = utf8(relocated);
+    request.outputPath = utf8(workspace.mosaicPath());
+    const auto manifestPath = utf8(relocated / "project.json");
+    const auto bytes = readBytesUnicode(manifestPath);
+    const auto manifest = nlohmann::json::parse(bytes);
+    for (int mutation = 0; mutation < 4; ++mutation)
+    {
+        auto changed = manifest;
+        switch (mutation)
+        {
+        case 0: changed["type"] = "unrelated-project"; break;
+        case 1: changed["resources"][0]["path"] = "../outside.png"; break;
+        case 2: changed["resources"][0]["sha256"] = std::string(64, '0'); break;
+        case 3: changed["grid"]["columns"] = 2.5; break;
+        }
+        const auto text = changed.dump();
+        REQUIRE(writeBytesUnicode(manifestPath, {text.begin(), text.end()}));
+        CHECK_FALSE(run(&ProjectService::check));
+    }
+    REQUIRE(writeBytesUnicode(manifestPath, bytes));
+    request.config.outputMode = OutputMode::Html;
+    request.overwrite = true;
+    CHECK_FALSE(run(&ProjectService::render));
+    CHECK(readBytesUnicode(request.outputPath) == rendered);
+}
