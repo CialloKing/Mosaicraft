@@ -27,15 +27,45 @@ git clone https://github.com/microsoft/vcpkg.git build/tools/vcpkg
 git -C build/tools/vcpkg checkout a0400024711b283056538ac19ced80b91a83c24c
 cmake -DMODE=Prepare -DVCPKG_ROOT=build/tools/vcpkg -P cmake/PrepareRelease.cmake
 cmake -DMODE=Install -DVCPKG_ROOT=build/tools/vcpkg -P cmake/PrepareRelease.cmake
-cmake -E env VCPKG_ROOT=build/tools/vcpkg cmake --preset windows-cpu -DVCPKG_INSTALLED_DIR=build/dependencies -DVCPKG_MANIFEST_INSTALL=OFF
+cmake -E env VCPKG_ROOT=build/tools/vcpkg cmake --preset windows-cpu
 cmake --build --preset windows-cpu
 ```
 
 使用 CUDA 时将 `windows-cpu` 换成 `windows-cuda`，配置时通过 `-DCUDAToolkit_ROOT="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5"` 指定实际 SDK。 [架构与单卡构建](cuda.md)
 
+随源码分发的第三方库和 vcpkg 安装的依赖都在 `third_party/`；Windows 构建预设使用 `third_party/vcpkg_installed/`。清理 `build/` 后仍可复用已安装的依赖。
+
 构建产物位于 `build/<preset>/Release/bin`。
 
 发布包使用独立的固定依赖和验收流程，推送 `v*` 版本标签会触发打包。 [发布清单](releasing.md)
+
+## Qt Widgets 桌面端
+
+桌面端位于 `desktop/`，独立构建，不使用浏览器服务。Qt Designer 可直接打开 [主窗口](../../desktop/ui/MainWindow.ui)、[通用设置窗口](../../desktop/ui/SettingsDialog.ui) 和 [建库设置窗口](../../desktop/ui/LibrarySettingsDialog.ui)。在主窗口表单中选中 `workspaces`，用 `currentIndex` 切换编辑（0）、导出（1）和素材库（2）。
+
+Windows 使用与 MSVC x64 匹配的 Qt 6.5+，包含 Widgets、Sql、Network 与 Linguist Tools。先按前一节准备依赖，再从仓库根目录运行以下 PowerShell 命令。CPU 使用 `windows-cpu`，CUDA 使用 `windows-cuda` 并在配置时按前一节指定实际 SDK。
+
+```powershell
+$env:VCPKG_ROOT = (Resolve-Path build/tools/vcpkg).Path
+$preset = 'windows-cpu'
+$qtRoot = 'C:/Qt/6.12.0/msvc2022_64'
+
+cmake --preset $preset
+cmake --build --preset $preset --target mosaicraft mosaicraft_desktop_worker --parallel
+
+cmake -S desktop -B build/desktop -G 'Visual Studio 18 2026' -A x64 "-DCMAKE_PREFIX_PATH=$qtRoot"
+cmake --build build/desktop --config Release --parallel
+
+$backendBin = (Resolve-Path "build/$preset/Release/bin").Path
+$env:PATH = "$qtRoot/bin;$backendBin;$env:PATH"
+./build/desktop/Release/MosaicraftDesktop.exe
+```
+
+素材导入和便携工程渲染使用 `mosaicraft`。普通工程的成品预览、候选查询和换图后导出使用 `mosaicraft_desktop_worker`。也可在「设置 → 通用设置」选择 `build/<preset>/Release/bin/mosaicraft.exe`，匹配程序会从同目录加载。Qt 的 SQLite 插件用于图库浏览，WebP 和 TIFF 预览使用相应的 Qt 图像格式插件。
+
+「保存」将本地文件引用、参数和手动换图记录写入 `.mscproj` 工程文件。导出 HTML 可将最终排列和素材打包为便携工程目录。已有便携工程可从目录或 `project.json` 打开，ZIP 需先解压。
+
+Windows 设置上述 Qt PATH 后，可运行 `ctest --test-dir build/desktop -C Release --output-on-failure` 验证工作区、设置页跳转、工程读写和图库浏览。将 `MOSAICRAFT_DESKTOP_SMOKE_CLI` 设为配有匹配程序的 CLI 完整路径，可同时验证预览、逐格替换及导出。
 
 ## Vulkan 与 Metal
 

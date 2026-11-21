@@ -306,6 +306,8 @@ target_compile_definitions(mosaicraft_core PRIVATE
 target_include_directories(mosaicraft_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_BINARY_DIR}/generated
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/hnswlib
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann-json
     ${TIFF_INCLUDE_DIR}
 )
 
@@ -369,6 +371,8 @@ target_link_libraries(mosaicraft PRIVATE
     mosaicraft_cuda
 )
 
+add_subdirectory(desktop/worker)
+
 # Windows 13.5 uses the hybrid loader from CUDA::cudart. Its driver runtime
 # is not an SDK DLL dependency; Packaging.cmake deploys actual non-driver imports.
 
@@ -386,6 +390,7 @@ target_link_libraries(MosaicraftWebUI PRIVATE
 include(cmake/Packaging.cmake)
 target_include_directories(MosaicraftWebUI PRIVATE
     ${CMAKE_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpp-httplib
 )
 # HTML 或脚本单独更新时也要同步到 exe 同目录。
 add_custom_target(mosaicraft_webui_html
@@ -410,6 +415,7 @@ target_link_libraries(mosaicraft_tests PRIVATE
 target_include_directories(mosaicraft_tests PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctest
 )
 
 # CTest 集成
@@ -429,6 +435,7 @@ target_link_libraries(mosaicraft_regression_tests PRIVATE
 target_include_directories(mosaicraft_regression_tests PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctest
 )
 add_test(NAME mosaicraft_regression_tests COMMAND mosaicraft_regression_tests)
 add_subdirectory(tools/release-check EXCLUDE_FROM_ALL)

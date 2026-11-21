@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SettingsDialog</class>
+ <widget class="QDialog" name="SettingsDialog">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>720</width><height>450</height></rect></property>
+  <property name="minimumSize"><size><width>620</width><height>390</height></size></property>
+  <property name="windowTitle"><string>Mosaicraft 设置</string></property>
+  <property name="styleSheet"><string notr="true"><![CDATA[
+QDialog { background: #2c2c2c; }
+QWidget { color: #e3e3e3; font-size: 13px; }
+QLabel[muted="true"] { color: #b0b0b0; }
+QLabel[sectionTitle="true"] { color: #eeeeee; font-size: 20px; font-weight: bold; }
+QListWidget, QLineEdit, QComboBox, QSpinBox { background: #242424; border: 1px solid #515151; border-radius: 4px; }
+QListWidget { outline: 0; }
+QListWidget::item { padding: 10px; }
+QListWidget::item:selected { background: #515151; color: #f4f4f4; }
+QComboBox, QLineEdit, QSpinBox { padding: 6px; }
+QComboBox QAbstractItemView { background: #303030; selection-background-color: #606060; }
+QPushButton { background: #383838; border: 1px solid #535353; border-radius: 4px; padding: 6px 12px; }
+QPushButton:hover { background: #484848; }
+QPushButton:default { background: #575757; border-color: #727272; }
+  ]]></string></property>
+  <layout class="QVBoxLayout" name="settingsLayout">
+   <property name="leftMargin"><number>16</number></property><property name="topMargin"><number>16</number></property><property name="rightMargin"><number>16</number></property><property name="bottomMargin"><number>16</number></property>
+   <item>
+    <layout class="QHBoxLayout" name="settingsBody" stretch="0,1">
+     <property name="spacing"><number>16</number></property>
+     <item><widget class="QListWidget" name="settingsNavigation"><property name="minimumSize"><size><width>144</width><height>0</height></size></property><property name="maximumSize"><size><width>170</width><height>16777215</height></size></property><item><property name="text"><string>通用设置</string></property></item><item><property name="text"><string>首选项</string></property></item><item><property name="text"><string>语言</string></property></item><item><property name="text"><string>素材库设置</string></property></item></widget></item>
+     <item>
+      <widget class="QStackedWidget" name="settingsPages">
+       <property name="currentIndex"><number>0</number></property>
+       <widget class="QWidget" name="generalPage">
+        <layout class="QVBoxLayout" name="generalLayout">
+         <item><widget class="QLabel" name="generalTitle"><property name="text"><string>通用设置</string></property><property name="sectionTitle" stdset="0"><bool>true</bool></property></widget></item>
+         <item><widget class="QLabel" name="generalHint"><property name="text"><string>设置本地 CLI 和默认的文件保存行为。</string></property><property name="wordWrap"><bool>true</bool></property><property name="muted" stdset="0"><bool>true</bool></property></widget></item>
+         <item>
+          <layout class="QFormLayout" name="generalForm">
+           <property name="fieldGrowthPolicy"><enum>QFormLayout::FieldGrowthPolicy::AllNonFixedFieldsGrow</enum></property>
+           <item row="0" column="0"><widget class="QLabel" name="cliExecutableLabel"><property name="text"><string>CLI 程序</string></property><property name="buddy"><cstring>cliExecutable</cstring></property></widget></item>
+           <item row="0" column="1"><layout class="QHBoxLayout" name="cliExecutableRow"><item><widget class="QLineEdit" name="cliExecutable"><property name="placeholderText"><string>自动查找同目录或 PATH</string></property></widget></item><item><widget class="QPushButton" name="browseExecutable"><property name="text"><string>浏览…</string></property></widget></item></layout></item>
+           <item row="1" column="0"><widget class="QLabel" name="defaultOutputLabel"><property name="text"><string>默认导出目录</string></property><property name="buddy"><cstring>defaultOutputFolder</cstring></property></widget></item>
+           <item row="1" column="1"><layout class="QHBoxLayout" name="defaultOutputRow"><item><widget class="QLineEdit" name="defaultOutputFolder"><property name="placeholderText"><string>留空使用目标图所在目录</string></property></widget></item><item><widget class="QPushButton" name="browseDefaultOutput"><property name="text"><string>浏览…</string></property></widget></item></layout></item>
+           <item row="2" column="0"><widget class="QLabel" name="recentLimitLabel"><property name="text"><string>最近文件数量</string></property><property name="buddy"><cstring>recentLimit</cstring></property></widget></item>
+           <item row="2" column="1"><widget class="QSpinBox" name="recentLimit"><property name="maximum"><number>30</number></property><property name="value"><number>10</number></property><property name="specialValueText"><string>不保留</string></property></widget></item>
+          </layout>
+         </item>
+         <item><spacer name="generalSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>16</height></size></property></spacer></item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="preferencesPage">
+        <layout class="QVBoxLayout" name="preferencesLayout">
+         <item><widget class="QLabel" name="preferencesTitle"><property name="text"><string>首选项</string></property><property name="sectionTitle" stdset="0"><bool>true</bool></property></widget></item>
+         <item><widget class="QLabel" name="preferencesHint"><property name="text"><string>这些设置应用于后续任务。可用的 GPU 后端取决于所选 CLI 的构建方式。</string></property><property name="wordWrap"><bool>true</bool></property><property name="muted" stdset="0"><bool>true</bool></property></widget></item>
+         <item>
+          <layout class="QFormLayout" name="preferencesForm">
+           <property name="fieldGrowthPolicy"><enum>QFormLayout::FieldGrowthPolicy::AllNonFixedFieldsGrow</enum></property>
+           <item row="0" column="0"><widget class="QLabel" name="backendLabel"><property name="text"><string>默认后端</string></property><property name="buddy"><cstring>defaultBackend</cstring></property></widget></item>
+           <item row="0" column="1"><widget class="QComboBox" name="defaultBackend"><item><property name="text"><string>自动</string></property></item><item><property name="text"><string notr="true">CPU</string></property></item><item><property name="text"><string notr="true">CUDA</string></property></item><item><property name="text"><string notr="true">Vulkan</string></property></item><item><property name="text"><string notr="true">Metal</string></property></item></widget></item>
+           <item row="1" column="0"><widget class="QLabel" name="defaultDeviceLabel"><property name="text"><string>GPU 设备标识</string></property><property name="buddy"><cstring>defaultDevice</cstring></property></widget></item>
+           <item row="1" column="1"><widget class="QLineEdit" name="defaultDevice"><property name="placeholderText"><string notr="true">auto / cuda:0 / vulkan:0</string></property></widget></item>
+           <item row="2" column="0"><widget class="QLabel" name="defaultThreadsLabel"><property name="text"><string>CPU 线程上限</string></property><property name="buddy"><cstring>defaultThreads</cstring></property></widget></item>
+           <item row="2" column="1"><widget class="QSpinBox" name="defaultThreads"><property name="maximum"><number>256</number></property><property name="specialValueText"><string>自动</string></property></widget></item>
+           <item row="3" column="0" colspan="2"><widget class="QCheckBox" name="confirmOverwrite"><property name="text"><string>替换已有输出前再次确认</string></property><property name="checked"><bool>true</bool></property></widget></item>
+          </layout>
+         </item>
+         <item><spacer name="preferencesSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>16</height></size></property></spacer></item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="languagePage">
+        <layout class="QVBoxLayout" name="languageLayout">
+         <item><widget class="QLabel" name="languageTitle"><property name="text"><string>语言</string></property><property name="sectionTitle" stdset="0"><bool>true</bool></property></widget></item>
+         <item><widget class="QLabel" name="languageHint"><property name="text"><string>选择桌面端界面语言，重新启动后生效。</string></property><property name="wordWrap"><bool>true</bool></property><property name="muted" stdset="0"><bool>true</bool></property></widget></item>
+         <item><layout class="QFormLayout" name="languageForm"><item row="0" column="0"><widget class="QLabel" name="interfaceLanguageLabel"><property name="text"><string>界面语言</string></property><property name="buddy"><cstring>interfaceLanguage</cstring></property></widget></item><item row="0" column="1"><widget class="QComboBox" name="interfaceLanguage"><item><property name="text"><string>跟随系统</string></property></item><item><property name="text"><string notr="true">简体中文</string></property></item><item><property name="text"><string notr="true">English</string></property></item></widget></item></layout></item>
+         <item><spacer name="languageSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>16</height></size></property></spacer></item>
+        </layout>
+       </widget>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item><widget class="QDialogButtonBox" name="settingsButtons"><property name="standardButtons"><set>QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Save</set></property></widget></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

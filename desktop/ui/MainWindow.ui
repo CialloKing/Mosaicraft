@@ -1,0 +1,499 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>1440</width><height>900</height></rect></property>
+  <property name="minimumSize"><size><width>1080</width><height>690</height></size></property>
+  <property name="windowTitle"><string notr="true">Mosaicraft</string></property>
+  <property name="styleSheet"><string notr="true"><![CDATA[
+QMainWindow, QWidget#workspaceRoot, QStackedWidget#workspaces { background: #242424; }
+QWidget { color: #e3e3e3; font-size: 13px; }
+QMenuBar, QMenu, QStatusBar { background: #282828; color: #e3e3e3; }
+QMenuBar { padding: 3px 9px; border-bottom: 1px solid #424242; }
+QMenuBar::item { padding: 5px 11px; }
+QMenu { border: 1px solid #545454; padding: 4px; }
+QMenu::item { padding: 6px 30px 6px 16px; }
+QMenu::item:disabled { color: #818181; }
+QMenuBar::item:selected, QMenu::item:selected { background: #464646; }
+QMenu::separator { height: 1px; background: #444444; margin: 3px 7px; }
+QFrame#workspaceBar, QFrame#libraryToolbar, QFrame#canvasFooter { background: #2c2c2c; border: 1px solid #424242; }
+QFrame#editorCanvasPanel, QFrame#exportPreviewPanel, QFrame#galleryPanel, QFrame#exportDetailsPanel {
+ background: #2c2c2c; border: 1px solid #444444; border-radius: 3px;
+}
+QFrame#modeRail { background: #303030; border: 1px solid #464646; border-radius: 3px; }
+QWidget#canvasEmpty, QGraphicsView, QLabel#exportPreview { background: #171717; border: none; }
+QLabel#brandMark { background: #494949; color: #f4f4f4; border: 1px solid #626262; border-radius: 3px; font-size: 17px; font-weight: bold; }
+QLabel#brandName { font-size: 18px; font-weight: bold; letter-spacing: 0.5px; }
+QLabel[sectionTitle="true"] { color: #eeeeee; font-size: 15px; font-weight: bold; }
+QLabel[muted="true"] { color: #b0b0b0; }
+QLabel[badge="true"] { color: #dedede; background: #3b3b3b; border: 1px solid #555555; border-radius: 2px; padding: 3px 8px; }
+QToolButton[workspaceButton="true"] { min-width: 72px; min-height: 30px; border: 1px solid transparent; }
+QToolButton[workspaceButton="true"]:checked { background: #474747; color: #f5f5f5; border-color: #696969; }
+QToolButton[railButton="true"] { min-width: 48px; min-height: 36px; padding: 3px; }
+QPushButton, QToolButton { background: #383838; border: 1px solid #535353; border-radius: 3px; padding: 5px 10px; }
+QPushButton:hover, QToolButton:hover { background: #484848; border-color: #737373; }
+QPushButton:focus, QToolButton:focus { border-color: #919191; }
+QPushButton:disabled, QToolButton:disabled { color: #818181; background: #303030; border-color: #424242; }
+QPushButton[primary="true"] { color: #f6f6f6; background: #575757; border-color: #727272; font-weight: bold; }
+QPushButton[primary="true"]:hover { background: #666666; }
+QPushButton[primary="true"]:disabled { background: #404040; color: #929292; border-color: #4b4b4b; }
+QToolButton:checked { background: #4e4e4e; color: #f6f6f6; border-color: #777777; }
+QToolButton:checked:disabled { background: #353535; color: #818181; border-color: #474747; }
+QToolButton#newTabButton { padding: 3px; min-width: 24px; max-width: 28px; }
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
+ padding: 5px 7px; background: #242424; border: 1px solid #515151; border-radius: 3px; selection-background-color: #606060;
+}
+QSpinBox QLineEdit, QDoubleSpinBox QLineEdit { background: transparent; border: 0; margin: 0; padding: 0; }
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus { border-color: #9b9b9b; }
+QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled { color: #848484; background: #303030; }
+QLabel:disabled, QLabel[muted="true"]:disabled, QCheckBox:disabled { color: #858585; }
+QComboBox QAbstractItemView { background: #303030; border: 1px solid #515151; selection-background-color: #5b5b5b; }
+QGroupBox { background: #323232; border: 1px solid #454545; border-radius: 3px; margin-top: 13px; padding: 9px 8px 7px; }
+QGroupBox::title { subcontrol-origin: margin; left: 9px; padding: 0 5px; color: #d6d6d6; font-weight: bold; }
+QTabWidget::pane { border: 1px solid #474747; background: #303030; }
+QTabBar::tab { background: #303030; color: #bfbfbf; padding: 7px 13px; border: 1px solid #474747; }
+QTabBar::tab:selected { background: #444444; color: #f3f3f3; border-bottom: 2px solid #a0a0a0; }
+QTabBar::tab:hover:!selected { background: #3b3b3b; }
+QTabBar::tab:disabled { color: #878787; border-bottom-color: #474747; }
+QListWidget { background: #252525; border: 1px solid #484848; border-radius: 3px; outline: 0; }
+QListWidget::item { padding: 5px; }
+QListWidget::item:selected { background: #515151; color: #f4f4f4; }
+QListWidget::item:hover:!selected { background: #373737; }
+QScrollArea { border: 0; }
+QScrollBar:vertical { width: 11px; background: #2d2d2d; }
+QScrollBar::handle:vertical { min-height: 28px; background: #626262; border-radius: 4px; margin: 2px; }
+QScrollBar::handle:vertical:hover { background: #7c7c7c; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+QWidget#parameterTab, QWidget#parameterContent, QScrollArea#parameterScroll { background: #3b3b3b; }
+QFrame#previewActions { background: #353535; border-bottom: 1px solid #6f6f6f; }
+QFrame#basicSettingsSeparator, QFrame#matchingSettingsSeparator { background: #6f6f6f; border: 0; }
+QLabel[parameterHeading="true"] { color: #e2e2e2; font-weight: bold; }
+QLabel[parameterHeading="true"]:disabled { color: #959595; }
+QLabel[parameterLabel="true"] { min-width: 74px; }
+QWidget#parameterContent QLineEdit, QWidget#parameterContent QComboBox,
+QWidget#parameterContent QSpinBox, QWidget#parameterContent QDoubleSpinBox { padding: 3px 6px; border-radius: 2px; }
+QWidget#parameterContent QSpinBox QLineEdit, QWidget#parameterContent QDoubleSpinBox QLineEdit { border: 0; padding: 0; }
+QLineEdit[dimensionField="true"] { min-width: 48px; min-height: 17px; }
+QToolButton[ratioButton="true"] { min-width: 32px; min-height: 17px; padding: 3px 4px; border-radius: 2px; }
+QWidget#exportControls { background: #292929; }
+QSplitter::handle { background: #242424; }
+QSplitter::handle:hover { background: #727272; }
+QPlainTextEdit { background: #232323; border: 1px solid #494949; color: #b0b0b0; }
+QComboBox#zoomPicker { padding: 1px 4px; border-radius: 0; }
+QComboBox#zoomPicker QLineEdit { border: 0; padding: 1px 3px; background: transparent; }
+QSplitter#compareSplitter::handle { background: #515151; }
+QSplitter#compareSplitter::handle:hover { background: #909090; }
+QLabel#canvasInfo { padding: 1px 8px; }
+QListWidget#candidateList::item:selected { border: 2px solid #d8d8d8; background: #515151; }
+QProgressBar { min-height: 5px; max-height: 5px; border: 0; background: #414141; }
+QProgressBar::chunk { background: #a0a0a0; }
+  ]]></string></property>
+  <widget class="QWidget" name="workspaceRoot">
+   <layout class="QVBoxLayout" name="rootLayout">
+    <property name="spacing"><number>7</number></property>
+    <property name="leftMargin"><number>7</number></property>
+    <property name="topMargin"><number>7</number></property>
+    <property name="rightMargin"><number>7</number></property>
+    <property name="bottomMargin"><number>7</number></property>
+    <item>
+     <widget class="QFrame" name="workspaceBar">
+      <layout class="QHBoxLayout" name="workspaceBarLayout">
+       <property name="spacing"><number>8</number></property>
+       <property name="topMargin"><number>6</number></property>
+       <property name="bottomMargin"><number>6</number></property>
+       <item><widget class="QLabel" name="brandMark"><property name="minimumSize"><size><width>30</width><height>30</height></size></property><property name="maximumSize"><size><width>30</width><height>30</height></size></property><property name="text"><string notr="true">M</string></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property></widget></item>
+       <item><widget class="QLabel" name="brandName"><property name="text"><string notr="true">Mosaicraft</string></property></widget></item>
+       <item><spacer name="brandSpacing"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Fixed</enum></property><property name="sizeHint" stdset="0"><size><width>24</width><height>0</height></size></property></spacer></item>
+       <item><widget class="QToolButton" name="editWorkspaceButton"><property name="text"><string>编辑</string></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property><property name="workspaceButton" stdset="0"><bool>true</bool></property></widget></item>
+       <item><widget class="QToolButton" name="exportWorkspaceButton"><property name="text"><string>导出</string></property><property name="checkable"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property><property name="workspaceButton" stdset="0"><bool>true</bool></property></widget></item>
+       <item><widget class="QToolButton" name="libraryWorkspaceButton"><property name="text"><string>素材库</string></property><property name="checkable"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property><property name="workspaceButton" stdset="0"><bool>true</bool></property></widget></item>
+       <item><spacer name="workspaceSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>0</height></size></property></spacer></item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <widget class="QStackedWidget" name="workspaces">
+      <property name="currentIndex"><number>0</number></property>
+      <widget class="QWidget" name="editPage">
+       <layout class="QVBoxLayout" name="editPageLayout">
+        <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+        <item>
+         <widget class="QSplitter" name="editorSplitter">
+          <property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="childrenCollapsible"><bool>false</bool></property>
+          <widget class="QFrame" name="editorCanvasPanel">
+           <layout class="QVBoxLayout" name="editorLayout">
+            <property name="spacing"><number>6</number></property>
+            <property name="leftMargin"><number>6</number></property><property name="topMargin"><number>6</number></property><property name="rightMargin"><number>6</number></property><property name="bottomMargin"><number>6</number></property>
+            <item>
+             <layout class="QHBoxLayout" name="tabsRow" stretch="1,0">
+              <item><widget class="QTabBar" name="projectTabs"><property name="drawBase"><bool>false</bool></property><property name="expanding"><bool>false</bool></property><property name="tabsClosable"><bool>true</bool></property><property name="elideMode"><enum>Qt::TextElideMode::ElideMiddle</enum></property></widget></item>
+              <item><widget class="QToolButton" name="newTabButton"><property name="text"><string notr="true">+</string></property><property name="toolTip"><string>新建工程</string></property><property name="accessibleName"><string>新建工程</string></property></widget></item>
+             </layout>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="canvasRow" stretch="0,1">
+              <item>
+               <widget class="QFrame" name="modeRail">
+                <layout class="QVBoxLayout" name="railLayout">
+                 <property name="leftMargin"><number>4</number></property><property name="rightMargin"><number>4</number></property><property name="topMargin"><number>6</number></property>
+                 <item><widget class="QToolButton" name="targetModeButton"><property name="text"><string>目标</string></property><property name="toolTip"><string>查看原始目标图</string></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property><property name="railButton" stdset="0"><bool>true</bool></property></widget></item>
+                 <item><widget class="QToolButton" name="resultModeButton"><property name="text"><string>成品</string></property><property name="toolTip"><string>查看生成的成品图</string></property><property name="checkable"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property><property name="enabled"><bool>false</bool></property><property name="railButton" stdset="0"><bool>true</bool></property></widget></item>
+                 <item><widget class="QToolButton" name="compareModeButton"><property name="text"><string>对比</string></property><property name="toolTip"><string>并排查看目标和成品，并联动缩放和平移</string></property><property name="checkable"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property><property name="enabled"><bool>false</bool></property><property name="railButton" stdset="0"><bool>true</bool></property></widget></item>
+                 <item><spacer name="modeSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>1</width><height>32</height></size></property></spacer></item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <layout class="QVBoxLayout" name="canvasLayout" stretch="1,0">
+                <property name="spacing"><number>0</number></property>
+                <item>
+                 <widget class="QStackedWidget" name="canvasViews">
+                  <property name="currentIndex"><number>0</number></property>
+                  <widget class="QWidget" name="canvasEmpty"/>
+                  <widget class="QSplitter" name="compareSplitter">
+                   <property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property>
+                   <property name="childrenCollapsible"><bool>false</bool></property>
+                   <widget class="QGraphicsView" name="editorImageView"/>
+                   <widget class="QGraphicsView" name="compareImageView"/>
+                  </widget>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QFrame" name="canvasFooter">
+                  <layout class="QHBoxLayout" name="canvasFooterLayout">
+                   <property name="leftMargin"><number>4</number></property><property name="rightMargin"><number>4</number></property>
+                   <property name="topMargin"><number>1</number></property><property name="bottomMargin"><number>1</number></property>
+                   <property name="spacing"><number>4</number></property>
+                   <item><widget class="QComboBox" name="zoomPicker">
+                    <property name="editable"><bool>true</bool></property><property name="insertPolicy"><enum>QComboBox::InsertPolicy::NoInsert</enum></property><property name="minimumSize"><size><width>104</width><height>0</height></size></property>
+                    <property name="accessibleName"><string>缩放比例</string></property>
+                    <item><property name="text"><string>适合画布</string></property></item>
+                    <item><property name="text"><string notr="true">25%</string></property></item>
+                    <item><property name="text"><string notr="true">50%</string></property></item>
+                    <item><property name="text"><string notr="true">100%</string></property></item>
+                    <item><property name="text"><string notr="true">200%</string></property></item>
+                    <item><property name="text"><string notr="true">400%</string></property></item>
+                   </widget></item>
+                   <item><widget class="QLabel" name="canvasInfo"><property name="text"><string>尚未打开图像</string></property><property name="muted" stdset="0"><bool>true</bool></property></widget></item>
+                   <item><spacer name="canvasFooterSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>10</width><height>0</height></size></property></spacer></item>
+                  </layout>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </widget>
+          <widget class="QTabWidget" name="inspectorTabs">
+           <property name="minimumSize"><size><width>334</width><height>0</height></size></property>
+           <property name="currentIndex"><number>0</number></property>
+           <widget class="QWidget" name="parameterTab">
+            <attribute name="title"><string>参数</string></attribute>
+            <layout class="QVBoxLayout" name="parameterLayout">
+             <property name="spacing"><number>0</number></property>
+             <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+             <item>
+              <widget class="QFrame" name="previewActions">
+               <layout class="QHBoxLayout" name="previewActionsLayout">
+                <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>8</number></property>
+                <item><widget class="QPushButton" name="generatePreviewButton"><property name="text"><string>生成预览图</string></property><property name="primary" stdset="0"><bool>true</bool></property></widget></item>
+               </layout>
+              </widget>
+             </item>
+             <item>
+              <widget class="QScrollArea" name="parameterScroll">
+               <property name="widgetResizable"><bool>true</bool></property>
+               <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarPolicy::ScrollBarAlwaysOff</enum></property>
+               <widget class="QWidget" name="parameterContent">
+                <property name="geometry"><rect><x>0</x><y>0</y><width>331</width><height>655</height></rect></property>
+                <layout class="QVBoxLayout" name="parameterCards">
+                 <property name="spacing"><number>0</number></property>
+                 <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+                 <item>
+                  <widget class="QFrame" name="gridCard">
+                   <layout class="QVBoxLayout" name="gridCardLayout">
+                    <property name="spacing"><number>7</number></property>
+                    <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>11</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property>
+                    <item><widget class="QLabel" name="gridCardTitle"><property name="text"><string>基础设置</string></property><property name="parameterHeading" stdset="0"><bool>true</bool></property></widget></item>
+                    <item>
+                     <layout class="QFormLayout" name="gridForm">
+                      <property name="fieldGrowthPolicy"><enum>QFormLayout::FieldGrowthPolicy::AllNonFixedFieldsGrow</enum></property>
+                      <property name="horizontalSpacing"><number>8</number></property><property name="verticalSpacing"><number>5</number></property>
+                      <item row="0" column="0"><widget class="QLabel" name="targetSizeLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string>目标图尺寸</string></property><property name="buddy"><cstring>targetWidth</cstring></property></widget></item>
+                      <item row="0" column="1"><layout class="QHBoxLayout" name="targetSizeRow" stretch="1,0,1,0"><property name="spacing"><number>3</number></property>
+                       <item><widget class="DimensionEdit" name="targetWidth"><property name="dimensionField" stdset="0"><bool>true</bool></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string notr="true">1</string></property><property name="accessibleName"><string>目标图尺寸宽</string></property></widget></item>
+                       <item><widget class="QLabel" name="targetCross"><property name="text"><string notr="true">×</string></property></widget></item>
+                       <item><widget class="DimensionEdit" name="targetHeight"><property name="dimensionField" stdset="0"><bool>true</bool></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string notr="true">1</string></property><property name="accessibleName"><string>目标图尺寸高</string></property></widget></item>
+                       <item><widget class="QToolButton" name="targetLock"><property name="text"><string>锁定</string></property><property name="toolTip"><string>固定宽高比</string></property><property name="accessibleName"><string>固定宽高比</string></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>true</bool></property><property name="ratioButton" stdset="0"><bool>true</bool></property></widget></item>
+                      </layout></item>
+                      <item row="1" column="0"><widget class="QLabel" name="matchSizeLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string>切块大小</string></property><property name="buddy"><cstring>matchWidth</cstring></property></widget></item>
+                      <item row="1" column="1"><layout class="QHBoxLayout" name="matchSizeRow" stretch="1,0,1,0"><property name="spacing"><number>3</number></property>
+                       <item><widget class="DimensionEdit" name="matchWidth"><property name="dimensionField" stdset="0"><bool>true</bool></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string notr="true">9</string></property><property name="accessibleName"><string>切块大小宽</string></property></widget></item>
+                       <item><widget class="QLabel" name="matchCross"><property name="text"><string notr="true">×</string></property></widget></item>
+                       <item><widget class="DimensionEdit" name="matchHeight"><property name="dimensionField" stdset="0"><bool>true</bool></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string notr="true">16</string></property><property name="accessibleName"><string>切块大小高</string></property></widget></item>
+                       <item><widget class="QToolButton" name="matchLock"><property name="text"><string>锁定</string></property><property name="toolTip"><string>固定宽高比</string></property><property name="accessibleName"><string>固定宽高比</string></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>false</bool></property><property name="ratioButton" stdset="0"><bool>true</bool></property></widget></item>
+                      </layout></item>
+                      <item row="2" column="0"><widget class="QLabel" name="tileSizeLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string>子图大小</string></property><property name="buddy"><cstring>tileWidth</cstring></property></widget></item>
+                      <item row="2" column="1"><layout class="QHBoxLayout" name="tileSizeRow" stretch="1,0,1,0"><property name="spacing"><number>3</number></property>
+                       <item><widget class="DimensionEdit" name="tileWidth"><property name="dimensionField" stdset="0"><bool>true</bool></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string notr="true">180</string></property><property name="accessibleName"><string>子图大小宽</string></property></widget></item>
+                       <item><widget class="QLabel" name="tileCross"><property name="text"><string notr="true">×</string></property></widget></item>
+                       <item><widget class="DimensionEdit" name="tileHeight"><property name="dimensionField" stdset="0"><bool>true</bool></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="text"><string notr="true">320</string></property><property name="accessibleName"><string>子图大小高</string></property></widget></item>
+                       <item><widget class="QToolButton" name="tileLock"><property name="text"><string>锁定</string></property><property name="toolTip"><string>固定宽高比</string></property><property name="accessibleName"><string>固定宽高比</string></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>false</bool></property><property name="ratioButton" stdset="0"><bool>true</bool></property></widget></item>
+                      </layout></item>
+                      <item row="3" column="0"><widget class="QLabel" name="jitterLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string>亮度扰动</string></property><property name="buddy"><cstring>brightnessJitter</cstring></property></widget></item>
+                      <item row="3" column="1"><widget class="QDoubleSpinBox" name="brightnessJitter"><property name="maximum"><double>0.500000</double></property><property name="singleStep"><double>0.010000</double></property></widget></item>
+                      <item row="4" column="0"><widget class="QLabel" name="blendLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string>目标叠加</string></property><property name="buddy"><cstring>targetBlend</cstring></property></widget></item>
+                      <item row="4" column="1"><widget class="QDoubleSpinBox" name="targetBlend"><property name="maximum"><double>1.000000</double></property><property name="singleStep"><double>0.050000</double></property></widget></item>
+                     </layout>
+                    </item>
+                   </layout>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QFrame" name="basicSettingsSeparator">
+                   <property name="minimumSize"><size><width>0</width><height>1</height></size></property>
+                   <property name="maximumSize"><size><width>16777215</width><height>1</height></size></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QFrame" name="matchingCard">
+                   <layout class="QVBoxLayout" name="matchingCardLayout">
+                    <property name="spacing"><number>7</number></property>
+                    <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>11</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property>
+                    <item><widget class="QLabel" name="matchingCardTitle"><property name="text"><string>匹配策略</string></property><property name="parameterHeading" stdset="0"><bool>true</bool></property></widget></item>
+                    <item>
+                     <layout class="QFormLayout" name="matchingForm">
+                      <property name="fieldGrowthPolicy"><enum>QFormLayout::FieldGrowthPolicy::AllNonFixedFieldsGrow</enum></property>
+                      <property name="horizontalSpacing"><number>8</number></property><property name="verticalSpacing"><number>5</number></property>
+                      <item row="0" column="0"><widget class="QLabel" name="seedLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string>随机种子</string></property><property name="buddy"><cstring>seedEdit</cstring></property></widget></item>
+                      <item row="0" column="1"><widget class="QLineEdit" name="seedEdit"><property name="placeholderText"><string>自动生成</string></property><property name="maxLength"><number>10</number></property></widget></item>
+                      <item row="1" column="0"><widget class="QLabel" name="scoreModeLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string>评分精度</string></property><property name="buddy"><cstring>scoreMode</cstring></property></widget></item>
+                      <item row="1" column="1"><widget class="QComboBox" name="scoreMode"><item><property name="text"><string>快速</string></property></item><item><property name="text"><string>兼容</string></property></item></widget></item>
+                      <item row="2" column="0" colspan="2"><layout class="QGridLayout" name="candidateSettings">
+                       <item row="0" column="0"><widget class="QLabel" name="candidatesLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string>候选数</string></property><property name="buddy"><cstring>candidates</cstring></property></widget></item><item row="0" column="1"><widget class="QLabel" name="randomTopLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string>TopN 随机</string></property><property name="buddy"><cstring>randomTop</cstring></property></widget></item>
+                       <item row="1" column="0"><widget class="QSpinBox" name="candidates"><property name="minimum"><number>10</number></property><property name="maximum"><number>10000</number></property><property name="value"><number>150</number></property></widget></item><item row="1" column="1"><widget class="QSpinBox" name="randomTop"><property name="minimum"><number>1</number></property><property name="maximum"><number>10000</number></property><property name="value"><number>10</number></property></widget></item>
+                      </layout></item>
+                      <item row="3" column="0"><widget class="QLabel" name="lightnessLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string>亮度范围</string></property><property name="buddy"><cstring>lightnessRange</cstring></property></widget></item>
+                      <item row="3" column="1"><widget class="QDoubleSpinBox" name="lightnessRange"><property name="maximum"><double>255.000000</double></property><property name="value"><double>20.000000</double></property></widget></item>
+                     </layout>
+                    </item>
+                   </layout>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QFrame" name="matchingSettingsSeparator">
+                   <property name="minimumSize"><size><width>0</width><height>1</height></size></property>
+                   <property name="maximumSize"><size><width>16777215</width><height>1</height></size></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QFrame" name="advancedMatchingCard">
+                   <layout class="QVBoxLayout" name="advancedMatchingCardLayout">
+                    <property name="spacing"><number>7</number></property>
+                    <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>11</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property>
+                    <item><widget class="QLabel" name="advancedMatchingCardTitle"><property name="text"><string>权重与去重</string></property><property name="parameterHeading" stdset="0"><bool>true</bool></property></widget></item>
+                    <item>
+                     <layout class="QFormLayout" name="advancedMatchingForm">
+                      <property name="fieldGrowthPolicy"><enum>QFormLayout::FieldGrowthPolicy::AllNonFixedFieldsGrow</enum></property>
+                      <property name="horizontalSpacing"><number>8</number></property><property name="verticalSpacing"><number>5</number></property>
+                      <item row="0" column="0" colspan="2"><widget class="QCheckBox" name="adaptiveWeights"><property name="text"><string>自适应权重</string></property></widget></item>
+                      <item row="1" column="0"><widget class="QLabel" name="labLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string notr="true">LAB</string></property><property name="buddy"><cstring>labWeight</cstring></property></widget></item>
+                      <item row="1" column="1"><widget class="QDoubleSpinBox" name="labWeight"><property name="singleStep"><double>0.050000</double></property><property name="value"><double>0.200000</double></property></widget></item>
+                      <item row="2" column="0"><widget class="QLabel" name="gridLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string notr="true">Grid</string></property><property name="buddy"><cstring>gridWeight</cstring></property></widget></item>
+                      <item row="2" column="1"><widget class="QDoubleSpinBox" name="gridWeight"><property name="singleStep"><double>0.050000</double></property><property name="value"><double>0.450000</double></property></widget></item>
+                      <item row="3" column="0"><widget class="QLabel" name="tinyLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string notr="true">Tiny</string></property><property name="buddy"><cstring>tinyWeight</cstring></property></widget></item>
+                      <item row="3" column="1"><widget class="QDoubleSpinBox" name="tinyWeight"><property name="singleStep"><double>0.050000</double></property><property name="value"><double>0.250000</double></property></widget></item>
+                      <item row="4" column="0"><widget class="QLabel" name="edgeLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string notr="true">Edge</string></property><property name="buddy"><cstring>edgeWeight</cstring></property></widget></item>
+                      <item row="4" column="1"><widget class="QDoubleSpinBox" name="edgeWeight"><property name="singleStep"><double>0.050000</double></property><property name="value"><double>0.050000</double></property></widget></item>
+                      <item row="5" column="0"><widget class="QLabel" name="neighborWindowLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string>邻域窗口</string></property><property name="buddy"><cstring>neighborWindow</cstring></property></widget></item>
+                      <item row="5" column="1"><widget class="QSpinBox" name="neighborWindow"><property name="maximum"><number>1000000</number></property><property name="specialValueText"><string>自动</string></property></widget></item>
+                      <item row="6" column="0"><widget class="QLabel" name="neighborPenaltyLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string>邻域惩罚</string></property><property name="buddy"><cstring>neighborPenalty</cstring></property></widget></item>
+                      <item row="6" column="1"><widget class="QDoubleSpinBox" name="neighborPenalty"><property name="maximum"><double>1000000.000000</double></property><property name="value"><double>100.000000</double></property></widget></item>
+                      <item row="7" column="0"><widget class="QLabel" name="reusePenaltyLabel"><property name="parameterLabel" stdset="0"><bool>true</bool></property><property name="text"><string>复用惩罚</string></property><property name="buddy"><cstring>reusePenalty</cstring></property></widget></item>
+                      <item row="7" column="1"><widget class="QDoubleSpinBox" name="reusePenalty"><property name="maximum"><double>1000000.000000</double></property><property name="singleStep"><double>0.010000</double></property></widget></item>
+                     </layout>
+                    </item>
+                   </layout>
+                  </widget>
+                 </item>
+                 <item><spacer name="parameterSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>10</height></size></property></spacer></item>
+                </layout>
+               </widget>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+           <widget class="QWidget" name="candidatesTab">
+            <attribute name="title"><string>候选图</string></attribute>
+            <layout class="QVBoxLayout" name="candidateTabLayout">
+             <item><widget class="QLabel" name="candidateTitle"><property name="text"><string>当前选格</string></property><property name="sectionTitle" stdset="0"><bool>true</bool></property></widget></item>
+             <item><widget class="QLabel" name="candidateHint"><property name="text"><string>生成预览图后，点击成品中的子图查看并更换候选素材。</string></property><property name="wordWrap"><bool>true</bool></property><property name="muted" stdset="0"><bool>true</bool></property></widget></item>
+             <item><widget class="QListWidget" name="candidateList"><property name="iconSize"><size><width>84</width><height>66</height></size></property><property name="gridSize"><size><width>96</width><height>94</height></size></property><property name="movement"><enum>QListView::Movement::Static</enum></property><property name="viewMode"><enum>QListView::ViewMode::IconMode</enum></property><property name="resizeMode"><enum>QListView::ResizeMode::Adjust</enum></property><property name="dragEnabled"><bool>false</bool></property></widget></item>
+            </layout>
+           </widget>
+          </widget>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="exportPage">
+       <layout class="QVBoxLayout" name="exportPageLayout">
+        <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+        <item>
+         <widget class="QSplitter" name="exportSplitter">
+          <property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="childrenCollapsible"><bool>false</bool></property>
+          <widget class="QScrollArea" name="exportScroll">
+           <property name="minimumSize"><size><width>320</width><height>0</height></size></property><property name="widgetResizable"><bool>true</bool></property>
+           <widget class="QWidget" name="exportControls">
+            <property name="geometry"><rect><x>0</x><y>0</y><width>350</width><height>682</height></rect></property>
+            <layout class="QVBoxLayout" name="exportCards">
+             <item><widget class="QLabel" name="exportTitle"><property name="text"><string>导出参数设置</string></property><property name="sectionTitle" stdset="0"><bool>true</bool></property></widget></item>
+             <item>
+              <widget class="QGroupBox" name="exportLocationCard">
+               <property name="title"><string>输出与位置</string></property>
+               <layout class="QFormLayout" name="exportLocationForm">
+                <item row="0" column="0"><widget class="QLabel" name="outputModeLabel"><property name="text"><string>输出类型</string></property><property name="buddy"><cstring>outputMode</cstring></property></widget></item>
+                <item row="0" column="1"><widget class="QComboBox" name="outputMode"><item><property name="text"><string>单张图片</string></property></item><item><property name="text"><string>HTML 便携工程</string></property></item><item><property name="text"><string>可缩放大图（Deep Zoom）</string></property></item><item><property name="text"><string>分块图片（每格一张）</string></property></item></widget></item>
+                <item row="1" column="0"><widget class="QLabel" name="outputPathLabel"><property name="text"><string>保存位置</string></property><property name="buddy"><cstring>outputPath</cstring></property></widget></item>
+                <item row="1" column="1"><layout class="QHBoxLayout" name="outputPathRow"><item><widget class="QLineEdit" name="outputPath"><property name="placeholderText"><string>指定文件或输出目录</string></property></widget></item><item><widget class="QPushButton" name="chooseOutputButton"><property name="text"><string>浏览…</string></property></widget></item></layout></item>
+                <item row="3" column="0" colspan="2"><widget class="QCheckBox" name="allowOverwrite"><property name="text"><string>允许替换已有输出</string></property></widget></item>
+               </layout>
+              </widget>
+             </item>
+             <item>
+              <widget class="QGroupBox" name="encodingCard">
+               <property name="title"><string>图片编码</string></property>
+               <layout class="QFormLayout" name="encodingForm">
+                <item row="0" column="0"><widget class="QLabel" name="formatLabel"><property name="text"><string>格式</string></property><property name="buddy"><cstring>outputFormat</cstring></property></widget></item>
+                <item row="0" column="1"><widget class="QComboBox" name="outputFormat"><item><property name="text"><string notr="true">PNG</string></property></item><item><property name="text"><string notr="true">JPEG</string></property></item><item><property name="text"><string notr="true">WebP</string></property></item><item><property name="text"><string notr="true">TIFF</string></property></item></widget></item>
+                <item row="1" column="0"><widget class="QLabel" name="qualityLabel"><property name="text"><string>JPEG / WebP 质量</string></property><property name="buddy"><cstring>outputQuality</cstring></property></widget></item>
+                <item row="1" column="1"><widget class="QSpinBox" name="outputQuality"><property name="minimum"><number>1</number></property><property name="maximum"><number>100</number></property><property name="value"><number>100</number></property></widget></item>
+                <item row="2" column="0"><widget class="QLabel" name="pngLabel"><property name="text"><string>PNG 压缩</string></property><property name="buddy"><cstring>outputPng</cstring></property></widget></item>
+                <item row="2" column="1"><widget class="QSpinBox" name="outputPng"><property name="minimum"><number>1</number></property><property name="maximum"><number>9</number></property></widget></item>
+                <item row="3" column="0"><widget class="QLabel" name="writeModeLabel"><property name="text"><string>写出策略</string></property><property name="buddy"><cstring>writeMode</cstring></property></widget></item>
+                <item row="3" column="1"><widget class="QComboBox" name="writeMode"><item><property name="text"><string>自动</string></property></item><item><property name="text"><string>流式</string></property></item><item><property name="text"><string>全量缓冲</string></property></item></widget></item>
+                <item row="4" column="0" colspan="2"><widget class="QCheckBox" name="exportThumbnail"><property name="text"><string>额外保存 JPEG 缩略图</string></property></widget></item>
+               </layout>
+              </widget>
+             </item>
+             <item>
+              <widget class="QGroupBox" name="appearanceCard">
+               <property name="title"><string>报告与诊断</string></property>
+               <layout class="QFormLayout" name="appearanceForm">
+                <item row="2" column="0" colspan="2"><widget class="QCheckBox" name="analyzeExport"><property name="text"><string>生成匹配质量报告</string></property></widget></item>
+                <item row="3" column="0" colspan="2"><widget class="QCheckBox" name="benchmarkExport"><property name="text"><string>记录阶段耗时</string></property></widget></item>
+                <item row="4" column="0" colspan="2"><widget class="QCheckBox" name="monitorExport"><property name="text"><string>采集资源用量</string></property></widget></item>
+               </layout>
+              </widget>
+             </item>
+             <item><widget class="QPushButton" name="startExportButton"><property name="minimumSize"><size><width>0</width><height>36</height></size></property><property name="text"><string>开始导出</string></property><property name="primary" stdset="0"><bool>true</bool></property></widget></item>
+             <item><widget class="QProgressBar" name="exportProgress"><property name="maximum"><number>0</number></property><property name="textVisible"><bool>false</bool></property></widget></item>
+             <item><spacer name="exportCardSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>4</height></size></property></spacer></item>
+            </layout>
+           </widget>
+          </widget>
+          <widget class="QSplitter" name="exportRightSplitter">
+           <property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="childrenCollapsible"><bool>false</bool></property>
+           <widget class="QFrame" name="exportPreviewPanel">
+            <layout class="QVBoxLayout" name="exportPreviewLayout" stretch="0,1">
+             <item><layout class="QHBoxLayout" name="exportPreviewHeader"><item><widget class="QLabel" name="exportPreviewTitle"><property name="text"><string>预览图</string></property><property name="sectionTitle" stdset="0"><bool>true</bool></property></widget></item><item><spacer name="exportPreviewSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>0</height></size></property></spacer></item><item><widget class="QLabel" name="exportPreviewBadge"><property name="text"><string>结果</string></property><property name="badge" stdset="0"><bool>true</bool></property></widget></item></layout></item>
+             <item><widget class="QLabel" name="exportPreview"><property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Ignored"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>0</width><height>165</height></size></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="wordWrap"><bool>true</bool></property><property name="muted" stdset="0"><bool>true</bool></property></widget></item>
+            </layout>
+           </widget>
+           <widget class="QFrame" name="exportDetailsPanel">
+            <layout class="QVBoxLayout" name="exportDetailsLayout">
+             <item><layout class="QHBoxLayout" name="exportDetailsHeader"><item><widget class="QLabel" name="exportDetailsTitle"><property name="text"><string>导出摘要 · 素材信息</string></property><property name="sectionTitle" stdset="0"><bool>true</bool></property></widget></item><item><spacer name="exportDetailsSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>30</width><height>0</height></size></property></spacer></item><item><widget class="QPushButton" name="revealExportButton"><property name="text"><string>打开输出位置</string></property><property name="enabled"><bool>false</bool></property></widget></item></layout></item>
+             <item><layout class="QFormLayout" name="exportSummaryForm">
+              <item row="0" column="0"><widget class="QLabel" name="summaryCanvasLabel"><property name="text"><string>成品尺寸</string></property><property name="muted" stdset="0"><bool>true</bool></property></widget></item>
+              <item row="0" column="1"><widget class="QLabel" name="summaryCanvas"><property name="text"><string notr="true">—</string></property></widget></item>
+              <item row="1" column="0"><widget class="QLabel" name="summaryLibraryLabel"><property name="text"><string>素材来源</string></property><property name="muted" stdset="0"><bool>true</bool></property></widget></item>
+              <item row="1" column="1"><widget class="QLabel" name="summaryLibrary"><property name="text"><string notr="true">—</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+              <item row="2" column="0"><widget class="QLabel" name="summaryStateLabel"><property name="text"><string>任务状态</string></property><property name="muted" stdset="0"><bool>true</bool></property></widget></item>
+              <item row="2" column="1"><widget class="QLabel" name="summaryState"><property name="text"><string>等待导出</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+             </layout></item>
+             <item><widget class="QPlainTextEdit" name="taskLog"><property name="readOnly"><bool>true</bool></property><property name="maximumBlockCount"><number>160</number></property><property name="placeholderText"><string>计算进度和诊断将显示在这里。</string></property></widget></item>
+            </layout>
+           </widget>
+          </widget>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="libraryPage">
+       <layout class="QVBoxLayout" name="libraryPageLayout" stretch="0,1">
+        <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+        <item>
+         <widget class="QFrame" name="libraryToolbar">
+          <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+          <layout class="QHBoxLayout" name="libraryToolbarLayout">
+           <property name="topMargin"><number>6</number></property><property name="bottomMargin"><number>6</number></property>
+           <item><widget class="QPushButton" name="importAssetsButton"><property name="text"><string>导入…</string></property><property name="primary" stdset="0"><bool>true</bool></property></widget></item>
+           <item><widget class="QToolButton" name="selectAssetsButton"><property name="text"><string>选择</string></property><property name="checkable"><bool>true</bool></property><property name="toolTip"><string>开启多选，随后可导出所选素材的副本</string></property></widget></item>
+           <item><widget class="QComboBox" name="assetViewMode"><property name="accessibleName"><string>视图</string></property><item><property name="text"><string>视图：缩略图</string></property></item><item><property name="text"><string>视图：列表</string></property></item></widget></item>
+           <item><widget class="QComboBox" name="assetSortMode"><property name="accessibleName"><string>排序方式</string></property><item><property name="text"><string>排序：文件名</string></property></item><item><property name="text"><string>排序：最近入库</string></property></item><item><property name="text"><string>排序：文件大小</string></property></item></widget></item>
+           <item><widget class="QPushButton" name="librarySettingsButton"><property name="text"><string>设置…</string></property><property name="toolTip"><string>建库与追加素材设置</string></property></widget></item>
+           <item><spacer name="libraryToolsSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>0</height></size></property></spacer></item>
+           <item><widget class="QPushButton" name="useLibraryButton"><property name="text"><string>用于当前工程</string></property><property name="toolTip"><string>将当前图库设为工程的匹配素材来源</string></property><property name="enabled"><bool>false</bool></property></widget></item>
+           <item><widget class="QPushButton" name="exportSelectedButton"><property name="text"><string>导出所选…</string></property><property name="toolTip"><string>将所选素材复制到其他目录</string></property><property name="enabled"><bool>false</bool></property></widget></item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="QFrame" name="galleryPanel">
+           <layout class="QVBoxLayout" name="galleryLayout">
+            <item><layout class="QHBoxLayout" name="galleryHeader"><item><widget class="QLabel" name="galleryTitle"><property name="text"><string>图库浏览</string></property><property name="sectionTitle" stdset="0"><bool>true</bool></property></widget></item><item><spacer name="galleryHeaderSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>24</width><height>0</height></size></property></spacer></item><item><widget class="QPushButton" name="reloadLibraryButton"><property name="text"><string>刷新</string></property></widget></item><item><widget class="QPushButton" name="chooseLibraryButton"><property name="text"><string>打开图库…</string></property></widget></item></layout></item>
+            <item><widget class="QLabel" name="galleryPath"><property name="text"><string>尚未打开图库。可以打开已有图库，或导入图片目录新建图库。</string></property><property name="wordWrap"><bool>true</bool></property><property name="muted" stdset="0"><bool>true</bool></property></widget></item>
+            <item><widget class="QListWidget" name="assetList"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>1</verstretch></sizepolicy></property><property name="viewMode"><enum>QListView::ViewMode::IconMode</enum></property><property name="resizeMode"><enum>QListView::ResizeMode::Adjust</enum></property><property name="movement"><enum>QListView::Movement::Static</enum></property><property name="uniformItemSizes"><bool>true</bool></property><property name="dragEnabled"><bool>false</bool></property><property name="iconSize"><size><width>124</width><height>102</height></size></property><property name="gridSize"><size><width>148</width><height>132</height></size></property><property name="spacing"><number>3</number></property></widget></item>
+            <item><widget class="QLabel" name="assetCountLabel"><property name="text"><string>0 张素材</string></property><property name="muted" stdset="0"><bool>true</bool></property></widget></item>
+           </layout>
+          </widget>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menuBar">
+   <widget class="QMenu" name="fileMenu">
+    <property name="title"><string>文件</string></property>
+    <widget class="QMenu" name="recentMenu"><property name="title"><string>最近打开的文件</string></property><addaction name="actionNoRecent"/></widget>
+    <addaction name="actionNew"/><addaction name="actionOpen"/><addaction name="recentMenu"/><addaction name="separator"/>
+    <addaction name="actionSave"/><addaction name="actionSaveAs"/><addaction name="separator"/><addaction name="actionExport"/>
+   </widget>
+   <widget class="QMenu" name="settingsMenu">
+    <property name="title"><string>设置</string></property>
+    <addaction name="actionGeneralSettings"/><addaction name="actionPreferences"/><addaction name="actionLibrarySettings"/><addaction name="actionLanguage"/>
+   </widget>
+   <widget class="QMenu" name="helpMenu">
+    <property name="title"><string>帮助</string></property>
+    <addaction name="actionAbout"/><addaction name="actionCheckUpdates"/>
+   </widget>
+   <addaction name="fileMenu"/><addaction name="settingsMenu"/><addaction name="helpMenu"/>
+  </widget>
+  <widget class="QStatusBar" name="statusBar"/>
+  <action name="actionNew"><property name="text"><string>新建</string></property><property name="shortcut"><string notr="true">Ctrl+N</string></property></action>
+  <action name="actionOpen"><property name="text"><string>打开…</string></property><property name="shortcut"><string notr="true">Ctrl+O</string></property></action>
+  <action name="actionSave"><property name="text"><string>保存</string></property><property name="shortcut"><string notr="true">Ctrl+S</string></property></action>
+  <action name="actionSaveAs"><property name="text"><string>另存为…</string></property><property name="shortcut"><string notr="true">Ctrl+Shift+S</string></property></action>
+  <action name="actionExport"><property name="text"><string>导出…</string></property><property name="shortcut"><string notr="true">Ctrl+E</string></property></action>
+  <action name="actionNoRecent"><property name="text"><string>没有最近记录</string></property><property name="enabled"><bool>false</bool></property></action>
+  <action name="actionGeneralSettings"><property name="text"><string>通用设置…</string></property></action>
+  <action name="actionPreferences"><property name="text"><string>首选项…</string></property></action>
+  <action name="actionLibrarySettings"><property name="text"><string>素材库设置…</string></property></action>
+  <action name="actionLanguage"><property name="text"><string>语言…</string></property></action>
+  <action name="actionAbout"><property name="text"><string>关于 Mosaicraft</string></property></action>
+  <action name="actionCheckUpdates"><property name="text"><string>检查更新…</string></property></action>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>DimensionEdit</class>
+   <extends>QLineEdit</extends>
+   <header>DimensionEdit.h</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>
