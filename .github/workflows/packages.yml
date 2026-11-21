@@ -9,10 +9,15 @@ on:
         required: false
         type: boolean
         default: false
+      desktop_release_tag:
+        description: Build only CUDA + Vulkan Qt packages from this existing release tag (no publishing)
+        required: false
+        type: string
 permissions:
   contents: read
 jobs:
   native-package:
+    if: ${{ !inputs.desktop_release_tag }}
     name: Package ${{ matrix.platform }} ${{ matrix.runtime }}
     strategy: &native_matrix
       fail-fast: false
@@ -86,6 +91,7 @@ jobs:
             build/package-${{ matrix.runtime }}/release-timings.json
           if-no-files-found: ignore
   native-verify:
+    if: ${{ !inputs.desktop_release_tag }}
     name: Standalone ${{ matrix.platform }} ${{ matrix.runtime }}
     needs: native-package
     strategy: *native_matrix
@@ -112,6 +118,7 @@ jobs:
           $validation = if ($runtime -eq 'vulkan') { 'not-run' } else { 'not-applicable' }
           ./scripts/verify-release-asset.ps1 -ArchivePath $archive[0].FullName -ExpectedSha256 $hash -ExpectedCommit '${{ github.sha }}' -ExpectedRuntime $runtime -ExpectedGpuValidation $validation -RequireStandalone
   cuda-package:
+    if: ${{ !inputs.desktop_release_tag }}
     name: Package ${{ matrix.platform }} CUDA
     strategy:
       fail-fast: false
@@ -178,7 +185,7 @@ jobs:
           if-no-files-found: ignore
   cuda-verify:
     name: Standalone ${{ matrix.platform }} CUDA
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_tests != true }}
+    if: ${{ !inputs.desktop_release_tag && (github.event_name != 'workflow_dispatch' || inputs.skip_tests != true) }}
     needs: cuda-package
     strategy:
       fail-fast: false
@@ -208,31 +215,40 @@ jobs:
           $hash = ((Get-Content "$($archive[0].FullName).sha256" -Raw) -split '\s+')[0]
           ./scripts/verify-release-asset.ps1 -ArchivePath $archive[0].FullName -ExpectedSha256 $hash -ExpectedCommit '${{ github.sha }}' -ExpectedRuntime cuda -ExpectedGpuValidation not-run -RequireStandalone
   qt-package:
-    name: Package ${{ matrix.platform }} Qt Desktop
+    name: Package ${{ matrix.platform }} Qt Desktop (${{ matrix.runtime }})
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: windows-x64
-            runner: windows-2025-vs2026
-            triplet: x64-windows-release
-          - platform: linux-x64
-            runner: ubuntu-24.04
-            triplet: x64-linux-release
+        platform: [windows-x64, linux-x64, macos-arm64]
+        runtime: ${{ fromJSON(inputs.desktop_release_tag && '["cuda-vulkan"]' || '["cpu", "cuda-vulkan"]') }}
+        exclude:
           - platform: macos-arm64
-            runner: macos-26
-            triplet: arm64-osx-release
-    runs-on: ${{ matrix.runner }}
+            runtime: cuda-vulkan
+    runs-on: ${{ matrix.platform == 'windows-x64' && 'windows-2025-vs2026' || matrix.platform == 'linux-x64' && 'ubuntu-24.04' || 'macos-26' }}
     defaults:
       run:
         shell: pwsh
     steps:
+      - name: Validate supplemental release tag
+        if: inputs.desktop_release_tag
+        env:
+          RELEASE_TAG: ${{ inputs.desktop_release_tag }}
+        run: |
+          if ($env:RELEASE_TAG -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Expected a stable release tag such as v1.15.11' }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.desktop_release_tag && format('refs/tags/{0}', inputs.desktop_release_tag) || github.sha }}
+          persist-credentials: false
+      # Use the source tag's build/dependency locks, but allow newer packagers to supplement an existing release.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.desktop_release_tag
+        with:
+          ref: ${{ github.sha }}
+          path: build/packaging-tools
           persist-credentials: false
       - uses: ./.github/actions/dependencies
         with:
-          triplet: ${{ matrix.triplet }}
+          triplet: ${{ runner.os == 'Windows' && 'x64-windows-release' || runner.os == 'Linux' && 'x64-linux-release' || 'arm64-osx-release' }}
       - name: Install Linux linker and display libraries (no system Qt)
         if: runner.os == 'Linux'
         shell: bash
@@ -242,13 +258,35 @@ jobs:
             libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-render-util0 libxcb-xkb1 libxcb-xinerama0 libxcb-xinput0 \
             libwayland-client0 libwayland-cursor0 libwayland-egl1
+          if [[ '${{ matrix.runtime }}' == 'cuda-vulkan' ]]; then
+            sudo apt-get install -y --no-install-recommends glslang-tools xvfb xauth
+          fi
       - name: Prepare locked Qt SDK
         run: ./scripts/setup-qt.ps1 -InstallDir (Join-Path $env:RUNNER_TEMP 'mosaicraft-qt')
-      - name: Build and package Qt Desktop with its runtime
-        run: ./scripts/release-desktop.ps1 -QtRoot $env:MOSAICRAFT_QT_ROOT
+      - name: Prepare locked CUDA SDK and Vulkan build tools
+        if: matrix.runtime == 'cuda-vulkan'
+        run: |
+          ./scripts/setup-cuda.ps1
+          ./scripts/setup-vulkan.ps1
+      - name: Build and verify Qt Desktop archive
+        env:
+          RELEASE_TAG: ${{ inputs.desktop_release_tag }}
+        run: |
+          $packager = './scripts/release-desktop.ps1'
+          $commit = $env:GITHUB_SHA
+          if ($env:RELEASE_TAG) {
+            $packager = './build/packaging-tools/scripts/release-desktop.ps1'
+            $commit = git rev-parse "refs/tags/$($env:RELEASE_TAG)^{commit}"
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve package source tag' }
+            $version = (Get-Content -Raw contracts.json | ConvertFrom-Json).softwareVersion
+            if ($env:RELEASE_TAG -cne "v$version") { throw 'Release tag does not match contracts.json' }
+          }
+          $options = @{}
+          if ('${{ matrix.runtime }}' -eq 'cuda-vulkan') { $options = @{ CudaVulkan = $true; GpuValidation = 'BuildOnly' } }
+          & $packager -SourceDir $PWD.Path -ExpectedSourceCommit $commit -QtRoot $env:MOSAICRAFT_QT_ROOT @options
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: qt-${{ matrix.platform }}
-          path: build/archives-qt/*
+          name: ${{ matrix.runtime == 'cpu' && format('qt-{0}', matrix.platform) || format('qt-cuda-vulkan-{0}', matrix.platform) }}
+          path: build/archives-qt/Mosaicraft_v*
           compression-level: 0
           if-no-files-found: error
