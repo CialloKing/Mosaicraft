@@ -25,6 +25,8 @@ using Json = nlohmann::json;
 using Clock = std::chrono::steady_clock;
 using namespace std::chrono_literals;
 
+int checkDocs(const fs::path &directory);
+
 namespace
 {
 void require(bool condition, const std::string &message)
@@ -254,6 +256,32 @@ public:
         return parsed;
     }
 
+    Json error(const std::string &method, const std::string &path, int status, const std::string &body = {})
+    {
+        const auto result = request(method, path, body);
+        require(result.status == status, path + ": expected HTTP " + std::to_string(status) + ": " + result.body);
+        const auto parsed = Json::parse(result.body);
+        require(parsed.at("ok") == false, path + ": wrong error envelope");
+        return parsed;
+    }
+
+    Json preview(const std::string &path)
+    {
+        const auto deadline = Clock::now() + 30s;
+        do
+        {
+            const auto state = json(path).at("preview");
+            if (state.at("state") == "succeeded")
+            {
+                return state;
+            }
+            require(state.at("state") == "queued" || state.at("state") == "running",
+                    "Preview failed: " + state.dump());
+            std::this_thread::sleep_for(100ms);
+        } while (Clock::now() < deadline);
+        throw std::runtime_error("Preview timed out: " + path);
+    }
+
     Json job(const std::string &operation, const Json &body, const std::string &input,
              const std::string &output)
     {
@@ -322,13 +350,29 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
             return entry.at("operation") == operation;
         }), std::string("Missing operation: ") + operation);
     }
-    require(api.request("POST", "/api/jobs/mosaic", "{").status == 400, "Malformed JSON must be rejected");
-    require(api.request("GET", "/api/jobs/not-found").status == 404, "Unknown job must be rejected");
-    require(api.request("POST", "/api/run", R"({"command":"mosaicraft db-stats"})").status == 404,
-            "Legacy command endpoint must not exist");
+    const auto supportsTargetSize = std::any_of(endpoints.begin(), endpoints.end(), [](const Json &entry)
+    {
+        if (entry.at("operation") != "planMosaic")
+        {
+            return false;
+        }
+        const auto &fields = entry.at("requestFields");
+        return std::find(fields.begin(), fields.end(), "targetSize") != fields.end();
+    });
+    api.error("GET", "/api/jobs/not-found", 404);
+    api.error("POST", "/api/run", 404, R"({"command":"mosaicraft db-stats"})");
+    for (const auto body : {"{", R"({"inputPath":"x","cpu":true})", R"({"inputPath":"x","unknown":1})",
+         R"({"inputPath":"x","tileW":3})", R"({"inputPath":"x","tileW":9.0})", R"({"inputPath":"x","useGpu":1})",
+         R"({"inputPath":"x","tileW":null})", R"({"inputPath":"x","tileW":9,"tileW":10})",
+         R"({"inputPath":"x","overlayStrength":"NaN"})", R"({"inputPath":"x","overlayStrength":1.01})"})
+    {
+        const auto error = api.error("POST", "/api/jobs/mosaic", 400, body);
+        require(error.at("exitCode") == 1 && !error.at("diagnostic").at("code").get<std::string>().empty(),
+                "Malformed request lacks diagnostic context");
+    }
     for (const auto query : {"db=x", "dbPath=x&unknown=1", "dbPath=x&dbPath=y", "dbPath=x&showUnused=1"})
     {
-        require(api.request("GET", std::string("/api/db/usage?") + query).status == 400, "Invalid usage query accepted");
+        api.error("GET", std::string("/api/db/usage?") + query, 400);
     }
 
     Json build{{"inputDir", input.u8string()}, {"outputDir", library}, {"dbPath", database}, {"threads", 1},
@@ -345,9 +389,18 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
         fallback(built.at("runtime"));
     }
     require(fs::file_size(fs::u8path(database)) > 0, "Build did not create the database");
-    api.json("/api/db/stats", {{"dbPath", database}});
-    const auto inspect = api.json("/api/inspect", {{"imagePath", target.u8string()}}).at("inspect");
-    require(inspect.at("width") == 36 && inspect.at("height") == 64, "Target dimensions were not preserved");
+    api.error("POST", "/api/jobs/build", 400, Json{{"inputDir", input.u8string()}, {"benchmark", true}}.dump());
+    const auto append = api.job("build", {{"inputDir", input.u8string()}, {"outputDir", library}, {"dbPath", database},
+                                {"appendMode", true}, {"benchmark", true}, {"threads", 1}}, input.u8string(), library);
+    require(append.at("runtime").at("metrics").at("sqlLookupCount") == 10 &&
+            append.at("runtime").at("metrics").at("committedBatchCount") == 0 && append.at("request").at("benchmark") == true,
+            "Append benchmark did not publish its no-change metrics");
+    const auto stats = api.json("/api/db/stats", {{"dbPath", database}}).at("stats");
+    require(stats.at("total") == 10, "Wrong library size after append");
+    api.json("/api/db/usage", {{"dbPath", database}, {"limit", 10}, {"showUnused", true}});
+    const auto inspect = api.json("/api/inspect", {{"imagePath", target.u8string()}, {"dbPath", database}}).at("inspect");
+    require(inspect.at("width") == 36 && inspect.at("height") == 64 && inspect.at("databaseAvailable") == true,
+            "Target dimensions or library availability was not preserved");
 
     Json mosaic{{"inputPath", target.u8string()}, {"dbPath", database}, {"outputPath", output("mosaic.png")},
                 {"tileW", 9}, {"tileH", 16}, {"outW", 18}, {"outH", 32}, {"nativeTileW", 18},
@@ -357,12 +410,15 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
     require(plan.at("columns") == 2 && plan.at("rows") == 2 && plan.at("rawBytes") == 36 * 64 * 3 &&
             !fs::exists(root / "mosaic.png"), "Mosaic planning must report the grid without creating an image");
     auto scale = mosaic;
-    scale.erase("outW");
-    scale.erase("outH");
-    scale["targetSize"] = "50%";
-    const auto scaled = api.json("/api/mosaic/plan", scale).at("plan");
-    require(scaled.at("columns") == plan.at("columns") && scaled.at("rows") == plan.at("rows"),
-            "Percent target size did not produce the expected grid");
+    if (supportsTargetSize)
+    {
+        scale.erase("outW");
+        scale.erase("outH");
+        scale["targetSize"] = "50%";
+        const auto scaled = api.json("/api/mosaic/plan", scale).at("plan");
+        require(scaled.at("columns") == plan.at("columns") && scaled.at("rows") == plan.at("rows"),
+                "Percent target size did not produce the expected grid");
+    }
     const auto mosaicJob = api.job("mosaic", scale, target.u8string(), output("mosaic.png"));
     const auto id = mosaicJob.at("id").get<std::string>();
     const auto artifact = "/api/jobs/" + id + "/artifacts/main";
@@ -370,9 +426,84 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
     require(image.status == 200 && image.body == read(root / "mosaic.png"), "Artifact differs from saved image");
     const auto partial = api.request("GET", artifact, {}, {{"Range", "bytes=0-7"}});
     require(partial.status == 206 && partial.body == image.body.substr(0, 8), "Invalid artifact range response");
-    require(api.json("/api/jobs/" + id + "/events?after=0&limit=100").contains("nextCursor"), "Missing event cursor");
+    const auto events = api.json("/api/jobs/" + id + "/events?after=0&limit=100");
+    const auto cursor = events.at("nextCursor").dump();
+    require(!events.at("events").empty() && api.json("/api/jobs/" + id + "/events?after=" + cursor).at("events").empty(),
+            "Missing events or repeated event cursor");
 
-    auto html = mosaic;
+    for (const auto &format : {std::pair{"jpg", 33000}, {"webp", 8200}})
+    {
+        for (const bool explicitFormat : {false, true})
+        {
+            auto policy = mosaic;
+            policy.erase("format");
+            policy["outH"] = 16;
+            policy["nativeTileW"] = format.second;
+            policy["nativeTileH"] = 1;
+            policy["lRange"] = 255;
+            policy["outputPath"] = output(std::string(explicitFormat ? "explicit." : "inferred.") + format.first);
+            if (explicitFormat)
+            {
+                policy["format"] = format.first;
+            }
+            const auto planned = api.json("/api/mosaic/plan", policy).at("plan");
+            const auto encoded = api.json("/api/mosaic", policy).at("runtime");
+            const auto actual = encoded.at("outputPlan");
+            const auto expected = explicitFormat ? format.first : "png";
+            const int width = explicitFormat ? (format.second == 33000 ? 65500 : 16382) : 2 * format.second;
+            require(actual.at("width") == width && actual.at("format") == expected && actual.at("path") == planned.at("path") &&
+                    actual.at("format") == planned.at("format") && actual.at("width") == planned.at("width") &&
+                    actual.at("scaled") == explicitFormat && actual.at("formatChanged") != explicitFormat &&
+                    fs::exists(fs::u8path(actual.at("path").get<std::string>())), "Encoded output disagrees with format plan");
+        }
+    }
+
+    auto interactive = mosaic;
+    interactive["outputPath"] = output("interactive.png");
+    interactive["topNRandom"] = 3;
+    interactive["lRange"] = 255;
+    interactive["analyze"] = true;
+    interactive["benchmark"] = true;
+    const auto initialPreview = api.json("/api/mosaic/preview", {{"request", interactive}, {"seed", 42}}).at("preview");
+    const auto previewId = initialPreview.at("id").get<std::string>();
+    const auto previewPath = "/api/mosaic/preview/" + previewId;
+    const auto grid = api.preview(previewPath);
+    const auto first = grid.at("imageIds").at(0);
+    require(grid.at("imageIds").size() == 4 && grid.at("featureBackend") == "cpu" && grid.at("scoreBackend") == "cpu" &&
+            !fs::exists(root / "interactive.png"), "Interactive preview did not produce the expected grid");
+    require(api.request("GET", previewPath + "/image/" + first.dump() + "-64").get_header_value("Content-Type") == "image/jpeg",
+            "Preview image was not served as a JPEG");
+    api.error("GET", previewPath + "/image/2147483647-64", 404);
+    const auto recommendations = api.json(previewPath + "/recommendations?position=0").at("recommendations");
+    require(recommendations.at("position") == 0 && !recommendations.at("images").empty(), "Missing tile recommendations");
+    const auto catalog = api.json(previewPath + "/library").at("library");
+    const auto &images = catalog.at("images");
+    const auto choice = std::find_if(images.begin(), images.end(), [&](const Json &entry)
+    {
+        return entry.at("available") == true && entry.at("id") != first;
+    });
+    require(choice != images.end(), "No available replacement image");
+    const auto quality = api.json("/api/mosaic/preview/quality", {{"previewId", previewId},
+                                  {"positions", Json::array({{{"position", 0}}})}, {"explain", true}}).at("quality").at(0);
+    require(quality.at("imageId") == first && quality.at("decision").at("rank") <= quality.at("decision").at("topN"),
+            "Preview quality does not describe the selected tile");
+    interactive["previewId"] = previewId;
+    interactive["previewEdits"] = Json::array({{{"position", 0}, {"imageId", choice->at("id")}, {"version", choice->at("version")}}});
+    const auto sample = api.json("/api/mosaic/sample-size", interactive).at("preview");
+    const auto sampled = api.preview("/api/mosaic/preview/" + sample.at("id").get<std::string>()).at("fileSample");
+    require(sampled.at("regions").get<int>() > 0 && sampled.at("pixels").get<int>() <= 4000000 &&
+            !fs::exists(root / "interactive.png"), "Sample must use bounded preview and not write the output");
+    const auto compare = api.json("/api/mosaic/preview/compare", {{"a", {{"previewId", previewId}}},
+                                  {"b", {{"previewId", previewId}, {"previewEdits", interactive.at("previewEdits")}}}}).at("preview");
+    const auto comparison = api.preview("/api/mosaic/preview/" + compare.at("id").get<std::string>()).at("comparison");
+    require(comparison.at("compared") == 4 && comparison.at("changed") == 1 && comparison.at("changedMap").at(0) == 1,
+            "Comparison lost the manually edited tile");
+    const auto pinned = api.job("mosaic", interactive, target.u8string(), output("interactive.png"));
+    const auto metrics = pinned.at("runtime").at("metrics");
+    require(metrics.at("reusedPreviewSelection") == 1 && metrics.at("manualPreviewEdits") == 1,
+            "Export lost the pinned selection or the manual edit");
+
+    auto html = interactive;
     html["outputMode"] = "html";
     html["outputPath"] = output("portable-artwork");
     for (const auto field : {"format", "pngLevel"})
@@ -397,6 +528,17 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
     require(api.request("HEAD", "/api/jobs/" + packed + "/artifacts/archive").status == 200,
             "Portable project archive is not downloadable");
 
+    const auto projectFile = Json::parse(read(root / "portable-artwork" / "project.json"));
+    const auto selected = projectFile.at("assets").at(projectFile.at("layout").at(0).get<size_t>());
+    require(read(root / "portable-artwork" / fs::u8path(selected.at("path").get<std::string>())) ==
+            read(fs::u8path(library) / fs::u8path(choice->at("name").get<std::string>())),
+            "HTML export lost the manually selected asset bytes");
+    require(api.request("DELETE", previewPath).status == 200, "Could not close the preview");
+    require(api.error("POST", "/api/jobs/mosaic", 409, interactive.dump()).at("diagnostic").at("code") == "preview_stale",
+            "Closed preview did not require a refresh");
+    std::ofstream(root / "mosaic.png", std::ios::app | std::ios::binary) << "changed";
+    api.error("GET", artifact, 409);
+
     if (vulkanFallback)
     {
         mosaic.erase("useGpu");
@@ -409,6 +551,41 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
         const auto failure = Json::parse(api.request("POST", "/api/mosaic", mosaic.dump()).body);
         require(failure.at("ok") == false && failure.at("diagnostic").at("code") == "gpu_required",
                 "An explicit Vulkan request must not silently fall back");
+    }
+    for (const auto &device : info.at("devices"))
+    {
+        const auto backend = device.at("backend").get<std::string>();
+        if (device.at("available") != true || (backend != "vulkan" && backend != "metal"))
+        {
+            continue;
+        }
+        const auto deviceId = device.at("id").get<std::string>();
+        auto stem = deviceId;
+        std::replace(stem.begin(), stem.end(), ':', '-');
+        const auto gpuLibrary = output("gpu-" + stem);
+        const auto gpuDb = (fs::u8path(gpuLibrary) / "mosaicraft.db").u8string();
+        auto gpuBuild = build;
+        gpuBuild["outputDir"] = gpuLibrary;
+        gpuBuild["dbPath"] = gpuDb;
+        gpuBuild["backend"] = backend;
+        gpuBuild["device"] = deviceId;
+        const auto gpuBuilt = api.job("build", gpuBuild, input.u8string(), gpuLibrary).at("runtime");
+        require(gpuBuilt.at("featureBackend") == backend && gpuBuilt.at("device") == deviceId,
+                "Explicit GPU build used the wrong device");
+        for (const std::string mode : {"compatible", "fast"})
+        {
+            auto request = mosaic;
+            request["useGpu"] = true;
+            request["backend"] = backend;
+            request["device"] = deviceId;
+            request["dbPath"] = gpuDb;
+            request["scoreMode"] = mode;
+            const auto path = output(stem + "-" + mode + ".png");
+            request["outputPath"] = path;
+            const auto execution = api.job("mosaic", request, target.u8string(), path).at("runtime");
+            require(execution.at("featureBackend") == backend && execution.at("device") == deviceId &&
+                    execution.at("scoreBackend") == (mode == "fast" ? backend : "cpu"), "GPU scoring selected a different backend");
+        }
     }
     const auto history = api.json("/api/history").at("history");
     require(std::any_of(history.begin(), history.end(), [&](const Json &entry)
@@ -460,6 +637,10 @@ int main(int argc, char **argv)
 {
     try
     {
+        if (argc == 3 && fs::path(argv[1]) == "--docs")
+        {
+            return checkDocs(fs::path(argv[2]));
+        }
         require(argc == 3 || argc == 4,
                 "Usage: mosaicraft_release_check <WebUI> <contracts.json> [--vulkan-fallback]");
         require(argc == 3 || fs::path(argv[3]) == "--vulkan-fallback", "Unknown smoke argument");

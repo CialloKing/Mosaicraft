@@ -4,7 +4,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 endif()
 
 find_package(Threads REQUIRED)
-add_executable(mosaicraft_release_check main.cpp)
+add_executable(mosaicraft_release_check main.cpp DocsCheck.cpp)
 target_compile_features(mosaicraft_release_check PRIVATE cxx_std_17)
 target_include_directories(mosaicraft_release_check PRIVATE ../../core)
 target_link_libraries(mosaicraft_release_check PRIVATE Threads::Threads)

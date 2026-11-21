@@ -194,7 +194,7 @@ endif()
 
 # A missing test (including one never registered) must fail before staging anything.
 set(mandatory cuda_architecture_config cuda_toolkit_config cuda_build_info_native
-    mosaicraft_tests mosaicraft_regression_tests webui_native_smoke)
+    mosaicraft_tests mosaicraft_regression_tests documentation_native webui_native_smoke)
 release_capture(test_listing "${ctest}" --test-dir "${BUILD_DIR}" -C Release --show-only=json-v1)
 string(JSON count LENGTH "${test_listing}" tests)
 if(count LESS 1)
