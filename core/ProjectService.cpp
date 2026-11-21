@@ -61,16 +61,26 @@ MosaicEngine::Config targetConfig(const json &manifest)
     if (manifest.contains("targetPreparation"))
     {
         const auto &preparation = manifest.at("targetPreparation");
-        const auto &resize = preparation.at("resize"), &upscale = preparation.at("upscale");
+        const auto &resize = preparation.at("resize");
         if (!resize.is_array() || resize.size() != 2 || !resize[0].is_number_integer() ||
-            !resize[1].is_number_integer() || !validImageSize(resize[0].get<int64_t>(), resize[1].get<int64_t>()) ||
-            !upscale.is_number_integer() || upscale.get<int64_t>() < 1 || upscale.get<int64_t>() > 64)
+            !resize[1].is_number_integer() || !validImageSize(resize[0].get<int64_t>(), resize[1].get<int64_t>()))
         {
             throw std::invalid_argument("invalid project target preparation");
         }
+        if (const auto upscale = preparation.find("upscale"); upscale != preparation.end())
+        {
+            if (!upscale->is_number_integer() || *upscale < 1)
+            {
+                throw std::invalid_argument("invalid project target preparation");
+            }
+            // Only the old no-op factor can be reproduced by a single resize.
+            if (*upscale != 1)
+            {
+                throw std::invalid_argument("legacy project target upscale is unsupported; recreate the HTML project");
+            }
+        }
         config.outW = resize[0];
         config.outH = resize[1];
-        config.upscale = upscale;
     }
     return config;
 }
@@ -334,8 +344,7 @@ bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &dir
             {"type", "mosaicraft-project"},
             {"grid",
              {{"columns", columns}, {"rows", rows}, {"matchTile", {config.tileW, config.tileH}}}},
-            {"targetPreparation", {{"resize", {geometry.resizedWidth, geometry.resizedHeight}},
-                                   {"upscale", std::max(1, config.upscale)}}},
+            {"targetPreparation", {{"resize", {geometry.width, geometry.height}}}},
             {"outputTile", {config.nativeTileW, config.nativeTileH}},
             {"seed", config.seed.value_or(0)},
             {"appearance", {{"targetBlend", config.overlayStrength}, {"brightnessJitter", 0}}},
@@ -745,7 +754,6 @@ ServiceResult ProjectService::render(const ProjectRequest &request, RuntimeConte
         config.tileH = preparation.tileH;
         config.outW = preparation.outW;
         config.outH = preparation.outH;
-        config.upscale = preparation.upscale;
         TargetGeometry geometry;
         if (!resolveTargetGeometry(target.cols, target.rows, config, geometry, error) ||
             geometry.columns != columns || geometry.rows != rows)
@@ -754,7 +762,7 @@ ServiceResult ProjectService::render(const ProjectRequest &request, RuntimeConte
         }
         if (config.outputMode != OutputMode::Html)
         {
-            resizeTarget(target, geometry, config);
+            resizeTarget(target, geometry);
             padTarget(target, config, columns, rows);
         }
         const auto selection = manifest["layout"].get<std::vector<int>>();

@@ -59,7 +59,7 @@ ServiceResult sampleMosaicSize(const MosaicRequest &request, const MosaicSelecti
         {
             return ServiceResult::failure(1, "cannot read target image", "input_unreadable");
         }
-        resizeTarget(target, plan.target, cfg);
+        resizeTarget(target, plan.target);
         padTarget(target, cfg, selection.columns, selection.rows);
         compositor = std::make_unique<TileCompositor>(target, selection.columns, selection.rows,
                                                      cv::Size(out.tileWidth, out.tileHeight));

@@ -5,6 +5,7 @@
 
 #include <iostream>
 #include <atomic>
+#include <cstdint>
 #include <string>
 
 namespace mosaicraft
@@ -38,9 +39,10 @@ public:
         double lRange = 20.0;
         double usePenalty = 0.0;
 
-        // 输出尺寸（0 = 用原始目标图分辨率；>0 则将目标图缩放到指定尺寸，输出 tile 尺寸由 nativeTileW×H 决定）
+        // 匹配前的目标像素尺寸，0 表示自动；百分比与显式像素尺寸互斥。
         int outW = 0;
         int outH = 0;
+        int64_t targetPercentMilli = 0; // 0 不指定；50% 表示为 50000。
 
         // 原生 tile 尺寸（每个 tile 的输出像素尺寸，默认与图库归一化规格 180×320 一致）
         int nativeTileW = 180;   // 输出 tile 尺寸（与图库归一化尺寸匹配）
@@ -84,7 +86,6 @@ public:
 
         // 目标图上采样因子：>1 时先将原图放大 n×，再以 tileW×tileH 格分割
         // 2× = 4× tile 密度，输出分辨率不变（配合 nativeTile 等比缩小）
-        int upscale = 0;   // 0/1 不放大，>1 按指定倍数放大。
         int pngCompressionLevel = 1;  // PNG 压缩级别 1-9，默认 1（最快速度）
         std::string writeMode = "auto";  // 写入模式：auto(内存自适应) / stream(低内存) / batch(全量)，对 PNG/TIFF 生效
 

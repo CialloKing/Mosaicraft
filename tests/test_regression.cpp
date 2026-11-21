@@ -467,6 +467,60 @@ TEST_CASE("oversized single images use the planned format tile and actual path")
     }
 }
 
+TEST_CASE("target size resolves pixel and percentage requests before matching")
+{
+    using nlohmann::json;
+    struct Case
+    {
+        const char *value;
+        int width, height;
+    };
+    for (const auto &entry : {Case{"1200X800", 1200, 800}, Case{"1200xauto", 1200, 1789},
+                              Case{"autox80", 54, 80}, Case{"50%", 27, 40}, Case{"200%", 106, 158},
+                              Case{"12.5%", 7, 10}, Case{"0.001%", 1, 1}, Case{"100%", 53, 79}})
+    {
+        CAPTURE(entry.value);
+        const json fields = {{"inputPath", "target.png"}, {"targetSize", entry.value}};
+        MosaicRequest request, restored;
+        RequestError error;
+        REQUIRE(parseMosaicRequestJson(fields.dump(), request, error));
+        const auto serialized = mosaicRequestToJson(request);
+        CHECK_FALSE(serialized.contains("upscale"));
+        REQUIRE(parseMosaicRequestJson(serialized.dump(), restored, error));
+        TargetGeometry geometry;
+        std::string detail;
+        REQUIRE(resolveTargetGeometry(53, 79, restored.config, geometry, detail));
+        CHECK(geometry.width == entry.width);
+        CHECK(geometry.height == entry.height);
+    }
+    for (auto size : {"0%", "-50%", "1e2%", "12.5001%", "12.%", "autoXauto", "0x80", "50", "1x1x1",
+                      "1000000000000000000%"})
+    {
+        CAPTURE(size);
+        MosaicRequest request;
+        RequestError error;
+        const json fields = {{"inputPath", "target.png"}, {"targetSize", size}};
+        CHECK_FALSE(parseMosaicRequestJson(fields.dump(), request, error));
+        CHECK(error.field == "targetSize");
+    }
+    for (const auto &spec : {json{{"targetSize", "50%"}, {"outH", 0}}, json{{"upscale", 1}},
+                             json{{"targetSize", 50}}})
+    {
+        auto fields = spec;
+        fields["inputPath"] = "target.png";
+        MosaicRequest request;
+        RequestError error;
+        CHECK_FALSE(parseMosaicRequestJson(fields.dump(), request, error));
+    }
+    MosaicEngine::Config config;
+    TargetGeometry geometry;
+    std::string detail;
+    config.targetPercentMilli = 200000;
+    CHECK_FALSE(resolveTargetGeometry(600000, 1, config, geometry, detail));
+    CHECK_FALSE(resolveTargetGeometry(6000, 6000, config, geometry, detail));
+    CHECK_FALSE(resolveTargetGeometry(10000, 10001, config, geometry, detail));
+}
+
 TEST_CASE("output plans match explicit tiles and published directory files")
 {
     TempWorkspace workspace;
@@ -1744,9 +1798,9 @@ TEST_CASE("mosaic validates dimensions formats and legacy grids before processin
     writeTargetImage(workspace.targetPath());
     REQUIRE(BuildService().run(makeBuildRequest(workspace)).ok);
     auto request = makeMosaicRequest(workspace);
-    request.config.upscale = 200000;
+    request.config.outW = 1000001;
     CHECK_FALSE(MosaicService().run(request).ok);
-    request.config.upscale = 1;
+    request.config.outW = 18;
     request.config.outputFormat = "PNG";
     REQUIRE(MosaicService().run(request).ok);
     request.config.outW = 0;
@@ -1934,6 +1988,19 @@ TEST_CASE("interactive selection is read-only and pins the exported tiles and an
     REQUIRE(empty.scores);
     CHECK(cache.scores->indices == empty.scores->indices);
     CHECK(cache.scores->values == empty.scores->values);
+
+    auto scaled = request;
+    scaled.config.outW = scaled.config.outH = 0;
+    scaled.config.targetPercentMilli = 50000;
+    MosaicSelection half, twice;
+    REQUIRE(MosaicService().preview(scaled, 42, cache, canceled, half).ok);
+    CHECK(half.columns == 2);
+    CHECK(half.rows == 2);
+    scaled.config.targetPercentMilli = 200000;
+    CHECK_FALSE(MosaicEngine::selectionCurrent(scaled.inputPath, scaled.dbPath, scaled.config, half));
+    REQUIRE(MosaicService().preview(scaled, 42, cache, canceled, twice).ok);
+    CHECK(twice.columns == 8);
+    CHECK(twice.rows == 8);
 
     const auto reserved = PreviewCacheReservation::totalBytes();
     canceled = true;
@@ -2413,7 +2480,7 @@ TEST_CASE("overlay preserves cache pixels adjustment order and all output paths"
     }
 }
 
-TEST_CASE("overlay follows resize upscale and reflected padding without changing selections")
+TEST_CASE("overlay follows target resize and reflected padding without changing selections")
 {
     TempWorkspace workspace;
     writeLibraryImages(workspace.inputDir());
@@ -2425,15 +2492,13 @@ TEST_CASE("overlay follows resize upscale and reflected padding without changing
     REQUIRE(BuildService().run(build).ok);
     auto request = makeMosaicRequest(workspace);
     auto &config = request.config;
-    config.outW = 11;
-    config.outH = 13;
-    config.upscale = 2;
+    config.outW = 22;
+    config.outH = 26;
     config.tileW = config.tileH = 4;
     config.nativeTileW = config.nativeTileH = 6;
     config.lRange = 255;
-    cv::Mat target, resized, padded, expected;
-    cv::resize(imreadUnicode(request.inputPath), resized, cv::Size(11, 13), 0, 0, cv::INTER_AREA);
-    cv::resize(resized, target, cv::Size(22, 26), 0, 0, cv::INTER_LINEAR);
+    cv::Mat target, padded, expected;
+    cv::resize(imreadUnicode(request.inputPath), target, cv::Size(22, 26), 0, 0, cv::INTER_AREA);
     cv::copyMakeBorder(target, padded, 0, 2, 0, 2, cv::BORDER_REFLECT);
     cv::resize(padded, expected, cv::Size(36, 42), 0, 0, cv::INTER_LINEAR);
     for (bool gpu : {false, true})

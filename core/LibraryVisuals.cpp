@@ -42,7 +42,7 @@ ServiceResult measureMosaicCoverage(const MosaicRequest &request, MosaicCoverage
         }
     }
     std::sort(lightness.begin(), lightness.end());
-    resizeTarget(target, geometry, cfg);
+    resizeTarget(target, geometry);
     padTarget(target, cfg, geometry.columns, geometry.rows);
     coverage.columns = geometry.columns;
     coverage.rows = geometry.rows;

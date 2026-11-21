@@ -56,20 +56,11 @@
   {
     "name": "target-size",
     "short": "",
-    "type": "size",
-    "field": "",
+    "type": "string",
+    "field": "targetSize",
     "commands": "create inspect",
-    "help": "Resize target WxH; one axis may be auto",
+    "help": "Resize target before matching: WxH (one axis may be auto) or a percentage, e.g. 50%, 200%",
     "advanced": false
-  },
-  {
-    "name": "target-upscale",
-    "short": "",
-    "type": "int",
-    "field": "upscale",
-    "commands": "create inspect",
-    "help": "Upscale after target resize (1..64)",
-    "advanced": true
   },
   {
     "name": "brightness-jitter",

@@ -11,13 +11,13 @@ class Database;
 
 struct TargetGeometry
 {
-    int resizedWidth = 0, resizedHeight = 0, width = 0, height = 0;
+    int width = 0, height = 0;
     int columns = 0, rows = 0;
 };
 
 bool resolveTargetGeometry(int width, int height, const MosaicEngine::Config &config,
                            TargetGeometry &geometry, std::string &error);
-void resizeTarget(cv::Mat &target, const TargetGeometry &geometry, const MosaicEngine::Config &config);
+void resizeTarget(cv::Mat &target, const TargetGeometry &geometry);
 void padTarget(cv::Mat &target, const MosaicEngine::Config &config, int columns, int rows);
 bool readLibraryDimensions(Database &database, int &width, int &height);
 bool orientOutputTile(MosaicEngine::Config &config, int libraryWidth, int libraryHeight);

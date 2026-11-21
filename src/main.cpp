@@ -242,7 +242,7 @@ json requestFields(const Arguments &args)
             fields[option.field] = value;
         }
     }
-    for (const auto &name : {"match-tile", "output-tile", "target-size"})
+    for (const auto &name : {"match-tile", "output-tile"})
     {
         if (!args.has(name))
         {
@@ -250,25 +250,13 @@ json requestFields(const Arguments &args)
         }
         auto value = args.get(name);
         int width = 0, height = 0;
-        const bool target = std::string(name) == "target-size";
-        const auto split = value.find_first_of("xX");
-        if (target && split != std::string::npos)
-        {
-            const auto w = value.substr(0, split), h = value.substr(split + 1);
-            width = w == "auto" ? 0 : integer(w);
-            height = h == "auto" ? 0 : integer(h);
-            if ((width == 0 && w != "auto") || (height == 0 && h != "auto") || (!width && !height) || width < 0 ||
-                height < 0)
-            {
-                throw std::invalid_argument("target-size requires positive WxH with at most one auto axis");
-            }
-        }
-        else if (!parseSize(value, width, height))
+        if (!parseSize(value, width, height))
         {
             throw std::invalid_argument(std::string(name) + " requires positive WxH");
         }
-        fields[target ? "outW" : std::string(name) == "match-tile" ? "tileW" : "nativeTileW"] = width;
-        fields[target ? "outH" : std::string(name) == "match-tile" ? "tileH" : "nativeTileH"] = height;
+        const bool matching = std::string(name) == "match-tile";
+        fields[matching ? "tileW" : "nativeTileW"] = width;
+        fields[matching ? "tileH" : "nativeTileH"] = height;
     }
     if (args.has("brightness-jitter"))
     {
@@ -510,7 +498,8 @@ ServiceResult execute(const Arguments &args, json &data, RuntimeContext &runtime
     request.dbPath = args.get("library", "library/mosaicraft.db");
     const auto result = InspectService().inspect(request);
     data["imageFeatures"] = inspectResultToJson(result);
-    if (result.status.ok && result.databaseAvailable)
+    const bool measureCoverage = result.status.ok && result.databaseAvailable;
+    if (measureCoverage || args.has("target-size"))
     {
         auto fields = requestFields(args);
         fields["inputPath"] = args.input;
@@ -519,6 +508,10 @@ ServiceResult execute(const Arguments &args, json &data, RuntimeContext &runtime
         if (!parseMosaicRequestJson(fields.dump(), coverageRequest, error))
         {
             throw std::invalid_argument(error.message);
+        }
+        if (!measureCoverage)
+        {
+            return result.status;
         }
         MosaicCoverage coverage;
         const auto status = measureMosaicCoverage(coverageRequest, coverage);

@@ -4,6 +4,7 @@
 #include "DeepZoomLayout.h"
 #include "MatchingBatch.h"
 #include "MosaicOutput.h"
+#include "NumericParsing.h"
 #include "RequestValidation.h"
 #include "TileCompositor.h"
 #include "UnicodeIO.h"
@@ -138,42 +139,42 @@ bool resolveTargetGeometry(int width, int height, const MosaicEngine::Config &co
         error = "Target exceeds 100 million pixels.";
         return false;
     }
-    const int64_t resizedWidth = config.outW > 0 ? config.outW : config.outH > 0
-        ? std::max<int64_t>(1, std::llround(static_cast<double>(width) * config.outH / height)) : width;
-    const int64_t resizedHeight = config.outH > 0 ? config.outH : config.outW > 0
-        ? std::max<int64_t>(1, std::llround(static_cast<double>(height) * config.outW / width)) : height;
-    if (!validImageSize(resizedWidth, resizedHeight))
+    int64_t workingWidth = width, workingHeight = height;
+    if (config.targetPercentMilli > 0)
     {
-        error = "Target resize exceeds 100 million pixels.";
-        return false;
+        constexpr int64_t denominator = 100 * kTargetPercentUnit, half = denominator / 2;
+        // Bound the product before multiplying, allowing values that round down to the axis limit.
+        constexpr int64_t maxNumerator = kMaxImageDimension * denominator + half - 1;
+        if (config.targetPercentMilli > maxNumerator / std::max(width, height))
+        {
+            error = "Target resize exceeds 1 million pixels on an axis.";
+            return false;
+        }
+        workingWidth = std::max<int64_t>(1, (width * config.targetPercentMilli + half) / denominator);
+        workingHeight = std::max<int64_t>(1, (height * config.targetPercentMilli + half) / denominator);
     }
-    const auto scale = std::max(1, config.upscale);
-    const auto workingWidth = resizedWidth * scale;
-    const auto workingHeight = resizedHeight * scale;
+    else
+    {
+        workingWidth = config.outW > 0 ? config.outW : config.outH > 0
+            ? std::max<int64_t>(1, std::llround(static_cast<double>(width) * config.outH / height)) : width;
+        workingHeight = config.outH > 0 ? config.outH : config.outW > 0
+            ? std::max<int64_t>(1, std::llround(static_cast<double>(height) * config.outW / width)) : height;
+    }
     if (!validImageSize(workingWidth, workingHeight))
     {
-        error = "Upscaled target exceeds 100 million pixels.";
+        error = "Target resize exceeds 1 million pixels on an axis or 100 million pixels in total.";
         return false;
     }
-    geometry = {static_cast<int>(resizedWidth), static_cast<int>(resizedHeight),
-                static_cast<int>(workingWidth), static_cast<int>(workingHeight),
+    geometry = {static_cast<int>(workingWidth), static_cast<int>(workingHeight),
                 static_cast<int>(divUp(workingWidth, config.tileW)), static_cast<int>(divUp(workingHeight, config.tileH))};
     return true;
 }
 
-void resizeTarget(cv::Mat &target, const TargetGeometry &geometry, const MosaicEngine::Config &config)
+void resizeTarget(cv::Mat &target, const TargetGeometry &geometry)
 {
-    if (config.outW > 0 || config.outH > 0)
+    if (target.cols != geometry.width || target.rows != geometry.height)
     {
-        cv::Mat resized;
-        cv::resize(target, resized, cv::Size(geometry.resizedWidth, geometry.resizedHeight), 0, 0, cv::INTER_AREA);
-        target = std::move(resized);
-    }
-    if (config.upscale > 1)
-    {
-        cv::Mat upscaled;
-        cv::resize(target, upscaled, cv::Size(geometry.width, geometry.height), 0, 0, cv::INTER_LINEAR);
-        target = std::move(upscaled);
+        cv::resize(target, target, cv::Size(geometry.width, geometry.height), 0, 0, cv::INTER_AREA);
     }
 }
 

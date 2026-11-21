@@ -84,8 +84,8 @@
   }
   function drawTarget(target, sx, sy, sw, sh, dx, dy, dw, dh) {
     const preparation = data.targetPreparation, tile = data.grid.matchTile;
-    const width = preparation ? preparation.resize[0] * preparation.upscale : columns * tile[0];
-    const height = preparation ? preparation.resize[1] * preparation.upscale : rows * tile[1];
+    const width = preparation ? preparation.resize[0] : columns * tile[0];
+    const height = preparation ? preparation.resize[1] : rows * tile[1];
     // 原目标按记录的工作尺寸映射；反射补边分段绘制，不分配整幅放大画布。
     const xs = targetBands(sx, sw, width, target.width), ys = targetBands(sy, sh, height, target.height);
     for (const y of ys) for (const x of xs) {

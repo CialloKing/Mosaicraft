@@ -120,7 +120,7 @@ ServiceResult prepareEvaluation(const MosaicRequest &request, const MosaicSelect
     {
         return ServiceResult::failure(1, "target grid changed", "preview_stale");
     }
-    resizeTarget(cache->target, geometry, request.config);
+    resizeTarget(cache->target, geometry);
     padTarget(cache->target, request.config, selection.columns, selection.rows);
     Database database(selection.dbPath, Database::OpenMode::ReadOnly);
     if (!database.isOpen())

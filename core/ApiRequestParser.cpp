@@ -513,6 +513,22 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
         }
         cfg.tileH = intValue;
     }
+    if (getStringField(values, keysFor("targetSize"), text, error))
+    {
+        if (values.contains("outW") || values.contains("outH"))
+        {
+            error.field = "targetSize";
+            error = "targetSize cannot be combined with outW or outH";
+            return false;
+        }
+        if (!parseTargetSize(text, cfg.outW, cfg.outH, cfg.targetPercentMilli))
+        {
+            error.field = "targetSize";
+            error = "targetSize (--target-size) requires positive WxH with at most one auto axis, "
+                    "or a positive percentage with up to three decimal places";
+            return false;
+        }
+    }
     if (getIntField(values, keysFor("outW"), intValue, error))
     {
         if (!requireIntAtLeast("outW", intValue, 0, error))
@@ -570,14 +586,6 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
             return false;
         }
         cfg.neighborWindow = intValue;
-    }
-    if (getIntField(values, keysFor("upscale"), intValue, error))
-    {
-        if (!requireIntAtLeast("upscale", intValue, 1, error))
-        {
-            return false;
-        }
-        cfg.upscale = intValue;
     }
     if (getIntField(values, keysFor("quality"), intValue, error))
     {

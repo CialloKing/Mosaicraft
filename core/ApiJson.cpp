@@ -1,6 +1,7 @@
 #include "ApiJson.h"
 #include "compute/ComputeBackend.h"
 #include "CliOptions.h"
+#include "NumericParsing.h"
 
 #include "Version.h"
 
@@ -221,8 +222,15 @@ nlohmann::json mosaicRequestToJson(const MosaicRequest &request)
     value["candidates"] = cfg.candidates;
     value["lRange"] = cfg.lRange;
     value["usePenalty"] = cfg.usePenalty;
-    value["outW"] = cfg.outW;
-    value["outH"] = cfg.outH;
+    if (cfg.targetPercentMilli > 0)
+    {
+        value["targetSize"] = formatTargetPercent(cfg.targetPercentMilli);
+    }
+    else
+    {
+        value["outW"] = cfg.outW;
+        value["outH"] = cfg.outH;
+    }
     if (cfg.outputTileExplicit)
     {
         value["nativeTileW"] = cfg.nativeTileW;
@@ -266,10 +274,6 @@ nlohmann::json mosaicRequestToJson(const MosaicRequest &request)
     if (cfg.formatExplicit)
     {
         value["format"] = cfg.outputFormat;
-    }
-    if (cfg.upscale > 0)
-    {
-        value["upscale"] = cfg.upscale;
     }
     if (cfg.outputMode == OutputMode::Html)
     {

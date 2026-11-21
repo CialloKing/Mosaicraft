@@ -47,6 +47,11 @@ def main():
         png(root / 'target.png', (100, 110, 120))
         run('library', 'build', photos, '-o', 'library', '--size', '18x32', '--backend', 'cpu')
         run('library', 'build', photos, '-o', 'library', ok=False)
+        for size, expected in [('50%', (2, 1)), ('200%', (8, 4)), ('12.5%', (1, 1)), ('16xauto', (2, 1))]:
+            coverage = run('inspect', 'target.png', '-l', 'library', '--target-size', size)['data']['gridCoverage']
+            assert (coverage['columns'], coverage['rows']) == expected
+        for args in [('--target-upscale', '1'), ('--target-size', '0%'), ('--target-size', '10000000%')]:
+            run('inspect', 'target.png', '-l', 'library', *args, ok=False)
         run('create', 'target.png', '-l', 'library', '-o', 'artwork', '--mode', 'html',
             '--backend', 'cpu', '--seed', 42, '--l-range', 255, '--target-blend', .2)
         manifest = json.loads((root / 'artwork/project.json').read_text())
@@ -71,7 +76,7 @@ def main():
             run('render', 'artwork', '-o', original, '--output-tile', '13x19')
             run('create', original, '-l', 'library', '-o', first, '--mode', 'html',
                 '--backend', 'cpu', '--seed', 42, '--l-range', 255,
-                '--target-size', '43x57', '--target-upscale', 2, '--target-blend', 1)
+                '--target-size', '200%', '--target-blend', 1)
             run('render', first, '-o', again, '--mode', 'html')
             for directory in (first, again):
                 named = json.loads((root / directory / 'project.json').read_text(encoding='utf-8'))
@@ -79,14 +84,14 @@ def main():
                 assert (root / directory / target_name).read_bytes().startswith(signature)
                 resource = next(r for r in named['resources'] if r['path'] == target_name)
                 assert (resource['width'], resource['height']) == (52, 38)
-                assert named['targetPreparation'] == dict(resize=[43, 57], upscale=2)
+                assert named['targetPreparation'] == dict(resize=[104, 76])
                 run('project', 'check', directory, '--deep')
             assert (root / first / target_name).read_bytes() == (root / again / target_name).read_bytes()
             if suffix != 'webp':
                 assert (root / original).read_bytes() == (root / first / target_name).read_bytes()
             run('create', original, '-l', 'library', '-o', f'direct-{suffix}.png', '--format', 'png',
                 '--backend', 'cpu', '--seed', 42, '--l-range', 255,
-                '--target-size', '43x57', '--target-upscale', 2, '--target-blend', 1)
+                '--target-size', '104x76', '--target-blend', 1)
             run('render', first, '-o', f'rendered-{suffix}.png')
             assert (root / f'direct-{suffix}.png').read_bytes() == (root / f'rendered-{suffix}.png').read_bytes()
         # Distinct content with the same name must survive without renaming; identical bytes copy once.
@@ -130,6 +135,18 @@ def main():
         assert all(Path(a['path']).name == special for a in preserved['assets'])
         assert preserved['layout'] == [0, 1, 0, 1]
         run('project', 'check', 'preserved', '--deep')
+        legacy = root / 'legacy-upscale'
+        shutil.copytree(root / 'artwork', legacy)
+        legacy_manifest = json.loads(json.dumps(manifest))
+        legacy_manifest['targetPreparation']['upscale'] = 1
+        save_fixture(legacy, legacy_manifest)
+        run('project', 'check', legacy, '--deep')
+        run('render', legacy, '-o', 'legacy-ok.png')
+        legacy_manifest['targetPreparation'].update(resize=[16, 16], upscale=2)
+        save_fixture(legacy, legacy_manifest)
+        for command in [('project', 'check', legacy), ('render', legacy, '-o', 'legacy-rejected.png')]:
+            rejected = run(*command, ok=False)
+            assert 'recreate the HTML project' in rejected['diagnostic']['message'], rejected
         quiet = subprocess.run([str(cli), 'project', 'info', 'artwork', '--quiet'], cwd=root,
                                capture_output=True, timeout=10)
         assert quiet.returncode == 0 and json.loads(quiet.stdout)['ok'] and not quiet.stderr
@@ -196,7 +213,7 @@ def main():
             lambda m: m.update(target='../outside.png'),
             lambda m: m['grid'].update(columns=2.5),
             lambda m: m['targetPreparation'].update(resize=[0, 32]),
-            lambda m: m['targetPreparation'].update(upscale=65),
+            lambda m: m['targetPreparation'].update(upscale=0),
             lambda m: m['targetPreparation'].update(resize=[31, 48]),
             lambda m: m.update(outputTile=[18.5, 32]),
         ):

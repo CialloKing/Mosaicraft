@@ -196,7 +196,7 @@ std::string MosaicEngine::matchingKey(const Config &cfg)
     std::ostringstream key;
     key.imbue(std::locale::classic());
     key << std::setprecision(std::numeric_limits<double>::max_digits10)
-        << cfg.tileW << ':' << cfg.tileH << ':' << cfg.outW << ':' << cfg.outH << ':' << std::max(1, cfg.upscale)
+        << cfg.tileW << ':' << cfg.tileH << ':' << cfg.outW << ':' << cfg.outH << ':' << cfg.targetPercentMilli
         << ':' << cfg.candidates << ':' << cfg.lRange << ':' << cfg.usePenalty << ':' << cfg.labWeight
         << ':' << cfg.gridWeight << ':' << cfg.tinyWeight << ':' << cfg.edgeWeight << ':' << cfg.lbpWeight
         << ':' << cfg.neighborWindow << ':' << cfg.neighborPenalty << ':' << cfg.topNRandom
@@ -397,7 +397,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
         const auto bytes = readBytesUnicode(targetPath);
         targetVersion = previewFileVersion(bytes);
         preparedKey = std::to_string(targetVersion) + ":" + std::to_string(cfg.outW) + ":" +
-                      std::to_string(cfg.outH) + ":" + std::to_string(std::max(1, cfg.upscale));
+                      std::to_string(cfg.outH) + ":" + std::to_string(cfg.targetPercentMilli);
         reusedTarget = m_previewWorkspace && m_previewWorkspace->targetKey == preparedKey &&
                        !m_previewWorkspace->target.empty();
         if (m_renderSelection && (bytes.empty() || targetVersion != m_renderSelection->targetVersion ||
@@ -455,7 +455,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
         {
             return runtime.fail("invalid_argument", error, "config");
         }
-        resizeTarget(target, geometry, cfg);
+        resizeTarget(target, geometry);
     }
     const int tilesX = (target.cols + cfg.tileW - 1) / cfg.tileW;
     const int tilesY = (target.rows + cfg.tileH - 1) / cfg.tileH;
