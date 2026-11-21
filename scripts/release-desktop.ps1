@@ -45,7 +45,7 @@ try {
     if ($CudaVulkan) {
         if ($IsMacOS) { throw 'CUDA + Vulkan desktop archives require Windows or Linux x64' }
         if (!$env:CUDAToolkit_ROOT) { throw 'Set CUDAToolkit_ROOT to the locked CUDA SDK' }
-        $preset = if ($IsWindows) { 'windows-cuda-vulkan' } else { 'linux-cuda-vulkan' }
+        $preset = if ($IsWindows) { 'windows-cuda' } else { 'linux-cuda' }
         # Keep the tagged source's auto policy (CUDA -> CPU); Vulkan is selected explicitly.
         $nativeOptions = @('-DMOSAICRAFT_CUDA:BOOL=ON', '-DMOSAICRAFT_VULKAN:BOOL=ON',
             '-DMOSAICRAFT_VULKAN_AUTO:BOOL=OFF', '-DMOSAICRAFT_METAL:BOOL=OFF',
