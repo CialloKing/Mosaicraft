@@ -39,6 +39,22 @@ Linux/macOS 分别选择 x64-linux-release、arm64-osx-release。Linux 打包还
 
 Linux/macOS 的日常源码构建使用 CMake 3.21+。发布脚本使用 PowerShell 7，并向 CMake 显式传入固定依赖工具链和运行库打包选项。Windows Preset 的 Visual Studio 2026 生成器需要 CMake 4.2+。 [源码构建](building.md)
 
+## CMake 发布入口（迁移验证）
+
+此入口先验证干净提交和实际构建配置，再运行必选 CTest、安装到临时目录、由 CPack 归档，最后用独立工具验证解包后的程序。只有通过验收的归档和 `.sha256` 才进入输出目录。没有跳过测试、冒烟或验包的选项。
+
+先按[源码构建说明](building.md)运行 `Prepare` 和 `Install`。Linux 打包另需系统的 Ninja 和 patchelf。未准备依赖时，发布配置不会自动开始下载和编译 OpenCV。
+
+```sh
+cmake -DVCPKG_ROOT=build/tools/vcpkg -DRUNTIME=cpu-only -DOUTPUT_DIR=build/migration-cpu -P cmake/Release.cmake
+cmake -DVCPKG_ROOT=build/tools/vcpkg -DRUNTIME=vulkan -DMOSAICRAFT_VULKAN_INCLUDE=<headers-include> -DMOSAICRAFT_GLSLANG=<glslang> -P cmake/Release.cmake
+cmake -DVCPKG_ROOT=build/tools/vcpkg -DRUNTIME=metal -DCHANNEL=candidate -P cmake/Release.cmake
+```
+
+`RUNTIME` 必填，`CHANNEL` 默认为 `stable`。可传入 `BUILD_DIR`、`OUTPUT_DIR`、`VCPKG_INSTALLED_DIR`；可以提供现有 SDK，也可用 `PrepareRelease.cmake` 的 `CUDA`、`Vulkan` 模式准备。CUDA 发布用 `-DCUDAToolkit_ROOT=<sdk>` 指定 SDK；Windows 正式包默认且必须 `Required`。Linux 未实机且要输出正式命名时须同时传入 `-DCUDA_VALIDATION=BuildOnly -DALLOW_UNVALIDATED_LINUX_CUDA=ON`，标记为 `not-run`。Windows 组合包须显式选 `-DRUNTIME=cuda-vulkan -DCHANNEL=candidate`，如无设备验证再加 `-DCUDA_VALIDATION=BuildOnly`。
+
+打开 **Compare CMake and legacy release packages**，按 `cpu` → `portable` → `cuda` 依次运行。对照以同一提交的两个归档为输入，新的独立 job 不安装 OpenCV 或 GPU SDK，对照完毕再用旧验收器核验新包。`cold` 模式跳过二进制缓存；Linux 会审计依赖准备、发布及独立验收的实际子进程。可传入 `published-tag` 验证现有正式附件。此工作流仅上传对照用的 Actions artifacts，不发布或替换附件。未完成跨平台对照前保持现有 `Native packages`、`Portable GPU candidates` 和 `Verify published release` 不变；Windows 正式 CUDA 还必须单独通过实机 `Required`。
+
 ## CUDA 验收状态
 
 云端与本机编译器固定 CUDA Toolkit 13.5.0/nvcc 13.5.37，使用 NVIDIA 官方重分发组件和锁定 SHA256；云端不安装显卡驱动。默认包含 sm_75、sm_80、sm_86、sm_89、sm_90、sm_100、sm_120 原生内核及对应七种 PTX，原算术编译参数保持不变。`cmake/cuda-13.5.json` 同时锁定 cudart、cuobjdump 13.5.37；打包前逐模块和最终程序核对架构，缺少任何目标即失败。

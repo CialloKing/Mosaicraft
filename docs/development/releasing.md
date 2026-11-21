@@ -57,6 +57,19 @@ Windows/Linux x64 正式 Vulkan 包启用 Vulkan → CPU，并在独立无驱动
 ./scripts/verify-release-asset.ps1 -ArchivePath <archive> -RequireStandalone
 ```
 
+## 使用原生验包器进行迁移验收
+
+用同提交构建产物中的 `mosaicraft_release_check`，或在独立的本机构建中生成它。这个工具不依赖 OpenCV、CUDA 或 Vulkan，也不从待验包取出。使用 Windows 时将工具路径指向 `.exe`，多配置生成器一般放在 `Release` 子目录。
+
+```sh
+cmake -S tools/release-check -B build/check-tool -DCMAKE_BUILD_TYPE=Release
+cmake --build build/check-tool --config Release
+cmake -DARCHIVE=<archive> -DEXPECTED_SHA256=<sha256> -DEXPECTED_COMMIT=<commit> -DCHECK_TOOL=<native-check> -P cmake/VerifyPackage.cmake
+cmake -DTAG=v1.15.10 -DASSET=<release-asset-name> -DCHECK_TOOL=<native-check> -P cmake/VerifyPackage.cmake
+```
+
+本地模式不联网，SHA256 应取自信任的旁文件或发布记录，提交来自对应的构建记录或版本标签。标签模式使用 `gh` 获取发布附件及摘要、解析标签提交。两种方式都在隔离的中文及空格目录内执行 CLI 和 Web UI/API 验收；正式 Vulkan 会隐藏 ICD 验证回退。迁移对照通过后才切换相应正式路径，详见[打包说明](packaging.md#cmake-发布入口迁移验证)。
+
 ## 发布与复核
 
 只有已授权的版本发布才创建并推送 v* 标签，触发 Native packages。检查三平台 CPU 与对应 CUDA、Vulkan 工作流，收集同一提交的附件、SHA256 和日志，再创建 Release。草稿和候选包不能称为稳定发布。

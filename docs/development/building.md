@@ -20,25 +20,18 @@ cd Mosaicraft
 
 ## Windows
 
-使用 Visual Studio 2026 的 C++ 工具、CMake 4.2+、PowerShell 7 和 Git。已有对应提交的 vcpkg 时，设置 `VCPKG_ROOT` 后即可依次运行 `Prepare` 和 `Install`。
+使用 Visual Studio 2026 的 C++ 工具、CMake 4.2+ 和 Git。下列命令从仓库根目录执行，也可在不安装 PowerShell 或 Python 的环境中使用。已有锁定版本的 vcpkg 时，直接使用其路径；首次准备依赖是显式步骤。
 
-```powershell
-git clone https://github.com/CialloKing/Mosaicraft.git
-cd Mosaicraft
+```sh
 git clone https://github.com/microsoft/vcpkg.git build/tools/vcpkg
 git -C build/tools/vcpkg checkout a0400024711b283056538ac19ced80b91a83c24c
-$env:VCPKG_ROOT = (Resolve-Path build/tools/vcpkg).Path
-./scripts/setup-dependencies.ps1 -Mode Prepare
-./scripts/setup-dependencies.ps1 -Mode Install
+cmake -DMODE=Prepare -DVCPKG_ROOT=build/tools/vcpkg -P cmake/PrepareRelease.cmake
+cmake -DMODE=Install -DVCPKG_ROOT=build/tools/vcpkg -P cmake/PrepareRelease.cmake
+cmake -E env VCPKG_ROOT=build/tools/vcpkg cmake --preset windows-cpu -DVCPKG_INSTALLED_DIR=build/dependencies -DVCPKG_MANIFEST_INSTALL=OFF
+cmake --build --preset windows-cpu
 ```
 
-使用 CUDA 时将下方的 `windows-cpu` 换成 `windows-cuda`，并设置 `$env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5'`。 [架构与单卡构建](cuda.md)
-
-```powershell
-$preset = 'windows-cpu'
-cmake --preset $preset
-cmake --build --preset $preset --target mosaicraft MosaicraftWebUI --parallel
-```
+使用 CUDA 时将 `windows-cpu` 换成 `windows-cuda`，配置时通过 `-DCUDAToolkit_ROOT="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5"` 指定实际 SDK。 [架构与单卡构建](cuda.md)
 
 构建产物位于 `build/<preset>/Release/bin`。
 
@@ -46,10 +39,21 @@ cmake --build --preset $preset --target mosaicraft MosaicraftWebUI --parallel
 
 ## Vulkan 与 Metal
 
-Vulkan 与 Metal 都是独立开关，默认 OFF，五个标准发布包保持关闭，CPU 构建不需要 GPU SDK。使用 Vulkan 的用户需要自行从源码编译：选用下方 Vulkan preset，或在配置时显式传入 -DMOSAICRAFT_VULKAN=ON。开发者 preset 的启用不会影响正式包；发布脚本再次显式设置开关并检查缓存，避免复用目录带入额外后端。设备与性能准入见[四后端实现与验收](portable-gpu.md)。
+Vulkan 与 Metal 都是独立开关，默认 OFF，五个标准发布包保持关闭，CPU 构建不需要 GPU SDK。源码启用 Vulkan 时选用下方 Vulkan preset，或在配置时显式传入 `-DMOSAICRAFT_VULKAN=ON`。开发者 preset 的启用不会影响正式包；发布脚本再次显式设置开关并检查缓存，避免复用目录带入额外后端。设备与性能准入见[四后端实现与验收](portable-gpu.md)。
 
-- Windows：先运行 ./scripts/setup-vulkan.ps1，再使用 windows-vulkan 或 windows-cuda-vulkan preset。
+- Windows：运行 `cmake -DMODE=Vulkan -P cmake/PrepareRelease.cmake`，然后用其输出设置 `-DMOSAICRAFT_VULKAN_INCLUDE` 和 `-DMOSAICRAFT_GLSLANG`，再配置 `windows-vulkan` 或 `windows-cuda-vulkan`。
 - Linux：安装 Vulkan headers 和 glslang，使用 linux-vulkan preset。
 - macOS：在完整 Xcode 环境使用 macos-metal preset，Command Line Tools 本身不足以提供完整 Metal 离线工具链。
 
 着色器在构建时离线编译并嵌入程序，运行发布包无需安装着色器开发工具。纯 CPU、CUDA、Vulkan 和 Metal 使用独立构建目录，避免沿用其他后端的缓存。
+
+## 单独构建回归工具
+
+普通构建不编译测试程序，也不探测解释器。配置后运行对应的 `-tests` 构建预设，再沿用同名测试预设（不带 `-tests`）：
+
+```sh
+cmake --build --preset windows-cpu-tests
+ctest --preset windows-cpu --output-on-failure
+```
+
+更换平台或后端时两条命令使用同一套预设。使用 `-B` 覆盖构建目录时，改用 `cmake --build <目录> --config Release --target mosaicraft_test_targets` 和 `ctest --test-dir <目录> -C Release --output-on-failure`。独立的前端命令检查由 CI 执行，不进入 CTest 发布门禁。
