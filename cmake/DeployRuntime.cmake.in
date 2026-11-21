@@ -13,8 +13,9 @@ else()
     set(_exclude "^/(usr/)?lib(64)?/.*(ld-linux|lib(c|m|dl|pthread|rt|gcc_s|stdc\\+\\+))\\.so.*")
 endif()
 set(_runtime_dirs "@_runtime_dirs@")
+set(_build_executables "@_build_executables@")
 file(GET_RUNTIME_DEPENDENCIES
-    EXECUTABLES "$<TARGET_FILE:mosaicraft>" "$<TARGET_FILE:MosaicraftWebUI>"
+    EXECUTABLES ${_build_executables}
     DIRECTORIES ${_runtime_dirs}
     # Display-driver components belong to the host, including hybrid CUDA loading.
     PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*" "[Nn][Vv][Cc][Uu][Dd][Aa]\\.dll" "libcuda\\.so.*" "libnvidia-.*"
@@ -44,7 +45,7 @@ if(UNIX AND NOT APPLE)
     endforeach()
 elseif(APPLE)
     file(GLOB _libraries "${_lib_dest}/*.dylib")
-    set(_binaries "${CMAKE_INSTALL_PREFIX}/mosaicraft" "${CMAKE_INSTALL_PREFIX}/MosaicraftWebUI" ${_libraries})
+    set(_binaries "@_install_executables@" ${_libraries})
     foreach(_binary IN LISTS _binaries)
         if(IS_SYMLINK "${_binary}")
             continue()
