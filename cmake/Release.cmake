@@ -283,6 +283,7 @@ file(WRITE "${stage}/BUILD_INFO.txt" "${info}")
 file(CONFIGURE OUTPUT "${work}/CPackConfig.cmake" CONTENT [=[
 set(CPACK_PACKAGE_NAME "Mosaicraft")
 set(CPACK_PACKAGE_VERSION "@version@")
+set(CPACK_PACKAGE_DESCRIPTION "Mosaicraft @version@ (@RUNTIME@)")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Mosaicraft @RUNTIME@")
 set(CPACK_GENERATOR "@generator@")
 set(CPACK_PACKAGE_FILE_NAME "@package@")

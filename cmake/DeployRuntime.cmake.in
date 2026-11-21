@@ -1,6 +1,9 @@
 # Inspect the built programs while their dependency search paths still exist.
 # Only native OS libraries are excluded; every third-party dependency is shipped.
 if(WIN32)
+    if(POLICY CMP0207)
+        cmake_policy(SET CMP0207 NEW)
+    endif()
     set(CMAKE_GET_RUNTIME_DEPENDENCIES_COMMAND "@_runtime_scanner@")
     # CMake < 4.3 may report mixed native/CMake separators on Windows.
     set(_exclude "[Ww][Ii][Nn][Dd][Oo][Ww][Ss].[Ss][Yy][Ss][Tt][Ee][Mm]32.*")
