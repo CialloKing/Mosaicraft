@@ -79,12 +79,15 @@ if(MOSAICRAFT_DEPLOY_QT)
     set(deploy_options)
     if(NOT APPLE)
         # The gallery needs SQLite and the image picker supports WebP and TIFF.
+        set(included_plugins qsqlite qwebp qtiff)
         set(excluded_plugins qsqlmysql qsqlodbc qsqlpsql qsqlibase qsqlmimer qsqloci)
         if(UNIX)
+            # Qt's Linux SDK defaults to XCB deployment even when it includes Wayland.
+            list(APPEND included_plugins qxcb qwayland)
             # Desktop users need X11/Wayland, not device-specific framebuffer backends.
             list(APPEND excluded_plugins qeglfs qlinuxfb qminimalegl qvkkhrdisplay qvnc qgtk3)
         endif()
-        list(APPEND deploy_options INCLUDE_PLUGINS qsqlite qwebp qtiff EXCLUDE_PLUGINS ${excluded_plugins})
+        list(APPEND deploy_options INCLUDE_PLUGINS ${included_plugins} EXCLUDE_PLUGINS ${excluded_plugins})
     endif()
     if(WIN32)
         # The native backend installer already puts the MSVC runtime beside the GUI.
