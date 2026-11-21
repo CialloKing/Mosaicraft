@@ -441,6 +441,7 @@ add_subdirectory(tools/release-check EXCLUDE_FROM_ALL)
 add_custom_target(mosaicraft_test_targets DEPENDS mosaicraft MosaicraftWebUI
     mosaicraft_tests mosaicraft_regression_tests mosaicraft_release_check)
 if(NOT MOSAICRAFT_LEGACY_SCRIPT_TESTS)
+    add_test(NAME cuda_build_info_native COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_build_info.cmake")
     add_test(NAME webui_native_smoke COMMAND mosaicraft_release_check
         "$<TARGET_FILE:MosaicraftWebUI>" "${CMAKE_SOURCE_DIR}/contracts.json")
     set_tests_properties(webui_native_smoke PROPERTIES TIMEOUT 240)
