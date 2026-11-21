@@ -1,10 +1,10 @@
 // Mosaicraft Web UI local HTTP server.
 // Serves the Web UI and structured API.
-#include "core/httplib.h"
+#include "httplib.h"
 #include "core/ApiHandlers.h"
 #include "core/ApiJson.h"
 #include "core/JobManager.h"
-#include "core/json.hpp"
+#include "json.hpp"
 #include "core/ExecutablePath.h"
 #include <algorithm>
 #include <chrono>

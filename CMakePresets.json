@@ -22,7 +22,7 @@
       "hidden": true,
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_INSTALLED_DIR": "${sourceDir}/build/dependencies",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/third_party/vcpkg_installed",
         "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets",
         "VCPKG_MANIFEST_INSTALL": "OFF"
       }

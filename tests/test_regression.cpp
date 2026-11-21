@@ -39,7 +39,7 @@
 #include "../core/LibraryAccess.h"
 #include "../core/OutputPublication.h"
 #include "../core/DeepZoomWriter.h"
-#include "../core/json.hpp"
+#include "json.hpp"
 #include <sqlite3.h>
 #include <cmath>
 

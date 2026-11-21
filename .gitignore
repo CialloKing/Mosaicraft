@@ -3,6 +3,7 @@ build/
 build_cuda_test/
 build_check/
 out/
+third_party/vcpkg_installed/
 
 # Database
 *.db

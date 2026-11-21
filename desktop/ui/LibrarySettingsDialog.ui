@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>LibrarySettingsDialog</class>
+ <widget class="QDialog" name="LibrarySettingsDialog">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>530</width><height>380</height></rect></property>
+  <property name="windowTitle"><string>素材库设置</string></property>
+  <property name="styleSheet"><string notr="true"><![CDATA[
+QDialog { background: #2c2c2c; }
+QWidget { color: #e3e3e3; font-size: 13px; }
+QLabel[muted="true"] { color: #b0b0b0; }
+QLabel[sectionTitle="true"] { color: #eeeeee; font-size: 20px; font-weight: bold; }
+QSpinBox { padding: 6px; background: #242424; border: 1px solid #515151; border-radius: 4px; }
+QGroupBox { background: #363636; border: 1px solid #4a4a4a; border-radius: 5px; margin-top: 13px; padding: 9px; }
+QGroupBox::title { subcontrol-origin: margin; left: 9px; padding: 0 5px; color: #d6d6d6; font-weight: bold; }
+QPushButton { background: #383838; border: 1px solid #535353; border-radius: 4px; padding: 6px 12px; }
+QPushButton:hover { background: #484848; }
+QPushButton:default { background: #575757; border-color: #727272; }
+  ]]></string></property>
+  <layout class="QVBoxLayout" name="librarySettingsLayout">
+   <property name="leftMargin"><number>16</number></property><property name="topMargin"><number>16</number></property><property name="rightMargin"><number>16</number></property><property name="bottomMargin"><number>16</number></property>
+   <item><widget class="QLabel" name="librarySettingsTitle"><property name="text"><string>建库与追加设置</string></property><property name="sectionTitle" stdset="0"><bool>true</bool></property></widget></item>
+   <item><widget class="QLabel" name="librarySettingsHint"><property name="text"><string>仅影响以后导入的素材。追加素材时使用已有图库的归一化尺寸。</string></property><property name="wordWrap"><bool>true</bool></property><property name="muted" stdset="0"><bool>true</bool></property></widget></item>
+   <item>
+    <widget class="QGroupBox" name="normalizationCard">
+     <property name="title"><string>归一化与扫描</string></property>
+     <layout class="QFormLayout" name="normalizationForm">
+      <item row="0" column="0"><widget class="QLabel" name="normalizeSizeLabel"><property name="text"><string>新图库尺寸</string></property><property name="buddy"><cstring>normalizeWidth</cstring></property></widget></item>
+      <item row="0" column="1"><layout class="QHBoxLayout" name="normalizeSizeRow"><item><widget class="QSpinBox" name="normalizeWidth"><property name="minimum"><number>1</number></property><property name="maximum"><number>8192</number></property><property name="value"><number>180</number></property><property name="accessibleName"><string>归一化宽度</string></property></widget></item><item><widget class="QLabel" name="normalizeCross"><property name="text"><string notr="true">×</string></property></widget></item><item><widget class="QSpinBox" name="normalizeHeight"><property name="minimum"><number>1</number></property><property name="maximum"><number>8192</number></property><property name="value"><number>320</number></property><property name="accessibleName"><string>归一化高度</string></property></widget></item></layout></item>
+      <item row="1" column="0" colspan="2"><widget class="QCheckBox" name="recursiveImport"><property name="text"><string>递归扫描子目录</string></property><property name="checked"><bool>true</bool></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="libraryEncodingCard">
+     <property name="title"><string>素材编码</string></property>
+     <layout class="QFormLayout" name="libraryEncodingForm">
+      <item row="0" column="0"><widget class="QLabel" name="libraryJpegLabel"><property name="text"><string>JPEG 质量</string></property><property name="buddy"><cstring>libraryJpegQuality</cstring></property></widget></item>
+      <item row="0" column="1"><widget class="QSpinBox" name="libraryJpegQuality"><property name="minimum"><number>1</number></property><property name="maximum"><number>100</number></property><property name="value"><number>100</number></property></widget></item>
+      <item row="1" column="0"><widget class="QLabel" name="libraryPngLabel"><property name="text"><string>PNG 压缩级别</string></property><property name="buddy"><cstring>libraryPngLevel</cstring></property></widget></item>
+      <item row="1" column="1"><widget class="QSpinBox" name="libraryPngLevel"><property name="maximum"><number>9</number></property><property name="value"><number>9</number></property></widget></item>
+      <item row="2" column="0"><widget class="QLabel" name="libraryWebpLabel"><property name="text"><string>WebP 质量</string></property><property name="buddy"><cstring>libraryWebpQuality</cstring></property></widget></item>
+      <item row="2" column="1"><widget class="QSpinBox" name="libraryWebpQuality"><property name="maximum"><number>100</number></property><property name="specialValueText"><string>无损</string></property></widget></item>
+     </layout>
+    </widget>
+   </item>
+   <item><widget class="QDialogButtonBox" name="librarySettingsButtons"><property name="standardButtons"><set>QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Save</set></property></widget></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
