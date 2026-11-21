@@ -110,6 +110,19 @@ jobs:
           else
             "${command[@]}"
           fi
+      - name: Require failure when CUDA is not visible
+        if: matrix.entry == 'native' && startsWith(matrix.package.runtime, 'cuda')
+        env:
+          CUDA_VISIBLE_DEVICES: '-1'
+        run: |
+          suffix=
+          if [[ "$RUNNER_OS" == Windows ]]; then suffix=.exe; fi
+          probe="build/package-migration/Release/bin/mosaicraft_tests$suffix"
+          if "$probe" --require-cuda > build/dependency-state/no-device.log 2>&1; then
+            printf '%s\n' 'A CUDA-required probe unexpectedly succeeded without devices' >&2
+            exit 1
+          fi
+          grep -F 'requires an available CUDA device' build/dependency-state/no-device.log
       - name: Build, test and archive with the baseline
         if: matrix.entry == 'legacy'
         shell: pwsh
@@ -201,7 +214,7 @@ jobs:
             if (( ${#prefix[@]} )); then audit=("${prefix[@]}" "build/$layout-verify-execve.log"); fi
             "${audit[@]}" cmake "-DARCHIVE=$archive" "-DEXPECTED_SHA256=$sha" "-DEXPECTED_COMMIT=$GITHUB_SHA" \
               "-DEXPECTED_RUNTIME=$EXPECT_RUNTIME" "-DEXPECTED_GPU_VALIDATION=$EXPECT_GPU" "-DCHECK_TOOL=$tool" \
-              -P cmake/VerifyPackage.cmake
+              -DREQUIRE_CURRENT=ON -P cmake/VerifyPackage.cmake
           done
           cmake "-DNEW_ARCHIVE=$base-native/${archive##*/}" "-DLEGACY_ARCHIVE=$archive" -P cmake/ComparePackages.cmake
           if [[ -n "$PUBLISHED_TAG" && ( "$CHANNEL" == stable || "$PACKAGE_ID" == windows-cuda ) ]]; then

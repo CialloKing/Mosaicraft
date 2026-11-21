@@ -438,7 +438,7 @@ if(NOT MOSAICRAFT_LEGACY_SCRIPT_TESTS)
     add_test(NAME documentation_native COMMAND mosaicraft_release_check --docs "${CMAKE_SOURCE_DIR}")
     add_test(NAME cuda_build_info_native COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_build_info.cmake")
     add_test(NAME webui_native_smoke COMMAND mosaicraft_release_check
-        "$<TARGET_FILE:MosaicraftWebUI>" "${CMAKE_SOURCE_DIR}/contracts.json")
+        "$<TARGET_FILE:MosaicraftWebUI>" "${CMAKE_SOURCE_DIR}/contracts.json" --current)
     set_tests_properties(webui_native_smoke PROPERTIES TIMEOUT 240)
 endif()
 if(MOSAICRAFT_LEGACY_SCRIPT_TESTS)

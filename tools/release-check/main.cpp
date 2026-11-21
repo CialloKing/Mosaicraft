@@ -318,7 +318,7 @@ private:
     httplib::Client client_;
 };
 
-void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulkanFallback)
+void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulkanFallback, bool current)
 {
     const auto input = root / "input";
     fs::create_directory(input);
@@ -335,6 +335,7 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
     const auto page = api.request("GET", "/");
     require(page.status == 200 && page.body.find("<!DOCTYPE html>") != std::string::npos,
             "Missing installed Web UI HTML document");
+    api.json("/api/ping");
     const auto info = api.json("/api/info").at("info");
     require(info.at("api").at("structured") == true &&
             info.at("api").at("contractMajorVersion") == contracts.at("apiMajorVersion") &&
@@ -350,15 +351,24 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
             return entry.at("operation") == operation;
         }), std::string("Missing operation: ") + operation);
     }
-    const auto supportsTargetSize = std::any_of(endpoints.begin(), endpoints.end(), [](const Json &entry)
+    // An existing attachment can predate a field even when it shares the software version.
+    // New release builds, in contrast, must pass every scenario for the current contract.
+    const auto supports = [&](const std::string &operation, const std::string &field)
     {
-        if (entry.at("operation") != "planMosaic")
+        return std::any_of(endpoints.begin(), endpoints.end(), [&](const Json &entry)
         {
-            return false;
-        }
-        const auto &fields = entry.at("requestFields");
-        return std::find(fields.begin(), fields.end(), "targetSize") != fields.end();
-    });
+            if (entry.at("operation") != operation)
+            {
+                return false;
+            }
+            const auto &fields = entry.at("requestFields");
+            return std::find(fields.begin(), fields.end(), field) != fields.end();
+        });
+    };
+    const bool supportsTargetSize = supports("planMosaic", "targetSize");
+    const bool buildCodecs = supports("submitBuildJob", "jpgQuality");
+    const bool buildBenchmark = supports("submitBuildJob", "benchmark");
+    require(!current || (supportsTargetSize && buildCodecs && buildBenchmark), "Current build lacks required API request fields");
     api.error("GET", "/api/jobs/not-found", 404);
     api.error("POST", "/api/run", 404, R"({"command":"mosaicraft db-stats"})");
     for (const auto body : {"{", R"({"inputPath":"x","cpu":true})", R"({"inputPath":"x","unknown":1})",
@@ -376,7 +386,12 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
     }
 
     Json build{{"inputDir", input.u8string()}, {"outputDir", library}, {"dbPath", database}, {"threads", 1},
-               {"forceMode", true}, {"normalizeWidth", 36}, {"normalizeHeight", 64}, {"jpgQuality", 82}, {"pngLevel", 0}};
+               {"forceMode", true}, {"normalizeWidth", 36}, {"normalizeHeight", 64}};
+    if (buildCodecs)
+    {
+        build["jpgQuality"] = 82;
+        build["pngLevel"] = 0;
+    }
     const auto built = api.job("build", build, input.u8string(), library);
     const auto fallback = [](const Json &runtime)
     {
@@ -390,13 +405,22 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
     }
     require(fs::file_size(fs::u8path(database)) > 0, "Build did not create the database");
     api.error("POST", "/api/jobs/build", 400, Json{{"inputDir", input.u8string()}, {"benchmark", true}}.dump());
-    const auto append = api.job("build", {{"inputDir", input.u8string()}, {"outputDir", library}, {"dbPath", database},
-                                {"appendMode", true}, {"benchmark", true}, {"threads", 1}}, input.u8string(), library);
-    require(append.at("runtime").at("metrics").at("sqlLookupCount") == 10 &&
-            append.at("runtime").at("metrics").at("committedBatchCount") == 0 && append.at("request").at("benchmark") == true,
-            "Append benchmark did not publish its no-change metrics");
+    Json appendOptions{{"inputDir", input.u8string()}, {"outputDir", library}, {"dbPath", database},
+                       {"appendMode", true}, {"threads", 1}};
+    if (buildBenchmark)
+    {
+        appendOptions["benchmark"] = true;
+    }
+    const auto append = api.job("build", appendOptions, input.u8string(), library);
+    if (buildBenchmark)
+    {
+        require(append.at("runtime").at("metrics").at("sqlLookupCount") == 10 &&
+                append.at("runtime").at("metrics").at("committedBatchCount") == 0 && append.at("request").at("benchmark") == true,
+                "Append benchmark did not publish its no-change metrics");
+    }
     const auto stats = api.json("/api/db/stats", {{"dbPath", database}}).at("stats");
     require(stats.at("total") == 10, "Wrong library size after append");
+    api.json("/api/db/health", {{"dbPath", database}});
     api.json("/api/db/usage", {{"dbPath", database}, {"limit", 10}, {"showUnused", true}});
     const auto inspect = api.json("/api/inspect", {{"imagePath", target.u8string()}, {"dbPath", database}}).at("inspect");
     require(inspect.at("width") == 36 && inspect.at("height") == 64 && inspect.at("databaseAvailable") == true,
@@ -552,7 +576,7 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
         require(failure.at("ok") == false && failure.at("diagnostic").at("code") == "gpu_required",
                 "An explicit Vulkan request must not silently fall back");
     }
-    for (const auto &device : info.at("devices"))
+    for (const auto &device : info.value("devices", Json::array()))
     {
         const auto backend = device.at("backend").get<std::string>();
         if (device.at("available") != true || (backend != "vulkan" && backend != "metal"))
@@ -590,14 +614,17 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
     const auto history = api.json("/api/history").at("history");
     require(std::any_of(history.begin(), history.end(), [&](const Json &entry)
     {
-        return entry.at("id") == built.at("id") && entry.at("request").at("jpgQuality") == 82 &&
-               entry.at("request").at("pngLevel") == 0 && !entry.at("request").contains("webpQuality");
-    }), "Build history did not preserve explicit codec options");
+        return entry.at("id") == built.at("id") &&
+               (!buildCodecs || (entry.at("request").at("jpgQuality") == 82 &&
+                entry.at("request").at("pngLevel") == 0 && !entry.at("request").contains("webpQuality")));
+    }), "Build history omitted the job or its explicit codec options");
+    require(!api.json("/api/jobs").at("jobs").empty(), "The queue omitted finished jobs");
+    require(api.request("DELETE", "/api/jobs").status == 200, "Could not clear finished jobs");
     require(api.request("DELETE", "/api/history").status == 200 && fs::exists(root / "mosaic.png"),
             "Clearing history must preserve saved output");
 }
 
-int smoke(const fs::path &exe, const fs::path &contractsFile, bool vulkanFallback)
+int smoke(const fs::path &exe, const fs::path &contractsFile, bool vulkanFallback, bool current)
 {
     const auto contracts = Json::parse(read(contractsFile));
     std::random_device random;
@@ -611,7 +638,7 @@ int smoke(const fs::path &exe, const fs::path &contractsFile, bool vulkanFallbac
         ServerProcess process(fs::absolute(exe), root, log, port);
         Api api(port);
         api.wait(process);
-        scenarios(api, root, contracts, vulkanFallback);
+        scenarios(api, root, contracts, vulkanFallback, current);
     }
     catch (...)
     {
@@ -641,10 +668,26 @@ int main(int argc, char **argv)
         {
             return checkDocs(fs::path(argv[2]));
         }
-        require(argc == 3 || argc == 4,
-                "Usage: mosaicraft_release_check <WebUI> <contracts.json> [--vulkan-fallback]");
-        require(argc == 3 || fs::path(argv[3]) == "--vulkan-fallback", "Unknown smoke argument");
-        return smoke(fs::path(argv[1]), fs::path(argv[2]), argc == 4);
+        require(argc >= 3 && argc <= 5,
+                "Usage: mosaicraft_release_check <WebUI> <contracts.json> [--vulkan-fallback] [--current]");
+        bool vulkanFallback = false, current = false;
+        for (int i = 3; i < argc; ++i)
+        {
+            const fs::path option(argv[i]);
+            if (option == "--vulkan-fallback" && !vulkanFallback)
+            {
+                vulkanFallback = true;
+            }
+            else if (option == "--current" && !current)
+            {
+                current = true;
+            }
+            else
+            {
+                throw std::runtime_error("Unknown or repeated smoke argument: " + option.u8string());
+            }
+        }
+        return smoke(fs::path(argv[1]), fs::path(argv[2]), vulkanFallback, current);
     }
     catch (const std::exception &error)
     {

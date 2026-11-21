@@ -307,7 +307,7 @@ release_file("${archive_dir}/${name}")
 file(SHA256 "${archive_dir}/${name}" sha)
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DARCHIVE=${archive_dir}/${name}" "-DEXPECTED_SHA256=${sha}"
     "-DEXPECTED_COMMIT=${commit}" "-DEXPECTED_RUNTIME=${RUNTIME}" "-DEXPECTED_GPU_VALIDATION=${gpu_validation}"
-    "-DCHECK_TOOL=${bin}/mosaicraft_release_check${suffix}" "-DWORK_ROOT=${work}"
+    "-DCHECK_TOOL=${bin}/mosaicraft_release_check${suffix}" "-DWORK_ROOT=${work}" -DREQUIRE_CURRENT=ON
     -P "${CMAKE_CURRENT_LIST_DIR}/VerifyPackage.cmake" COMMAND_ERROR_IS_FATAL ANY)
 release_capture(current "${git}" -C "${repo}" rev-parse HEAD)
 release_capture(status "${git}" -C "${repo}" status --porcelain --untracked-files=normal)
