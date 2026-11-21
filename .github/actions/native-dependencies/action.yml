@@ -1,0 +1,52 @@
+name: Native locked dependencies
+description: Fingerprint, restore, install and immediately save native vcpkg dependencies.
+inputs:
+  cold:
+    description: Bypass Actions cache restore and save for a fresh dependency audit.
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: microsoft/vcpkg
+        ref: a0400024711b283056538ac19ced80b91a83c24c
+        path: build/tools/vcpkg
+        persist-credentials: false
+    - name: Prepare and fingerprint toolchain
+      id: prepare
+      shell: bash
+      env:
+        COLD: ${{ inputs.cold }}
+      run: |
+        command=(cmake -DMODE=Prepare -DVCPKG_ROOT=build/tools/vcpkg -P cmake/PrepareRelease.cmake)
+        if [[ "$RUNNER_OS" == Linux && "$COLD" == true ]]; then
+          bash scripts/audit-native-release.sh build/dependency-state/prepare-execve.log "${command[@]}"
+        else
+          "${command[@]}"
+        fi
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: inputs.cold != 'true'
+      id: restore
+      with:
+        path: ${{ steps.prepare.outputs.cache-path }}
+        key: ${{ steps.prepare.outputs.cache-key }}
+        restore-keys: ${{ steps.prepare.outputs.cache-prefix }}
+    - name: Install minimal Release dependencies
+      shell: bash
+      env:
+        COLD: ${{ inputs.cold }}
+      run: |
+        command=(cmake -DMODE=Install -P cmake/PrepareRelease.cmake)
+        if [[ "$RUNNER_OS" == Linux && "$COLD" == true ]]; then
+          bash scripts/audit-native-release.sh build/dependency-state/execve.log "${command[@]}"
+          grep -Eq '"restoredPackages":0}' build/dependency-state/x64-linux-release/install-summary.json
+        else
+          "${command[@]}"
+        fi
+    - name: Save dependencies before project tests
+      if: inputs.cold != 'true' && steps.prepare.outputs.cache-write == 'true' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.prepare.outputs.cache-path }}
+        key: ${{ steps.prepare.outputs.cache-key }}

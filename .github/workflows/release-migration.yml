@@ -1,0 +1,229 @@
+name: Compare CMake and legacy release packages
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Validate in order CPU, portable, then CUDA (Windows CUDA on hosted runners is a candidate).
+        type: choice
+        options: [cpu, portable, cuda]
+        default: cpu
+      cold:
+        description: Bypass dependency binary cache and audit subprocesses on Linux.
+        type: boolean
+        default: true
+      published-tag:
+        description: Also validate existing stable GitHub attachments for this phase (for example v1.15.10).
+        required: false
+permissions:
+  contents: read
+jobs:
+  select:
+    runs-on: ubuntu-22.04
+    outputs:
+      packages: ${{ steps.matrix.outputs.packages }}
+    steps:
+      - id: matrix
+        env:
+          PHASE: ${{ inputs.phase }}
+        shell: bash
+        run: |
+          case "$PHASE" in
+            cpu) packages='[
+              {"id":"windows-cpu", "runner":"windows-2025-vs2026", "platform":"windows-x64", "runtime":"cpu-only", "channel":"stable", "gpu":"not-applicable"},
+              {"id":"linux-cpu", "runner":"ubuntu-22.04", "platform":"linux-x64", "runtime":"cpu-only", "channel":"stable", "gpu":"not-applicable"},
+              {"id":"macos-cpu", "runner":"macos-15", "platform":"macos-arm64", "runtime":"cpu-only", "channel":"stable", "gpu":"not-applicable"}]';;
+            portable) packages='[
+              {"id":"windows-vulkan", "runner":"windows-2025-vs2026", "platform":"windows-x64", "runtime":"vulkan", "channel":"stable", "gpu":"not-run"},
+              {"id":"linux-vulkan", "runner":"ubuntu-22.04", "platform":"linux-x64", "runtime":"vulkan", "channel":"stable", "gpu":"not-run"},
+              {"id":"windows-vulkan-candidate", "runner":"windows-2025-vs2026", "platform":"windows-x64", "runtime":"vulkan", "channel":"candidate", "gpu":"not-run"},
+              {"id":"linux-vulkan-candidate", "runner":"ubuntu-22.04", "platform":"linux-x64", "runtime":"vulkan", "channel":"candidate", "gpu":"not-run"},
+              {"id":"macos-metal", "runner":"macos-15", "platform":"macos-arm64", "runtime":"metal", "channel":"candidate", "gpu":"not-run"}]';;
+            cuda) packages='[
+              {"id":"windows-cuda", "runner":"windows-2025-vs2026", "platform":"windows-x64", "runtime":"cuda", "channel":"candidate", "gpu":"not-run"},
+              {"id":"linux-cuda", "runner":"ubuntu-22.04", "platform":"linux-x64", "runtime":"cuda", "channel":"stable", "gpu":"not-run"},
+              {"id":"windows-cuda-vulkan", "runner":"windows-2025-vs2026", "platform":"windows-x64", "runtime":"cuda-vulkan", "channel":"candidate", "gpu":"not-run"}]';;
+            *) exit 1;;
+          esac
+          printf 'packages=%s\n' "$(jq -c . <<<"$packages")" >> "$GITHUB_OUTPUT"
+  package:
+    name: ${{ matrix.package.id }} (${{ matrix.entry }})
+    needs: select
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.select.outputs.packages) }}
+        entry: [native, legacy]
+    runs-on: ${{ matrix.package.runner }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      RUNTIME: ${{ matrix.package.runtime }}
+      CHANNEL: ${{ matrix.package.channel }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Use Ubuntu 22.04 system CMake and native utilities
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          tools=(ninja-build patchelf strace)
+          if [[ "$RUNTIME" == *vulkan ]]; then tools+=(glslang-tools); fi
+          sudo apt-get install -y --no-install-recommends "${tools[@]}"
+          printf '%s\n' /usr/bin >> "$GITHUB_PATH"
+      - uses: ./.github/actions/native-dependencies
+        with:
+          cold: ${{ inputs.cold && matrix.entry == 'native' }}
+      - name: Prepare locked GPU SDKs
+        env:
+          AUDIT: ${{ inputs.cold && matrix.entry == 'native' }}
+        run: |
+          prepare_sdk() {
+            local mode=$1
+            local -a command=(cmake "-DMODE=$mode" -P cmake/PrepareRelease.cmake)
+            if [[ "$RUNNER_OS" == Linux && "$AUDIT" == true ]]; then
+              bash scripts/audit-native-release.sh "build/dependency-state/$mode-execve.log" "${command[@]}"
+            else
+              "${command[@]}"
+            fi
+          }
+          if [[ "$RUNTIME" == cuda* ]]; then prepare_sdk CUDA; fi
+          if [[ "$RUNTIME" == *vulkan ]]; then prepare_sdk Vulkan; fi
+          if [[ "$RUNTIME" == metal ]]; then
+            xcrun -sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+          fi
+      - name: Build, test and archive with CMake
+        if: matrix.entry == 'native'
+        env:
+          COLD: ${{ inputs.cold }}
+        run: |
+          options=()
+          if [[ "$RUNTIME" == cuda* ]]; then options+=(-DCUDA_VALIDATION=BuildOnly); fi
+          if [[ "$RUNNER_OS" == Linux && "$RUNTIME" == cuda ]]; then
+            options+=(-DALLOW_UNVALIDATED_LINUX_CUDA=ON)
+          fi
+          command=(cmake "-DRUNTIME=$RUNTIME" "-DCHANNEL=$CHANNEL" -DBUILD_DIR=build/package-migration
+            -DOUTPUT_DIR=build/migration-archives "${options[@]}" -P cmake/Release.cmake)
+          if [[ "$RUNNER_OS" == Linux && "$COLD" == true ]]; then
+            bash scripts/audit-native-release.sh build/dependency-state/release-execve.log "${command[@]}"
+          else
+            "${command[@]}"
+          fi
+      - name: Build, test and archive with the baseline
+        if: matrix.entry == 'legacy'
+        shell: pwsh
+        run: |
+          $options = @{}
+          switch ($env:RUNTIME) {
+            'cpu-only' { $options.NoCuda = $true }
+            'metal' { $options.NoCuda = $true; $options.Metal = $true }
+            'vulkan' {
+              $options.NoCuda = $true
+              if ($env:CHANNEL -eq 'stable') { $options.VulkanRelease = $true } else { $options.Vulkan = $true }
+            }
+            'cuda-vulkan' { $options.Vulkan = $true; $options.CudaValidation = 'BuildOnly' }
+            'cuda' {
+              $options.CudaValidation = 'BuildOnly'
+              if ($IsLinux) { $options.AllowUnvalidatedCudaRelease = $true }
+            }
+          }
+          ./scripts/release.ps1 -BuildDir build/package-migration -OutputDir build/migration-archives @options
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: migration-${{ matrix.package.id }}-${{ matrix.entry }}
+          path: build/migration-archives/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.entry == 'native'
+        with:
+          name: migration-${{ matrix.package.id }}-check-tool
+          path: build/package-migration/Release/bin/mosaicraft_release_check*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: migration-${{ matrix.package.id }}-${{ matrix.entry }}-diagnostics
+          path: |
+            build/dependency-state/
+            build/package-migration/Testing/Temporary/
+          if-no-files-found: ignore
+  compare:
+    name: Standalone ${{ matrix.package.id }} comparison
+    needs: [select, package]
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.select.outputs.packages) }}
+    runs-on: ${{ matrix.package.runner }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      EXPECT_RUNTIME: ${{ matrix.package.runtime }}
+      EXPECT_GPU: ${{ matrix.package.gpu }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: migration-${{ matrix.package.id }}-*
+          merge-multiple: false
+          path: build/comparison
+      - name: Check both archives without project dependencies
+        env:
+          PACKAGE_ID: ${{ matrix.package.id }}
+          COLD: ${{ inputs.cold }}
+          PUBLISHED_TAG: ${{ inputs.published-tag }}
+          ASSET_PLATFORM: ${{ matrix.package.platform }}
+          CHANNEL: ${{ matrix.package.channel }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          suffix= extension=tar.gz
+          if [[ "$RUNNER_OS" == Windows ]]; then suffix=.exe; extension=zip; fi
+          base="build/comparison/migration-$PACKAGE_ID"
+          tool="$base-check-tool/mosaicraft_release_check$suffix"
+          chmod +x "$tool"
+          prefix=()
+          if [[ "$RUNNER_OS" == Linux && "$COLD" == true ]]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends strace
+            prefix=(bash scripts/audit-native-release.sh)
+          fi
+          for layout in native legacy; do
+            archives=("$base-$layout/"*".$extension")
+            [[ "${#archives[@]}" == 1 ]]
+            archive=${archives[0]}
+            read -r sha _ < "$archive.sha256"
+            audit=()
+            if (( ${#prefix[@]} )); then audit=("${prefix[@]}" "build/$layout-verify-execve.log"); fi
+            "${audit[@]}" cmake "-DARCHIVE=$archive" "-DEXPECTED_SHA256=$sha" "-DEXPECTED_COMMIT=$GITHUB_SHA" \
+              "-DEXPECTED_RUNTIME=$EXPECT_RUNTIME" "-DEXPECTED_GPU_VALIDATION=$EXPECT_GPU" "-DCHECK_TOOL=$tool" \
+              -P cmake/VerifyPackage.cmake
+          done
+          cmake "-DNEW_ARCHIVE=$base-native/${archive##*/}" "-DLEGACY_ARCHIVE=$archive" -P cmake/ComparePackages.cmake
+          if [[ -n "$PUBLISHED_TAG" && ( "$CHANNEL" == stable || "$PACKAGE_ID" == windows-cuda ) ]]; then
+            gpu=$EXPECT_GPU
+            if [[ "$PACKAGE_ID" == windows-cuda ]]; then gpu=passed; fi
+            cmake "-DTAG=$PUBLISHED_TAG" "-DREPOSITORY=$GITHUB_REPOSITORY" \
+              "-DASSET=Mosaicraft_${PUBLISHED_TAG}_${ASSET_PLATFORM}_${EXPECT_RUNTIME}.$extension" \
+              "-DEXPECTED_RUNTIME=$EXPECT_RUNTIME" "-DEXPECTED_GPU_VALIDATION=$gpu" "-DCHECK_TOOL=$tool" \
+              -P cmake/VerifyPackage.cmake
+          fi
+      - name: Run the old verifier on the new archive
+        shell: pwsh
+        env:
+          PACKAGE_ID: ${{ matrix.package.id }}
+        run: |
+          $archive = @(Get-ChildItem "build/comparison/migration-$env:PACKAGE_ID-native" -File | Where-Object { $_.Name -match '\.(zip|tar\.gz)$' })
+          if ($archive.Count -ne 1) { throw 'Expected exactly one native archive' }
+          $hash = ((Get-Content "$($archive[0].FullName).sha256" -Raw) -split '\s+')[0]
+          ./scripts/verify-release-asset.ps1 -ArchivePath $archive[0].FullName -ExpectedSha256 $hash -ExpectedCommit $env:GITHUB_SHA -ExpectedRuntime $env:EXPECT_RUNTIME -ExpectedGpuValidation $env:EXPECT_GPU -RequireStandalone
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && runner.os == 'Linux' && inputs.cold
+        with:
+          name: migration-${{ matrix.package.id }}-verify-audit
+          path: build/*-verify-execve.log
+          if-no-files-found: ignore
