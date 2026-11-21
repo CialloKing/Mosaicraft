@@ -58,10 +58,10 @@ if ($ExpectedCommit -or $gpu) {
     if ($LASTEXITCODE -ne 0 -or $info.Platform -ne $platform -or $info.Version -ne $version -or
         ($ExpectedCommit -and $info.GitCommit -ne $ExpectedCommit)) { throw 'Desktop archive metadata does not match' }
     if ($gpu) {
-        $state = if ($platform -eq 'windows-x64' -and !$candidate) { 'passed' } else { 'not-run' }
+        $states = if ($candidate) { 'not-run' } elseif ($RequireGpu -or $platform -eq 'windows-x64') { 'passed' } else { 'not-run', 'passed' }
         if ($info.Runtime -ne 'cuda-vulkan' -or $info.CudaBackend -ne 'enabled' -or
-            $info.VulkanBackend -ne 'enabled' -or $info.GpuValidation -ne $state -or
-            $info.PortableGpuValidation -ne $state -or $info.PortableAutoSelection -ne 'cuda-to-cpu') {
+            $info.VulkanBackend -ne 'enabled' -or $info.GpuValidation -notin $states -or
+            $info.PortableGpuValidation -ne $info.GpuValidation -or $info.PortableAutoSelection -ne 'cuda-to-cpu') {
             throw 'Incorrect desktop GPU metadata'
         }
         if (!($entries -clike "$stem/bin/licenses/cuda/*")) { throw 'Missing CUDA notices' }
