@@ -29,9 +29,7 @@ elseif(_score_arch MATCHES "(aarch64|arm64)" AND NOT MSVC)
     set_property(SOURCE compute/PortableCompute.cpp APPEND PROPERTY COMPILE_DEFINITIONS MOSAICRAFT_NEON_DISTANCE)
     set_property(SOURCE compute/PortableCompute.cpp compute/FastDistance.cpp APPEND PROPERTY COMPILE_OPTIONS -ffp-contract=off)
 endif()
-if(MOSAICRAFT_VULKAN OR MOSAICRAFT_METAL)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter)
-endif()
+set(_embed_shader "${CMAKE_CURRENT_LIST_DIR}/EmbedBinary.cmake")
 if(MOSAICRAFT_VULKAN)
     find_path(MOSAICRAFT_VULKAN_INCLUDE vulkan/vulkan.h HINTS "$ENV{MOSAICRAFT_VULKAN_INCLUDE}" "$ENV{VULKAN_SDK}/Include")
     if(NOT MOSAICRAFT_VULKAN_INCLUDE)
@@ -52,10 +50,11 @@ if(MOSAICRAFT_VULKAN)
             DEPENDS "compute/shaders/${shader}.comp" core/GridWeights.inc VERBATIM)
     endforeach()
     add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/PortableSpirv.h"
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/embed_spirv.py"
-            "${CMAKE_CURRENT_BINARY_DIR}/generated/PortableSpirv.h"
-            "${CMAKE_CURRENT_BINARY_DIR}/generated/features.spv" "${CMAKE_CURRENT_BINARY_DIR}/generated/scoring.spv"
-        DEPENDS scripts/embed_spirv.py "${CMAKE_CURRENT_BINARY_DIR}/generated/features.spv"
+        COMMAND "${CMAKE_COMMAND}" -DFORMAT=spirv
+            "-DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/generated/PortableSpirv.h"
+            "-DFEATURES=${CMAKE_CURRENT_BINARY_DIR}/generated/features.spv"
+            "-DSCORING=${CMAKE_CURRENT_BINARY_DIR}/generated/scoring.spv" -P "${_embed_shader}"
+        DEPENDS "${_embed_shader}" "${CMAKE_CURRENT_BINARY_DIR}/generated/features.spv"
             "${CMAKE_CURRENT_BINARY_DIR}/generated/scoring.spv" VERBATIM)
     target_sources(mosaicraft_core PRIVATE compute/VulkanBackend.cpp "${CMAKE_CURRENT_BINARY_DIR}/generated/PortableSpirv.h")
     target_include_directories(mosaicraft_core PRIVATE "${MOSAICRAFT_VULKAN_INCLUDE}")
@@ -75,9 +74,12 @@ if(MOSAICRAFT_METAL)
             -o "${CMAKE_CURRENT_BINARY_DIR}/generated/portable.air"
         COMMAND "${MOSAICRAFT_XCRUN}" -sdk macosx metallib "${CMAKE_CURRENT_BINARY_DIR}/generated/portable.air"
             -o "${CMAKE_CURRENT_BINARY_DIR}/generated/portable.metallib"
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/embed_metal.py"
-            "${CMAKE_CURRENT_BINARY_DIR}/generated/portable.metallib" "${CMAKE_CURRENT_BINARY_DIR}/generated/PortableMetal.h"
-        DEPENDS compute/shaders/portable.metal core/GridWeights.inc scripts/embed_metal.py VERBATIM)
+        COMMAND "${CMAKE_COMMAND}" -DFORMAT=metal
+            "-DINPUT=${CMAKE_CURRENT_BINARY_DIR}/generated/portable.metallib"
+            "-DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/generated/PortableMetal.h" -P "${_embed_shader}"
+        DEPENDS compute/shaders/portable.metal core/GridWeights.inc "${_embed_shader}"
+        BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/generated/portable.air"
+            "${CMAKE_CURRENT_BINARY_DIR}/generated/portable.metallib" VERBATIM)
     target_sources(mosaicraft_core PRIVATE compute/MetalBackend.mm "${CMAKE_CURRENT_BINARY_DIR}/generated/PortableMetal.h")
     set_source_files_properties(compute/MetalBackend.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     target_compile_definitions(mosaicraft_core PRIVATE MOSAICRAFT_METAL)
