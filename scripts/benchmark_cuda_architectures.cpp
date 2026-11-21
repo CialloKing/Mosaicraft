@@ -1,7 +1,7 @@
 // Explicit A/B harness: same private database, fixed RNG seed and captured tile IDs.
 #include "core/MatchingAccess.h"
 #include "core/UnicodeIO.h"
-#include "core/json.hpp"
+#include "json.hpp"
 #include "compute/CudaBackend.h"
 #include <chrono>
 #include <fstream>

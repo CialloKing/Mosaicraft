@@ -1,7 +1,7 @@
 #include "compute/CompatibleFeatures.h"
 #include "core/FeatureExtractor.h"
 #include "core/FeatureUtils.h"
-#include "core/json.hpp"
+#include "json.hpp"
 #include <chrono>
 #include <iostream>
 

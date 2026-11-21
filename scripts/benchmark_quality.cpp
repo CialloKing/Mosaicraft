@@ -5,7 +5,7 @@
 #include "core/GridDuplicateCache.h"
 #include "core/MatchingScore.h"
 #include "core/UnicodeIO.h"
-#include "core/json.hpp"
+#include "json.hpp"
 #include <algorithm>
 #include <cmath>
 #include <fstream>

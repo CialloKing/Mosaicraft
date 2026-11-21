@@ -25,7 +25,7 @@ if (-not $Triplet)
 $generator = if ($isWindowsHost) { "Visual Studio 18 2026" } else { "Ninja" }
 $architecture = $Triplet.Split("-")[0]
 $work = Join-Path $repo "build/dependency-state/$Triplet"
-$installed = Join-Path $repo "build/dependencies"
+$installed = Join-Path $repo "third_party/vcpkg_installed"
 $cache = if ($env:RUNNER_TEMP) { Join-Path $env:RUNNER_TEMP "mosaicraft-vcpkg-cache" } else { Join-Path $repo "build/dependency-cache" }
 New-Item -ItemType Directory -Force -Path $work, $cache, $installed | Out-Null
 

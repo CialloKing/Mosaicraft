@@ -3,7 +3,7 @@
 #include "core/MosaicService.h"
 #include "core/RuntimeContext.h"
 #include "core/UnicodeIO.h"
-#include "core/json.hpp"
+#include "json.hpp"
 #include <charconv>
 #include <fstream>
 #include <iostream>
