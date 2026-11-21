@@ -74,7 +74,7 @@ if (($IsWindows -and $platform -ne 'windows-x64') -or ($IsLinux -and $platform -
 }
 $root = (New-Item -ItemType Directory -Path (Join-Path $archive.DirectoryName "smoke-$([guid]::NewGuid())")).FullName
 $envBackup = @{}
-foreach ($key in @('PATH','LD_LIBRARY_PATH','QT_PLUGIN_PATH','QT_QPA_PLATFORM_PLUGIN_PATH','MOSAICRAFT_DESKTOP_SMOKE_CLI')) {
+foreach ($key in @('PATH','LD_LIBRARY_PATH','QT_PLUGIN_PATH','QT_QPA_PLATFORM_PLUGIN_PATH','QT_DEBUG_PLUGINS','MOSAICRAFT_DESKTOP_SMOKE_CLI')) {
     $envBackup[$key] = [Environment]::GetEnvironmentVariable($key)
 }
 Push-Location -LiteralPath $root
@@ -94,8 +94,12 @@ try {
     } else {
         $env:PATH = '/usr/bin:/bin'
         $env:MOSAICRAFT_DESKTOP_SMOKE_CLI = Join-Path $bin 'mosaicraft'
-        & timeout 180 xvfb-run -a (Join-Path $bin 'MosaicraftDesktop') --smoke-test -platform xcb
-        if ($LASTEXITCODE -ne 0) { throw 'Packaged desktop smoke failed' }
+        $env:QT_DEBUG_PLUGINS = '1'  # Report the real load error rather than Qt's generic XCB hint.
+        & timeout 180 xvfb-run -a (Join-Path $bin 'MosaicraftDesktop') --smoke-test -platform xcb 2>(Join-Path $root 'gui.log')
+        if ($LASTEXITCODE -ne 0) {
+            Get-Content -LiteralPath (Join-Path $root 'gui.log') -Tail 60 | Out-Host
+            throw 'Packaged desktop smoke failed'
+        }
     }
     Write-Output 'Packaged desktop smoke passed'
     if ($gpu) { & (Join-Path $PSScriptRoot 'test-desktop-gpu.ps1') -Bin $bin -RequireGpu:$RequireGpu }

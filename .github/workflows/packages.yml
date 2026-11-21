@@ -257,12 +257,19 @@ jobs:
           sudo apt-get install -y --no-install-recommends patchelf libgl-dev libegl-dev libopengl-dev \
             libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-render-util0 libxcb-xkb1 libxcb-xinerama0 libxcb-xinput0 \
+            libx11-xcb1 libxcb-randr0 libxcb-shape0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 \
             libwayland-client0 libwayland-cursor0 libwayland-egl1
           if [[ '${{ matrix.runtime }}' == 'cuda-vulkan' ]]; then
             sudo apt-get install -y --no-install-recommends glslang-tools xvfb xauth
           fi
       - name: Prepare locked Qt SDK
         run: ./scripts/setup-qt.ps1 -InstallDir (Join-Path $env:RUNNER_TEMP 'mosaicraft-qt')
+      - name: Check Qt XCB host libraries before compiling
+        if: runner.os == 'Linux' && matrix.runtime == 'cuda-vulkan'
+        shell: bash
+        run: |
+          dependencies=$(ldd "$MOSAICRAFT_QT_ROOT/plugins/platforms/libqxcb.so")
+          if grep -F 'not found' <<< "$dependencies"; then exit 1; fi
       - name: Prepare locked CUDA SDK and Vulkan build tools
         if: matrix.runtime == 'cuda-vulkan'
         run: |
