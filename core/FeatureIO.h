@@ -36,16 +36,20 @@ inline uint64_t decodeUnsigned(const uint8_t *in, size_t bytes)
     }
     return value;
 }
-inline std::vector<uint8_t> encodeFloats(const float *values, size_t count)
+inline void encodeFloats(const float *values, size_t count, uint8_t *bytes)
 {
     static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559, "IEEE float32 required");
-    std::vector<uint8_t> bytes(count * 4);
     for (size_t i = 0; i < count; ++i)
     {
         uint32_t bits;
         std::memcpy(&bits, values + i, 4);
-        encodeUnsigned(bytes.data() + i * 4, bits, 4);
+        encodeUnsigned(bytes + i * 4, bits, 4);
     }
+}
+inline std::vector<uint8_t> encodeFloats(const float *values, size_t count)
+{
+    std::vector<uint8_t> bytes(count * 4);
+    encodeFloats(values, count, bytes.data());
     return bytes;
 }
 inline void decodeFloats(const uint8_t *bytes, float *values, size_t count)

@@ -6,6 +6,7 @@
 
 #include <opencv2/imgproc.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -62,6 +63,17 @@ void FeatureExtractor::compute(const cv::Mat& bgr,
                                 const std::string& featDir,
                                 const std::string& baseName)
 {
+    TextureFeatures texture;
+    const bool store = !featDir.empty() && !baseName.empty();
+    compute(bgr, rec, store ? &texture : nullptr);
+    if (store)
+    {
+        saveFeatures(rec, featDir, baseName, texture.tiny.data(), texture.lbp.data());
+    }
+}
+
+void FeatureExtractor::compute(const cv::Mat &bgr, ImageRecord &rec, TextureFeatures *texture)
+{
     // ——— V1：全局 AvgLAB + 亮度 ———
     cv::Mat lab;
     cv::cvtColor(bgr, lab, cv::COLOR_BGR2Lab);
@@ -80,11 +92,12 @@ void FeatureExtractor::compute(const cv::Mat& bgr,
 
     computeStatistics(bgr, rec, lab, gray);
 
-    if (!featDir.empty() && !baseName.empty())
+    if (texture)
     {
         const auto tiny = computeTinyImageFromGray(gray);
-        const auto hist = computeLBPHistogramFromGray(gray);
-        saveFeatures(rec, featDir, baseName, tiny.data(), hist.data());
+        const auto lbp = computeLBPHistogramFromGray(gray);
+        std::copy_n(tiny.begin(), texture->tiny.size(), texture->tiny.begin());
+        std::copy_n(lbp.begin(), texture->lbp.size(), texture->lbp.begin());
     }
 
     rec.featureVersion = featureVersion();

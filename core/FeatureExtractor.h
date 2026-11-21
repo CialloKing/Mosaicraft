@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "Database.h"
+#include "FeaturePayload.h"
 
 #include <opencv2/core.hpp>
 #include <string>
@@ -23,6 +24,8 @@ public:
                  ImageRecord& rec,
                  const std::string& featDir = "",
                  const std::string& baseName = "");
+
+    void compute(const cv::Mat &bgr, ImageRecord &record, TextureFeatures *texture);
 
     // 当前特征版本号
     static int featureVersion();
