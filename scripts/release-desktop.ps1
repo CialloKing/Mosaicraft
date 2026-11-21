@@ -68,6 +68,10 @@ try {
     $toolchain = Join-Path $env:VCPKG_ROOT 'scripts/buildsystems/vcpkg.cmake'
     $guiOptions = if ($IsWindows) { @('-G', 'Visual Studio 18 2026', '-A', 'x64') } else { @('-G', 'Ninja') }
     if ($IsMacOS) { $guiOptions += '-DCMAKE_OSX_ARCHITECTURES=arm64' }
+    if ($IsLinux) {
+        # qt.conf controls plugin lookup after startup; the ELF loader needs its own relative path.
+        $guiOptions += '-DCMAKE_INSTALL_RPATH=$ORIGIN/../lib'
+    }
     Invoke-Checked cmake (@('--preset', $preset, '-B', $native,
         "-DCMAKE_TOOLCHAIN_FILE=$toolchain", "-DVCPKG_INSTALLED_DIR=$VcpkgInstalledDir",
         "-DVCPKG_TARGET_TRIPLET=$triplet", "-DVCPKG_HOST_TRIPLET=$triplet", '-DVCPKG_MANIFEST_INSTALL=OFF',
