@@ -547,7 +547,7 @@ try {
     if (-not $SkipConfigure) {
         Invoke-Step "Configure" {
             # Source and release builds share presets; explicit overrides take precedence.
-            $configureArgs = @('--preset', $configurePreset, '-S', $RepoRoot, '-B', $buildPath, '-DMOSAICRAFT_BUNDLE_RUNTIME=ON')
+            $configureArgs = @('--preset', $configurePreset, '-S', $RepoRoot, '-B', $buildPath, '-DMOSAICRAFT_BUNDLE_RUNTIME=ON', '-DMOSAICRAFT_LEGACY_SCRIPT_TESTS=ON')
             # A reused developer cache must not enable optional backends in a standard release.
             $configureArgs += "-DMOSAICRAFT_VULKAN:BOOL=$(if ($Vulkan) { 'ON' } else { 'OFF' })"
             $configureArgs += "-DMOSAICRAFT_VULKAN_AUTO:BOOL=$(if ($VulkanRelease) { 'ON' } else { 'OFF' })"

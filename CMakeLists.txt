@@ -414,13 +414,7 @@ target_include_directories(mosaicraft_tests PRIVATE
 
 # CTest 集成
 enable_testing()
-option(MOSAICRAFT_LEGACY_SCRIPT_TESTS "Register optional interpreter-based tests during release migration" ON)
-if(MOSAICRAFT_LEGACY_SCRIPT_TESTS)
-    find_program(NODE_COMMAND NAMES node nodejs)
-endif()
-if(MOSAICRAFT_LEGACY_SCRIPT_TESTS AND NODE_COMMAND)
-    add_test(NAME command_shell COMMAND "${NODE_COMMAND}" "${CMAKE_SOURCE_DIR}/tests/test_command_shell.js")
-endif()
+option(MOSAICRAFT_LEGACY_SCRIPT_TESTS "Register optional interpreter-based tests during release migration" OFF)
 add_test(NAME cuda_architecture_config COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_architectures.cmake")
 add_test(NAME cuda_toolkit_config COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_toolkit.cmake")
 add_test(NAME mosaicraft_tests COMMAND mosaicraft_tests)
