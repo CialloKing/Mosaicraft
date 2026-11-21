@@ -13,7 +13,7 @@
 
 ## 接口与开发
 
-- [HTTP API](reference/api.md)：API 1.5、任务、预览和诊断。
+- [HTTP API](reference/api.md)：API 1.6、任务、预览和诊断。
 - [源码构建](development/building.md)：Windows、Linux、macOS 与 GPU 构建开关。
 - [架构与数据契约](development/architecture.md)：处理流程、数据边界及版本来源。
 - [CUDA 配置](development/cuda.md)：架构、模板与实机覆盖范围。

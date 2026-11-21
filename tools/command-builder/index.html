@@ -387,8 +387,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     </div>
     <p class="hint" id="format-policy-hint">自动推导的 JPG/WebP 超限时改存 PNG，保留完整尺寸；显式选择 JPG/WebP 时缩小输出 Tile。</p>
     <div class="row">
-      <div class="field"><label>匹配前目标宽度 --target-size WxH</label><input type="number" id="m-outw" min="0" max="1000000" placeholder="0=自动；单轴保持比例"></div>
-      <div class="field"><label>匹配前目标高度 --target-size WxH</label><input type="number" id="m-outh" min="0" max="1000000" placeholder="0=自动；单轴保持比例"></div>
+      <div class="field"><label>匹配前目标尺寸 --target-size</label><input type="text" id="m-target-size" placeholder="原尺寸；例如 1200xauto 或 50%" aria-describedby="m-target-size-migration"><span class="hint" id="m-target-size-migration" hidden>旧参数使用了两段缩放，无法恢复；请重新填写匹配前目标尺寸。</span></div>
       <div class="field"><label>输出 Tile 尺寸 --output-tile</label><input type="text" id="m-otile" placeholder="自动（通常 180x320）"></div>
     </div>
     <div class="row">
@@ -413,7 +412,6 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <div class="field"><label>L 亮度范围 --l-range</label><input type="number" id="m-lrange" value="20" min="0" step="1"></div>
       <div class="field"><label>邻域窗口 --neighbor-window</label><input type="number" id="m-nwin" value="0" min="0" placeholder="0=自动"></div>
       <div class="field"><label>邻域惩罚 --neighbor-penalty</label><input type="number" id="m-npen" value="100" min="0" step="1"><span class="hint">基础惩罚值</span></div>
-      <div class="field"><label>上采样 --target-upscale</label><input type="number" id="m-upscale" min="1" placeholder="1× (不放大)"></div>
     </div>
     <div class="row">
       <div class="field"><label>随机种子 --seed</label><input id="m-seed" type="number" min="0" max="4294967295" placeholder="自动生成并记录"></div>
@@ -697,8 +695,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <div class="help-table-wrap"><table class="help-table">
         <thead><tr><th scope="col">选项</th><th scope="col">作用、默认值与适用场景</th></tr></thead><tbody>
           <tr><td>Tile 宽度 / 高度<br><code>--match-tile</code></td><td>每个匹配区域在处理后目标图中占用的宽高，默认 <code>9 × 16</code>，各轴至少 4。缩小可得到更多素材块和更细的整体轮廓，但匹配和输出成本更高；放大适合先快速试图或减少素材块数。尽量让宽高比与图库素材、输出 Tile 接近，以免最终画面比例改变。</td></tr>
-          <tr><td>输出宽度 / 高度<br><code>--target-size</code></td><td>切块前把目标图缩放到指定像素。留空或 0 不指定；只填一轴时另一轴按原比例推导，两轴都填则按填写尺寸缩放，可能拉伸画面。原图很大或实时预览格数过多时，可先缩小一轴来减少网格数量；原始目标图本身也须满足尺寸上限。</td></tr>
-          <tr><td>上采样<br><code>--target-upscale</code></td><td>在上述目标缩放之后、切块之前按整数倍放大，默认 1，范围 1～64。2 倍通常约产生 4 倍网格；需要更密的拼图时使用，代价是更长耗时、更大输出和内存开销，放大不会创造原图细节。</td></tr>
+          <tr><td>匹配前目标尺寸<br><code>--target-size</code></td><td>切块前缩放目标图。留空用原尺寸；填写 <code>1200xauto</code> 等尺寸时，<code>auto</code> 轴按原比例推导，指定双轴可能拉伸画面。填写 <code>50%</code> 或 <code>200%</code> 等百分比可等比缩放，支持最多三位小数。缩小可减少网格，放大可增加网格，但不会创造原图细节。</td></tr>
           <tr><td>输出 Tile 尺寸<br><code>--output-tile</code></td><td>每个入选素材在最终图中占用的像素，写成 <code>宽x高</code>。留空时默认 <code>180x320</code>，横向图库使用 <code>320x180</code>；手动填写的尺寸不自动旋转。需要较小文件时可按相同比例缩小，如 <code>32x18</code>；放大会使素材更易看清，但不会增加匹配块数。比例与匹配 Tile 不同时，整体画面比例也会改变。</td></tr>
           <tr><td>输出格式<br><code>--format</code></td><td>默认自动：先看输出文件后缀，再看目标图后缀，否则用 PNG；显式选择优先，并调整不一致的输出后缀。JPG 适合照片和较小文件，PNG 适合无损保存，WebP 适合需要该格式的场景，TIFF 适合支持它的后续流程。不支持的输出后缀会报错，除非显式选择支持的格式。</td></tr>
           <tr><td>格式尺寸上限</td><td>JPG 单轴最多 65,500 像素，WebP 为 16,383。自动推导的 JPG/WebP 超限时改存 PNG 并保留尺寸；显式选定时缩小输出 Tile 以适配。若网格某轴的块数本身超限，需改用 PNG/TIFF 或分块输出。任务“输出计划”显示适配，结果区显示实际文件。</td></tr>
@@ -1078,7 +1075,7 @@ function renderGeneratedCommand(tab, payload) {
       'unknown-shell': '请选择支持的命令行类型。',
       'missing-executable': '请填写 mosaicraft 程序路径。',
       'control-character': '命令参数包含换行或控制字符，无法复制为单行命令。',
-      'cmd-argument': 'CMD 命令不支持含 %、! 或双引号的参数，请切换 PowerShell 或 Unix Shell；仍可点击“运行”。',
+      'cmd-argument': 'CMD 命令仅允许目标尺寸百分比中的 %，其他含 %、! 或双引号的参数请切换 PowerShell 或 Unix Shell；仍可点击“运行”。',
       'powershell-legacy-argument': 'PowerShell 5.1 无法可靠传递空参数或内嵌双引号，请切换 PowerShell 7.3+ 或 Unix Shell；仍可点击“运行”。'
     })[error.message] || error.message;
     button.disabled = true;
@@ -1806,9 +1803,17 @@ function buildMosaicPayload(previewOnly = false) {
   setIfNumber(payload, 'lRange', 'm-lrange', 'L 亮度范围', {min:0,max:255});
   setIfNumber(payload, 'neighborWindow', 'm-nwin', '邻域窗口', { integer: true, min: 0, max:1000000 });
   setIfNumber(payload, 'neighborPenalty', 'm-npen', '邻域惩罚', {min:0});
-  setIfNumber(payload, 'upscale', 'm-upscale', '上采样', { integer: true, min: 1, max:64 });
-  setIfNumber(payload, 'outW', 'm-outw', '输出宽度', { integer: true, min: 0, max: 1000000 });
-  setIfNumber(payload, 'outH', 'm-outh', '输出高度', { integer: true, min: 0, max: 1000000 });
+  const targetSize = val('m-target-size');
+  if (targetSize) {
+    if (!commandShell.isTargetPercentage(targetSize)) {
+      const pixels = targetSize.match(/^(\d+|auto)[xX](\d+|auto)$/)?.slice(1).filter(axis => axis !== 'auto').map(Number);
+      if (!pixels?.length || pixels.some(axis => axis < 1 || axis > 1000000) ||
+          (pixels.length === 2 && pixels[0] * pixels[1] > 100000000)) {
+        throw uiFieldError('m-target-size', '须填写有效的像素尺寸（如 1200xauto），或最多三位小数的正百分比');
+      }
+    }
+    payload.targetSize = targetSize;
+  }
   const outTile = setIfSize(payload, 'outputTile', 'm-otile', '输出 Tile 尺寸');
   setIfNumber(payload, 'labWeight', 'm-labw', 'LAB 权重', {min:0});
   setIfNumber(payload, 'gridWeight', 'm-gridw', 'Grid 权重', {min:0});
@@ -2300,7 +2305,7 @@ document.addEventListener('click', event => {
 });
 
 
-const FORM_FIELDS = {"mosaic": {"inputPath": "m-input", "dbPath": "m-db", "outputPath": "m-output", "format": "m-format", "writeMode": "m-writemode", "tileW": "m-tilew", "tileH": "m-tileh", "candidates": "m-candidates", "topNRandom": "m-topn", "lRange": "m-lrange", "neighborWindow": "m-nwin", "neighborPenalty": "m-npen", "upscale": "m-upscale", "outW": "m-outw", "outH": "m-outh", "labWeight": "m-labw", "gridWeight": "m-gridw", "tinyWeight": "m-tinyw", "edgeWeight": "m-edgew", "lbpWeight": "m-lbpw", "usePenalty": "m-penalty", "quality": "m-quality", "pngLevel": "m-pnglevel", "colorStrength": "m-colorstr", "overlayStrength": "m-overlaystr", "tiled": "m-tiled", "deepZoom": "m-deepzoom", "analyze": "m-analyze", "adaptiveWeights": "m-adaptive", "benchmark": "m-benchmark", "resourceMonitor": "m-monitor", "colorAdjust": "m-coloradj", "generatePreview": "m-preview"}, "build": {"inputDir": "b-input", "outputDir": "b-output", "threads": "b-threads", "appendMode": "b-append", "recursive": "b-recursive", "normalizeOnly": "b-normonly"}};
+const FORM_FIELDS = {"mosaic": {"inputPath": "m-input", "dbPath": "m-db", "outputPath": "m-output", "format": "m-format", "writeMode": "m-writemode", "tileW": "m-tilew", "tileH": "m-tileh", "candidates": "m-candidates", "topNRandom": "m-topn", "lRange": "m-lrange", "neighborWindow": "m-nwin", "neighborPenalty": "m-npen", "labWeight": "m-labw", "gridWeight": "m-gridw", "tinyWeight": "m-tinyw", "edgeWeight": "m-edgew", "lbpWeight": "m-lbpw", "usePenalty": "m-penalty", "quality": "m-quality", "pngLevel": "m-pnglevel", "colorStrength": "m-colorstr", "overlayStrength": "m-overlaystr", "tiled": "m-tiled", "deepZoom": "m-deepzoom", "analyze": "m-analyze", "adaptiveWeights": "m-adaptive", "benchmark": "m-benchmark", "resourceMonitor": "m-monitor", "colorAdjust": "m-coloradj", "generatePreview": "m-preview"}, "build": {"inputDir": "b-input", "outputDir": "b-output", "threads": "b-threads", "appendMode": "b-append", "recursive": "b-recursive", "normalizeOnly": "b-normonly"}};
 
 Object.assign(FORM_FIELDS.mosaic, {outputMode:'m-mode',backend:'m-backend',device:'m-device',scoreMode:'m-score-mode',threads:'m-threads',seed:'m-seed',overwrite:'m-overwrite'});
 delete FORM_FIELDS.mosaic.colorAdjust;
@@ -2331,6 +2336,16 @@ for (const prefix of ['m', 'b']) {
   });
 }
 
+function restoreTargetSize(size, width, height, upscale) {
+  const input = document.getElementById('m-target-size');
+  const obsolete = Number(upscale) > 1;
+  width = Number(width) || 0;
+  height = Number(height) || 0;
+  input.value = obsolete ? '' : size ?? (width || height ? (width || 'auto') + 'x' + (height || 'auto') : '');
+  document.getElementById('m-target-size-migration').hidden = !obsolete;
+  if (obsolete) input.closest('details').open = true;
+}
+
 function restoreRequestParameters(job) {
   const project = ['render','project-check','project-pack'].includes(job && job.type);
   const tab = project ? 'project' : job && job.type;
@@ -2345,6 +2360,7 @@ function restoreRequestParameters(job) {
     else element.value = request[key] === undefined ? '' : request[key];
   }
   if (tab === 'mosaic') {
+    restoreTargetSize(request.targetSize, request.outW, request.outH, request.upscale);
     document.getElementById('m-otile').value = request.nativeTileW || request.nativeTileH
       ? (request.nativeTileW || 180) + 'x' + (request.nativeTileH || 320) : '';
     document.getElementById('m-mode').value = request.outputMode || (request.deepZoom ? 'deepzoom' : request.tiled ? 'tiles' : 'image');
@@ -2469,7 +2485,7 @@ function readFormPayload(tab) {
 }
 const CLI_OPTION_DEFINITIONS = @mosaicCliOptionsJson@;
 const CLI_DEFAULTS = { mosaic: { quality:100, pngLevel:1, writeMode:'auto', tileW:9, tileH:16, candidates:150,
-  topNRandom:10, lRange:20, neighborWindow:0, neighborPenalty:100, upscale:1, outW:0, outH:0, outputTile:'180x320',
+  topNRandom:10, lRange:20, neighborWindow:0, neighborPenalty:100, outputTile:'180x320',
   labWeight:.2, gridWeight:.45, tinyWeight:.25, edgeWeight:.05, lbpWeight:.05, usePenalty:0, colorStrength:.04, overlayStrength:0 },
   build: {threads:0,normalizeSize:'180x320'}, dbusage:{limit:50} };
 function commandFromPayload(tab, payload, shell = document.getElementById('command-shell').value,
@@ -2496,10 +2512,7 @@ function commandFromPayload(tab, payload, shell = document.getElementById('comma
     else parts.push('--' + option.name, String(value));
   }
   const size = (flag, w, h) => { if (w !== undefined && h !== undefined) parts.push(flag, w + 'x' + h); };
-  if (command === 'create' || command === 'inspect') {
-    size('--match-tile', cli.tileW, cli.tileH);
-    if (cli.outW || cli.outH) size('--target-size', cli.outW || 'auto', cli.outH || 'auto');
-  }
+  if (command === 'create' || command === 'inspect') size('--match-tile', cli.tileW, cli.tileH);
   if (command === 'create' || command === 'render') size('--output-tile', cli.nativeTileW, cli.nativeTileH);
   if (command === 'build' || command === 'normalize') size('--size', cli.normalizeWidth, cli.normalizeHeight);
   if (command === 'report' && (tab === 'dbhealth' || val('s-check') || val('s-deep'))) parts.push('--check');
@@ -2575,6 +2588,12 @@ function initializeFormUi() {
       }
     }
   }
+  if (validDraft && !Object.hasOwn(draft.fields, 'm-target-size')) {
+    restoreTargetSize(undefined, draft.fields['m-outw'], draft.fields['m-outh'], draft.fields['m-upscale']);
+  }
+  document.getElementById('m-target-size').addEventListener('input', () => {
+    document.getElementById('m-target-size-migration').hidden = true;
+  });
   const tab = validDraft && Array.from(document.querySelectorAll('.tab')).find(item => item.dataset.cmd === draft.tab);
   if (tab) tab.click();
   restoringDraft = false;

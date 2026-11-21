@@ -409,7 +409,12 @@ try {
         $overlayEndpoint = @($endpoints.endpoints | Where-Object { $_.operation -eq $operation })[0]
         Assert-True ($overlayEndpoint.requestFields -contains "overlayStrength") "overlayStrength missing from endpoint discovery"
     }
+    foreach ($operation in @("mosaic", "submitMosaicJob", "planMosaic", "mosaicCoverage")) {
+        $endpoint = @($endpoints.endpoints | Where-Object { $_.operation -eq $operation })[0]
+        Assert-True ($endpoint.requestFields -contains "targetSize" -and $endpoint.requestFields -notcontains "upscale") "incorrect target sizing metadata for $operation"
+    }
     $uiHtml = (Invoke-WebRequest -Uri "$script:BaseUrl/" -UseBasicParsing).Content
+    Assert-True ($uiHtml -match 'id="m-target-size"' -and $uiHtml -notmatch '--target-upscale') "Web UI should use only the unified target size"
     Assert-True ($uiHtml -match 'id="m-overlaystr"[^>]+value="0"[^>]+step="0.05"') "overlay control defaults missing from Web UI"
 
     $badJson = Invoke-ApiResponse -Method "POST" -Path "/api/jobs/mosaic" -Body "{" -RawBody
@@ -428,7 +433,9 @@ try {
     foreach ($body in @(
         '{"inputPath":"x","cpu":true}', '{"inputPath":"x","unknown":1}',
         '{"inputPath":"x","tileW":9.0}', '{"inputPath":"x","useGpu":1}',
-        '{"inputPath":"x","tileW":null}', '{"inputPath":"x","tileW":9,"tileW":10}'
+        '{"inputPath":"x","tileW":null}', '{"inputPath":"x","tileW":9,"tileW":10}',
+        '{"inputPath":"x","upscale":1}', '{"inputPath":"x","targetSize":"12.5001%"}',
+        '{"inputPath":"x","targetSize":"50%","outW":0}'
     )) {
         $invalid = Invoke-ApiResponse -Method "POST" -Path "/api/jobs/mosaic" -Body $body -RawBody
         Assert-True ($invalid.StatusCode -eq 400 -and $invalid.Json.ok -eq $false) "noncanonical body should fail"
@@ -535,7 +542,16 @@ try {
     $plan = (Invoke-Api -Method 'POST' -Path '/api/mosaic/plan' -Body $mosaicBody).plan
     Assert-True ($plan.columns -eq 2 -and $plan.rows -eq 2 -and $plan.rawBytes -eq 36 * 64 * 3) "planned grid or pixel budget is incorrect"
     Assert-True (-not (Test-Path -LiteralPath $mosaicPath)) "planning wrote a mosaic"
-    $mosaic = Invoke-Api -Method "POST" -Path "/api/jobs/mosaic" -Body $mosaicBody
+    $scaledBody = $mosaicBody.Clone()
+    $scaledBody.Remove('outW')
+    $scaledBody.Remove('outH')
+    $scaledBody.targetSize = '50%'
+    $scaledPlan = (Invoke-Api -Method 'POST' -Path '/api/mosaic/plan' -Body $scaledBody).plan
+    $cliExe = Join-Path (Split-Path -Parent $webUiPath) ('mosaicraft' + [IO.Path]::GetExtension($webUiPath))
+    $cliGrid = (& $cliExe inspect $targetPath -l $libraryDir --target-size '50%' --json | ConvertFrom-Json).data.gridCoverage
+    Assert-True ($scaledPlan.columns -eq $plan.columns -and $scaledPlan.rows -eq $plan.rows -and
+        $cliGrid.columns -eq $scaledPlan.columns -and $cliGrid.rows -eq $scaledPlan.rows) 'percent grid differs between CLI and API'
+    $mosaic = Invoke-Api -Method "POST" -Path "/api/jobs/mosaic" -Body $scaledBody
     Assert-True ($mosaic.ok -eq $true -and $null -ne $mosaic.job) "mosaic job was not accepted"
     Assert-JobSnapshot -Job $mosaic.job -ExpectedType "mosaic" -ExpectedInputPath $targetPath -ExpectedOutputPath $mosaicPath
     $plain = Wait-JobSucceeded -JobId $mosaic.job.id -Label "mosaic" -ExpectedType "mosaic" -ExpectedInputPath $targetPath -ExpectedOutputPath $mosaicPath
@@ -653,7 +669,7 @@ try {
     # Real file responses and cursored diagnostics, independent of HTML text assertions.
     Assert-True (-not [string]::IsNullOrWhiteSpace($info.info.runtime.sessionId)) "session id missing"
     Assert-True (-not [string]::IsNullOrWhiteSpace($info.info.runtime.workingDirectory)) "working directory missing"
-    $interactiveBody = $mosaicBody.Clone()
+    $interactiveBody = $scaledBody.Clone()
     $interactiveBody.outputPath = Join-Path $outputDir 'interactive.png'
     $interactiveBody.topNRandom = 3
     $interactiveBody.lRange = 255

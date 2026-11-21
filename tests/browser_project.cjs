@@ -30,8 +30,14 @@ async function checkMosaicForm(page, server, target) {
     };
     set('m-device', 'cuda:0');
     set('m-tilew', ''); set('m-tileh', '20');
+    set('m-target-size', '50%');
     const implicit = readFormPayload('mosaic');
     const command = commandFromPayload('mosaic', implicit);
+    const cmd = commandFromPayload('mosaic', implicit, 'cmd');
+    restoreTargetSize(undefined, 123, 0, 2);
+    const rejectedLegacy = !document.getElementById('m-target-size-migration').hidden && !val('m-target-size');
+    set('m-target-size', '50%');
+    restoreTargetSize('50%');
     set('m-otile', '180x320');
     const explicit = readFormPayload('mosaic');
     set('m-quality', '101');
@@ -46,11 +52,17 @@ async function checkMosaicForm(page, server, target) {
     const saved = JSON.parse(localStorage.getItem(key));
     saved.fields['m-writemode'] = 'invalid-choice';
     saved.fields['b-device'] = 'cuda:99';
+    delete saved.fields['m-target-size'];
+    saved.fields['m-outw'] = '600';
     localStorage.setItem(key, JSON.stringify(saved));
-    return {implicit, command, explicit, rejected, html, reenabled};
+    return {implicit, command, cmd, explicit, rejected, html, reenabled, rejectedLegacy};
   });
   assert.deepEqual([state.implicit.tileW, state.implicit.tileH], [9, 20]);
   assert.match(state.command, /--match-tile\s+9x20/);
+  assert.equal(state.implicit.targetSize, '50%');
+  assert.match(state.cmd, /--target-size "50%"/);
+  assert.doesNotMatch(state.command, /--target-upscale/);
+  assert(state.rejectedLegacy);
   assert.equal(state.implicit.nativeTileW, undefined);
   assert.deepEqual([state.explicit.nativeTileW, state.explicit.nativeTileH], [180, 320]);
   assert(state.rejected && state.reenabled && state.html.quality === undefined);
@@ -59,6 +71,7 @@ async function checkMosaicForm(page, server, target) {
   try {
     await page.reload({waitUntil:'domcontentloaded'});
     assert.equal(await page.locator('#m-input').inputValue(), target);
+    assert.equal(await page.locator('#m-target-size').inputValue(), '600xauto');
     assert.equal(await page.locator('#m-device').inputValue(), 'cuda:0');
     assert.equal(await page.locator('#b-device').inputValue(), 'cuda:99');
     assert.match(await page.locator('#m-device option:checked').textContent(), /等待设备探测/);
@@ -67,6 +80,10 @@ async function checkMosaicForm(page, server, target) {
   assert.equal(await page.locator('#m-device').inputValue(), 'cuda:0');
   assert.equal(await page.locator('#b-device').inputValue(), 'cuda:99');
   assert(await page.locator('#b-device option:checked').isDisabled());
+  await page.locator('#m-target-size').evaluate(input => {
+    input.value = '';
+    input.dispatchEvent(new Event('input', {bubbles:true}));
+  });
 }
 
 async function checkDeepZoomFallback(browser, entry) {

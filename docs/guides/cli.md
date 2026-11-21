@@ -62,8 +62,7 @@ CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，�
 | --- | --- |
 | `--match-tile WxH` | 目标每格覆盖像素，默认 9×16。 |
 | `--output-tile WxH` | 输出每格像素，默认 180×320；横向图库默认取 320×180。放大仅重采样包内素材。 |
-| `--target-size WxH` | 匹配前调整目标尺寸；允许单轴 `auto`，双轴指定可改变比例。 |
-| `--target-upscale N` | 调整目标尺寸后再放大，随后按既有规则补边。 |
+| `--target-size WxH 或 P%` | 匹配前缩放一次。像素写法允许单轴 `auto`，双轴指定可改变比例；百分比按原图等比计算。不指定则用原尺寸。 |
 | `--mode image\|html\|deepzoom\|tiles` | 决定单图或完整目录结构。已知图片后缀可推导 image，其他路径必须指定模式。 |
 | `--format jpg\|png\|webp\|tiff` | 图片编码；HTML 与编码参数互斥，Deep Zoom/分块固定使用 JPEG。 |
 | `--target-blend 0..1` | 目标叠加，默认 0。 |
@@ -75,11 +74,17 @@ CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，�
 | `--threads N` | CPU 工作上限，0 自动，各阶段可进一步收缩。 |
 
 ```sh
-./mosaicraft create target.jpg -l library -o result.png --write-mode stream --thumbnail
+./mosaicraft create target.jpg -l library -o result.png --target-size 1200xauto --write-mode stream --thumbnail
+./mosaicraft create target.jpg -l library -o smaller.png --target-size '50%'
+./mosaicraft inspect target.jpg -l library --target-size '200%'
 ./mosaicraft create target.jpg -l library -o blended.png --target-blend 0.2 --analyze
 ./mosaicraft create target.jpg -l library -o zoom-view --mode deepzoom
 ./mosaicraft create target.jpg -l library -o tiles --mode tiles
 ```
+
+百分比必须为正数，最多三位小数；宽高分别四舍五入，最小 1 像素。原图及切块前工作图单轴不得超过 100 万像素、总面积不得超过 1 亿像素。`--target-size` 改变匹配网格；只想改变成品分辨率、保留格数时，请调 `--output-tile`。
+
+旧 `--target-upscale` 已移除。以前只用 `--target-upscale 2` 的命令可改为 `--target-size 200%` 以获得同样的工作图尺寸，但缩放后的像素或选图可能不同。如果旧命令还指定了中间尺寸，请改用最终工作图的像素尺寸，或重新选择百分比；不再模拟先缩放再放大的效果。
 
 单图 `--format` 优先于后缀；JPG/WebP 超限时继续使用既有策略：推导格式转等尺寸 PNG，显式格式缩小输出图块。JPEG/WebP `--quality` 默认 100，PNG `--png-compression` 默认 1、范围 1～9。`--overwrite` 允许替换已有文件；目录只允许覆盖可识别且没有额外文件的 Mosaicraft 输出。工程与 ZIP 先暂存后发布，失败保留旧输出。
 

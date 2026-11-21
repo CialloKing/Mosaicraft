@@ -2,6 +2,10 @@
 
 本页区分当前源码与公开安装包，详细历史记录见[历史档案](archive/README.md)。软件与数据版本的唯一来源是根目录 contracts.json；安装后的实际能力以该包 BUILD_INFO.txt、contracts.json 和 --help-all 为准。
 
+## 当前源码（未发布）
+
+- `--target-size` 支持像素、单轴 `auto` 和百分比；移除 `--target-upscale`。HTTP API 1.6 改用 `targetSize`，不再接受 `upscale`。已导出的旧两段缩放工程仍可离线浏览，但新版检查和回导要求重新生成。详见[命令行指南](guides/cli.md)及 [API 迁移说明](reference/api.md)。
+
 ## v1.15.10
 
 本版提供七个原生包：Windows x64 与 Linux x64 各提供 CPU、CUDA、Vulkan，macOS ARM64 提供 CPU。归档及 SHA-256 见 [GitHub Release](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.10)。

@@ -5,6 +5,7 @@ const commandShell = (() => {
     cmd: 'CMD (cmd.exe)', bash: 'Bash', zsh: 'Zsh', sh: 'POSIX sh'
   };
   const supported = shell => Object.hasOwn(names, shell);
+  const isTargetPercentage = value => /^\d+(?:\.\d{1,3})?%$/.test(value) && /[1-9]/.test(value);
   const defaultForPlatform = platform => /^(win|windows)/i.test(platform) ? 'powershell' : /mac|darwin/i.test(platform) ? 'zsh' : 'bash';
   const singleQuoted = value => "'" + value.replace(/'/g, "'\\''") + "'";
   const powershellQuoted = value => "'" + value.replace(/['\u2018\u2019]/g, '$&$&') + "'";
@@ -20,9 +21,15 @@ const commandShell = (() => {
     }
     const safe = value => /^[A-Za-z0-9_./:+-][A-Za-z0-9_./:=+-]*$/.test(value);
     if (shell === 'cmd') {
-      // Expansion also happens inside double quotes. Refuse ambiguous paste syntax.
-      if (values.some(value => /[%!\"]/.test(value))) {
-        throw new Error('cmd-argument');
+      // Interactive CMD leaves a lone trailing % literal; two could form a variable expansion.
+      let usedPercent = false;
+      for (const [index, value] of values.entries()) {
+        const hasPercent = value.includes('%');
+        if (/[!"]/.test(value) || (hasPercent &&
+            (usedPercent || index < 2 || values[index - 1] !== '--target-size' || !isTargetPercentage(value)))) {
+          throw new Error('cmd-argument');
+        }
+        usedPercent ||= hasPercent;
       }
       return values.map(value => safe(value) ? value : windowsQuoted(value)).join(' ');
     }
@@ -41,6 +48,6 @@ const commandShell = (() => {
     }
     return values.map(value => safe(value) ? value : singleQuoted(value)).join(' ');
   }
-  return {names, supported, defaultForPlatform, render};
+  return {names, supported, defaultForPlatform, isTargetPercentage, render};
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = commandShell;

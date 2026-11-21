@@ -12,6 +12,12 @@ assert.equal(shell.render('mosaicraft', ['C:\\a b\\'], 'cmd'), 'mosaicraft "C:\\
 assert.equal(shell.render('mosaicraft', ['C:\\a b\\'], 'powershell'), "& 'mosaicraft' 'C:\\a b\\\\'");
 assert.equal(shell.render('mosaicraft', ['a\u2019b'], 'powershell'), "& 'mosaicraft' 'a\u2019\u2019b'");
 assert.match(shell.render('a b/mosaicraft', ['"quoted"', ''], 'pwsh'), /PSNativeCommandArgumentPassing = 'Standard'/);
+assert.equal(shell.render('mosaicraft', ['create', 'a.jpg', '--target-size', '12.5%'], 'cmd'),
+  'mosaicraft create a.jpg --target-size "12.5%"');
+assert.throws(() => shell.render('mosaicraft', ['50%'], 'cmd'), /cmd-argument/);
+assert.throws(() => shell.render('mosaicraft', ['--target-size', '0%'], 'cmd'), /cmd-argument/);
+assert.throws(() => shell.render('mosaicraft', ['--target-size', '50%', '--target-size', '200%'], 'cmd'), /cmd-argument/);
+assert.equal(shell.render('mosaicraft', ['--target-size', '200%'], 'powershell'), "& 'mosaicraft' --target-size '200%'");
 for (const name of ['bash', 'zsh', 'sh']) {
   assert.equal(shell.render('./mosaicraft', ['create', "a'b $x.jpg"], name), "./mosaicraft create 'a'\\''b $x.jpg'");
   assert.equal(shell.render('./mosaicraft', ['', '=value', '*.jpg'], name), "./mosaicraft '' '=value' '*.jpg'");

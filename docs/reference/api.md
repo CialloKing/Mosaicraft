@@ -15,9 +15,9 @@ Both entries call the same core services for mosaic generation, library building
 `/api/info` 在 `entryPoints` 中暴露相同的入口边界，调用方可据此区分当前入口和支持的可执行入口集合。
 `/api/info` exposes the same entry point boundary in `entryPoints`, so callers can distinguish the current entry from the supported executable entry set.
 
-当前 API 版本为 **1.5**，主版本为 **1**。增加设备发现、Vulkan/Metal 及评分模式，保留已有请求字段及路径语义。端点继续使用 `/api/*`，图库数据库结构版本仍为 1。
+当前源码的 API 版本为 **1.6**，主版本仍为 **1**。此版本有一项不兼容变更：生成、规划、覆盖分析和预览请求用统一的 `targetSize`（例如 `"50%"` 或 `"1200xauto"`）；旧 `upscale` 字段即使是 `1` 也会被拒绝。`outW` / `outH` 仍可单独使用，不能与 `targetSize` 同传。单独使用旧 `upscale: 2` 的请求可改为 `targetSize: "200%"` 以得到相同工作尺寸，但不保证缩放后的像素或选图一致。
 
-API **1.5** adds device discovery, Vulkan/Metal and compatible/fast scoring. New requests that omit `scoreMode` use `fast`; saved legacy requests missing that field are restored as `compatible`. The library schema version remains 1.
+API **1.6** keeps major version **1** but removes `upscale` from mosaic requests. Use `targetSize` with the same syntax as `--target-size`, or keep `outW` / `outH` without `targetSize`. The `/api/*` paths and library schema version are unchanged. New requests that omit `scoreMode` use `fast`; saved legacy requests missing that field are restored as `compatible`.
 
 `GET /api/info` 新增 `devices`：每项包含 `id`、`backend`、`name`、`available`、`integrated`、`validated`、`reason`、`maxBufferBytes`。`available` 仅表示运行时发现能力，不能代替性能或包的硬件验收。新后端的 `validated=false` 表示尚未获得跨任务的默认准入。
 
@@ -45,7 +45,7 @@ Returns service version, entry name, structured API status, API contract version
 | 字段 | 说明 |
 |------|------|
 | `contractVersion` | HTTP/服务合约的语义版本 / semantic version of the HTTP/service contract |
-| `contractMajorVersion` | 主兼容版本。增量式元数据或端点变更应保持此值稳定；破坏性的请求/响应变更必须递增 / breaking request/response changes must increment it |
+| `contractMajorVersion` | 主兼容版本。通常在破坏性变更时递增；1.6 删除 `upscale` 是保留主版本的例外 / normally increments for breaking changes; removal of `upscale` in 1.6 is an exception |
 | `compatibility` | 稳定性标签，供生成客户端和 UI 适配器使用 / stability label for generated clients and UI adapters |
 | `stable` | 当前合约是否面向常规调用方 / whether the current contract is intended for regular callers |
 
@@ -138,12 +138,12 @@ The API requires a local Host with the current port. Browser Origin must match t
 | 字段 / Field | 范围 / Range |
 |------|------|
 | `tileW`, `tileH` | `4..1000000`, tile pixels `<=100000000` |
-| `outW`, `outH` | `0..1000000`; `0=auto`, one axis preserves aspect ratio |
+| `targetSize` | 字符串：`1200x800`、`1200xauto`、`autox800` 或 `50%` / `12.5%`。百分比必须为正，最多三位小数；按原图缩放并逐轴四舍五入，最小 1 px。不能和 `outW` / `outH` 同传。 |
+| `outW`, `outH` | `0..1000000`; `0=auto`, one axis preserves aspect ratio; do not send with `targetSize` |
 | `nativeTileW`, `nativeTileH` | `1..1000000`, tile pixels `<=100000000` |
 | `candidates` | `10..10000` |
 | `topNRandom` | `1..10000` |
 | `neighborWindow` | `0..1000000` |
-| `upscale` | `1..64` when provided |
 | `quality` | `1..100` |
 | `pngLevel` | 成品 `1..9`，建库和追加 `0..9` |
 | `lRange` | `0..255`, candidate L difference limit |
@@ -162,9 +162,9 @@ The API requires a local Host with the current port. Browser Origin must match t
 亮度调整默认关闭（`colorAdjust: false`），`colorStrength` 默认 `0.04`；单独设置强度不会启用。选图后，每个输出小块在 `1±colorStrength` 范围的 1001 档乘数中等概率抽取一档，统一缩放 LAB L 通道，A、B 通道保持不变。默认乘数范围为 `0.96～1.04`，平均值为 1；强度为 0 时跳过颜色转换，保持原像素。像素取整、高亮截断和颜色转换仍可能影响最终图像的平均亮度。
 Brightness adjustment defaults to off (`colorAdjust: false`), with `colorStrength` defaulting to `0.04`; setting strength alone does not enable it. After matching, each output tile uniformly samples one of 1001 multipliers in `1±colorStrength` and scales its LAB L channel, leaving A and B unchanged. The default multiplier range is `0.96..1.04`, with a mean of 1; zero strength skips color conversion and preserves the pixels. Quantization, highlight clipping, and color conversion can still affect the final image's mean brightness.
 
-基础图透明叠加通过 `overlayStrength` 开启，例如 `0.2` 表示 80% 素材与 20% 基础图混合，无需额外开关。同步 `/api/mosaic` 和异步 `/api/jobs/mosaic` 均支持。使用经过尺寸调整、upscale 和镜像补边后的目标工作图，按全图坐标逐块双线性采样；强度 `0` 跳过叠加，`1` 在成功加载的小块中完全显示该参考图。不会改变选图和图库；缺失素材仍计为失败并沿用原背景。若同时开启亮度扰动，先调整亮度再叠加。分析分数仍衡量选图质量，不代表最终合成画面的相似度。
+基础图透明叠加通过 `overlayStrength` 开启，例如 `0.2` 表示 80% 素材与 20% 基础图混合，无需额外开关。同步 `/api/mosaic` 和异步 `/api/jobs/mosaic` 均支持。使用经过单次缩放和镜像补边后的目标工作图，按全图坐标逐块双线性采样；强度 `0` 跳过叠加，`1` 在成功加载的小块中完全显示该参考图。不会改变选图和图库；缺失素材仍计为失败并沿用原背景。若同时开启亮度扰动，先调整亮度再叠加。分析分数仍衡量选图质量，不代表最终合成画面的相似度。
 
-Base-image overlay is enabled by `overlayStrength`; `0.2` blends 80% tile pixels with 20% target pixels, with no separate switch. Both synchronous `/api/mosaic` and asynchronous `/api/jobs/mosaic` support it. The reference is the resized, upscaled and reflect-padded working target, sampled per tile using global coordinates and bilinear interpolation. Zero skips overlay; one fully shows the reference in successfully loaded tiles. Matching and the library remain unchanged. Missing tiles retain their failure counts and background. Optional brightness jitter runs before overlay. Analysis scores continue to describe tile matching, not final composite similarity.
+Base-image overlay is enabled by `overlayStrength`; `0.2` blends 80% tile pixels with 20% target pixels, with no separate switch. Both synchronous `/api/mosaic` and asynchronous `/api/jobs/mosaic` support it. The reference is the resized and reflect-padded working target, sampled per tile using global coordinates and bilinear interpolation. Zero skips overlay; one fully shows the reference in successfully loaded tiles. Matching and the library remain unchanged. Missing tiles retain their failure counts and background. Optional brightness jitter runs before overlay. Analysis scores continue to describe tile matching, not final composite similarity.
 
 示例 / Example:
 
@@ -368,7 +368,7 @@ Runs a mosaic request synchronously. New UI code should prefer `POST /api/jobs/m
 Returns HTTP 200 with a service result after successful generation, without a job. Synchronous generation and asynchronous build/mosaic pipelines share a serial execution lock to keep feature cache writes consistent.
 
 两个生成端点默认允许超大输出，无需额外字段或开关。目标缩放/上采样后的工作图像最多 1 亿像素。JPEG/WebP 超限时按统一编码策略改用 PNG 或缩小输出图块；网格本身超过编码上限时失败。PNG/TIFF 可指定 `writeMode: "stream"` 降低内存占用。不兼容的旧图库必须在新目录重建，当前更新不迁移或重建已有有效图库。
-Both mosaic endpoints allow large output by default, without an extra field or switch. Resized/upscaled working targets are limited to 100 million pixels. JPEG/WebP overflow follows the format policy above; a grid exceeding codec limits fails. PNG/TIFF can use `writeMode: "stream"` to reduce memory use. Unsupported libraries must be rebuilt in a new directory before generation.
+Both mosaic endpoints allow large output by default, without an extra field or switch. The source and resized working target are limited to 1 million pixels per axis and 100 million pixels in total. JPEG/WebP overflow follows the format policy above; a grid exceeding codec limits fails. PNG/TIFF can use `writeMode: "stream"` to reduce memory use. Unsupported libraries must be rebuilt in a new directory before generation.
 
 两个生成端点均接受 `generatePreview: true`，默认 `false`，等价于 CLI `--thumbnail`。只支持单图；与 `tiled` 或 `deepZoom` 组合返回 400，诊断字段为 `generatePreview`。沿用宽度最多 1400、总像素最多 400 万、不放大的 JPEG 预览，质量固定为 92。同步响应只返回产物元数据，使用任务端点生成才能通过任务产物接口下载。
 `generatePreview` is optional and off by default. It uses the existing bounded JPEG preview generator and is incompatible with tiled/DeepZoom output.
