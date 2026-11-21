@@ -122,6 +122,11 @@ class PreviewRecommendationCache
     {
     }
 
+    std::shared_ptr<PreviewRecommendationCache> withoutRanking() const
+    {
+        return std::make_shared<PreviewRecommendationCache>(m_scores, m_window, m_penalty);
+    }
+
     Row get(const MosaicSelection &selection, size_t position)
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -167,6 +172,42 @@ class PreviewRecommendationCache
         return row;
     }
 };
+
+PreviewEditResult MosaicSelection::replaceAsset(size_t position, int imageId, std::string_view version)
+{
+    if (position >= indices.size() || position >= imageIds.size())
+    {
+        return PreviewEditResult::InvalidPosition;
+    }
+    if (imageId <= 0)
+    {
+        return PreviewEditResult::InvalidImageId;
+    }
+    const auto *entry = catalog ? catalog->find(imageId) : nullptr;
+    if (!entry)
+    {
+        return PreviewEditResult::UnknownImage;
+    }
+    auto asset = previewAsset(*entry);
+    if (!asset.available || asset.version() != version)
+    {
+        return PreviewEditResult::StaleAsset;
+    }
+    if (indices[position] == entry->index)
+    {
+        return PreviewEditResult::Unchanged;
+    }
+
+    // 编辑副本不能清掉原快照的排序，但两者仍可共用只读基础分。
+    auto unranked = m_recommendations ? m_recommendations->withoutRanking() : nullptr;
+    assets.insert_or_assign(entry->id, std::move(asset));
+    indices[position] = entry->index;
+    imageIds[position] = entry->id;
+    ++manualEdits;
+    m_recommendations = std::move(unranked);
+    recommendations.clear();
+    return PreviewEditResult::Applied;
+}
 
 void MosaicSelection::deferRecommendations(std::shared_ptr<const PreviewScores> scores, int window, double penalty)
 {

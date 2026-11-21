@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -83,6 +84,11 @@ struct PreviewCatalog
     const PreviewCatalogEntry *find(int id) const;
 };
 
+enum class PreviewEditResult
+{
+    Applied, Unchanged, InvalidPosition, InvalidImageId, UnknownImage, StaleAsset
+};
+
 struct MosaicSelection
 {
     struct PreviewDecision
@@ -104,6 +110,7 @@ struct MosaicSelection
     std::vector<unsigned char> referenceJpeg;
     SelectionAnalysis analysis;
 
+    PreviewEditResult replaceAsset(size_t position, int imageId, std::string_view version);
     void deferRecommendations(std::shared_ptr<const PreviewScores> scores, int window, double penalty);
     std::array<int, recommendationLimit> recommendationsAt(size_t position) const;
 

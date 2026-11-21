@@ -708,6 +708,15 @@ try {
     $pastCatalog = (Invoke-Api -Method 'GET' -Path ($interactivePath + '/library?offset=999999')).library
     Assert-True ($pastCatalog.total -eq $catalog.total -and $pastCatalog.images.Count -eq 0 -and -not $pastCatalog.more) "out-of-range preview library page is incorrect"
     $interactiveBody.previewId = $interactive.preview.id
+    # A valid first edit must not leak into the preview when a later edit is rejected.
+    $interactiveBody.previewEdits = @(
+        @{ position = 0; imageId = $choice.id; version = $choice.version },
+        @{ position = 1; imageId = $choice.id; version = 'stale' }
+    )
+    $rejected = Invoke-ApiResponse -Method 'POST' -Path '/api/mosaic/sample-size' -Body $interactiveBody
+    Assert-True ($rejected.StatusCode -eq 409) 'invalid edit batch was not rejected'
+    $afterRejection = (Invoke-Api -Method 'GET' -Path $interactivePath).preview
+    Assert-True (($afterRejection.imageIds -join ',') -eq ($grid.imageIds -join ',')) 'rejected batch changed the preview'
     $interactiveBody.previewEdits = @(@{ position = 0; imageId = $choice.id; version = $choice.version })
     $sample = (Invoke-Api -Method 'POST' -Path '/api/mosaic/sample-size' -Body $interactiveBody).preview
     $samplePath = '/api/mosaic/preview/' + $sample.id

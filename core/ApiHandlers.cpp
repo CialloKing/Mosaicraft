@@ -881,26 +881,23 @@ std::optional<ApiResponse> applyPreviewEdits(const nlohmann::json &edits,
         }
         const auto position = edit["position"].get<uint64_t>();
         const auto imageId = edit["imageId"].get<uint64_t>();
-        if (position >= updated->indices.size() || imageId == 0 || imageId > INT_MAX || !seen.insert(position).second)
+        if (position > SIZE_MAX || imageId > INT_MAX || !seen.insert(static_cast<size_t>(position)).second)
         {
             return badRequest("invalid or repeated preview edit");
         }
-        const auto *entry = selection->catalog->find(static_cast<int>(imageId));
-        if (!entry)
+        switch (updated->replaceAsset(static_cast<size_t>(position), static_cast<int>(imageId),
+                                      edit["version"].get_ref<const std::string &>()))
         {
+        case PreviewEditResult::InvalidPosition:
+        case PreviewEditResult::InvalidImageId:
+            return badRequest("invalid or repeated preview edit");
+        case PreviewEditResult::UnknownImage:
             return badRequest("replacement image is not in the preview library");
-        }
-        const auto asset = previewAsset(*entry);
-        if (!asset.available || asset.version() != edit["version"].get_ref<const std::string &>())
-        {
+        case PreviewEditResult::StaleAsset:
             return previewConflict("replacement image changed; select it again after refreshing");
-        }
-        if (updated->indices[position] != entry->index)
-        {
-            updated->indices[position] = entry->index;
-            updated->imageIds[position] = entry->id;
-            updated->assets.insert_or_assign(entry->id, asset);
-            ++updated->manualEdits;
+        case PreviewEditResult::Applied:
+        case PreviewEditResult::Unchanged:
+            break;
         }
     }
     selection = std::move(updated);

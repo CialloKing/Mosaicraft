@@ -168,26 +168,35 @@ size_t readPosition(const json &payload, const MosaicSelection &selection)
     return value.get<size_t>();
 }
 
-void replaceAsset(MosaicSelection &selection, const json &payload)
+size_t replaceAsset(MosaicSelection &selection, const json &payload)
 {
-    const auto position = readPosition(payload, selection);
-    const auto &value = payload.at("imageId");
-    if (!value.is_number_unsigned() || value == 0 || value > INT_MAX)
+    const auto &position = payload.at("position");
+    const auto &id = payload.at("imageId");
+    const auto &version = payload.at("version");
+    if (!position.is_number_unsigned() || position.get<uint64_t>() > SIZE_MAX)
+    {
+        throw std::invalid_argument("invalid tile position");
+    }
+    if (!id.is_number_unsigned() || id.get<uint64_t>() > INT_MAX)
     {
         throw std::invalid_argument("invalid replacement image ID");
     }
-    const auto *entry = selection.catalog ? selection.catalog->find(value.get<int>()) : nullptr;
-    const auto asset = entry ? previewAsset(*entry) : PreviewAsset{};
-    if (!asset.available || payload.at("version") != asset.version())
+    if (!version.is_string())
     {
         throw std::invalid_argument("replacement image changed or is unavailable");
     }
-    if (selection.indices[position] != entry->index)
+    const auto tile = position.get<size_t>();
+    switch (selection.replaceAsset(tile, id.get<int>(), version.get_ref<const std::string &>()))
     {
-        selection.indices[position] = entry->index;
-        selection.imageIds[position] = entry->id;
-        selection.assets.insert_or_assign(entry->id, asset);
-        ++selection.manualEdits;
+    case PreviewEditResult::Applied:
+    case PreviewEditResult::Unchanged:
+        return tile;
+    case PreviewEditResult::InvalidPosition:
+        throw std::invalid_argument("invalid tile position");
+    case PreviewEditResult::InvalidImageId:
+        throw std::invalid_argument("invalid replacement image ID");
+    default:
+        throw std::invalid_argument("replacement image changed or is unavailable");
     }
 }
 
@@ -332,15 +341,15 @@ public:
             TaskResourceMonitor monitor(runtime, output.resourceMonitor);
             return serviceResultToJson(MosaicService().run(output, runtime, &selection));
         }
-        const auto position = readPosition(payload, selection);
         if (operation == "replace")
         {
-            replaceAsset(selection, payload);
+            const auto position = replaceAsset(selection, payload);
             frame.paint(selection, request.config, position, *cache);
             return {{"ok", true}, {"image", encodeImage(frame.image)}, {"imageId", selection.imageIds[position]}};
         }
         if (operation == "candidates")
         {
+            const auto position = readPosition(payload, selection);
             const auto currentSources = inputStamps(request, selection);
             if (currentSources != sources)
             {
