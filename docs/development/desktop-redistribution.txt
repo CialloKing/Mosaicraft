@@ -1,0 +1,21 @@
+Mosaicraft Desktop (CPU)
+======================
+
+Extract the complete archive and keep the package layout intact.
+Windows: open bin/MosaicraftDesktop.exe.
+Linux: run ./bin/MosaicraftDesktop from a desktop session (X11/XWayland or Wayland).
+macOS: open MosaicraftDesktop.app. The bundle is ad-hoc signed, not notarized.
+No system Qt installation is required. This archive does not supply a display
+server, graphics drivers, or a replacement for the host operating system libraries.
+
+Qt @QT_VERSION@ is distributed as shared libraries or frameworks with its plugins.
+The applicable Qt LGPL version 3 and GPL version 3 texts are in licenses/qt and
+LICENSE. The SDK's third-party component inventories are also in licenses/qt;
+license grants and full third-party attributions are in the corresponding sources. The original Qt sources, build instructions and notices for this exact
+version are available from the Qt project:
+https://download.qt.io/official_releases/qt/6.12/@QT_VERSION@/submodules/
+https://code.qt.io/cgit/qt/qtbase.git/tree/LICENSES?h=v@QT_VERSION@
+
+The Qt libraries are not statically linked into Mosaicraft Desktop. The applicable
+license permits replacing them with compatible modified shared libraries. On macOS
+modifying the bundle invalidates its seal; re-sign the modified bundle to use it.

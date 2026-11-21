@@ -1,0 +1,74 @@
+{
+  "version": "6.12.0",
+  "repository": "https://download.qt.io/online/qtsdkrepository",
+  "platforms": {
+    "windows-x64": {
+      "archives": [
+        {
+          "path": "windows_x86/desktop/qt6_6120/qt6_6120_msvc2022_64/qt.qt6.6120.addons.qtimageformats.win64_msvc2022_64/6.12.0-0-202609280346qtimageformats-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+          "sha256": "b5a5729e0dab582a3676bf82ffc77b9de5f95bb9d0a60226f730d97fad2db448"
+        },
+        {
+          "path": "windows_x86/desktop/qt6_6120/qt6_6120_msvc2022_64/qt.qt6.6120.win64_msvc2022_64/6.12.0-0-202609280346qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+          "sha256": "219d1b86def3be418e31d704572bc4acc91b2ec373c65595c9fb12b42bf098dc"
+        },
+        {
+          "path": "windows_x86/desktop/qt6_6120/qt6_6120_msvc2022_64/qt.qt6.6120.win64_msvc2022_64/6.12.0-0-202609280346qttools-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+          "sha256": "73328e361429378df518f391ebe4d82c51e833f4d5a951692768ab5a5a1d7da5"
+        },
+        {
+          "path": "windows_x86/desktop/qt6_6120/qt6_6120_msvc2022_64/qt.qt6.6120.win64_msvc2022_64/6.12.0-0-202609280346qttranslations-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z",
+          "sha256": "328321e8879a3dc119775b4404d6e32ec2a361696e73f760540a732921507917"
+        }
+      ]
+    },
+    "linux-x64": {
+      "archives": [
+        {
+          "path": "linux_x64/desktop/qt6_6120/qt6_6120/qt.qt6.6120.addons.qtimageformats.linux_gcc_64/6.12.0-0-202609280346qtimageformats-Linux-RHEL_9_6-GCC-Linux-RHEL_9_6-X86_64.7z",
+          "sha256": "a94de54e4d4c695bb61d6dc1041f9673c67c6dd5336b4df63da3198da6d1ed09"
+        },
+        {
+          "path": "linux_x64/desktop/qt6_6120/qt6_6120/qt.qt6.6120.linux_gcc_64/6.12.0-0-202609280346icu-linux-Rhel8.6-x86_64.7z",
+          "sha256": "1fdbcd67b1760f3a3f031c64637a9f19992aed2f35aa615e12a468f8c655d4da"
+        },
+        {
+          "path": "linux_x64/desktop/qt6_6120/qt6_6120/qt.qt6.6120.linux_gcc_64/6.12.0-0-202609280346qtbase-Linux-RHEL_9_6-GCC-Linux-RHEL_9_6-X86_64.7z",
+          "sha256": "943023b929d0c08eafe7341700b5ed7601284410b7afd6093f950be291d1d7cd"
+        },
+        {
+          "path": "linux_x64/desktop/qt6_6120/qt6_6120/qt.qt6.6120.linux_gcc_64/6.12.0-0-202609280346qttools-Linux-RHEL_9_6-GCC-Linux-RHEL_9_6-X86_64.7z",
+          "sha256": "5d6f90961df3a1e5a57fac69bbbe6983860bad11c419a49736b84914588b4334"
+        },
+        {
+          "path": "linux_x64/desktop/qt6_6120/qt6_6120/qt.qt6.6120.linux_gcc_64/6.12.0-0-202609280346qttranslations-Linux-RHEL_9_6-GCC-Linux-RHEL_9_6-X86_64.7z",
+          "sha256": "bd10fbbce93b076d9bc29576f41e9ccbaf3f7782625f9bebb418d2d9b9f97c47"
+        },
+        {
+          "path": "linux_x64/desktop/qt6_6120/qt6_6120/qt.qt6.6120.linux_gcc_64/6.12.0-0-202609280346qtwayland-Linux-RHEL_9_6-GCC-Linux-RHEL_9_6-X86_64.7z",
+          "sha256": "14c0dc4c8147cf9f7f64909b27ae5c9ab2aaa8ad6625bc2248c693c2a327ab5b"
+        }
+      ]
+    },
+    "macos-arm64": {
+      "archives": [
+        {
+          "path": "mac_x64/desktop/qt6_6120/qt6_6120/qt.qt6.6120.addons.qtimageformats.clang_64/6.12.0-0-202609280346qtimageformats-MacOS-MacOS_26-Clang-MacOS-MacOS_26-X86_64-ARM64.7z",
+          "sha256": "f4b4ed77d79050263e04941d4060c4e1c1d7e279c4c89c059b7805752c1fba1d"
+        },
+        {
+          "path": "mac_x64/desktop/qt6_6120/qt6_6120/qt.qt6.6120.clang_64/6.12.0-0-202609280346qtbase-MacOS-MacOS_26-Clang-MacOS-MacOS_26-X86_64-ARM64.7z",
+          "sha256": "1e0df66ed17ae97997971ff481983c5c0b7497a52ef52f699725701401fd80ee"
+        },
+        {
+          "path": "mac_x64/desktop/qt6_6120/qt6_6120/qt.qt6.6120.clang_64/6.12.0-0-202609280346qttools-MacOS-MacOS_26-Clang-MacOS-MacOS_26-X86_64-ARM64.7z",
+          "sha256": "c503c114fbb96a2c2dad07fae4d195cb800ab498c9deb440c879e657ec14e8f8"
+        },
+        {
+          "path": "mac_x64/desktop/qt6_6120/qt6_6120/qt.qt6.6120.clang_64/6.12.0-0-202609280346qttranslations-MacOS-MacOS_26-Clang-MacOS-MacOS_26-X86_64-ARM64.7z",
+          "sha256": "274dd3952f8b8b2b42e3e10887cb228b67e4a004f4ea8f0adb538f24abc0b58a"
+        }
+      ]
+    }
+  }
+}
