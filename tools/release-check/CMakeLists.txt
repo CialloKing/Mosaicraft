@@ -1,0 +1,18 @@
+cmake_minimum_required(VERSION 3.20)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    project(MosaicraftReleaseCheck LANGUAGES CXX)
+endif()
+
+find_package(Threads REQUIRED)
+add_executable(mosaicraft_release_check main.cpp)
+target_compile_features(mosaicraft_release_check PRIVATE cxx_std_17)
+target_include_directories(mosaicraft_release_check PRIVATE ../../core)
+target_link_libraries(mosaicraft_release_check PRIVATE Threads::Threads)
+if(WIN32)
+    target_link_libraries(mosaicraft_release_check PRIVATE ws2_32)
+endif()
+if(MSVC)
+    # The verifier runs independently of the packaged CRT and project dependencies.
+    set_property(TARGET mosaicraft_release_check PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    target_compile_options(mosaicraft_release_check PRIVATE /utf-8)
+endif()

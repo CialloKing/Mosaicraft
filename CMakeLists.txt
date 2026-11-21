@@ -414,8 +414,11 @@ target_include_directories(mosaicraft_tests PRIVATE
 
 # CTest 集成
 enable_testing()
-find_program(NODE_COMMAND NAMES node nodejs)
-if(NODE_COMMAND)
+option(MOSAICRAFT_LEGACY_SCRIPT_TESTS "Register optional interpreter-based tests during release migration" ON)
+if(MOSAICRAFT_LEGACY_SCRIPT_TESTS)
+    find_program(NODE_COMMAND NAMES node nodejs)
+endif()
+if(MOSAICRAFT_LEGACY_SCRIPT_TESTS AND NODE_COMMAND)
     add_test(NAME command_shell COMMAND "${NODE_COMMAND}" "${CMAKE_SOURCE_DIR}/tests/test_command_shell.js")
 endif()
 add_test(NAME cuda_architecture_config COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_architectures.cmake")
@@ -434,10 +437,19 @@ target_include_directories(mosaicraft_regression_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/tests
 )
 add_test(NAME mosaicraft_regression_tests COMMAND mosaicraft_regression_tests)
+add_subdirectory(tools/release-check EXCLUDE_FROM_ALL)
 add_custom_target(mosaicraft_test_targets DEPENDS mosaicraft MosaicraftWebUI
-    mosaicraft_tests mosaicraft_regression_tests)
-find_package(Python3 COMPONENTS Interpreter QUIET)
-if(Python3_Interpreter_FOUND)
+    mosaicraft_tests mosaicraft_regression_tests mosaicraft_release_check)
+if(NOT MOSAICRAFT_LEGACY_SCRIPT_TESTS)
+    add_test(NAME webui_native_smoke COMMAND mosaicraft_release_check
+        "$<TARGET_FILE:MosaicraftWebUI>" "${CMAKE_SOURCE_DIR}/contracts.json")
+    set_tests_properties(webui_native_smoke PROPERTIES TIMEOUT 240)
+endif()
+if(MOSAICRAFT_LEGACY_SCRIPT_TESTS)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    find_program(POWERSHELL_COMMAND NAMES pwsh powershell)
+endif()
+if(MOSAICRAFT_LEGACY_SCRIPT_TESTS AND Python3_Interpreter_FOUND)
     add_test(NAME documentation COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/check-docs.py")
     add_test(NAME portable_library COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/portable_library.py"
         --cli "$<TARGET_FILE:mosaicraft>")
@@ -448,8 +460,7 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME study_paths COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/test_study_paths.py")
 endif()
 
-find_program(POWERSHELL_COMMAND NAMES pwsh powershell)
-if (POWERSHELL_COMMAND)
+if(MOSAICRAFT_LEGACY_SCRIPT_TESTS AND POWERSHELL_COMMAND)
     add_test(NAME cuda_build_info COMMAND "${POWERSHELL_COMMAND}" -NoProfile -File "${CMAKE_SOURCE_DIR}/tests/test_cuda_build_info.ps1")
     add_custom_target(mosaicraft_webui_smoke
         COMMAND "${POWERSHELL_COMMAND}" -NoProfile -ExecutionPolicy Bypass
