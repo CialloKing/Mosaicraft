@@ -1,5 +1,8 @@
 #include "MainWindow.h"
+#include "LibraryLocation.h"
+#include "core/ManagedLibrary.h"
 #include "Dialogs.h"
+#include "EditPage/DimensionEdit.h"
 #include "ui_MainWindow.h"
 
 #include <QAbstractButton>
@@ -14,17 +17,21 @@
 #include <QImageReader>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QLocale>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QMouseEvent>
 #include <QNetworkAccessManager>
+#include <QNetworkReply>
 #include <QProcess>
-#include <QRegularExpressionValidator>
 #include <QSaveFile>
 #include <QSettings>
+#include <QStyleHints>
 #include <QTemporaryDir>
 #include <QSignalBlocker>
 #include <QUrl>
+#include <QVersionNumber>
+#include <QWindow>
+#include <QtMath>
 
 #include <algorithm>
 
@@ -33,13 +40,7 @@ namespace
 constexpr auto projectSuffix = ".mscproj";
 constexpr auto projectType = "mosaicraft-desktop-project";
 
-void initializeCombo(QComboBox *control, const QStringList &values)
-{
-    for (int index = 0; index < values.size(); ++index)
-    {
-        control->setItemData(index, values[index]);
-    }
-}
+const QUrl releasePage("https://github.com/CialloKing/Mosaicraft/releases/latest");
 
 QJsonObject readDocument(const QString &path, qint64 sizeLimit)
 {
@@ -80,33 +81,6 @@ QString originalFormat(const QString &path)
     return QStringList{"jpg", "webp", "tiff"}.contains(format) ? format : QStringLiteral("png");
 }
 
-void recordRatio(DimensionEdit *width, DimensionEdit *height, QAbstractButton *lock)
-{
-    lock->setProperty("aspectRatio", double(width->value()) / height->value());
-}
-
-void connectRatio(DimensionEdit *width, DimensionEdit *height, QAbstractButton *lock)
-{
-    QObject::connect(lock, &QAbstractButton::toggled, lock, [=](bool enabled) {
-        if (enabled) recordRatio(width, height, lock);
-    });
-    const auto link = [lock](DimensionEdit *source, DimensionEdit *other, bool fromWidth) {
-        QObject::connect(source, &DimensionEdit::valueChanged, lock, [=](int value) {
-            if (!lock->isChecked()) return;
-            const auto ratio = lock->property("aspectRatio").toDouble();
-            const double scale = fromWidth ? 1 / ratio : ratio;
-            const QSignalBlocker blockSource(source);
-            const QSignalBlocker blockOther(other);
-            const int bounded = qMax(DimensionEdit::minimum, int(qMin(double(value), DimensionEdit::maximum / scale)));
-            if (bounded != value) source->setValue(bounded);
-            other->setValue(qRound(qMin(double(DimensionEdit::maximum), source->value() * scale)));
-        });
-    };
-    recordRatio(width, height, lock);
-    link(width, height, true);
-    link(height, width, false);
-}
-
 QString nativePath(const QString &path)
 {
     return QDir::toNativeSeparators(path);
@@ -126,7 +100,8 @@ QPixmap loadPreviewImage(const QString &path, QSize limit, QSize *sourceSize)
     QImageReader reader(path);
     reader.setAutoTransform(true);
     auto size = reader.size();
-    if (size.isValid() && (size.width() > limit.width() || size.height() > limit.height()))
+    if (limit.isValid() && !limit.isEmpty() && size.isValid() &&
+        (size.width() > limit.width() || size.height() > limit.height()))
     {
         reader.setScaledSize(size.scaled(limit, Qt::KeepAspectRatio));
     }
@@ -149,18 +124,12 @@ MainWindow::MainWindow(QSettings &settings, QWidget *parent)
 {
     ui->setupUi(this);
     setAcceptDrops(true);
-    ui->menuBar->setNativeMenuBar(false);
-    ui->editorSplitter->setStretchFactor(0, 1);
-    ui->editorSplitter->setSizes({1060, 370});
-    ui->exportSplitter->setStretchFactor(1, 1);
-    ui->exportSplitter->setSizes({355, 1050});
-    ui->exportRightSplitter->setStretchFactor(0, 1);
-    ui->exportRightSplitter->setSizes({570, 230});
     recentFiles = settings.value("general/recentFiles").toStringList();
     setupMenu();
     setupEditor();
     setupExport();
-    setupLibrary();
+    setupDocumentOptions();
+    setupJobProcess();
     setupPreviewSession();
     showDocument(-1);
     statusBar()->showMessage(tr("就绪"));
@@ -174,18 +143,48 @@ MainWindow::~MainWindow()
 
 void MainWindow::setupMenu()
 {
+    ui->menuBar->setNativeMenuBar(false);
+#if defined(Q_OS_WIN) && QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+    if (QGuiApplication::platformName() == QStringLiteral("windows"))
+    {
+        QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
+        setWindowFlags(windowFlags() | Qt::CustomizeWindowHint | Qt::WindowMinMaxButtonsHint |
+                       Qt::WindowCloseButtonHint | Qt::ExpandedClientAreaHint | Qt::NoTitleBarBackgroundHint);
+        setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea, false);
+        winId();
+        auto nativeWindow = windowHandle();
+        // QWidget restores the title hint when window buttons are present. The native window accepts them separately.
+        nativeWindow->setFlag(Qt::WindowTitleHint, false);
+        const auto menuMargins = ui->menuBar->contentsMargins();
+        const auto reserveCaption = [this, menuMargins](QMargins margins) {
+            // The Windows Qt platform places three buttons, each 1.5 title-bar heights wide.
+            const int controls = qMax(144, qMax(margins.right(), qCeil(margins.top() * 4.5)));
+            ui->menuBar->setContentsMargins(menuMargins + QMargins(margins.left(), 0, controls, 0));
+            ui->menuBar->setMinimumHeight(margins.top());
+        };
+        connect(nativeWindow, &QWindow::safeAreaMarginsChanged, this, reserveCaption);
+        reserveCaption(nativeWindow->safeAreaMargins());
+        ui->menuBar->installEventFilter(this);
+    }
+#endif
     connect(ui->actionNew, &QAction::triggered, this, &MainWindow::newDocument);
     connect(ui->actionOpen, &QAction::triggered, this, &MainWindow::chooseDocument);
     connect(ui->actionSave, &QAction::triggered, this, [this] { saveDocument(activeDocument, false); });
     connect(ui->actionSaveAs, &QAction::triggered, this, [this] { saveDocument(activeDocument, true); });
     connect(ui->actionExport, &QAction::triggered, this, [this] { switchWorkspace(Workspace::Export); });
     const auto openSettings = [this](SettingsPage page) {
-        if (editSettings(this, settings, page))
+        const auto previous = libraryMaintenanceRequest();
+        if (editSettings(this, settings, page, libraryStatus))
         {
             updateRecentMenu();
             updateEditorControls();
             updateOutputControls();
+            updateSummaries();
             statusBar()->showMessage(tr("设置已保存"), 3500);
+            if (page == SettingsPage::Library || previous != libraryMaintenanceRequest())
+            {
+                checkLibrary();
+            }
         }
     };
     connect(ui->actionGeneralSettings, &QAction::triggered, this, [openSettings] { openSettings(SettingsPage::General); });
@@ -196,114 +195,13 @@ void MainWindow::setupMenu()
     connect(ui->actionCheckUpdates, &QAction::triggered, this, &MainWindow::checkUpdates);
     connect(ui->editWorkspaceButton, &QToolButton::clicked, this, [this] { switchWorkspace(Workspace::Edit); });
     connect(ui->exportWorkspaceButton, &QToolButton::clicked, this, [this] { switchWorkspace(Workspace::Export); });
-    connect(ui->libraryWorkspaceButton, &QToolButton::clicked, this, [this] { switchWorkspace(Workspace::Library); });
     updateRecentMenu();
-}
-
-void MainWindow::setupEditor()
-{
-    ui->editorImageView->setScene(canvasScene);
-    ui->compareImageView->setScene(compareScene);
-    ui->compareSplitter->setStretchFactor(0, 1);
-    ui->compareSplitter->setStretchFactor(1, 1);
-    for (auto view : {ui->editorImageView, ui->compareImageView})
-    {
-        view->viewport()->installEventFilter(this);
-        view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        view->setTransformationAnchor(QGraphicsView::NoAnchor);
-        view->setResizeAnchor(QGraphicsView::NoAnchor);
-        view->viewport()->setCursor(Qt::OpenHandCursor);
-    }
-    for (auto label : {ui->summaryLibrary, ui->galleryPath, ui->summaryState})
-    {
-        label->setTextFormat(Qt::PlainText);
-    }
-    ui->seedEdit->setValidator(new QRegularExpressionValidator(QRegularExpression("[0-9]{0,10}"), ui->seedEdit));
-    initializeCombo(ui->scoreMode, {"fast", "compatible"});
-    initializeCombo(ui->outputMode, {"image", "html", "deepzoom", "tiles"});
-    initializeCombo(ui->outputFormat, {"png", "jpg", "webp", "tiff"});
-    initializeCombo(ui->writeMode, {"auto", "stream", "batch"});
-
-    connectRatio(ui->targetWidth, ui->targetHeight, ui->targetLock);
-    connectRatio(ui->matchWidth, ui->matchHeight, ui->matchLock);
-    connectRatio(ui->tileWidth, ui->tileHeight, ui->tileLock);
-    fields = {ui->matchWidth, ui->matchHeight, ui->matchLock, ui->targetWidth, ui->targetHeight, ui->targetLock,
-              ui->tileWidth, ui->tileHeight, ui->tileLock, ui->candidates, ui->randomTop, ui->lightnessRange,
-              ui->scoreMode, ui->seedEdit, ui->labWeight, ui->gridWeight, ui->tinyWeight, ui->edgeWeight,
-              ui->neighborWindow, ui->neighborPenalty, ui->reusePenalty, ui->adaptiveWeights, ui->outputMode,
-              ui->outputPath, ui->outputFormat, ui->outputQuality, ui->outputPng, ui->writeMode, ui->exportThumbnail,
-              ui->allowOverwrite, ui->targetBlend, ui->brightnessJitter, ui->analyzeExport, ui->benchmarkExport,
-              ui->monitorExport};
-    defaultOptions = captureOptions();
-    for (auto field : fields)
-    {
-        if (const auto dimension = qobject_cast<DimensionEdit *>(field))
-        {
-            connect(dimension, &DimensionEdit::valueChanged, this, &MainWindow::formChanged);
-        }
-        else if (const auto edit = qobject_cast<QLineEdit *>(field))
-        {
-            connect(edit, &QLineEdit::textChanged, this, &MainWindow::formChanged);
-        }
-        else if (const auto spin = qobject_cast<QSpinBox *>(field))
-        {
-            connect(spin, &QSpinBox::valueChanged, this, &MainWindow::formChanged);
-        }
-        else if (const auto decimal = qobject_cast<QDoubleSpinBox *>(field))
-        {
-            connect(decimal, &QDoubleSpinBox::valueChanged, this, &MainWindow::formChanged);
-        }
-        else if (const auto combo = qobject_cast<QComboBox *>(field))
-        {
-            connect(combo, &QComboBox::currentIndexChanged, this, &MainWindow::formChanged);
-        }
-        else if (const auto button = qobject_cast<QAbstractButton *>(field))
-        {
-            connect(button, &QAbstractButton::toggled, this, &MainWindow::formChanged);
-        }
-    }
-
-    connect(ui->projectTabs, &QTabBar::currentChanged, this, &MainWindow::showDocument);
-    connect(ui->projectTabs, &QTabBar::tabCloseRequested, this, &MainWindow::closeDocument);
-    connect(ui->newTabButton, &QToolButton::clicked, this, &MainWindow::newDocument);
-    connect(ui->generatePreviewButton, &QPushButton::clicked, this, &MainWindow::generatePreview);
-    connect(ui->targetModeButton, &QToolButton::clicked, this, [this] { setViewMode(ViewMode::Target); });
-    connect(ui->resultModeButton, &QToolButton::clicked, this, [this] { setViewMode(ViewMode::Result); });
-    connect(ui->compareModeButton, &QToolButton::clicked, this, [this] { setViewMode(ViewMode::Compare); });
-    connect(ui->inspectorTabs, &QTabWidget::currentChanged, this, [this] {
-        if (activeDocument >= 0 && ui->inspectorTabs->currentWidget() == ui->candidatesTab &&
-            documents[activeDocument].view == ViewMode::Target && ui->resultModeButton->isEnabled())
-        {
-            setViewMode(ViewMode::Result);
-        }
-        refreshCanvas(true);
-    });
-    connect(ui->candidateList, &QListWidget::itemClicked, this, &MainWindow::replaceTile);
-    connect(ui->zoomPicker, &QComboBox::activated, this, [this](int index) {
-        if (index == 0)
-        {
-            fitCanvas();
-        }
-        else
-        {
-            setZoom(ui->zoomPicker->itemText(index).chopped(1).toDouble() / 100, false);
-        }
-    });
-    connect(ui->zoomPicker->lineEdit(), &QLineEdit::returnPressed, this, [this] {
-        auto value = ui->zoomPicker->currentText().trimmed();
-        if (value.endsWith('%')) value.chop(1);
-        bool ok = false;
-        const auto percent = QLocale().toDouble(value, &ok);
-        if (ok && percent > 0) setZoom(percent / 100, false);
-        else fitCanvas();
-    });
 }
 
 void MainWindow::switchWorkspace(Workspace workspace)
 {
     ui->workspaces->setCurrentIndex(static_cast<int>(workspace));
-    const QList<QToolButton *> buttons{ui->editWorkspaceButton, ui->exportWorkspaceButton, ui->libraryWorkspaceButton};
+    const QList<QToolButton *> buttons{ui->editWorkspaceButton, ui->exportWorkspaceButton};
     buttons[static_cast<int>(workspace)]->setChecked(true);
     if (workspace == Workspace::Export)
     {
@@ -319,15 +217,22 @@ void MainWindow::newDocument()
         tr("图片 (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.bmp);;所有文件 (*)"));
     if (path.isEmpty()) return;
 
-    const auto library = QFileDialog::getExistingDirectory(this, tr("选择工程素材库（可取消并使用当前素材库）"), catalog.root);
-    if (!library.isEmpty() && !QFileInfo(libraryDatabasePath(library)).isFile())
+    const auto directory = defaultLibraryDirectory(settings);
+    const auto chosen = QFileDialog::getExistingDirectory(this, tr("选择工程素材库（取消则使用默认素材库）"), directory);
+    const bool useDefault = chosen.isEmpty() || QFileInfo(chosen).canonicalFilePath() == QFileInfo(directory).canonicalFilePath();
+    const auto database = useDefault ? QString{} : QDir(chosen).absoluteFilePath(mosaicraft::managed_library::databaseFile);
+    if (!useDefault && !QFileInfo(database).isFile())
     {
-        QMessageBox::warning(this, windowTitle(), tr("该目录没有 mosaicraft.db，请先在素材库页导入图片。"));
+        QMessageBox::warning(this, windowTitle(), tr("该目录没有 mosaicraft.db。可在「设置 → 素材库设置」选择原始素材目录并建库。"));
         return;
     }
-    if (openPath(path) && !library.isEmpty())
+    if (openPath(path) && !useDefault)
     {
-        documents[activeDocument].library = libraryDatabasePath(library);
+        const auto fallback = defaultLibraryDatabase(settings);
+        if (fallback.isEmpty() || QFileInfo(database).canonicalFilePath() != QFileInfo(fallback).canonicalFilePath())
+        {
+            documents[activeDocument].library = database;
+        }
         updateSummaries();
     }
 }
@@ -507,7 +412,6 @@ bool MainWindow::openPath(const QString &path)
     {
         document.target = absolute;
         document.dirty = true;
-        document.library = catalog.databasePath;
     }
     for (int index = 0; index < documents.size(); ++index)
     {
@@ -647,6 +551,24 @@ void MainWindow::updateRecentMenu()
     }
 }
 
+bool MainWindow::eventFilter(QObject *object, QEvent *event)
+{
+    if (object == ui->menuBar &&
+        (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonDblClick) &&
+        static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton &&
+        !ui->menuBar->actionAt(static_cast<QMouseEvent *>(event)->position().toPoint()))
+    {
+        if (event->type() == QEvent::MouseButtonDblClick)
+        {
+            if (isMaximized()) showNormal();
+            else showMaximized();
+            return true;
+        }
+        return windowHandle()->startSystemMove();
+    }
+    return handleCanvasEvent(object, event) || QMainWindow::eventFilter(object, event);
+}
+
 void MainWindow::dragEnterEvent(QDragEnterEvent *event)
 {
     if (!busy() && ui->workspaces->currentWidget() == ui->editPage &&
@@ -663,6 +585,38 @@ void MainWindow::dropEvent(QDropEvent *event)
         openPath(event->mimeData()->urls().front().toLocalFile()))
     {
         event->acceptProposedAction();
+    }
+}
+
+void MainWindow::setupDocumentOptions()
+{
+    defaultOptions = captureOptions();
+    for (auto field : fields)
+    {
+        if (const auto dimension = qobject_cast<DimensionEdit *>(field))
+        {
+            connect(dimension, &DimensionEdit::valueChanged, this, &MainWindow::formChanged);
+        }
+        else if (const auto edit = qobject_cast<QLineEdit *>(field))
+        {
+            connect(edit, &QLineEdit::textChanged, this, &MainWindow::formChanged);
+        }
+        else if (const auto spin = qobject_cast<QSpinBox *>(field))
+        {
+            connect(spin, &QSpinBox::valueChanged, this, &MainWindow::formChanged);
+        }
+        else if (const auto decimal = qobject_cast<QDoubleSpinBox *>(field))
+        {
+            connect(decimal, &QDoubleSpinBox::valueChanged, this, &MainWindow::formChanged);
+        }
+        else if (const auto combo = qobject_cast<QComboBox *>(field))
+        {
+            connect(combo, &QComboBox::currentIndexChanged, this, &MainWindow::formChanged);
+        }
+        else if (const auto button = qobject_cast<QAbstractButton *>(field))
+        {
+            connect(button, &QAbstractButton::toggled, this, &MainWindow::formChanged);
+        }
     }
 }
 
@@ -701,9 +655,7 @@ void MainWindow::applyOptions(const QJsonObject &options)
         }
         else if (const auto button = qobject_cast<QAbstractButton *>(field)) button->setChecked(value.toBool(fallback.toBool()));
     }
-    recordRatio(ui->targetWidth, ui->targetHeight, ui->targetLock);
-    recordRatio(ui->matchWidth, ui->matchHeight, ui->matchLock);
-    recordRatio(ui->tileWidth, ui->tileHeight, ui->tileLock);
+    updateEditorAspectRatios();
 }
 
 void MainWindow::formChanged()
@@ -725,4 +677,51 @@ void MainWindow::formChanged()
     updateEditorControls();
     updateOutputControls();
     updateSummaries();
+}
+
+void MainWindow::showAbout()
+{
+    QMessageBox::about(this, tr("关于 Mosaicraft"),
+        tr("Mosaicraft Desktop %1\n\nQt Widgets 本地桌面工作区。\n使用 Mosaicraft CLI 建库、匹配和导出。")
+            .arg(QCoreApplication::applicationVersion()));
+}
+
+void MainWindow::checkUpdates()
+{
+    ui->actionCheckUpdates->setEnabled(false);
+    statusBar()->showMessage(tr("正在检查更新…"));
+    QNetworkRequest request(QUrl("https://api.github.com/repos/CialloKing/Mosaicraft/releases/latest"));
+    request.setRawHeader("Accept", "application/vnd.github+json");
+    request.setHeader(QNetworkRequest::UserAgentHeader, "Mosaicraft Desktop");
+    request.setTransferTimeout(10000);
+    auto reply = network->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        ui->actionCheckUpdates->setEnabled(true);
+        statusBar()->clearMessage();
+        if (reply->error() != QNetworkReply::NoError)
+        {
+            QMessageBox::warning(this, tr("检查更新"), tr("无法检查更新：%1").arg(reply->errorString()));
+            return;
+        }
+        auto version = QJsonDocument::fromJson(reply->readAll()).object()["tag_name"].toString();
+        if (version.startsWith('v')) version.remove(0, 1);
+        const auto latest = QVersionNumber::fromString(version);
+        const auto current = QVersionNumber::fromString(QCoreApplication::applicationVersion());
+        if (latest.isNull())
+        {
+            QMessageBox::warning(this, tr("检查更新"), tr("没有收到可识别的发布版本。"));
+        }
+        else if (latest > current)
+        {
+            if (QMessageBox::question(this, tr("检查更新"), tr("Mosaicraft 已发布 %1。打开发布页？").arg(version)) == QMessageBox::Yes)
+            {
+                QDesktopServices::openUrl(releasePage);
+            }
+        }
+        else
+        {
+            QMessageBox::information(this, tr("检查更新"), tr("没有发现更新的 Mosaicraft 发布版本。"));
+        }
+    });
 }

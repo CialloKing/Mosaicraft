@@ -23,8 +23,8 @@ if (($platform -eq 'windows-x64') -ne ($extension -eq 'zip')) { throw 'Wrong arc
 $entries = @(& cmake -E tar tf $archive.FullName)
 if ($LASTEXITCODE -ne 0 -or !$entries.Count) { throw 'Cannot list desktop archive' }
 $required = @('BUILD_INFO.txt', 'LICENSE', 'desktop-redistribution.txt', 'licenses/qt/LGPL-3.0-only.txt')
-$modules = @('Core', 'Gui', 'Widgets', 'Sql', 'Network')
-$plugins = @('sqldrivers/qsqlite', 'imageformats/qwebp', 'imageformats/qtiff')
+$modules = @('Core', 'Gui', 'Widgets', 'Network')
+$plugins = @('imageformats/qwebp', 'imageformats/qtiff')
 switch ($platform) {
     'windows-x64' {
         $required += @('bin/MosaicraftDesktop.exe', 'bin/mosaicraft.exe', 'bin/mosaicraft_desktop_worker.exe', 'bin/qt.conf', 'bin/contracts.json', 'bin/vcruntime140.dll')

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(MosaicraftDesktop LANGUAGES CXX)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets Sql Network LinguistTools)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets Network LinguistTools)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
@@ -13,32 +13,34 @@ set(contracts "${CMAKE_CURRENT_SOURCE_DIR}/../contracts.json")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${contracts}")
 file(READ "${contracts}" contract_json)
 string(JSON mosaicraft_version GET "${contract_json}" softwareVersion)
-string(JSON library_version GET "${contract_json}" libraryVersion)
 
 qt_add_executable(MosaicraftDesktop WIN32 MACOSX_BUNDLE
     CanvasImageItem.cpp
     CanvasImageItem.h
-    DimensionEdit.h
+    PreviewImage.cpp
+    PreviewImage.h
+    EditPage/DimensionEdit.h
+    EditPage/MainWindowEditor.cpp
+    ExportPage/ImagePreviewView.cpp
+    ExportPage/ImagePreviewView.h
+    ExportPage/MainWindowExport.cpp
     main.cpp
     MainWindow.cpp
-    MainWindowEditor.cpp
     MainWindow.h
     MainWindowJobs.cpp
     MainWindowLibrary.cpp
     ../tests/test_desktop.cpp
     Dialogs.cpp
     Dialogs.h
-    LibraryCatalog.cpp
-    LibraryCatalog.h
+    LibraryLocation.cpp
+    LibraryLocation.h
     ui/MainWindow.ui
     ui/SettingsDialog.ui
-    ui/LibrarySettingsDialog.ui
 )
-target_link_libraries(MosaicraftDesktop PRIVATE Qt6::Widgets Qt6::Sql Qt6::Network)
-target_include_directories(MosaicraftDesktop PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(MosaicraftDesktop PRIVATE Qt6::Widgets Qt6::Network)
+target_include_directories(MosaicraftDesktop PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_definitions(MosaicraftDesktop PRIVATE
     MOSAICRAFT_DESKTOP_VERSION="${mosaicraft_version}"
-    MOSAICRAFT_LIBRARY_VERSION=${library_version}
 )
 if(MSVC)
     target_compile_options(MosaicraftDesktop PRIVATE /utf-8)
@@ -78,16 +80,15 @@ if(MOSAICRAFT_DEPLOY_QT)
     install(TARGETS MosaicraftDesktop BUNDLE DESTINATION . RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
     set(deploy_options)
     if(NOT APPLE)
-        # The gallery needs SQLite and the image picker supports WebP and TIFF.
-        set(included_plugins qsqlite qwebp qtiff)
-        set(excluded_plugins qsqlmysql qsqlodbc qsqlpsql qsqlibase qsqlmimer qsqloci)
+        # The image picker supports WebP and TIFF.
+        set(included_plugins qwebp qtiff)
         if(UNIX)
             # Qt's Linux SDK defaults to XCB deployment even when it includes Wayland.
             list(APPEND included_plugins qxcb qwayland)
             # Desktop users need X11/Wayland, not device-specific framebuffer backends.
-            list(APPEND excluded_plugins qeglfs qlinuxfb qminimalegl qvkkhrdisplay qvnc qgtk3)
+            list(APPEND deploy_options EXCLUDE_PLUGINS qeglfs qlinuxfb qminimalegl qvkkhrdisplay qvnc qgtk3)
         endif()
-        list(APPEND deploy_options INCLUDE_PLUGINS ${included_plugins} EXCLUDE_PLUGINS ${excluded_plugins})
+        list(APPEND deploy_options INCLUDE_PLUGINS ${included_plugins})
     endif()
     if(WIN32)
         # The native backend installer already puts the MSVC runtime beside the GUI.

@@ -1,9 +1,11 @@
 #include "Dialogs.h"
-#include "ui_LibrarySettingsDialog.h"
+#include "LibraryLocation.h"
 #include "ui_SettingsDialog.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QSettings>
@@ -27,9 +29,12 @@ void chooseData(QComboBox *control, const QStringList &values, const QString &va
     control->setCurrentIndex(qMax(0, values.indexOf(value)));
 }
 
-void populateLibrarySettings(Ui::LibrarySettingsDialog &form, const QSettings &settings)
+void populateLibrarySettings(Ui::SettingsDialog &form, const QSettings &settings)
 {
     const auto options = libraryBuildOptions(settings);
+    form.librarySource->setText(QDir::toNativeSeparators(settings.value("library/source").toString()));
+    form.libraryDirectory->setText(QDir::toNativeSeparators(settings.value("library/directory").toString()));
+    form.libraryDirectory->setPlaceholderText(QDir::toNativeSeparators(defaultLibraryDirectory(settings)));
     form.normalizeWidth->setValue(options.size.width());
     form.normalizeHeight->setValue(options.size.height());
     form.recursiveImport->setChecked(options.recursive);
@@ -38,8 +43,12 @@ void populateLibrarySettings(Ui::LibrarySettingsDialog &form, const QSettings &s
     form.libraryWebpQuality->setValue(options.webpQuality);
 }
 
-void saveLibrarySettings(const Ui::LibrarySettingsDialog &form, QSettings &settings)
+void saveLibrarySettings(const Ui::SettingsDialog &form, QSettings &settings)
 {
+    const auto source = form.librarySource->text().trimmed();
+    const auto directory = form.libraryDirectory->text().trimmed();
+    settings.setValue("library/source", source.isEmpty() ? QString{} : QFileInfo(source).absoluteFilePath());
+    settings.setValue("library/directory", directory.isEmpty() ? QString{} : QFileInfo(directory).absoluteFilePath());
     settings.setValue("library/width", form.normalizeWidth->value());
     settings.setValue("library/height", form.normalizeHeight->value());
     settings.setValue("library/recursive", form.recursiveImport->isChecked());
@@ -49,19 +58,26 @@ void saveLibrarySettings(const Ui::LibrarySettingsDialog &form, QSettings &setti
 }
 }
 
-bool editSettings(QWidget *parent, QSettings &settings, SettingsPage page)
+bool editSettings(QWidget *parent, QSettings &settings, SettingsPage page, const QString &libraryStatus)
 {
     QDialog dialog(parent);
     Ui::SettingsDialog form;
     form.setupUi(&dialog);
-    auto libraryPage = new QDialog(form.settingsPages);
-    Ui::LibrarySettingsDialog libraryForm;
-    libraryForm.setupUi(libraryPage);
-    libraryPage->setWindowFlags(Qt::Widget);
-    libraryForm.librarySettingsButtons->hide();
-    libraryForm.librarySettingsLayout->setContentsMargins(9, 9, 9, 9);
-    form.settingsPages->addWidget(libraryPage);
-    populateLibrarySettings(libraryForm, settings);
+    populateLibrarySettings(form, settings);
+    form.libraryStatus->setTextFormat(Qt::PlainText);
+    form.libraryStatus->setText(libraryStatus);
+    form.libraryStatus->setVisible(!libraryStatus.isEmpty());
+    const auto browseDirectory = [&dialog](QPushButton *button, QLineEdit *field, const QString &title) {
+        QObject::connect(button, &QPushButton::clicked, &dialog, [&dialog, field, title] {
+            const auto initial = field->text().isEmpty() ? field->placeholderText() : field->text();
+            const auto folder = QFileDialog::getExistingDirectory(&dialog, title, initial);
+            if (!folder.isEmpty()) field->setText(QDir::toNativeSeparators(folder));
+        });
+    };
+    browseDirectory(form.browseLibrarySource, form.librarySource,
+                    QCoreApplication::translate("SettingsDialog", "选择原始素材目录"));
+    browseDirectory(form.browseLibraryDirectory, form.libraryDirectory,
+                    QCoreApplication::translate("SettingsDialog", "选择素材库目录"));
     form.cliExecutable->setText(settings.value("general/cli").toString());
     form.defaultOutputFolder->setText(settings.value("general/outputFolder").toString());
     form.recentLimit->setValue(settings.value("general/recentLimit", 10).toInt());
@@ -115,7 +131,7 @@ bool editSettings(QWidget *parent, QSettings &settings, SettingsPage page)
         settings.setValue("preferences/threads", form.defaultThreads->value());
         settings.setValue("preferences/confirmOverwrite", form.confirmOverwrite->isChecked());
         settings.setValue("language/locale", form.interfaceLanguage->currentData().toString());
-        saveLibrarySettings(libraryForm, settings);
+        saveLibrarySettings(form, settings);
         return true;
     }
     return false;
@@ -129,17 +145,4 @@ LibraryBuildOptions libraryBuildOptions(const QSettings &settings)
             qBound(1, settings.value("library/jpegQuality", 100).toInt(), 100),
             qBound(0, settings.value("library/pngLevel", 9).toInt(), 9),
             qBound(0, settings.value("library/webpQuality", 0).toInt(), 100)};
-}
-
-void editLibrarySettings(QWidget *parent, QSettings &settings)
-{
-    QDialog dialog(parent);
-    Ui::LibrarySettingsDialog form;
-    form.setupUi(&dialog);
-    populateLibrarySettings(form, settings);
-    connectButtons(dialog, form.librarySettingsButtons);
-    if (dialog.exec() == QDialog::Accepted)
-    {
-        saveLibrarySettings(form, settings);
-    }
 }

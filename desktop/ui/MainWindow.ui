@@ -17,11 +17,11 @@ QMenu::item:disabled { color: #818181; }
 QMenuBar::item:selected, QMenu::item:selected { background: #464646; }
 QMenu::separator { height: 1px; background: #444444; margin: 3px 7px; }
 QFrame#workspaceBar, QFrame#libraryToolbar, QFrame#canvasFooter { background: #2c2c2c; border: 1px solid #424242; }
-QFrame#editorCanvasPanel, QFrame#exportPreviewPanel, QFrame#galleryPanel, QFrame#exportDetailsPanel {
+QFrame#editorCanvasPanel, QFrame#exportPreviewPanel, QFrame#exportDetailsPanel {
  background: #2c2c2c; border: 1px solid #444444; border-radius: 3px;
 }
 QFrame#modeRail { background: #303030; border: 1px solid #464646; border-radius: 3px; }
-QWidget#canvasEmpty, QGraphicsView, QLabel#exportPreview { background: #171717; border: none; }
+QWidget#canvasEmpty, QGraphicsView { background: #171717; border: none; }
 QLabel#brandMark { background: #494949; color: #f4f4f4; border: 1px solid #626262; border-radius: 3px; font-size: 17px; font-weight: bold; }
 QLabel#brandName { font-size: 18px; font-weight: bold; letter-spacing: 0.5px; }
 QLabel[sectionTitle="true"] { color: #eeeeee; font-size: 15px; font-weight: bold; }
@@ -107,7 +107,6 @@ QProgressBar::chunk { background: #a0a0a0; }
        <item><spacer name="brandSpacing"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeType"><enum>QSizePolicy::Policy::Fixed</enum></property><property name="sizeHint" stdset="0"><size><width>24</width><height>0</height></size></property></spacer></item>
        <item><widget class="QToolButton" name="editWorkspaceButton"><property name="text"><string>编辑</string></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property><property name="workspaceButton" stdset="0"><bool>true</bool></property></widget></item>
        <item><widget class="QToolButton" name="exportWorkspaceButton"><property name="text"><string>导出</string></property><property name="checkable"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property><property name="workspaceButton" stdset="0"><bool>true</bool></property></widget></item>
-       <item><widget class="QToolButton" name="libraryWorkspaceButton"><property name="text"><string>素材库</string></property><property name="checkable"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property><property name="workspaceButton" stdset="0"><bool>true</bool></property></widget></item>
        <item><spacer name="workspaceSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>0</height></size></property></spacer></item>
       </layout>
      </widget>
@@ -398,8 +397,16 @@ QProgressBar::chunk { background: #a0a0a0; }
            <property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="childrenCollapsible"><bool>false</bool></property>
            <widget class="QFrame" name="exportPreviewPanel">
             <layout class="QVBoxLayout" name="exportPreviewLayout" stretch="0,1">
-             <item><layout class="QHBoxLayout" name="exportPreviewHeader"><item><widget class="QLabel" name="exportPreviewTitle"><property name="text"><string>预览图</string></property><property name="sectionTitle" stdset="0"><bool>true</bool></property></widget></item><item><spacer name="exportPreviewSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>0</height></size></property></spacer></item><item><widget class="QLabel" name="exportPreviewBadge"><property name="text"><string>结果</string></property><property name="badge" stdset="0"><bool>true</bool></property></widget></item></layout></item>
-             <item><widget class="QLabel" name="exportPreview"><property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Ignored"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><property name="minimumSize"><size><width>0</width><height>165</height></size></property><property name="alignment"><set>Qt::AlignmentFlag::AlignCenter</set></property><property name="wordWrap"><bool>true</bool></property><property name="muted" stdset="0"><bool>true</bool></property></widget></item>
+             <item><layout class="QHBoxLayout" name="exportPreviewHeader">
+              <item><widget class="QLabel" name="exportPreviewTitle"><property name="text"><string>预览图</string></property><property name="sectionTitle" stdset="0"><bool>true</bool></property></widget></item>
+              <item><spacer name="exportPreviewSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>0</height></size></property></spacer></item>
+              <item><widget class="QToolButton" name="exportZoomOut"><property name="text"><string notr="true">−</string></property><property name="toolTip"><string>缩小</string></property><property name="accessibleName"><string>缩小</string></property></widget></item>
+              <item><widget class="QLabel" name="exportZoomLevel"/></item>
+              <item><widget class="QToolButton" name="exportZoomIn"><property name="text"><string notr="true">+</string></property><property name="toolTip"><string>放大</string></property><property name="accessibleName"><string>放大</string></property></widget></item>
+              <item><widget class="QToolButton" name="exportZoomFit"><property name="text"><string>适合窗口</string></property></widget></item>
+              <item><widget class="QToolButton" name="exportZoomActual"><property name="text"><string notr="true">100%</string></property></widget></item>
+             </layout></item>
+             <item><widget class="ImagePreviewView" name="exportPreview"><property name="minimumSize"><size><width>0</width><height>165</height></size></property><property name="accessibleName"><string>预览图</string></property></widget></item>
             </layout>
            </widget>
            <widget class="QFrame" name="exportDetailsPanel">
@@ -418,37 +425,6 @@ QProgressBar::chunk { background: #a0a0a0; }
            </widget>
           </widget>
          </widget>
-        </item>
-       </layout>
-      </widget>
-      <widget class="QWidget" name="libraryPage">
-       <layout class="QVBoxLayout" name="libraryPageLayout" stretch="0,1">
-        <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
-        <item>
-         <widget class="QFrame" name="libraryToolbar">
-          <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
-          <layout class="QHBoxLayout" name="libraryToolbarLayout">
-           <property name="topMargin"><number>6</number></property><property name="bottomMargin"><number>6</number></property>
-           <item><widget class="QPushButton" name="importAssetsButton"><property name="text"><string>导入…</string></property><property name="primary" stdset="0"><bool>true</bool></property></widget></item>
-           <item><widget class="QToolButton" name="selectAssetsButton"><property name="text"><string>选择</string></property><property name="checkable"><bool>true</bool></property><property name="toolTip"><string>开启多选，随后可导出所选素材的副本</string></property></widget></item>
-           <item><widget class="QComboBox" name="assetViewMode"><property name="accessibleName"><string>视图</string></property><item><property name="text"><string>视图：缩略图</string></property></item><item><property name="text"><string>视图：列表</string></property></item></widget></item>
-           <item><widget class="QComboBox" name="assetSortMode"><property name="accessibleName"><string>排序方式</string></property><item><property name="text"><string>排序：文件名</string></property></item><item><property name="text"><string>排序：最近入库</string></property></item><item><property name="text"><string>排序：文件大小</string></property></item></widget></item>
-           <item><widget class="QPushButton" name="librarySettingsButton"><property name="text"><string>设置…</string></property><property name="toolTip"><string>建库与追加素材设置</string></property></widget></item>
-           <item><spacer name="libraryToolsSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>0</height></size></property></spacer></item>
-           <item><widget class="QPushButton" name="useLibraryButton"><property name="text"><string>用于当前工程</string></property><property name="toolTip"><string>将当前图库设为工程的匹配素材来源</string></property><property name="enabled"><bool>false</bool></property></widget></item>
-           <item><widget class="QPushButton" name="exportSelectedButton"><property name="text"><string>导出所选…</string></property><property name="toolTip"><string>将所选素材复制到其他目录</string></property><property name="enabled"><bool>false</bool></property></widget></item>
-          </layout>
-         </widget>
-        </item>
-        <item>
-         <widget class="QFrame" name="galleryPanel">
-           <layout class="QVBoxLayout" name="galleryLayout">
-            <item><layout class="QHBoxLayout" name="galleryHeader"><item><widget class="QLabel" name="galleryTitle"><property name="text"><string>图库浏览</string></property><property name="sectionTitle" stdset="0"><bool>true</bool></property></widget></item><item><spacer name="galleryHeaderSpacer"><property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>24</width><height>0</height></size></property></spacer></item><item><widget class="QPushButton" name="reloadLibraryButton"><property name="text"><string>刷新</string></property></widget></item><item><widget class="QPushButton" name="chooseLibraryButton"><property name="text"><string>打开图库…</string></property></widget></item></layout></item>
-            <item><widget class="QLabel" name="galleryPath"><property name="text"><string>尚未打开图库。可以打开已有图库，或导入图片目录新建图库。</string></property><property name="wordWrap"><bool>true</bool></property><property name="muted" stdset="0"><bool>true</bool></property></widget></item>
-            <item><widget class="QListWidget" name="assetList"><property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>1</verstretch></sizepolicy></property><property name="viewMode"><enum>QListView::ViewMode::IconMode</enum></property><property name="resizeMode"><enum>QListView::ResizeMode::Adjust</enum></property><property name="movement"><enum>QListView::Movement::Static</enum></property><property name="uniformItemSizes"><bool>true</bool></property><property name="dragEnabled"><bool>false</bool></property><property name="iconSize"><size><width>124</width><height>102</height></size></property><property name="gridSize"><size><width>148</width><height>132</height></size></property><property name="spacing"><number>3</number></property></widget></item>
-            <item><widget class="QLabel" name="assetCountLabel"><property name="text"><string>0 张素材</string></property><property name="muted" stdset="0"><bool>true</bool></property></widget></item>
-           </layout>
-          </widget>
         </item>
        </layout>
       </widget>
@@ -491,7 +467,12 @@ QProgressBar::chunk { background: #a0a0a0; }
   <customwidget>
    <class>DimensionEdit</class>
    <extends>QLineEdit</extends>
-   <header>DimensionEdit.h</header>
+   <header>EditPage/DimensionEdit.h</header>
+  </customwidget>
+  <customwidget>
+   <class>ImagePreviewView</class>
+   <extends>QGraphicsView</extends>
+   <header>ExportPage/ImagePreviewView.h</header>
   </customwidget>
  </customwidgets>
  <resources/>

@@ -259,6 +259,7 @@ add_library(mosaicraft_core STATIC
     core/JobManager.cpp
     core/LibraryAccess.cpp
     core/LibraryPaths.cpp
+    core/LibraryMaintenance.cpp
     core/DatabaseSchema.cpp
     core/LibraryColorOrder.cpp
     core/MosaicOutput.cpp
@@ -275,6 +276,7 @@ add_library(mosaicraft_core STATIC
     core/PreviewCandidates.cpp
     core/PreviewCache.cpp
     core/MosaicService.cpp
+    core/EditorSession.cpp
 )
 if (NOT MOSAICRAFT_CUDA)
     target_sources(mosaicraft_core PRIVATE core/CudaStubs.cpp)
@@ -395,7 +397,8 @@ target_link_libraries(mosaicraft PRIVATE
     mosaicraft_cuda
 )
 
-add_subdirectory(desktop/worker)
+add_executable(mosaicraft_desktop_worker EXCLUDE_FROM_ALL src/desktop_worker.cpp)
+target_link_libraries(mosaicraft_desktop_worker PRIVATE mosaicraft_core mosaicraft_cuda)
 
 # Windows 13.5 uses the hybrid loader from CUDA::cudart. Its driver runtime
 # is not an SDK DLL dependency; Packaging.cmake deploys actual non-driver imports.

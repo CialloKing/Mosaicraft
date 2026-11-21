@@ -1,5 +1,7 @@
 #include "CanvasImageItem.h"
+#include "LibraryLocation.h"
 #include "MainWindow.h"
+#include "PreviewImage.h"
 #include "ui_MainWindow.h"
 
 #include <QApplication>
@@ -17,21 +19,17 @@
 #include <QPainter>
 #include <QProcess>
 #include <QSettings>
-#include <QSqlDatabase>
-#include <QSqlQuery>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QTranslator>
 #include <QWheelEvent>
 
-#include <algorithm>
-
 namespace
 {
-QImage renderCanvasSample(const QImage &image, QSize size)
+QImage renderCanvasSample(const QImage &image, QSize size, bool smooth = false)
 {
     QGraphicsScene scene;
-    auto item = new CanvasImageItem(QPixmap::fromImage(image));
+    auto item = new CanvasImageItem(QPixmap::fromImage(image), smooth);
     scene.addItem(item);
     scene.setSceneRect(item->boundingRect());
     QImage result(size, QImage::Format_RGB32);
@@ -39,6 +37,23 @@ QImage renderCanvasSample(const QImage &image, QSize size)
     QPainter painter(&result);
     scene.render(&painter, QRectF(result.rect()), scene.sceneRect(), Qt::IgnoreAspectRatio);
     return result;
+}
+
+QImage nativePreviewTile(const PreviewImage &preview, QSize size)
+{
+    QImage image(size, QImage::Format_RGB32);
+    image.fill(Qt::black);
+    QPainter painter(&image);
+    preview.paint(&painter, QRectF(QPointF(), QSizeF(size)), 1);
+    return image;
+}
+
+void scrollPreview(QGraphicsView *view)
+{
+    const auto position = view->viewport()->rect().center();
+    QWheelEvent wheel(position, view->viewport()->mapToGlobal(position), {}, {0, 120}, Qt::NoButton,
+                      Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(view->viewport(), &wheel);
 }
 
 QImage makeFixture(int index, const QSize &size)
@@ -62,42 +77,6 @@ QImage makeFixture(int index, const QSize &size)
     return image;
 }
 
-bool createFixtureLibrary(const QString &directory)
-{
-    if (!QDir().mkpath(directory))
-    {
-        return false;
-    }
-    const auto connection = QStringLiteral("desktop-smoke-library");
-    bool ok = true;
-    {
-        auto database = QSqlDatabase::addDatabase("QSQLITE", connection);
-        database.setDatabaseName(QDir(directory).filePath("mosaicraft.db"));
-        ok = database.open();
-        QSqlQuery query(database);
-        ok = ok && query.exec(QString("PRAGMA user_version=%1").arg(MOSAICRAFT_LIBRARY_VERSION)) &&
-             query.exec("CREATE TABLE meta(key TEXT, value TEXT)") &&
-             query.exec("INSERT INTO meta VALUES ('feature_w','180'), ('feature_h','320')") &&
-             query.exec("CREATE TABLE images(id INTEGER, file_path TEXT, src_width INTEGER, src_height INTEGER, "
-                        "file_size INTEGER, created_at TEXT)") &&
-             query.prepare("INSERT INTO images VALUES (?,?,?,?,?,?)");
-        for (int index = 1; ok && index <= 45; ++index)
-        {
-            const auto filename = QString("Tile-%1.png").arg(index, 3, 10, QChar('0'));
-            const auto path = QDir(directory).filePath(filename);
-            ok = makeFixture(index, {180, 320}).save(path);
-            query.bindValue(0, index);
-            query.bindValue(1, filename);
-            query.bindValue(2, 180);
-            query.bindValue(3, 320);
-            query.bindValue(4, QFileInfo(path).size());
-            query.bindValue(5, QString("2026-01-%1").arg(index % 28 + 1, 2, 10, QChar('0')));
-            ok = ok && query.exec();
-        }
-    }
-    QSqlDatabase::removeDatabase(connection);
-    return ok;
-}
 }
 
 int MainWindow::smokeTest(const QString &captureDirectory)
@@ -133,6 +112,9 @@ int MainWindow::smokeTest(const QString &captureDirectory)
     {
         return 1;
     }
+    const auto smooth = renderCanvasSample(checker, {10, 10}, true);
+    if (!require(smooth.pixelColor(4, 2).red() > 0 && smooth.pixelColor(4, 2).red() < 255,
+                 "smooth image-viewer enlargement")) return 1;
     QImage stripe(4, 4, QImage::Format_RGB32);
     stripe.fill(Qt::black);
     for (int y = 0; y < stripe.height(); ++y) stripe.setPixelColor(0, y, Qt::white);
@@ -146,7 +128,8 @@ int MainWindow::smokeTest(const QString &captureDirectory)
     const auto scratchPattern = (cli.isEmpty() ? QDir::temp() : QDir::current()).filePath("desktop-smoke-XXXXXX");
     QTemporaryDir scratch(scratchPattern);
     QTranslator english;
-    if (!require(english.load(":/i18n/mosaicraft_en.qm") && english.translate("MainWindow", "文件") == "File",
+    if (!require(english.load(":/i18n/mosaicraft_en.qm") && english.translate("MainWindow", "文件") == "File" &&
+                 english.translate("SettingsDialog", "原始素材目录") == "Source image folder",
                  "English translations"))
     {
         return 1;
@@ -157,9 +140,16 @@ int MainWindow::smokeTest(const QString &captureDirectory)
     resize(1440, 900);
     if (!require(ui->projectTabs->count() == 0 && !ui->parameterContent->isEnabled() &&
                  !ui->canvasViews->isEnabled() && !ui->generatePreviewButton->isEnabled() &&
-                 ui->canvasEmpty->findChildren<QLabel *>().isEmpty() && ui->exportPreview->text().isEmpty(), "empty previews without placeholders") ||
+                 ui->canvasEmpty->findChildren<QLabel *>().isEmpty() && !ui->exportPreview->hasImage(), "empty previews without placeholders") ||
+        !require(menuWidget() == ui->menuBar && ui->workspaceBar->parentWidget() == ui->workspaceRoot &&
+                 ui->rootLayout->itemAt(0)->widget() == ui->workspaceBar &&
+                 ui->workspaceBarLayout->itemAt(3)->widget() == ui->editWorkspaceButton &&
+                 ui->workspaceBarLayout->itemAt(4)->widget() == ui->exportWorkspaceButton &&
+                 ui->workspaces->count() == 2 && !findChild<QWidget *>("libraryWorkspaceButton"),
+                 "menu and workspace positions with only editor and export") ||
         !require(capture("00-empty", this), "empty editor capture") ||
-        !require(scratch.isValid() && makeFixture(0, {960, 720}).save(target) && createFixtureLibrary(library), "image and catalog fixtures") ||
+        !require(scratch.isValid() && makeFixture(0, {960, 720}).save(target) && QDir().mkpath(library), "image fixture") ||
+        !require(containedFile(library, "../" + QFileInfo(target).fileName()).isEmpty(), "portable project directory boundary") ||
         !require(openPath(target), "open target") ||
         !require(ui->projectTabs->count() == 1 && ui->canvasViews->currentIndex() == 1, "editor canvas"))
     {
@@ -179,11 +169,7 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         return 1;
     }
 
-    if (!require(QApplication::testAttribute(Qt::AA_DontUseNativeDialogs) &&
-                 QApplication::translate("QFileDialog", "&Open").startsWith(QStringLiteral("打开")) &&
-                 QApplication::translate("QFileDialog", "&Save").startsWith(QStringLiteral("保存")) &&
-                 QApplication::translate("QPlatformTheme", "Cancel") == QStringLiteral("取消"),
-                 "Chinese file dialog buttons"))
+    if (!require(!QApplication::testAttribute(Qt::AA_DontUseNativeDialogs), "system file dialogs enabled"))
     {
         return 1;
     }
@@ -284,7 +270,7 @@ int MainWindow::smokeTest(const QString &captureDirectory)
     if (!require(ui->workspaces->currentWidget() == ui->exportPage && create.front() == "create" &&
                  create.contains("--match-tile") && create.contains("12x16") && create.contains("--png-compression") &&
                  create.contains("--seed") && !create.contains("--target-upscale") && !create.contains("--lbp-weight") &&
-                 exportImage.isNull() && ui->outputQuality->isHidden(), "single image export arguments") ||
+                 !ui->exportPreview->hasImage() && ui->outputQuality->isHidden(), "single image export arguments") ||
         !require(capture("02-export", this), "export capture"))
     {
         return 1;
@@ -298,49 +284,6 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         return 1;
     }
 
-    ui->libraryWorkspaceButton->click();
-    if (!require(ui->workspaces->currentWidget() == ui->libraryPage && loadLibrary(library, false) &&
-                 catalog.assets.size() == 45 && ui->assetList->count() == 45, "continuous gallery") ||
-        !require(containedFile(library, "../" + QFileInfo(target).fileName()).isEmpty(), "gallery directory boundary"))
-    {
-        return 1;
-    }
-    ui->assetViewMode->setCurrentIndex(1);
-    if (!require(ui->assetList->viewMode() == QListView::ListMode, "library list view"))
-    {
-        return 1;
-    }
-    ui->assetSortMode->setCurrentIndex(1);
-    const auto sortedFirst = catalog.assets.front().importedAt;
-    if (!require(sortedFirst >= catalog.assets.back().importedAt, "library sorting"))
-    {
-        return 1;
-    }
-    ui->assetSortMode->setCurrentIndex(0);
-    ui->assetViewMode->setCurrentIndex(0);
-    bool originalOpened = false;
-    ui->assetList->setCurrentRow(0);
-    QTimer::singleShot(0, this, [&] {
-        auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
-        if (dialog)
-        {
-            const auto original = dialog->findChild<QGraphicsView *>();
-            originalOpened = original && original->scene()->sceneRect().size() == QSizeF(180, 320);
-            dialog->reject();
-        }
-    });
-    ui->assetList->itemClicked(ui->assetList->item(0));
-    ui->selectAssetsButton->setChecked(true);
-    ui->assetList->setCurrentRow(0, QItemSelectionModel::Select);
-    ui->assetList->item(1)->setSelected(true);
-    ui->assetList->item(44)->setSelected(true);
-    if (!require(originalOpened && selectedAssets.size() == 3 && ui->assetList->selectedItems().size() == 3 &&
-                 ui->exportSelectedButton->isEnabled(), "gallery original image and multi-selection") ||
-        !require(capture("03-library", this), "gallery capture"))
-    {
-        return 1;
-    }
-
     const QList<QAction *> settingActions{ui->actionGeneralSettings, ui->actionPreferences, ui->actionLanguage, ui->actionLibrarySettings};
     for (int index = 0; index < settingActions.size(); ++index)
     {
@@ -349,10 +292,20 @@ int MainWindow::smokeTest(const QString &captureDirectory)
             auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
             auto pages = dialog ? dialog->findChild<QStackedWidget *>("settingsPages") : nullptr;
             correctPage = pages && pages->currentIndex() == index;
-            if (correctPage && index == 3) correctPage = pages->currentWidget()->findChild<QSpinBox *>("normalizeWidth") != nullptr;
             if (dialog)
             {
-                if (index == 1) correctPage = correctPage && capture("04-preferences", dialog);
+                if (index == 1)
+                {
+                    correctPage = correctPage && !dialog->findChild<QComboBox *>("assetZoomWheel") &&
+                                  capture("04-preferences", dialog);
+                }
+                if (index == 3)
+                {
+                    correctPage = correctPage && pages->currentWidget()->objectName() == "librarySettingsPage" &&
+                                  pages->currentWidget()->findChild<QSpinBox *>("normalizeWidth") &&
+                                  dialog->findChild<QLineEdit *>("librarySource") &&
+                                  dialog->findChild<QLineEdit *>("libraryDirectory") && capture("05-library-settings", dialog);
+                }
                 dialog->reject();
             }
         });
@@ -362,21 +315,6 @@ int MainWindow::smokeTest(const QString &captureDirectory)
             return 1;
         }
     }
-    bool buildSettings = false;
-    QTimer::singleShot(0, this, [&] {
-        auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
-        if (dialog)
-        {
-            buildSettings = dialog->objectName() == "LibrarySettingsDialog" && capture("05-library-settings", dialog);
-            dialog->reject();
-        }
-    });
-    ui->librarySettingsButton->click();
-    if (!require(buildSettings, "library settings dialog"))
-    {
-        return 1;
-    }
-
     if (cli.isEmpty())
     {
         return 0;
@@ -397,40 +335,115 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         if (busy()) wait.exec();
         return !busy();
     };
-    const auto runAndWait = [&](Job type, const QStringList &args, const QString &destination) {
-        return waitForWork([&] { runJob(type, args, destination); });
+    const auto source = root.filePath(QStringLiteral("原始素材"));
+    const auto built = root.filePath(QStringLiteral("默认素材库"));
+    const auto bitmap = QDir(source).filePath("source.bmp");
+    const auto second = QDir(source).filePath("second.png");
+    if (!require(QDir().mkpath(source) && makeFixture(2, {320, 240}).save(bitmap) &&
+                 makeFixture(9, {180, 320}).save(second), "material source fixtures"))
+    {
+        return 1;
+    }
+    QTimer::singleShot(0, this, [&] {
+        if (auto dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget()))
+        {
+            dialog->findChild<QLineEdit *>("librarySource")->setText(source);
+            dialog->findChild<QLineEdit *>("libraryDirectory")->setText(built);
+            dialog->accept();
+        }
+    });
+    const auto activeLibrary = [&] { return defaultLibraryDatabase(settings); };
+    const auto checkLibraryAndWait = [&] { return waitForWork([&] { checkLibrary(); }); };
+    const auto indexedImages = [&] {
+        return QFileInfo(activeLibrary()).dir().entryList({"*.png"}, QDir::Files);
     };
-    const auto source = root.filePath("input");
-    const auto built = root.filePath("built library");
-    if (!require(root.mkdir("input") && QFile::copy(target, QDir(source).filePath("asset.png")), "CLI import source") ||
-        !require(runAndWait(Job::Import, buildLibraryArgs(source, built, false), built) && catalog.assets.size() == 1,
-                 "CLI creates and loads a library"))
+    if (!require(waitForWork([&] { ui->actionLibrarySettings->trigger(); }) &&
+                 settings.value("library/source").toString() == source &&
+                 settings.value("library/directory").toString() == built && QFileInfo(activeLibrary()).isFile() &&
+                 indexedImages().size() == 2, "saving library settings builds the default library"))
     {
-        qWarning().noquote() << ui->taskLog->toPlainText();
+        qWarning().noquote() << libraryStatus;
         return 1;
     }
-    const auto additional = root.filePath("additional");
-    const auto database = libraryDatabasePath(built);
-    if (!require(root.mkdir("additional") && makeFixture(9, {180, 320}).save(QDir(additional).filePath("additional.png")),
-                 "CLI append source") ||
-        !require(runAndWait(Job::Import, buildLibraryArgs(additional, database, true), database) && catalog.assets.size() == 2,
-                 "CLI appends assets"))
+    const auto firstLibrary = activeLibrary();
+    if (!require(checkLibraryAndWait() && activeLibrary() == firstLibrary &&
+                 libraryStatus == tr("素材库完整性检查通过。"), "startup reuses an unchanged, healthy library"))
     {
-        qWarning().noquote() << ui->taskLog->toPlainText();
+        qWarning().noquote() << libraryStatus;
         return 1;
     }
-    ui->useLibraryButton->click();
-    if (!require(documents[activeDocument].library == catalog.databasePath && ui->workspaces->currentWidget() == ui->editPage,
-                 "assign gallery to current project"))
+    const QFileInfo bitmapBefore(bitmap);
+    const auto bitmapBytes = bitmapBefore.size();
+    const auto bitmapTime = bitmapBefore.lastModified();
+    QFile bitmapFile(bitmap);
+    if (!require(makeFixture(5, {320, 240}).save(bitmap) && QFileInfo(bitmap).size() == bitmapBytes &&
+                 bitmapFile.open(QIODevice::ReadWrite) && bitmapFile.setFileTime(bitmapTime, QFileDevice::FileModificationTime),
+                 "change source contents while keeping its size and timestamp"))
     {
         return 1;
     }
+    bitmapFile.close();
+    if (!require(checkLibraryAndWait() && activeLibrary() != firstLibrary && indexedImages().size() == 2,
+                 "changed source bytes trigger a rebuild"))
+    {
+        qWarning().noquote() << libraryStatus;
+        return 1;
+    }
+    auto previous = activeLibrary();
+    const auto missing = QFileInfo(previous).dir().filePath(indexedImages().front());
+    if (!require(QFile::remove(missing) && checkLibraryAndWait() && activeLibrary() != previous &&
+                 indexedImages().size() == 2, "deep verification repairs missing generated materials"))
+    {
+        qWarning().noquote() << libraryStatus;
+        return 1;
+    }
+    previous = activeLibrary();
+    if (!require(QFile::remove(second) && checkLibraryAndWait() && activeLibrary() != previous &&
+                 indexedImages().size() == 1, "removed originals are removed from the library"))
+    {
+        qWarning().noquote() << libraryStatus;
+        return 1;
+    }
+    previous = activeLibrary();
+    const auto corruptSource = QDir(source).filePath("corrupt.png");
+    QFile corrupt(corruptSource);
+    if (!require(corrupt.open(QIODevice::WriteOnly) && corrupt.write("bad image") == 9, "corrupt source fixture")) return 1;
+    corrupt.close();
+    if (!require(checkLibraryAndWait() && activeLibrary() == previous && QFileInfo(previous).isFile() &&
+                 libraryStatus.startsWith(tr("素材库检查或重建失败。%1").arg(QString{})), "failed rebuild keeps the published library") ||
+        !require(QFile::remove(corruptSource) && QFile::remove(bitmap) && checkLibraryAndWait() &&
+                 activeLibrary() != previous && QFileInfo(activeLibrary()).isFile() && indexedImages().isEmpty(),
+                 "removing all originals publishes a valid empty library"))
+    {
+        qWarning().noquote() << libraryStatus;
+        return 1;
+    }
+    if (!require(makeFixture(2, {320, 240}).save(bitmap) && makeFixture(9, {180, 320}).save(second) &&
+                 checkLibraryAndWait() && indexedImages().size() == 2 && documentLibrary(documents[activeDocument]) == library,
+                 "adding originals rebuilds and existing project library paths are preserved"))
+    {
+        qWarning().noquote() << libraryStatus;
+        return 1;
+    }
+    documents[activeDocument].library.clear();
+    switchWorkspace(Workspace::Edit);
+    if (!require(documentLibrary(documents[activeDocument]) == activeLibrary(), "default projects use the current library")) return 1;
     ui->targetWidth->setValue(96);
     ui->lightnessRange->setValue(255);
     ui->reusePenalty->setValue(0.01);
     ui->outputMode->setCurrentIndex(ui->outputMode->findData("image"));
+    previewFiles = std::make_unique<QTemporaryDir>(root.filePath("preview-XXXXXX"));
+    ui->tileWidth->setValue(260);
+    if (!require(waitForWork([&] { generatePreview(); }) && documents[activeDocument].preview &&
+                 documents[activeDocument].preview->size() == QSize(2080, 160) &&
+                 canvasScene->sceneRect().size() == QSizeF(2080, 160), "original-size editor preview above 1800 pixels"))
+    {
+        qWarning().noquote() << ui->taskLog->toPlainText();
+        return 1;
+    }
+    ui->tileWidth->setValue(24);
     if (!require(waitForWork([&] { generatePreview(); }) && previewCurrent() &&
-                 documents[activeDocument].previewGrid == QSize(8, 5) && !documents[activeDocument].preview.isNull(),
+                 documents[activeDocument].previewGrid == QSize(8, 5) && documents[activeDocument].preview,
                  "CLI preview selection and composition"))
     {
         qWarning().noquote() << ui->taskLog->toPlainText();
@@ -484,10 +497,13 @@ int MainWindow::smokeTest(const QString &captureDirectory)
     const int oldId = currentCandidate;
     auto replacement = ui->candidateList->item(ui->candidateList->currentRow() == 0 ? 1 : 0);
     const int replacementId = replacement->data(Qt::UserRole).toInt();
-    const auto priorPreview = documents[activeDocument].preview.toImage();
+    const auto expected = QImage(replacement->data(Qt::UserRole + 3).toString())
+                              .scaled({24, 32}, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    const auto priorPreview = nativePreviewTile(*documents[activeDocument].preview, {24, 32});
     if (!require(waitForWork([&] { replaceTile(replacement); }) && currentCandidate == replacementId &&
                  oldId != currentCandidate && documents[activeDocument].edits.size() == 1 &&
-                 documents[activeDocument].preview.toImage() != priorPreview, "replace candidate and update preview") ||
+                 nativePreviewTile(*documents[activeDocument].preview, {24, 32}) != priorPreview,
+                 "replace candidate and update native preview tile") ||
         !require(capture("07-candidates", this), "candidate capture"))
     {
         qWarning().noquote() << ui->taskLog->toPlainText();
@@ -503,14 +519,10 @@ int MainWindow::smokeTest(const QString &captureDirectory)
     const auto output = root.filePath(QStringLiteral("导出 成品.png"));
     ui->outputPath->setText(output);
     switchWorkspace(Workspace::Export);
-    const auto material = std::find_if(catalog.assets.cbegin(), catalog.assets.cend(), [&](const LibraryAsset &asset) {
-        return asset.id == replacementId;
-    });
-    if (!require(material != catalog.assets.cend(), "replacement material"))
-    {
-        return 1;
-    }
-    const auto expected = QImage(catalog.assetPath(*material)).scaled({24, 32}, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    QApplication::processEvents();
+    const auto exportZoom = ui->exportPreview->transform().m11();
+    scrollPreview(ui->exportPreview);
+    if (!require(ui->exportPreview->transform().m11() > exportZoom, "export preview wheel zoom")) return 1;
     const auto matchesReplacement = [&expected](const QString &path) {
         const QImage result(path);
         if (result.size() != QSize(192, 160) || expected.isNull()) return false;
@@ -518,7 +530,7 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         const auto b = result.pixelColor(12, 16);
         return qAbs(a.red() - b.red()) + qAbs(a.green() - b.green()) + qAbs(a.blue() - b.blue()) <= 18;
     };
-    if (!require(waitForWork([&] { exportDocument(); }) && matchesReplacement(output) && !exportImage.isNull(),
+    if (!require(waitForWork([&] { exportDocument(); }) && matchesReplacement(output) && ui->exportPreview->hasImage(),
                  "export uses the manually selected tile") ||
         !require(saveDocument(activeDocument, false), "save project with tile replacement") ||
         !require(capture("08-export-result", this), "export with result capture"))
@@ -540,14 +552,18 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         return 1;
     }
     const auto portableExport = root.filePath("portable");
-    previewFiles = std::make_unique<QTemporaryDir>(root.filePath("preview-XXXXXX"));
     ui->outputMode->setCurrentIndex(ui->outputMode->findData("html"));
     ui->outputPath->setText(portableExport);
     if (!require(waitForWork([&] { exportDocument(); }) && QFileInfo::exists(QDir(portableExport).filePath("project.json")),
                  "export edited selection as a portable project") ||
-        !require(openPath(portableExport) && !documents[activeDocument].manifest.isEmpty(), "open portable project") ||
-        !require(waitForWork([&] { generatePreview(); }) && !documents[activeDocument].preview.isNull(),
-                 "preview reopened portable project"))
+        !require(openPath(portableExport) && !documents[activeDocument].manifest.isEmpty(), "open portable project"))
+    {
+        qWarning().noquote() << ui->taskLog->toPlainText();
+        return 1;
+    }
+    ui->tileWidth->setValue(260);
+    if (!require(waitForWork([&] { generatePreview(); }) && documents[activeDocument].preview &&
+                 documents[activeDocument].preview->size() == QSize(2080, 160), "original-size portable preview"))
     {
         qWarning().noquote() << ui->taskLog->toPlainText();
         return 1;

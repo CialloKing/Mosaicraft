@@ -13,7 +13,6 @@
 
 int main(int argc, char *argv[])
 {
-    QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
     QApplication app(argc, argv);
     app.setApplicationName("Mosaicraft Desktop");
     app.setOrganizationName("Mosaicraft");
@@ -86,5 +85,6 @@ int main(int argc, char *argv[])
     {
         window.openPath(parser.positionalArguments().front());
     }
+    window.checkLibrary();
     return app.exec();
 }
