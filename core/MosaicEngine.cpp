@@ -928,19 +928,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
     int cntEdge = 0, cntMissEdge = 0;
     int cntLBP  = 0, cntMissLBP  = 0;
 
-    // 自适应邻居窗口：基准 2 倍 tile 行宽，默认下限 300，上限 400
-    auto autoNeighborWindow = [&]() {
-        int base = std::max(300, tilesX * 2);
-        int dynamic = static_cast<int>(std::sqrt(static_cast<double>(allRecords.size())) * 1.5);
-        return std::max(base, std::min(dynamic, 400));
-    };
-
-    if (cfg.neighborWindow <= 0)
-    {
-        // 自适应邻居窗口：由 autoNeighborWindow 自动计算（下限 300，上限 400）
-        // 未设置窗口大小时自动计算，否则全库扫描 O(库大小) 开销过大
-        cfg.neighborWindow = autoNeighborWindow();
-    }
+    cfg.neighborWindow = detail::resolveNeighborWindow(cfg.neighborWindow, tilesX, allRecords.size());
 
     auto limits = m_limits;
     detail::CpuTrial trialOptions;
@@ -957,15 +945,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
                                            cfg.benchmark ? &neighborCounters : nullptr, trialOptions.slots,
                                            trialOptions.ways, largeFastCpuImage);
 
-    // 权重归一化：将各特征权重转为 tile 评分系数
-    double wSum = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight;
-    if (cfg.edgeWeight > 0) wSum += cfg.edgeWeight;
-    if (cfg.lbpWeight > 0)  wSum += cfg.lbpWeight;
-    double nLabW = cfg.labWeight / wSum;
-    double nGridW = cfg.gridWeight / wSum;
-    double nTinyW = cfg.tinyWeight / wSum;
-    double nEdgeW = cfg.edgeWeight / wSum;
-    double nLbpW  = cfg.lbpWeight / wSum;
+    const auto defaultWeights = normalizedMatchWeights(cfg);
     N = cfg.candidates;
 
     // 每个 tile 的最终选择结果：GPU 路径预分配，CPU 路径后续填充
@@ -1768,8 +1748,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
             const auto d = compute::fp32Distances(batch, tile, allRecords[index], features,
                 trialOptions.planar ? batch.planar[tile].data() : nullptr,
                 trialOptions.planar ? planarLibrary[index].data() : nullptr);
-            return float(batch.labW[tile]) * d[0] + float(batch.gridW[tile]) * d[1] +
-                   float(batch.tinyW[tile]) * d[2] + float(batch.edgeW[tile]) * d[3] + float(batch.lbpW[tile]) * d[4];
+            return weightedFastScore(batch, tile, d);
         };
         const size_t cpuWorkspace = scratch + compatible.hostBytes() + portableFeatures.hostBytes();
         const auto fitsCpuScores = [&](size_t rows)
@@ -2100,26 +2079,22 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
                 for (int j = 0; j < N; ++j)
                 {
                     auto &index = allIndices[static_cast<size_t>(local) * N + j];
-                    if (index >= 0 && std::abs(allRecords[index].avgL - allTL[local]) > cfg.lRange)
-                    {
-                        index = -1;
-                    }
+                    filterCandidateLightness(index, allRecords, allTL[local], cfg.lRange);
                     hasCandidates = hasCandidates || index >= 0;
                 }
             }
             metrics.msANNQuery += Ms(Clock::now() - queryStart).count();
-            std::fill(tileLabW.begin(), tileLabW.end(), nLabW);
-            std::fill(tileGridW.begin(), tileGridW.end(), nGridW);
-            std::fill(tileTinyW.begin(), tileTinyW.end(), nTinyW);
-            std::fill(tileEdgeW.begin(), tileEdgeW.end(), nEdgeW);
-            std::fill(tileLbpW.begin(), tileLbpW.end(), nLbpW);
+            std::fill(tileLabW.begin(), tileLabW.end(), defaultWeights[0]);
+            std::fill(tileGridW.begin(), tileGridW.end(), defaultWeights[1]);
+            std::fill(tileTinyW.begin(), tileTinyW.end(), defaultWeights[2]);
+            std::fill(tileEdgeW.begin(), tileEdgeW.end(), defaultWeights[3]);
+            std::fill(tileLbpW.begin(), tileLbpW.end(), defaultWeights[4]);
             if (cfg.adaptiveWeights)
             {
-                const MatchWeights defaults{nLabW, nGridW, nTinyW, nEdgeW, nLbpW};
                 for (int ti = 0; ti < count; ++ti)
                 {
                     const auto category = classifyTile(allEdge[ti], allGrid[ti], allLBP[ti]);
-                    const auto weights = adaptiveTileWeights(category, defaults);
+                    const auto weights = adaptiveTileWeights(category, defaultWeights);
                     tileLabW[ti] = weights[0];
                     tileGridW[ti] = weights[1];
                     tileTinyW[ti] = weights[2];
@@ -2462,7 +2437,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
                             // GPU scores 基于 8x8 grid，4x4 分数 = 原分数 - 8x8 grid项 + 4x4 grid项
                             double grid8d = gridDistance8x8(allGrid[local], allRecords[indices[j]].gridLab, true);
                             double grid4d = gridDistance(tileGrid4x4[local], libGrid4x4[indices[j]]);
-                            double score4 = scores[j] - nGridW * grid8d + nGridW * grid4d;
+                            double score4 = scores[j] - defaultWeights[1] * grid8d + defaultWeights[1] * grid4d;
                             double score8 = scores[j]; // GPU , ,  8, 8
                             if (score4 < best4)
                             {

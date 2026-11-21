@@ -18,6 +18,7 @@
 #include "../core/MosaicSelection.h"
 #include "../core/PngStreamWriter.h"
 #include "../core/PreviewAccumulator.h"
+#include "../core/PreviewCandidates.h"
 #include "../core/TileCompositor.h"
 #include "../core/WorkerPool.h"
 #include <deque>
@@ -1966,6 +1967,41 @@ TEST_CASE("interactive selection is read-only and pins the exported tiles and an
     {
         CHECK(cached.recommendationsAt(position) == fresh.recommendationsAt(position));
     }
+
+    PreviewCandidateRow fromCache, recomputed;
+    const PreviewWorkspace coldCandidates;
+    REQUIRE(previewCandidates(different, cached, cache, 1, 3, fromCache).ok);
+    REQUIRE(previewCandidates(different, cached, coldCandidates, 1, 3, recomputed).ok);
+    CHECK(fromCache.source == PreviewScoreSource::PreviewCache);
+    CHECK(recomputed.source == PreviewScoreSource::CpuRecomputed);
+    REQUIRE(fromCache.candidates.size() == 3);
+    REQUIRE(recomputed.candidates.size() == fromCache.candidates.size());
+    for (size_t i = 0; i < fromCache.candidates.size(); ++i)
+    {
+        const auto &expected = fromCache.candidates[i];
+        const auto &actual = recomputed.candidates[i];
+        CHECK(actual.imageId == expected.imageId);
+        CHECK(actual.baseScore == doctest::Approx(expected.baseScore).epsilon(1e-6));
+        CHECK(actual.rankScore == doctest::Approx(expected.rankScore).epsilon(1e-6));
+    }
+
+    // 将下一格的首选放到上一格，必须重新施加近距离重复惩罚。
+    const auto originalRank = cached.recommendationsAt(1);
+    const int replacement = originalRank[0];
+    REQUIRE(replacement != cached.imageIds[0]);
+    const auto *asset = cached.catalog->find(replacement);
+    REQUIRE(asset);
+    const auto version = previewAsset(*asset).version();
+    auto edited = cached;
+    REQUIRE(edited.replaceAsset(0, replacement, version) == PreviewEditResult::Applied);
+    CHECK(edited.replaceAsset(0, replacement, version) == PreviewEditResult::Unchanged);
+    CHECK(edited.manualEdits == 1);
+    const auto editedRank = edited.recommendationsAt(1);
+    CHECK(editedRank[0] != replacement);
+    CHECK(cached.recommendationsAt(1) == originalRank);
+    REQUIRE(previewCandidates(different, edited, cache, 1, 1, fromCache).ok);
+    REQUIRE(fromCache.candidates.size() == 1);
+    CHECK(fromCache.candidates.front().imageId == editedRank[0]);
 
     auto weighted = different;
     weighted.config.labWeight += 0.1;

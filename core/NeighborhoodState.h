@@ -7,6 +7,8 @@
 
 namespace mosaicraft::detail
 {
+int resolveNeighborWindow(int requested, int columns, size_t records);
+
 // 保存已算完的前 K 个分数；门槛只能下降，平分必须继续走原来的排序规则。
 class RankBound
 {

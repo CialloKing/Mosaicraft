@@ -1,8 +1,9 @@
 #include "MosaicSelection.h"
 #include "Database.h"
-#include "NeighborhoodState.h"
+#include "PreviewCandidates.h"
 #include "UnicodeIO.h"
 
+#include <algorithm>
 #include <list>
 #include <mutex>
 
@@ -140,29 +141,13 @@ class PreviewRecommendationCache
             return hit->second;
         }
 
-        const auto &scores = *m_scores;
-        detail::NeighborhoodState neighborhood(scores.records, selection.columns, m_window, m_penalty);
-        const int tile = static_cast<int>(position);
-        neighborhood.replay(selection.indices, tile);
-        const size_t start = position * scores.candidates;
-        std::vector<std::pair<double, int>> ranked;
-        ranked.reserve(scores.candidates);
-        for (int candidate = 0; candidate < scores.candidates; ++candidate)
-        {
-            const int index = scores.indices[start + candidate];
-            if (index >= 0)
-            {
-                double value = scores.values[start + candidate];
-                neighborhood.applyPenalty(value, index, tile);
-                ranked.emplace_back(value, index);
-            }
-        }
-        const size_t count = std::min(ranked.size(), size_t(MosaicSelection::recommendationLimit));
-        std::partial_sort(ranked.begin(), ranked.begin() + count, ranked.end());
+        const auto scores = detail::cachedBaseScoreRow(*m_scores, position);
+        const auto ranked = detail::rankPreviewCandidates(scores, m_scores->records, selection, position,
+            m_window, m_penalty, MosaicSelection::recommendationLimit);
         Row row{};
-        for (size_t i = 0; i < count; ++i)
+        for (size_t i = 0; i < ranked.size(); ++i)
         {
-            row[i] = scores.records[ranked[i].second].id;
+            row[i] = ranked[i].imageId;
         }
         m_recent.emplace_front(position, row);
         if (m_recent.size() > 128)

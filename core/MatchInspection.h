@@ -43,6 +43,21 @@ TileClass classifyTile(double edge, const Grid &grid, const Lbp &lbp)
 
 using MatchWeights = std::array<double, 5>;
 
+inline MatchWeights normalizedMatchWeights(const MosaicEngine::Config &config)
+{
+    double total = config.labWeight + config.gridWeight + config.tinyWeight;
+    if (config.edgeWeight > 0)
+    {
+        total += config.edgeWeight;
+    }
+    if (config.lbpWeight > 0)
+    {
+        total += config.lbpWeight;
+    }
+    return {config.labWeight / total, config.gridWeight / total, config.tinyWeight / total,
+            config.edgeWeight / total, config.lbpWeight / total};
+}
+
 inline MatchWeights adaptiveTileWeights(TileClass type, const MatchWeights &defaults)
 {
     switch (type)

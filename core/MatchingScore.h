@@ -4,6 +4,21 @@
 
 namespace mosaicraft
 {
+inline void filterCandidateLightness(int &index, const std::vector<ImageRecord> &records, double lightness, double range)
+{
+    if (index >= 0 && std::abs(records[index].avgL - lightness) > range)
+    {
+        index = -1;
+    }
+}
+
+inline float weightedFastScore(const MatchingBuffers &tiles, size_t tile, const std::array<float, 5> &distances)
+{
+    return float(tiles.labW[tile]) * distances[0] + float(tiles.gridW[tile]) * distances[1] +
+           float(tiles.tinyW[tile]) * distances[2] + float(tiles.edgeW[tile]) * distances[3] +
+           float(tiles.lbpW[tile]) * distances[4];
+}
+
 // 这是自定义尺寸原 CPU 表达式。顺序决定舍入和平分结果，不能重排成点积或融合乘加。
 inline double cpuBaseScore(const MatchingBuffers &tiles, size_t tile, const ImageRecord &record,
                            const FeaturePack::Reader::Row &features, double usePenalty)

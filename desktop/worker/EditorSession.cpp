@@ -1,5 +1,5 @@
 #include "EditorSession.h"
-#include "EditorCandidates.h"
+#include "core/PreviewCandidates.h"
 #include "core/ApiJson.h"
 #include "core/ApiRequestParser.h"
 #include "core/BrightnessAdjustment.h"
@@ -287,8 +287,8 @@ public:
                 }
                 sources = currentSources;
             }
-            std::vector<EditorCandidate> candidates;
-            const auto status = editorCandidates(request, selection, workspace, position, candidates);
+            PreviewCandidateRow row;
+            const auto status = previewCandidates(request, selection, workspace, position, request.config.candidates, row);
             if (!status.ok)
             {
                 return serviceResultToJson(status);
@@ -306,9 +306,9 @@ public:
             };
             const int current = selection.imageIds[position];
             bool containsCurrent = false;
-            for (const auto &candidate : candidates)
+            for (const auto &candidate : row.candidates)
             {
-                append(candidate.imageId, 1.0 / (1.0 + std::max(0.0, candidate.score)));
+                append(candidate.imageId, 1.0 / (1.0 + std::max(0.0, candidate.rankScore)));
                 containsCurrent = containsCurrent || candidate.imageId == current;
             }
             if (!containsCurrent && current > 0)

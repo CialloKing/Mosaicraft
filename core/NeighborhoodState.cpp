@@ -1,6 +1,7 @@
 #include "NeighborhoodState.h"
 #include <algorithm>
 #include <array>
+#include <cmath>
 #if defined(_MSC_VER)
 #include <intrin.h>
 #endif
@@ -13,6 +14,17 @@ constexpr double gridThreshold = 0.010;
 constexpr double gridPenalty = 200.0;
 constexpr int gridWindow = 50;
 } // namespace
+
+int resolveNeighborWindow(int requested, int columns, size_t records)
+{
+    if (requested > 0)
+    {
+        return requested;
+    }
+    // 至少覆盖两行；图库大小只调整 300 到 400 之间的基准。
+    const int dynamic = static_cast<int>(std::sqrt(static_cast<double>(records)) * 1.5);
+    return std::max({300, columns * 2, std::min(dynamic, 400)});
+}
 
 // 最近 50 个成功选图各占一位。只排除不可能相似的格，余下仍交原来的完整距离判断。
 struct NeighborhoodState::RecentGridFilter

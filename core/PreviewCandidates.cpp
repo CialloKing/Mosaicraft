@@ -1,53 +1,99 @@
-#include "EditorCandidates.h"
+#include "PreviewCandidates.h"
 
 #include "compute/PortableCompute.h"
-#include "core/ExecutionScope.h"
-#include "core/FeatureIndex.h"
-#include "core/MatchInspection.h"
-#include "core/MatchingScore.h"
-#include "core/MosaicPlanning.h"
-#include "core/MosaicSelection.h"
-#include "core/NeighborhoodState.h"
-#include "core/TileFeatures.h"
-#include "core/UnicodeIO.h"
+#include "ExecutionScope.h"
+#include "FeatureIndex.h"
+#include "LibraryAccess.h"
+#include "MatchInspection.h"
+#include "MatchingScore.h"
+#include "MosaicPlanning.h"
+#include "MosaicSelection.h"
+#include "MosaicService.h"
+#include "NeighborhoodState.h"
+#include "TileFeatures.h"
+#include "UnicodeIO.h"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
-#include <cmath>
-#include <numeric>
+#include <limits>
+#include <mutex>
+#include <optional>
+#include <tuple>
 
-using namespace mosaicraft;
+namespace mosaicraft
+{
+namespace detail
+{
+BaseScoreRow cachedBaseScoreRow(const PreviewScores &scores, size_t position)
+{
+    if (scores.candidates <= 0)
+    {
+        return {};
+    }
+    const auto count = static_cast<size_t>(scores.candidates);
+    if (position >= std::min(scores.indices.size(), scores.values.size()) / count)
+    {
+        return {};
+    }
+    const auto offset = position * count;
+    return {scores.indices.data() + offset, scores.values.data() + offset, count};
+}
+
+std::vector<PreviewCandidate> rankPreviewCandidates(BaseScoreRow scores, const std::vector<ImageRecord> &records,
+    const MosaicSelection &selection, size_t position, int window, double penalty, size_t limit)
+{
+    if (!scores.count || !limit)
+    {
+        return {};
+    }
+    // 排序分只使用此快照的前序选择；基础分不因编辑而失效。
+    NeighborhoodState neighborhood(records, selection.columns, window, penalty);
+    const int tile = static_cast<int>(position);
+    neighborhood.replay(selection.indices, tile);
+    struct Ranked
+    {
+        double rankScore, baseScore;
+        int index;
+    };
+    std::vector<Ranked> ranked;
+    ranked.reserve(scores.count);
+    for (size_t i = 0; i < scores.count; ++i)
+    {
+        const int index = scores.indices[i];
+        if (index >= 0)
+        {
+            double rankScore = scores.values[i];
+            neighborhood.applyPenalty(rankScore, index, tile);
+            ranked.push_back({rankScore, scores.values[i], index});
+        }
+    }
+    const auto less = [](const Ranked &a, const Ranked &b)
+    {
+        return std::tie(a.rankScore, a.index) < std::tie(b.rankScore, b.index);
+    };
+    const size_t count = std::min(limit, ranked.size());
+    if (count < ranked.size())
+    {
+        std::partial_sort(ranked.begin(), ranked.begin() + count, ranked.end(), less);
+    }
+    else
+    {
+        std::sort(ranked.begin(), ranked.end(), less);
+    }
+    std::vector<PreviewCandidate> result;
+    result.reserve(count);
+    for (size_t i = 0; i < count; ++i)
+    {
+        const auto &candidate = ranked[i];
+        result.push_back({records[candidate.index].id, candidate.baseScore, candidate.rankScore});
+    }
+    return result;
+}
+} // namespace detail
 
 namespace
 {
-using Scores = std::vector<std::pair<double, int>>;
-
-void rankCandidates(Scores &scores, const std::vector<ImageRecord> &records,
-                    const MosaicEngine::Config &config, const MosaicSelection &selection,
-                    size_t position, std::vector<EditorCandidate> &result)
-{
-    int window = config.neighborWindow;
-    if (window <= 0)
-    {
-        const int dynamic = static_cast<int>(std::sqrt(static_cast<double>(records.size())) * 1.5);
-        window = std::max({300, selection.columns * 2, std::min(dynamic, 400)});
-    }
-    detail::NeighborhoodState neighborhood(records, selection.columns, window, config.neighborPenalty);
-    const int tile = static_cast<int>(position);
-    neighborhood.replay(selection.indices, tile);
-    for (auto &[score, index] : scores)
-    {
-        neighborhood.applyPenalty(score, index, tile);
-    }
-    std::sort(scores.begin(), scores.end());
-    result.reserve(scores.size());
-    for (const auto &[score, index] : scores)
-    {
-        result.push_back({records[index].id, score});
-    }
-}
-
 void loadFeatures(const cv::Mat &tile, cv::Size size, bool fast, MatchingBuffers &buffers)
 {
     cv::Mat resized, lab, gray;
@@ -119,12 +165,7 @@ bool prepareFeatures(const MosaicRequest &request, const MosaicSelection &select
 
 void setWeights(MatchingBuffers &buffers, const MosaicEngine::Config &config)
 {
-    MatchWeights weights{config.labWeight, config.gridWeight, config.tinyWeight, config.edgeWeight, config.lbpWeight};
-    const auto total = std::accumulate(weights.begin(), weights.end(), 0.0);
-    for (auto &weight : weights)
-    {
-        weight /= total;
-    }
+    auto weights = normalizedMatchWeights(config);
     if (config.adaptiveWeights)
     {
         weights = adaptiveTileWeights(classifyTile(buffers.edge[0], buffers.grid[0], buffers.lbp[0]), weights);
@@ -135,39 +176,50 @@ void setWeights(MatchingBuffers &buffers, const MosaicEngine::Config &config)
     buffers.edgeW[0] = weights[3];
     buffers.lbpW[0] = weights[4];
 }
+} // namespace
 
-float fastScore(const MatchingBuffers &buffers, const ImageRecord &record, const FeaturePack::Reader::Row &features)
-{
-    const auto d = compute::fp32Distances(buffers, 0, record, features);
-    return float(buffers.labW[0]) * d[0] + float(buffers.gridW[0]) * d[1] + float(buffers.tinyW[0]) * d[2] +
-           float(buffers.edgeW[0]) * d[3] + float(buffers.lbpW[0]) * d[4];
-}
-}
-
-ServiceResult editorCandidates(const MosaicRequest &request, const MosaicSelection &selection,
-                               const PreviewWorkspace &workspace, size_t position, std::vector<EditorCandidate> &result)
+ServiceResult previewCandidates(const MosaicRequest &request, const MosaicSelection &selection,
+                                const PreviewWorkspace &workspace, size_t position, size_t limit,
+                                PreviewCandidateRow &result)
 {
     const auto &config = request.config;
-    Scores scores;
-    scores.reserve(config.candidates);
-    const auto count = static_cast<size_t>(config.candidates);
-    const auto offset = position * count;
-    if (workspace.scores && workspace.scores->candidates == config.candidates &&
-        workspace.scores->indices.size() >= offset + count && workspace.scores->values.size() >= offset + count)
+    result = {};
+    if (selection.columns <= 0 || position >= selection.indices.size() ||
+        position > std::numeric_limits<int>::max() || config.candidates <= 0)
     {
-        const auto &cached = *workspace.scores;
-        for (size_t candidate = offset; candidate < offset + count; ++candidate)
-        {
-            if (cached.indices[candidate] >= 0)
-            {
-                scores.emplace_back(cached.values[candidate], cached.indices[candidate]);
-            }
-        }
-        rankCandidates(scores, cached.records, config, selection, position, result);
+        return ServiceResult::failure(1, "invalid preview tile or candidate count", "invalid_candidate_query");
+    }
+    if (workspace.catalog && workspace.catalog != selection.catalog)
+    {
+        return ServiceResult::failure(1, "the candidate workspace belongs to another preview", "preview_stale");
+    }
+    if (!limit)
+    {
         return ServiceResult::success();
     }
+    const auto rank = [&](detail::BaseScoreRow row, const std::vector<ImageRecord> &records)
+    {
+        const int window = detail::resolveNeighborWindow(config.neighborWindow, selection.columns, records.size());
+        result.candidates = detail::rankPreviewCandidates(row, records, selection, position, window,
+                                                           config.neighborPenalty, limit);
+    };
+    if (workspace.scores && workspace.scores->candidates == config.candidates)
+    {
+        const auto row = detail::cachedBaseScoreRow(*workspace.scores, position);
+        if (row.count)
+        {
+            rank(row, workspace.scores->records);
+            return ServiceResult::success();
+        }
+    }
 
+    std::lock_guard<std::mutex> lock(pipelineMutex());
     ExecutionScope scope;
+    const LibraryAccess library(selection.dbPath, false);
+    if (!library.acquired())
+    {
+        return ServiceResult::failure(1, "the preview library is busy", "library_busy");
+    }
     Database database(selection.dbPath, Database::OpenMode::ReadOnly);
     if (!database.isOpen())
     {
@@ -190,9 +242,10 @@ ServiceResult editorCandidates(const MosaicRequest &request, const MosaicSelecti
 
     const auto featureDirectory = u8path(records.front().tinyPath).parent_path();
     auto &indices = buffers.indices;
-    if (workspace.candidates && workspace.candidates->data.size() >= offset + count)
+    const auto count = indices.size();
+    if (workspace.candidates && position < workspace.candidates->data.size() / count)
     {
-        std::copy_n(workspace.candidates->data.begin() + offset, count, indices.begin());
+        std::copy_n(workspace.candidates->data.begin() + position * count, count, indices.begin());
     }
     else
     {
@@ -208,31 +261,37 @@ ServiceResult editorCandidates(const MosaicRequest &request, const MosaicSelecti
         }
         writeTileVector(buffers.l[0], buffers.a[0], buffers.b[0], buffers.grid[0], buffers.edge[0], buffers.queries.data());
         WorkerPool workers(1);
-        index->queryBatch(buffers.queries, config.candidates, indices, workers);
+        index->queryBatch(buffers.queries, config.candidates, indices, workers, MOSAICRAFT_TRIAL_ANN_ROWS);
     }
     for (auto &index : indices)
     {
-        if (index >= 0 && std::abs(records[index].avgL - buffers.l[0]) > config.lRange)
-        {
-            index = -1;
-        }
+        filterCandidateLightness(index, records, buffers.l[0], config.lRange);
     }
     setWeights(buffers, config);
     FeaturePack::Reader reader(pathToUtf8(featureDirectory), records, 32ULL * 1024 * 1024);
     reader.prepare(indices);
-    const RowHistory history(indices.data(), config.candidates, records, config.usePenalty);
-    for (int index : indices)
+    std::optional<RowHistory> history;
+    if (config.scoreMode == ScoreMode::Fast)
     {
+        history.emplace(indices.data(), config.candidates, records, config.usePenalty);
+    }
+    std::vector<double> values(count);
+    for (size_t i = 0; i < count; ++i)
+    {
+        const int index = indices[i];
         if (index >= 0)
         {
             const auto &asset = records[index];
             const auto &features = reader.get(index);
-            const double score = config.scoreMode == ScoreMode::Fast
-                ? history.combine(fastScore(buffers, asset, features), asset.useCount, config.usePenalty)
+            values[i] = history
+                ? history->combine(weightedFastScore(buffers, 0, compute::fp32Distances(buffers, 0, asset, features)),
+                                   asset.useCount, config.usePenalty)
                 : cpuBaseScore(buffers, 0, asset, features, config.usePenalty);
-            scores.emplace_back(score, index);
         }
     }
-    rankCandidates(scores, records, config, selection, position, result);
+    // 补算使用 CPU，不能将它标成原 GPU 预览的分数。
+    result.source = PreviewScoreSource::CpuRecomputed;
+    rank({indices.data(), values.data(), values.size()}, records);
     return ServiceResult::success();
 }
+} // namespace mosaicraft
