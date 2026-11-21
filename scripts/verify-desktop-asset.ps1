@@ -24,7 +24,9 @@ switch ($platform) {
     }
     'linux-x64' {
         $required += @('bin/MosaicraftDesktop', 'bin/mosaicraft', 'bin/mosaicraft_desktop_worker', 'bin/qt.conf', 'bin/contracts.json')
+        $required += 'licenses/qt/ICU-73.2.txt'
         $patterns = @($modules | ForEach-Object { "*/libQt6$_.so.6" })
+        $patterns += '*/libicudata.so.73', '*/libicui18n.so.73', '*/libicuuc.so.73'
         $patterns += ($plugins + 'platforms/qxcb' + 'platforms/qwayland') | ForEach-Object { '*/' + ($_ -replace '/q', '/libq') + '.so' }
     }
     'macos-arm64' {

@@ -16,6 +16,10 @@ version are available from the Qt project:
 https://download.qt.io/official_releases/qt/6.12/@QT_VERSION@/submodules/
 https://code.qt.io/cgit/qt/qtbase.git/tree/LICENSES?h=v@QT_VERSION@
 
+The Linux package also includes ICU 73.2 from the Qt SDK. Its license is in
+licenses/qt/ICU-73.2.txt; the source is available from the ICU project:
+https://github.com/unicode-org/icu/releases/tag/release-73-2
+
 The Qt libraries are not statically linked into Mosaicraft Desktop. The applicable
 license permits replacing them with compatible modified shared libraries. On macOS
 modifying the bundle invalidates its seal; re-sign the modified bundle to use it.

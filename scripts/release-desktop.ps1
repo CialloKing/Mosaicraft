@@ -75,6 +75,9 @@ try {
     $qtNotices = Join-Path $package 'licenses/qt'
     New-Item -ItemType Directory -Force -Path $qtNotices | Out-Null
     Copy-Item -LiteralPath 'third_party/qt-notices/LGPL-3.0-only.txt' -Destination $qtNotices
+    if ($IsLinux) {
+        Copy-Item -LiteralPath 'third_party/qt-notices/ICU-73.2.txt' -Destination $qtNotices
+    }
     # Keep the component/third-party inventory provided by the actual SDK archives.
     foreach ($module in @('qtbase', 'qtimageformats', 'qttranslations')) {
         Copy-Item -LiteralPath "$QtRoot/sbom/$module-$($qt.version).cdx.json" -Destination $qtNotices

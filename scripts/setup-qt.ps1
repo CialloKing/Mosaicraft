@@ -23,7 +23,10 @@ foreach ($item in $sdk.archives) {
             throw "Could not download the locked Qt archive: $($item.path)"
         }
     }
-    Push-Location -LiteralPath $qtRoot
+    # ICU is stored flat; Qt's Linux libraries resolve it next to libQt6Core.
+    $destination = if ($item.destination) { Join-Path $qtRoot $item.destination } else { $qtRoot }
+    New-Item -ItemType Directory -Force -Path $destination | Out-Null
+    Push-Location -LiteralPath $destination
     try {
         & cmake -E tar xf $archive
         if ($LASTEXITCODE -ne 0) { throw "Could not extract $archive" }
@@ -36,5 +39,9 @@ foreach ($item in $sdk.archives) {
 if (!(Test-Path -LiteralPath (Join-Path $qtRoot 'lib/cmake/Qt6/Qt6Config.cmake') -PathType Leaf)) {
     throw "Missing Qt CMake configuration in $qtRoot"
 }
+# lrelease loads QtQml on Unix; checking the tool catches incomplete SDKs before the build.
+$extension = if ($IsWindows) { '.exe' } else { '' }
+& (Join-Path $qtRoot "bin/lrelease$extension") -version | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "The Qt translation tool cannot run in $qtRoot" }
 if ($env:GITHUB_ENV) { "MOSAICRAFT_QT_ROOT=$qtRoot" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append }
 Write-Output $qtRoot
