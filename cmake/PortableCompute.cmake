@@ -68,19 +68,21 @@ if(MOSAICRAFT_METAL)
     enable_language(OBJCXX)
     set_target_properties(mosaicraft_core PROPERTIES OBJCXX_STANDARD 17 OBJCXX_STANDARD_REQUIRED ON)
     find_program(MOSAICRAFT_XCRUN xcrun REQUIRED)
-    add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/PortableMetal.h"
+    set(air "${CMAKE_CURRENT_BINARY_DIR}/generated/portable.air")
+    set(metallib "${CMAKE_CURRENT_BINARY_DIR}/generated/portable.metallib")
+    set(metal_header "${CMAKE_CURRENT_BINARY_DIR}/generated/PortableMetal.h")
+    add_custom_command(OUTPUT "${air}"
         COMMAND "${MOSAICRAFT_XCRUN}" -sdk macosx metal -std=metal3.0 -fno-fast-math -ffp-contract=off
             "-I${CMAKE_CURRENT_SOURCE_DIR}/core" -c "${CMAKE_CURRENT_SOURCE_DIR}/compute/shaders/portable.metal"
-            -o "${CMAKE_CURRENT_BINARY_DIR}/generated/portable.air"
-        COMMAND "${MOSAICRAFT_XCRUN}" -sdk macosx metallib "${CMAKE_CURRENT_BINARY_DIR}/generated/portable.air"
-            -o "${CMAKE_CURRENT_BINARY_DIR}/generated/portable.metallib"
-        COMMAND "${CMAKE_COMMAND}" -DFORMAT=metal
-            "-DINPUT=${CMAKE_CURRENT_BINARY_DIR}/generated/portable.metallib"
-            "-DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/generated/PortableMetal.h" -P "${_embed_shader}"
-        DEPENDS compute/shaders/portable.metal core/GridWeights.inc "${_embed_shader}"
-        BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/generated/portable.air"
-            "${CMAKE_CURRENT_BINARY_DIR}/generated/portable.metallib" VERBATIM)
-    target_sources(mosaicraft_core PRIVATE compute/MetalBackend.mm "${CMAKE_CURRENT_BINARY_DIR}/generated/PortableMetal.h")
+            -o "${air}"
+        DEPENDS compute/shaders/portable.metal core/GridWeights.inc VERBATIM)
+    add_custom_command(OUTPUT "${metallib}"
+        COMMAND "${MOSAICRAFT_XCRUN}" -sdk macosx metallib "${air}" -o "${metallib}"
+        DEPENDS "${air}" VERBATIM)
+    add_custom_command(OUTPUT "${metal_header}"
+        COMMAND "${CMAKE_COMMAND}" -DFORMAT=metal "-DINPUT=${metallib}" "-DOUTPUT=${metal_header}" -P "${_embed_shader}"
+        DEPENDS "${metallib}" "${_embed_shader}" VERBATIM)
+    target_sources(mosaicraft_core PRIVATE compute/MetalBackend.mm "${metal_header}")
     set_source_files_properties(compute/MetalBackend.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     target_compile_definitions(mosaicraft_core PRIVATE MOSAICRAFT_METAL)
     target_link_libraries(mosaicraft_core PRIVATE "-framework Metal" "-framework Foundation")
