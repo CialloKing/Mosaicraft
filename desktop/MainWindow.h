@@ -60,7 +60,7 @@ private:
         QSize projectTile;
         QSize previewGrid;
         QPixmap preview, reference;
-        QStringList previewArgs;
+        QJsonObject previewRequest;
         QJsonArray edits;
         QString layout;
         QJsonObject options;
@@ -120,6 +120,11 @@ private:
     void showExportImage();
     void chooseOutput();
     QString suggestedOutput() const;
+    struct ExportOptions;
+    void collectExportOptions(ExportOptions &options, const Document &document, const QString &destination,
+                              bool preview) const;
+    void collectExecutionOptions(ExportOptions &options, bool useDevice) const;
+    QJsonObject buildEditorRequest(const Document &document, const QString &destination, bool preview = false) const;
     QStringList buildExportArgs(const Document &document, const QString &destination, bool preview = false) const;
     void exportDocument();
     void runExport(const QString &destination);

@@ -388,7 +388,7 @@ void MainWindow::useCurrentLibrary()
         document.layout.clear();
         document.preview = {};
         document.reference = {};
-        document.previewArgs.clear();
+        document.previewRequest = {};
         document.dirty = true;
         document.view = ViewMode::Target;
         showDocument(activeDocument);

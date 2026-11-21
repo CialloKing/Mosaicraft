@@ -99,8 +99,9 @@ bool MainWindow::previewCurrent() const
 {
     if (activeDocument < 0) return false;
     const auto &document = documents[activeDocument];
-    return document.id == editorOwner && editor->state() == QProcess::Running && editor->program() == resolveEditorWorker() &&
-           document.previewArgs == buildExportArgs(document, previewName, true);
+    return document.manifest.isEmpty() && document.id == editorOwner && editor->state() == QProcess::Running &&
+           editor->program() == resolveEditorWorker() &&
+           document.previewRequest == buildEditorRequest(document, previewName, true);
 }
 
 void MainWindow::updateEditorControls()
@@ -429,7 +430,7 @@ void MainWindow::generatePreview()
         updateTab();
     }
     sendEditorRequest({{"op", "preview"},
-                       {"args", QJsonArray::fromStringList(buildExportArgs(document, previewName, true))},
+                       {"request", buildEditorRequest(document, previewName, true)},
                        {"layout", document.layout}, {"edits", document.edits}});
 }
 
@@ -525,10 +526,16 @@ void MainWindow::receiveEditorReply(const QJsonObject &reply)
     const auto operation = std::exchange(editorOperation, QString{});
     const auto request = std::exchange(editorRequest, QJsonObject{});
     const auto diagnostic = reply["diagnostic"].toObject()["code"].toString();
-    if (diagnostic == "preview_stale") document.previewArgs.clear();
+    if (diagnostic == "preview_stale")
+    {
+        document.previewRequest = {};
+    }
     if (operation == "export")
     {
-        if (reply["ok"].toBool() && ui->reusePenalty->value() > 0) document.previewArgs.clear();
+        if (reply["ok"].toBool() && ui->reusePenalty->value() > 0)
+        {
+            document.previewRequest = {};
+        }
         job = {Job::Export, activeDocument, request["destination"].toString(), QJsonDocument(reply).toJson(), {}};
         finishJob(true);
         return;
@@ -559,7 +566,9 @@ void MainWindow::receiveEditorReply(const QJsonObject &reply)
                     document.options = captureOptions();
                     document.dirty = true;
                 }
-                document.previewArgs = buildExportArgs(document, previewName, true);
+                // 记录实际发出的请求；缺省种子由已完成的预览确定。
+                document.previewRequest = request["request"].toObject();
+                document.previewRequest.insert("seed", reply["seed"]);
                 statusBar()->showMessage(tr("预览图已生成"), 4500);
             }
             else

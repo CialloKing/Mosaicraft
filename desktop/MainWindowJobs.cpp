@@ -6,7 +6,6 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QJsonArray>
 #include <QJsonDocument>
 #include <QLocale>
 #include <QMessageBox>
@@ -19,6 +18,7 @@
 #include <QUrl>
 #include <QVersionNumber>
 
+#include <type_traits>
 #include <utility>
 
 namespace
@@ -191,40 +191,129 @@ void MainWindow::refreshExportPreview()
     ui->revealExportButton->setEnabled(document && !document->outputLocation.isEmpty());
 }
 
+// 表单值只收集一次；只有真正启动 CLI 才需要将其转成字符串参数。
+struct MainWindow::ExportOptions
+{
+    bool structured = false;
+    QJsonObject request;
+    QStringList args;
+
+    template <typename T>
+    void set(const char *option, const char *field, const T &value)
+    {
+        if (structured)
+        {
+            request.insert(field, QJsonValue(value));
+        }
+        else if constexpr (std::is_same_v<T, QString>)
+        {
+            args << option << value;
+        }
+        else
+        {
+            args << option << QString::number(value);
+        }
+    }
+
+    void size(const char *option, const char *widthField, const char *heightField, int width, int height)
+    {
+        if (structured)
+        {
+            request.insert(widthField, width);
+            request.insert(heightField, height);
+        }
+        else
+        {
+            args << option << dimensions(width, height);
+        }
+    }
+
+    void flag(const char *option, const char *field, bool enabled)
+    {
+        if (!enabled)
+        {
+            return;
+        }
+        if (structured)
+        {
+            request.insert(field, true);
+        }
+        else
+        {
+            args << option;
+        }
+    }
+};
+
 QStringList MainWindow::buildExportArgs(const Document &document, const QString &destination, bool preview) const
+{
+    ExportOptions options;
+    collectExportOptions(options, document, destination, preview);
+    return std::move(options.args);
+}
+
+QJsonObject MainWindow::buildEditorRequest(const Document &document, const QString &destination, bool preview) const
+{
+    ExportOptions options{true};
+    collectExportOptions(options, document, destination, preview);
+    return std::move(options.request);
+}
+
+void MainWindow::collectExportOptions(ExportOptions &options, const Document &document, const QString &destination,
+                                      bool preview) const
 {
     const bool portable = !document.manifest.isEmpty();
     const auto mode = preview ? QStringLiteral("image") : ui->outputMode->currentData().toString();
     const bool image = mode == "image";
     const bool html = mode == "html";
-    QStringList args{portable ? "render" : "create", portable ? document.manifest : document.target, "-o", destination,
-                     "--mode", mode};
-    const auto value = [&args](const QString &option, auto number) { args << option << QString::number(number); };
+    if (options.structured)
+    {
+        options.request.insert("inputPath", document.target);
+    }
+    else
+    {
+        options.args = {portable ? "render" : "create", portable ? document.manifest : document.target};
+    }
+    options.set("-o", "outputPath", destination);
+    options.set("--mode", "outputMode", mode);
     if (!portable)
     {
         if (!document.library.isEmpty())
         {
-            args << "-l" << QFileInfo(document.library).absoluteFilePath();
+            options.set("-l", "dbPath", QFileInfo(document.library).absoluteFilePath());
         }
-        args << "--match-tile" << dimensions(ui->matchWidth->value(), ui->matchHeight->value());
-        args << "--target-size" << dimensions(ui->targetWidth->value(), ui->targetHeight->value());
-        value("--candidates", ui->candidates->value());
-        value("--random-top", ui->randomTop->value());
-        value("--l-range", ui->lightnessRange->value());
-        value("--neighbor-window", ui->neighborWindow->value());
-        value("--neighbor-penalty", ui->neighborPenalty->value());
-        value("--reuse-penalty", ui->reusePenalty->value());
-        value("--lab-weight", ui->labWeight->value());
-        value("--grid-weight", ui->gridWeight->value());
-        value("--tiny-weight", ui->tinyWeight->value());
-        value("--edge-weight", ui->edgeWeight->value());
-        args << "--score-mode" << ui->scoreMode->currentData().toString();
-        if (ui->adaptiveWeights->isChecked()) args << "--adaptive-weights";
-        if (ui->analyzeExport->isChecked()) args << "--analyze";
-        if (!preview && ui->monitorExport->isChecked()) args << "--resource-monitor";
-        if (!ui->seedEdit->text().isEmpty()) args << "--seed" << ui->seedEdit->text();
+        options.size("--match-tile", "tileW", "tileH", ui->matchWidth->value(), ui->matchHeight->value());
+        options.set("--target-size", "targetSize", dimensions(ui->targetWidth->value(), ui->targetHeight->value()));
+        options.set("--candidates", "candidates", ui->candidates->value());
+        options.set("--random-top", "topNRandom", ui->randomTop->value());
+        options.set("--l-range", "lRange", ui->lightnessRange->value());
+        options.set("--neighbor-window", "neighborWindow", ui->neighborWindow->value());
+        options.set("--neighbor-penalty", "neighborPenalty", ui->neighborPenalty->value());
+        options.set("--reuse-penalty", "usePenalty", ui->reusePenalty->value());
+        options.set("--lab-weight", "labWeight", ui->labWeight->value());
+        options.set("--grid-weight", "gridWeight", ui->gridWeight->value());
+        options.set("--tiny-weight", "tinyWeight", ui->tinyWeight->value());
+        options.set("--edge-weight", "edgeWeight", ui->edgeWeight->value());
+        options.set("--score-mode", "scoreMode", ui->scoreMode->currentData().toString());
+        options.flag("--adaptive-weights", "adaptiveWeights", ui->adaptiveWeights->isChecked());
+        options.flag("--analyze", "analyze", ui->analyzeExport->isChecked());
+        options.flag("--resource-monitor", "resourceMonitor", !preview && ui->monitorExport->isChecked());
+        const auto seed = ui->seedEdit->text();
+        if (!seed.isEmpty())
+        {
+            bool numeric = false;
+            const auto value = seed.toLongLong(&numeric);
+            if (options.structured && numeric)
+            {
+                options.set("--seed", "seed", value);
+            }
+            else
+            {
+                options.set("--seed", "seed", seed);
+            }
+        }
     }
-    appendExecutionArgs(args, !portable);
+    collectExecutionOptions(options, !portable);
     auto width = ui->tileWidth->value();
     auto height = ui->tileHeight->value();
     if (preview && portable && document.projectGrid.isValid())
@@ -234,29 +323,48 @@ QStringList MainWindow::buildExportArgs(const Document &document, const QString 
         width = qMax(1, qRound(width * scale));
         height = qMax(1, qRound(height * scale));
     }
-    args << "--output-tile" << dimensions(width, height);
-    value("--target-blend", ui->targetBlend->value());
-    if (!html) value("--brightness-jitter", ui->brightnessJitter->value());
+    options.size("--output-tile", "nativeTileW", "nativeTileH", width, height);
+    options.set("--target-blend", "overlayStrength", ui->targetBlend->value());
+    if (!html)
+    {
+        const auto strength = ui->brightnessJitter->value();
+        options.set("--brightness-jitter", "colorStrength", strength);
+        if (options.structured)
+        {
+            options.request.insert("colorAdjust", strength != 0);
+        }
+    }
     if (preview)
     {
-        if (portable) args << "--format" << "png" << "--png-compression" << "1" << "--overwrite";
-        return args;
+        if (portable)
+        {
+            options.set("--format", "format", QStringLiteral("png"));
+            options.set("--png-compression", "pngLevel", 1);
+            options.flag("--overwrite", "overwrite", true);
+        }
+        return;
     }
-    if (ui->benchmarkExport->isChecked()) args << "--benchmark";
-    if (ui->allowOverwrite->isChecked()) args << "--overwrite";
+    options.flag("--benchmark", "benchmark", ui->benchmarkExport->isChecked());
+    options.flag("--overwrite", "overwrite", ui->allowOverwrite->isChecked());
     if (image)
     {
         const auto format = ui->outputFormat->currentData().toString();
-        args << "--format" << format << "--write-mode" << ui->writeMode->currentData().toString();
-        if (ui->exportThumbnail->isChecked()) args << "--thumbnail";
-        if (format == "png") value("--png-compression", ui->outputPng->value());
-        if (format == "jpg" || format == "webp") value("--quality", ui->outputQuality->value());
+        options.set("--format", "format", format);
+        options.set("--write-mode", "writeMode", ui->writeMode->currentData().toString());
+        options.flag("--thumbnail", "generatePreview", ui->exportThumbnail->isChecked());
+        if (format == "png")
+        {
+            options.set("--png-compression", "pngLevel", ui->outputPng->value());
+        }
+        if (format == "jpg" || format == "webp")
+        {
+            options.set("--quality", "quality", ui->outputQuality->value());
+        }
     }
     else if (!html)
     {
-        value("--quality", ui->outputQuality->value());
+        options.set("--quality", "quality", ui->outputQuality->value());
     }
-    return args;
 }
 
 void MainWindow::exportDocument()
@@ -296,27 +404,35 @@ void MainWindow::exportDocument()
 
 void MainWindow::runExport(const QString &destination)
 {
-    const auto args = buildExportArgs(documents[activeDocument], destination);
+    const auto &document = documents[activeDocument];
     if (previewCurrent())
     {
-        sendEditorRequest({{"op", "export"}, {"args", QJsonArray::fromStringList(args)}, {"destination", destination}});
+        sendEditorRequest({{"op", "export"}, {"request", buildEditorRequest(document, destination)},
+                           {"destination", destination}});
     }
     else
     {
-        runJob(Job::Export, args, destination);
+        runJob(Job::Export, buildExportArgs(document, destination), destination);
     }
 }
 
 void MainWindow::appendExecutionArgs(QStringList &args, bool useDevice) const
 {
-    args << "--threads" << QString::number(qBound(0, settings.value("preferences/threads", 0).toInt(), 256));
+    ExportOptions options;
+    collectExecutionOptions(options, useDevice);
+    args += options.args;
+}
+
+void MainWindow::collectExecutionOptions(ExportOptions &options, bool useDevice) const
+{
+    options.set("--threads", "threads", qBound(0, settings.value("preferences/threads", 0).toInt(), 256));
     if (useDevice)
     {
-        args << "--backend" << settings.value("preferences/backend", "auto").toString();
+        options.set("--backend", "backend", settings.value("preferences/backend", "auto").toString());
         const auto device = settings.value("preferences/device").toString();
         if (!device.isEmpty())
         {
-            args << "--device" << device;
+            options.set("--device", "device", device);
         }
     }
 }

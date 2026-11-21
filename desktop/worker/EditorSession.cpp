@@ -3,22 +3,18 @@
 #include "core/ApiJson.h"
 #include "core/ApiRequestParser.h"
 #include "core/BrightnessAdjustment.h"
-#include "core/CliOptions.h"
 #include "core/ImageCache.h"
 #include "core/MosaicPlanning.h"
 #include "core/MosaicSelection.h"
-#include "core/NumericParsing.h"
 #include "core/UnicodeIO.h"
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <climits>
 #include <iostream>
 #include <random>
 #include <stdexcept>
-#include <string_view>
 #include <utility>
 
 using namespace mosaicraft;
@@ -28,88 +24,19 @@ namespace
 {
 constexpr int previewEdge = 1800;
 
-MosaicRequest parseEditorRequest(const json &arguments)
+MosaicRequest parseEditorRequest(const json &payload)
 {
-    const auto args = arguments.get<std::vector<std::string>>();
-    if (args.size() < 2 || args[0] != "create")
+    const auto fields = payload.find("request");
+    if (fields == payload.end() || !fields->is_object())
     {
-        throw std::invalid_argument("editor requires create arguments");
+        throw std::invalid_argument("editor requires a request object; use the matching desktop version");
     }
-    json fields{{"inputPath", args[1]}};
-    const auto &options = cliOptions();
-    for (size_t i = 2; i < args.size(); ++i)
-    {
-        const auto &key = args[i];
-        const auto option = std::find_if(options.begin(), options.end(), [&](const CliOption &item) {
-            return cliOptionSupports(item, "create") &&
-                   (key == "--" + std::string(item.name) || (*item.shortName && key == "-" + std::string(item.shortName)));
-        });
-        if (option == options.end())
-        {
-            throw std::invalid_argument("unknown editor option: " + key);
-        }
-        const std::string_view type = option->type;
-        if (type == "bool" && *option->field)
-        {
-            fields[option->field] = true;
-            continue;
-        }
-        if (++i == args.size() || args[i].empty())
-        {
-            throw std::invalid_argument("missing value for " + key);
-        }
-        const auto &value = args[i];
-        if (type == "size")
-        {
-            int width, height;
-            if (!parseSize(value, width, height))
-            {
-                throw std::invalid_argument(key + " requires positive WxH");
-            }
-            if (key == "--match-tile")
-            {
-                fields["tileW"] = width;
-                fields["tileH"] = height;
-            }
-            else if (key == "--output-tile")
-            {
-                fields["nativeTileW"] = width;
-                fields["nativeTileH"] = height;
-            }
-        }
-        else if (!*option->field)
-        {
-            throw std::invalid_argument("unsupported editor option: " + key);
-        }
-        else if (type == "int")
-        {
-            int number;
-            if (!parseStrictInt(value, number)) throw std::invalid_argument("invalid number for " + key);
-            fields[option->field] = number;
-        }
-        else if (type == "double")
-        {
-            auto number = json::parse(value, nullptr, false);
-            if (!number.is_number() || !std::isfinite(number.get<double>()))
-                throw std::invalid_argument("invalid number for " + key);
-            fields[option->field] = std::move(number);
-        }
-        else if (type == "seed")
-        {
-            if (value.find_first_not_of("0123456789") != std::string::npos)
-                throw std::invalid_argument("seed must be an unsigned 32-bit integer");
-            fields[option->field] = std::stoull(value);
-        }
-        else
-        {
-            // 尺寸字符串交由和 CLI 相同的请求解析器校验，支持 auto 轴和百分比。
-            fields[option->field] = value;
-        }
-    }
-    if (fields.contains("colorStrength")) fields["colorAdjust"] = fields["colorStrength"].get<double>() != 0;
     MosaicRequest request;
     RequestError error;
-    if (!parseMosaicRequestJson(fields.dump(), request, error)) throw std::invalid_argument(error.message);
+    if (!parseMosaicRequestJson(fields->dump(), request, error))
+    {
+        throw std::invalid_argument(error.message);
+    }
     return request;
 }
 
@@ -276,7 +203,7 @@ public:
         const auto operation = payload.at("op").get<std::string>();
         if (operation == "preview")
         {
-            auto nextRequest = parseEditorRequest(payload.at("args"));
+            auto nextRequest = parseEditorRequest(payload);
             const auto seed = nextRequest.config.seed ? *nextRequest.config.seed : std::random_device{}();
             nextRequest.config.seed = seed;
             MosaicSelection nextSelection;
@@ -335,7 +262,7 @@ public:
         }
         if (operation == "export")
         {
-            auto output = parseEditorRequest(payload.at("args"));
+            auto output = parseEditorRequest(payload);
             output.config.seed = request.config.seed;
             RuntimeContext runtime(false);
             TaskResourceMonitor monitor(runtime, output.resourceMonitor);
