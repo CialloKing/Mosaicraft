@@ -77,3 +77,23 @@ jobs:
           name: ci-${{ matrix.platform }}-${{ github.sha }}
           path: build/dependency-state/
           if-no-files-found: ignore
+  desktop:
+    name: Windows CPU Qt Desktop
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/native-dependencies
+        with:
+          cache-namespace: ${{ inputs.cache-namespace || 'deps-v1' }}
+      - name: Prepare locked Qt SDK
+        shell: pwsh
+        run: ./scripts/setup-qt.ps1 -InstallDir (Join-Path $env:RUNNER_TEMP 'mosaicraft-qt')
+      - name: Build and test the interactive backend
+        shell: pwsh
+        run: |
+          cmake --preset windows-cpu -B build/windows-desktop-ci -DMOSAICRAFT_BUILD_DESKTOP=ON "-DCMAKE_PREFIX_PATH=$env:MOSAICRAFT_QT_ROOT"
+          cmake --build build/windows-desktop-ci --config Release --target MosaicraftDesktop --parallel
+          $env:PATH = "$env:MOSAICRAFT_QT_ROOT/bin;$env:PATH"
+          ctest --test-dir build/windows-desktop-ci -C Release -R '^desktop_smoke$' --no-tests=error --output-on-failure --timeout 180

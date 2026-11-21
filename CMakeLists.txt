@@ -420,6 +420,10 @@ target_include_directories(mosaicraft_tests PRIVATE
 
 # CTest 集成
 enable_testing()
+option(MOSAICRAFT_BUILD_DESKTOP "Build the Qt Widgets desktop application" OFF)
+if(MOSAICRAFT_BUILD_DESKTOP)
+    add_subdirectory(desktop)
+endif()
 option(MOSAICRAFT_LEGACY_SCRIPT_TESTS "Register optional interpreter-based tests during release migration" OFF)
 add_test(NAME cuda_architecture_config COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_architectures.cmake")
 add_test(NAME cuda_toolkit_config COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_toolkit.cmake")
