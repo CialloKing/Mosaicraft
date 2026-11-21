@@ -4,7 +4,7 @@
 
 ## v1.15.11
 
-新增 Windows x64、Linux x64 和 macOS ARM64 的 CPU 版 Qt 桌面包，保留原来的三平台 CPU、Windows/Linux CUDA 和 Windows/Linux Vulkan 共七个原生包。[下载与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.11) · [Qt 桌面包说明](development/packaging.md#qt-桌面发布包)
+提供三个 CPU 版 Qt 桌面包（Windows x64、Linux x64、macOS ARM64），以及两个 CUDA + Vulkan 双后端 Qt 桌面包（Windows x64、Linux x64）。原来的七个 Web UI / CLI 包保持不变。[下载与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.11) · [Qt 桌面包说明](development/packaging.md#qt-桌面发布包)
 
 - 桌面应用支持预览、逐格换图、保存及重开 `.mscproj` 工程后导出。桌面与 Web 共用换图校验和候选评分规则；已有桌面工程不需要迁移。
 - 源码构建可启用 `MOSAICRAFT_BUILD_DESKTOP`，默认关闭。Qt 桌面包随附 Qt 运行库、平台插件与许可说明，不依赖系统 Qt。

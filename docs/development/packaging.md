@@ -12,7 +12,7 @@
 
 ## 正式包后端范围
 
-v1.15.11 保留七个原生包，另提供三个 Qt 桌面包。CPU/CUDA 运行时仍关闭 Vulkan 和 Metal；正式 Vulkan 包启用 `MOSAICRAFT_VULKAN_AUTO`，`auto` 优先 Vulkan 并回退 CPU，不编译 CUDA/Metal。`release.ps1` 显式设置这些开关并核对实际 CMake 缓存。
+v1.15.11 保留七个原生包，另提供五个 Qt 桌面包。原生 CPU/CUDA 包关闭 Vulkan 和 Metal；原生 Vulkan 包启用 `MOSAICRAFT_VULKAN_AUTO`，`auto` 优先 Vulkan 并回退 CPU，不编译 CUDA/Metal。`release.ps1` 显式设置这些开关并核对实际 CMake 缓存。
 
 ```powershell
 ./scripts/setup-vulkan.ps1
@@ -78,17 +78,19 @@ $env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.
 
 ## Qt 桌面发布包
 
-`Native packages` 保留七个 Web UI 包，另外构建三个 **CPU 版 Qt 桌面包**。两种包可以同时发布，安装互不依赖。
+`Native packages` 除了七个 Web UI / CLI 包，还构建下列 Qt 桌面包。桌面包自带 CLI 和 worker，不依赖原生包。
 
-| 平台 | 附件 | 解压后启动 |
-| --- | --- | --- |
-| Windows x64 | `Mosaicraft_v<version>_windows-x64_qt.zip` | `bin/MosaicraftDesktop.exe` |
-| Linux x64 | `Mosaicraft_v<version>_linux-x64_qt.tar.gz` | `./bin/MosaicraftDesktop` |
-| macOS ARM64 | `Mosaicraft_v<version>_macos-arm64_qt.tar.gz` | `MosaicraftDesktop.app` |
+| 平台 | CPU 附件后缀 | CUDA + Vulkan 附件后缀 | 解压后启动 |
+| --- | --- | --- | --- |
+| Windows x64 | `_windows-x64_qt.zip` | `_windows-x64_qt_cuda-vulkan.zip` | `bin/MosaicraftDesktop.exe` |
+| Linux x64 | `_linux-x64_qt.tar.gz` | `_linux-x64_qt_cuda-vulkan.tar.gz` | `./bin/MosaicraftDesktop` |
+| macOS ARM64 | `_macos-arm64_qt.tar.gz` | — | `MosaicraftDesktop.app` |
 
-三包均用 [锁定的 Qt SDK](../../cmake/qt-sdk.json)，随包部署 Qt 共享库、平台插件、SQLite、WebP、TIFF、CLI、桌面匹配程序及后端依赖。保持解压后的目录结构，无需安装系统 Qt 或 CUDA。Linux 以 Ubuntu 24.04 上的构建为基线，仍需要操作系统的显示服务和驱动；macOS `.app` 为临时签名（ad-hoc），未公证。
+桌面包均用 [锁定的 Qt SDK](../../cmake/qt-sdk.json)，随包部署 Qt 共享库、平台插件、SQLite、WebP、TIFF、CLI、桌面匹配程序及后端依赖。保持解压后的目录结构，无需另装 Qt 或 CUDA Toolkit。Linux 以 Ubuntu 24.04 上的构建为基线，仍需要操作系统的显示服务和驱动；macOS `.app` 为临时签名（ad-hoc），未公证。
 
-Qt 打包任务不运行 GUI、CLI 或冒烟测试；它核对归档中应有的可执行文件、Qt 库、插件及许可证，并生成 `.sha256`。可对下载的桌面附件重做静态验包：
+双后端包的 CLI 和 worker 均编入 CUDA 和 Vulkan；`auto` 使用 CUDA → CPU，需通过桌面设置显式选择 Vulkan。不分发显卡驱动，使用 GPU 时需安装相应驱动。
+
+所有桌面包都核对归档布局、Qt 库、插件及许可证，并生成 `.sha256`。双后端包另检查 CUDA 的七种原生架构及 PTX，解包后运行 GUI 和无 GPU 时的 CPU 回退测试。Windows 云端产物以 `_candidate` 结尾，正式包需实机通过 CUDA 和 Vulkan 预览；Linux 云端包的 GPU 实机状态记录为 `not-run`。可复查下载的桌面附件：
 
 ```powershell
 ./scripts/verify-desktop-asset.ps1 -ArchivePath <archive> -ExpectedSha256 <sha256>
@@ -100,6 +102,8 @@ Qt 打包任务不运行 GUI、CLI 或冒烟测试；它核对归档中应有的
 $qtRoot = ./scripts/setup-qt.ps1 -InstallDir build/tools/qt-sdk
 ./scripts/release-desktop.ps1 -QtRoot $qtRoot
 ```
+
+Windows/Linux 双后端构建另需准备锁定的 CUDA SDK、Vulkan 头文件和离线着色器编译器（见 `Native packages`），然后给脚本加 `-CudaVulkan`；默认要求实机验证。没有 GPU 验收环境时显式加 `-GpuValidation BuildOnly`；Linux 冒烟测试还需 `xvfb` 与 `xauth`。
 
 产物位于 `build/archives-qt/`。对外分发时保留包内许可证和源码来源说明，并随发布提供与锁定 Qt 版本对应的源码获取方式。
 

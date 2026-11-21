@@ -72,6 +72,8 @@ cmake -DTAG=v1.15.10 -DASSET=<release-asset-name> -DCHECK_TOOL=<native-check> -P
 
 ## 发布与复核
 
-只有已授权的版本发布才创建并推送 v* 标签，触发 Native packages。检查原有三平台 CPU 与对应 CUDA、Vulkan 包，再收集同一提交的三个 [Qt 桌面包](packaging.md#qt-桌面发布包)、所有 SHA256 和日志。Qt 附件使用独立的静态验包器，不执行冒烟测试；发布时连同 Qt 的许可证和对应源码来源一并提供，再创建 Release。草稿和候选包不能称为稳定发布。
+只有已授权的版本发布才创建并推送 v* 标签，触发 Native packages。检查七个原生包和同一提交的五个 [Qt 桌面包](packaging.md#qt-桌面发布包)，收集 SHA-256 和验收日志。Windows 双后端桌面候选包不可作为正式附件，须用实机验收产物替代；Linux 的 GPU 未实测时标 `not-run`。发布时提供 Qt 许可证和对应源码来源。
+
+为既有 Release 补发双后端桌面包时，手动运行 Native packages 并填 `desktop_release_tag`。该流程只构建和验包，不发布；核对两个归档的源提交均与原标签一致后，再追加附件并更新校验清单和发布说明，不移动标签。
 
 发布后运行 Verify published release 下载真实附件验证，并核对页面的候选、驱动和 not-run 说明。撤下候选时保留真实历史验收记录，更新[版本状态](../releases.md)，不要伪装为从未执行过测试。
