@@ -19,6 +19,17 @@ jobs:
         with:
           persist-credentials: false
       - run: node tests/test_command_shell.js
+  documentation:
+    name: Documentation links and index
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: |
+          cmake -S tools/release-check -B build/check-docs -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/check-docs --config Release --parallel 2
+          ./build/check-docs/mosaicraft_release_check --docs "$GITHUB_WORKSPACE"
   cpu:
     name: ${{ matrix.platform }} CPU-only
     strategy:
@@ -27,7 +38,6 @@ jobs:
         include:
           - platform: windows-x64
             runner: windows-2025-vs2026
-            triplet: x64-windows-release
             preset: windows-cpu
           - platform: linux-x64
             runner: ubuntu-22.04
@@ -40,21 +50,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Check documentation links and index
-        if: runner.os == 'Linux'
-        run: python3 scripts/check-docs.py
-      - uses: ./.github/actions/dependencies
+      - uses: ./.github/actions/native-dependencies
         if: runner.os == 'Windows'
         with:
-          triplet: ${{ matrix.triplet }}
           cache-namespace: ${{ inputs.cache-namespace || 'deps-v1' }}
       - name: Configure CPU Release
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: bash
         run: cmake --preset '${{ matrix.preset }}'
       - name: Build CLI and Web UI
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: bash
         run: cmake --build --preset '${{ matrix.preset }}' --target mosaicraft MosaicraftWebUI --parallel
       - name: Build with system packages
         if: runner.os != 'Windows'

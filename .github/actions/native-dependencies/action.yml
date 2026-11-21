@@ -1,6 +1,9 @@
 name: Native locked dependencies
 description: Fingerprint, restore, install and immediately save native vcpkg dependencies.
 inputs:
+  cache-namespace:
+    description: Override only to isolate a cold/warm validation pair.
+    default: deps-v1
   cold:
     description: Bypass Actions cache restore and save for a fresh dependency audit.
     default: 'false'
@@ -18,8 +21,9 @@ runs:
       shell: bash
       env:
         COLD: ${{ inputs.cold }}
+        CACHE_NAMESPACE: ${{ inputs.cache-namespace }}
       run: |
-        command=(cmake -DMODE=Prepare -DVCPKG_ROOT=build/tools/vcpkg -P cmake/PrepareRelease.cmake)
+        command=(cmake -DMODE=Prepare -DVCPKG_ROOT=build/tools/vcpkg "-DCACHE_NAMESPACE=$CACHE_NAMESPACE" -P cmake/PrepareRelease.cmake)
         if [[ "$RUNNER_OS" == Linux && "$COLD" == true ]]; then
           bash scripts/audit-native-release.sh build/dependency-state/prepare-execve.log "${command[@]}"
         else
