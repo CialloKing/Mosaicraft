@@ -1,6 +1,6 @@
 # Mosaicraft
 
-Mosaicraft 用图库里的照片拼出一张目标图，提供本地 Web UI 和命令行，支持交互预览、逐格换图、超大图流式输出与离线 HTML 工程。
+Mosaicraft 用图库里的照片拼出一张目标图，提供 Qt 桌面应用、本地 Web UI 和命令行，支持交互预览、逐格换图、超大图流式输出与离线 HTML 工程。
 
 （本项目纯AI生成，绝无手写代码）
 
@@ -16,7 +16,7 @@ Mosaicraft 用图库里的照片拼出一张目标图，提供本地 Web UI 和�
 | Linux x64 | Ubuntu 22.04 / glibc 2.35 | `_linux-x64_cpu-only.tar.gz` | `_linux-x64_cuda.tar.gz` | `_linux-x64_vulkan.tar.gz` |
 | macOS ARM64 | macOS 13 | `_macos-arm64_cpu-only.tar.gz` | — | — |
 
-v1.15.10 共七个原生包。Vulkan 包默认优先使用 Vulkan，启动计算前不可用则回退 CPU；CUDA 包仍为 CUDA → CPU。Metal 不随正式包发布。`BUILD_INFO.txt` 记录构建和 GPU 验收状态。 详见[版本状态](docs/releases.md)与[GPU 后端](docs/guides/gpu-backends.md)。
+v1.15.11 提供七个原生包及三个独立的 CPU 版 Qt 桌面包。桌面包的文件名以 `_qt.zip` 或 `_qt.tar.gz` 结尾，解压后启动 `MosaicraftDesktop`（macOS 打开 `.app`）；详见[桌面包说明](docs/development/packaging.md#qt-桌面发布包)。Vulkan 包默认优先使用 Vulkan，启动计算前不可用则回退 CPU；CUDA 包仍为 CUDA → CPU。Metal 不随正式包发布。`BUILD_INFO.txt` 记录构建和 GPU 验收状态。 详见[版本状态](docs/releases.md)与[GPU 后端](docs/guides/gpu-backends.md)。
 
 ## 快速开始
 

@@ -2,8 +2,12 @@
 
 本页区分当前源码与公开安装包，详细历史记录见[历史档案](archive/README.md)。软件与数据版本的唯一来源是根目录 contracts.json；安装后的实际能力以该包 BUILD_INFO.txt、contracts.json 和 --help-all 为准。
 
-## 当前源码（未发布）
+## v1.15.11
 
+新增 Windows x64、Linux x64 和 macOS ARM64 的 CPU 版 Qt 桌面包，保留原来的三平台 CPU、Windows/Linux CUDA 和 Windows/Linux Vulkan 共七个原生包。[下载与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.11) · [Qt 桌面包说明](development/packaging.md#qt-桌面发布包)
+
+- 桌面应用支持预览、逐格换图、保存及重开 `.mscproj` 工程后导出。桌面与 Web 共用换图校验和候选评分规则；已有桌面工程不需要迁移。
+- 源码构建可启用 `MOSAICRAFT_BUILD_DESKTOP`，默认关闭。Qt 桌面包随附 Qt 运行库、平台插件与许可说明，不依赖系统 Qt。
 - `--target-size` 支持像素、单轴 `auto` 和百分比；移除 `--target-upscale`。HTTP API 1.6 改用 `targetSize`，不再接受 `upscale`。已导出的旧两段缩放工程仍可离线浏览，但新版检查和回导要求重新生成。详见[命令行指南](guides/cli.md)及 [API 迁移说明](reference/api.md)。
 
 ## v1.15.10

@@ -12,7 +12,7 @@
 | Linux x64 | Ubuntu 22.04 / glibc 2.35 | `_linux-x64_cpu-only.tar.gz` | `_linux-x64_cuda.tar.gz` | `_linux-x64_vulkan.tar.gz` |
 | macOS ARM64 | macOS 13 | `_macos-arm64_cpu-only.tar.gz` | — | — |
 
-v1.15.10 共七个原生包。Vulkan 包默认优先使用 Vulkan，启动计算前不可用则回退 CPU；CUDA 包仍为 CUDA → CPU。Metal 不随正式包发布。`BUILD_INFO.txt` 记录构建和 GPU 验收状态。 [本版说明与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.10)
+v1.15.11 提供七个原生包及三个独立的 CPU 版 Qt 桌面包。需要 Qt 界面时选择对应平台的 `_qt` 包，无需另装 Qt，启动方式见[桌面包说明](../development/packaging.md#qt-桌面发布包)。Vulkan 包默认优先使用 Vulkan，启动计算前不可用则回退 CPU；CUDA 包仍为 CUDA → CPU。Metal 不随正式包发布。`BUILD_INFO.txt` 记录构建和 GPU 验收状态。 [本版说明与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.11)
 
 ## 图形界面
 
