@@ -1,15 +1,24 @@
-# Static archive inspection only: no extraction or execution of packaged programs.
-param([Parameter(Mandatory)][string]$ArchivePath, [string]$ExpectedSha256)
+param(
+    [Parameter(Mandatory)][string]$ArchivePath,
+    [string]$ExpectedSha256,
+    [string]$ExpectedCommit,
+    [switch]$RunSmoke,
+    [switch]$RequireGpu
+)
 
 $ErrorActionPreference = 'Stop'
 $archive = Get-Item -LiteralPath $ArchivePath
 if ($ExpectedSha256 -and (Get-FileHash -LiteralPath $archive.FullName).Hash -ne $ExpectedSha256) {
     throw 'Desktop archive SHA-256 mismatch'
 }
-if ($archive.Name -notmatch '^(Mosaicraft_v[0-9]+\.[0-9]+\.[0-9]+_(windows-x64|linux-x64|macos-arm64)_qt)\.(zip|tar\.gz)$') {
+if ($archive.Name -notmatch '^(?<stem>Mosaicraft_v(?<version>[0-9]+\.[0-9]+\.[0-9]+)_(?<platform>windows-x64|linux-x64|macos-arm64)_qt(?<gpu>_cuda-vulkan(?<candidate>_candidate)?)?)\.(?<ext>zip|tar\.gz)$') {
     throw 'Unexpected desktop archive filename'
 }
-$stem, $platform, $extension = $Matches[1], $Matches[2], $Matches[3]
+$stem, $platform, $extension, $version = $Matches.stem, $Matches.platform, $Matches.ext, $Matches.version
+$gpu = [bool]$Matches.gpu
+$candidate = [bool]$Matches.candidate
+if (($gpu -and $platform -eq 'macos-arm64') -or ($candidate -and $platform -ne 'windows-x64') -or
+    ($RequireGpu -and (!$RunSmoke -or !$gpu -or $candidate))) { throw 'Unsupported desktop archive validation mode' }
 if (($platform -eq 'windows-x64') -ne ($extension -eq 'zip')) { throw 'Wrong archive format for the target platform' }
 $entries = @(& cmake -E tar tf $archive.FullName)
 if ($LASTEXITCODE -ne 0 -or !$entries.Count) { throw 'Cannot list desktop archive' }
@@ -43,3 +52,54 @@ foreach ($pattern in $patterns) {
     if (!($entries -clike "$stem/$pattern")) { throw "Desktop archive is missing $pattern" }
 }
 Write-Output "Verified desktop archive layout: $($archive.Name)"
+
+if ($ExpectedCommit -or $gpu) {
+    $info = & tar -xOf $archive.FullName "$stem/BUILD_INFO.txt" | Out-String | ConvertFrom-StringData -Delimiter ':'
+    if ($LASTEXITCODE -ne 0 -or $info.Platform -ne $platform -or $info.Version -ne $version -or
+        ($ExpectedCommit -and $info.GitCommit -ne $ExpectedCommit)) { throw 'Desktop archive metadata does not match' }
+    if ($gpu) {
+        $state = if ($platform -eq 'windows-x64' -and !$candidate) { 'passed' } else { 'not-run' }
+        if ($info.Runtime -ne 'cuda-vulkan' -or $info.CudaBackend -ne 'enabled' -or
+            $info.VulkanBackend -ne 'enabled' -or $info.GpuValidation -ne $state -or
+            $info.PortableGpuValidation -ne $state -or $info.PortableAutoSelection -ne 'cuda-to-cpu') {
+            throw 'Incorrect desktop GPU metadata'
+        }
+        if (!($entries -clike "$stem/bin/licenses/cuda/*")) { throw 'Missing CUDA notices' }
+        if ($platform -eq 'linux-x64' -and !($entries -clike "$stem/bin/lib/libcudart.so.*")) { throw 'Missing CUDA runtime' }
+    } elseif ($info.Runtime -ne 'cpu-only') { throw 'Incorrect desktop CPU metadata' }
+}
+if (!$RunSmoke) { return }
+if (($IsWindows -and $platform -ne 'windows-x64') -or ($IsLinux -and $platform -ne 'linux-x64') -or $IsMacOS) {
+    throw 'Run this desktop smoke on the target Windows/Linux platform'
+}
+$root = (New-Item -ItemType Directory -Path (Join-Path $archive.DirectoryName "smoke-$([guid]::NewGuid())")).FullName
+$envBackup = @{}
+foreach ($key in @('PATH','LD_LIBRARY_PATH','QT_PLUGIN_PATH','QT_QPA_PLATFORM_PLUGIN_PATH','MOSAICRAFT_DESKTOP_SMOKE_CLI')) {
+    $envBackup[$key] = [Environment]::GetEnvironmentVariable($key)
+}
+Push-Location -LiteralPath $root
+try {
+    & cmake -E tar xf $archive.FullName
+    if ($LASTEXITCODE -ne 0) { throw 'Desktop archive extraction failed' }
+    foreach ($key in @('LD_LIBRARY_PATH','QT_PLUGIN_PATH','QT_QPA_PLATFORM_PLUGIN_PATH')) {
+        [Environment]::SetEnvironmentVariable($key, $null, 'Process')
+    }
+    $bin = Join-Path $root "$stem/bin"
+    if ($IsWindows) {
+        $env:PATH = "$env:WINDIR/System32;$env:WINDIR"
+        $env:MOSAICRAFT_DESKTOP_SMOKE_CLI = Join-Path $bin 'mosaicraft.exe'
+        $gui = Start-Process -FilePath (Join-Path $bin 'MosaicraftDesktop.exe') -ArgumentList '--smoke-test','-platform','windows' -WindowStyle Hidden -PassThru
+        if (!$gui.WaitForExit(180000)) { $gui.Kill($true); throw 'Packaged desktop smoke timed out' }
+        if ($gui.ExitCode -ne 0) { throw "Packaged desktop smoke failed ($($gui.ExitCode))" }
+    } else {
+        $env:PATH = '/usr/bin:/bin'
+        $env:MOSAICRAFT_DESKTOP_SMOKE_CLI = Join-Path $bin 'mosaicraft'
+        & timeout 180 xvfb-run -a (Join-Path $bin 'MosaicraftDesktop') --smoke-test -platform xcb
+        if ($LASTEXITCODE -ne 0) { throw 'Packaged desktop smoke failed' }
+    }
+    Write-Output 'Packaged desktop smoke passed'
+    if ($gpu) { & (Join-Path $PSScriptRoot 'test-desktop-gpu.ps1') -Bin $bin -RequireGpu:$RequireGpu }
+} finally {
+    Pop-Location
+    foreach ($key in $envBackup.Keys) { [Environment]::SetEnvironmentVariable($key, $envBackup[$key], 'Process') }
+}
