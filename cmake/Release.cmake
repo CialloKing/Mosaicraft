@@ -119,6 +119,17 @@ file(REAL_PATH "${MOSAICRAFT_REPO}" repo)
 cmake_path(ABSOLUTE_PATH BUILD_DIR BASE_DIRECTORY "${repo}" NORMALIZE)
 cmake_path(ABSOLUTE_PATH OUTPUT_DIR BASE_DIRECTORY "${repo}" NORMALIZE)
 set(bin "${BUILD_DIR}/Release/bin")
+set(sdk_args)
+if(cuda AND DEFINED CUDAToolkit_ROOT)
+    list(APPEND sdk_args "-DCUDAToolkit_ROOT=${CUDAToolkit_ROOT}")
+endif()
+if(vulkan)
+    foreach(key IN ITEMS MOSAICRAFT_VULKAN_INCLUDE MOSAICRAFT_GLSLANG)
+        if(DEFINED ${key})
+            list(APPEND sdk_args "-D${key}=${${key}}")
+        endif()
+    endforeach()
+endif()
 message(STATUS "Building v${version} ${platform}-${arch} ${RUNTIME} (${CHANNEL}) at ${commit}")
 execute_process(COMMAND "${CMAKE_COMMAND}" --preset "${preset}" -S "${repo}" -B "${BUILD_DIR}"
     "-DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
@@ -126,7 +137,7 @@ execute_process(COMMAND "${CMAKE_COMMAND}" --preset "${preset}" -S "${repo}" -B 
     "-DVCPKG_TARGET_TRIPLET=${triplet}" "-DVCPKG_HOST_TRIPLET=${triplet}" -DVCPKG_MANIFEST_INSTALL=OFF
     "-DMOSAICRAFT_CUDA:BOOL=${cuda}" "-DMOSAICRAFT_VULKAN:BOOL=${vulkan}" "-DMOSAICRAFT_METAL:BOOL=${metal}"
     "-DMOSAICRAFT_VULKAN_AUTO:BOOL=${vulkan_auto}" -DMOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON
-    -DMOSAICRAFT_LEGACY_SCRIPT_TESTS:BOOL=OFF
+    -DMOSAICRAFT_LEGACY_SCRIPT_TESTS:BOOL=OFF ${sdk_args}
     COMMAND_ERROR_IS_FATAL ANY)
 file(STRINGS "${BUILD_DIR}/CMakeCache.txt" cache)
 set(expected_cache "MOSAICRAFT_CUDA:BOOL=${cuda}" "MOSAICRAFT_VULKAN:BOOL=${vulkan}"
