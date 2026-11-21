@@ -471,10 +471,12 @@ if ($hostPlatform -notin @('windows', 'linux', 'macos') -or ($hostPlatform -ne '
 {
     throw 'Packaging requires a supported native x64 Windows/Linux or ARM64 macOS host'
 }
-$configurePreset = if ($hostPlatform -eq 'macos') { 'macos-arm64-cpu' } else { "$hostPlatform-$(if ($NoCuda) { 'cpu' } else { 'cuda' })" }
-if ($Metal) { $configurePreset = 'macos-metal' }
-elseif ($Vulkan) { $configurePreset = "$hostPlatform-$(if ($NoCuda) { 'vulkan' } else { 'cuda-vulkan' })" }
-if (-not $BuildDir) { $BuildDir = "build/$configurePreset" }
+$configurePreset = "$hostPlatform-$hostArch"
+if (-not $BuildDir) {
+    $buildPlatform = if ($hostPlatform -eq 'macos' -and $packageRuntime -eq 'cpu-only') { $configurePreset } else { $hostPlatform }
+    $buildRuntime = if ($packageRuntime -eq 'cpu-only') { 'cpu' } else { $packageRuntime }
+    $BuildDir = "build/$buildPlatform-$buildRuntime"
+}
 $buildPath = Resolve-RepoPath $BuildDir
 $gpuValidation = if ($NoCuda) { 'not-applicable' } elseif ($CudaValidation -eq 'BuildOnly') { 'not-run' } else { 'passed' }
 if ($NoCuda -and ($Vulkan -or $Metal)) { $gpuValidation = 'not-run' }
@@ -549,6 +551,7 @@ try {
             # Source and release builds share presets; explicit overrides take precedence.
             $configureArgs = @('--preset', $configurePreset, '-S', $RepoRoot, '-B', $buildPath, '-DMOSAICRAFT_BUNDLE_RUNTIME=ON', '-DMOSAICRAFT_LEGACY_SCRIPT_TESTS=ON')
             # A reused developer cache must not enable optional backends in a standard release.
+            $configureArgs += "-DMOSAICRAFT_CUDA:BOOL=$(if ($NoCuda) { 'OFF' } else { 'ON' })"
             $configureArgs += "-DMOSAICRAFT_VULKAN:BOOL=$(if ($Vulkan) { 'ON' } else { 'OFF' })"
             $configureArgs += "-DMOSAICRAFT_VULKAN_AUTO:BOOL=$(if ($VulkanRelease) { 'ON' } else { 'OFF' })"
             $configureArgs += "-DMOSAICRAFT_METAL:BOOL=$(if ($Metal) { 'ON' } else { 'OFF' })"

@@ -32,12 +32,12 @@ try {
     if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$($contract.softwareVersion)") {
         throw 'Release tag does not match contracts.json'
     }
-    $platform, $preset, $triplet, $format, $extension = if ($IsWindows) {
-        'windows-x64', 'windows-cpu', 'x64-windows-release', 'zip', 'zip'
+    $platform, $triplet, $format, $extension = if ($IsWindows) {
+        'windows-x64', 'x64-windows-release', 'zip', 'zip'
     } elseif ($IsMacOS) {
-        'macos-arm64', 'macos-arm64-cpu', 'arm64-osx-release', 'gnutar', 'tar.gz'
+        'macos-arm64', 'arm64-osx-release', 'gnutar', 'tar.gz'
     } elseif ($IsLinux) {
-        'linux-x64', 'linux-cpu', 'x64-linux-release', 'gnutar', 'tar.gz'
+        'linux-x64', 'x64-linux-release', 'gnutar', 'tar.gz'
     } else { throw 'Unsupported desktop release host' }
     $nativeOptions = @('-DMOSAICRAFT_CUDA=OFF', '-DMOSAICRAFT_VULKAN=OFF', '-DMOSAICRAFT_VULKAN_AUTO=OFF', '-DMOSAICRAFT_METAL=OFF')
     $runtime = 'cpu-only'
@@ -45,13 +45,18 @@ try {
     if ($CudaVulkan) {
         if ($IsMacOS) { throw 'CUDA + Vulkan desktop archives require Windows or Linux x64' }
         if (!$env:CUDAToolkit_ROOT) { throw 'Set CUDAToolkit_ROOT to the locked CUDA SDK' }
-        $preset = if ($IsWindows) { 'windows-cuda' } else { 'linux-cuda' }
         # Keep the tagged source's auto policy (CUDA -> CPU); Vulkan is selected explicitly.
         $nativeOptions = @('-DMOSAICRAFT_CUDA:BOOL=ON', '-DMOSAICRAFT_VULKAN:BOOL=ON',
             '-DMOSAICRAFT_VULKAN_AUTO:BOOL=OFF', '-DMOSAICRAFT_METAL:BOOL=OFF',
             '-DCUDA_ARCH=sm_75;sm_80;sm_86;sm_89;sm_90;sm_100;sm_120', "-DCUDAToolkit_ROOT=$env:CUDAToolkit_ROOT")
         $runtime = 'cuda-vulkan'
         $suffix = if ($IsWindows -and $GpuValidation -eq 'BuildOnly') { 'qt_cuda-vulkan_candidate' } else { 'qt_cuda-vulkan' }
+    }
+    $preset = $platform
+    $sourcePresets = (Get-Content -Raw -LiteralPath 'CMakePresets.json' | ConvertFrom-Json).configurePresets.name
+    if ($preset -notin $sourcePresets) {
+        # Supplemental packages can build a source tag with the older preset names.
+        $preset = if ($IsMacOS) { 'macos-arm64-cpu' } else { "$($platform.Split('-')[0])-$(if ($CudaVulkan) { 'cuda' } else { 'cpu' })" }
     }
     $arch = if ($IsMacOS) { 'Arm64' } else { 'X64' }
     if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne $arch) { throw 'A native build is required' }

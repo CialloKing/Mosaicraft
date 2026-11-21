@@ -43,7 +43,7 @@ Windows CUDA 正式附件须通过本机 GPU 验收；Linux CUDA 附件验证构
 
 ## v1.15.7
 
-本版保持五个标准包：Windows x64 CPU/CUDA、Linux x64 CPU/CUDA、macOS ARM64 CPU。Vulkan 和 Metal 通过条件编译关闭，不另发新后端包；Vulkan 用户须[自行从源码启用编译](development/building.md#vulkan-与-metal)。下载与校验值见 [GitHub Release](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.7)。
+本版保持五个标准包：Windows x64 CPU/CUDA、Linux x64 CPU/CUDA、macOS ARM64 CPU。Vulkan 和 Metal 通过条件编译关闭，不另发新后端包；Vulkan 用户须[自行从源码启用编译](development/building.md#gpu-后端与编译配置)。下载与校验值见 [GitHub Release](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.7)。
 
 - 发布构建显式关闭可选后端，并检查缓存，避免开发者构建目录将 Vulkan 带入正式包。
 - Web UI 实时显示任务和预览的实际后端、设备与评分路径。

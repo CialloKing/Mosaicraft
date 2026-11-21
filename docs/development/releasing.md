@@ -22,8 +22,8 @@ InspectOnly 检查工具链、必要文档、许可证及版本说明。完整�
 三平台 CPU 包来自同一提交，通过完整 CTest、Web UI/API smoke 和独立附件验收。工程变更另覆盖离线 HTML 浏览、回导、资源检查、ZIP64 与覆盖回滚；CLI/Web UI 参数改动检查命令生成。
 
 ```powershell
-ctest --test-dir build/windows-cpu -C Release --output-on-failure
-pwsh -NoProfile -File tests/webui_smoke.ps1 -WebUiExe build/windows-cpu/Release/bin/MosaicraftWebUI.exe
+ctest --test-dir build/windows-x64 -C Release --output-on-failure
+pwsh -NoProfile -File tests/webui_smoke.ps1 -WebUiExe build/windows-x64/Release/bin/MosaicraftWebUI.exe
 node tests/test_command_shell.js
 ```
 

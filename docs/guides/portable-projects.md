@@ -89,8 +89,8 @@ HTML 界面使用“窗口浏览”。查看器不设置位图缓存大小上限
 ## 验证入口
 
 ```powershell
-ctest --test-dir build/windows-cpu -C Release --output-on-failure
-pwsh -NoProfile -File tests/webui_smoke.ps1 -WebUiExe build/windows-cpu/Release/bin/MosaicraftWebUI.exe
+ctest --test-dir build/windows-x64 -C Release --output-on-failure
+pwsh -NoProfile -File tests/webui_smoke.ps1 -WebUiExe build/windows-x64/Release/bin/MosaicraftWebUI.exe
 node tests/browser_project.cjs <已导出的合成工程目录> [http://localhost:8080]
 ```
 

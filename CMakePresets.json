@@ -7,354 +7,114 @@
   },
   "configurePresets": [
     {
-      "name": "release-build",
-      "hidden": true,
-      "binaryDir": "${sourceDir}/build/${presetName}",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "MOSAICRAFT_VULKAN": "OFF",
-        "MOSAICRAFT_METAL": "OFF"
-      }
-    },
-    {
-      "name": "windows-dependencies",
-      "inherits": "release-build",
-      "hidden": true,
-      "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_INSTALLED_DIR": "${sourceDir}/third_party/vcpkg_installed",
-        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets",
-        "VCPKG_MANIFEST_INSTALL": "OFF"
-      }
-    },
-    {
-      "name": "windows-cpu",
-      "inherits": "windows-dependencies",
+      "name": "windows-x64",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
       },
       "generator": "Visual Studio 18 2026",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows-release",
-        "VCPKG_HOST_TRIPLET": "x64-windows-release",
-        "MOSAICRAFT_CUDA": "OFF"
-      },
-      "architecture": "x64"
-    },
-    {
-      "name": "windows-cuda",
-      "inherits": "windows-cpu",
-      "cacheVariables": {
-        "MOSAICRAFT_CUDA": "ON",
-        "CUDAToolkit_ROOT": "$env{CUDAToolkit_ROOT}"
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/third_party/vcpkg_installed",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets",
+        "VCPKG_MANIFEST_INSTALL": false,
+        "MOSAICRAFT_CUDA": false,
+        "MOSAICRAFT_VULKAN": false,
+        "MOSAICRAFT_VULKAN_AUTO": false,
+        "MOSAICRAFT_METAL": false
       }
     },
     {
-      "name": "linux-cpu",
-      "inherits": "release-build",
+      "name": "windows-arm64",
+      "inherits": "windows-x64",
+      "architecture": "ARM64",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "arm64-windows-release",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/third_party/vcpkg_installed/arm64"
+      }
+    },
+    {
+      "name": "linux-x64",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Linux"
       },
       "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "MOSAICRAFT_CUDA": "OFF"
+        "CMAKE_BUILD_TYPE": "Release",
+        "MOSAICRAFT_LINUX_ARCH": "x64",
+        "MOSAICRAFT_CUDA": false,
+        "MOSAICRAFT_VULKAN": false,
+        "MOSAICRAFT_VULKAN_AUTO": false,
+        "MOSAICRAFT_METAL": false
       }
     },
     {
-      "name": "linux-cuda",
-      "inherits": "linux-cpu",
+      "name": "linux-arm64",
+      "inherits": "linux-x64",
       "cacheVariables": {
-        "MOSAICRAFT_CUDA": "ON",
-        "CUDAToolkit_ROOT": "$env{CUDAToolkit_ROOT}"
+        "MOSAICRAFT_LINUX_ARCH": "arm64"
       }
     },
     {
-      "name": "macos-cpu",
-      "inherits": "release-build",
+      "name": "macos-x64",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Darwin"
       },
       "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "MOSAICRAFT_CUDA": "OFF"
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_ARCHITECTURES": "x86_64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "13.0",
+        "MOSAICRAFT_CUDA": false,
+        "MOSAICRAFT_VULKAN": false,
+        "MOSAICRAFT_VULKAN_AUTO": false,
+        "MOSAICRAFT_METAL": false
       }
     },
     {
-      "name": "macos-arm64-cpu",
-      "inherits": "macos-cpu",
+      "name": "macos-arm64",
+      "inherits": "macos-x64",
       "cacheVariables": {
-        "CMAKE_OSX_ARCHITECTURES": "arm64",
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "13.0"
-      }
-    },
-    {
-      "name": "default",
-      "displayName": "Windows CUDA (legacy alias)",
-      "inherits": "windows-cuda",
-      "binaryDir": "${sourceDir}/build/windows-cuda"
-    },
-    {
-      "name": "relwithdebinfo",
-      "inherits": "windows-cuda",
-      "binaryDir": "${sourceDir}/build/windows-relwithdebinfo",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
-      }
-    },
-    {
-      "name": "windows-vulkan",
-      "inherits": "windows-cpu",
-      "cacheVariables": {
-        "MOSAICRAFT_VULKAN": "ON"
-      }
-    },
-    {
-      "name": "windows-cuda-vulkan",
-      "inherits": "windows-cuda",
-      "cacheVariables": {
-        "MOSAICRAFT_VULKAN": "ON"
-      }
-    },
-    {
-      "name": "linux-vulkan",
-      "inherits": "linux-cpu",
-      "cacheVariables": {
-        "MOSAICRAFT_VULKAN": "ON"
-      }
-    },
-    {
-      "name": "macos-metal",
-      "inherits": "macos-arm64-cpu",
-      "cacheVariables": {
-        "MOSAICRAFT_METAL": "ON"
+        "CMAKE_OSX_ARCHITECTURES": "arm64"
       }
     }
   ],
   "buildPresets": [
     {
-      "name": "test-targets",
-      "hidden": true,
-      "targets": [
-        "mosaicraft_test_targets"
-      ]
-    },
-    {
-      "name": "windows-cpu-tests",
-      "inherits": [
-        "test-targets",
-        "windows-cpu"
-      ]
-    },
-    {
-      "name": "windows-cuda-tests",
-      "inherits": [
-        "test-targets",
-        "windows-cuda"
-      ]
-    },
-    {
-      "name": "linux-cpu-tests",
-      "inherits": [
-        "test-targets",
-        "linux-cpu"
-      ]
-    },
-    {
-      "name": "linux-cuda-tests",
-      "inherits": [
-        "test-targets",
-        "linux-cuda"
-      ]
-    },
-    {
-      "name": "macos-cpu-tests",
-      "inherits": [
-        "test-targets",
-        "macos-cpu"
-      ]
-    },
-    {
-      "name": "macos-arm64-cpu-tests",
-      "inherits": [
-        "test-targets",
-        "macos-arm64-cpu"
-      ]
-    },
-    {
-      "name": "windows-vulkan-tests",
-      "inherits": [
-        "test-targets",
-        "windows-vulkan"
-      ]
-    },
-    {
-      "name": "windows-cuda-vulkan-tests",
-      "inherits": [
-        "test-targets",
-        "windows-cuda-vulkan"
-      ]
-    },
-    {
-      "name": "linux-vulkan-tests",
-      "inherits": [
-        "test-targets",
-        "linux-vulkan"
-      ]
-    },
-    {
-      "name": "macos-metal-tests",
-      "inherits": [
-        "test-targets",
-        "macos-metal"
-      ]
-    },
-    {
-      "name": "windows-cpu",
-      "configurePreset": "windows-cpu",
+      "name": "windows-x64",
+      "configurePreset": "windows-x64",
       "configuration": "Release"
     },
     {
-      "name": "windows-cuda",
-      "configurePreset": "windows-cuda",
+      "name": "windows-arm64",
+      "configurePreset": "windows-arm64",
       "configuration": "Release"
     },
     {
-      "name": "linux-cpu",
-      "configurePreset": "linux-cpu",
-      "configuration": "Release"
+      "name": "linux-x64",
+      "configurePreset": "linux-x64"
     },
     {
-      "name": "linux-cuda",
-      "configurePreset": "linux-cuda",
-      "configuration": "Release"
+      "name": "linux-arm64",
+      "configurePreset": "linux-arm64"
     },
     {
-      "name": "macos-cpu",
-      "configurePreset": "macos-cpu",
-      "configuration": "Release"
+      "name": "macos-x64",
+      "configurePreset": "macos-x64"
     },
     {
-      "name": "macos-arm64-cpu",
-      "configurePreset": "macos-arm64-cpu",
-      "configuration": "Release"
-    },
-    {
-      "name": "release",
-      "configurePreset": "default",
-      "configuration": "Release"
-    },
-    {
-      "name": "relwithdebinfo",
-      "configurePreset": "relwithdebinfo",
-      "configuration": "RelWithDebInfo"
-    },
-    {
-      "name": "windows-vulkan",
-      "configurePreset": "windows-vulkan",
-      "configuration": "Release"
-    },
-    {
-      "name": "windows-cuda-vulkan",
-      "configurePreset": "windows-cuda-vulkan",
-      "configuration": "Release"
-    },
-    {
-      "name": "linux-vulkan",
-      "configurePreset": "linux-vulkan",
-      "configuration": "Release"
-    },
-    {
-      "name": "macos-metal",
-      "configurePreset": "macos-metal",
-      "configuration": "Release"
-    }
-  ],
-  "testPresets": [
-    {
-      "name": "windows-cpu",
-      "configurePreset": "windows-cpu",
-      "configuration": "Release",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "windows-cuda",
-      "configurePreset": "windows-cuda",
-      "configuration": "Release",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "linux-cpu",
-      "configurePreset": "linux-cpu",
-      "configuration": "Release",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "linux-cuda",
-      "configurePreset": "linux-cuda",
-      "configuration": "Release",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "macos-cpu",
-      "configurePreset": "macos-cpu",
-      "configuration": "Release",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "macos-arm64-cpu",
-      "configurePreset": "macos-arm64-cpu",
-      "configuration": "Release",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "windows-vulkan",
-      "configurePreset": "windows-vulkan",
-      "configuration": "Release",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "windows-cuda-vulkan",
-      "configurePreset": "windows-cuda-vulkan",
-      "configuration": "Release",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "linux-vulkan",
-      "configurePreset": "linux-vulkan",
-      "configuration": "Release",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "macos-metal",
-      "configurePreset": "macos-metal",
-      "configuration": "Release",
-      "output": {
-        "outputOnFailure": true
-      }
+      "name": "macos-arm64",
+      "configurePreset": "macos-arm64"
     }
   ]
 }

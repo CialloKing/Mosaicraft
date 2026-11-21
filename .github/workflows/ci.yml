@@ -38,13 +38,10 @@ jobs:
         include:
           - platform: windows-x64
             runner: windows-2025-vs2026
-            preset: windows-cpu
           - platform: linux-x64
             runner: ubuntu-22.04
-            preset: linux-cpu
           - platform: macos-arm64
             runner: macos-15
-            preset: macos-cpu
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -57,19 +54,19 @@ jobs:
       - name: Configure CPU Release
         if: runner.os == 'Windows'
         shell: bash
-        run: cmake --preset '${{ matrix.preset }}'
+        run: cmake --preset '${{ matrix.platform }}'
       - name: Build CLI and Web UI
         if: runner.os == 'Windows'
         shell: bash
-        run: cmake --build --preset '${{ matrix.preset }}' --target mosaicraft MosaicraftWebUI --parallel
+        run: cmake --build --preset '${{ matrix.platform }}' --target mosaicraft MosaicraftWebUI --parallel
       - name: Build with system packages
         if: runner.os != 'Windows'
         shell: sh
         run: |
           if [ "$RUNNER_OS" = Linux ]; then export PATH="/usr/bin:$PATH"; fi
           ./scripts/build-native.sh --install-deps
-          ./build/${{ matrix.preset }}/Release/bin/mosaicraft --version
-          ./build/${{ matrix.preset }}/Release/bin/MosaicraftWebUI --help
+          ./build/${{ matrix.platform }}/Release/bin/mosaicraft --version
+          ./build/${{ matrix.platform }}/Release/bin/MosaicraftWebUI --help
       - name: Upload diagnostics
         if: always() && runner.os == 'Windows'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -93,7 +90,7 @@ jobs:
       - name: Build and test the interactive backend
         shell: pwsh
         run: |
-          cmake --preset windows-cpu -B build/windows-desktop-ci -DMOSAICRAFT_BUILD_DESKTOP=ON "-DCMAKE_PREFIX_PATH=$env:MOSAICRAFT_QT_ROOT"
+          cmake --preset windows-x64 -B build/windows-desktop-ci -DMOSAICRAFT_BUILD_DESKTOP=ON "-DCMAKE_PREFIX_PATH=$env:MOSAICRAFT_QT_ROOT"
           cmake --build build/windows-desktop-ci --config Release --target MosaicraftDesktop --parallel
           $env:PATH = "$env:MOSAICRAFT_QT_ROOT/bin;$env:PATH"
           ctest --test-dir build/windows-desktop-ci -C Release -R '^desktop_smoke$' --no-tests=error --output-on-failure --timeout 180

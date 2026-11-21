@@ -60,23 +60,27 @@ done
 host=$(uname -s)
 case "$host" in
     Linux)
-        preset=linux-cpu
-        if "$cuda"; then
-            preset=linux-cuda
-        fi
+        platform=linux
         ;;
     Darwin)
         if "$cuda"; then
             printf '%s\n' 'The CUDA build is supported on Linux only by this script.' >&2
             exit 2
         fi
-        preset=macos-cpu
+        platform=macos
         ;;
     *)
         printf '%s\n' 'This script supports Linux and macOS.' >&2
         exit 2
         ;;
 esac
+machine=$(uname -m)
+case "$machine" in
+    x86_64|amd64) arch=x64 ;;
+    arm64|aarch64) arch=arm64 ;;
+    *) printf 'Unsupported %s architecture: %s\n' "$host" "$machine" >&2; exit 2 ;;
+esac
+preset="$platform-$arch"
 
 if "$install_deps"; then
     install_dependencies
@@ -84,6 +88,12 @@ fi
 
 repo=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 cd "$repo"
-cmake --preset "$preset"
+build_dir="build/$preset"
+set -- --preset "$preset"
+if "$cuda"; then
+    build_dir="$build_dir-cuda"
+    set -- "$@" -DMOSAICRAFT_CUDA=ON
+fi
+cmake "$@" -B "$build_dir"
 CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-2}" \
-    cmake --build --preset "$preset" --target mosaicraft MosaicraftWebUI
+    cmake --build "$build_dir" --target mosaicraft MosaicraftWebUI
