@@ -121,7 +121,8 @@ def path_mode(connection):
     if connection.execute("PRAGMA user_version").fetchone()[0] != VERSIONS["libraryVersion"]:
         raise ValueError("Unsupported library version; rebuild in a new directory")
     required = {
-        "images": {"id", "file_path", "file_hash", "grid_lab", "tiny_path", "lbp_path", "feature_version"},
+        "images": {"id", "file_path", "file_hash", "feature_version"},
+        "image_features": {"image_id", "grid_lab", "tiny", "lbp"},
         "usage_stats": {"image_id", "total_runs", "total_tiles", "last_used"},
         "target_runs": {"target_hash", "first_path", "run_count", "last_used"},
         "image_color_order": {"image_id", "file_hash", "version", "sort_key", "source_l", "source_a", "source_b"}}
@@ -135,7 +136,7 @@ def path_mode(connection):
     feature = connection.execute("SELECT value FROM meta WHERE key='feature_version'").fetchone()
     if not feature or feature[0] != str(VERSIONS["featureVersion"]):
         raise ValueError("Unsupported feature version")
-    if connection.execute("SELECT count(*) FROM images WHERE feature_version IS NOT ? OR grid_lab IS NULL OR length(grid_lab)!=768", (VERSIONS["featureVersion"],)).fetchone()[0]:
+    if connection.execute("SELECT count(*) FROM images LEFT JOIN image_features ON image_id=id WHERE feature_version IS NOT ? OR typeof(grid_lab)!='blob' OR length(grid_lab)!=768 OR length(tiny)!=256 OR length(lbp)!=1024", (VERSIONS["featureVersion"],)).fetchone()[0]:
         raise ValueError("Invalid library features")
     return mode
 
@@ -153,11 +154,12 @@ def source_inventory(database):
     summary = hashlib.sha256()
     with readonly_database(database) as connection:
         mode = path_mode(connection)
-        for row in connection.execute("SELECT id,file_path,tiny_path,lbp_path FROM images ORDER BY id"):
-            summary.update(str(row[0]).encode())
-            for value in row[1:]:
-                path = resource(database, value, mode)
-                summary.update((digest(path) if path else "missing").encode())
+        for image_id, image, grid, tiny, lbp in connection.execute(
+                "SELECT id,file_path,grid_lab,tiny,lbp FROM images JOIN image_features ON image_id=id ORDER BY id"):
+            summary.update(str(image_id).encode())
+            summary.update(digest(resource(database, image, mode)).encode())
+            for payload in (grid, tiny, lbp):
+                summary.update(payload)
     return summary.hexdigest()
 
 
@@ -169,25 +171,21 @@ def private_library(source, root, images):
     with readonly_database(source) as original, closing(sqlite3.connect(snapshot)) as target:
         mode = path_mode(original)
         original.backup(target)
-        rows = original.execute("SELECT id,file_path,tiny_path,lbp_path FROM images ORDER BY id").fetchall()
+        rows = target.execute("SELECT id,file_path FROM images ORDER BY id").fetchall()
         target.execute("BEGIN IMMEDIATE")
         target.execute("UPDATE images SET file_path='.__study_stage__/' || id")
-        for image_id, image, tiny, histogram in rows:
-            new_paths = []
-            for value, relative, include in ((image, f"images/id_{image_id}{Path(image).suffix}", images),
-                                            (tiny, f"features/id_{image_id}.tiny", True),
-                                            (histogram, f"features/id_{image_id}.lbp", True)):
-                if value and include:
-                    old = resource(source, value, mode)
-                    new = root / relative
-                    new.parent.mkdir(parents=True, exist_ok=True)
-                    if not new.exists():
-                        try:
-                            new.hardlink_to(old)
-                        except OSError:
-                            shutil.copy2(old, new)
-                new_paths.append(relative if value else None)
-            target.execute("UPDATE images SET file_path=?,tiny_path=?,lbp_path=? WHERE id=?", (*new_paths, image_id))
-        target.execute("INSERT OR REPLACE INTO meta VALUES('path_format',?)", (FORMAT,))
+        for image_id, image in rows:
+            relative = f"images/id_{image_id}{Path(image).suffix}"
+            if images:
+                old = resource(source, image, mode)
+                new = root / relative
+                new.parent.mkdir(parents=True, exist_ok=True)
+                if not new.exists():
+                    try:
+                        new.hardlink_to(old)
+                    except OSError:
+                        shutil.copy2(old, new)
+            target.execute("UPDATE images SET file_path=? WHERE id=?", (relative, image_id))
+        target.execute("UPDATE meta SET value=lower(hex(randomblob(16))) WHERE key='library_uuid'")
         target.commit()
     return snapshot, len(rows)

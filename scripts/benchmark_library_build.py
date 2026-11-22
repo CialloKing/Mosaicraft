@@ -18,13 +18,18 @@ def logical_rows(root):
     h = hashlib.sha256()
     photo_bytes = 0
     with readonly_database(root/'mosaicraft.db') as db:
-        for row in db.execute('SELECT id,file_path,file_hash,avg_l,avg_a,avg_b,edge_density,grid_lab,feature_version,use_count,tiny_path,lbp_path FROM images ORDER BY id'):
-            photo_bytes += (root/row[1]).stat().st_size
-            for v in row[:-2]:
-                b = v if isinstance(v,bytes) else repr(v).encode()
-                h.update(len(b).to_bytes(4,'little')); h.update(b)
-            for rel in row[-2:]:
-                h.update(bytes.fromhex(digest(root/rel)))
+        # 双格式解释器只属于新旧基准，产品代码不读取旧图库。
+        blob_layout = bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='image_features'").fetchone())
+        scalar = 'SELECT id,file_path,file_hash,avg_l,avg_a,avg_b,edge_density,feature_version,use_count,'
+        query = (scalar + 'f.grid_lab,f.tiny,f.lbp FROM images JOIN image_features f ON id=f.image_id ORDER BY id'
+                 if blob_layout else scalar + 'grid_lab,tiny_path,lbp_path FROM images ORDER BY id')
+        for row in db.execute(query):
+            photo_bytes += (root / row[1]).stat().st_size
+            values = row if blob_layout else (*row[:-2], *((root / path).read_bytes()[16:] for path in row[-2:]))
+            for value in values:
+                payload = value if isinstance(value, bytes) else repr(value).encode()
+                h.update(len(payload).to_bytes(4, 'little'))
+                h.update(payload)
         count, = db.execute('SELECT COUNT(*) FROM images').fetchone()
     return h.hexdigest(), count, photo_bytes
 

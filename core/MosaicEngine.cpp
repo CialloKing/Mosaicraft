@@ -4,12 +4,11 @@
 #include "BenchmarkTimer.h"
 #include "CpuTrial.h"
 #include "BrightnessAdjustment.h"
-#include "CandidateFeatures.h"
 #include "Database.h"
 #include "FeatureExtractor.h"
 #include "FeatureIndex.h"
 #include "FeatureMatrix.h"
-#include "FeaturePack.h"
+#include "LibraryFeatureStore.h"
 #include "FeatureUtils.h"
 #include "TileFeatures.h"
 #include "IdenticalTiles.h"
@@ -89,12 +88,12 @@ std::string targetUsageHash(const cv::Mat &image)
 }
 
 SelectionAnalysis analyzeEditedTiles(const cv::Mat &target, const MosaicEngine::Config &cfg,
-                                     cv::Size featureSize, int columns, const std::string &featureDir,
+                                     cv::Size featureSize, int columns, Database &db,
                                      const std::vector<ImageRecord> &records, const std::vector<int> &indices,
                                      RuntimeContext &runtime)
 {
     SelectionAnalysis result;
-    FeaturePack::Reader reader(featureDir, records, 64ULL * 1024 * 1024, &runtime);
+    LibraryFeatureStore::Reader reader(db, records, 64ULL * 1024 * 1024, &runtime);
     WorkerPool workers(cfg.threads > 0 ? static_cast<unsigned>(cfg.threads) : 0);
     const auto sum = cfg.labWeight + cfg.gridWeight + cfg.tinyWeight + cfg.edgeWeight + cfg.lbpWeight;
     const MatchWeights defaults{cfg.labWeight / sum, cfg.gridWeight / sum, cfg.tinyWeight / sum,
@@ -222,7 +221,7 @@ bool MosaicEngine::selectionCurrent(const std::string &targetPath, const std::st
     return db.isOpen() && db.path() == selection.dbPath &&
            db.getMeta("feature_w") == std::to_string(selection.featureWidth) &&
            db.getMeta("feature_h") == std::to_string(selection.featureHeight) &&
-           previewLibraryVersion(db.allRecords(includeUseCounts), selection.featureWidth, selection.featureHeight,
+           previewLibraryVersion(db.assetKey(), includeUseCounts ? db.metadataRecords() : std::vector<ImageRecord>{}, selection.featureWidth, selection.featureHeight,
                                  includeUseCounts) ==
                selection.libraryVersion && previewAssetsCurrent(selection);
 }
@@ -498,12 +497,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
                 readOnce ? &allRecords : nullptr, cfg.benchmark ? &snapshotReadMs : nullptr, includeUseCounts);
     if (!db.isOpen())
     {
-        {
-            std::ostringstream detail;
-            detail << "Cannot open database: " << dbPath;
-            runtime.fail(db.errorCode(), detail.str(), "dbPath", dbPath);
-        }
-        return false;
+        return runtime.fail(db.errorCode(), db.error(), "dbPath", dbPath);
     }
 
     if (cfg.benchmark)
@@ -542,8 +536,6 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
         std::cout << "  (auto output tile: 320x180, DB is landscape)" << std::endl;
     }
 
-    // 提取特征目录路径，供 FeaturePack / ANN 持久化缓存使用
-    std::string featDirCache;
     if (m_preview)
     {
         std::cout << "[Preview] Preparing library features and scoring backend..." << std::endl;
@@ -566,25 +558,10 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
         {
             allRecords = db.allRecords(includeUseCounts);  // 全量记录，GPU 路径需连续索引
         }
-        dbCount = static_cast<int>(allRecords.size());
-        for (const auto& record : allRecords)
+        if (allRecords.size() != static_cast<size_t>(dbCount))
         {
-            // 分析读取全部 192 维；拒绝不完整旧记录，避免越界和虚假的匹配报告。
-            if (record.featureVersion != FeatureExtractor::featureVersion() || record.gridLab.size() != 192 ||
-                !std::all_of(record.gridLab.begin(), record.gridLab.end(),
-                             [](float value)
-                             {
-                                 return std::isfinite(value);
-                             }))
-            {
-                {
-                    std::ostringstream detail;
-                    detail << "Invalid grid features for image " << record.id
-                           << ". Rebuild this library before generating a mosaic.";
-                    runtime.fail("library_incompatible", detail.str(), "dbPath", dbPath);
-                }
-                return false;
-            }
+            return runtime.fail("library_incompatible", db.error().empty()
+                ? "Cannot read every Grid row; rebuild the library in a new directory" : db.error(), "dbPath", dbPath);
         }
     }
     if (cfg.benchmark)
@@ -592,26 +569,13 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
         runtime.metric("databaseReadRecordsMs", readOnce ? snapshotReadMs : Ms(Clock::now() - recordsStart).count());
     }
     const uint64_t libraryVersion = m_preview || m_renderSelection
-        ? previewLibraryVersion(allRecords, featW, featH, includeUseCounts) : 0;
+        ? previewLibraryVersion(db.assetKey(), allRecords, featW, featH, includeUseCounts) : 0;
     if (m_renderSelection &&
         (m_renderSelection->dbPath != db.path() || m_renderSelection->libraryVersion != libraryVersion ||
          m_renderSelection->columns != tilesX || m_renderSelection->rows != tilesY ||
          m_renderSelection->indices.size() != static_cast<size_t>(totalTiles) || !previewAssetsCurrent(*m_renderSelection)))
     {
         return runtime.fail("preview_stale", "library or selected images changed; refresh the preview", "previewId");
-    }
-
-    // 从第一条记录的 tinyPath 推断特征目录
-    if (!allRecords.empty() && !allRecords[0].tinyPath.empty())
-    {
-        std::string firstTiny = allRecords[0].tinyPath;
-        auto slashPos = firstTiny.rfind('/');
-        auto backslashPos = firstTiny.rfind('\\');
-        auto dirEnd = (slashPos != std::string::npos && backslashPos != std::string::npos)
-            ? std::max(slashPos, backslashPos)
-            : (slashPos != std::string::npos ? slashPos : backslashPos);
-        if (dirEnd != std::string::npos)
-            featDirCache = firstTiny.substr(0, dirEnd);
     }
 
     // 为 GPU 路径准备连续内存缓冲区，存放 tiny/LBP 特征数据
@@ -672,13 +636,9 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
         ? PreviewCachePolicy::forTask(m_limits.hostBytes, allowLargeCache) : PreviewCachePolicy{};
     PreviewCacheMiss scoreMiss{}, featureMiss{}, candidateMiss{};
     double featureVersionMs = 0, featureVerifyMs = 0, referenceEncodeMs = 0;
-    const auto sourceStampTrial = m_previewWorkspace ? std::getenv("MOSAICRAFT_BENCH_PREVIEW_STAMPS") : nullptr;
-    const bool parallelStamp = sourceStampTrial ? std::string_view(sourceStampTrial) == "1" : tunedPreview;
-    const unsigned stampWorkers = parallelStamp && previewCache.tier != PreviewCachePolicy::Tier::Disabled
-        ? std::clamp(cfg.threads > 0 ? unsigned(cfg.threads) : std::thread::hardware_concurrency(), 1u, 4u) : 1u;
     int workspaceDrops = 0;
     constexpr const char *cacheLayout = "preview1:";
-    std::optional<uint64_t> sourceVersion;
+    std::optional<std::string> sourceVersion;
     std::string scoreKeyPrefix;
     const auto scoreKey = [&](const MatchingBackends &active)
     {
@@ -695,7 +655,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
     {
         {
             BenchmarkTimer timer(cfg.benchmark, featureVersionMs);
-            sourceVersion = FeaturePack::sourceVersion(featDirCache, allRecords, stampWorkers);
+            sourceVersion = db.featureKey();
         }
         if (sourceVersion)
         {
@@ -705,7 +665,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
             scoring.neighborPenalty = 0;
             scoring.analyze = false;
             scoreKeyPrefix = cacheLayout + preparedKey + ':' + db.path() + ':' + std::to_string(libraryVersion) + ':' +
-                std::to_string(*sourceVersion) + ':' + matchingKey(scoring);
+                *sourceVersion + ':' + matchingKey(scoring);
             if (previewCache.tier != PreviewCachePolicy::Tier::Disabled && !cfg.analyze &&
                 m_previewWorkspace->scoreKey == scoreKey(backends))
             {
@@ -759,23 +719,15 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
         std::iota(needed.begin(), needed.end(), 0);
         std::vector<uint8_t> tinyValid, lbpValid;
         const auto packStart = Clock::now();
-        const bool cacheLoaded = FeaturePack::load(featDirCache, allRecords, needed, h_tiny, h_lbp, tinyValid, lbpValid,
-                                                   cfg.benchmark ? &metrics.libraryReadStats : nullptr, cfg.threads);
+        const bool cacheLoaded = LibraryFeatureStore::load(db, allRecords, needed, h_tiny, h_lbp, tinyValid, lbpValid,
+                                                   cfg.benchmark ? &metrics.libraryReadStats : nullptr);
         if (cfg.benchmark)
         {
-            runtime.metric("libraryReadPackMs", Ms(Clock::now() - packStart).count());
+            runtime.metric("libraryReadTextureMs", Ms(Clock::now() - packStart).count());
         }
         if (!cacheLoaded)
         {
-            std::cout << "  (validated feature cache miss, using source files)" << std::endl;
-        }
-        for (int i = 0; i < dbCount; ++i)
-        {
-            if (!tinyValid[i] || !lbpValid[i])
-            {
-                runtime.emit("warning", "feature_missing", "missing features retain the existing matching penalty",
-                             "dbPath", !tinyValid[i] ? allRecords[i].tinyPath : allRecords[i].lbpPath);
-            }
+            return runtime.fail("library_incompatible", db.error(), "dbPath", db.path());
         }
         if (cuda::uploadLibrary(gpuLib, h_lab.data(), h_grid.data(), h_tiny.data(), h_edge.data(), h_lbp.data(),
                                 h_use.data(), dbCount, cfg.benchmark ? &metrics.libraryTimings : nullptr, tinyValid.data(),
@@ -1028,7 +980,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
             runtime.stage("analyzing");
             if (m_renderSelection && m_renderSelection->manualEdits)
             {
-                diagnostics = analyzeEditedTiles(target, cfg, {featW, featH}, tilesX, featDirCache,
+                diagnostics = analyzeEditedTiles(target, cfg, {featW, featH}, tilesX, db,
                                                  allRecords, bestLibIdx, runtime);
             }
         }
@@ -1223,9 +1175,10 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
             std::cout << "[Preview] Preparing the ANN index..." << std::endl;
         }
         const bool reuseIndex = m_previewWorkspace && m_previewWorkspace->index &&
-            m_previewWorkspace->libraryPath == db.path() && m_previewWorkspace->libraryVersion == libraryVersion;
+            m_previewWorkspace->libraryFeatureKey == db.featureKey() && !includeUseCounts;
         auto annIndex = reuseIndex ? m_previewWorkspace->index : std::make_shared<FeatureIndex>();
-        const std::string annPath = featDirCache.empty() ? "lib.ann196" : featDirCache + "/lib.ann196";
+        const auto annDirectory = u8path(db.path()).parent_path() / "index";
+        const auto annPath = pathToUtf8(annDirectory / "lib.ann196");
         // Only CPU and CUDA sessions were qualified; portable backends keep their original preview behavior.
         auto *indexSession = portableRequested ? nullptr : m_indexSession;
         bool retainIndex = false, hotIndex = false;
@@ -1270,7 +1223,9 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
                 releaseGpuLib();
                 return runtime.fail("library_unavailable", "ANN index could not be built", "dbPath", dbPath);
             }
-            if (!m_preview && !annIndex->save(annPath))
+            std::error_code indexError;
+            if (!m_preview && (std::filesystem::create_directories(annDirectory, indexError),
+                               indexError || !annIndex->save(annPath)))
             {
                 {
                     std::ostringstream detail;
@@ -1299,6 +1254,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
             m_previewWorkspace->index = dbCount <= 100000 ? annIndex : nullptr;
             m_previewWorkspace->libraryPath = db.path();
             m_previewWorkspace->libraryVersion = libraryVersion;
+            m_previewWorkspace->libraryFeatureKey = db.featureKey();
             runtime.metric("previewIndexReused", indexSession ? hotIndex : reuseIndex);
         }
         runtime.stage("matching");
@@ -1320,6 +1276,11 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
         if (cfg.threads > 0)
         {
             featureThreads = std::min(featureThreads, static_cast<unsigned>(cfg.threads - (overlap ? 2 : 0)));
+        }
+        if (!templateCuda && static_cast<size_t>(dbCount) > readerBudget / LibraryFeatureStore::Reader::rowBytes)
+        {
+            // ANN 保留量会压缩读缓存，批次必须随实际预算下降才能在评分前固定所有候选。
+            batchRows = std::min(batchRows, std::max<size_t>(1, readerBudget / LibraryFeatureStore::Reader::rowBytes / N));
         }
         const auto featureSlots = static_cast<unsigned>(std::min<size_t>(batchRows, featureThreads));
         if (cfg.threads == 0 && largeFastCpuImage && !selection && !cfg.analyze && !m_previewWorkspace)
@@ -1528,11 +1489,11 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
                 // 这部分 pinned 暂存已包含在 selectionBytes 的额外预算中。
             }
         }
-        std::unique_ptr<FeaturePack::Reader> featureReader;
+        std::unique_ptr<LibraryFeatureStore::Reader> featureReader;
         if (!templateCuda || cfg.analyze)
         {
             const auto readStart = Clock::now();
-            featureReader = std::make_unique<FeaturePack::Reader>(templateCuda ? std::string() : featDirCache, allRecords,
+            featureReader = std::make_unique<LibraryFeatureStore::Reader>(db, allRecords,
                 readerBudget, templateCuda ? nullptr : &runtime,
                 retainIndex && !templateCuda ? &indexSession->features : nullptr);
             if (cfg.benchmark)
@@ -1541,7 +1502,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
             }
             if (retainIndex)
             {
-                runtime.metric("libraryFeatureRowsReused", featureReader->stats().sessionHit ? dbCount : 0);
+                runtime.metric("libraryFeatureRowsReused", featureReader->retainedRows());
             }
             if (!templateCuda)
             {
@@ -1743,7 +1704,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
             }
         }
         const auto fastDistance = [&](const MatchingBuffers &batch, size_t tile, int index,
-                                      const FeaturePack::Reader::Row &features)
+                                      const LibraryFeatureStore::Reader::Row &features)
         {
             const auto d = compute::fp32Distances(batch, tile, allRecords[index], features,
                 trialOptions.planar ? batch.planar[tile].data() : nullptr,
@@ -2249,13 +2210,11 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
                         }
                         else
                         {
-                            featureReader->prepare(expandedIndices);
-                            for (size_t j = 0; j < added; ++j)
+                            featureReader->scoreBatches(expandedIndices.data(), added, false,
+                                [&](size_t j, int index, const LibraryFeatureStore::Reader::Row &row)
                             {
-                                const int index = expandedIndices[j];
-                                expandedErrors[j] = cpuBaseScore(buffers, local, allRecords[index],
-                                                                featureReader->get(index), 0);
-                            }
+                                expandedErrors[j] = cpuBaseScore(buffers, local, allRecords[index], row, 0);
+                            });
                             metrics.msCPUScore += Ms(Clock::now() - scoreStart).count();
                         }
                         for (size_t j = 0; j < added; ++j)
@@ -2632,8 +2591,9 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
                     metrics.msGPUScore += Ms(Clock::now() - scoreStart).count();
                     m_compatibleScoreTiles += count;
                 }
-                // 分析仍读取原 CPU 特征；普通 GPU 评分无需重复读取所有候选。
-                if (!gpuScoring || cfg.analyze)
+                const bool preparedFeatures = !gpuScoring && !selection && featureReader->capacity() >=
+                    std::min(allRecords.size(), allIndices.size());
+                if (preparedFeatures)
                 {
                     const auto readStart = Clock::now();
                     featureReader->prepare(allIndices);
@@ -2642,10 +2602,9 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
                     metrics.msSelect += readMs;
                 }
                 bool preparedScores = gpuScoring;
-                if (parallelBase)
+                if (parallelBase && preparedFeatures)
                 {
                     const auto start = Clock::now();
-                    std::atomic<bool> missing{false};
                     queryWorkers.runChunks(count, trialOptions.scoreGrain, [&](size_t local)
                     {
                         const size_t begin = local * N;
@@ -2657,12 +2616,6 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
                                 continue;
                             }
                             const auto *row = featureReader->preparedRow(index);
-                            if (!row)
-                            {
-                                // 极小预算可能无法固定一整行；回到原读取路径，以保留缺失特征的错误语义。
-                                missing.store(true, std::memory_order_relaxed);
-                                return;
-                            }
                             if (fastScore)
                             {
                                 buffers.fastScores[pos] = fastDistance(buffers, local, index, *row);
@@ -2673,7 +2626,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
                             }
                         }
                     });
-                    preparedScores = !missing.load(std::memory_order_relaxed);
+                    preparedScores = true;
                     metrics.msBaseScore += Ms(Clock::now() - start).count();
                 }
                 startPrefetch();
@@ -2681,18 +2634,28 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
                 for (int local = 0; local < count; ++local)
                 {
                     const int ti = first + local;
+                    const size_t begin = static_cast<size_t>(local) * N;
+                    const int *indices = allIndices.data() + begin;
                     if (selection)
                     {
                         selection->clear();
-                        for (int j = 0; j < N; ++j)
+                        if (gpuScoring)
                         {
-                            const size_t offset = static_cast<size_t>(local) * N + j;
-                            const int index = allIndices[offset];
-                            if (index >= 0)
+                            for (int j = 0; j < N; ++j)
                             {
-                                selection->add(index, gpuScoring ? allScores[offset]
-                                    : cpuBaseScore(buffers, local, allRecords[index], featureReader->get(index), 0));
+                                if (indices[j] >= 0)
+                                {
+                                    selection->add(indices[j], allScores[begin + j]);
+                                }
                             }
+                        }
+                        else
+                        {
+                            featureReader->scoreBatches(indices, N, false,
+                                [&](size_t, int index, const LibraryFeatureStore::Reader::Row &row)
+                            {
+                                selection->add(index, cpuBaseScore(buffers, local, allRecords[index], row, 0));
+                            });
                         }
                         if (!selectExperimental(local, ti))
                         {
@@ -2705,38 +2668,44 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
                     std::optional<RowHistory> history;
                     if (fastScore)
                     {
-                        history.emplace(allIndices.data() + size_t(local) * N, N, allRecords, cfg.usePenalty);
+                        history.emplace(indices, N, allRecords, cfg.usePenalty);
                         wideHistoryRows += history->wide;
                     }
                     const auto scoreStart = cfg.benchmark ? Clock::now() : Clock::time_point{};
-                    for (int j = 0; j < N; ++j)
+                    const auto rankCandidate = [&](size_t j, int index, double value)
                     {
-                        int li = allIndices[static_cast<size_t>(local) * N + j];
-                        if (li < 0)
-                        {
-                            continue;
-                        }
-                        const auto &r = allRecords[li];
-                        const size_t candidate = static_cast<size_t>(local) * N + j;
-                        double s = 0;
-                        if (fastScore)
-                        {
-                            const float distance = preparedScores ? buffers.fastScores[candidate]
-                                : fastDistance(buffers, local, li, featureReader->get(li));
-                            s = history->combine(distance, r.useCount, cfg.usePenalty);
-                        }
-                        else
-                        {
-                            s = preparedScores ? allScores[candidate]
-                                : cpuBaseScore(buffers, local, r, featureReader->get(li), cfg.usePenalty);
-                        }
                         if (newScores)
                         {
-                            newScores->values[scoreOffset + candidate] = s;
+                            newScores->values[scoreOffset + begin + j] = value;
                         }
                         BenchmarkTimer neighborTimer(cfg.benchmark, metrics.msNeighbor);
-                        neighborhood.applyPenalty(s, li, ti, bound);
-                        scored.push_back({s, li});
+                        neighborhood.applyPenalty(value, index, ti, bound);
+                        scored.push_back({value, index});
+                    };
+                    if (preparedScores)
+                    {
+                        for (int j = 0; j < N; ++j)
+                        {
+                            const int index = indices[j];
+                            if (index >= 0)
+                            {
+                                rankCandidate(j, index, fastScore
+                                    ? history->combine(buffers.fastScores[begin + j], allRecords[index].useCount, cfg.usePenalty)
+                                    : allScores[begin + j]);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 扩展候选可能已淘汰本批特征行；实验分支独立处理，不会走到这里。
+                        featureReader->scoreBatches(indices, N, preparedFeatures,
+                            [&](size_t j, int index, const LibraryFeatureStore::Reader::Row &row)
+                        {
+                            const auto &record = allRecords[index];
+                            rankCandidate(j, index, fastScore
+                                ? history->combine(fastDistance(buffers, local, index, row), record.useCount, cfg.usePenalty)
+                                : cpuBaseScore(buffers, local, record, row, cfg.usePenalty));
+                        });
                     }
                     if (cfg.benchmark)
                     {
@@ -2893,7 +2862,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
         if (newScores)
         {
             BenchmarkTimer timer(cfg.benchmark, featureVerifyMs);
-            publishScores = sourceVersion == FeaturePack::sourceVersion(featDirCache, allRecords, stampWorkers);
+            publishScores = sourceVersion == db.featureKey();
             if (!publishScores)
             {
                 scoreMiss = PreviewCacheMiss::SourceVersion;
@@ -3059,6 +3028,9 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
         runtime.metric("selectionMs", metrics.msSelect);
         runtime.metric("matchingBufferPeakBytes", metrics.matchingPeakBytes);
         runtime.metric("featureCachePeakBytes", metrics.featureReadStats.peakBytes);
+        runtime.metric("featureCacheEvictions", metrics.featureReadStats.evictions);
+        runtime.metric("featureSqlRows", metrics.featureReadStats.sourceReads + metrics.libraryReadStats.sourceReads);
+        runtime.metric("featureSqlMs", metrics.featureReadStats.sqliteMs + metrics.libraryReadStats.sqliteMs);
         runtime.metric("deviceTemporaryBytes", m_compatibleTemporaryBytes);
         runtime.stage("finalizing");
         return selected == totalTiles || runtime.fail("no_candidates", "some tiles have no eligible candidates");
@@ -3204,6 +3176,9 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
         runtime.metric("analysisMs", metrics.msAnalysis);
         runtime.metric("matchingBufferPeakBytes", metrics.matchingPeakBytes);
         runtime.metric("featureCachePeakBytes", metrics.featureReadStats.peakBytes);
+        runtime.metric("featureCacheEvictions", metrics.featureReadStats.evictions);
+        runtime.metric("featureSqlRows", metrics.featureReadStats.sourceReads + metrics.libraryReadStats.sourceReads);
+        runtime.metric("featureSqlMs", metrics.featureReadStats.sqliteMs + metrics.libraryReadStats.sqliteMs);
         runtime.metric("deviceTemporaryBytes", m_compatibleTemporaryBytes);
     }
     runtime.stage("finalizing");

@@ -6,6 +6,7 @@
 namespace mosaicraft
 {
 
+std::filesystem::path libraryIngestJournalPath(const std::string &dbPath);
 std::filesystem::path libraryJournalPath(const std::string& dbPath);
 std::filesystem::file_status libraryJournalStatus(const std::filesystem::path &path);
 

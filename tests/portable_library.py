@@ -64,7 +64,10 @@ def check_usage(root, run):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cli', type=Path, required=True)
-    executable = parser.parse_args().cli.resolve()
+    parser.add_argument('--baseline', type=Path, help='optional 1.15.11 executable for a real version-1 library')
+    parser.add_argument('--regression', type=Path, help='optional native regression binary with crash fixture')
+    args = parser.parse_args()
+    executable = args.cli.resolve()
     with tempfile.TemporaryDirectory(prefix='mosaicraft-portable-') as folder:
         root = Path(folder)
         old = root / 'old.db'
@@ -89,6 +92,44 @@ def main():
         assert writer.execute('SELECT use_count FROM images').fetchone()[0] == 9
         writer.close()
         assert not (root / '.mosaicraft-backups').exists()
+
+        fixture_input = root / 'ingest-input'
+        fixture_input.mkdir()
+        png(fixture_input / 'input.png', (1, 2, 3))
+        build = ['library', 'build', fixture_input, '-o', 'fixture-library', '--size', '16x16', '--backend', 'cpu']
+        library = root / 'fixture-library'
+        database = library / 'mosaicraft.db'
+        if args.baseline:
+            subprocess.run([args.baseline.resolve(), *build], cwd=root, check=True, capture_output=True)
+            with closing(sqlite3.connect(database)) as db:
+                assert db.execute('PRAGMA user_version').fetchone() == (1,)
+                assert not db.execute("SELECT name FROM sqlite_master WHERE name='image_features'").fetchone()
+            # A rejected old library must not inspect or recover a pending journal.
+            Path(str(database) + '.color-order.json').write_bytes(b'old journal')
+            def snapshot():
+                return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in library.iterdir()
+                        if p.is_file() and not p.name.endswith(('.library.lock', '-shm'))}
+            before = snapshot()
+            run(['library', 'report', database, '--json'], False)
+            run(['library', 'add', fixture_input, '-l', database, '--backend', 'cpu', '--json'], False)
+            run(['create', fixture_input / 'input.png', '-l', database, '-o', 'refused.png', '--json'], False)
+            assert before == snapshot(), (before, snapshot())
+            library = root / 'crash-library'
+            database = library / 'mosaicraft.db'
+            build[4] = library.name
+        if args.regression:
+            run(build)
+            for stage, count in [('before', 1), ('after', 2)]:
+                result = subprocess.run([args.regression.resolve(), f'--ingest-crash-{stage}-commit'], cwd=library)
+                assert result.returncode == 86, result.returncode
+                assert (library / '.mosaicraft-new-999999.png').is_file()
+                run(['library', 'report', database, '--json'], False, b'unfinished library ingestion')
+                run(['library', 'add', fixture_input, '-l', database, '--backend', 'cpu', '--json'])
+                assert not Path(str(database) + '.ingest.json').exists()
+                assert not (library / '.mosaicraft-new-999999.png').exists()
+                with closing(sqlite3.connect(database)) as db:
+                    assert db.execute('SELECT count(*) FROM images').fetchone() == (count,)
+                    assert db.execute('SELECT count(*) FROM image_features').fetchone() == (count,)
 
         # A palette PNG must stay indexed and keep transparency and metadata on both sides of IDAT.
         raw = (b'\0' + bytes(range(2)) * 16) * 32
@@ -143,9 +184,14 @@ def main():
         connection = sqlite3.connect(database)
         try:
             assert connection.execute('PRAGMA user_version').fetchone()[0] == 1
-            assert all(not Path(p).is_absolute() for row in connection.execute('SELECT file_path,tiny_path,lbp_path FROM images') for p in row)
-            material, old, digest, tiny, lbp = connection.execute(
-                'SELECT id,file_path,file_hash,tiny_path,lbp_path FROM images ORDER BY id LIMIT 1').fetchone()
+            assert connection.execute('PRAGMA page_size').fetchone()[0] == 8192
+            assert not (library / 'features').exists()
+            assert all(not Path(p).is_absolute() for p, in connection.execute('SELECT file_path FROM images'))
+            material, old, digest = connection.execute(
+                'SELECT id,file_path,file_hash FROM images ORDER BY id LIMIT 1').fetchone()
+            uuid, = connection.execute("SELECT value FROM meta WHERE key='library_uuid'").fetchone()
+            assert connection.execute('SELECT length(grid_lab),length(tiny),length(lbp) FROM image_features'
+                                      ' WHERE image_id=?', (material,)).fetchone() == (768, 256, 1024)
         finally:
             connection.close()
 
@@ -167,12 +213,12 @@ def main():
         run(add, False, b'color reorder recovery failed')
         assert staged.is_file() and journal.read_text(encoding='utf-8') == '{'
         data = dict(version=contracts['journalVersion'], library_version=contracts['libraryVersion'],
-                    feature_version=contracts['featureVersion'], token=token, database=database.name,
+                    feature_version=contracts['featureVersion'], uuid=uuid, token=token, database=database.name,
                     output='.', staging=staging.name, phase='staging', entries=[dict(
                         id=material, old_db_path=old, original=old, final='999999.png',
                         temporary=staged.relative_to(library).as_posix(), hash=digest, size=staged.stat().st_size)])
         journal.write_text(json.dumps(data), encoding='utf-8')
-        protected = (database, journal, staged, library / tiny, library / lbp)
+        protected = (database, journal, staged)
         before = [path.read_bytes() for path in protected]
         for flags in ([], ['--apply']):
             run(['library', 'purge', str(database), *flags], False, b'unfinished color reorder')

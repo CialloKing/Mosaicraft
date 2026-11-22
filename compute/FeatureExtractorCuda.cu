@@ -534,8 +534,7 @@ __global__ void featureKernel(const uint8_t *__restrict__ d_images, float *__res
 // ============================================================
 // 主机接口
 // ============================================================
-int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &records, const std::string &featDir,
-                 const std::vector<std::string> &stems, FeatureWorkspace *workspace)
+int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &records, std::vector<TextureFeatures> &textures, FeatureWorkspace *workspace)
 {
     int N = static_cast<int>(images.size());
     if (N <= 0)
@@ -717,10 +716,8 @@ int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &r
         FeatureExtractor::computeStatistics(images[i], rec);
 
         // Save TinyImage
-        if (!featDir.empty() && i < static_cast<int>(stems.size()))
-        {
-            FeatureExtractor::saveFeatures(rec, featDir, stems[i], &h_tiny[i * 256], &h_lbp[i * 256]);
-        }
+        std::copy_n(&h_tiny[i * 256], textures[i].tiny.size(), textures[i].tiny.begin());
+        std::copy_n(&h_lbp[i * 256], textures[i].lbp.size(), textures[i].lbp.begin());
 
         rec.featureVersion = FeatureExtractor::featureVersion();
     }

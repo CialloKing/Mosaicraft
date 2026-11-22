@@ -36,18 +36,19 @@ struct TargetFeatures
 {
     cv::Scalar lab;
     std::vector<float> grid;
-    FeaturePack::Reader::Row texture;
+    LibraryFeatureStore::Reader::Row texture;
     double edge = 0;
 };
 
 struct EvaluationCache
 {
     std::string key;
-    SourceStamp targetStamp, dbStamp, walStamp;
+    SourceStamp targetStamp;
+    std::string libraryKey;
     cv::Mat target;
     std::vector<ImageRecord> records;
     std::unordered_map<int, int> index;
-    std::unique_ptr<FeaturePack::Reader> reader;
+    LibraryFeatureStore::Reader::Session session;
 
     TargetFeatures features(size_t position, int columns, cv::Size size, const MosaicEngine::Config &config) const
     {
@@ -69,7 +70,7 @@ struct EvaluationCache
         return result;
     }
 
-    std::optional<PreviewCandidateScore> score(const TargetFeatures &tile, int id, const MosaicEngine::Config &config)
+    std::optional<PreviewCandidateScore> score(LibraryFeatureStore::Reader &reader, const TargetFeatures &tile, int id, const MosaicEngine::Config &config)
     {
         const auto found = index.find(id);
         if (found == index.end())
@@ -78,7 +79,7 @@ struct EvaluationCache
         }
         const auto &record = records[found->second];
         const auto distances = featureDistances(tile.lab[0], tile.lab[1], tile.lab[2], tile.grid, tile.edge,
-                                                tile.texture, record, reader->get(found->second));
+                                                tile.texture, record, reader.get(found->second));
         double value = inspectionScore(distances, config);
         if (config.adaptiveWeights)
         {
@@ -95,13 +96,12 @@ struct EvaluationCache
 std::mutex evaluationMutex;
 std::unique_ptr<EvaluationCache> evaluation;
 
-ServiceResult prepareEvaluation(const MosaicRequest &request, const MosaicSelection &selection)
+ServiceResult prepareEvaluation(Database &database, const MosaicRequest &request, const MosaicSelection &selection)
 {
     const auto input = stamp(request.inputPath);
-    const auto dbStamp = stamp(selection.dbPath);
-    const auto wal = stamp(selection.dbPath + "-wal");
+    const auto libraryKey = database.assetKey();
     if (evaluation && evaluation->key == selection.editKey && evaluation->targetStamp == input &&
-        evaluation->dbStamp == dbStamp && evaluation->walStamp == wal)
+        evaluation->libraryKey == libraryKey)
     {
         return ServiceResult::success();
     }
@@ -122,15 +122,10 @@ ServiceResult prepareEvaluation(const MosaicRequest &request, const MosaicSelect
     }
     resizeTarget(cache->target, geometry);
     padTarget(cache->target, request.config, selection.columns, selection.rows);
-    Database database(selection.dbPath, Database::OpenMode::ReadOnly);
-    if (!database.isOpen())
-    {
-        return ServiceResult::failure(1, database.error(), database.errorCode());
-    }
     const bool includeUseCounts = request.config.usePenalty > 0;
     cache->records = database.allRecords(includeUseCounts);
     if (cache->records.empty() ||
-        previewLibraryVersion(cache->records, selection.featureWidth, selection.featureHeight, includeUseCounts) !=
+        previewLibraryVersion(libraryKey, cache->records, selection.featureWidth, selection.featureHeight, includeUseCounts) !=
             selection.libraryVersion)
     {
         return ServiceResult::failure(1, "library changed", "preview_stale");
@@ -139,12 +134,9 @@ ServiceResult prepareEvaluation(const MosaicRequest &request, const MosaicSelect
     {
         cache->index.emplace(cache->records[i].id, static_cast<int>(i));
     }
-    const auto directory = pathToUtf8(u8path(cache->records.front().tinyPath).parent_path());
-    cache->reader = std::make_unique<FeaturePack::Reader>(directory, cache->records, 32ULL * 1024 * 1024);
     cache->key = selection.editKey;
     cache->targetStamp = input;
-    cache->dbStamp = dbStamp;
-    cache->walStamp = wal;
+    cache->libraryKey = libraryKey;
     evaluation = std::move(cache);
     return ServiceResult::success();
 }
@@ -153,17 +145,19 @@ ServiceResult prepareEvaluation(const MosaicRequest &request, const MosaicSelect
 ServiceResult evaluatePreview(const MosaicRequest &request, const MosaicSelection &selection,
                               const std::vector<PreviewProbe> &probes, bool explain,
                               std::vector<PreviewTileScore> &scores)
+try
 {
     const std::unique_lock<std::mutex> lock(evaluationMutex, std::try_to_lock);
-    const LibraryAccess library(selection.dbPath, false);
-    if (!lock.owns_lock() || !library.acquired())
+    Database library(selection.dbPath, Database::OpenMode::ReadOnly);
+    if (!lock.owns_lock() || !library.isOpen())
     {
         return ServiceResult::failure(1, "preview evaluation is busy", "library_busy");
     }
-    if (auto status = prepareEvaluation(request, selection); !status.ok)
+    if (auto status = prepareEvaluation(library, request, selection); !status.ok)
     {
         return status;
     }
+    LibraryFeatureStore::Reader reader(library, evaluation->records, 32ULL * 1024 * 1024, nullptr, &evaluation->session);
     const auto &config = request.config;
     const cv::Size size(selection.featureWidth, selection.featureHeight);
     for (const auto &probe : probes)
@@ -173,7 +167,7 @@ ServiceResult evaluatePreview(const MosaicRequest &request, const MosaicSelectio
         if (id > 0 || explain)
         {
             const auto features = evaluation->features(probe.position, selection.columns, size, config);
-            if (auto selected = evaluation->score(features, id, config))
+            if (auto selected = evaluation->score(reader, features, id, config))
             {
                 result.score = selected->score;
                 if (explain)
@@ -187,7 +181,7 @@ ServiceResult evaluatePreview(const MosaicRequest &request, const MosaicSelectio
                 {
                     if (candidate != id)
                     {
-                        if (auto item = evaluation->score(features, candidate, config))
+                        if (auto item = evaluation->score(reader, features, candidate, config))
                         {
                             result.candidates.push_back(*item);
                         }
@@ -211,13 +205,18 @@ ServiceResult evaluatePreview(const MosaicRequest &request, const MosaicSelectio
     }
     return ServiceResult::success();
 }
+catch (const InvalidLibraryFeatures &error)
+{
+    return ServiceResult::failure(2, error.what(), "library_incompatible", "dbPath");
+}
 
 ServiceResult comparePreview(const MosaicRequest &request, const MosaicSelection &a, const MosaicSelection &b,
                              const std::atomic_bool &canceled, PreviewComparison &result)
+try
 {
     const std::unique_lock<std::mutex> lock(evaluationMutex, std::try_to_lock);
-    const LibraryAccess library(a.dbPath, false);
-    if (!lock.owns_lock() || !library.acquired())
+    Database library(a.dbPath, Database::OpenMode::ReadOnly);
+    if (!lock.owns_lock() || !library.isOpen())
     {
         return ServiceResult::failure(1, "preview evaluation is busy", "library_busy");
     }
@@ -225,10 +224,11 @@ ServiceResult comparePreview(const MosaicRequest &request, const MosaicSelection
     {
         return ServiceResult::failure(1, "comparison assets changed", "preview_stale");
     }
-    if (auto status = prepareEvaluation(request, a); !status.ok)
+    if (auto status = prepareEvaluation(library, request, a); !status.ok)
     {
         return status;
     }
+    LibraryFeatureStore::Reader reader(library, evaluation->records, 32ULL * 1024 * 1024, nullptr, &evaluation->session);
     const auto &config = request.config;
     const MosaicEngine::Config fixed;
     const cv::Size featureSize(a.featureWidth, a.featureHeight);
@@ -266,8 +266,8 @@ ServiceResult comparePreview(const MosaicRequest &request, const MosaicSelection
             continue;
         }
         const auto features = evaluation->features(position, a.columns, featureSize, config);
-        const auto scoreA = evaluation->score(features, idA, fixed);
-        const auto scoreB = idA == idB ? scoreA : evaluation->score(features, idB, fixed);
+        const auto scoreA = evaluation->score(reader, features, idA, fixed);
+        const auto scoreB = idA == idB ? scoreA : evaluation->score(reader, features, idB, fixed);
         if (scoreA && scoreB)
         {
             scoresA.push_back(static_cast<float>(scoreA->score));
@@ -332,5 +332,9 @@ ServiceResult comparePreview(const MosaicRequest &request, const MosaicSelection
         return ServiceResult::failure(1, "comparison preview was not encoded", "preview_canceled");
     }
     return ServiceResult::success();
+}
+catch (const InvalidLibraryFeatures &error)
+{
+    return ServiceResult::failure(2, error.what(), "library_incompatible", "dbPath");
 }
 } // namespace mosaicraft

@@ -300,7 +300,7 @@ ServiceResult planMosaic(MosaicRequest request, MosaicPlan &plan)
     {
         // 未完成匹配时只能给唯一素材数量的范围；不用整幅图片压缩率估算工程。
         std::vector<uint64_t> sizes;
-        for (const auto &record : database.allRecords(false))
+        for (const auto &record : database.metadataRecords(false))
         {
             std::error_code error;
             const auto bytes = std::filesystem::file_size(u8path(record.filePath), error);

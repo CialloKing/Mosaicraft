@@ -24,7 +24,7 @@ class CompatibleScoreWorkspace
     size_t deviceBytes() const;
     size_t libraryBytes() const;
     const char *preparationFailure() const;
-    void uploadLibrary(const std::vector<ImageRecord> &records, FeaturePack::Reader &reader,
+    void uploadLibrary(const std::vector<ImageRecord> &records, LibraryFeatureStore::Reader &reader,
                        GpuTimings *timings = nullptr);
     // MatchingBuffers 中仅使用固定维度特征、候选索引及权重，与图像宽高无关。
     void score(const MatchingBuffers &tiles, int count, double usePenalty, double *scores,

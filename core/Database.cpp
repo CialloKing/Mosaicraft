@@ -6,6 +6,7 @@
 #include "UnicodeIO.h"
 #include "Version.h"
 #include "FeatureIO.h"
+#include "FeatureSql.h"
 
 #include <cstring>
 #include <algorithm>
@@ -26,7 +27,11 @@ Database::Database(const std::string &dbPath, OpenMode mode, std::vector<ImageRe
                    double *readMs, bool includeUseCounts) : m_db(nullptr)
 {
     std::error_code error;
-    m_path = pathToUtf8(std::filesystem::weakly_canonical(u8path(dbPath), error));
+    const auto absolute = std::filesystem::absolute(u8path(dbPath), error);
+    if (!error)
+    {
+        m_path = pathToUtf8(std::filesystem::weakly_canonical(absolute, error));
+    }
     if (error)
     {
         m_error = "cannot resolve database: " + dbPath;
@@ -40,6 +45,7 @@ Database::Database(const std::string &dbPath, OpenMode mode, std::vector<ImageRe
         m_error = "database missing or cannot be inspected: " + dbPath;
         return;
     }
+    m_paths = std::make_unique<LibraryPaths>(m_path);
     const bool exclusiveLock = m_exclusive || m_new;
     m_access = std::make_unique<LibraryAccess>(m_path, exclusiveLock, 5000);
     if (!m_access->acquired())
@@ -56,13 +62,6 @@ Database::Database(const std::string &dbPath, OpenMode mode, std::vector<ImageRe
         {
             m_error = "database missing: " + dbPath;
         }
-        else if (mode != OpenMode::Recover &&
-                 std::filesystem::exists(libraryJournalStatus(libraryJournalPath(m_path))))
-        {
-            m_error = m_new ? "database missing but a color reorder journal remains: " + dbPath :
-                "unfinished color reorder; retain the journal and staging directory, then run "
-                "library add <input-directory> -l <library>: " + dbPath;
-        }
     }
     catch (const std::filesystem::filesystem_error &exception)
     {
@@ -74,12 +73,40 @@ Database::Database(const std::string &dbPath, OpenMode mode, std::vector<ImageRe
         return;
     }
     // 先只读校验；旧库失败时不得执行 WAL 设置、DDL 或任何升级。
+    if (!m_new && !preflightFeatureSchema())
+    {
+        m_access.reset();
+        return;
+    }
     bool valid = openConnection(m_new, !m_new);
     if (valid && !m_new)
     {
         // 在只读连接的同一快照内校验并取走匹配行；损坏库仍在打开可写连接前拒绝。
         valid = (!matchingRows || beginTransaction()) && validateSchema(matchingRows, readMs, includeUseCounts) &&
                 (!matchingRows || commitTransaction());
+        if (valid && mode != OpenMode::Recover)
+        {
+            try
+            {
+                if (std::filesystem::exists(libraryJournalStatus(libraryIngestJournalPath(m_path))))
+                {
+                    m_error = "unfinished library ingestion; retain the journal and staging directory, then run "
+                              "library add <input-directory> -l <library>: " + m_path;
+                    valid = false;
+                }
+                else if (std::filesystem::exists(libraryJournalStatus(libraryJournalPath(m_path))))
+                {
+                    m_error = "unfinished color reorder; retain the journal and staging directory, then run "
+                              "library add <input-directory> -l <library>: " + m_path;
+                    valid = false;
+                }
+            }
+            catch (const std::filesystem::filesystem_error &exception)
+            {
+                m_error = exception.what();
+                valid = false;
+            }
+        }
         if (valid && mode != OpenMode::ReadOnly)
         {
             closeConnection();
@@ -128,7 +155,7 @@ bool Database::createTables(int featureWidth, int featureHeight)
         return true;
     }
     // 完整结构与标记一次提交；已有库永远不补表或补列。
-    if (!exec("BEGIN IMMEDIATE"))
+    if (!exec("PRAGMA page_size=8192") || !exec("BEGIN IMMEDIATE"))
     {
         return false;
     }
@@ -160,17 +187,7 @@ bool Database::createTables(int featureWidth, int featureHeight)
             saturation      REAL DEFAULT 0.0,
             color_variance  REAL DEFAULT 0.0,
 
-            -- 区域结构特征：8×8 LAB Grid = 192 float BLOB
-            grid_lab         BLOB NOT NULL CHECK(length(grid_lab)=768),
-
-            -- TinyImage 16×16 灰度图文件路径
-            tiny_path       TEXT,
-
-            -- 边缘特征
             edge_density    REAL DEFAULT 0.0,
-
-            -- 纹理特征文件路径
-            lbp_path       TEXT,
 
             -- 使用统计
             use_count       INTEGER DEFAULT 0,
@@ -185,6 +202,13 @@ bool Database::createTables(int featureWidth, int featureHeight)
         CREATE INDEX idx_hash    ON images(file_hash);
         CREATE INDEX idx_avg_l   ON images(avg_l);
         CREATE INDEX idx_use     ON images(use_count);
+
+        CREATE TABLE image_features (
+            image_id INTEGER PRIMARY KEY REFERENCES images(id) ON DELETE CASCADE,
+            grid_lab BLOB NOT NULL CHECK(typeof(grid_lab)='blob' AND length(grid_lab)=768),
+            tiny BLOB NOT NULL CHECK(typeof(tiny)='blob' AND length(tiny)=256),
+            lbp BLOB NOT NULL CHECK(typeof(lbp)='blob' AND length(lbp)=1024)
+        );
 
         CREATE TABLE meta (
             key   TEXT PRIMARY KEY,
@@ -216,6 +240,11 @@ bool Database::createTables(int featureWidth, int featureHeight)
               "total_runs INTEGER DEFAULT 0,total_tiles INTEGER DEFAULT 0,last_used TEXT);") ||
         !exec("CREATE TABLE target_runs(target_hash TEXT PRIMARY KEY,first_path TEXT,"
               "run_count INTEGER DEFAULT 0,last_used TEXT);") ||
+        !exec("CREATE TABLE image_target_runs (image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE, "
+              "target_hash TEXT NOT NULL REFERENCES target_runs(target_hash), "
+              "PRIMARY KEY(image_id, target_hash)) WITHOUT ROWID") ||
+        !exec("INSERT INTO meta VALUES('library_uuid', lower(hex(randomblob(16))))") ||
+        !setMeta("feature_revision", "0") || !setMeta("asset_revision", "0") ||
         !setMeta("path_format", portablePathFormat) ||
         !setMeta("feature_version", std::to_string(kFeatureVersion)) ||
         !setMeta("feature_w", std::to_string(featureWidth)) ||
@@ -284,139 +313,210 @@ std::string Database::getMeta(const std::string& key, const std::string& default
 // 插入
 // ============================================================
 
-bool Database::insertImage(const ImageRecord& rec)
+bool Database::insertImage(const ImageRecord &rec, const TextureFeatures &texture)
 {
-    if (!m_db)
+    const auto finite = [](double value)
     {
+        return std::isfinite(value);
+    };
+    const std::array scalars{rec.avgL, rec.avgA, rec.avgB, rec.edgeDensity, rec.meanBrightness,
+                             rec.stdBrightness, rec.contrast, rec.saturation, rec.colorVariance, rec.aspectRatio};
+    if (!inTransaction() || rec.featureVersion != kFeatureVersion || rec.gridLab.size() != 192 ||
+        !std::all_of(rec.gridLab.begin(), rec.gridLab.end(), finite) ||
+        !std::all_of(texture.lbp.begin(), texture.lbp.end(), finite) ||
+        !std::all_of(scalars.begin(), scalars.end(), finite))
+    {
+        m_error = "invalid feature record or missing write transaction";
         return false;
     }
-    if (rec.featureVersion != kFeatureVersion || rec.gridLab.size() != 192 ||
-        !std::all_of(rec.gridLab.begin(), rec.gridLab.end(), [](float value)
-        {
-            return std::isfinite(value);
-        }) || !std::isfinite(rec.avgL) || !std::isfinite(rec.avgA) || !std::isfinite(rec.avgB))
-    {
-        m_error = "library_incompatible: invalid feature record";
-        return false;
-    }
-
-    std::string file = rec.filePath, tiny = rec.tinyPath, hist = rec.lbpPath;
+    std::string file;
     try
     {
-        if (m_db)
-        {
-            const LibraryPaths paths(m_path);
-            file = paths.store(file);
-            tiny = paths.store(tiny);
-            hist = paths.store(hist);
-        }
+        file = m_paths->store(rec.filePath);
     }
     catch (const std::exception &error)
     {
         m_error = error.what();
         return false;
     }
-
-    const char* sql = R"SQL(
-        INSERT INTO images
-            (file_path, file_hash, format, src_width, src_height, aspect_ratio, file_size,
-             avg_l, avg_a, avg_b,
-             mean_brightness, std_brightness, contrast,
-             saturation, color_variance,
-             grid_lab,
-             tiny_path,
-             edge_density,
-             lbp_path,
-             feature_version)
-        VALUES
-            (?, ?, ?, ?, ?, ?, ?,
-             ?, ?, ?,
-             ?, ?, ?,
-             ?, ?,
-             ?,
-             ?,
-             ?,
-             ?,
-             ?)
-        ON CONFLICT(file_path) DO UPDATE SET
-            file_hash=excluded.file_hash, avg_l=excluded.avg_l, avg_a=excluded.avg_a, avg_b=excluded.avg_b,
-            mean_brightness=excluded.mean_brightness, std_brightness=excluded.std_brightness,
-            contrast=excluded.contrast, saturation=excluded.saturation, color_variance=excluded.color_variance,
-            grid_lab=excluded.grid_lab, tiny_path=excluded.tiny_path, edge_density=excluded.edge_density,
-            lbp_path=excluded.lbp_path, feature_version=excluded.feature_version
+    const char *sql = R"SQL(
+        INSERT INTO images(file_path,file_hash,format,src_width,src_height,aspect_ratio,file_size,
+             avg_l,avg_a,avg_b,mean_brightness,std_brightness,contrast,saturation,color_variance,
+             edge_density,feature_version)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     )SQL";
-
     auto *stmt = prepareCached(m_insertStatement, sql);
-    if (!stmt)
+    auto *features = prepareCached(m_featureStatement,
+        "INSERT INTO image_features(image_id,grid_lab,tiny,lbp) VALUES(?,?,?,?)");
+    if (!stmt || !features)
     {
-        std::cerr << "Prepare insert error: " << sqlite3_errmsg(m_db) << std::endl;
         return false;
     }
-
-    // 参数索引从 1 开始
-    int idx = 1;
-
-    // 元数据
-    sqlite3_bind_text(stmt, idx++, file.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, idx++, rec.fileHash.c_str(), -1, SQLITE_TRANSIENT);
-    // format
-    if (rec.format.empty()) { sqlite3_bind_null(stmt, idx++); }
-    else                     { sqlite3_bind_text(stmt, idx++, rec.format.c_str(), -1, SQLITE_TRANSIENT); }
-    sqlite3_bind_int(stmt, idx++, rec.srcWidth);
-    sqlite3_bind_int(stmt, idx++, rec.srcHeight);
-    sqlite3_bind_double(stmt, idx++, rec.aspectRatio);
-    sqlite3_bind_int64(stmt, idx++, rec.fileSize);
-
-    // 全局颜色
-    sqlite3_bind_double(stmt, idx++, rec.avgL);
-    sqlite3_bind_double(stmt, idx++, rec.avgA);
-    sqlite3_bind_double(stmt, idx++, rec.avgB);
-
-    // 亮度统计
-    sqlite3_bind_double(stmt, idx++, rec.meanBrightness);
-    sqlite3_bind_double(stmt, idx++, rec.stdBrightness);
-    sqlite3_bind_double(stmt, idx++, rec.contrast);
-
-    // 颜色统计
-    sqlite3_bind_double(stmt, idx++, rec.saturation);
-    sqlite3_bind_double(stmt, idx++, rec.colorVariance);
-
-    // 区域结构：grid_lab 序列化为 BLOB
-    if (rec.gridLab.empty())
-    {
-        sqlite3_bind_null(stmt, idx++);
-    }
-    else
-    {
-        // 192 个 float → 768 字节
-        std::size_t blobSize = rec.gridLab.size() * sizeof(float);
-        sqlite3_bind_blob(stmt, idx++, rec.gridLab.data(),
-                          static_cast<int>(blobSize), SQLITE_TRANSIENT);
-    }
-
-    // tiny_path
-    if (rec.tinyPath.empty()) { sqlite3_bind_null(stmt, idx++); }
-    else                       { sqlite3_bind_text(stmt, idx++, tiny.c_str(), -1, SQLITE_TRANSIENT); }
-
-    // 边缘
-    sqlite3_bind_double(stmt, idx++, rec.edgeDensity);
-
-    // lbp_path
-    if (rec.lbpPath.empty()) { sqlite3_bind_null(stmt, idx++); }
-    else                       { sqlite3_bind_text(stmt, idx++, hist.c_str(), -1, SQLITE_TRANSIENT); }
-
-    // feature_version
-    sqlite3_bind_int(stmt, idx++, rec.featureVersion);
-
-    const int rc = sqlite3_step(stmt);
+    const bool bound = sqlite3_bind_text(stmt, 1, file.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+        sqlite3_bind_text(stmt, 2, rec.fileHash.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+        sqlite3_bind_text(stmt, 3, rec.format.c_str(), -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+        sqlite3_bind_int(stmt, 4, rec.srcWidth) == SQLITE_OK && sqlite3_bind_int(stmt, 5, rec.srcHeight) == SQLITE_OK &&
+        sqlite3_bind_double(stmt, 6, rec.aspectRatio) == SQLITE_OK && sqlite3_bind_int64(stmt, 7, rec.fileSize) == SQLITE_OK &&
+        sqlite3_bind_double(stmt, 8, rec.avgL) == SQLITE_OK && sqlite3_bind_double(stmt, 9, rec.avgA) == SQLITE_OK &&
+        sqlite3_bind_double(stmt, 10, rec.avgB) == SQLITE_OK &&
+        sqlite3_bind_double(stmt, 11, rec.meanBrightness) == SQLITE_OK &&
+        sqlite3_bind_double(stmt, 12, rec.stdBrightness) == SQLITE_OK &&
+        sqlite3_bind_double(stmt, 13, rec.contrast) == SQLITE_OK && sqlite3_bind_double(stmt, 14, rec.saturation) == SQLITE_OK &&
+        sqlite3_bind_double(stmt, 15, rec.colorVariance) == SQLITE_OK && sqlite3_bind_double(stmt, 16, rec.edgeDensity) == SQLITE_OK &&
+        sqlite3_bind_int(stmt, 17, rec.featureVersion) == SQLITE_OK;
+    const bool inserted = bound && sqlite3_step(stmt) == SQLITE_DONE;
     sqlite3_reset(stmt);
-
-    if (rc != SQLITE_DONE)
+    if (!inserted)
     {
-        std::cerr << "Insert error: " << sqlite3_errmsg(m_db) << std::endl;
+        m_error = sqlite3_errmsg(m_db);
         return false;
+    }
+    std::array<uint8_t, 768> grid{};
+    std::array<uint8_t, 1024> lbp{};
+    encodeFloats(rec.gridLab.data(), rec.gridLab.size(), grid.data());
+    encodeFloats(texture.lbp.data(), texture.lbp.size(), lbp.data());
+    const bool ok = sqlite3_bind_int64(features, 1, sqlite3_last_insert_rowid(m_db)) == SQLITE_OK &&
+        sqlite3_bind_blob(features, 2, grid.data(), static_cast<int>(grid.size()), SQLITE_TRANSIENT) == SQLITE_OK &&
+        sqlite3_bind_blob(features, 3, texture.tiny.data(), static_cast<int>(texture.tiny.size()), SQLITE_TRANSIENT) == SQLITE_OK &&
+        sqlite3_bind_blob(features, 4, lbp.data(), static_cast<int>(lbp.size()), SQLITE_TRANSIENT) == SQLITE_OK &&
+        sqlite3_step(features) == SQLITE_DONE;
+    if (!ok)
+    {
+        m_error = sqlite3_errmsg(m_db);
+    }
+    sqlite3_reset(features);
+    return ok;
+}
+
+bool Database::inTransaction() const
+{
+    return m_db && !sqlite3_get_autocommit(m_db);
+}
+
+bool Database::advanceRevisions(bool features)
+{
+    return exec(features
+        ? "UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key IN ('feature_revision','asset_revision')"
+        : "UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='asset_revision'");
+}
+
+std::string Database::featureKey()
+{
+    return m_path + ':' + getMeta("library_uuid") + ':' + getMeta("feature_revision");
+}
+
+std::string Database::assetKey()
+{
+    return featureKey() + ':' + getMeta("asset_revision");
+}
+
+bool Database::readTextures(const std::vector<int> &ids, std::unordered_map<int, TextureFeatures> &out)
+{
+    // 固定大小的 IN 批次复用同一语句；未使用的参数留为 NULL。
+    constexpr size_t chunk = 128;
+    if (!m_textureStatement)
+    {
+        std::string sql = "SELECT image_id,tiny,lbp FROM image_features WHERE image_id IN (?";
+        for (size_t i = 1; i < chunk; ++i)
+        {
+            sql += ",?";
+        }
+        if (!prepareCached(m_textureStatement, (sql + ") ORDER BY image_id").c_str()))
+        {
+            m_error = sqlite3_errmsg(m_db);
+            return false;
+        }
+    }
+    auto *statement = m_textureStatement;
+    for (size_t first = 0; first < ids.size(); first += chunk)
+    {
+        const auto count = std::min(chunk, ids.size() - first);
+        sqlite3_clear_bindings(statement);
+        for (size_t i = 0; i < count; ++i)
+        {
+            if (sqlite3_bind_int(statement, static_cast<int>(i + 1), ids[first + i]) != SQLITE_OK)
+            {
+                sqlite3_reset(statement);
+                return false;
+            }
+        }
+        int rc;
+        while ((rc = sqlite3_step(statement)) == SQLITE_ROW)
+        {
+            const int id = sqlite3_column_int(statement, 0);
+            if (!decodeTextures(statement, 1, out[id]))
+            {
+                out.erase(id);
+                sqlite3_reset(statement);
+                m_error = "invalid Tiny/LBP for image " + std::to_string(id);
+                return false;
+            }
+        }
+        sqlite3_reset(statement);
+        if (rc != SQLITE_DONE)
+        {
+            m_error = sqlite3_errmsg(m_db);
+            return false;
+        }
+        for (size_t i = 0; i < count; ++i)
+        {
+            if (!out.count(ids[first + i]))
+            {
+                m_error = "missing feature row for image " + std::to_string(ids[first + i]);
+                return false;
+            }
+        }
     }
     return true;
+}
+
+bool Database::checkIntegrity()
+{
+    sqlite3_stmt *statement = nullptr;
+    const bool quick = sqlite3_prepare_v2(m_db, "PRAGMA quick_check(1)", -1, &statement, nullptr) == SQLITE_OK &&
+        sqlite3_step(statement) == SQLITE_ROW && sqlite3_column_text(statement, 0) &&
+        std::string(reinterpret_cast<const char *>(sqlite3_column_text(statement, 0))) == "ok";
+    sqlite3_finalize(statement);
+    statement = nullptr;
+    const bool references = sqlite3_prepare_v2(m_db, "PRAGMA foreign_key_check", -1, &statement, nullptr) == SQLITE_OK &&
+        sqlite3_step(statement) == SQLITE_DONE;
+    sqlite3_finalize(statement);
+    return quick && references;
+}
+
+std::vector<int> Database::invalidFeatureIds()
+{
+    std::vector<int> invalid;
+    sqlite3_stmt *statement = nullptr;
+    if (sqlite3_prepare_v2(m_db, "SELECT i.id,i.feature_version,i.avg_l,i.avg_a,i.avg_b,i.edge_density,"
+        "f.grid_lab,f.tiny,f.lbp FROM images i LEFT JOIN image_features f ON f.image_id=i.id ORDER BY i.id",
+        -1, &statement, nullptr) != SQLITE_OK)
+    {
+        throw std::runtime_error(sqlite3_errmsg(m_db));
+    }
+    const std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> guard(statement, sqlite3_finalize);
+    std::array<float, 192> grid{};
+    TextureFeatures texture;
+    int rc;
+    while ((rc = sqlite3_step(statement)) == SQLITE_ROW)
+    {
+        bool valid = sqlite3_column_int(statement, 1) == kFeatureVersion;
+        for (int column = 2; column <= 5; ++column)
+        {
+            const int type = sqlite3_column_type(statement, column);
+            valid = valid && (type == SQLITE_INTEGER || type == SQLITE_FLOAT) &&
+                std::isfinite(sqlite3_column_double(statement, column));
+        }
+        if (!valid || !decodeFeatureBlob(statement, 6, grid.data(), grid.size()) || !decodeTextures(statement, 7, texture))
+        {
+            invalid.push_back(sqlite3_column_int(statement, 0));
+        }
+    }
+    if (rc != SQLITE_DONE)
+    {
+        throw std::runtime_error(sqlite3_errmsg(m_db));
+    }
+    return invalid;
 }
 
 std::unordered_map<int, ImageColorOrder> Database::imageColorOrders()
@@ -527,14 +627,21 @@ bool Database::removeImages(const std::vector<int> &ids)
     {
         return false;
     }
-    bool ok = true;
-    // 记录及关联统计先在同一事务中提交，提交前不得删除磁盘特征。
+    sqlite3_stmt *statement = nullptr;
+    bool ok = sqlite3_prepare_v2(m_db, "DELETE FROM images WHERE id=?", -1, &statement, nullptr) == SQLITE_OK;
+    bool removed = false;
     for (int id : ids)
     {
-        ok = ok && exec("DELETE FROM usage_stats WHERE image_id=" + std::to_string(id)) &&
-             exec("DELETE FROM images WHERE id=" + std::to_string(id));
+        if (!ok || sqlite3_bind_int(statement, 1, id) != SQLITE_OK || sqlite3_step(statement) != SQLITE_DONE)
+        {
+            ok = false;
+            break;
+        }
+        removed = removed || sqlite3_changes(m_db) != 0;
+        ok = sqlite3_reset(statement) == SQLITE_OK;
     }
-    if (ok && exec("COMMIT"))
+    sqlite3_finalize(statement);
+    if (ok && (!removed || advanceRevisions(true)) && exec("COMMIT"))
     {
         return true;
     }
@@ -579,6 +686,7 @@ bool Database::readMatchingRows(std::vector<ImageRecord> &out, bool includeUseCo
     sqlite3_finalize(count);
     if (size < 0 || size >= std::numeric_limits<int>::max())
     {
+        m_error = "cannot count library image rows";
         return false;
     }
     bool valid = false;
@@ -599,155 +707,103 @@ std::vector<ImageRecord> Database::queryByLRange(double minL, double maxL, int l
 }
 
 std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit, bool *validated,
-                                             bool includeUseCounts, const RecordReadProgress &progress)
+                                             bool includeUseCounts, const RecordReadProgress &progress, bool withGrid)
 {
     std::vector<ImageRecord> results;
     if (!m_db)
     {
         return results;
     }
-
-    // 完整读接口仍返回归一化/分析元数据；匹配路径不从 SQLite 复制不用的列。
-    std::string sql = "SELECT id,file_path,file_hash,avg_l,avg_a,avg_b,grid_lab,"
-        "tiny_path,edge_density,lbp_path,feature_version";
-    if (includeUseCounts)
-    {
-        sql += ",use_count";
-    }
-    if (!validated)
-    {
-        sql += ",format,src_width,src_height,aspect_ratio,file_size,"
-            "mean_brightness,std_brightness,contrast,saturation,color_variance";
-    }
-    // 省略计数的路径读取全库；按主键直接扫表，避免亮度索引回表和临时排序。
-    sql += includeUseCounts
-        ? " FROM images WHERE avg_l BETWEEN ? AND ? ORDER BY use_count ASC LIMIT ?"
-        : " FROM images NOT INDEXED WHERE avg_l BETWEEN ? AND ? ORDER BY id ASC LIMIT ?";
-
-    sqlite3_stmt* stmt = nullptr;
+    std::string sql = "SELECT i.id,i.file_path,i.file_hash,i.avg_l,i.avg_a,i.avg_b,i.edge_density,i.feature_version";
+    sql += includeUseCounts ? ",i.use_count" : ",0";
+    sql += !validated ? ",i.format,i.src_width,i.src_height,i.aspect_ratio,i.file_size,i.mean_brightness,"
+                        "i.std_brightness,i.contrast,i.saturation,i.color_variance" : "";
+    sql += withGrid ? ",f.grid_lab FROM images i LEFT JOIN image_features f ON f.image_id=i.id" : " FROM images i";
+    sql += withGrid ? " WHERE i.avg_l BETWEEN ? AND ?" : "";
+    sql += includeUseCounts ? " ORDER BY i.use_count,i.id LIMIT ?" : " ORDER BY i.id LIMIT ?";
+    sqlite3_stmt *stmt = nullptr;
     if (sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
     {
-        return results;
+        return {};
     }
-    sqlite3_bind_double(stmt, 1, minL);
-    sqlite3_bind_double(stmt, 2, maxL);
-    sqlite3_bind_int(stmt, 3, limit);
-
-    // 每次查询只准备一次库根目录，记录读取只拼接资源路径。
+    const std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> guard(stmt, sqlite3_finalize);
+    if (withGrid)
+    {
+        sqlite3_bind_double(stmt, 1, minL);
+        sqlite3_bind_double(stmt, 2, maxL);
+    }
+    sqlite3_bind_int(stmt, withGrid ? 3 : 1, limit);
     const LibraryPaths paths(m_path);
-    std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> guard(stmt, sqlite3_finalize);
     if (validated)
     {
         results.reserve(static_cast<size_t>(limit - 1));
     }
-    // 每批约占全量记录的百分之一，限制通知次数并保留快速读取时的中间进度。
-    const auto progressBatch = static_cast<std::size_t>(std::max(1, limit / 100));
+    const auto progressBatch = static_cast<size_t>(std::max(1, limit / 100));
     int rc;
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW)
     {
-        if (validated && (sqlite3_column_type(stmt, 6) != SQLITE_BLOB || sqlite3_column_bytes(stmt, 6) != 768 ||
-                          sqlite3_column_type(stmt, 10) != SQLITE_INTEGER || sqlite3_column_int64(stmt, 10) != kFeatureVersion))
+        ImageRecord rec;
+        const auto text = [&](int column)
         {
+            const auto *value = reinterpret_cast<const char *>(sqlite3_column_text(stmt, column));
+            return value ? value : "";
+        };
+        rec.id = sqlite3_column_int(stmt, 0);
+        rec.filePath = text(1);
+        if (rec.filePath.empty() || !LibraryPaths::relative(rec.filePath))
+        {
+            m_error = "library_incompatible: invalid stored path for image " + std::to_string(rec.id);
             return {};
         }
-        ImageRecord rec;
-        int col = 0;
-
-        rec.id           = sqlite3_column_int(stmt, col++);
-        rec.filePath     = sqlite3_column_type(stmt, col) != SQLITE_NULL
-                           ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, col)) : "";
-        col++;
-        rec.fileHash     = sqlite3_column_type(stmt, col) != SQLITE_NULL
-                           ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, col)) : "";
-        col++;
-        rec.avgL         = sqlite3_column_double(stmt, col++);
-        // NULL 不能冒充合法的零色度，排序应在移动文件前报告损坏的均值。
-        auto average = [&]()
+        rec.filePath = paths.resolve(rec.filePath);
+        rec.fileHash = text(2);
+        const auto number = [&](int column)
         {
-            const double value = sqlite3_column_type(stmt, col) == SQLITE_NULL
-                ? std::numeric_limits<double>::quiet_NaN() : sqlite3_column_double(stmt, col);
-            ++col;
-            return value;
+            const auto type = sqlite3_column_type(stmt, column);
+            return type == SQLITE_INTEGER || type == SQLITE_FLOAT ? sqlite3_column_double(stmt, column)
+                : std::numeric_limits<double>::quiet_NaN();
         };
-        rec.avgA = average();
-        rec.avgB = average();
-
-        // grid_lab BLOB → std::vector<float>
-        if (sqlite3_column_type(stmt, col) != SQLITE_NULL)
-        {
-            int blobSize = sqlite3_column_bytes(stmt, col);
-            const float* blobData = static_cast<const float*>(
-                sqlite3_column_blob(stmt, col));
-            int numFloats = blobSize / static_cast<int>(sizeof(float));
-            rec.gridLab.resize(numFloats);
-            decodeFloats(reinterpret_cast<const uint8_t *>(blobData), rec.gridLab.data(), numFloats);
-        }
-        col++;
-
-        rec.tinyPath = sqlite3_column_type(stmt, col) != SQLITE_NULL
-                       ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, col)) : "";
-        col++;
-
-        rec.edgeDensity   = sqlite3_column_double(stmt, col++);
-
-        rec.lbpPath = sqlite3_column_type(stmt, col) != SQLITE_NULL
-                       ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, col)) : "";
-        col++;
-
-        rec.featureVersion = sqlite3_column_int(stmt, col++);
-        if (includeUseCounts)
-        {
-            rec.useCount = sqlite3_column_int(stmt, col++);
-        }
-
+        rec.avgL = number(3);
+        rec.avgA = number(4);
+        rec.avgB = number(5);
+        rec.edgeDensity = number(6);
+        rec.featureVersion = sqlite3_column_int(stmt, 7);
+        rec.useCount = sqlite3_column_int(stmt, 8);
         if (!validated)
         {
-            rec.format       = sqlite3_column_type(stmt, col) != SQLITE_NULL
-                               ? reinterpret_cast<const char*>(sqlite3_column_text(stmt, col)) : "";
-            col++;
-            rec.srcWidth     = sqlite3_column_int(stmt, col++);
-            rec.srcHeight    = sqlite3_column_int(stmt, col++);
-            rec.aspectRatio  = sqlite3_column_double(stmt, col++);
-            rec.fileSize     = sqlite3_column_int64(stmt, col++);
-
-            rec.meanBrightness = sqlite3_column_double(stmt, col++);
-            rec.stdBrightness  = sqlite3_column_double(stmt, col++);
-            rec.contrast       = sqlite3_column_double(stmt, col++);
-
-            rec.saturation     = sqlite3_column_double(stmt, col++);
-            rec.colorVariance  = sqlite3_column_double(stmt, col++);
+            rec.format = text(9);
+            rec.srcWidth = sqlite3_column_int(stmt, 10);
+            rec.srcHeight = sqlite3_column_int(stmt, 11);
+            rec.aspectRatio = sqlite3_column_double(stmt, 12);
+            rec.fileSize = sqlite3_column_int64(stmt, 13);
+            rec.meanBrightness = sqlite3_column_double(stmt, 14);
+            rec.stdBrightness = sqlite3_column_double(stmt, 15);
+            rec.contrast = sqlite3_column_double(stmt, 16);
+            rec.saturation = sqlite3_column_double(stmt, 17);
+            rec.colorVariance = sqlite3_column_double(stmt, 18);
         }
-        if (validated && (rec.filePath.empty() || !LibraryPaths::relative(rec.filePath) ||
-                          !LibraryPaths::relative(rec.tinyPath) || !LibraryPaths::relative(rec.lbpPath) ||
-                          !std::isfinite(rec.avgL) || !std::isfinite(rec.avgA) || !std::isfinite(rec.avgB) ||
-                          !std::all_of(rec.gridLab.begin(), rec.gridLab.end(), [](float value)
-                          {
-                              return std::isfinite(value);
-                          })))
+        if (withGrid)
         {
-            return {};
+            const int column = sqlite3_column_count(stmt) - 1;
+            rec.gridLab.resize(192);
+            bool scalars = rec.featureVersion == kFeatureVersion;
+            for (int i = 3; i <= 6; ++i)
+            {
+                const int type = sqlite3_column_type(stmt, i);
+                scalars = scalars && (type == SQLITE_FLOAT || type == SQLITE_INTEGER) && std::isfinite(sqlite3_column_double(stmt, i));
+            }
+            if (!scalars || !decodeFeatureBlob(stmt, column, rec.gridLab.data(), rec.gridLab.size()))
+            {
+                m_error = "library_incompatible: invalid Grid or scalar features for image " + std::to_string(rec.id);
+                return {};
+            }
         }
-        if (m_db)
-        {
-            rec.filePath = paths.resolve(rec.filePath);
-            rec.tinyPath = paths.resolve(rec.tinyPath);
-            rec.lbpPath = paths.resolve(rec.lbpPath);
-        }
-        if (MOSAICRAFT_TRIAL_LIBRARY_PATHS)
-        {
-            // 行已完整解码；移交路径与 Grid 存储，不再复制同一条记录。
-            results.emplace_back(std::move(rec));
-        }
-        else
-        {
-            results.push_back(rec);
-        }
+        results.emplace_back(std::move(rec));
         if (progress && results.size() % progressBatch == 0)
         {
             progress(results.size());
         }
     }
-
     if (progress && rc == SQLITE_DONE && results.size() % progressBatch != 0)
     {
         progress(results.size());
@@ -756,7 +812,7 @@ std::vector<ImageRecord> Database::readRange(double minL, double maxL, int limit
     {
         *validated = rc == SQLITE_DONE;
     }
-    return results;
+    return rc == SQLITE_DONE ? std::move(results) : std::vector<ImageRecord>{};
 }
 
 std::vector<int> Database::queryIdsByLRange(double minL, double maxL, int limit,
@@ -868,16 +924,8 @@ bool Database::recordRunUsage(const std::unordered_map<int, int> &imageUseCount,
         return false;
     }
 
-    // 旧库没有素材与目标的对应关系。仅增加新关系，保留旧计数和已累计的格数。
     const bool wrote = [&]()
     {
-        if (!exec("CREATE TABLE IF NOT EXISTS image_target_runs ("
-                  "image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE, "
-                  "target_hash TEXT NOT NULL REFERENCES target_runs(target_hash), "
-                  "PRIMARY KEY(image_id, target_hash)) WITHOUT ROWID"))
-        {
-            return false;
-        }
         const auto prepare = [&](const char *sql)
         {
             sqlite3_stmt *statement = nullptr;
@@ -929,19 +977,9 @@ std::vector<std::tuple<int, int, int>> Database::topUsedImages(int limit, bool s
     {
         return result;
     }
-    bool tracksTargets = false;
-    const auto markFound = [](void *data, int, char **, char **)
-    {
-        *static_cast<bool *>(data) = true;
-        return 0;
-    };
-    // 读旧库不能隐式建表；探测与查询共享快照，避免并发首次写入时读到混合口径。
-    const auto found = sqlite3_exec(m_db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='image_target_runs'",
-                                    markFound, &tracksTargets, nullptr);
-    const auto runs = tracksTargets ? "(SELECT count(*) FROM image_target_runs WHERE image_id=usage_stats.image_id)"
-                                    : "0";
-    const std::string sql = std::string("SELECT usage_stats.image_id, ") + runs + " AS tracked_runs,total_tiles "
-                            "FROM usage_stats JOIN images ON images.id=usage_stats.image_id ORDER BY " +
+    const std::string sql = std::string("SELECT usage_stats.image_id, (SELECT count(*) FROM image_target_runs "
+                            "WHERE image_id=usage_stats.image_id) AS tracked_runs,total_tiles "
+                            "FROM usage_stats JOIN images ON images.id=usage_stats.image_id ORDER BY " ) +
                             (sortByTiles ? "total_tiles DESC, tracked_runs DESC" : "tracked_runs DESC, total_tiles DESC") +
                             ", usage_stats.image_id ASC" + (limit > 0 ? " LIMIT " + std::to_string(limit) : "");
     const auto append = [](void *data, int, char **values, char **)
@@ -950,7 +988,7 @@ std::vector<std::tuple<int, int, int>> Database::topUsedImages(int limit, bool s
         rows.emplace_back(std::atoi(values[0]), std::atoi(values[1]), values[2] ? std::atoi(values[2]) : 0);
         return 0;
     };
-    if (found != SQLITE_OK || sqlite3_exec(m_db, sql.c_str(), append, &result, nullptr) != SQLITE_OK || !commitTransaction())
+    if (sqlite3_exec(m_db, sql.c_str(), append, &result, nullptr) != SQLITE_OK || !commitTransaction())
     {
         rollbackTransaction();
         result.clear();

@@ -76,8 +76,7 @@ def prepare(args):
                                      platform=platform.platform(), python=sys.version, python_opencv=cv2.__version__),
                     script_sha256=digest(__file__),
                     memory_metric="PeakWorkingSet; GPU sampling covers the whole device, not this process alone")
-    with (root / "prepare.log").open("w", encoding="utf-8") as log:
-        subprocess.run([str(args.quality), "--prepare-cache", str(snapshot)], stdout=log, stderr=log, check=True)
+
     save(path, manifest)
     return manifest
 
@@ -322,8 +321,7 @@ def synthetic(args, original):
                 scarce3=db.execute("SELECT COUNT(*) FROM images WHERE avg_l BETWEEN 253 AND 257").fetchone()[0])
         if manifest["brightness_eligible"] != dict(scarce2=2, scarce3=3):
             raise RuntimeError("Synthetic fixture did not retain the intended scarce candidate counts")
-        with (root / "prepare.log").open("w", encoding="utf-8") as log:
-            subprocess.run([str(args.quality), "--prepare-cache", str(snapshot)], stdout=log, stderr=log, check=True)
+
         save(manifest_path, manifest)
     results = []
     for case in manifest["cases"]:

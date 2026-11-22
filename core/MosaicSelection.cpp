@@ -219,33 +219,21 @@ uint64_t previewFileVersion(const std::vector<unsigned char> &bytes)
     return version.value();
 }
 
-uint64_t previewLibraryVersion(const std::vector<ImageRecord> &records, int width, int height,
-                               bool includeUseCounts)
+uint64_t previewLibraryVersion(const std::string &assetKey, const std::vector<ImageRecord> &records,
+                               int width, int height, bool includeUseCounts)
 {
     Fingerprint version;
+    version.add(assetKey);
     version.add(width);
     version.add(height);
-    version.add(records.size());
-    // 绑定实际记录顺序，避免库重建后复用旧下标；区分含历史计数与省略计数的预览缓存。
     version.add(includeUseCounts);
-    for (const auto &record : records)
+    if (includeUseCounts)
     {
-        version.add(record.id);
-        version.add(record.filePath);
-        version.add(record.fileHash);
-        version.add(record.featureVersion);
-        if (includeUseCounts)
+        for (const auto &record : records)
         {
+            version.add(record.id);
             version.add(record.useCount);
         }
-        version.add(record.avgL);
-        version.add(record.avgA);
-        version.add(record.avgB);
-        version.add(record.edgeDensity);
-        version.add(record.gridLab.size());
-        version.add(record.gridLab.data(), record.gridLab.size() * sizeof(float));
-        version.add(record.tinyPath);
-        version.add(record.lbpPath);
     }
     return version.value();
 }

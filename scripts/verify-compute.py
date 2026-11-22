@@ -48,7 +48,6 @@ def main():
     source = Path(specification["source"]).resolve()
     source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
     snapshot, count = private_library(source, root / "library", options.performance)
-    run([options.quality.resolve(), "--prepare-cache", snapshot], root / "prepare-cache.log")
     with readonly_database(source) as original:
         usage = dict(original.execute("SELECT id,use_count FROM images"))
     with readonly_database(snapshot) as database:

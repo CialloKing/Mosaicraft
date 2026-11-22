@@ -21,7 +21,7 @@ inline float weightedFastScore(const MatchingBuffers &tiles, size_t tile, const 
 
 // 这是自定义尺寸原 CPU 表达式。顺序决定舍入和平分结果，不能重排成点积或融合乘加。
 inline double cpuBaseScore(const MatchingBuffers &tiles, size_t tile, const ImageRecord &record,
-                           const FeaturePack::Reader::Row &features, double usePenalty)
+                           const LibraryFeatureStore::Reader::Row &features, double usePenalty)
 {
     const double lab = tiles.labW[tile] *
         labDistance(tiles.l[tile], tiles.a[tile], tiles.b[tile], record.avgL, record.avgA, record.avgB);

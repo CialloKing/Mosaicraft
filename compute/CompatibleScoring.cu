@@ -291,7 +291,7 @@ const char *CompatibleScoreWorkspace::preparationFailure() const
     return m_failure;
 }
 
-void CompatibleScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &records, FeaturePack::Reader &reader,
+void CompatibleScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &records, LibraryFeatureStore::Reader &reader,
                                              GpuTimings *timings)
 {
     if (!m_impl || m_impl->failed || records.size() != size_t(m_impl->library.count))
@@ -304,12 +304,12 @@ void CompatibleScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &rec
     StreamDrain drain(p.transfer.stream);
     try
     {
-        for (int first = 0; first < p.library.count; first += p.chunk)
+        const int chunk = static_cast<int>(std::min<size_t>(p.chunk, reader.capacity()));
+        for (int first = 0; first < p.library.count; first += chunk)
         {
-            const int count = std::min(p.chunk, p.library.count - first);
+            const int count = std::min(chunk, p.library.count - first);
             p.needed.resize(count);
             std::iota(p.needed.begin(), p.needed.end(), first);
-            // 批量来源校验会复用目录/卷元数据采样；逐行 get 会退化为重复文件系统查询。
             reader.prepare(p.needed);
             auto host = libraryLayout(p.staging.get(), count);
             for (int i = 0; i < count; ++i)

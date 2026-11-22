@@ -73,16 +73,21 @@ ServiceResult measureMosaicCoverage(const MosaicRequest &request, MosaicCoverage
 }
 
 ServiceResult browseLibrary(const std::string &dbPath, const std::string &sort, int anchor, LibraryBrowser &browser)
+try
 {
     Database db(resolveDbPathForService(dbPath), Database::OpenMode::ReadOnly);
     if (!db.isOpen())
     {
         return ServiceResult::failure(2, db.error(), db.errorCode(), "dbPath");
     }
-    const auto records = db.allRecords();
+    const auto records = sort == "similarity" ? db.allRecords() : db.metadataRecords();
+    if (records.size() != static_cast<size_t>(db.totalCount()))
+    {
+        return ServiceResult::failure(2, db.error(), db.errorCode(), "dbPath");
+    }
     int width = 0, height = 0;
     readLibraryDimensions(db, width, height);
-    browser.version = previewLibraryVersion(records, width, height);
+    browser.version = previewLibraryVersion(db.assetKey(), records, width, height);
     std::vector<int> order(records.size());
     std::iota(order.begin(), order.end(), 0);
     if (sort == "similarity")
@@ -95,13 +100,13 @@ ServiceResult browseLibrary(const std::string &dbPath, const std::string &sort, 
         {
             return ServiceResult::failure(1, "select a library image as the reference", "invalid_argument", "anchor");
         }
-        const auto featureDir = pathToUtf8(u8path(found->tinyPath).parent_path());
+        const auto featureDir = pathToUtf8(u8path(db.path()).parent_path() / "index");
         FeatureIndex index;
         if (!index.load(featureDir + "/lib.ann196", FeatureIndex::kDimension, records) && !index.build(records))
         {
             return ServiceResult::failure(2, "cannot prepare similarity candidates", "library_unavailable");
         }
-        FeaturePack::Reader reader(featureDir, records, 32ULL * 1024 * 1024);
+        LibraryFeatureStore::Reader reader(db, records, 32ULL * 1024 * 1024);
         const auto row = reader.get(static_cast<int>(found - records.begin()));
         std::vector<float> query;
         buildTileVector(found->avgL, found->avgA, found->avgB, found->gridLab, row.tiny, found->edgeDensity, row.lbp, query);
@@ -114,12 +119,13 @@ ServiceResult browseLibrary(const std::string &dbPath, const std::string &sort, 
                 order.push_back(position);
             }
         }
-        for (int position : order)
+        reader.scoreBatches(order.data(), order.size(), false,
+            [&](size_t, int position, const LibraryFeatureStore::Reader::Row &candidate)
         {
             const auto &record = records[position];
             browser.distances[record.id] = inspectionScore(featureDistances(found->avgL, found->avgA, found->avgB,
-                found->gridLab, found->edgeDensity, row, record, reader.get(position)), {});
-        }
+                found->gridLab, found->edgeDensity, row, record, candidate), {});
+        });
         std::sort(order.begin(), order.end(), [&](int left, int right)
         {
             return std::make_pair(browser.distances.at(records[left].id), records[left].id) <
@@ -167,5 +173,9 @@ ServiceResult browseLibrary(const std::string &dbPath, const std::string &sort, 
         browser.ordered.push_back({record.id, position, pathToUtf8(u8path(record.filePath).filename()), record.filePath, record.fileHash});
     }
     return ServiceResult::success();
+}
+catch (const InvalidLibraryFeatures &error)
+{
+    return ServiceResult::failure(2, error.what(), "library_incompatible", "dbPath");
 }
 } // namespace mosaicraft

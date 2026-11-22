@@ -166,9 +166,8 @@ void reportMosaicBenchmark(const MosaicMetrics &metrics, const MosaicBenchmarkCo
               << "  Feature cache hits: " << metrics.featureReadStats.hits << "\n"
               << "  Feature source reads: " << metrics.featureReadStats.sourceReads << "\n"
               << "  Feature cache evictions: " << metrics.featureReadStats.evictions << "\n"
-              << "  Feature cache preloaded: " << metrics.featureReadStats.preloaded << "\n";
-    std::cout << "  Library feature source reads: " << metrics.libraryReadStats.sourceReads << "\n"
-              << "  Library feature pack hits: " << metrics.libraryReadStats.packedRows << "\n";
+              << "  Feature cache reused: " << metrics.featureReadStats.sessionHit << "\n";
+    std::cout << "  Library feature source reads: " << metrics.libraryReadStats.sourceReads << "\n";
     std::cout << "  === Total: " << context.totalMs << " ms ===\n";
     if (context.totalTiles > 0)
     {

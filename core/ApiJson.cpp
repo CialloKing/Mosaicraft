@@ -464,9 +464,7 @@ nlohmann::json databasePurgeToJson(const DatabasePurge& purge)
     for (const auto& item : purge.orphanPreview) {
         orphans.push_back({
             {"id", item.id},
-            {"filePath", item.filePath},
-            {"tinyPath", item.tinyPath},
-            {"lbpPath", item.lbpPath}
+            {"filePath", item.filePath}
         });
     }
     return {
@@ -590,7 +588,6 @@ nlohmann::json apiInfoToJson(const char* entryName)
              {{"library", kLibraryVersion},
               {"feature", kFeatureVersion},
               {"ann", kAnnVersion},
-              {"featurePack", kFeaturePackVersion},
               {"colorOrder", kColorOrderVersion},
               {"journal", kJournalVersion},
               {"studySchema", kStudySchemaVersion},

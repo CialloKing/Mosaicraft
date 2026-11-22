@@ -1,8 +1,6 @@
 #include "DatabaseService.h"
 
 #include "Database.h"
-#include "FeatureIO.h"
-#include "FeaturePack.h"
 #include "LibraryInspection.h"
 #include "LibraryVisuals.h"
 #include "MosaicService.h"
@@ -112,8 +110,33 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
         out.status = ServiceResult::failure(2, db.error(), db.errorCode(), "dbPath");
         return out;
     }
-    auto all = db.allRecords();
+    auto all = db.metadataRecords();
     out.health.total = static_cast<int>(all.size());
+    if (out.health.total != db.totalCount())
+    {
+        out.status = ServiceResult::failure(2, "cannot read all library metadata", "library_incompatible", "dbPath");
+        return out;
+    }
+    std::vector<int> invalid;
+    try
+    {
+        invalid = db.invalidFeatureIds();
+    }
+    catch (const std::exception &error)
+    {
+        out.status = ServiceResult::failure(2, error.what(), "library_incompatible", "dbPath");
+        return out;
+    }
+    out.health.invalidFeatures = static_cast<int>(invalid.size());
+    for (size_t i = 0; i < std::min<size_t>(invalid.size(), 50); ++i)
+    {
+        out.health.warnings.push_back("Invalid features for image " + std::to_string(invalid[i]));
+    }
+    if (!db.checkIntegrity())
+    {
+        out.status = ServiceResult::failure(2, "SQLite integrity or foreign key check failed", "library_incompatible", "dbPath");
+        return out;
+    }
     out.health.empty = out.health.total == 0;
     if (out.health.empty)
     {
@@ -133,14 +156,6 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
         else if (status == LibraryFileState::Unreadable)
         {
             ++out.health.unreadableFiles;
-        }
-        std::array<uint8_t, 256> tiny{};
-        std::array<float, 256> lbp{};
-        if (r.gridLab.size() != 192 ||
-            !readFeature(r.tinyPath, FeatureKind::Tiny, tiny.data()) ||
-            !readFeature(r.lbpPath, FeatureKind::Lbp, lbp.data()))
-        {
-            ++out.health.invalidFeatures;
         }
         if (request.deep && status == LibraryFileState::Available)
         {
@@ -258,7 +273,7 @@ DatabaseUsageResult DatabaseService::usage(const DatabaseUsageRequest& request) 
         return out;
     }
 
-    auto all = db.allRecords();
+    auto all = db.metadataRecords();
     out.usage.total = static_cast<int>(all.size());
     auto top = db.topUsedImages(request.limit, request.sortByTiles);
     out.usage.empty = top.empty();
@@ -312,7 +327,7 @@ DatabaseUsageExportResult DatabaseService::exportUsage(const DatabaseUsageExport
         return out;
     }
 
-    auto allRecs = db.allRecords();
+    auto allRecs = db.metadataRecords();
     std::unordered_map<int, std::string> pathMap;
     for (const auto& rec : allRecs)
     {
@@ -429,7 +444,7 @@ DatabasePurgeResult DatabaseService::purge(const DatabasePurgeRequest& request) 
         return out;
     }
 
-    auto all = db.allRecords();
+    auto all = db.metadataRecords();
     out.purge.total = static_cast<int>(all.size());
 
     std::vector<OrphanRecord> orphans;
@@ -437,7 +452,7 @@ DatabasePurgeResult DatabaseService::purge(const DatabasePurgeRequest& request) 
     {
         if (inspectLibraryFile(rec.filePath) == LibraryFileState::Missing)
         {
-            orphans.push_back({rec.id, rec.filePath, rec.tinyPath, rec.lbpPath});
+            orphans.push_back({rec.id, rec.filePath});
         }
     }
 
@@ -479,25 +494,6 @@ DatabasePurgeResult DatabaseService::purge(const DatabasePurgeRequest& request) 
         return out;
     }
     out.purge.removedCount = static_cast<int>(ids.size());
-    std::unordered_set<std::string> referenced;
-    for (const auto &record : db.allRecords())
-    {
-        referenced.insert(record.tinyPath);
-        referenced.insert(record.lbpPath);
-    }
-    for (const auto &orphan : orphans)
-    {
-        for (const auto &path : {orphan.tinyPath, orphan.lbpPath})
-        {
-            if (!path.empty() && !referenced.count(path))
-            {
-                std::error_code error;
-                std::filesystem::remove(u8path(path), error);
-            }
-        }
-    }
-    // 缓存的内容指纹已随记录变更失效；仅移除无引用的旧代，不删除有效源特征。
-    FeaturePack::removeObsolete(pathToUtf8(u8path(db.path()).parent_path() / "features"));
     if (out.purge.failedCount > 0)
     {
         out.status = ServiceResult::failure(1, "purge completed with errors");

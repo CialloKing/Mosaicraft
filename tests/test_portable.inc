@@ -122,7 +122,6 @@ TEST_CASE("portable FP32 reference retains missing feature penalties")
         records[i].gridLab.assign(192, 17.25f);
         records[i].useCount = 123456789;
     }
-    FeaturePack::Reader reader(".", records);
     MatchingBuffers tiles;
     tiles.resize(1, 0, 4, false, false);
     tiles.l[0] = 121.987654321;
@@ -131,11 +130,10 @@ TEST_CASE("portable FP32 reference retains missing feature penalties")
     tiles.tinyW[0] = 0.25;
     tiles.edgeW[0] = tiles.lbpW[0] = 0.05;
     tiles.indices = {0, 1, -1, 2};
-    CHECK_THROWS(reader.get(0));
-    const auto distances = compute::fp32Distances(tiles, 0, records[0], FeaturePack::Reader::Row{});
+    const auto distances = compute::fp32Distances(tiles, 0, records[0], LibraryFeatureStore::Reader::Row{});
     CHECK(distances[2] == 1.0f);
     CHECK(distances[4] == 1.0f);
-    FeaturePack::Reader::Row row;
+    LibraryFeatureStore::Reader::Row row;
     row.tinyValid = row.lbpValid = true;
     for (int i = 0; i < 256; ++i)
     {

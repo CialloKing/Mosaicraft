@@ -1,4 +1,5 @@
 #include "LibraryCatalog.h"
+#include "../core/LibrarySchemaCheck.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -13,6 +14,29 @@ namespace
 {
 QString readDatabase(QSqlDatabase &database, LibraryCatalog &catalog)
 {
+    const auto incompatible = QCoreApplication::translate("LibraryCatalog", "不支持此图库结构。请在新目录重建图库。");
+    const QFileInfo wal(catalog.databasePath + "-wal");
+    if (!wal.exists() && !wal.isSymLink())
+    {
+        // 无 WAL 时用只读结构探测避免为被拒绝的图库创建 SQLite 辅助文件。
+        database.setConnectOptions("QSQLITE_OPEN_READONLY;QSQLITE_OPEN_URI");
+        database.setDatabaseName(QString::fromStdString(mosaicraft::immutableLibraryUri(
+            QDir::fromNativeSeparators(catalog.databasePath).toStdString())));
+        if (!database.open())
+        {
+            return database.lastError().text();
+        }
+        bool valid;
+        {
+            QSqlQuery probe(database);
+            valid = probe.exec(mosaicraft::featureSchemaProbe);
+        }
+        database.close();
+        if (!valid)
+        {
+            return incompatible;
+        }
+    }
     database.setConnectOptions("QSQLITE_OPEN_READONLY;QSQLITE_BUSY_TIMEOUT=1500");
     database.setDatabaseName(catalog.databasePath);
     if (!database.open())
@@ -22,9 +46,10 @@ QString readDatabase(QSqlDatabase &database, LibraryCatalog &catalog)
 
     QSqlQuery query(database);
     query.setForwardOnly(true);
-    if (!query.exec("PRAGMA user_version") || !query.next() || query.value(0).toInt() != MOSAICRAFT_LIBRARY_VERSION)
+    if (!query.exec("PRAGMA user_version") || !query.next() || query.value(0).toInt() != MOSAICRAFT_LIBRARY_VERSION ||
+        !query.exec(mosaicraft::featureSchemaProbe))
     {
-        return QCoreApplication::translate("LibraryCatalog", "不支持此图库版本。请选择由当前版本创建的图库。");
+        return incompatible;
     }
     if (!query.exec("SELECT key, value FROM meta WHERE key IN ('feature_w', 'feature_h')"))
     {

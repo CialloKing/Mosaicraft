@@ -10,5 +10,6 @@ struct TextureFeatures
 {
     std::array<uint8_t, 256> tiny{};
     std::array<float, 256> lbp{};
+    bool tinyValid = false, lbpValid = false;
 };
 }

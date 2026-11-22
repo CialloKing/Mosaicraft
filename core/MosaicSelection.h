@@ -125,6 +125,7 @@ struct PreviewWorkspace
     std::shared_ptr<FeatureIndex> index;
     std::shared_ptr<const PreviewCatalog> catalog;
     uint64_t libraryVersion = 0;
+    std::string libraryFeatureKey;
     std::unique_ptr<PreviewCacheRows<int>> candidates;
     std::string tileFeatureKey, scoreKey;
     std::unique_ptr<PreviewCacheRows<PreviewTileFeatures>> tileFeatures;
@@ -132,7 +133,7 @@ struct PreviewWorkspace
 };
 
 uint64_t previewFileVersion(const std::vector<unsigned char> &bytes);
-uint64_t previewLibraryVersion(const std::vector<ImageRecord> &records, int width, int height,
+uint64_t previewLibraryVersion(const std::string &assetKey, const std::vector<ImageRecord> &records, int width, int height,
                                bool includeUseCounts = true);
 PreviewAsset previewAsset(const ImageRecord &record);
 PreviewAsset previewAsset(const PreviewCatalogEntry &entry);

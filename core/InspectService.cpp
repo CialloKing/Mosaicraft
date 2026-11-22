@@ -61,7 +61,7 @@ InspectResult InspectService::inspect(const InspectRequest& request) const
         auto candidates = db.queryIdsByLRange(out.candidateMinL, out.candidateMaxL, 200, false);
         out.candidateCount = static_cast<int>(candidates.size());
 
-        auto all = db.allRecords();
+        auto all = db.metadataRecords();
         if (!all.empty())
         {
             out.libraryMinL = 255.0;

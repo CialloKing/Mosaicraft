@@ -115,7 +115,6 @@ def prepare(args):
                     flags=STUDY_FLAGS,
                     memory_metric="Windows process peak working set; sampled total GPU device usage, not per-process VRAM")
     save(manifest_path, manifest)
-    subprocess.run([str(args.quality.resolve()), "--prepare-cache", str(snapshot)], check=True)
     return manifest
 
 

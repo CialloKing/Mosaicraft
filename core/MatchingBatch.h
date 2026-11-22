@@ -1,6 +1,6 @@
 #pragma once
 #include "FeatureMatrix.h"
-#include "FeaturePack.h"
+#include "LibraryFeatureStore.h"
 #include "compute/CudaBackend.h"
 #include <algorithm>
 #include <limits>
@@ -64,10 +64,10 @@ inline size_t matchingBatchRows(const MatchingLimits &limits, int width, int hei
         throw std::overflow_error("matching buffer size overflow");
     }
     size_t rows = std::min(limits.maxTiles, std::max<size_t>(1, limits.hostBytes / (rgb + fixed + candidateBytes)));
-    if (!gpu && libraryCount > limits.featureBytes / sizeof(FeaturePack::Reader::Row))
+    if (!gpu && libraryCount > limits.featureBytes / LibraryFeatureStore::Reader::rowBytes)
     {
         // 大库按批次固定候选缓存；最坏情况下每个 tile 的候选都互不相同。
-        rows = std::min(rows, std::max<size_t>(1, limits.featureBytes / sizeof(FeaturePack::Reader::Row) /
+        rows = std::min(rows, std::max<size_t>(1, limits.featureBytes / LibraryFeatureStore::Reader::rowBytes /
                                                       std::min<size_t>(libraryCount, candidates)));
     }
     return rows;

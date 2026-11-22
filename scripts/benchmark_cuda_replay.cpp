@@ -1,7 +1,7 @@
 #include "core/Database.h"
 #include "core/FeatureIndex.h"
 #include "core/FeatureMatrix.h"
-#include "core/FeaturePack.h"
+#include "core/LibraryFeatureStore.h"
 #include "core/GridDuplicateCache.h"
 #include "core/MosaicEngine.h"
 #include "core/UnicodeIO.h"
@@ -38,9 +38,9 @@ int main(int argc, char **argv)
     {
         return 1;
     }
-    const auto directory = pathToUtf8(u8path(records.front().tinyPath).parent_path());
     FeatureIndex index;
-    if (!index.load(directory + "/lib.ann196", FeatureIndex::kDimension, records))
+    const auto ann = u8path(db.path()).parent_path() / "index" / "lib.ann196";
+    if (!index.load(pathToUtf8(ann), FeatureIndex::kDimension, records))
     {
         return 1;
     }
@@ -105,7 +105,7 @@ int main(int argc, char **argv)
         libraryEdge[i] = records[i].edgeDensity;
         use[i] = records[i].useCount;
     }
-    if (!FeaturePack::load(directory, records, needed, libraryTiny, libraryLbp, tinyValid, lbpValid))
+    if (!LibraryFeatureStore::load(db, records, needed, libraryTiny, libraryLbp, tinyValid, lbpValid))
     {
         return 1;
     }

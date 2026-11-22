@@ -1,17 +1,10 @@
 #include "FeatureExtractor.h"
 #include "FeatureUtils.h"
-#include "FeatureIO.h"
 #include "Version.h"
-#include "UnicodeIO.h"
 
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
-#include <cstdint>
-#include <cstring>
-#include <fstream>
-#include <string>
-#include <stdexcept>
 #include <vector>
 
 namespace mosaicraft
@@ -58,20 +51,6 @@ void FeatureExtractor::computeStatistics(const cv::Mat& bgr, ImageRecord& rec,
     rec.edgeDensity = computeEdgeDensityFromGray(gray);
 }
 
-void FeatureExtractor::compute(const cv::Mat& bgr,
-                                ImageRecord& rec,
-                                const std::string& featDir,
-                                const std::string& baseName)
-{
-    TextureFeatures texture;
-    const bool store = !featDir.empty() && !baseName.empty();
-    compute(bgr, rec, store ? &texture : nullptr);
-    if (store)
-    {
-        saveFeatures(rec, featDir, baseName, texture.tiny.data(), texture.lbp.data());
-    }
-}
-
 void FeatureExtractor::compute(const cv::Mat &bgr, ImageRecord &rec, TextureFeatures *texture)
 {
     // ——— V1：全局 AvgLAB + 亮度 ———
@@ -101,21 +80,6 @@ void FeatureExtractor::compute(const cv::Mat &bgr, ImageRecord &rec, TextureFeat
     }
 
     rec.featureVersion = featureVersion();
-}
-
-void FeatureExtractor::saveFeatures(ImageRecord &record, const std::string &directory,
-                                     const std::string &stem, const uint8_t *tiny, const float *lbp)
-{
-    if (directory.empty() || stem.empty())
-    {
-        return;
-    }
-    const std::string tinyPath = directory + "/" + stem + ".tiny";
-    const std::string histogramPath = directory + "/" + stem + ".lbp";
-    writeFeature(tinyPath, FeatureKind::Tiny, tiny);
-    writeFeature(histogramPath, FeatureKind::Lbp, lbp);
-    record.tinyPath = tinyPath;
-    record.lbpPath = histogramPath;
 }
 
 } // namespace mosaicraft

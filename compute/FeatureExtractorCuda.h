@@ -20,12 +20,11 @@ namespace cuda
 // images:           [batchSize] 张 BGR 归一化图，尺寸必须一致且在模板尺寸名单中
 // records:          [batchSize] 输出，各字段被填充（grid_lab, avgL/A/B,
 //                   meanBrightness, stdBrightness, contrast, saturation,
-//                   colorVariance, edgeDensity, LBP, tinyPath, featureVersion）
-// featDir, stems:   [batchSize] 特征文件目录和文件名前缀
+//                   colorVariance, edgeDensity, featureVersion）
+// textures:        [batchSize] 主机端纹理输出，存储由建库事务负责。
 //
 // 返回成功处理的数量。
-int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &records, const std::string &featDir,
-                 const std::vector<std::string> &stems, FeatureWorkspace *workspace = nullptr);
+int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &records, std::vector<TextureFeatures> &textures, FeatureWorkspace *workspace = nullptr);
 
 } // namespace cuda
 } // namespace mosaicraft
