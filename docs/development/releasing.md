@@ -49,10 +49,10 @@ Windows/Linux x64 正式 Vulkan 包启用 Vulkan → CPU，并在独立无驱动
 cmake -S tools/release-check -B build/check-tool -DCMAKE_BUILD_TYPE=Release
 cmake --build build/check-tool --config Release
 cmake -DARCHIVE=<archive> -DEXPECTED_SHA256=<sha256> -DEXPECTED_COMMIT=<commit> -DCHECK_TOOL=<native-check> -P cmake/VerifyPackage.cmake
-cmake -DTAG=v1.15.10 -DASSET=<release-asset-name> -DCHECK_TOOL=<native-check> -P cmake/VerifyPackage.cmake
+cmake "-DTAG=v1.15.10" -DASSET=<release-asset-name> -DCHECK_TOOL=<native-check> -P cmake/VerifyPackage.cmake
 ```
 
-本地模式不联网，SHA256 应取自信任的旁文件或发布记录，提交来自对应的构建记录或版本标签。标签模式使用 `gh` 获取发布附件及摘要、解析标签提交。两种方式都在隔离的中文及空格目录内执行 CLI 和 Web UI/API 验收；正式 Vulkan 会隐藏 ICD 验证回退。从 Actions 下载的目录也可以用 `-DARCHIVE_DIR=<目录>` 自动读取唯一归档和同名 `.sha256`。
+本地模式不联网，SHA256 应取自信任的旁文件或发布记录，提交来自对应的构建记录或版本标签。标签模式使用 `gh` 获取发布附件及摘要、解析标签提交。两种方式都在隔离的中文及空格目录内执行 CLI 和 Web UI/API 验收；尚未提供 `contracts.json` 的 v1.14.7–v1.14.11 使用旧版 CLI 命令与 API 连通性检查；正式 Vulkan 会隐藏 ICD 验证回退。从 Actions 下载的目录也可以用 `-DARCHIVE_DIR=<目录>` 自动读取唯一归档和同名 `.sha256`。
 
 ## 发布与复核
 

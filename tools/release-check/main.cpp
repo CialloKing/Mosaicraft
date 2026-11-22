@@ -626,7 +626,9 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
 
 int smoke(const fs::path &exe, const fs::path &contractsFile, bool vulkanFallback, bool current)
 {
-    const auto contracts = Json::parse(read(contractsFile));
+    const bool legacy = contractsFile == "--legacy";
+    require(!legacy || (!vulkanFallback && !current), "Legacy archives cannot use current smoke options");
+    const auto contracts = legacy ? Json::object() : Json::parse(read(contractsFile));
     std::random_device random;
     const auto root = fs::temp_directory_path() /
                       fs::u8path(u8"mosaicraft \u4e2d\u6587 smoke " + std::to_string(random()) + "-" + std::to_string(random()));
@@ -638,7 +640,21 @@ int smoke(const fs::path &exe, const fs::path &contractsFile, bool vulkanFallbac
         ServerProcess process(fs::absolute(exe), root, log, port);
         Api api(port);
         api.wait(process);
-        scenarios(api, root, contracts, vulkanFallback, current);
+        if (legacy)
+        {
+            // v1.14.x exposes the structured API but predates the portable-project contract.
+            const auto page = api.request("GET", "/");
+            require(page.status == 200 && page.body.find("<!DOCTYPE html>") != std::string::npos,
+                    "Missing installed legacy Web UI HTML document");
+            api.json("/api/ping");
+            const auto info = api.json("/api/info").at("info").at("api");
+            require(info.at("structured") == true && info.at("contractMajorVersion") == 2,
+                    "Unexpected legacy API contract");
+        }
+        else
+        {
+            scenarios(api, root, contracts, vulkanFallback, current);
+        }
     }
     catch (...)
     {
@@ -669,7 +685,7 @@ int main(int argc, char **argv)
             return checkDocs(fs::path(argv[2]));
         }
         require(argc >= 3 && argc <= 5,
-                "Usage: mosaicraft_release_check <WebUI> <contracts.json> [--vulkan-fallback] [--current]");
+                "Usage: mosaicraft_release_check <WebUI> <contracts.json|--legacy> [--vulkan-fallback] [--current]");
         bool vulkanFallback = false, current = false;
         for (int i = 3; i < argc; ++i)
         {
