@@ -8,6 +8,10 @@ on:
         description: Build only CUDA + Vulkan Qt packages from this existing release tag (no publishing)
         required: false
         type: string
+      include_native_cuda:
+        description: Also rebuild native CUDA packages when supplementing a release tag
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -92,8 +96,12 @@ jobs:
           gpu-validation: ${{ matrix.runtime == 'vulkan' && 'not-run' || 'not-applicable' }}
           channel: stable
   cuda-package:
-    if: ${{ !inputs.desktop_release_tag }}
+    if: ${{ !inputs.desktop_release_tag || inputs.include_native_cuda }}
     name: Package ${{ matrix.platform }} CUDA
+    outputs:
+      source-commit: ${{ steps.product.outputs.commit || github.sha }}
+    env:
+      PACKAGE_SOURCE: ${{ inputs.desktop_release_tag && 'build/package-source' || '.' }}
     strategy:
       fail-fast: false
       matrix:
@@ -110,14 +118,29 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Keep the tag immutable: only SDK preparation comes from the workflow revision.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: product
+        if: inputs.desktop_release_tag
+        with:
+          ref: ${{ format('refs/tags/{0}', inputs.desktop_release_tag) }}
+          path: build/package-source
+          persist-credentials: false
+      - name: Check source version before packaging
+        if: inputs.desktop_release_tag
+        env:
+          SOURCE_TAG: ${{ inputs.desktop_release_tag }}
+        run: '[[ "$SOURCE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "$SOURCE_TAG" == "v$(jq -r .softwareVersion "$PACKAGE_SOURCE/contracts.json")" ]]'
       - name: Install packaging tool
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends ninja-build patchelf
       - uses: ./.github/actions/native-dependencies
+        with:
+          source-directory: ${{ env.PACKAGE_SOURCE }}
       - name: Install hash-locked CUDA 13.5.37 compiler and runtime
-        run: cmake -DMODE=CUDA -P cmake/PrepareRelease.cmake
+        run: cmake "-DSOURCE_DIR=$PACKAGE_SOURCE" -DMODE=CUDA -P cmake/PrepareRelease.cmake
       - name: Build and verify seven CUDA architectures
         shell: bash
         run: |
@@ -125,11 +148,12 @@ jobs:
           if [[ "$RUNNER_OS" == Linux ]]; then
             options=(-DCHANNEL=stable -DALLOW_UNVALIDATED_LINUX_CUDA=ON)
           fi
+          cd "$PACKAGE_SOURCE"
           cmake -DRUNTIME=cuda -DBUILD_DIR=build/package-cuda -DCUDA_VALIDATION=BuildOnly "${options[@]}" -P cmake/Release.cmake
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cuda-${{ matrix.platform }}
-          path: build/archives/*
+          path: ${{ env.PACKAGE_SOURCE }}/build/archives/*
           if-no-files-found: error
       - name: Upload CUDA diagnostics
         if: always()
@@ -137,13 +161,13 @@ jobs:
         with:
           name: cuda-diagnostics-${{ matrix.platform }}
           path: |
-            build/dependency-state/
-            build/package-cuda/Testing/Temporary/
-            build/package-cuda/cuda-architectures.txt
+            ${{ env.PACKAGE_SOURCE }}/build/dependency-state/
+            ${{ env.PACKAGE_SOURCE }}/build/package-cuda/Testing/Temporary/
+            ${{ env.PACKAGE_SOURCE }}/build/package-cuda/cuda-architectures.txt
           if-no-files-found: ignore
   cuda-verify:
     name: Standalone ${{ matrix.platform }} CUDA
-    if: ${{ !inputs.desktop_release_tag }}
+    if: ${{ !inputs.desktop_release_tag || inputs.include_native_cuda }}
     needs: cuda-package
     strategy:
       fail-fast: false
@@ -167,6 +191,7 @@ jobs:
           path: build/download
       - uses: ./.github/actions/verify-native-package
         with:
+          expected-commit: ${{ needs.cuda-package.outputs.source-commit }}
           runtime: cuda
           gpu-validation: not-run
           channel: ${{ runner.os == 'Windows' && 'candidate' || 'stable' }}

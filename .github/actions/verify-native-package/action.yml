@@ -10,6 +10,9 @@ inputs:
   channel:
     description: Expected stable or candidate channel.
     required: true
+  expected-commit:
+    description: Product commit for an artifact built from a separate release checkout.
+    default: ${{ github.sha }}
   tag:
     description: Published tag; when empty, verify the artifact in build/download instead.
     default: ''
@@ -27,6 +30,7 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
+        EXPECTED_COMMIT: ${{ inputs.expected-commit }}
         RELEASE_TAG: ${{ inputs.tag }}
         RUNTIME: ${{ inputs.runtime }}
         GPU_VALIDATION: ${{ inputs.gpu-validation }}
@@ -37,7 +41,7 @@ runs:
         if [[ -n "$RELEASE_TAG" ]]; then
           source=("-DTAG=$RELEASE_TAG" "-DREPOSITORY=$GITHUB_REPOSITORY")
         else
-          source=(-DARCHIVE_DIR=build/download "-DEXPECTED_COMMIT=$GITHUB_SHA" -DREQUIRE_CURRENT=ON)
+          source=(-DARCHIVE_DIR=build/download "-DEXPECTED_COMMIT=$EXPECTED_COMMIT" -DREQUIRE_CURRENT=ON)
         fi
         cmake "${source[@]}" "-DEXPECTED_RUNTIME=$RUNTIME" "-DEXPECTED_GPU_VALIDATION=$GPU_VALIDATION" \
           "-DEXPECTED_CHANNEL=$CHANNEL" "-DCHECK_TOOL=build/check-tool/bin/mosaicraft_release_check$suffix" \
