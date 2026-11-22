@@ -312,7 +312,6 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
 .help-contents { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 16px; }
 .help-steps { padding-left: 22px; }
 .help-steps li { padding: 7px 0; }
-.help-template-sizes { margin: 8px 0; padding-left: 22px; }
 .help-page code { font-size: .83em; color: var(--accent2); overflow-wrap: anywhere; }
 .help-page details { border-top: 1px solid var(--border); padding: 12px 0; }
 .help-page details:last-child { padding-bottom: 0; }
@@ -364,7 +363,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <h2 id="mosaic-heading">生成马赛克</h2>
     <div class="mosaic-paths">
       <div class="field field-full"><label>目标图片（必填）</label><div class="path-field"><input type="text" id="m-input" placeholder="填写要拼成的图片路径"><button type="button" class="btn btn-secondary" data-browse-path="m-input" aria-label="浏览目标图片" hidden>浏览</button></div></div>
-      <div class="field field-full"><label>图库 --library（默认 ./library/mosaicraft.db）</label><input type="text" id="m-db" placeholder="留空使用默认值，或粘贴目录路径如 D:\my_library"></div>
+      <div class="field field-full"><label>图库 --library（默认 ./library/mosaicraft.db）</label><input type="text" id="m-db" aria-describedby="m-library-tile-status" placeholder="留空使用默认值，或粘贴目录路径如 D:\my_library"><span class="hint" id="m-library-tile-status" role="status">填写图库后，按图库比例设置匹配 Tile 默认值。</span></div>
       <div class="field field-full">
         <label for="m-output">输出路径 -o（单图为文件，HTML / Deep Zoom / 分块为完整目录）</label>
         <input type="text" id="m-output" value="output/output.png" placeholder="留空使用默认路径" aria-describedby="m-output-path-hint">
@@ -700,7 +699,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <p>先对目标图缩放与上采样，再按匹配 Tile 划网格；最后用选中的素材填充每个网格。最终尺寸由网格数和输出 Tile 尺寸共同决定，页面上的“输出宽度 / 高度”不是最终主图尺寸。</p>
       <div class="help-table-wrap"><table class="help-table">
         <thead><tr><th scope="col">选项</th><th scope="col">作用、默认值与适用场景</th></tr></thead><tbody>
-          <tr><td>Tile 宽度 / 高度<br><code>--match-tile</code></td><td>每个匹配区域在处理后目标图中占用的宽高，默认 <code>9 × 16</code>，各轴至少 4。缩小可得到更多素材块和更细的整体轮廓，但匹配和输出成本更高；放大适合先快速试图或减少素材块数。尽量让宽高比与图库素材、输出 Tile 接近，以免最终画面比例改变。</td></tr>
+          <tr><td>Tile 宽度 / 高度<br><code>--match-tile</code></td><td>每个匹配区域在处理后目标图中占用的宽高，未读取图库时初始为 <code>9 × 16</code>。填写或更换图库路径后，读取图库归一化尺寸并按相同比例设置默认值，各轴至少 4；随后可手动修改。缩小可得到更多素材块和更细的整体轮廓，但匹配和输出成本更高；放大适合先快速试图或减少素材块数。尽量让宽高比与图库素材、输出 Tile 接近，以免最终画面比例改变。</td></tr>
           <tr><td>匹配前目标尺寸<br><code>--target-size</code></td><td>切块前缩放目标图。留空用原尺寸；填写 <code>1200xauto</code> 等尺寸时，<code>auto</code> 轴按原比例推导，指定双轴可能拉伸画面。填写 <code>50%</code> 或 <code>200%</code> 等百分比可等比缩放，支持最多三位小数。缩小可减少网格，放大可增加网格，但不会创造原图细节。</td></tr>
           <tr><td>输出 Tile 尺寸<br><code>--output-tile</code></td><td>每个入选素材在最终图中占用的像素，写成 <code>宽x高</code>。留空时默认 <code>180x320</code>，横向图库使用 <code>320x180</code>；手动填写的尺寸不自动旋转。需要较小文件时可按相同比例缩小，如 <code>32x18</code>；放大会使素材更易看清，但不会增加匹配块数。比例与匹配 Tile 不同时，整体画面比例也会改变。</td></tr>
           <tr><td>输出格式<br><code>--format</code></td><td>默认自动：先看输出文件后缀，再看目标图后缀，否则用 PNG；显式选择优先，并调整不一致的输出后缀。JPG 适合照片和较小文件，PNG 适合无损保存，WebP 适合需要该格式的场景，TIFF 适合支持它的后续流程。不支持的输出后缀会报错，除非显式选择支持的格式。</td></tr>
@@ -1000,6 +999,7 @@ function val(id) {
 }
 
 function generateCommand() {
+  if (!restoringDraft) libraryTileDefaults.sync();
   clearFieldErrors();
   syncPreviewOption();
   const tab = document.querySelector('.tab.active').dataset.cmd;
@@ -2362,6 +2362,7 @@ function restoreRequestParameters(job) {
     else element.value = request[key] === undefined ? '' : request[key];
   }
   if (tab === 'mosaic') {
+    libraryTileDefaults.sync(request.tileW != null || request.tileH != null);
     restoreTargetSize(request.targetSize, request.outW, request.outH, request.upscale);
     document.getElementById('m-otile').value = request.nativeTileW || request.nativeTileH
       ? (request.nativeTileW || 180) + 'x' + (request.nativeTileH || 320) : '';
@@ -2407,7 +2408,8 @@ function updateMosaicSettings() {
   for (const {count, fields} of mosaicSettings) {
     const changes = fields.filter(([element, initial]) => {
       const current = mosaicSettingValue(element);
-      return current !== '' && current !== initial;
+      const baseline = libraryTileDefaults.fields.includes(element) ? Number(element.defaultValue) : initial;
+      return current !== '' && current !== baseline;
     }).length;
     count.textContent = changes ? `已修改 ${changes} 项` : '';
     count.hidden = !changes;
@@ -2422,6 +2424,66 @@ function normalizePath(value) {
   const text = String(value || '').trim();
   return text.length >= 2 && text.startsWith('"') && text.endsWith('"') ? text.slice(1, -1) : text;
 }
+const libraryTileDefaults = (() => {
+  const fields = ['m-tilew', 'm-tileh'].map(id => document.getElementById(id));
+  const status = document.getElementById('m-library-tile-status');
+  let path = '', revision = 0, timer, queued = false, keepValues = false;
+  for (const field of fields) {
+    field.addEventListener('input', () => { keepValues = true; });
+  }
+
+  function matchTile(width, height) {
+    let a = width, b = height;
+    while (b) [a, b] = [b, a % b];
+    const w = width / a, h = height / a;
+    // 保持精确比例，长边尽量接近原来的 16 像素，且每轴不小于 4。
+    const scale = Math.max(Math.ceil(4 / Math.min(w, h)), Math.round(16 / Math.max(w, h)));
+    return [w * scale, h * scale];
+  }
+
+  function sync(preserve = false) {
+    const current = val('m-db');
+    if (current !== path) {
+      path = current;
+      revision++;
+      clearTimeout(timer);
+      queued = true;
+      keepValues = preserve;
+      status.textContent = '连接本地服务后读取图库尺寸。';
+    } else if (preserve) {
+      keepValues = true;
+    }
+    if (!queued || !serverAvailable) return;
+    queued = false;
+    const requested = path, requestVersion = revision;
+    status.textContent = '正在读取图库尺寸…';
+    timer = setTimeout(async () => {
+      const payload = requested ? {dbPath:requested} : {};
+      if (apiEndpoints.some(endpoint => endpoint.operation === 'databaseStats' &&
+          endpoint.queryKeys?.includes('dimensionsOnly'))) payload.dimensionsOnly = true;
+      const data = await postJson('/api/db/stats', payload);
+      // 较早路径的响应不能覆盖新路径。路径修改后手填的值也应保留。
+      if (requestVersion !== revision) return;
+      const width = Number(data.stats?.featureWidth), height = Number(data.stats?.featureHeight);
+      if (!data.ok || ![width, height].every(n => Number.isInteger(n) && n >= 1 && n <= 8192)) {
+        status.textContent = '无法读取图库尺寸，已保留当前匹配 Tile。';
+        return;
+      }
+      const tile = matchTile(width, height);
+      const currentValues = fields.map(field => field.value);
+      fields.forEach((field, index) => {
+        field.defaultValue = tile[index];
+        field.value = keepValues ? currentValues[index] : tile[index];
+      });
+      status.textContent = `图库 ${width}×${height}，匹配 Tile 默认 ${tile.join('×')}` +
+        (keepValues ? '（保留当前值）。' : '。');
+      generateCommand();
+    }, 250);
+  }
+
+  return {fields, sync};
+})();
+
 function uiFieldError(field, message) { return Object.assign(new Error(message), { field }); }
 function highlightDiagnostic(diagnostic) {
   const tab = document.querySelector('.tab.active').dataset.cmd;
@@ -2629,6 +2691,7 @@ function initializeFormUi() {
   const tab = validDraft && Array.from(document.querySelectorAll('.tab')).find(item => item.dataset.cmd === draft.tab);
   if (tab) tab.click();
   restoringDraft = false;
+  if (validDraft) libraryTileDefaults.sync('m-tilew' in draft.fields || 'm-tileh' in draft.fields);
   updateRecentLists(); syncPreviewOption();
   document.getElementById('m-input').addEventListener('input', () => { mosaicTargetTouched = true; });
   document.querySelectorAll('.panel:not(#panel-preview) input, .panel select').forEach(element => {

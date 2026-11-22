@@ -84,6 +84,21 @@ async function checkMosaicForm(page, server, target) {
     input.value = '';
     input.dispatchEvent(new Event('input', {bubbles:true}));
   });
+
+  const sizes = {'test-wide': ['320','180'], 'test-portrait': ['384','512']};
+  await page.route('**/api/db/stats', async route => {
+    const size = sizes[route.request().postDataJSON()?.dbPath];
+    if (!size) return route.continue();
+    await route.fulfill({json:{ok:true, stats:{featureWidth:size[0], featureHeight:size[1]}}});
+  });
+  await page.locator('#m-db').fill('test-wide');
+  await page.waitForFunction(() => val('m-tilew') === '16' && val('m-tileh') === '9');
+  await page.locator('#m-tilew').evaluate(element => { element.closest('details').open = true; });
+  await page.locator('#m-tilew').fill('20');
+  await page.locator('#m-db').dispatchEvent('change');
+  assert.equal(await page.locator('#m-tilew').inputValue(), '20');
+  await page.locator('#m-db').fill('test-portrait');
+  await page.waitForFunction(() => val('m-tilew') === '12' && val('m-tileh') === '16');
 }
 
 async function checkDeepZoomFallback(browser, entry) {
@@ -298,6 +313,15 @@ async function checkDeepZoomFallback(browser, entry) {
           await page.locator('[data-cmd="build"]').click();
           await page.locator('#b-input').fill(path.join(project, '..', 'photos'));
           await page.locator('#b-output').fill(path.join(project, '..', 'library'));
+          const presets = page.locator('#b-size-presets button');
+          const templateHeader = fs.readFileSync(path.join(__dirname, '../compute/TemplateFeatureSizes.h'), 'utf8');
+          const templateSizes = [...templateHeader.matchAll(/X\((\d+), *(\d+)\)/g)].map(([,w,h]) => `${w}x${h}`);
+          assert.deepEqual(await presets.allTextContents(), templateSizes);
+          await presets.filter({hasText:'1024x1024'}).click();
+          assert.equal(await page.locator('#b-normsize').inputValue(), '1024x1024');
+          assert.equal(await presets.filter({hasText:'1024x1024'}).getAttribute('aria-pressed'), 'true');
+          await page.locator('#b-normsize').fill('31x17');
+          assert.equal(await page.locator('#b-size-mode').textContent(), '自定义');
           await page.locator('#b-normsize').fill('invalid');
           await page.locator('#b-mode').selectOption('add');
           assert(await page.locator('#b-normsize').isDisabled());
