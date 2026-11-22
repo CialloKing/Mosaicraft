@@ -14,6 +14,12 @@
 
 需要 Qt 界面时，选择对应平台的 `_qt` CPU 包，或 Windows/Linux x64 的 `_qt_cuda-vulkan` 双后端包，无需另装 Qt。双后端包的「自动」依次尝试 CUDA、CPU；用 Vulkan 时请在设置的「默认后端」中显式选择。独立的原生 `_vulkan` 包默认优先 Vulkan，启动计算前不可用则回退 CPU。Metal 不随正式包发布。见[桌面包说明](../development/packaging.md#qt-桌面发布包)和[本版校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.11)。
 
+## Qt 桌面预览的内存
+
+无需设置缓存大小。在生成页把鼠标停在画布上方的「成品图」「目标图」或对比说明上，可查看所有工程的已缓存贴图和当前自动预算（MiB）。普通工程按实际生成的不同贴图估算需求：多个格子复用同一张贴图只算一份；便携工程按金字塔分块估算。
+
+桌面贴图与匹配程序的素材像素缓存合计最多使用物理内存的四分之一，且不超过 8 GiB，按需增长，不预分配。系统余量不足时自动收缩；后台标签页只保留少量热块，开始导出时桌面贴图缓存至多保留 64 MiB。匹配、总览和导出缓冲不计入这项预算，因此它不是整个程序的内存上限。缓存淘汰不改变选图和输出像素。
+
 ## 图形界面
 
 解压后，Windows 双击 `MosaicraftWebUI.exe`；Linux/macOS 在解压目录运行 ./MosaicraftWebUI。浏览器默认打开 http://localhost:8080。
