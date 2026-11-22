@@ -434,10 +434,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     }
     std::atomic<int> normDone{0};
     std::atomic<int> normalizationProcessed{0};
-    int normThreads = request.threads > 0
-        ? std::max(1, request.threads)
-        : static_cast<int>(std::thread::hardware_concurrency());
-    if (request.threads <= 0 && normThreads < 2) normThreads = 2;
+    int normThreads = normalizationWorkerCount(request.threads);
 
     AppendBenchmark benchmark;
     auto *profile = request.benchmark ? &benchmark : nullptr;

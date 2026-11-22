@@ -7,9 +7,20 @@
 #include <algorithm>
 #include <atomic>
 #include <set>
+#include <thread>
 
 namespace mosaicraft
 {
+int normalizationWorkerCount(int requestedThreads)
+{
+    if (requestedThreads > 0)
+    {
+        return requestedThreads;
+    }
+    // 与建库和追加共用自动策略，不受通用线程池的 8 线程默认上限限制。
+    return std::max(2, static_cast<int>(std::thread::hardware_concurrency()));
+}
+
 ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runtime)
 {
     namespace fs = std::filesystem;
@@ -67,7 +78,9 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
     }
     fs::create_directories(output);
     std::atomic<size_t> completed{0}, failed{0};
-    WorkerPool workers(request.threads > 0 ? request.threads : 0);
+    // 按图片并行，文件少时不用启动没有任务可做的工作线程。
+    const auto slots = std::min(files.size(), static_cast<size_t>(normalizationWorkerCount(request.threads)));
+    WorkerPool workers(static_cast<unsigned>(slots));
     runtime.stage("normalizing");
     workers.run(files.size(),
                 [&](size_t index)
