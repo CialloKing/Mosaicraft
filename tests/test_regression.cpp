@@ -2368,7 +2368,8 @@ TEST_CASE("bounded cache shares immutable pixels and output modes agree")
     CHECK(cache.cachedBytes() == 18 * 32 * 3);
     REQUIRE(cache.getShared(3, source, 36, 64));
     CHECK(cache.cachedBytes() == 18 * 32 * 3);
-    cache.clear();
+    cache.setBudget(0);
+    REQUIRE(cache.getShared(1, source, 18, 32));
     CHECK(cache.cachedBytes() == 0);
     CHECK_FALSE(first->empty()); // 淘汰和清空不影响使用中的共享引用。
 

@@ -5,6 +5,7 @@
 #include "Base64.h"
 #include "BrightnessAdjustment.h"
 #include "ImageCache.h"
+#include "DesktopPreviewMemory.h"
 #include "LibraryMaintenance.h"
 #include "MosaicPlanning.h"
 #include "MosaicSelection.h"
@@ -16,6 +17,7 @@
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <climits>
 #include <fstream>
 #include <iostream>
@@ -197,7 +199,7 @@ struct EditorFrame
     }
 
     void compose(const MosaicSelection &selection, const MosaicRequest &request, const PreviewWorkspace &workspace,
-                 std::filesystem::path files, ImageCache &cache, RuntimeContext &runtime)
+                 std::filesystem::path files, RuntimeContext &runtime)
     {
         if (!std::filesystem::is_directory(files) || !std::filesystem::is_empty(files))
             throw std::invalid_argument("editor preview requires an empty temporary directory");
@@ -225,12 +227,26 @@ struct EditorFrame
             padTarget(nativeReference, renderConfig, selection.columns, selection.rows);
         }
 
+        // 合成结束后可从预览目录重读贴图，不让空闲 worker 或下一次导出背着旧像素。
+        ImageCache cache(desktopPixelBudget(PreviewPixels::Worker, 0));
+        using Clock = std::chrono::steady_clock;
+        auto nextSample = Clock::now() + std::chrono::seconds(1);
+        const auto updateBudget = [&]()
+        {
+            const auto now = Clock::now();
+            if (now >= nextSample)
+            {
+                cache.setBudget(desktopPixelBudget(PreviewPixels::Worker, cache.cachedBytes()));
+                nextSample = now + std::chrono::seconds(1);
+            }
+        };
         // The GUI reads native tiles when zoomed in. Only the fit overview is reduced.
         std::ofstream index(directory / "cells.bin", std::ios::binary);
         index.exceptions(std::ios::failbit | std::ios::badbit);
         for (size_t position = 0; position < selection.imageIds.size(); ++position)
         {
             runtime.checkCanceled();
+            updateBudget();
             const auto key = writeTile(selection, position, cache);
             index.write(reinterpret_cast<const char *>(&key), sizeof(key));
         }
@@ -246,6 +262,7 @@ struct EditorFrame
             for (int left = 0; left < size.width;)
             {
                 const int column = static_cast<int>(int64_t(left) * selection.columns / size.width);
+                updateBudget();
                 paintOverview(selection, size_t(row) * selection.columns + column, cache);
                 left = boundary(column + 1, selection.columns, size.width);
             }
@@ -305,9 +322,8 @@ public:
                 return {{"ok", false}, {"code", "saved_edits_stale"}, {"message", error.what()}};
             }
             EditorFrame nextFrame;
-            auto nextCache = std::make_unique<ImageCache>(64ULL * 1024 * 1024);
             nextFrame.compose(nextSelection, nextRequest, nextWorkspace,
-                              u8path(payload.at("previewDirectory").get<std::string>()), *nextCache, runtime);
+                              u8path(payload.at("previewDirectory").get<std::string>()), runtime);
             auto response = json{{"ok", true}, {"image", encodeImage(nextFrame.image)},
                                  {"reference", encodeBase64(nextSelection.referenceJpeg)}, {"seed", seed},
                                  {"columns", nextSelection.columns}, {"rows", nextSelection.rows},
@@ -318,10 +334,9 @@ public:
             workspace = std::move(nextWorkspace);
             sources = inputStamps(request, selection);
             frame = std::move(nextFrame);
-            cache = std::move(nextCache);
             return response;
         }
-        if (!cache)
+        if (frame.directory.empty())
         {
             throw std::invalid_argument("generate a preview first");
         }
@@ -342,10 +357,11 @@ public:
             auto oldOverview = frame.image;
             try
             {
-                const auto key = frame.writeTile(selection, position, *cache);
+                ImageCache cache(desktopPixelBudget(PreviewPixels::Worker, 0));
+                const auto key = frame.writeTile(selection, position, cache);
                 if (!key) throw std::runtime_error("cannot read replacement preview tile");
                 frame.image = oldOverview.clone();
-                frame.paintOverview(selection, position, *cache);
+                frame.paintOverview(selection, position, cache);
                 return {{"ok", true}, {"image", encodeImage(frame.image)}, {"tileKey", key},
                         {"imageId", selection.imageIds[position]}};
             }
@@ -411,7 +427,6 @@ private:
     std::array<FileStamp, 3> sources{};
     std::atomic_bool canceled{false};
     EditorFrame frame;
-    std::unique_ptr<ImageCache> cache;
 };
 }
 

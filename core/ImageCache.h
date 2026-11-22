@@ -198,6 +198,16 @@ class ImageCache
         return image ? image->clone() : cv::Mat{};
     }
 
+    void setBudget(size_t bytes)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_budget = bytes;
+        while (m_bytes > m_budget)
+        {
+            erase(m_entries.find(m_lru.front()));
+        }
+    }
+
     void clear()
     {
         std::lock_guard<std::mutex> lock(m_mutex);
