@@ -11,6 +11,7 @@
 #include "../core/LibraryPaths.h"
 #include "../core/GridDuplicateCache.h"
 #include "../core/ImageCache.h"
+#include "../core/DesktopPreviewMemory.h"
 #include "../core/ImageNormalizer.h"
 #include "../core/MatchingAccess.h"
 #include "../core/MosaicOutput.h"
@@ -2338,6 +2339,17 @@ TEST_CASE("preview write failures preserve the closed main image")
         config.outputMode = deepZoom ? OutputMode::DeepZoom : OutputMode::Tiles;
         CHECK_FALSE(writeIndexedMosaicOutput(config, path, 1, 1, 6, 4, {record}, {0}, {}, stats));
     }
+}
+
+TEST_CASE("desktop pixel budgets share headroom and shrink under pressure")
+{
+    constexpr uint64_t GiB = 1024ULL * 1024 * 1024;
+    const auto gui = PreviewPixels::Canvas, worker = PreviewPixels::Worker;
+    CHECK(desktopPixelBudget(gui, 32 * GiB, 14 * GiB, 0) == 6 * GiB);
+    CHECK(desktopPixelBudget(worker, 32 * GiB, 14 * GiB, 0) == 2 * GiB);
+    CHECK(desktopPixelBudget(gui, 32 * GiB, 6 * GiB, GiB) == GiB);
+    CHECK(desktopPixelBudget(gui, 32 * GiB, 5 * GiB, GiB) == 0);
+    CHECK(desktopPixelBudget(worker, 0, 0, 0) == 64 * 1024 * 1024);
 }
 
 TEST_CASE("bounded cache shares immutable pixels and output modes agree")
