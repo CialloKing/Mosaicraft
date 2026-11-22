@@ -268,6 +268,10 @@ __device__ float rgb2gray(float r, float g, float b)
 // 主 kernel：模板化，每个 block 处理一张图片
 // 模板参数 W, H = 图像宽高
 // ============================================================
+// 保留旧尺寸的启动形状；宽图让每个线程处理多列，不顶到单块线程上限。
+template <int W>
+static constexpr int featureBlockThreads = W <= 960 ? W : 256;
+
 template <int W, int H, bool Ordered = false>
 __global__ void featureKernel(const uint8_t *__restrict__ d_images, float *__restrict__ d_grid,
                               uint8_t *__restrict__ d_tiny, float *__restrict__ d_lbp, double *__restrict__ d_avgLAB,
@@ -282,6 +286,9 @@ __global__ void featureKernel(const uint8_t *__restrict__ d_images, float *__res
     constexpr int GRID_CELLS = 64;
     constexpr int TINY_SX = W / 16;
     constexpr int TINY_SY = H / 16;
+    constexpr int blockThreads = featureBlockThreads<W>;
+    static_assert(W % blockThreads == 0, "feature blocks must cover whole column groups");
+    static_assert(!Ordered || blockThreads == W, "ordered grid requires one thread per column");
 
     int imgIdx = blockIdx.x;
     if (imgIdx >= batchSize)
@@ -318,133 +325,131 @@ __global__ void featureKernel(const uint8_t *__restrict__ d_images, float *__res
     __syncthreads();
 
     __shared__ float3 columns[Ordered ? W : 1];
-    float colL = 0, colA = 0, colB = 0;
     float localGrayAcc = 0, localGraySq = 0;
     int localEdge = 0;
 
-    for (int y = 0; y < IMG_H; ++y)
+    for (int first = 0; first < IMG_W; first += blockThreads)
     {
-        int x = tx;
-        if (x >= IMG_W)
+        const int x = first + tx;
+        float colL = 0, colA = 0, colB = 0;
+        for (int y = 0; y < IMG_H; ++y)
         {
-            continue;
-        }
+            int idx = (y * IMG_W + x) * 3;
+            float b = img[idx];
+            float g = img[idx + 1];
+            float r = img[idx + 2];
 
-        int idx = (y * IMG_W + x) * 3;
-        float b = img[idx];
-        float g = img[idx + 1];
-        float r = img[idx + 2];
+            float lv, av, bv;
+            rgb2lab(r, g, b, lv, av, bv);
 
-        float lv, av, bv;
-        rgb2lab(r, g, b, lv, av, bv);
-
-        if constexpr (Ordered)
-        {
-            // One writer per column, then one per cell: the sum cannot depend on warp arrival order.
-            colL += lv;
-            colA += av;
-            colB += bv;
-            if ((y + 1) % GRID_CH == 0 || y + 1 == H)
+            if constexpr (Ordered)
             {
-                columns[x] = make_float3(colL, colA, colB);
-                __syncthreads();
-                if (tx < 8)
+                // One writer per column, then one per cell: the sum cannot depend on warp arrival order.
+                colL += lv;
+                colA += av;
+                colB += bv;
+                if ((y + 1) % GRID_CH == 0 || y + 1 == H)
                 {
-                    float3 sum = make_float3(0, 0, 0);
-                    for (int i = tx * GRID_CW; i < min((tx + 1) * GRID_CW, W); ++i)
+                    columns[x] = make_float3(colL, colA, colB);
+                    __syncthreads();
+                    if (tx < 8)
                     {
-                        sum.x += columns[i].x;
-                        sum.y += columns[i].y;
-                        sum.z += columns[i].z;
+                        float3 sum = make_float3(0, 0, 0);
+                        for (int i = tx * GRID_CW; i < min((tx + 1) * GRID_CW, W); ++i)
+                        {
+                            sum.x += columns[i].x;
+                            sum.y += columns[i].y;
+                            sum.z += columns[i].z;
+                        }
+                        const int c = (y / GRID_CH * 8 + tx) * 3;
+                        s_gridLab[c] = sum.x;
+                        s_gridLab[c + 1] = sum.y;
+                        s_gridLab[c + 2] = sum.z;
                     }
-                    const int c = (y / GRID_CH * 8 + tx) * 3;
-                    s_gridLab[c] = sum.x;
-                    s_gridLab[c + 1] = sum.y;
-                    s_gridLab[c + 2] = sum.z;
+                    __syncthreads();
+                    colL = colA = colB = 0;
                 }
-                __syncthreads();
-                colL = colA = colB = 0;
             }
-        }
-        else
-        {
-            int cellX = x / GRID_CW;
-            int cellY = y / GRID_CH;
-            if (cellX >= 8)
+            else
             {
-                cellX = 7;
+                int cellX = x / GRID_CW;
+                int cellY = y / GRID_CH;
+                if (cellX >= 8)
+                {
+                    cellX = 7;
+                }
+                if (cellY >= 8)
+                {
+                    cellY = 7;
+                }
+                int cellIdx = cellY * 8 + cellX;
+                atomicAdd(&s_gridLab[cellIdx * 3 + 0], lv);
+                atomicAdd(&s_gridLab[cellIdx * 3 + 1], av);
+                atomicAdd(&s_gridLab[cellIdx * 3 + 2], bv);
             }
-            if (cellY >= 8)
-            {
-                cellY = 7;
-            }
-            int cellIdx = cellY * 8 + cellX;
-            atomicAdd(&s_gridLab[cellIdx * 3 + 0], lv);
-            atomicAdd(&s_gridLab[cellIdx * 3 + 1], av);
-            atomicAdd(&s_gridLab[cellIdx * 3 + 2], bv);
-        }
 
-        float gray = rgb2gray(r, g, b);
-        localGrayAcc += gray;
-        localGraySq += gray * gray;
+            float gray = rgb2gray(r, g, b);
+            localGrayAcc += gray;
+            localGraySq += gray * gray;
 
-        if (x > 0 && y > 0)
-        {
-            float center = gray;
-            float right = rgb2gray(img[(y * IMG_W + x - 1) * 3 + 2], img[(y * IMG_W + x - 1) * 3 + 1],
-                                   img[(y * IMG_W + x - 1) * 3]);
-            float down = rgb2gray(img[((y - 1) * IMG_W + x) * 3 + 2], img[((y - 1) * IMG_W + x) * 3 + 1],
-                                  img[((y - 1) * IMG_W + x) * 3]);
-            float grad = fabsf(center - right) + fabsf(center - down);
-            if (grad > 30.0f)
+            if (x > 0 && y > 0)
             {
-                localEdge++;
+                float center = gray;
+                float right = rgb2gray(img[(y * IMG_W + x - 1) * 3 + 2], img[(y * IMG_W + x - 1) * 3 + 1],
+                                       img[(y * IMG_W + x - 1) * 3]);
+                float down = rgb2gray(img[((y - 1) * IMG_W + x) * 3 + 2], img[((y - 1) * IMG_W + x) * 3 + 1],
+                                      img[((y - 1) * IMG_W + x) * 3]);
+                float grad = fabsf(center - right) + fabsf(center - down);
+                if (grad > 30.0f)
+                {
+                    localEdge++;
+                }
             }
-        }
 
-        if (x > 0 && x < IMG_W - 1 && y > 0 && y < IMG_H - 1)
-        {
-            uint8_t code = 0;
-            float c = rgb2gray(img[((y)*IMG_W + x) * 3 + 2], img[((y)*IMG_W + x) * 3 + 1], img[((y)*IMG_W + x) * 3]);
-            auto gv = [&](int dy, int dx)
+            if (x > 0 && x < IMG_W - 1 && y > 0 && y < IMG_H - 1)
             {
-                float v = rgb2gray(img[((y + dy) * IMG_W + (x + dx)) * 3 + 2],
-                                   img[((y + dy) * IMG_W + (x + dx)) * 3 + 1], img[((y + dy) * IMG_W + (x + dx)) * 3]);
-                return v >= c ? 1.0f : 0.0f;
-            };
-            if (gv(-1, -1))
-            {
-                code |= 1;
+                uint8_t code = 0;
+                float c = rgb2gray(img[((y)*IMG_W + x) * 3 + 2], img[((y)*IMG_W + x) * 3 + 1], img[((y)*IMG_W + x) * 3]);
+                auto gv = [&](int dy, int dx)
+                {
+                    float v = rgb2gray(img[((y + dy) * IMG_W + (x + dx)) * 3 + 2],
+                                       img[((y + dy) * IMG_W + (x + dx)) * 3 + 1], img[((y + dy) * IMG_W + (x + dx)) * 3]);
+                    return v >= c ? 1.0f : 0.0f;
+                };
+                if (gv(-1, -1))
+                {
+                    code |= 1;
+                }
+                if (gv(-1, 0))
+                {
+                    code |= 2;
+                }
+                if (gv(-1, 1))
+                {
+                    code |= 4;
+                }
+                if (gv(0, 1))
+                {
+                    code |= 8;
+                }
+                if (gv(1, 1))
+                {
+                    code |= 16;
+                }
+                if (gv(1, 0))
+                {
+                    code |= 32;
+                }
+                if (gv(1, -1))
+                {
+                    code |= 64;
+                }
+                if (gv(0, -1))
+                {
+                    code |= 128;
+                }
+                atomicAdd(&s_lbpHist[code], 1u);
             }
-            if (gv(-1, 0))
-            {
-                code |= 2;
-            }
-            if (gv(-1, 1))
-            {
-                code |= 4;
-            }
-            if (gv(0, 1))
-            {
-                code |= 8;
-            }
-            if (gv(1, 1))
-            {
-                code |= 16;
-            }
-            if (gv(1, 0))
-            {
-                code |= 32;
-            }
-            if (gv(1, -1))
-            {
-                code |= 64;
-            }
-            if (gv(0, -1))
-            {
-                code |= 128;
-            }
-            atomicAdd(&s_lbpHist[code], 1u);
         }
     }
 
@@ -642,8 +647,9 @@ int extractBatch(const std::vector<cv::Mat> &images, std::vector<ImageRecord> &r
 #define LAUNCH_BUILD_FEATURE(W, H)                                                                         \
     if (imgW == W && imgH == H)                                                                           \
     {                                                                                                    \
-        featureKernel<W, H><<<N, W>>>(d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(),              \
-                                      d_avgLAB.get(), d_bright.get(), d_contrast.get(), d_edge.get(), N);  \
+        featureKernel<W, H><<<N, featureBlockThreads<W> >>>(                                                \
+            d_images.get(), d_grid.get(), d_tiny.get(), d_lbp.get(), d_avgLAB.get(),                      \
+            d_bright.get(), d_contrast.get(), d_edge.get(), N);                                           \
     }                                                                                                    \
     else
     MOSAICRAFT_CUDA_TEMPLATE_SIZES(LAUNCH_BUILD_FEATURE)
@@ -797,8 +803,9 @@ int launchKernel(const uint8_t *h_images, int N, double *h_avgLAB, float *h_grid
     }
     {
         PhaseTimer timer(timings ? &timings->computeMs : nullptr);
-        featureKernel<W, H><<<N, W>>>(d_img.get(), d_grid.get(), d_tiny.get(), d_lbp.get(), d_lab.get(), d_bright.get(),
-                                      d_contrast.get(), d_edge.get(), N);
+        featureKernel<W, H><<<N, featureBlockThreads<W> >>>(
+            d_img.get(), d_grid.get(), d_tiny.get(), d_lbp.get(), d_lab.get(), d_bright.get(),
+            d_contrast.get(), d_edge.get(), N);
         if (cudaGetLastError() != cudaSuccess || cudaDeviceSynchronize() != cudaSuccess)
         {
             fprintf(stderr, "GPU kernel error (%dx%d)\n", W, H);
@@ -919,7 +926,7 @@ void extractPipelined(FeaturePipeline &p, int first, int count, double *lab, flo
     }
     auto launch = [&](auto ordered)
     {
-        featureKernel<W, H, decltype(ordered)::value><<<count, W, 0, transfer.stream>>>(
+        featureKernel<W, H, decltype(ordered)::value><<<count, featureBlockThreads<W>, 0, transfer.stream>>>(
             p.images.get(), p.grid.get() + first * 192, p.tiny.get() + first * 256,
             p.lbp.get() + first * 256, p.lab.get(), p.bright.get(), p.contrast.get(), p.edge.get(), count);
     };
@@ -1085,7 +1092,8 @@ int extractFeaturesRaw(const uint8_t *h_images, int N, double *h_avgLAB, float *
 bool probeTemplateFeatures(const cudaDeviceProp &device, CudaAvailability &status)
 {
 #define CHECK_FEATURE_KERNEL(W, H)                                                                       \
-    if (!checkKernel(featureKernel<W, H>, W, device, status, "featureKernel<" #W "," #H ">"))            \
+    if (!checkKernel(featureKernel<W, H>, featureBlockThreads<W>, device, status,                       \
+                     "featureKernel<" #W "," #H ">"))                                                   \
     {                                                                                                    \
         return false;                                                                                    \
     }

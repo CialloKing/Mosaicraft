@@ -2202,6 +2202,12 @@ TEST_CASE("CUDA pipeline preserves features and drains failed work")
         {
             images[i] = static_cast<uint8_t>((i * 17 + i / 97) % 256);
         }
+        const bool wide = size.width == 1024;
+        if (wide)
+        {
+            // 白图的每个 Grid 单元都应为白色；只处理首组列时两条路径仍可能一致。
+            std::fill_n(images.begin(), bytes / config.maxTiles, uint8_t{255});
+        }
         std::vector<double> lab(9), expectedLab(9), edge(3), expectedEdge(3);
         std::vector<float> grid(3 * 192), expectedGrid(3 * 192), lbp(3 * 256), expectedLbp(3 * 256);
         REQUIRE(extractFeaturesRaw(images.data(), 3, size.width, size.height, expectedLab.data(),
@@ -2224,6 +2230,13 @@ TEST_CASE("CUDA pipeline preserves features and drains failed work")
         for (size_t i = 0; i < grid.size(); ++i)
         {
             CHECK(std::abs(grid[i] - expectedGrid[i]) < 0.001f);
+        }
+        if (wide)
+        {
+            for (int cell = 0; cell < 64; ++cell)
+            {
+                CHECK(grid[cell * 3] == doctest::Approx(255.0).epsilon(0.00001));
+            }
         }
         CHECK(timings.uploadBytes == bytes);
         CHECK(timings.downloadBytes == 3 * 2072);

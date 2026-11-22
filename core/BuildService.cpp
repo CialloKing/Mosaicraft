@@ -496,14 +496,18 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     std::mutex queueMtx;
     std::condition_variable queueCV;
     std::condition_variable queueFullCV;
-    constexpr int MAX_QUEUE = 512;
+    const size_t pixelsPerImage = static_cast<size_t>(request.normalizeWidth) * request.normalizeHeight * 3;
+    // 大图不要按 256 张堆积；解码队列和连续上传缓冲均占用主机内存。
+    constexpr size_t templatePixelBudget = 256ULL * 1024 * 1024;
+    const size_t gpuBatch = std::clamp<size_t>(templatePixelBudget / std::max<size_t>(1, pixelsPerImage), 1, 256);
+    const size_t queueLimit = 2 * gpuBatch;
     std::atomic<bool> normPhaseDone{false};
     std::atomic<int> gpuDone{0};
     const auto waitForQueueSpace = [&](std::unique_lock<std::mutex> &lock, BenchmarkSample *timing)
     {
         const auto ready = [&]()
         {
-            return normQueue.size() < MAX_QUEUE || normPhaseDone.load();
+            return normQueue.size() < queueLimit || normPhaseDone.load();
         };
         // 不计已就绪的检查或取锁；这里只观察队列背压。
         BenchmarkTimer timer(timing && !ready() ? timing : nullptr);
@@ -563,7 +567,6 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                      : gpuOk               ? "template_cuda"
                                            : "cpu",
                      "none");
-    constexpr int GPU_BATCH = 256;
     if (request.appendMode && !request.normalizeOnly)
     {
         visuals.before = summarizeColors(db.averageColors());
@@ -619,7 +622,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         {
             profile->featureSlots = 1; // 主机端单消费者，不是 CUDA 执行单元数量。
         }
-        std::cout << "Normalizing + Features: template CUDA (batch " << GPU_BATCH << ", pipelined)" << std::endl;
+        std::cout << "Normalizing + Features: template CUDA (batch " << gpuBatch << ", pipelined)" << std::endl;
         gpuThread = std::thread(
             [&]()
             {
@@ -629,9 +632,9 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                     bool firstBatch = true;
                     std::set<std::string> pendingHashes;
                     std::vector<cv::Mat> imgs;
-                    imgs.reserve(GPU_BATCH);
+                    imgs.reserve(gpuBatch);
                     std::vector<ImageRecord> recs;
-                    recs.reserve(GPU_BATCH);
+                    recs.reserve(gpuBatch);
                     auto flush = [&]()
                     {
                         runtime.checkCanceled();
@@ -810,7 +813,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                         imgs.push_back(item.img);
                         recs.push_back(rec);
                         // 特征文件不跟随数字编号，追加重排也不会覆盖其他图片的特征。
-                        if ((int)imgs.size() >= GPU_BATCH)
+                        if (imgs.size() >= gpuBatch)
                         {
                             flush();
                         }
@@ -966,7 +969,6 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     {
         tGpuStart = std::chrono::steady_clock::now();
         constexpr size_t pixelBudget = 64ULL * 1024 * 1024;
-        const size_t pixelsPerImage = static_cast<size_t>(request.normalizeWidth) * request.normalizeHeight * 3;
         // 同目录输入的尺寸可能不同，单张处理保证超预算图片独占批次。
         size_t batchLimit =
             inputIsOutput ? 1 : std::min<size_t>(256, std::max<size_t>(1, pixelBudget / pixelsPerImage));
