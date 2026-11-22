@@ -36,7 +36,8 @@ public:
         }
     };
     static std::string libraryOutputExtension(const std::string& inputPath);
-    static cv::Mat readLibrarySource(const std::string& inputPath);
+    // 原地入库预检可检测是否必须写出修复后的 PNG，常规读取仍要求文件本身可解码。
+    static cv::Mat readLibrarySource(const std::string& inputPath, bool* requiresPngRewrite = nullptr);
     bool processLibraryImage(const std::string& inputPath, const std::string& outputPath,
                              const LibraryEncodingOptions& encoding, cv::Mat* storedPixels, LibraryTimings* timings);
     bool processStandaloneImage(const std::string& inputPath, const std::string& outputPath,

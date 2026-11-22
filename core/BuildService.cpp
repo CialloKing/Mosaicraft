@@ -301,12 +301,18 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
             {
                 continue;
             }
-            const auto image = ImageNormalizer::readLibrarySource(*file);
+            bool requiresPngRewrite = false;
+            const auto image = ImageNormalizer::readLibrarySource(*file, &requiresPngRewrite);
             if (image.empty())
             {
                 runtime.emit("warning", "source_skipped", "cannot decode source or signature does not match",
                              "inputDir", *file);
                 continue;
+            }
+            if (requiresPngRewrite)
+            {
+                return runtimeFailure(runtime, 1, "in-place library PNG has oversized iTXt: " + *file +
+                                      "; use a separate output directory", "invalid_argument", "inputDir", *file);
             }
             if (ImageNormalizer::libraryOutputExtension(*file) != pathToUtf8(path.extension()) ||
                 image.size() != requestedSize)

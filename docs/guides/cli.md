@@ -36,7 +36,7 @@ CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，�
 ./mosaicraft library normalize photos -o normalized --size 180x320
 ```
 
-建库归一化尺寸默认 180×320，每轴 1～8192。`library build` 和 `library add` 保留 JPG/JPEG、PNG、WebP 的格式及后缀拼写，将 BMP 和 TIFF/TIF 转为 PNG。同尺寸的 JPG/JPEG、PNG、WebP 直接复制原字节。原地建库要求新素材已经符合目标尺寸及格式，需要转换或缩放时请使用独立输出目录。历史图库素材继续可读。
+建库归一化尺寸默认 180×320，每轴 1～8192。`library build` 和 `library add` 保留 JPG/JPEG、PNG、WebP 的格式及后缀拼写，将 BMP 和 TIFF/TIF 转为 PNG。同尺寸的 JPG/JPEG、PNG、WebP 通常直接复制原字节。若 PNG 含超过解码器上限的 `iTXt` 文本块，建库、追加或单独归一化时会先在内存中的副本移除这些块；移除文本不改变像素，原图不改动；此类素材需要使用独立输出目录。原地建库要求新素材已经符合目标尺寸及格式，需要转换或缩放时请使用独立输出目录。历史图库素材继续可读。
 
 下列参数用于建库和追加时的重新编码。压缩和质量设置不影响直接复制的素材。
 

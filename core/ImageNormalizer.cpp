@@ -104,15 +104,24 @@ std::string ImageNormalizer::libraryOutputExtension(const std::string& inputPath
     return {};
 }
 
-cv::Mat ImageNormalizer::readLibrarySource(const std::string& inputPath)
+cv::Mat ImageNormalizer::readLibrarySource(const std::string& inputPath, bool* requiresPngRewrite)
 {
-    const auto bytes = readBytesUnicode(inputPath);
-    if (bytes.empty() || signedImageFormat(bytes) != imageFormat(inputPath))
+    auto bytes = readBytesUnicode(inputPath);
+    const auto format = signedImageFormat(bytes);
+    if (requiresPngRewrite)
+    {
+        *requiresPngRewrite = false;
+    }
+    if (format.empty() || format != imageFormat(inputPath))
     {
         return {};
     }
     try
     {
+        if (requiresPngRewrite && format == ".png")
+        {
+            *requiresPngRewrite = stripOversizedPngText(bytes);
+        }
         return cv::imdecode(bytes, cv::IMREAD_COLOR);
     }
     catch (const cv::Exception&)
@@ -152,19 +161,27 @@ bool ImageNormalizer::processImpl(const std::string& inputPath, const std::strin
         auto encoded = readBytesUnicode(inputPath);
         const auto inputFormat = imageFormat(inputPath);
         const auto outputFormat = imageFormat(outputPath);
-        if (encoding && (encoded.empty() || signedImageFormat(encoded) != inputFormat))
+        const auto format = signedImageFormat(encoded);
+        if (encoding && (format.empty() || format != inputFormat))
         {
             throw std::runtime_error("input signature does not match the file extension");
         }
+        const bool requiresPngRewrite = format == ".png" && stripOversizedPngText(encoded);
         cv::Mat src = encoded.empty() ? cv::Mat() : cv::imdecode(encoded, cv::IMREAD_COLOR);
         if (src.empty())
         {
             throw std::runtime_error("cannot decode input");
         }
-        if (src.cols == m_targetWidth && src.rows == m_targetHeight && inputFormat == outputFormat)
+        const bool sameSizeAndFormat = src.cols == m_targetWidth && src.rows == m_targetHeight && inputFormat == outputFormat;
+        std::error_code ec;
+        const bool sameFile = (sameSizeAndFormat || requiresPngRewrite) &&
+                              std::filesystem::equivalent(u8path(inputPath), u8path(outputPath), ec);
+        if (sameFile && requiresPngRewrite)
         {
-            std::error_code ec;
-            const bool sameFile = std::filesystem::equivalent(u8path(inputPath), u8path(outputPath), ec);
+            throw std::runtime_error("PNG has oversized iTXt; use a separate output file");
+        }
+        if (sameSizeAndFormat)
+        {
             if (!sameFile && compactPng)
             {
                 compactLibraryPng(encoded, src.total());

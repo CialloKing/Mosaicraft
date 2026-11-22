@@ -3,6 +3,7 @@
 #include <zlib.h>
 #include <array>
 #include <cstring>
+#include <utility>
 
 namespace mosaicraft
 {
@@ -23,6 +24,59 @@ struct Codec
         }
     }
 };
+}
+
+bool stripOversizedPngText(std::vector<uint8_t>& png)
+{
+    constexpr size_t overhead = 12;
+    // OpenCV 的 PNG 解码器用 libpng 默认的 8,000,000 字节限制检查整个块（含头部与 CRC）。
+    constexpr size_t maxChunkSize = 8'000'000;
+    if (png.size() <= maxChunkSize || png_sig_cmp(png.data(), 0, 8) || png_get_uint_32(png.data() + 8) != 13 ||
+        std::memcmp(png.data() + 12, "IHDR", 4) != 0)
+    {
+        return false;
+    }
+
+    // 先确认块边界完整且没有数字签名，再原地移动保留的字节，避免额外复制整张 PNG。
+    std::vector<std::pair<size_t, size_t>> removals;
+    bool complete = false;
+    for (size_t pos = 8; png.size() - pos >= overhead; )
+    {
+        const size_t length = png_get_uint_32(png.data() + pos);
+        const auto* type = png.data() + pos + 4;
+        if (length > PNG_UINT_31_MAX || length > png.size() - pos - overhead || std::memcmp(type, "dSIG", 4) == 0)
+        {
+            return false;
+        }
+        const size_t end = pos + length + overhead;
+        if (length + overhead > maxChunkSize && std::memcmp(type, "iTXt", 4) == 0)
+        {
+            removals.emplace_back(pos, end);
+        }
+        if (std::memcmp(type, "IEND", 4) == 0)
+        {
+            complete = length == 0;
+            break;
+        }
+        pos = end;
+    }
+    if (!complete || removals.empty())
+    {
+        return false;
+    }
+
+    size_t dest = removals.front().first;
+    size_t src = dest;
+    for (const auto& [first, end] : removals)
+    {
+        std::memmove(png.data() + dest, png.data() + src, first - src);
+        dest += first - src;
+        src = end;
+    }
+    const auto tail = png.size() - src;
+    std::memmove(png.data() + dest, png.data() + src, tail);
+    png.resize(dest + tail);
+    return true;
 }
 
 void compactLibraryPng(std::vector<uint8_t>& png, std::size_t decodedPixels)

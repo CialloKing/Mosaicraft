@@ -101,6 +101,51 @@ TEST_CASE("same-size PNG normalization preserves indexed pixels and ancillary ch
     CHECK(readBytesUnicode(source) == original);
 }
 
+TEST_CASE("library add drops only oversized PNG iTXt from the saved copy")
+{
+    TempWorkspace workspace;
+    auto request = makeBuildRequest(workspace);
+    request.backend = BackendPolicy::Cpu;
+    const cv::Size size(request.normalizeWidth, request.normalizeHeight);
+    requireWriteImage(workspace.inputDir() / "seed.png", cv::Mat::zeros(size, CV_8UC3));
+    REQUIRE(BuildService().run(request).ok);
+
+    const auto insertText = [](std::vector<uint8_t>& png, size_t textSize)
+    {
+        constexpr size_t dataSize = 6;
+        const auto length = static_cast<png_uint_32>(dataSize + textSize);
+        // 合法的未压缩 iTXt：一个字符的关键字，以及空语言和翻译字段。
+        std::vector<uint8_t> chunk(length + 12, 'x');
+        png_save_uint_32(chunk.data(), length);
+        std::copy_n("iTXtK", 5, chunk.data() + 4);
+        std::fill_n(chunk.data() + 9, 5, 0);
+        png_save_uint_32(chunk.data() + 8 + length, crc32(0, chunk.data() + 4, length + 4));
+        png.insert(png.begin() + 33, chunk.begin(), chunk.end());
+    };
+    std::vector<uint8_t> expected;
+    REQUIRE(cv::imencode(".png", cv::Mat(size, CV_8UC3, cv::Scalar(20, 90, 170)), expected));
+    insertText(expected, 12);
+    auto original = expected;
+    insertText(original, 8'000'000);
+    const auto input = utf8(workspace.emptyInputDir() / "oversized.PNG");
+    REQUIRE(writeBytesUnicode(input, original));
+    request.appendMode = true;
+    request.inputDir = utf8(workspace.emptyInputDir());
+    const auto result = BuildService().run(request);
+    REQUIRE_MESSAGE(result.ok, result.message);
+
+    Database database(request.dbPath);
+    const auto records = database.metadataRecords(false);
+    REQUIRE(records.size() == 2);
+    const auto repaired = std::find_if(records.begin(), records.end(), [](const auto& record)
+    {
+        return u8path(record.filePath).extension() == ".PNG";
+    });
+    REQUIRE(repaired != records.end());
+    CHECK(readBytesUnicode(repaired->filePath) == expected);
+    CHECK(readBytesUnicode(input) == original);
+}
+
 TEST_CASE("portable HTML stays renderable after relocation and rejects corrupt manifests")
 {
     TempWorkspace workspace;
