@@ -2,6 +2,12 @@
 
 本页区分当前源码与公开安装包，详细历史记录见[历史档案](archive/README.md)。软件与数据版本的唯一来源是根目录 contracts.json；安装后的实际能力以该包 BUILD_INFO.txt、contracts.json 和 --help-all 为准。
 
+## v1.15.13
+
+- CLI、Web UI 与 Qt 桌面的成品 PNG 默认压缩等级从 1 提高到 6，以减小常见输出的体积，解码像素不变。仍可显式选择 0–9；建库默认等级 9 和内部快速预览不变。
+- 成品 PNG 的 1–9 级支持按图像行分块并行压缩。自动线程按进程可用的 CPU 线程、图像行数和内存预算尽量扩大并行度；0 级继续使用原有路径。CPU 与 GPU 匹配均可受益，具体耗时和体积随图片而异。
+- HTTP API 仍为 1.7。v1.15.12 创建的图库和现有工程不需要迁移；v1.15.11 及更早的旧布局仍需在新目录[重建图库](guides/portable-libraries.md#从旧图库重建)。
+
 ## v1.15.12
 
 - 图库特征统一存入 SQLite 的 `image_features`，不再生成 `.tiny`、`.lbp` 或 FeaturePack。图库及特征版本号仍为 1，但旧布局**不能打开或原地升级**。请按[重建步骤](guides/portable-libraries.md#从旧图库重建)建到新目录。
