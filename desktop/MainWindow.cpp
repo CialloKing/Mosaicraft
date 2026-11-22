@@ -274,6 +274,7 @@ void MainWindow::showDocument(int index)
 {
     activeDocument = index >= 0 && index < documents.size() ? index : -1;
     const auto document = activeDocument >= 0 ? &documents[activeDocument] : nullptr;
+    refreshPreviewMemory();
     applyOptions(document ? document->options : defaultOptions);
     if (document) documents[activeDocument].selectedTile = -1;
     ui->candidateList->clear();

@@ -15,6 +15,10 @@
 <context>
     <name>MainWindow</name>
     <message>
+        <source>所有工程的贴图缓存：%1 MiB / 自动预算 %2 MiB</source>
+        <translation>Tile cache across projects: %1 MiB / automatic budget %2 MiB</translation>
+    </message>
+    <message>
         <source>最小化</source>
         <translation>Minimize</translation>
     </message>

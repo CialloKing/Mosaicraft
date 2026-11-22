@@ -75,8 +75,12 @@ QImage PreviewImage::loadTile(const QString &name) const
     QImage tile(directory->filePath(name));
     if (!tile.isNull())
     {
-        const auto cost = qMax<qsizetype>(1, tile.sizeInBytes() / 1024);
-        if (cost <= tiles.maxCost()) tiles.insert(name, new QImage(tile), cost);
+        const auto bytes = tile.sizeInBytes();
+        const auto cost = bytes / 1024 + (bytes % 1024 != 0);
+        if (cost <= tiles.maxCost())
+        {
+            tiles.insert(name, new QImage(tile), cost);
+        }
     }
     return tile;
 }

@@ -463,6 +463,7 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         qWarning().noquote() << ui->taskLog->toPlainText();
         return 1;
     }
+    auto previousPreview = documents[activeDocument].preview;
     ui->tileWidth->setValue(24);
     if (!require(waitForWork([&] { generatePreview(); }) && previewCurrent() &&
                  documents[activeDocument].previewGrid == QSize(8, 5) && documents[activeDocument].preview,
@@ -470,6 +471,29 @@ int MainWindow::smokeTest(const QString &captureDirectory)
     {
         qWarning().noquote() << ui->taskLog->toPlainText();
         return 1;
+    }
+    // 严格的小预算可复现多标签页的回收，不依赖测试机器的空闲内存。
+    {
+        Document background;
+        background.preview = std::move(previousPreview);
+        documents.append(std::move(background));
+        auto &old = *documents.last().preview;
+        auto &current = *documents[activeDocument].preview;
+        old.setCacheLimitKiB(1024);
+        current.setCacheLimitKiB(1024);
+        nativePreviewTile(old, {260, 32});
+        const auto pixels = nativePreviewTile(current, {24, 32});
+        const bool warmed = old.cachedKiB() > 3 && current.cachedKiB() > 0;
+        distributePreviewMemory(12);
+        const bool activeRetained = old.cachedKiB() == 0 && current.cachedKiB() > 0 && current.cachedKiB() <= 12;
+        distributePreviewMemory(0);
+        if (!require(warmed && activeRetained && nativePreviewTile(current, {24, 32}) == pixels &&
+                     current.cachedKiB() == 0, "shared preview budget protects active tiles and evicts without changing pixels"))
+        {
+            return 1;
+        }
+        documents.removeLast();
+        refreshPreviewMemory();
     }
     ui->compareModeButton->click();
     QApplication::processEvents();

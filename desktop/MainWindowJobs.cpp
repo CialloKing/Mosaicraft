@@ -76,6 +76,7 @@ void MainWindow::setupTaskDialog()
 
 void MainWindow::setTaskMessage(const QString &message)
 {
+    refreshPreviewMemory();
     taskMessage->setText(message);
     if (!taskDialog->isHidden()) return;
 

@@ -2,6 +2,7 @@
 #include "DimensionEdit.h"
 #include "MainWindow.h"
 #include "PreviewImage.h"
+#include "core/DesktopPreviewMemory.h"
 #include "ui_MainWindow.h"
 
 #include <QAbstractButton>
@@ -21,6 +22,7 @@
 #include <QTimer>
 #include <QWheelEvent>
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -536,14 +538,72 @@ bool MainWindow::finishPortablePreview(const JobState &completed, bool ok, QStri
 
     auto &document = documents[completed.documentIndex];
     document.preview = std::move(preview);
+    refreshPreviewMemory();
     document.view = ViewMode::Result;
     refreshCanvas();
     refreshExportPreview();
     return true;
 }
 
+void MainWindow::refreshPreviewMemory()
+{
+    uint64_t usedKiB = 0;
+    bool hasPreview = false;
+    for (const auto &document : std::as_const(documents))
+    {
+        if (document.preview)
+        {
+            usedKiB += document.preview->cachedKiB();
+            hasPreview = true;
+        }
+    }
+    if (!hasPreview)
+    {
+        ui->canvasInfo->setToolTip({});
+        return;
+    }
+    qsizetype budget = mosaicraft::desktopPixelBudget(mosaicraft::PreviewPixels::Canvas, usedKiB * 1024) / 1024;
+    if (job.type == Job::Export || editorOperation == QStringLiteral("export"))
+    {
+        // 输出工作区不包含在预览预算内，导出前先主动让出大部分贴图。
+        budget = qMin<qsizetype>(budget, 64 * 1024);
+    }
+    distributePreviewMemory(budget);
+}
+
+void MainWindow::distributePreviewMemory(qsizetype budget)
+{
+    const auto active = activeDocument >= 0 ? documents[activeDocument].preview.get() : nullptr;
+    const auto inactive = std::count_if(documents.cbegin(), documents.cend(), [active](const Document &document)
+    {
+        return document.preview && document.preview.get() != active;
+    });
+    // 后台项目只保留已有热块，不给每个标签页都分配一份可增长的额度。
+    const auto idleShare = inactive ? budget / 4 / inactive : 0;
+    auto remaining = budget;
+    for (const auto &document : std::as_const(documents))
+    {
+        if (document.preview && document.preview.get() != active)
+        {
+            document.preview->setCacheLimitKiB(qMin(idleShare, document.preview->cachedKiB()));
+            remaining -= document.preview->cachedKiB();
+        }
+    }
+    if (active)
+    {
+        active->setCacheLimitKiB(remaining);
+    }
+    const auto retained = budget - remaining + (active ? active->cachedKiB() : 0);
+    ui->canvasInfo->setToolTip(tr("所有工程的贴图缓存：%1 MiB / 自动预算 %2 MiB")
+        .arg((retained + 1023) / 1024).arg(budget / 1024));
+}
+
 void MainWindow::setupPreviewSession()
 {
+    // 即使用户停在当前视图，也要能因其他应用占用内存而回收缓存；不在 paint() 中查询系统。
+    auto memoryTimer = new QTimer(this);
+    connect(memoryTimer, &QTimer::timeout, this, &MainWindow::refreshPreviewMemory);
+    memoryTimer->start(1000);
     ui->candidateList->setLayoutMode(QListView::Batched);
     ui->candidateList->setItemDelegate(new CandidateDelegate(ui->candidateList));
     connect(ui->candidateList, &QListWidget::itemActivated, this, &MainWindow::replaceTile);
@@ -652,7 +712,11 @@ void MainWindow::receiveEditorReply(const QJsonObject &reply)
             const QSize tile(reply["tileWidth"].toInt(), reply["tileHeight"].toInt());
             auto preview = PreviewImage::openMosaic(std::move(files), grid, tile, image);
             ok = bool(preview);
-            if (ok) document.preview = std::move(preview);
+            if (ok)
+            {
+                document.preview = std::move(preview);
+                refreshPreviewMemory();
+            }
         }
         else
         {

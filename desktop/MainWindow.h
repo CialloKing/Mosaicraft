@@ -121,6 +121,8 @@ private:
     bool handleCanvasEvent(QObject *object, QEvent *event);
     void updateEditorAspectRatios();
     void setupPreviewSession();
+    void refreshPreviewMemory();
+    void distributePreviewMemory(qsizetype budgetKiB);
     void closePreviewSession();
     void generatePreview();
     bool finishPortablePreview(const JobState &completed, bool ok, QString &message);
