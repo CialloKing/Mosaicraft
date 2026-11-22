@@ -324,18 +324,30 @@ int MainWindow::smokeTest(const QString &captureDirectory)
     settings.setValue("general/cli", QFileInfo(cli).absoluteFilePath());
     settings.setValue("preferences/backend", "cpu");
     settings.setValue("preferences/threads", 2);
-    const auto waitForWork = [&](const auto &start) {
+    const auto waitForWork = [&](const auto &start, bool waitForLibrary = false)
+    {
+        // 便携预览完成和排队的图库检查启动之间有一个事件循环间隙。
+        const auto done = [&]()
+        {
+            return !busy() && (!waitForLibrary || !libraryCheckPending);
+        };
         QEventLoop wait;
         QTimer poll;
         connect(&poll, &QTimer::timeout, &wait, [&] {
             if (auto message = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) message->reject();
-            if (!busy()) wait.quit();
+            if (done())
+            {
+                wait.quit();
+            }
         });
         poll.start(25);
         QTimer::singleShot(100000, &wait, &QEventLoop::quit);
         start();
-        if (busy()) wait.exec();
-        return !busy();
+        if (!done())
+        {
+            wait.exec();
+        }
+        return done();
     };
     const auto source = root.filePath(QStringLiteral("原始素材"));
     const auto built = root.filePath(QStringLiteral("默认素材库"));
@@ -614,8 +626,11 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         bool previewStarted = false;
         const auto finished = waitForWork([&] {
             previewStarted = openPath(path) && job.type == Job::PortablePreview && taskDialog->isVisible();
-            if (checkLibraryAtStartup) checkLibrary();
-        });
+            if (checkLibraryAtStartup)
+            {
+                checkLibrary();
+            }
+        }, checkLibraryAtStartup);
         const auto &document = documents[activeDocument];
         return finished && previewStarted && !libraryCheckPending && document.manifest == manifest &&
             QFileInfo(document.target).dir() == QDir(portableExport) && document.view == ViewMode::Result &&
