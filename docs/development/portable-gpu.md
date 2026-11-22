@@ -70,7 +70,7 @@ CPU 构建不引入 GPU SDK。Vulkan 使用 1.1 基线，动态加载系统驱�
 
 在平台预设上通过 `-DMOSAICRAFT_VULKAN=ON` 或 `-DMOSAICRAFT_METAL=ON` 开启后端。CUDA 与 Vulkan 的组合再加 `-DMOSAICRAFT_CUDA=ON`。 [GPU 构建参数](building.md#gpu-后端与编译配置)
 
-`Portable GPU candidates` CI 复用发布、CTest、smoke 和归档校验。`release.ps1 -NoCuda -Vulkan`、`release.ps1 -Vulkan` 或 macOS 的 `release.ps1 -NoCuda -Metal` 均生成 `_candidate` 包，记录 `PortableGpuValidation: not-run` 和 `PortableAutoSelection: disabled`。包状态不能替代本机限定范围的验收记录。
+`Portable GPU candidates` CI 复用发布、CTest、smoke 和归档校验。按 [打包说明](packaging.md#cmake-发布入口) 准备依赖和 SDK 后，运行 `cmake -DRUNTIME=vulkan -DCHANNEL=candidate -P cmake/Release.cmake`。Windows 上可将运行时改为 `cuda-vulkan` 生成双后端候选，macOS ARM64 上可改为 `metal`。这些归档带 `_candidate` 后缀，记录 `PortableGpuValidation: not-run` 和 `PortableAutoSelection: disabled`，不能替代本机实测。
 
 使用固定清单复现：
 
