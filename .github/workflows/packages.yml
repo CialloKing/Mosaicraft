@@ -236,20 +236,21 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake "-DSOURCE_DIR=$env:PACKAGE_SOURCE" -DMODE=Vulkan -P cmake/PrepareRelease.cmake
       - name: Build and verify Qt Desktop archive
+        shell: bash
         env:
           RELEASE_TAG: ${{ inputs.desktop_release_tag }}
+          QT_RUNTIME: ${{ matrix.runtime }}
         run: |
-          $packager = './scripts/release-desktop.ps1'
-          $commit = $env:GITHUB_SHA
-          if ($env:RELEASE_TAG) {
-            $commit = git -C $env:PACKAGE_SOURCE rev-parse "refs/tags/$($env:RELEASE_TAG)^{commit}"
-            if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve package source tag' }
-            $version = (Get-Content -Raw (Join-Path $env:PACKAGE_SOURCE 'contracts.json') | ConvertFrom-Json).softwareVersion
-            if ($env:RELEASE_TAG -cne "v$version") { throw 'Release tag does not match contracts.json' }
-          }
-          $options = @{}
-          if ('${{ matrix.runtime }}' -eq 'cuda-vulkan') { $options = @{ CudaVulkan = $true; GpuValidation = 'BuildOnly' } }
-          & $packager -SourceDir $env:PACKAGE_SOURCE -OutputDir (Join-Path $PWD.Path 'build/archives-qt') -ExpectedSourceCommit $commit -QtRoot $env:MOSAICRAFT_QT_ROOT @options
+          options=("-DEXPECTED_COMMIT=$GITHUB_SHA" -DRUNTIME=cpu-only)
+          if [[ "$QT_RUNTIME" == cuda-vulkan ]]; then
+            options+=(-DRUNTIME=cuda-vulkan -DGPU_VALIDATION=BuildOnly)
+          fi
+          if [[ -n "$RELEASE_TAG" ]]; then
+            commit=$(git -C "$PACKAGE_SOURCE" rev-parse "refs/tags/$RELEASE_TAG^{commit}")
+            options+=("-DEXPECTED_COMMIT=$commit" "-DSOURCE_TAG=$RELEASE_TAG")
+          fi
+          cmake "-DSOURCE_DIR=$PACKAGE_SOURCE" "-DOUTPUT_DIR=$PWD/build/archives-qt" \
+            "${options[@]}" -P cmake/ReleaseDesktop.cmake
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.runtime == 'cpu' && format('qt-{0}', matrix.platform) || format('qt-cuda-vulkan-{0}', matrix.platform) }}

@@ -86,20 +86,19 @@ cmake -DRUNTIME=cuda -DCUDA_VALIDATION=Required -DCUDAToolkit_ROOT=<sdk> -P cmak
 所有桌面包都核对归档布局、Qt 库、插件及许可证，并生成 `.sha256`。双后端包另检查 CUDA 的七种原生架构及 PTX，解包后运行 GUI 和无 GPU 时的 CPU 回退测试。Windows 云端产物以 `_candidate` 结尾，正式包需实机通过 CUDA 和 Vulkan 预览；Linux 云端包的 GPU 实机状态记录为 `not-run`。可复查下载的桌面附件：
 
 ```powershell
-./scripts/verify-desktop-asset.ps1 -ArchivePath <archive> -ExpectedSha256 <sha256>
+cmake -DARCHIVE=<archive> -DEXPECTED_SHA256=<sha256> -P cmake/VerifyDesktopPackage.cmake
 ```
 
 本机构建先按[源码构建](building.md)准备对应平台的锁定 vcpkg 依赖，设置 `VCPKG_ROOT`，Linux 另装工作流中列出的链接/显示依赖，再运行：
 
 ```powershell
 cmake -DMODE=Qt -P cmake/PrepareRelease.cmake
-$qtRoot = 'build/tools/qt-sdk/6.12.0'
-./scripts/release-desktop.ps1 -QtRoot $qtRoot
+cmake -DQT_ROOT=build/tools/qt-sdk/6.12.0 -P cmake/ReleaseDesktop.cmake
 ```
 
-Windows/Linux 双后端构建另需准备锁定的 CUDA SDK、Vulkan 头文件和离线着色器编译器（见 `Native packages`），然后给脚本加 `-CudaVulkan`；默认要求实机验证。没有 GPU 验收环境时显式加 `-GpuValidation BuildOnly`；Linux 冒烟测试还需 `xvfb` 与 `xauth`。
+Windows/Linux 双后端构建另需准备锁定的 CUDA SDK、Vulkan 头文件和离线着色器编译器（见 `Native packages`），然后传入 `-DRUNTIME=cuda-vulkan`；默认要求实机验证。没有 GPU 验收环境时显式加 `-DGPU_VALIDATION=BuildOnly`；Linux 冒烟测试还需 `xvfb` 与 `xauth`。
 
-产物位于 `build/archives-qt/`。对外分发时保留包内许可证和源码来源说明，并随发布提供与锁定 Qt 版本对应的源码获取方式。
+产物位于 `build/archives-qt/`。在 Windows/Linux 本机可给验包入口加 `-DRUN_SMOKE=ON` 执行归档中的 GUI；双后端包还检查禁用 GPU 后的回退，加 `-DREQUIRE_GPU=ON` 则同时要求实机通过两个后端。对外分发时保留包内许可证和源码来源说明，并随发布提供与锁定 Qt 版本对应的源码获取方式。
 
 ## 独立包验收
 
