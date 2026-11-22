@@ -165,6 +165,7 @@ if(cuda)
             message(FATAL_ERROR "CUDA GPU probe did not pass")
         endif()
         set(ENV{MOSAICRAFT_REQUIRE_CUDA} 1)
+        set(gpu_validation passed)
     else()
         # BuildOnly must never be mistaken for successful real-device acceptance.
         execute_process(COMMAND "${CMAKE_COMMAND}" -E env CUDA_VISIBLE_DEVICES=-1
@@ -172,7 +173,6 @@ if(cuda)
         if(status STREQUAL "0" OR NOT "${output}\n${error}" MATCHES "requires an available CUDA device")
             message(FATAL_ERROR "Unexpected CUDA-required result without a device: ${status}\n${output}\n${error}")
         endif()
-        set(gpu_validation passed)
     endif()
 endif()
 
