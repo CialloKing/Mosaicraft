@@ -16,15 +16,12 @@ jobs:
         include:
           - platform: windows-x64
             runner: windows-2025-vs2026
-            triplet: x64-windows-release
             backend: Vulkan
           - platform: linux-x64
             runner: ubuntu-22.04
-            triplet: x64-linux-release
             backend: Vulkan
           - platform: macos-arm64
             runner: macos-15
-            triplet: arm64-osx-release
             backend: Metal
     runs-on: ${{ matrix.runner }}
     defaults:
@@ -34,9 +31,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/dependencies
-        with:
-          triplet: ${{ matrix.triplet }}
+      - uses: ./.github/actions/native-dependencies
       - name: Install Linux build and archive tools
         if: runner.os == 'Linux'
         run: |
@@ -45,7 +40,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Prepare pinned Vulkan headers and offline compiler
         if: matrix.backend == 'Vulkan'
-        run: ./scripts/setup-vulkan.ps1
+        run: cmake -DMODE=Vulkan -P cmake/PrepareRelease.cmake
       - name: Prepare Apple offline shader compiler
         if: matrix.backend == 'Metal'
         run: |

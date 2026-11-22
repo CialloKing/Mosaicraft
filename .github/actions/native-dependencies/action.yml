@@ -1,6 +1,9 @@
 name: Native locked dependencies
 description: Fingerprint, restore, install and immediately save native vcpkg dependencies.
 inputs:
+  source-directory:
+    description: Checkout containing the product and dependency locks.
+    default: '.'
   cache-namespace:
     description: Override only to isolate a cold/warm validation pair.
     default: deps-v1
@@ -14,16 +17,17 @@ runs:
       with:
         repository: microsoft/vcpkg
         ref: a0400024711b283056538ac19ced80b91a83c24c
-        path: build/tools/vcpkg
+        path: ${{ inputs.source-directory }}/build/tools/vcpkg
         persist-credentials: false
     - name: Prepare and fingerprint toolchain
       id: prepare
       shell: bash
       env:
         COLD: ${{ inputs.cold }}
+        SOURCE_DIR: ${{ inputs.source-directory }}
         CACHE_NAMESPACE: ${{ inputs.cache-namespace }}
       run: |
-        command=(cmake -DMODE=Prepare -DVCPKG_ROOT=build/tools/vcpkg "-DCACHE_NAMESPACE=$CACHE_NAMESPACE" -P cmake/PrepareRelease.cmake)
+        command=(cmake -DMODE=Prepare "-DSOURCE_DIR=$SOURCE_DIR" -DVCPKG_ROOT=build/tools/vcpkg "-DCACHE_NAMESPACE=$CACHE_NAMESPACE" -P cmake/PrepareRelease.cmake)
         if [[ "$RUNNER_OS" == Linux && "$COLD" == true ]]; then
           bash scripts/audit-native-release.sh build/dependency-state/prepare-execve.log "${command[@]}"
         else
@@ -40,8 +44,9 @@ runs:
       shell: bash
       env:
         COLD: ${{ inputs.cold }}
+        SOURCE_DIR: ${{ inputs.source-directory }}
       run: |
-        command=(cmake -DMODE=Install -P cmake/PrepareRelease.cmake)
+        command=(cmake -DMODE=Install "-DSOURCE_DIR=$SOURCE_DIR" -P cmake/PrepareRelease.cmake)
         if [[ "$RUNNER_OS" == Linux && "$COLD" == true ]]; then
           bash scripts/audit-native-release.sh build/dependency-state/execve.log "${command[@]}"
           grep -Eq '"restoredPackages":0}' build/dependency-state/x64-linux-release/install-summary.json

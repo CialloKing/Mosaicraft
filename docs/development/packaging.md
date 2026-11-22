@@ -15,7 +15,7 @@
 v1.15.11 保留七个原生包，另提供五个 Qt 桌面包。原生 CPU/CUDA 包关闭 Vulkan 和 Metal；原生 Vulkan 包启用 `MOSAICRAFT_VULKAN_AUTO`，`auto` 优先 Vulkan 并回退 CPU，不编译 CUDA/Metal。`release.ps1` 显式设置这些开关并核对实际 CMake 缓存。
 
 ```powershell
-./scripts/setup-vulkan.ps1
+cmake -DMODE=Vulkan -P cmake/PrepareRelease.cmake
 ./scripts/release.ps1 -BuildDir build/package-vulkan -NoCuda -VulkanRelease -OutputDir build/archives
 ```
 
@@ -30,12 +30,12 @@ v1.15.11 保留七个原生包，另提供五个 Qt 桌面包。原生 CPU/CUDA 
 首次本机使用：
 
 ```powershell
-./scripts/setup-dependencies.ps1 -Mode Prepare -VcpkgRoot <pinned-vcpkg> -Triplet x64-windows-release
-./scripts/setup-dependencies.ps1 -Mode Install -VcpkgRoot <pinned-vcpkg> -Triplet x64-windows-release
+cmake -DMODE=Prepare -DVCPKG_ROOT=<pinned-vcpkg> -P cmake/PrepareRelease.cmake
+cmake -DMODE=Install -DVCPKG_ROOT=<pinned-vcpkg> -P cmake/PrepareRelease.cmake
 ./scripts/release.ps1 -BuildDir build/package-cpu -NoCuda -OutputDir build/archives
 ```
 
-Linux/macOS 分别选择 x64-linux-release、arm64-osx-release。Linux 打包还需要 patchelf。每种运行时使用独立构建目录。CMake 递归收集第三方运行库，Linux 使用相对 RPATH，macOS 修正加载路径后签名；Unix tar.gz 保留执行权限和符号链接。包内附有第三方许可证。
+准备入口自动选择本机平台的 Release triplet。Linux 打包还需要 patchelf。每种运行时使用独立构建目录。CMake 递归收集第三方运行库，Linux 使用相对 RPATH，macOS 修正加载路径后签名；Unix tar.gz 保留执行权限和符号链接。包内附有第三方许可证。
 
 Linux/macOS 的日常源码构建使用 CMake 3.21+。发布脚本使用 PowerShell 7，并向 CMake 显式传入固定依赖工具链和运行库打包选项。Windows Preset 的 Visual Studio 2026 生成器需要 CMake 4.2+。 [源码构建](building.md)
 
@@ -61,7 +61,7 @@ cmake -DVCPKG_ROOT=build/tools/vcpkg -DRUNTIME=metal -DCHANNEL=candidate -P cmak
 
 ```powershell
 # Windows 云端候选：完整 CPU 回退测试，但不声称 GPU 通过验收
-./scripts/setup-cuda.ps1
+cmake -DMODE=CUDA -P cmake/PrepareRelease.cmake
 ./scripts/release.ps1 -BuildDir build/package-cuda -CudaValidation BuildOnly -OutputDir build/archives
 
 # Linux CUDA 正式附件：完整测试，GPU 状态仍为 not-run
@@ -99,7 +99,8 @@ $env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.
 本机构建先按[源码构建](building.md)准备对应平台的锁定 vcpkg 依赖，设置 `VCPKG_ROOT`，Linux 另装工作流中列出的链接/显示依赖，再运行：
 
 ```powershell
-$qtRoot = ./scripts/setup-qt.ps1 -InstallDir build/tools/qt-sdk
+cmake -DMODE=Qt -P cmake/PrepareRelease.cmake
+$qtRoot = 'build/tools/qt-sdk/6.12.0'
 ./scripts/release-desktop.ps1 -QtRoot $qtRoot
 ```
 

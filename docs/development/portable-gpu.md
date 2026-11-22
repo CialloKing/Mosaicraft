@@ -66,7 +66,7 @@
 
 ## 构建与候选包
 
-CPU 构建不引入 GPU SDK。Vulkan 使用 1.1 基线，动态加载系统驱动，GLSL 离线编译并嵌入 SPIR-V。Windows 的 `scripts/setup-vulkan.ps1` 固定 Vulkan-Headers 提交及 glslang 16.6.0 下载哈希。Metal 仅在 macOS 使用完整 Xcode 的 metal/metallib 工具离线编译并嵌入，无快速数学和浮点收缩。
+CPU 构建不引入 GPU SDK。Vulkan 使用 1.1 基线，动态加载系统驱动，GLSL 离线编译并嵌入 SPIR-V。Windows 的 `cmake -DMODE=Vulkan -P cmake/PrepareRelease.cmake` 固定 Vulkan-Headers 提交及 glslang 16.6.0 下载哈希。Metal 仅在 macOS 使用完整 Xcode 的 metal/metallib 工具离线编译并嵌入，无快速数学和浮点收缩。
 
 在平台预设上通过 `-DMOSAICRAFT_VULKAN=ON` 或 `-DMOSAICRAFT_METAL=ON` 开启后端。CUDA 与 Vulkan 的组合再加 `-DMOSAICRAFT_CUDA=ON`。 [GPU 构建参数](building.md#gpu-后端与编译配置)
 

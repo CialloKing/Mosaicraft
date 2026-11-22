@@ -96,7 +96,7 @@ jobs:
           cache-namespace: ${{ inputs.cache-namespace || 'deps-v1' }}
       - name: Prepare locked Qt SDK
         shell: pwsh
-        run: ./scripts/setup-qt.ps1 -InstallDir (Join-Path $env:RUNNER_TEMP 'mosaicraft-qt')
+        run: cmake -DMODE=Qt "-DDESTINATION=$env:RUNNER_TEMP/mosaicraft-qt" -P cmake/PrepareRelease.cmake
       - name: Build and test the interactive backend
         shell: pwsh
         run: |

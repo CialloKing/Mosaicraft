@@ -37,7 +37,7 @@ Windows/Linux x64 正式 Vulkan 包启用 Vulkan → CPU，并在独立无驱动
 ./scripts/release.ps1 -BuildDir build/package-cuda-local -CudaValidation Required -OutputDir build/archives
 # CPU 包
 ./scripts/release.ps1 -BuildDir build/package-cpu -NoCuda -OutputDir build/archives
-# 正式 Vulkan 包（先执行 setup-vulkan.ps1）
+# 正式 Vulkan 包（先运行 PrepareRelease.cmake 的 Vulkan 模式）
 ./scripts/release.ps1 -BuildDir build/package-vulkan -NoCuda -VulkanRelease -OutputDir build/archives
 ```
 

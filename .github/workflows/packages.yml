@@ -26,23 +26,18 @@ jobs:
           - platform: windows-x64
             runtime: cpu
             runner: windows-2025-vs2026
-            triplet: x64-windows-release
           - platform: linux-x64
             runtime: cpu
             runner: ubuntu-22.04
-            triplet: x64-linux-release
           - platform: macos-arm64
             runtime: cpu
             runner: macos-15
-            triplet: arm64-osx-release
           - platform: windows-x64
             runtime: vulkan
             runner: windows-2025-vs2026
-            triplet: x64-windows-release
           - platform: linux-x64
             runtime: vulkan
             runner: ubuntu-22.04
-            triplet: x64-linux-release
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
@@ -51,9 +46,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/dependencies
-        with:
-          triplet: ${{ matrix.triplet }}
+      - uses: ./.github/actions/native-dependencies
       - name: Install packaging tool
         if: runner.os == 'Linux'
         run: |
@@ -64,7 +57,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Prepare pinned Vulkan headers and offline compiler
         if: matrix.runtime == 'vulkan'
-        run: ./scripts/setup-vulkan.ps1
+        run: cmake -DMODE=Vulkan -P cmake/PrepareRelease.cmake
       - name: Build, test and package native Release
         run: |
           $releaseOptions = @{}
@@ -126,10 +119,8 @@ jobs:
         include:
           - platform: windows-x64
             runner: windows-2025-vs2026
-            triplet: x64-windows-release
           - platform: linux-x64
             runner: ubuntu-22.04
-            triplet: x64-linux-release
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
@@ -138,11 +129,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/dependencies
-        with:
-          triplet: ${{ matrix.triplet }}
+      - uses: ./.github/actions/native-dependencies
       - name: Install hash-locked CUDA 13.5.37 compiler and runtime
-        run: ./scripts/setup-cuda.ps1
+        run: cmake -DMODE=CUDA -P cmake/PrepareRelease.cmake
       - name: Install packaging tool
         if: runner.os == 'Linux'
         run: |
@@ -225,6 +214,8 @@ jobs:
           - platform: macos-arm64
             runtime: cuda-vulkan
     runs-on: ${{ matrix.platform == 'windows-x64' && 'windows-2025-vs2026' || matrix.platform == 'linux-x64' && 'ubuntu-24.04' || 'macos-26' }}
+    env:
+      PACKAGE_SOURCE: ${{ inputs.desktop_release_tag && 'build/package-source' || '.' }}
     defaults:
       run:
         shell: pwsh
@@ -237,18 +228,17 @@ jobs:
           if ($env:RELEASE_TAG -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Expected a stable release tag such as v1.15.11' }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.desktop_release_tag && format('refs/tags/{0}', inputs.desktop_release_tag) || github.sha }}
           persist-credentials: false
-      # Use the source tag's build/dependency locks, but allow newer packagers to supplement an existing release.
+      # Keep the tag's source and locks separate from the current packaging tools.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: inputs.desktop_release_tag
         with:
-          ref: ${{ github.sha }}
-          path: build/packaging-tools
+          ref: ${{ format('refs/tags/{0}', inputs.desktop_release_tag) }}
+          path: build/package-source
           persist-credentials: false
-      - uses: ./.github/actions/dependencies
+      - uses: ./.github/actions/native-dependencies
         with:
-          triplet: ${{ runner.os == 'Windows' && 'x64-windows-release' || runner.os == 'Linux' && 'x64-linux-release' || 'arm64-osx-release' }}
+          source-directory: ${{ inputs.desktop_release_tag && 'build/package-source' || '.' }}
       - name: Install Linux linker and display libraries (no system Qt)
         if: runner.os == 'Linux'
         shell: bash
@@ -263,7 +253,7 @@ jobs:
             sudo apt-get install -y --no-install-recommends glslang-tools xvfb xauth
           fi
       - name: Prepare locked Qt SDK
-        run: ./scripts/setup-qt.ps1 -InstallDir (Join-Path $env:RUNNER_TEMP 'mosaicraft-qt')
+        run: cmake "-DSOURCE_DIR=$env:PACKAGE_SOURCE" -DMODE=Qt "-DDESTINATION=$env:RUNNER_TEMP/mosaicraft-qt" -P cmake/PrepareRelease.cmake
       - name: Check Qt XCB host libraries before compiling
         if: runner.os == 'Linux' && matrix.runtime == 'cuda-vulkan'
         shell: bash
@@ -273,8 +263,9 @@ jobs:
       - name: Prepare locked CUDA SDK and Vulkan build tools
         if: matrix.runtime == 'cuda-vulkan'
         run: |
-          ./scripts/setup-cuda.ps1
-          ./scripts/setup-vulkan.ps1
+          cmake "-DSOURCE_DIR=$env:PACKAGE_SOURCE" -DMODE=CUDA -P cmake/PrepareRelease.cmake
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake "-DSOURCE_DIR=$env:PACKAGE_SOURCE" -DMODE=Vulkan -P cmake/PrepareRelease.cmake
       - name: Build and verify Qt Desktop archive
         env:
           RELEASE_TAG: ${{ inputs.desktop_release_tag }}
@@ -282,15 +273,14 @@ jobs:
           $packager = './scripts/release-desktop.ps1'
           $commit = $env:GITHUB_SHA
           if ($env:RELEASE_TAG) {
-            $packager = './build/packaging-tools/scripts/release-desktop.ps1'
-            $commit = git rev-parse "refs/tags/$($env:RELEASE_TAG)^{commit}"
+            $commit = git -C $env:PACKAGE_SOURCE rev-parse "refs/tags/$($env:RELEASE_TAG)^{commit}"
             if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve package source tag' }
-            $version = (Get-Content -Raw contracts.json | ConvertFrom-Json).softwareVersion
+            $version = (Get-Content -Raw (Join-Path $env:PACKAGE_SOURCE 'contracts.json') | ConvertFrom-Json).softwareVersion
             if ($env:RELEASE_TAG -cne "v$version") { throw 'Release tag does not match contracts.json' }
           }
           $options = @{}
           if ('${{ matrix.runtime }}' -eq 'cuda-vulkan') { $options = @{ CudaVulkan = $true; GpuValidation = 'BuildOnly' } }
-          & $packager -SourceDir $PWD.Path -ExpectedSourceCommit $commit -QtRoot $env:MOSAICRAFT_QT_ROOT @options
+          & $packager -SourceDir $env:PACKAGE_SOURCE -OutputDir (Join-Path $PWD.Path 'build/archives-qt') -ExpectedSourceCommit $commit -QtRoot $env:MOSAICRAFT_QT_ROOT @options
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.runtime == 'cpu' && format('qt-{0}', matrix.platform) || format('qt-cuda-vulkan-{0}', matrix.platform) }}
