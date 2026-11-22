@@ -1255,7 +1255,7 @@ TEST_CASE("API endpoint metadata is shared and self-describing")
     CHECK(dbStats->method == "GET|POST");
     CHECK(dbStats->methods == std::vector<std::string>{"GET", "POST"});
     CHECK(dbStats->httpPattern == "/api/db/stats");
-    CHECK(dbStats->queryKeys == std::vector<std::string>{"dbPath", "deep"});
+    CHECK(dbStats->queryKeys == std::vector<std::string>{"dbPath", "deep", "dimensionsOnly"});
     CHECK(std::find(dbStats->acceptedQueryKeys.begin(), dbStats->acceptedQueryKeys.end(),
         "dbPath") != dbStats->acceptedQueryKeys.end());
     CHECK(dbStats->successStatus == 200);

@@ -428,6 +428,8 @@ Inspects a source image and optionally reports database match coverage.
 返回数据库大小、LAB 范围、亮度分桶和覆盖间隙。
 Returns database size, LAB ranges, brightness buckets, and coverage gaps.
 
+可选 `dimensionsOnly: true`（GET 查询用 `dimensionsOnly=true`）。只读打开图库，仅返回 `stats.featureWidth` 和 `stats.featureHeight` 两个字符串，不扫描素材。
+
 `lHistogram` 在非空图库中返回 8 档 `{lo, hi, count}`，覆盖保存的 LAB L 值 0～255。`coverageGaps` 为覆盖缺口代码。
 
 `colors` 包含 `ab`（32×32，行按 b，列按 a）、`hue`（24 档 LAB 色相角）、`lightness`（8 档）、`gray` 和 `total`。建库任务详情 `runtime.build` 提供 `scanned/normalized/duplicates/inserted`，完成索引的任务还包含 `before/after` 色彩汇总。

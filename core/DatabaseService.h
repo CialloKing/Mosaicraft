@@ -14,6 +14,7 @@ struct DatabaseRequest
 {
     std::string dbPath = "library/mosaicraft.db";
     bool deep = false;
+    bool dimensionsOnly = false;
 };
 
 struct DatabaseUsageRequest

@@ -3,6 +3,7 @@
 #include "Database.h"
 #include "LibraryInspection.h"
 #include "LibraryVisuals.h"
+#include "MosaicPlanning.h"
 #include "MosaicService.h"
 #include "OutputPublication.h"
 #include "UnicodeIO.h"
@@ -20,10 +21,26 @@ namespace mosaicraft
 DatabaseStatsResult DatabaseService::stats(const DatabaseRequest& request) const
 {
     DatabaseStatsResult out;
-    Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
+    const auto mode = request.dimensionsOnly ? Database::OpenMode::ReadOnly : Database::OpenMode::Existing;
+    Database db(resolveDbPathForService(request.dbPath), mode);
     if (!db.isOpen())
     {
         out.status = ServiceResult::failure(2, db.error(), db.errorCode(), "dbPath");
+        return out;
+    }
+
+    if (request.dimensionsOnly)
+    {
+        // 自动填表只需要元数据，避免在输入路径时加载全库颜色统计。
+        int width = 0, height = 0;
+        if (!readLibraryDimensions(db, width, height))
+        {
+            out.status = ServiceResult::failure(2, "invalid library feature dimensions", "library_incompatible", "dbPath");
+            return out;
+        }
+        out.stats.featureWidth = std::to_string(width);
+        out.stats.featureHeight = std::to_string(height);
+        out.status = ServiceResult::success("database dimensions read");
         return out;
     }
 

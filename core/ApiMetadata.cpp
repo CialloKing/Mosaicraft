@@ -71,6 +71,7 @@ std::vector<std::string> endpointQueryKeys(ApiOperation operation)
     case ApiOperation::BrowsePreviewLibrary:
         return {"q", "offset"};
     case ApiOperation::DatabaseStats:
+        return {"dbPath", "deep", "dimensionsOnly"};
     case ApiOperation::DatabaseHealth:
         return {"dbPath", "deep"};
     case ApiOperation::DatabaseUsage:
@@ -666,7 +667,7 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata()
             endpoint("DELETE", "/api/jobs/{id}", "cancel queued job", "jobs", ApiOperation::CancelJob,
                      ApiRequestShape::JobId, {"id"}, {"id"}, true),
             endpoint("GET|POST", "/api/db/stats", "database statistics", "database", ApiOperation::DatabaseStats,
-                     ApiRequestShape::Query, {"dbPath", "deep"}),
+                     ApiRequestShape::Query, {"dbPath", "deep", "dimensionsOnly"}),
             endpoint("GET|POST", "/api/db/health", "database health report", "database", ApiOperation::DatabaseHealth,
                      ApiRequestShape::Query, {"dbPath", "deep"}),
             endpoint("GET|POST", "/api/db/usage", "database usage report", "database", ApiOperation::DatabaseUsage,

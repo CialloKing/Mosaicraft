@@ -420,6 +420,11 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
     }
     const auto stats = api.json("/api/db/stats", {{"dbPath", database}}).at("stats");
     require(stats.at("total") == 10, "Wrong library size after append");
+    if (current)
+    {
+        const auto dimensions = api.json("/api/db/stats", {{"dbPath", library}, {"dimensionsOnly", true}}).at("stats");
+        require(dimensions == Json{{"featureWidth", "36"}, {"featureHeight", "64"}}, "Wrong library dimensions");
+    }
     api.json("/api/db/health", {{"dbPath", database}});
     api.json("/api/db/usage", {{"dbPath", database}, {"limit", 10}, {"showUnused", true}});
     const auto inspect = api.json("/api/inspect", {{"imagePath", target.u8string()}, {"dbPath", database}}).at("inspect");

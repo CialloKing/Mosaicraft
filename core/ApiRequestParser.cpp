@@ -924,7 +924,8 @@ bool parseBuildRequestJson(const std::string &body, BuildRequest &request, Reque
     return error.empty() && validateBuildRequest(request, error.message, &error.field);
 }
 
-bool applyDatabaseRequestJson(const std::string &body, DatabaseRequest &request, RequestError &error)
+bool applyDatabaseRequestJson(const std::string &body, DatabaseRequest &request, RequestError &error,
+                              ApiOperation operation)
 {
     json values;
     if (!parseJsonObject(body, values, error))
@@ -933,7 +934,7 @@ bool applyDatabaseRequestJson(const std::string &body, DatabaseRequest &request,
     }
 
     std::string text;
-    if (!validateFields(values, ApiOperation::DatabaseStats, error))
+    if (!validateFields(values, operation, error))
     {
         return false;
     }
@@ -946,6 +947,7 @@ bool applyDatabaseRequestJson(const std::string &body, DatabaseRequest &request,
     {
         request.deep = deep;
     }
+    getBoolField(values, {"dimensionsOnly"}, request.dimensionsOnly, error);
     return error.empty();
 }
 
@@ -1085,9 +1087,9 @@ bool applyInspectRequestJson(const std::string &body, InspectRequest &request, R
 }
 
 bool parseDatabaseRequestApi(const ApiQueryParams &query, const std::string &body, DatabaseRequest &request,
-                             RequestError &error)
+                             RequestError &error, ApiOperation operation)
 {
-    if (!validateQuery(query, body, ApiOperation::DatabaseStats, error))
+    if (!validateQuery(query, body, operation, error))
     {
         return false;
     }
@@ -1101,7 +1103,8 @@ bool parseDatabaseRequestApi(const ApiQueryParams &query, const std::string &bod
     {
         request.deep = deep;
     }
-    return applyDatabaseRequestJson(body, request, error);
+    getQueryBool(query, "dimensionsOnly", false, request.dimensionsOnly, error);
+    return applyDatabaseRequestJson(body, request, error, operation);
 }
 
 bool parseDatabaseUsageRequestApi(const ApiQueryParams &query, const std::string &body, DatabaseUsageRequest &request,

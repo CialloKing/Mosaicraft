@@ -52,7 +52,8 @@ bool parseMosaicRequestJson(const std::string &body, MosaicRequest &request, Req
 
 bool parseBuildRequestJson(const std::string &body, BuildRequest &request, RequestError &error);
 
-bool applyDatabaseRequestJson(const std::string &body, DatabaseRequest &request, RequestError &error);
+bool applyDatabaseRequestJson(const std::string &body, DatabaseRequest &request, RequestError &error,
+                              ApiOperation operation = ApiOperation::DatabaseStats);
 
 bool applyDatabaseUsageRequestJson(const std::string &body, DatabaseUsageRequest &request, RequestError &error);
 
@@ -64,7 +65,7 @@ bool applyDatabasePurgeRequestJson(const std::string &body, DatabasePurgeRequest
 bool applyInspectRequestJson(const std::string &body, InspectRequest &request, RequestError &error);
 
 bool parseDatabaseRequestApi(const ApiQueryParams &query, const std::string &body, DatabaseRequest &request,
-                             RequestError &error);
+                             RequestError &error, ApiOperation operation = ApiOperation::DatabaseStats);
 
 bool parseDatabaseUsageRequestApi(const ApiQueryParams &query, const std::string &body, DatabaseUsageRequest &request,
                                   RequestError &error);

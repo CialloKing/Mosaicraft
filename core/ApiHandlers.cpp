@@ -1463,6 +1463,11 @@ ApiResponse apiDatabaseStats(const ApiQueryParams& query, const std::string& bod
     DatabaseService service;
     const auto result = service.stats(request);
     if (!result.status.ok) return resultResponse(500, result.status);
+    if (request.dimensionsOnly)
+    {
+        return {200, apiPayloadJson(result.status, "stats", {{"featureWidth", result.stats.featureWidth},
+                                                            {"featureHeight", result.stats.featureHeight}})};
+    }
     return {200, apiPayloadJson(result.status, "stats", databaseStatsToJson(result.stats))};
 }
 
@@ -1470,7 +1475,10 @@ ApiResponse apiDatabaseHealth(const ApiQueryParams& query, const std::string& bo
 {
     DatabaseRequest request;
     RequestError error;
-    if (!parseDatabaseRequestApi(query, body, request, error)) return badRequest(error);
+    if (!parseDatabaseRequestApi(query, body, request, error, ApiOperation::DatabaseHealth))
+    {
+        return badRequest(error);
+    }
 
     DatabaseService service;
     const auto result = service.health(request);
