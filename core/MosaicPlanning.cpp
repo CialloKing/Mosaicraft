@@ -14,7 +14,6 @@
 #include <array>
 #include <cmath>
 #include <limits>
-#include <thread>
 
 namespace mosaicraft
 {
@@ -339,7 +338,7 @@ ServiceResult planMosaic(MosaicRequest request, MosaicPlan &plan)
     }
 #endif
     const uint64_t overlay = config.overlayStrength > 0 ? TileCompositor::workingBytes({plan.output.tileWidth, plan.output.tileHeight}) : 0;
-    const auto workers = std::min<uint64_t>(count, std::min(8u, std::max(1u, std::thread::hardware_concurrency())));
+    const auto workers = std::min<uint64_t>(count, outputThreadLimit(config, plan.output));
     const auto budget = outputBudget(config, plan.output, config.overlayStrength > 0 ? targetBytes : 0, overlay * workers);
     plan.rawBytes = budget.rawBytes;
     plan.writeMode = single ? (budget.stream ? "stream" : "batch") : "tiles";

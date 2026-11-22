@@ -30,6 +30,11 @@ double milliseconds(Clock::time_point start)
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
 }
 
+bool isPngImage(const MosaicEngine::Config &config, const detail::OutputPlan &plan)
+{
+    return config.outputMode == OutputMode::Image && plan.format == "png";
+}
+
 unsigned pngWorkers(int requested)
 {
     unsigned detected = std::max(1u, std::thread::hardware_concurrency());
@@ -72,6 +77,16 @@ unsigned pngWorkers(int requested)
 
 } // namespace
 
+unsigned outputThreadLimit(const MosaicEngine::Config &config, const detail::OutputPlan &plan)
+{
+    if (isPngImage(config, plan))
+    {
+        return pngWorkers(config.threads);
+    }
+    return config.threads > 0 ? static_cast<unsigned>(config.threads)
+                              : std::min(8u, std::max(1u, std::thread::hardware_concurrency()));
+}
+
 OutputBudget outputBudget(const MosaicEngine::Config &config, const detail::OutputPlan &plan,
                           uint64_t overlayReferenceBytes, uint64_t overlayWorkingBytes)
 {
@@ -93,13 +108,13 @@ OutputBudget outputBudget(const MosaicEngine::Config &config, const detail::Outp
     const bool stream = plan.format != "webp" && (config.writeMode == "stream" ||
         (config.writeMode == "auto" && (memory ? batchBytes > memory : rawBytes > 500ULL * 1024 * 1024)));
     ParallelPngPlan png;
-    if (config.outputMode == OutputMode::Image && plan.format == "png")
+    if (isPngImage(config, plan))
     {
         // 编码缓冲和像素条带/画布同时存在，内存不足时缩减并行度或保留旧编码器。
         constexpr uint64_t cap = 256ULL * 1024 * 1024;
         const uint64_t base = stream ? streamBytes : batchBytes;
         const uint64_t budget = memory ? (memory > base ? std::min(cap, (memory - base) / 4) : 0) : cap / 4;
-        png = planParallelPng(plan.width, plan.height, pngWorkers(config.threads), budget);
+        png = planParallelPng(plan.width, plan.height, outputThreadLimit(config, plan), budget);
     }
     return {rawBytes, rowBytes, batchBytes + std::min(maximum - batchBytes, png.bufferBytes),
             streamBytes + std::min(maximum - streamBytes, png.bufferBytes), rgbRows, stream, png};
@@ -149,18 +164,15 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         {
             throw std::invalid_argument("overlayStrength must be finite and between 0 and 1");
         }
-        const bool pngImage = config.outputMode == OutputMode::Image && plan.format == "png";
-        const unsigned outputThreads = pngImage ? pngWorkers(config.threads) :
-            (config.threads > 0 ? static_cast<unsigned>(config.threads)
-                               : std::min(8u, std::max(1u, std::thread::hardware_concurrency())));
-        const unsigned placementThreads = pngImage && config.threads == 0 ? std::min(8u, outputThreads) : outputThreads;
-        const unsigned workers = static_cast<unsigned>(std::min<size_t>(count, placementThreads));
+        const bool pngImage = isPngImage(config, plan);
+        const unsigned outputThreads = outputThreadLimit(config, plan);
+        const unsigned workers = static_cast<unsigned>(std::min<size_t>(count, outputThreads));
         std::unique_ptr<TileCompositor> compositor;
         if (config.overlayStrength > 0)
         {
             compositor = std::make_unique<TileCompositor>(target, tilesX, tilesY, cv::Size(tileW, tileH));
             stats.overlayReferenceBytes = target.total() * target.elemSize();
-            stats.overlayWorkingBytes = std::min<size_t>(count, outputThreads) * TileCompositor::workingBytes(cv::Size(tileW, tileH));
+            stats.overlayWorkingBytes = workers * TileCompositor::workingBytes(cv::Size(tileW, tileH));
         }
         ImageCache cache(ImageCache::kDefaultBudget, config.benchmark);
         std::unordered_map<int, size_t> useCounts;
@@ -184,11 +196,13 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         {
             budget = outputBudget(config, plan, stats.overlayReferenceBytes, stats.overlayWorkingBytes);
         }
-        const bool reserveEncoder = MOSAICRAFT_TRIAL_STREAM && !budget.png.workers && budget.stream &&
-                                    config.threads > 1 && outputThreads > 1 && (pngImage || plan.format == "jpg");
-        // 旧双缓冲为串行编码预留一个执行位；并行 PNG 则分阶段复用同一线程池。
-        WorkerPool pool(reserveEncoder ? std::min(workers, outputThreads - 1)
-                                       : static_cast<unsigned>(std::max<size_t>(workers, budget.png.workers)));
+        const bool reserveEncoder = budget.stream && !budget.png.workers && outputThreads > 1 &&
+                                    ((pngImage && config.threads == 0) ||
+                                     (MOSAICRAFT_TRIAL_STREAM && config.threads > 1 && (pngImage || plan.format == "jpg")));
+        // 流式 PNG 每次只拼一条带；串行编码与拼贴重叠时也要给编码保留一个执行位。
+        const unsigned placementSlots = pngImage && budget.stream ? std::min(workers, static_cast<unsigned>(tilesX)) : workers;
+        WorkerPool pool(reserveEncoder ? std::min(placementSlots, outputThreads - 1)
+                                       : static_cast<unsigned>(std::max<size_t>(placementSlots, budget.png.workers)));
         stats.workerSlots = pool.size();
         std::atomic<int> failures{0};
         std::atomic<int64_t> loadingNs{0}, decodeNs{0}, resizeNs{0};
@@ -469,7 +483,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         {
             openWriter();
         }
-        if (stream && (parallelPng || (pngImage && outputThreads == 1) || (config.threads > 0 && !reserveEncoder)))
+        if (stream && !reserveEncoder && (pngImage || config.threads > 0))
         {
             // PNG 拼贴与并行编码复用同一线程池，不在同一时刻各占一套线程。
             // 显式线程预算的串行编码也保留现有的分阶段行为。

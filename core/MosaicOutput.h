@@ -19,6 +19,8 @@ struct OutputBudget
     ParallelPngPlan png;
 };
 
+unsigned outputThreadLimit(const MosaicEngine::Config &config, const detail::OutputPlan &plan);
+
 OutputBudget outputBudget(const MosaicEngine::Config &config, const detail::OutputPlan &plan,
                           uint64_t overlayReferenceBytes, uint64_t overlayWorkingBytes);
 

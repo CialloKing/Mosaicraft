@@ -17,8 +17,10 @@ namespace
 {
 constexpr size_t MiB = 1024 * 1024;
 constexpr size_t dictionaryBytes = 32 * 1024;
-constexpr size_t minBlockBytes = 256 * 1024;
-constexpr size_t maxBlockBytes = 4 * MiB;
+constexpr size_t minBlockBytes = 64 * 1024;
+constexpr size_t targetBlockBytes = 4 * MiB;
+// 为压缩上界及块尾保留余量，保证 IDAT 长度不超过 PNG 的 31 位限制。
+constexpr size_t maxBlockInputBytes = 1024 * MiB;
 constexpr size_t stateBudget = 512 * 1024; // zlib 的滑窗、哈希表和 pending buffer。
 constexpr std::array<uint8_t, 8> signature{137, 80, 78, 71, 13, 10, 26, 10};
 constexpr std::array<uint8_t, 4> idat{'I', 'D', 'A', 'T'};
@@ -177,12 +179,12 @@ ParallelPngPlan planParallelPng(int width, int height, unsigned workers, uint64_
         return {};
     }
     const uint64_t rowBytes = uint64_t(width) * 3 + 1;
-    const uint64_t filteredBytes = rowBytes * height;
     const uint64_t fixedBytes = dictionaryBytes + rowBytes - 1; // 包含自适应滤波的上一行。
-    if (filteredBytes < 8 * MiB || rowBytes > maxBlockBytes || memoryBudget < fixedBytes)
+    if (rowBytes > maxBlockInputBytes || memoryBudget <= fixedBytes)
     {
-        return {}; // 小图或极宽行继续走 libpng，避免线程与缓冲开销。
+        return {};
     }
+    // 先按较小的工作粒度分配最多的槽位，不用整图大小挡住中小图。
     const auto minimumRows = std::max<size_t>(1, minBlockBytes / rowBytes);
     const uint64_t budget = memoryBudget - fixedBytes;
     const auto slots = static_cast<size_t>(std::min<uint64_t>(
@@ -192,9 +194,10 @@ ParallelPngPlan planParallelPng(int width, int height, unsigned workers, uint64_
         return {};
     }
 
-    // 核数多时缩小块而不是为每核无条件保留 4 MiB 输入和压缩缓冲。
-    const size_t perSlot = static_cast<size_t>(budget / slots);
-    size_t lo = minimumRows, hi = static_cast<size_t>(std::min<uint64_t>(maxBlockBytes / rowBytes, uint64_t(height) / slots));
+    // 固定并行度后再增大块；极宽行按整行切分，只要预算能容纳即可。
+    const uint64_t perSlot = budget / slots;
+    const auto targetRows = std::max<size_t>(1, targetBlockBytes / rowBytes);
+    size_t lo = minimumRows, hi = std::min(targetRows, static_cast<size_t>(height) / slots);
     while (lo < hi)
     {
         const size_t mid = lo + (hi - lo + 1) / 2;

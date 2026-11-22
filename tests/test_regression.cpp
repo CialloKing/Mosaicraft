@@ -3003,10 +3003,26 @@ TEST_CASE("Parallel PNG round-trips all compression levels across row and block 
     CHECK_FALSE(partial.close());
 }
 
+TEST_CASE("PNG planner fills worker slots before increasing block size")
+{
+    constexpr uint64_t MiB = 1024 * 1024;
+    const auto medium = planParallelPng(1024, 768, 32, 64 * MiB);
+    CHECK(medium.workers == 32);
+    CHECK(medium.blockRows == 24);
+    CHECK(planParallelPng(1024, 768, 4, 64 * MiB).workers == 4);
+    const auto limited = planParallelPng(1024, 768, 32, 2 * MiB);
+    CHECK(limited.workers == 3);
+    CHECK(limited.bufferBytes <= 2 * MiB);
+    CHECK(planParallelPng(64, 64, 32, 64 * MiB).workers == 0);
+    const auto wide = planParallelPng(2000000, 4, 32, 64 * MiB);
+    CHECK(wide.workers == 4);
+    CHECK(wide.blockRows == 1);
+}
+
 TEST_CASE("PNG output uses the same pixels in serial, stream and batch modes")
 {
     TempWorkspace workspace;
-    const cv::Mat tile(512, 512, CV_8UC3, cv::Scalar(20, 90, 210));
+    const cv::Mat tile(256, 256, CV_8UC3, cv::Scalar(20, 90, 210));
     const auto source = workspace.inputDir() / "tile.png";
     requireWriteImage(source, tile);
     ImageRecord record;
@@ -3038,7 +3054,7 @@ TEST_CASE("PNG output uses the same pixels in serial, stream and batch modes")
             CHECK(stats.pngWorkerSlots <= static_cast<size_t>(threads));
         }
         const auto decoded = imreadUnicode(path);
-        REQUIRE(decoded.size() == cv::Size(2048, 1536));
+        REQUIRE(decoded.size() == cv::Size(1024, 768));
         if (threads == 1)
         {
             expected = decoded;
