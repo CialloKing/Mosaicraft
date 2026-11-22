@@ -13,10 +13,16 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Read the source dependency lock
+      id: lock
+      shell: bash
+      env:
+        SOURCE_DIR: ${{ inputs.source-directory }}
+      run: cmake -DMODE=Lock "-DSOURCE_DIR=$SOURCE_DIR" -P cmake/PrepareRelease.cmake
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: microsoft/vcpkg
-        ref: a0400024711b283056538ac19ced80b91a83c24c
+        ref: ${{ steps.lock.outputs.vcpkg-commit }}
         path: ${{ inputs.source-directory }}/build/tools/vcpkg
         persist-credentials: false
     - name: Prepare and fingerprint toolchain
@@ -29,7 +35,7 @@ runs:
       run: |
         command=(cmake -DMODE=Prepare "-DSOURCE_DIR=$SOURCE_DIR" -DVCPKG_ROOT=build/tools/vcpkg "-DCACHE_NAMESPACE=$CACHE_NAMESPACE" -P cmake/PrepareRelease.cmake)
         if [[ "$RUNNER_OS" == Linux && "$COLD" == true ]]; then
-          bash scripts/audit-native-release.sh build/dependency-state/prepare-execve.log "${command[@]}"
+          cmake -DLOG=build/dependency-state/prepare-execve.log -P cmake/AuditRelease.cmake -- "${command[@]}"
         else
           "${command[@]}"
         fi
@@ -48,7 +54,7 @@ runs:
       run: |
         command=(cmake -DMODE=Install "-DSOURCE_DIR=$SOURCE_DIR" -P cmake/PrepareRelease.cmake)
         if [[ "$RUNNER_OS" == Linux && "$COLD" == true ]]; then
-          bash scripts/audit-native-release.sh build/dependency-state/execve.log "${command[@]}"
+          cmake -DLOG=build/dependency-state/execve.log -P cmake/AuditRelease.cmake -- "${command[@]}"
           grep -Eq '"restoredPackages":0}' build/dependency-state/x64-linux-release/install-summary.json
         else
           "${command[@]}"

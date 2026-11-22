@@ -95,11 +95,11 @@ jobs:
         with:
           cache-namespace: ${{ inputs.cache-namespace || 'deps-v1' }}
       - name: Prepare locked Qt SDK
-        shell: pwsh
-        run: cmake -DMODE=Qt "-DDESTINATION=$env:RUNNER_TEMP/mosaicraft-qt" -P cmake/PrepareRelease.cmake
+        shell: bash
+        run: cmake -DMODE=Qt -P cmake/PrepareRelease.cmake
       - name: Build and test the interactive backend
-        shell: pwsh
+        shell: bash
         run: |
-          cmake --preset windows-x64 -B build/windows-desktop-ci -DMOSAICRAFT_BUILD_DESKTOP=ON "-DCMAKE_PREFIX_PATH=$env:MOSAICRAFT_QT_ROOT"
+          cmake --preset windows-x64 -B build/windows-desktop-ci -DMOSAICRAFT_BUILD_DESKTOP=ON "-DCMAKE_PREFIX_PATH=$MOSAICRAFT_QT_ROOT"
           cmake --build build/windows-desktop-ci --config Release --target MosaicraftDesktop --parallel
           ctest --test-dir build/windows-desktop-ci -C Release -R '^desktop_smoke$' --no-tests=error --output-on-failure --timeout 180

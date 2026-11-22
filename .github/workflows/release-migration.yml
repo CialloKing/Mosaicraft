@@ -82,7 +82,7 @@ jobs:
             local mode=$1
             local -a command=(cmake "-DMODE=$mode" -P cmake/PrepareRelease.cmake)
             if [[ "$RUNNER_OS" == Linux && "$AUDIT" == true ]]; then
-              bash scripts/audit-native-release.sh "build/dependency-state/$mode-execve.log" "${command[@]}"
+              cmake "-DLOG=build/dependency-state/$mode-execve.log" -P cmake/AuditRelease.cmake -- "${command[@]}"
             else
               "${command[@]}"
             fi
@@ -104,7 +104,7 @@ jobs:
           command=(cmake "-DRUNTIME=$RUNTIME" "-DCHANNEL=$CHANNEL" -DBUILD_DIR=build/package-migration
             -DOUTPUT_DIR=build/migration-archives "${options[@]}" -P cmake/Release.cmake)
           if [[ "$RUNNER_OS" == Linux && "$COLD" == true ]]; then
-            bash scripts/audit-native-release.sh build/dependency-state/release-execve.log "${command[@]}"
+            cmake -DLOG=build/dependency-state/release-execve.log -P cmake/AuditRelease.cmake -- "${command[@]}"
           else
             "${command[@]}"
           fi
@@ -164,14 +164,12 @@ jobs:
           base="build/comparison/migration-$PACKAGE_ID"
           tool="$base-check-tool/mosaicraft_release_check$suffix"
           chmod +x "$tool"
-          prefix=()
+          audit=()
           if [[ "$RUNNER_OS" == Linux && "$COLD" == true ]]; then
             sudo apt-get update -qq
             sudo apt-get install -y --no-install-recommends strace
-            prefix=(bash scripts/audit-native-release.sh)
+            audit=(cmake -DLOG=build/standalone-verify-execve.log -P cmake/AuditRelease.cmake --)
           fi
-          audit=()
-          if (( ${#prefix[@]} )); then audit=("${prefix[@]}" build/standalone-verify-execve.log); fi
           "${audit[@]}" cmake "-DARCHIVE_DIR=$base" "-DEXPECTED_COMMIT=$GITHUB_SHA" \
             "-DEXPECTED_RUNTIME=$EXPECT_RUNTIME" "-DEXPECTED_GPU_VALIDATION=$EXPECT_GPU" \
             "-DEXPECTED_CHANNEL=$CHANNEL" "-DCHECK_TOOL=$tool" -DREQUIRE_CURRENT=ON -P cmake/VerifyPackage.cmake

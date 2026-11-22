@@ -25,9 +25,9 @@ v1.15.11 保留七个原生包，另提供五个 Qt 桌面包。原生 CPU/CUDA 
 首次本机使用：
 
 ```powershell
-cmake -DMODE=Prepare -DVCPKG_ROOT=<pinned-vcpkg> -P cmake/PrepareRelease.cmake
-cmake -DMODE=Install -DVCPKG_ROOT=<pinned-vcpkg> -P cmake/PrepareRelease.cmake
-cmake -DRUNTIME=cpu-only -DVCPKG_ROOT=<pinned-vcpkg> -P cmake/Release.cmake
+cmake -DMODE=Prepare "-DVCPKG_ROOT=<pinned-vcpkg>" -P cmake/PrepareRelease.cmake
+cmake -DMODE=Install "-DVCPKG_ROOT=<pinned-vcpkg>" -P cmake/PrepareRelease.cmake
+cmake -DRUNTIME=cpu-only "-DVCPKG_ROOT=<pinned-vcpkg>" -P cmake/Release.cmake
 ```
 
 准备入口自动选择本机平台的 Release triplet。Linux 打包还需要 patchelf。每种运行时使用独立构建目录。CMake 递归收集第三方运行库，Linux 使用相对 RPATH，macOS 修正加载路径后签名；Unix tar.gz 保留执行权限和符号链接。包内附有第三方许可证。
@@ -86,14 +86,14 @@ cmake -DRUNTIME=cuda -DCUDA_VALIDATION=Required -DCUDAToolkit_ROOT=<sdk> -P cmak
 所有桌面包都核对归档布局、Qt 库、插件及许可证，并生成 `.sha256`。双后端包另检查 CUDA 的七种原生架构及 PTX，解包后运行 GUI 和无 GPU 时的 CPU 回退测试。Windows 云端产物以 `_candidate` 结尾，正式包需实机通过 CUDA 和 Vulkan 预览；Linux 云端包的 GPU 实机状态记录为 `not-run`。可复查下载的桌面附件：
 
 ```powershell
-cmake -DARCHIVE=<archive> -DEXPECTED_SHA256=<sha256> -P cmake/VerifyDesktopPackage.cmake
+cmake "-DARCHIVE=<archive>" "-DEXPECTED_SHA256=<sha256>" -P cmake/VerifyDesktopPackage.cmake
 ```
 
 本机构建先按[源码构建](building.md)准备对应平台的锁定 vcpkg 依赖，设置 `VCPKG_ROOT`，Linux 另装工作流中列出的链接/显示依赖，再运行：
 
 ```powershell
 cmake -DMODE=Qt -P cmake/PrepareRelease.cmake
-cmake -DQT_ROOT=build/tools/qt-sdk/6.12.0 -P cmake/ReleaseDesktop.cmake
+cmake "-DQT_ROOT=build/tools/qt-sdk/6.12.0" -P cmake/ReleaseDesktop.cmake
 ```
 
 Windows/Linux 双后端构建另需准备锁定的 CUDA SDK、Vulkan 头文件和离线着色器编译器（见 `Native packages`），然后传入 `-DRUNTIME=cuda-vulkan`；默认要求实机验证。没有 GPU 验收环境时显式加 `-DGPU_VALIDATION=BuildOnly`；Linux 冒烟测试还需 `xvfb` 与 `xauth`。
