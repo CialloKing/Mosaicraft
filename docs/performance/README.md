@@ -4,6 +4,8 @@
 
 ## 文件索引
 
+- [1.15.12 SQLite BLOB 图库：本地验收与性能](sqlite-blob-1.15.12.md)
+
 - [Windows CPU 预览：更大内存上限对照](preview-memory-scale-dbbc7d7e1.md)
 
 - [Windows Web UI 预览缓存扩容与特征源校验](preview-cache-ec28d6912.md)

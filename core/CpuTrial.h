@@ -37,7 +37,7 @@ struct CpuTrial
         };
         constexpr size_t mib = 1024 * 1024;
         const auto host = get("MOSAICRAFT_BENCH_HOST_MIB", "host_mib", 0, {256, 512, 1024});
-        const auto features = get("MOSAICRAFT_BENCH_FEATURE_MIB", "feature_mib", 0, {256, 512, 1024});
+        const auto features = get("MOSAICRAFT_BENCH_FEATURE_MIB", "feature_mib", 0, {1, 8, 32, 256, 512, 1024});
         const auto batch = get("MOSAICRAFT_BENCH_BATCH", "batch", 0, {1024, 2048});
         if (host)
         {

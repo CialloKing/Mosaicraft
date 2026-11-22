@@ -13,6 +13,11 @@
 namespace mosaicraft
 {
 
+std::filesystem::path libraryIngestJournalPath(const std::string &dbPath)
+{
+    return u8path(dbPath + ".ingest.json");
+}
+
 std::filesystem::path libraryJournalPath(const std::string& dbPath)
 {
     return u8path(pathToUtf8(std::filesystem::weakly_canonical(u8path(dbPath))) + ".color-order.json");
@@ -26,7 +31,7 @@ std::filesystem::file_status libraryJournalStatus(const std::filesystem::path &p
     if ((error && error != std::errc::no_such_file_or_directory) ||
         !std::filesystem::status_known(status))
     {
-        throw std::filesystem::filesystem_error("cannot inspect color reorder journal", path, error);
+        throw std::filesystem::filesystem_error("cannot inspect library recovery journal", path, error);
     }
     return status;
 }

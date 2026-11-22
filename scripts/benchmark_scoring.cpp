@@ -22,8 +22,7 @@ int main(int argc, char **argv)
     {
         return 1;
     }
-    const auto directory = pathToUtf8(u8path(records.front().tinyPath).parent_path());
-    FeaturePack::Reader reader(directory, records);
+    LibraryFeatureStore::Reader reader(db, records);
     FeatureIndex index;
     if (!index.build(records))
     {

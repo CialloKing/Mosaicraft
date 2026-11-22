@@ -103,7 +103,7 @@ static std::vector<int> readSelection(const std::string &path, size_t count)
 
 static Json evaluate(const Target &target, const std::vector<int> &indices,
                      const std::vector<ImageRecord> &records,
-                     const std::vector<FeaturePack::Reader::Row> &payloads, GridDuplicateCache &duplicates)
+                     const std::vector<LibraryFeatureStore::Reader::Row> &payloads, GridDuplicateCache &duplicates)
 {
     std::vector<double> scores;
     std::vector<std::pair<double, size_t>> ranked;
@@ -200,7 +200,7 @@ static Json evaluate(const Target &target, const std::vector<int> &indices,
 }
 
 static Json oracle(const Target &target, const std::vector<ImageRecord> &records,
-                   const std::vector<FeaturePack::Reader::Row> &payloads, const FeatureIndex &index)
+                   const std::vector<LibraryFeatureStore::Reader::Row> &payloads, const FeatureIndex &index)
 {
     std::vector<Json> rows(32);
     WorkerPool workers(8);
@@ -265,9 +265,8 @@ int main(int argc, char **argv)
     }
     try
     {
-        const bool prepareCache = std::string(argv[1]) == "--prepare-cache";
         const bool openLibrary = std::string(argv[1]) == "--open-library";
-        const auto study = prepareCache || openLibrary ? Json{{"snapshot", localToUtf8(argv[2])}} : readJson(argv[1]);
+        const auto study = openLibrary ? Json{{"snapshot", localToUtf8(argv[2])}} : readJson(argv[1]);
         Database db(study.at("snapshot").get<std::string>(), Database::OpenMode::Existing);
         if (!db.isOpen())
         {
@@ -283,18 +282,8 @@ int main(int argc, char **argv)
         {
             throw std::runtime_error("empty snapshot");
         }
-        const auto directory = pathToUtf8(u8path(records.front().tinyPath).parent_path());
-        if (prepareCache)
-        {
-            if (!FeaturePack::buildCache(directory, records))
-            {
-                throw std::runtime_error("cannot prepare private feature cache");
-            }
-            std::cout << "Private feature cache ready: " << records.size() << std::endl;
-            return 0;
-        }
-        FeaturePack::Reader reader(directory, records);
-        std::vector<FeaturePack::Reader::Row> payloads;
+        LibraryFeatureStore::Reader reader(db, records);
+        std::vector<LibraryFeatureStore::Reader::Row> payloads;
         payloads.reserve(records.size());
         for (size_t i = 0; i < records.size(); ++i)
         {
@@ -305,7 +294,7 @@ int main(int argc, char **argv)
             }
         }
         FeatureIndex index;
-        const auto annPath = directory + "/lib.ann196";
+        const auto annPath = pathToUtf8(u8path(db.path()).parent_path() / "index" / "lib.ann196");
         if (!index.load(annPath, FeatureIndex::kDimension, records) && !index.build(records))
         {
             throw std::runtime_error("cannot initialize diagnostic ANN");

@@ -54,7 +54,7 @@ fs::path identity(const fs::path &path)
 
 struct FileInformation
 {
-    uint64_t volume, size;
+    uint64_t volume, size, fileId;
     bool regular;
 };
 
@@ -76,6 +76,7 @@ FileInformation fileInformation(const fs::path &path)
     }
     return {information.dwVolumeSerialNumber,
             (static_cast<uint64_t>(information.nFileSizeHigh) << 32) | information.nFileSizeLow,
+            (static_cast<uint64_t>(information.nFileIndexHigh) << 32) | information.nFileIndexLow,
             !(information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)};
 #else
     struct stat information{};
@@ -84,7 +85,7 @@ FileInformation fileInformation(const fs::path &path)
         throw std::runtime_error("cannot inspect library path: " + pathToUtf8(path));
     }
     return {static_cast<uint64_t>(information.st_dev), static_cast<uint64_t>(information.st_size),
-            S_ISREG(information.st_mode)};
+            static_cast<uint64_t>(information.st_ino), S_ISREG(information.st_mode)};
 #endif
 }
 
@@ -159,15 +160,20 @@ Json journalPaths(Json journal, const std::string &database, bool storing)
     return journal;
 }
 
-void writeJournal(const fs::path& path, const Json& journal)
+void persistJournal(const fs::path &path, const Json &contents)
 {
     const auto temporary = u8path(pathToUtf8(path) + ".tmp");
+    const auto temporaryStatus = libraryJournalStatus(temporary);
+    if (fs::exists(temporaryStatus) && !fs::is_regular_file(temporaryStatus))
+    {
+        throw std::runtime_error("invalid temporary journal path");
+    }
     std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-    output << journalPaths(journal, journal.at("database").get<std::string>(), true).dump(2);
+    output << contents.dump(2);
     output.close();
     if (!output)
     {
-        throw std::runtime_error("cannot write color reorder journal");
+        throw std::runtime_error("cannot write library recovery journal");
     }
 #ifdef _WIN32
     const auto handle = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
@@ -178,7 +184,7 @@ void writeJournal(const fs::path& path, const Json& journal)
     }
     if (!flushed || !MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
     {
-        throw std::runtime_error("cannot persist color reorder journal");
+        throw std::runtime_error("cannot persist library recovery journal");
     }
 #else
     const int descriptor = open(temporary.c_str(), O_WRONLY);
@@ -189,7 +195,7 @@ void writeJournal(const fs::path& path, const Json& journal)
     }
     if (!flushed)
     {
-        throw std::runtime_error("cannot persist color reorder journal");
+        throw std::runtime_error("cannot persist library recovery journal");
     }
     fs::rename(temporary, path);
     const int directory = open(path.parent_path().c_str(), O_RDONLY);
@@ -200,9 +206,36 @@ void writeJournal(const fs::path& path, const Json& journal)
     }
     if (!directoryFlushed)
     {
-        throw std::runtime_error("cannot persist color reorder journal directory");
+        throw std::runtime_error("cannot persist library recovery journal directory");
     }
 #endif
+}
+
+void writeJournal(const fs::path &path, const Json &journal)
+{
+    persistJournal(path, journalPaths(journal, journal.at("database").get<std::string>(), true));
+}
+
+constexpr const char *ingestFilePrefix = ".mosaicraft-new-";
+
+fs::path ingestStaging(Database &db)
+{
+    const auto uuid = db.getMeta("library_uuid");
+    if (uuid.size() != 32 || uuid.find_first_not_of("0123456789abcdef") != std::string::npos)
+    {
+        throw std::runtime_error("invalid library identity");
+    }
+    return u8path(db.path()).parent_path() / u8path(".mosaicraft-ingest-" + uuid);
+}
+
+bool isIngestFilename(const fs::path &path)
+{
+    return path == path.filename() && pathToUtf8(path).rfind(ingestFilePrefix, 0) == 0;
+}
+
+Json ingestManifest(Database &db, const std::string &batch)
+{
+    return {{"uuid", db.getMeta("library_uuid")}, {"batch", batch}, {"entries", Json::array()}};
 }
 
 void cleanupJournal(const fs::path& path, const Json& journal)
@@ -220,7 +253,7 @@ void cleanupJournal(const fs::path& path, const Json& journal)
 void validateJournal(Database& database, const Json& journal, bool committed)
 {
     if (journal.at("version") != kJournalVersion || journal.at("library_version") != kLibraryVersion ||
-        journal.at("feature_version") != kFeatureVersion ||
+        journal.at("feature_version") != kFeatureVersion || journal.at("uuid") != database.getMeta("library_uuid") ||
         identity(u8path(journal.at("database").get<std::string>())) != identity(u8path(database.path())))
     {
         throw std::runtime_error("color reorder journal belongs to another database or version");
@@ -237,7 +270,7 @@ void validateJournal(Database& database, const Json& journal, bool committed)
         throw std::runtime_error("invalid color reorder staging directory");
     }
     std::unordered_map<int, ImageRecord> records;
-    for (auto& record : database.allRecords())
+    for (auto& record : database.metadataRecords())
     {
         records.emplace(record.id, std::move(record));
     }
@@ -271,7 +304,188 @@ void requireSize(const fs::path& path, const Json& entry)
     }
 }
 
+std::uint64_t ingestWriteTime(const fs::path &path)
+{
+    // 文件时钟的宽度和单位依平台而异，只在本机比较原始计数的低 64 位。
+    return static_cast<std::uint64_t>(fs::last_write_time(path).time_since_epoch().count());
+}
+
 } // namespace
+
+bool recoverLibraryIngest(Database &db, std::string &error)
+{
+    try
+    {
+        const auto path = libraryIngestJournalPath(db.path());
+        const auto status = libraryJournalStatus(path);
+        if (!fs::exists(status))
+        {
+            return true;
+        }
+        if (!fs::is_regular_file(status))
+        {
+            throw std::runtime_error("ingest journal is not a regular file");
+        }
+        std::ifstream file(path, std::ios::binary);
+        const auto manifest = Json::parse(file);
+        file.close();
+        const auto staging = ingestStaging(db);
+        const auto stagingStatus = libraryJournalStatus(staging);
+        if (manifest.at("uuid") != db.getMeta("library_uuid") ||
+            (fs::exists(stagingStatus) && !fs::is_directory(stagingStatus)))
+        {
+            throw std::runtime_error("ingest journal or staging directory belongs to another library");
+        }
+        const bool committed = manifest.at("batch") == db.getMeta("ingest_batch");
+        const LibraryPaths paths(db.path());
+        std::vector<fs::path> uncommitted;
+        for (const auto &entry : manifest.at("entries"))
+        {
+            const auto relative = entry.at("path").get<std::string>();
+            const auto name = u8path(relative).filename();
+            if (!LibraryPaths::relative(relative) || !isIngestFilename(name))
+            {
+                throw std::runtime_error("invalid ingest destination");
+            }
+            const auto final = u8path(paths.resolve(relative));
+            if (paths.store(pathToUtf8(fs::weakly_canonical(final.parent_path()) / name)) != relative)
+            {
+                throw std::runtime_error("ingest destination escapes the library");
+            }
+            const auto pending = staging / name;
+            const auto pendingStatus = libraryJournalStatus(pending);
+            const auto finalStatus = libraryJournalStatus(final);
+            if (!fs::exists(finalStatus))
+            {
+                if (committed)
+                {
+                    throw std::runtime_error("committed library image is missing");
+                }
+                continue;
+            }
+            if (!fs::is_regular_file(finalStatus) || (fs::exists(pendingStatus) &&
+                (!fs::is_regular_file(pendingStatus) || !fs::equivalent(pending, final))))
+            {
+                throw std::runtime_error("ingest destination is occupied by another file");
+            }
+            const auto info = fileInformation(final);
+            if (info.volume != entry.at("volume").get<uint64_t>() || info.fileId != entry.at("file_id").get<uint64_t>() ||
+                info.size != entry.at("size").get<uint64_t>() ||
+                ingestWriteTime(final) != entry.at("time").get<uint64_t>())
+            {
+                throw std::runtime_error("ingest destination changed");
+            }
+            if (!committed)
+            {
+                uncommitted.push_back(final);
+            }
+        }
+        std::vector<fs::path> pendingFiles;
+        if (fs::is_directory(stagingStatus))
+        {
+            for (const auto &item : fs::directory_iterator(staging))
+            {
+                if (!isIngestFilename(item.path().filename()) || !fs::is_regular_file(item.symlink_status()))
+                {
+                    throw std::runtime_error("unexpected file in ingest staging directory");
+                }
+                pendingFiles.push_back(item.path());
+            }
+        }
+        const auto temporary = u8path(pathToUtf8(path) + ".tmp");
+        const auto temporaryStatus = libraryJournalStatus(temporary);
+        if (fs::exists(temporaryStatus) && !fs::is_regular_file(temporaryStatus))
+        {
+            throw std::runtime_error("invalid temporary ingest journal");
+        }
+        // 先核实整份清单，发生外部冲突时不留下部分清理的现场。
+        for (const auto &final : uncommitted)
+        {
+            fs::remove(final);
+        }
+        for (const auto &pending : pendingFiles)
+        {
+            fs::remove(pending);
+        }
+        fs::remove(staging);
+        fs::remove(temporary);
+        fs::remove(path);
+        return true;
+    }
+    catch (const std::exception &exception)
+    {
+        error = std::string("library ingestion recovery failed; retain journal and staging: ") + exception.what();
+        return false;
+    }
+}
+
+LibraryIngest::LibraryIngest(Database &db, const fs::path &output)
+    : m_db(db), m_output(output), m_staging(ingestStaging(db))
+{
+    if (fs::exists(libraryJournalStatus(m_staging)))
+    {
+        throw std::runtime_error("library ingest staging directory already exists");
+    }
+    persistJournal(libraryIngestJournalPath(db.path()), ingestManifest(db, ""));
+    fs::create_directory(m_staging);
+}
+
+LibraryIngest::~LibraryIngest()
+{
+    std::string ignored;
+    finish(ignored);
+}
+
+void LibraryIngest::publish(const std::vector<ImageRecord *> &records)
+{
+    // 当前修订号与上个已提交标记不同；回滚后仍可辨别这个批次的文件。
+    const auto batch = m_db.getMeta("feature_revision");
+    auto manifest = ingestManifest(m_db, batch);
+    const LibraryPaths paths(m_db.path());
+    std::vector<fs::path> finals;
+    finals.reserve(records.size());
+    for (const auto *record : records)
+    {
+        const auto pending = u8path(record->filePath);
+        const auto final = m_output / pending.filename();
+        if (pending.parent_path() != m_staging || !isIngestFilename(pending.filename()) ||
+            !fs::is_regular_file(libraryJournalStatus(pending)) || fs::exists(libraryJournalStatus(final)))
+        {
+            throw std::runtime_error("invalid staged image or occupied destination");
+        }
+        const auto info = fileInformation(pending);
+        manifest["entries"].push_back({{"path", paths.store(pathToUtf8(final))},
+            {"size", info.size}, {"volume", info.volume}, {"file_id", info.fileId},
+            {"time", ingestWriteTime(pending)}});
+        finals.push_back(final);
+    }
+    persistJournal(libraryIngestJournalPath(m_db.path()), manifest);
+    for (size_t i = 0; i < records.size(); ++i)
+    {
+        moveFile(u8path(records[i]->filePath), finals[i]);
+        records[i]->filePath = pathToUtf8(finals[i]);
+    }
+    if (!m_db.setMeta("ingest_batch", batch))
+    {
+        throw std::runtime_error("cannot write ingest commit marker");
+    }
+}
+
+bool LibraryIngest::finish(std::string &error)
+{
+    if (m_active && m_db.inTransaction())
+    {
+        // 事务尚未确定结果时必须保留清单，由下次打开读取已持久化的提交标记。
+        error = "cannot recover ingestion while a database transaction is active";
+        return false;
+    }
+    if (m_active && !recoverLibraryIngest(m_db, error))
+    {
+        return false;
+    }
+    m_active = false;
+    return true;
+}
 
 bool recoverLibraryColorOrder(Database& database, std::string& error)
 {
@@ -378,7 +592,7 @@ bool reorderLibraryByColor(Database& database, const std::string& outputDir,
         {
             return std::chrono::duration<double, std::milli>(Clock::now() - from).count();
         };
-        auto records = database.allRecords();
+        auto records = database.metadataRecords();
         if (records.size() != static_cast<size_t>(database.totalCount()))
         {
             throw std::runtime_error("cannot read all library records for color ordering");
@@ -463,7 +677,8 @@ bool reorderLibraryByColor(Database& database, const std::string& outputDir,
         const auto token = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
         staging = root / (".mosaicraft-color-order-" + token);
         Json journal = {{"version", kJournalVersion}, {"library_version", kLibraryVersion},
-            {"feature_version", kFeatureVersion}, {"database", database.path()}, {"token", token},
+            {"feature_version", kFeatureVersion}, {"uuid", database.getMeta("library_uuid")},
+            {"database", database.path()}, {"token", token},
             {"output", pathToUtf8(root)}, {"staging", pathToUtf8(staging)},
             {"phase", "staging"}, {"entries", Json::array()}};
         const int width = std::max(6, static_cast<int>(std::to_string(records.empty() ? 0 : records.size() - 1).size()));
@@ -537,7 +752,7 @@ bool reorderLibraryByColor(Database& database, const std::string& outputDir,
                 }
                 ++result.renamed;
             }
-            if (!database.setMeta("color_order_batch", token))
+            if (!database.setMeta("color_order_batch", token) || !database.advanceRevisions(false))
             {
                 throw std::runtime_error("cannot save color reorder commit marker");
             }

@@ -51,6 +51,14 @@ void reportOutputBenchmark(const OutputStats &stats, const MosaicEngine::Config 
     }
     std::cout << "  Output benchmark:\n" << std::fixed << std::setprecision(1);
     metric(runtime, "outputWorkerSlots", "Output worker slots", stats.workerSlots, "");
+    if (stats.pngWorkerSlots)
+    {
+        metric(runtime, "pngWorkerSlots", "PNG compression worker slots", stats.pngWorkerSlots, "");
+        if (stats.pngBufferBytes)
+        {
+            metric(runtime, "pngBufferBytes", "PNG compression buffer budget", stats.pngBufferBytes, " bytes");
+        }
+    }
     metric(runtime, "placementMs", "Placement", stats.placementMs);
     if (config.outputMode == OutputMode::Image)
     {
@@ -166,9 +174,8 @@ void reportMosaicBenchmark(const MosaicMetrics &metrics, const MosaicBenchmarkCo
               << "  Feature cache hits: " << metrics.featureReadStats.hits << "\n"
               << "  Feature source reads: " << metrics.featureReadStats.sourceReads << "\n"
               << "  Feature cache evictions: " << metrics.featureReadStats.evictions << "\n"
-              << "  Feature cache preloaded: " << metrics.featureReadStats.preloaded << "\n";
-    std::cout << "  Library feature source reads: " << metrics.libraryReadStats.sourceReads << "\n"
-              << "  Library feature pack hits: " << metrics.libraryReadStats.packedRows << "\n";
+              << "  Feature cache reused: " << metrics.featureReadStats.sessionHit << "\n";
+    std::cout << "  Library feature source reads: " << metrics.libraryReadStats.sourceReads << "\n";
     std::cout << "  === Total: " << context.totalMs << " ms ===\n";
     if (context.totalTiles > 0)
     {

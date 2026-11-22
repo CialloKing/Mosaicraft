@@ -53,13 +53,11 @@ class StudyPaths(unittest.TestCase):
             source = root / "source"
             source.mkdir()
             (source / "image.png").write_bytes(b"fixture")
-            (source / "data.tiny").write_bytes(bytes(256))
-            (source / "data.hist").write_bytes(bytes(1024))
             connection = sqlite3.connect(source / "mosaicraft.db")
             connection.executescript("CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT);"
                 "PRAGMA user_version=1;INSERT INTO meta VALUES('path_format','db-relative-v1'),('feature_version','1');"
-                "CREATE TABLE images(id INTEGER PRIMARY KEY,file_path TEXT UNIQUE,file_hash TEXT,grid_lab BLOB,tiny_path TEXT,lbp_path TEXT,feature_version INTEGER);"
-                "INSERT INTO images VALUES(1,'image.png','fixture',zeroblob(768),'data.tiny','data.hist',1);CREATE TABLE usage_stats(image_id,total_runs,total_tiles,last_used);CREATE TABLE target_runs(target_hash,first_path,run_count,last_used);CREATE TABLE image_color_order(image_id,file_hash,version,sort_key,source_l,source_a,source_b);")
+                "CREATE TABLE images(id INTEGER PRIMARY KEY,file_path TEXT UNIQUE,file_hash TEXT,feature_version INTEGER);"
+                "INSERT INTO images VALUES(1,'image.png','fixture',1);CREATE TABLE image_features(image_id,grid_lab,tiny,lbp);INSERT INTO image_features VALUES(1,zeroblob(768),zeroblob(256),zeroblob(1024));CREATE TABLE usage_stats(image_id,total_runs,total_tiles,last_used);CREATE TABLE target_runs(target_hash,first_path,run_count,last_used);CREATE TABLE image_color_order(image_id,file_hash,version,sort_key,source_l,source_a,source_b);")
             connection.close()
             target, count = private_library(source / "mosaicraft.db", root / "study", images=True)
             self.assertEqual(count, 1)
@@ -67,7 +65,7 @@ class StudyPaths(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     resource(target, invalid, "db-relative-v1")
             with readonly_database(target) as connection:
-                paths = connection.execute("SELECT file_path,tiny_path,lbp_path FROM images").fetchone()
+                paths = connection.execute("SELECT file_path FROM images").fetchone()
                 self.assertTrue(all(resource(target, path, "db-relative-v1").exists() for path in paths))
             target.parent.rename(root / "moved")
 

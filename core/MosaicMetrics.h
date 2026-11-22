@@ -34,7 +34,7 @@ struct MosaicMetrics
 
     OutputStats outputStats;
     cuda::GpuTimings featureTimings, scoreTimings, libraryTimings;
-    FeaturePack::Reader::ReadStats libraryReadStats, featureReadStats;
+    LibraryFeatureStore::Reader::ReadStats libraryReadStats, featureReadStats;
     size_t matchingBatches = 0, matchingPeakBytes = 0, maximumBatchTiles = 0;
     bool matchingPrefetch = false;
 };

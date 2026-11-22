@@ -269,6 +269,7 @@ int MainWindow::smokeTest(const QString &captureDirectory)
     const auto create = buildExportArgs(documents[activeDocument], root.filePath("作品.png"));
     if (!require(ui->workspaces->currentWidget() == ui->exportPage && create.front() == "create" &&
                  create.contains("--match-tile") && create.contains("12x16") && create.contains("--png-compression") &&
+                 create.value(create.indexOf("--png-compression") + 1) == "6" &&
                  create.contains("--seed") && !create.contains("--target-upscale") && !create.contains("--lbp-weight") &&
                  !ui->exportPreview->hasImage() && ui->outputQuality->isHidden(), "single image export arguments") ||
         !require(capture("02-export", this), "export capture"))
@@ -373,6 +374,11 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         return 1;
     }
     const QFileInfo bitmapBefore(bitmap);
+    const auto firstGeneration = QFileInfo(firstLibrary).dir();
+    QFile indexCache(firstGeneration.filePath("index/lib.ann196"));
+    if (!require(firstGeneration.mkpath("index") && indexCache.open(QIODevice::WriteOnly), "optional index cache fixture"))
+        return 1;
+    indexCache.close();
     const auto bitmapBytes = bitmapBefore.size();
     const auto bitmapTime = bitmapBefore.lastModified();
     QFile bitmapFile(bitmap);
@@ -383,8 +389,8 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         return 1;
     }
     bitmapFile.close();
-    if (!require(checkLibraryAndWait() && activeLibrary() != firstLibrary && indexedImages().size() == 2,
-                 "changed source bytes trigger a rebuild"))
+    if (!require(checkLibraryAndWait() && activeLibrary() != firstLibrary && indexedImages().size() == 2 &&
+                 !firstGeneration.exists(), "changed source bytes replace the old generation including its index cache"))
     {
         qWarning().noquote() << libraryStatus;
         return 1;

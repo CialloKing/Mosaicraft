@@ -1,7 +1,8 @@
 #include "Database.h"
 #include "LibraryPaths.h"
+#include "LibrarySchemaCheck.h"
+#include "UnicodeIO.h"
 #include "Version.h"
-#include "FeatureIO.h"
 #include <sqlite3.h>
 #include <charconv>
 #include <chrono>
@@ -10,6 +11,31 @@
 
 namespace mosaicraft
 {
+bool Database::preflightFeatureSchema()
+{
+    std::error_code error;
+    const auto wal = std::filesystem::symlink_status(u8path(m_path + "-wal"), error);
+    if (wal.type() != std::filesystem::file_type::not_found)
+    {
+        // 已有 WAL 可能含有新建的表，正常只读连接会看到一致的 SQLite 快照。
+        return true;
+    }
+    // 普通只读 SQLite 仍可能创建空 WAL/SHM；无 WAL 时先探测结构，不污染被拒绝的目录。
+    const auto uri = immutableLibraryUri(u8path(m_path).generic_u8string());
+    const int opened = sqlite3_open_v2(uri.c_str(), &m_db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nullptr);
+    sqlite3_stmt *probe = nullptr;
+    const bool valid = opened == SQLITE_OK &&
+        sqlite3_prepare_v2(m_db, featureSchemaProbe, -1, &probe, nullptr) == SQLITE_OK;
+    if (!valid)
+    {
+        m_error = opened == SQLITE_OK ? "library_incompatible: missing feature table or columns; rebuild the library in a new directory"
+                                     : m_db ? sqlite3_errmsg(m_db) : "cannot allocate SQLite connection";
+    }
+    sqlite3_finalize(probe);
+    closeConnection();
+    return valid;
+}
+
 bool Database::openConnection(bool create, bool readOnly)
 {
     const int flags = readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE | (create ? SQLITE_OPEN_CREATE : 0);
@@ -25,7 +51,7 @@ bool Database::openConnection(bool create, bool readOnly)
 
 void Database::closeConnection()
 {
-    for (auto **statement : {&m_insertStatement, &m_hashStatement, &m_pathStatement, &m_colorStatement})
+    for (auto **statement : {&m_insertStatement, &m_featureStatement, &m_textureStatement, &m_hashStatement, &m_pathStatement, &m_colorStatement})
     {
         sqlite3_finalize(*statement);
         *statement = nullptr;
@@ -35,56 +61,6 @@ void Database::closeConnection()
         sqlite3_close(m_db);
         m_db = nullptr;
     }
-}
-
-bool Database::validateStoredPaths()
-{
-    sqlite3_stmt *statement = nullptr;
-    // 全表已逐行验证路径与数值，把格式/版本判定放入同一快照，不删减校验。
-    const char *columns = MOSAICRAFT_TRIAL_LIBRARY_PATHS
-        ? "SELECT file_path,tiny_path,lbp_path,grid_lab,avg_l,avg_a,avg_b,feature_version IS ? AND typeof(grid_lab)='blob' FROM images"
-        : "SELECT file_path,tiny_path,lbp_path,grid_lab,avg_l,avg_a,avg_b FROM images";
-    if (sqlite3_prepare_v2(m_db, columns, -1, &statement, nullptr) != SQLITE_OK)
-    {
-        return false;
-    }
-    if (MOSAICRAFT_TRIAL_LIBRARY_PATHS)
-    {
-        sqlite3_bind_int(statement, 1, kFeatureVersion);
-    }
-    int rc;
-    bool valid = true;
-    while ((rc = sqlite3_step(statement)) == SQLITE_ROW)
-    {
-        if (MOSAICRAFT_TRIAL_LIBRARY_PATHS && !sqlite3_column_int(statement, 7))
-        {
-            valid = false;
-        }
-        for (int column = 0; column < 3; ++column)
-        {
-            const auto *value = reinterpret_cast<const char *>(sqlite3_column_text(statement, column));
-            valid = valid && (column != 0 || (value && *value)) && LibraryPaths::relative(value ? value : "");
-        }
-        const auto *grid = static_cast<const uint8_t *>(sqlite3_column_blob(statement, 3));
-        if (!grid || sqlite3_column_bytes(statement, 3) != 768)
-        {
-            valid = false;
-            continue;
-        }
-        std::array<float, 192> values{};
-        decodeFloats(grid, values.data(), values.size());
-        for (float value : values)
-        {
-            valid = valid && std::isfinite(value);
-        }
-        for (int column = 4; column < 7; ++column)
-        {
-            valid = valid && sqlite3_column_type(statement, column) != SQLITE_NULL &&
-                std::isfinite(sqlite3_column_double(statement, column));
-        }
-    }
-    sqlite3_finalize(statement);
-    return valid && rc == SQLITE_DONE;
 }
 
 bool Database::validateSchema(std::vector<ImageRecord> *matchingRows, double *readMs, bool includeUseCounts)
@@ -110,8 +86,10 @@ bool Database::validateSchema(std::vector<ImageRecord> *matchingRows, double *re
     const std::map<std::string, std::string> tables
     {
         {"images", "id,file_path,file_hash,format,src_width,src_height,aspect_ratio,file_size,avg_l,avg_a,avg_b,"
-                   "mean_brightness,std_brightness,contrast,saturation,color_variance,grid_lab,tiny_path,"
-                   "edge_density,lbp_path,feature_version,use_count,created_at"},
+                   "mean_brightness,std_brightness,contrast,saturation,color_variance,"
+                   "edge_density,feature_version,use_count,created_at"},
+        {"image_features", "image_id,grid_lab,tiny,lbp"},
+        {"image_target_runs", "image_id,target_hash"},
         {"meta", "key,value"},
         {"image_color_order", "image_id,file_hash,version,sort_key,source_l,source_a,source_b"},
         {"usage_stats", "image_id,total_runs,total_tiles,last_used"},
@@ -132,7 +110,7 @@ bool Database::validateSchema(std::vector<ImageRecord> *matchingRows, double *re
     // 主键和非空约束决定后续更新语义；只有列名相同的仿造表不能视为完整图库。
     if (!scalar("SELECT count(*) FROM pragma_table_info('images') WHERE "
                 "(name='id' AND type='INTEGER' AND pk=1) OR "
-                "(name IN ('file_path','file_hash','grid_lab','feature_version') AND \"notnull\"=1)", 5) ||
+                "(name IN ('file_path','file_hash','feature_version') AND \"notnull\"=1)", 4) ||
         !scalar("SELECT count(*) FROM pragma_table_info('meta') WHERE "
                 "(name='key' AND type='TEXT' AND pk=1) OR (name='value' AND \"notnull\"=1)", 2) ||
         !scalar("SELECT count(*) FROM pragma_table_info('image_color_order') WHERE "
@@ -152,10 +130,29 @@ bool Database::validateSchema(std::vector<ImageRecord> *matchingRows, double *re
     {
         return incompatible("missing library constraints");
     }
+    if (!scalar("SELECT count(*) FROM pragma_foreign_key_list('image_features') WHERE "
+                "\"table\"='images' AND \"from\"='image_id' AND \"to\"='id' AND on_delete='CASCADE'", 1))
+    {
+        return incompatible("missing feature foreign key");
+    }
     if (getMeta("path_format") != portablePathFormat ||
         getMeta("feature_version") != std::to_string(kFeatureVersion))
     {
         return incompatible("unsupported path or feature version");
+    }
+    if (getMeta("library_uuid").size() != 32)
+    {
+        return incompatible("missing library identity");
+    }
+    for (const auto *key : {"feature_revision", "asset_revision"})
+    {
+        const auto text = getMeta(key);
+        std::int64_t value = 0;
+        const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+        if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || value < 0)
+        {
+            return incompatible("invalid library revision");
+        }
     }
     for (const auto *key : {"feature_w", "feature_h"})
     {
@@ -167,7 +164,7 @@ bool Database::validateSchema(std::vector<ImageRecord> *matchingRows, double *re
             return incompatible("invalid feature dimensions");
         }
     }
-    bool rowsValid;
+    bool rowsValid = true;
     if (matchingRows)
     {
         using Clock = std::chrono::steady_clock;
@@ -178,21 +175,10 @@ bool Database::validateSchema(std::vector<ImageRecord> *matchingRows, double *re
             *readMs = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
         }
     }
-    else
-    {
-        rowsValid = validateStoredPaths();
-    }
-    if ((!matchingRows && !MOSAICRAFT_TRIAL_LIBRARY_PATHS && !scalar("SELECT count(*) FROM images WHERE feature_version IS NOT " + std::to_string(kFeatureVersion) +
-                " OR grid_lab IS NULL OR typeof(grid_lab)!='blob' OR length(grid_lab)!=768", 0)) ||
-        !rowsValid)
+    if (!rowsValid && m_error.empty())
     {
         return incompatible("invalid feature rows or stored paths");
     }
-    sqlite3_stmt *check = nullptr;
-    const bool valid = sqlite3_prepare_v2(m_db, "PRAGMA quick_check(1)", -1, &check, nullptr) == SQLITE_OK &&
-        sqlite3_step(check) == SQLITE_ROW && sqlite3_column_text(check, 0) &&
-        std::string(reinterpret_cast<const char *>(sqlite3_column_text(check, 0))) == "ok";
-    sqlite3_finalize(check);
-    return valid || incompatible("damaged SQLite database");
+    return rowsValid;
 }
 }

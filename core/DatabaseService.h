@@ -129,8 +129,6 @@ struct OrphanRecord
 {
     int id = 0;
     std::string filePath;
-    std::string tinyPath;
-    std::string lbpPath;
 };
 
 struct DatabasePurge

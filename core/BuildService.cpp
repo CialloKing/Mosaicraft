@@ -6,7 +6,6 @@
 #include "BenchmarkTimer.h"
 #include "Database.h"
 #include "FeatureExtractor.h"
-#include "FeaturePack.h"
 #include "FeatureUtils.h"
 #include "ImageNormalizer.h"
 #include "LibraryColorOrder.h"
@@ -64,7 +63,7 @@ constexpr int EXIT_ERR_DB = 2;
 struct AppendBenchmark
 {
     ImageNormalizer::LibraryTimings normalization;
-    BenchmarkSample hash, sql, batchDedup, transaction, commit, producerWait, consumerWait;
+    BenchmarkSample hash, sql, batchDedup, transaction, blobWrite, commit, producerWait, consumerWait;
     size_t sqlHits = 0, batchDuplicates = 0, normalizeSlots = 0, featureSlots = 0;
 
     void report(RuntimeContext &runtime, int threads) const
@@ -98,6 +97,7 @@ struct AppendBenchmark
         timing("sqlLookupMs", sql);
         timing("batchDedupMs", batchDedup);
         timing("batchTransactionMs", transaction);
+        timing("batchBlobWriteMs", blobWrite);
         timing("batchCommitMs", commit);
         timing("normalizeQueueProducerWaitWorkerMs", producerWait);
         timing("normalizeQueueConsumerWaitMs", consumerWait);
@@ -211,7 +211,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         }
         // 恢复、读取库尺寸和追加共用同一把独占锁，期间不能让其他任务看到暂存路径。
         std::string recoveryError;
-        if (!recoverLibraryColorOrder(*database, recoveryError))
+        if (!recoverLibraryIngest(*database, recoveryError) || !recoverLibraryColorOrder(*database, recoveryError))
         {
             return runtimeFailure(runtime, EXIT_ERR_DB, recoveryError, "library_unavailable", "dbPath", dbPath);
         }
@@ -273,7 +273,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     std::set<fs::path> reservedPaths;
     const auto reserveExistingPaths = [&](Database &db)
     {
-        for (const auto &record : db.allRecords(false))
+        for (const auto &record : db.metadataRecords(false))
         {
             reservedPaths.insert(fs::absolute(u8path(record.filePath)).lexically_normal());
         }
@@ -362,13 +362,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                               dbPath);
     }
 
-    const auto featDir = pathToUtf8(output / "features");
-    fs::create_directories(u8path(featDir), ec);
-    if (ec)
-    {
-        return runtimeFailure(runtime, 1, "cannot create feature directory: " + featDir, "output_write_failed",
-                              "outputDir", outputDir);
-    }
+
     if (existingCount > 0 &&
         (db.getMeta("feature_w") != std::to_string(request.normalizeWidth) ||
          db.getMeta("feature_h") != std::to_string(request.normalizeHeight)))
@@ -387,7 +381,6 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     auto tBuildStart = std::chrono::steady_clock::now();
     auto tNormStart = tBuildStart;
     std::chrono::steady_clock::time_point tGpuStart = tBuildStart;
-    std::chrono::steady_clock::time_point tCacheStart = tBuildStart;
     std::chrono::steady_clock::time_point tNormEnd = tBuildStart;
     std::chrono::steady_clock::duration batchNormalization{};
     ImageNormalizer normalizer(request.normalizeWidth, request.normalizeHeight);
@@ -398,6 +391,27 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     {
         reserveExistingPaths(db);
     }
+    std::optional<LibraryIngest> ingest;
+    if (!inputIsOutput)
+    {
+        ingest.emplace(db, output);
+    }
+    const auto publishBatch = [&](const std::vector<ImageRecord *> &records)
+    {
+        try
+        {
+            if (ingest)
+            {
+                ingest->publish(records);
+            }
+            return true;
+        }
+        catch (const std::exception &exception)
+        {
+            runtime.fail("library_write_failed", exception.what(), "dbPath", dbPath);
+            return false;
+        }
+    };
     size_t nameIndex = 0;
     for (size_t i = 0; i < files.size(); ++i)
     {
@@ -416,7 +430,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
             candidate = u8path(outputDir) / name;
         } while (fs::exists(candidate) || reservedPaths.count(fs::absolute(candidate).lexically_normal()));
         reservedPaths.insert(fs::absolute(candidate).lexically_normal());
-        outPaths[i] = pathToUtf8(candidate);
+        outPaths[i] = pathToUtf8(ingest->staging() / candidate.filename());
     }
     std::atomic<int> normDone{0};
     std::atomic<int> normalizationProcessed{0};
@@ -582,10 +596,15 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         }
         return duplicate;
     };
+    const auto writeImage = [&](const ImageRecord &record, const TextureFeatures &texture)
+    {
+        BenchmarkTimer timer(profile ? &profile->blobWrite : nullptr);
+        return db.insertImage(record, texture);
+    };
     const auto commitBatch = [&]()
     {
         BenchmarkTimer timer(profile ? &profile->commit : nullptr);
-        return db.commitTransaction();
+        return db.advanceRevisions(true) && db.commitTransaction();
     };
 
     std::thread gpuThread;
@@ -609,8 +628,6 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                     imgs.reserve(GPU_BATCH);
                     std::vector<ImageRecord> recs;
                     recs.reserve(GPU_BATCH);
-                    std::vector<std::string> stems;
-                    stems.reserve(GPU_BATCH);
                     auto flush = [&]()
                     {
                         if (imgs.empty())
@@ -622,8 +639,9 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                             tGpuStart = std::chrono::steady_clock::now();
                             firstBatch = false;
                         }
+                        std::vector<TextureFeatures> textures(imgs.size());
 #ifdef MOSAICRAFT_CUDA
-                        int done = cuda::extractBatch(imgs, recs, featDir, stems, &featureWorkspace);
+                        int done = cuda::extractBatch(imgs, recs, textures, &featureWorkspace);
 #else
                         int done = 0;
 #endif
@@ -641,22 +659,35 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                         {
                             for (size_t bi = 0; bi < imgs.size(); ++bi)
                             {
-                                extractor.compute(imgs[bi], recs[bi], featDir, stems[bi]);
+                                extractor.compute(imgs[bi], recs[bi], &textures[bi]);
                             }
                         }
                         else if (done != static_cast<int>(imgs.size()))
                         {
                             for (size_t bi = static_cast<size_t>(std::max(0, done)); bi < imgs.size(); ++bi)
                             {
-                                extractor.compute(imgs[bi], recs[bi], featDir, stems[bi]);
+                                extractor.compute(imgs[bi], recs[bi], &textures[bi]);
                             }
                         }
                         {
                             BenchmarkTimer timer(profile ? &profile->transaction : nullptr);
-                            if (!db.beginTransaction())
+                            if (!db.beginImmediateTransaction())
                             {
                                 runtime.fail("library_write_failed", "cannot begin build transaction", "dbPath", dbPath);
                                 throw std::runtime_error("cannot begin build transaction");
+                            }
+                            std::vector<ImageRecord *> batch;
+                            for (auto &record : recs)
+                            {
+                                if (!record.filePath.empty())
+                                {
+                                    batch.push_back(&record);
+                                }
+                            }
+                            if (!publishBatch(batch))
+                            {
+                                db.rollbackTransaction();
+                                throw std::runtime_error("cannot publish build batch");
                             }
                             for (size_t bi = 0; bi < recs.size(); ++bi)
                             {
@@ -664,18 +695,20 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                                 {
                                     continue;
                                 }
-                                if (db.insertImage(recs[bi]))
+                                if (writeImage(recs[bi], textures[bi]))
                                 {
                                     inserted++;
                                 }
                                 else
                                 {
+                                    db.rollbackTransaction();
                                     runtime.fail("library_write_failed", "cannot insert image into library", "dbPath", dbPath);
                                     throw std::runtime_error("cannot insert image into library");
                                 }
                             }
                             if (!commitBatch())
                             {
+                                db.rollbackTransaction();
                                 runtime.fail("library_write_failed", "cannot commit build transaction", "dbPath", dbPath);
                                 throw std::runtime_error("cannot commit build transaction");
                             }
@@ -689,7 +722,6 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                         }
                         imgs.clear();
                         recs.clear();
-                        stems.clear();
                     };
                     while (true)
                     {
@@ -772,7 +804,6 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                         imgs.push_back(item.img);
                         recs.push_back(rec);
                         // 特征文件不跟随数字编号，追加重排也不会覆盖其他图片的特征。
-                        stems.push_back("hash_" + hash);
                         if ((int)imgs.size() >= GPU_BATCH)
                         {
                             flush();
@@ -1030,6 +1061,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
             const size_t count = std::min(batchLimit, files.size() - first);
             std::vector<cv::Mat> images(count);
             std::vector<ImageRecord> records(count);
+            std::vector<TextureFeatures> textures(count);
             std::vector<uint8_t> ready(count, 0);
             std::vector<std::string> errors(count);
             // 生产者只写自己的槽，查重和提交仍由单写者按扫描顺序执行。
@@ -1190,7 +1222,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                 }
                 catch (const std::exception &error)
                 {
-                    // CUDA 运行期失败中止本批；此时尚未写特征文件或开始数据库事务。
+                    // CUDA 运行期失败中止本批；此时尚未开始数据库事务。
                     return runtimeFailure(runtime, 4, error.what(), portableReady ? "gpu_execution_failed" : "cuda_execution_failed", "");
                 }
             }
@@ -1211,14 +1243,14 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                                     record.avgA = feature.lab[1];
                                     record.avgB = feature.lab[2];
                                     record.gridLab.assign(feature.grid.begin(), feature.grid.end());
-                                    FeatureExtractor::saveFeatures(record, featDir, "hash_" + record.fileHash,
-                                                                   feature.tiny.data(), feature.lbp.data());
+                                    std::copy_n(feature.tiny.begin(), textures[i].tiny.size(), textures[i].tiny.begin());
+                                    std::copy_n(feature.lbp.begin(), textures[i].lbp.size(), textures[i].lbp.begin());
                                     record.featureVersion = FeatureExtractor::featureVersion();
                                 }
                                 else
                                 {
                                     FeatureExtractor featureExtractor;
-                                    featureExtractor.compute(images[i], records[i], featDir, "hash_" + records[i].fileHash);
+                                    featureExtractor.compute(images[i], records[i], &textures[i]);
                                 }
                             }
                             catch (const std::exception &error)
@@ -1248,15 +1280,23 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
             {
                 // SQL 只在调用线程执行；失败回滚整批，提交后才增加已入库数量。
                 BenchmarkTimer timer(profile ? &profile->transaction : nullptr);
-                if (!db.beginTransaction())
+                if (!db.beginImmediateTransaction())
                 {
                     return runtimeFailure(runtime, 2, "cannot begin CPU build transaction", "library_write_failed",
                                           "dbPath", dbPath);
                 }
-                bool written = true;
+                std::vector<ImageRecord *> batch;
                 for (size_t i = 0; i < count; ++i)
                 {
-                    if (ready[i] && !db.insertImage(records[i]))
+                    if (ready[i])
+                    {
+                        batch.push_back(&records[i]);
+                    }
+                }
+                bool written = publishBatch(batch);
+                for (size_t i = 0; written && i < count; ++i)
+                {
+                    if (ready[i] && !writeImage(records[i], textures[i]))
                     {
                         written = false;
                         break;
@@ -1311,6 +1351,11 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         runtime.artifact("normalized", "directory", outputDir);
         return ServiceResult::success("normalize completed");
     }
+    std::string ingestError;
+    if (ingest && !ingest->finish(ingestError))
+    {
+        return runtimeFailure(runtime, 2, ingestError, "library_write_failed", "dbPath", dbPath);
+    }
     if (inserted == 0 && db.totalCount() == 0)
     {
         return runtimeFailure(runtime, 1, "no readable images could be indexed", "input_unreadable", "inputDir",
@@ -1355,35 +1400,10 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
               << "s | color ordering " << colorSeconds << "s";
     std::cout << std::endl;
 
-    runtime.stage("building_cache");
-    tCacheStart = std::chrono::steady_clock::now();
-    std::cout << "Building feature cache..." << std::flush;
-    FeaturePack::Stats cacheStats;
-    if (FeaturePack::buildCache(featDir, db.allRecords(), &cacheStats, request.threads))
-    {
-        if (!cacheStats.reused)
-        {
-            FeaturePack::removeObsolete(featDir);
-        }
-        std::cout << (cacheStats.reused ? " reused" : " done") << std::endl;
-    }
-    else
-    {
-        std::cout << " failed" << std::endl;
-        return runtimeFailure(runtime, 1, "cannot build feature cache after color ordering", "library_unavailable",
-                              "dbPath", dbPath);
-    }
-    auto cacheSec = std::chrono::duration_cast<Ms>(
-        std::chrono::steady_clock::now() - tCacheStart).count() / 1000.0;
-    std::cout << "  Cache build: " << std::fixed << std::setprecision(1) << cacheSec << "s" << std::endl;
-    std::cout << "  Cache validation/source loading: " << cacheStats.validationMs << " ms\n"
-              << "  Cache writing: " << cacheStats.writingMs << " ms\n";
-    db.setMeta("feature_w", std::to_string(request.normalizeWidth));
-    db.setMeta("feature_h", std::to_string(request.normalizeHeight));
     std::cout << "Feature resolution: " << request.normalizeWidth << "x" << request.normalizeHeight << std::endl;
     const auto wallMs =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - commandStart).count();
-    std::cout << "  Build total (wall, including scan/cache): " << wallMs << " ms\n";
+    std::cout << "  Build total (wall, including scan and color order): " << wallMs << " ms\n";
     if (gpuOk)
     {
         std::cout << "  GPU normalization/features overlap; child timings are not additive.\n";
@@ -1396,7 +1416,6 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     runtime.metric("normalizeMs", normMs);
     runtime.metric("libraryFeaturesMs", gpuMs);
     runtime.metric("reorderMs", colorSeconds * 1000);
-    runtime.metric("cacheMs", cacheSec * 1000);
     try
     {
         visuals.after = summarizeColors(db.averageColors());

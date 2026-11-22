@@ -92,7 +92,7 @@ const char *fastScoreRevision()
 }
 
 std::array<float, 5> fp32Distances(const MatchingBuffers &tiles, size_t tile, const ImageRecord &record,
-                                   const FeaturePack::Reader::Row &payload, const float *tilePlanar, const float *recordPlanar)
+                                   const LibraryFeatureStore::Reader::Row &payload, const float *tilePlanar, const float *recordPlanar)
 {
     static constexpr float weights[64] = {
 #include "core/GridWeights.inc"
@@ -307,7 +307,7 @@ bool ScoreWorkspace::prepare(int maximum, int count, size_t libraryCount, size_t
     return true;
 }
 
-void ScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &images, FeaturePack::Reader &reader)
+void ScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &images, LibraryFeatureStore::Reader &reader)
 {
     if (!session || images.size() * stride * 4 != library)
     {
@@ -315,23 +315,13 @@ void ScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &images, Featu
     }
     std::vector<uint32_t> packed(uploadRows * stride);
     std::vector<int> needed;
-    const bool prepareAll = reader.stats().preloaded && images.size() <= uploadRows * stride;
-    if (prepareAll)
+    const auto chunk = std::min(uploadRows, reader.capacity());
+    for (size_t first = 0; first < images.size(); first += chunk)
     {
-        // 复用 FeaturePack 的目录批量校验，避免整库上传触发两次逐文件属性查询。
-        needed.resize(images.size());
-        std::iota(needed.begin(), needed.end(), 0);
+        const size_t count = std::min(chunk, images.size() - first);
+        needed.resize(count);
+        std::iota(needed.begin(), needed.end(), int(first));
         reader.prepare(needed);
-    }
-    for (size_t first = 0; first < images.size(); first += uploadRows)
-    {
-        const size_t count = std::min(uploadRows, images.size() - first);
-        if (!prepareAll)
-        {
-            needed.resize(count);
-            std::iota(needed.begin(), needed.end(), int(first));
-            reader.prepare(needed);
-        }
         for (size_t row = 0; row < count; ++row)
         {
             const auto &r = images[first + row];

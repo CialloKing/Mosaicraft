@@ -40,7 +40,7 @@ const char *CompatibleScoreWorkspace::preparationFailure() const
 {
     return "CUDA is not available";
 }
-void CompatibleScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &, FeaturePack::Reader &, GpuTimings *)
+void CompatibleScoreWorkspace::uploadLibrary(const std::vector<ImageRecord> &, LibraryFeatureStore::Reader &, GpuTimings *)
 {
     throw std::runtime_error("CUDA is not available");
 }

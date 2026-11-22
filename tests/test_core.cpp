@@ -1426,6 +1426,7 @@ TEST_CASE("API request parser builds mosaic requests")
     CHECK(request.dbPath == "db.sqlite");
     CHECK(request.outputPath == "out.png");
     CHECK(request.config.jpegQuality == 95);
+    CHECK(request.config.pngCompressionLevel == 6);
     CHECK(request.config.writeMode == "stream");
     CHECK(request.config.outputMode == OutputMode::DeepZoom);
     CHECK(request.config.outputMode != OutputMode::Image);
@@ -2518,7 +2519,9 @@ TEST_CASE("portable render request preserves appearance overrides and rejects ma
     CHECK(request.jitterExplicit);
     CHECK(request.blendExplicit);
     CHECK_FALSE(request.outputTileExplicit);
-    CHECK(projectRequestToJson(request).at("benchmark") == true);
+    const auto serialized = projectRequestToJson(request);
+    CHECK(serialized.at("benchmark") == true);
+    CHECK(serialized.at("pngLevel") == 6);
     for (auto mode : {OutputMode::Image, OutputMode::Html, OutputMode::DeepZoom, OutputMode::Tiles})
     {
         ProjectRequest saved;
@@ -2528,7 +2531,12 @@ TEST_CASE("portable render request preserves appearance overrides and rejects ma
         ProjectRequest restored;
         auto fields = projectRequestToJson(saved);
         fields.erase("deep");
-        CHECK(parseProjectRequestJson(fields.dump(), ApiOperation::SubmitRenderJob, restored, error));
+        if (mode == OutputMode::Image)
+        {
+            fields["pngLevel"] = 1;
+        }
+        REQUIRE(parseProjectRequestJson(fields.dump(), ApiOperation::SubmitRenderJob, restored, error));
+        CHECK(restored.config.pngCompressionLevel == (mode == OutputMode::Image ? 1 : 6));
     }
     for (const auto *body :
          {R"({"projectPath":"artwork","outputPath":"result.png","tileW":9})",

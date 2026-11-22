@@ -1,6 +1,6 @@
 #pragma once
 
-#include "FeaturePack.h"
+#include "LibraryFeatureStore.h"
 #include "FeatureUtils.h"
 #include "MosaicEngine.h"
 
@@ -74,8 +74,8 @@ using FeatureDistances = std::array<double, 5>;
 
 template <class Grid>
 FeatureDistances featureDistances(double l, double a, double b, const Grid &grid, double edge,
-                                  const FeaturePack::Reader::Row &query, const ImageRecord &record,
-                                  const FeaturePack::Reader::Row &candidate)
+                                  const LibraryFeatureStore::Reader::Row &query, const ImageRecord &record,
+                                  const LibraryFeatureStore::Reader::Row &candidate)
 {
     return {labDistance(l, a, b, record.avgL, record.avgA, record.avgB),
             gridDistance8x8(grid, record.gridLab, true),

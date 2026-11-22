@@ -1,5 +1,7 @@
 #pragma once
 
+#include "FeaturePayload.h"
+
 #include <cstdint>
 #include <array>
 #include <functional>
@@ -18,6 +20,7 @@ namespace mosaicraft
 {
 
 class LibraryAccess;
+class LibraryPaths;
 class RuntimeContext;
 
 // ImageRecord — 图片在数据库中的一条完整记录。
@@ -53,15 +56,8 @@ struct ImageRecord
     // 为空表示尚未计算
     std::vector<float> gridLab;
 
-    // ——— TinyImage ———
-    // 16×16 灰度图，存为独立文件
-    std::string tinyPath;
-
     // ——— 边缘特征 ———
     double edgeDensity = 0.0;       // 边缘像素占比（0~1）
-
-    // ——— 纹理特征 ———
-    std::string lbpPath;           // 直方图 / LBP / GLCM 特征文件路径
 
     // ——— 使用统计 ———
     int useCount = 0;               // 被匹配选用的次数
@@ -82,7 +78,7 @@ struct ImageColorOrder
 };
 
 // Database — SQLite 索引的 RAII 封装。
-// 只存索引指针和标量特征；大块数据（TinyImage / Histogram）存文件系统。
+// 素材文件独立存放，全部特征由 SQLite 管理。
 class Database
 {
 public:
@@ -125,8 +121,15 @@ public:
 
     // ——— 写操作 ———
 
-    // 插入一条记录；若 file_path 已存在则忽略（UNIQUE 约束）
-    bool insertImage(const ImageRecord& rec);
+    // 必须在调用者的批次事务内使用，确保素材、特征及修订号同时提交。
+    bool insertImage(const ImageRecord &rec, const TextureFeatures &texture);
+    bool inTransaction() const;
+    bool advanceRevisions(bool features);
+    std::string featureKey();
+    std::string assetKey();
+    bool checkIntegrity();
+    std::vector<int> invalidFeatureIds();
+    bool readTextures(const std::vector<int> &ids, std::unordered_map<int, TextureFeatures> &out);
 
     // 颜色浏览缓存不参与马赛克匹配；路径更新只修改指定 ID 的位置。
     std::unordered_map<int, ImageColorOrder> imageColorOrders();
@@ -159,6 +162,11 @@ public:
     }
 
     // 获取图库总数
+    std::vector<ImageRecord> metadataRecords(bool includeUseCounts = true)
+    {
+        return readRange(std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max(),
+                         totalCount() + 1, nullptr, includeUseCounts, {}, false);
+    }
     int totalCount();
     std::vector<std::array<double, 3>> averageColors();
 
@@ -178,21 +186,24 @@ public:
 private:
     sqlite3* m_db;
     sqlite3_stmt *m_insertStatement = nullptr;
+    sqlite3_stmt *m_featureStatement = nullptr;
+    sqlite3_stmt *m_textureStatement = nullptr;
     sqlite3_stmt *m_hashStatement = nullptr;
     sqlite3_stmt *m_pathStatement = nullptr;
     sqlite3_stmt *m_colorStatement = nullptr;
     sqlite3_stmt *prepareCached(sqlite3_stmt *&statement, const char *sql);
     std::unique_ptr<LibraryAccess> m_access;
+    std::unique_ptr<LibraryPaths> m_paths;
     std::string m_path;
     std::string m_error;
     bool m_exclusive = false, m_new = false;
+    bool preflightFeatureSchema();
     bool openConnection(bool create, bool readOnly = false);
     bool validateSchema(std::vector<ImageRecord> *matchingRows, double *readMs, bool includeUseCounts);
     bool readMatchingRows(std::vector<ImageRecord> &out, bool includeUseCounts);
     std::vector<ImageRecord> readRange(double minL, double maxL, int limit, bool *validated,
-                                       bool includeUseCounts, const RecordReadProgress &progress = {});
+                                       bool includeUseCounts, const RecordReadProgress &progress = {}, bool withGrid = true);
     void closeConnection();
-    bool validateStoredPaths();
 
     // 执行无结果集 SQL（CREATE / INSERT / DELETE）
     bool exec(const std::string& sql);

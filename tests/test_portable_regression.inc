@@ -53,7 +53,7 @@ TEST_CASE("portable scoring and selection meet FP64 quality and ID gates")
             }
             Database database(utf8(workspace.dbPath()), Database::OpenMode::Existing);
             const auto records = database.allRecords();
-            FeaturePack::Reader reader(utf8(workspace.libraryDir() / "features"), records, 64 * 1024 * 1024);
+            LibraryFeatureStore::Reader reader(database, records, 64 * 1024 * 1024);
             std::vector<int> all(records.size());
             std::iota(all.begin(), all.end(), 0);
             reader.prepare(all);

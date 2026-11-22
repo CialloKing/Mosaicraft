@@ -382,7 +382,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <div class="row">
       <div class="field"><label>输出格式 --format</label><select id="m-format" title="自动：输出后缀优先，否则使用输入后缀"><option value="">自动：输出后缀优先，否则使用输入后缀</option><option value="jpg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option><option value="tiff">TIFF</option></select></div>
       <div class="field"><label>JPEG/WebP 质量 --quality</label><input type="number" id="m-quality" value="100" min="1" max="100"></div>
-      <div class="field"><label>PNG 压缩级别 --png-compression</label><select id="m-pnglevel"><option value="">默认(1)</option><option value="1">1 最快</option><option value="3">3 平衡</option><option value="6">6 较小</option><option value="9">9 最小</option></select></div>
+      <div class="field"><label>PNG 压缩级别 --png-compression</label><select id="m-pnglevel"><option value="">默认(6)</option><option value="1">1 最快</option><option value="3">3 平衡</option><option value="6">6 较小</option><option value="9">9 最小</option></select></div>
       <div class="field"><label>写入模式 --write-mode</label><select id="m-writemode"><option value="">auto(自动)</option><option value="stream">stream(流式低内存)</option><option value="batch">batch(全量缓冲)</option></select></div>
     </div>
     <p class="hint" id="format-policy-hint">自动推导的 JPG/WebP 超限时改存 PNG，保留完整尺寸；显式选择 JPG/WebP 时缩小输出 Tile。</p>
@@ -635,7 +635,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     <div class="field"><label>外观种子</label><input id="r-seed" type="number" min="0" max="4294967295" placeholder="继承工程"></div>
     <div class="field"><label>线程上限</label><input id="r-threads" type="number" min="0" max="256" value="0"></div>
     <div class="field"><label>JPEG/WebP 质量</label><input id="r-quality" type="number" min="1" max="100" placeholder="100"></div>
-    <div class="field"><label>PNG 压缩</label><input id="r-png" type="number" min="1" max="9" placeholder="1"></div>
+    <div class="field"><label>PNG 压缩</label><input id="r-png" type="number" min="1" max="9" placeholder="6"></div>
     <div class="field"><label>写入模式</label><select id="r-write"><option value="">自动</option><option value="stream">流式</option><option value="batch">全量</option></select></div>
     </div><div class="chk-row"><label><input id="r-thumbnail" type="checkbox">附加单图缩略图</label><label><input id="r-overwrite" type="checkbox">覆盖已有输出</label><label><input id="r-deep" type="checkbox">深度检查</label></div>
     <p class="hint">放大图块只会重采样包内素材，不能恢复归一化前照片细节。重新渲染不会重新选图或增加图库使用记录。HTML 请发送完整 ZIP，解压后离线打开 index.html。</p>
@@ -2133,7 +2133,7 @@ const STAGE_LABELS = {
   queued: '等待执行', validating: '校验参数', scanning: '扫描素材', reading_library: '读取图库',
   preparing_images: '归一化与特征提取', building_index: '准备索引', matching: '匹配选图',
   writing_output: '输出图片', writing_preview: '生成预览', analyzing: '生成分析报告',
-  reordering_library: '颜色重排', building_cache: '构建特征缓存', building_pyramid: '构建金字塔',
+  reordering_library: '颜色重排', building_pyramid: '构建金字塔',
   finalizing: '收尾', canceled: '已取消'
 };
 const DIAGNOSTIC_HINTS = {
@@ -2484,7 +2484,7 @@ function readFormPayload(tab) {
   return payload;
 }
 const CLI_OPTION_DEFINITIONS = @mosaicCliOptionsJson@;
-const CLI_DEFAULTS = { mosaic: { quality:100, pngLevel:1, writeMode:'auto', tileW:9, tileH:16, candidates:150,
+const CLI_DEFAULTS = { mosaic: { quality:100, pngLevel:6, writeMode:'auto', tileW:9, tileH:16, candidates:150,
   topNRandom:10, lRange:20, neighborWindow:0, neighborPenalty:100, outputTile:'180x320',
   labWeight:.2, gridWeight:.45, tinyWeight:.25, edgeWeight:.05, lbpWeight:.05, usePenalty:0, colorStrength:.04, overlayStrength:0 },
   build: {threads:0,normalizeSize:'180x320'}, dbusage:{limit:50} };

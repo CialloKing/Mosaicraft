@@ -66,7 +66,7 @@ def main():
     prepared = a.prepared.resolve()
     manifest = json.loads((prepared/'report.json').read_bytes())
     src = prepared/'library'/'snapshot.db'
-    if not manifest['complete'] or not src.is_file() or not (src.parent/'features'/'lib.ann196').is_file():
+    if not manifest['complete'] or not src.is_file() or not (src.parent/'index'/'lib.ann196').is_file():
         p.error('requires a completed private benchmark and its prepared index')
     # A unique sibling keeps relative resource paths intact; create must never see the source DB.
     db = src.with_name(f'perf-create-{uuid.uuid4().hex}.db')

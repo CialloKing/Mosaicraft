@@ -5,7 +5,6 @@
 #include "../core/NeighborhoodState.h"
 #include "../core/AnalysisTiles.h"
 #include "../core/BrightnessAdjustment.h"
-#include "../core/CandidateFeatures.h"
 #include "../core/FeatureExtractor.h"
 #include "../core/FeatureUtils.h"
 #include "../core/FeatureIO.h"
@@ -16,6 +15,7 @@
 #include "../core/MatchingAccess.h"
 #include "../core/MosaicOutput.h"
 #include "../core/MosaicSelection.h"
+#include "../core/ParallelPngWriter.h"
 #include "../core/PngStreamWriter.h"
 #include "../core/PreviewAccumulator.h"
 #include "../core/PreviewCandidates.h"
@@ -23,7 +23,7 @@
 #include "../core/WorkerPool.h"
 #include <deque>
 #include <limits>
-#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#define DOCTEST_CONFIG_IMPLEMENT
 #include "doctest.h"
 
 #include "../core/BuildService.h"
@@ -38,6 +38,7 @@
 #include "../core/ColorOrder.h"
 #include "../core/LibraryColorOrder.h"
 #include "../core/LibraryAccess.h"
+#include "../core/LibraryMaintenance.h"
 #include "../core/OutputPublication.h"
 #include "../core/DeepZoomWriter.h"
 #include "json.hpp"
@@ -46,6 +47,9 @@
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <cstdlib>
+#include <string_view>
 
 #include <chrono>
 #include <cctype>
@@ -196,6 +200,28 @@ MosaicRequest makeMosaicRequest(const TempWorkspace& workspace)
     return request;
 }
 
+constexpr auto ingestFixtureName = ".mosaicraft-new-999999.png";
+
+bool publishIngestFixture(Database &db, LibraryIngest &ingest)
+{
+    ImageRecord record;
+    record.filePath = utf8(ingest.staging() / ingestFixtureName);
+    record.fileHash = "recovery-fixture";
+    const cv::Mat image(16, 16, CV_8UC3, cv::Scalar(3, 78, 90));
+    if (!imwriteUnicode(record.filePath, image))
+    {
+        return false;
+    }
+    TextureFeatures texture;
+    FeatureExtractor().compute(image, record, &texture);
+    if (!db.beginImmediateTransaction())
+    {
+        return false;
+    }
+    ingest.publish({&record});
+    return db.insertImage(record, texture) && db.advanceRevisions(true);
+}
+
 int fixtureSql(const fs::path &path, const std::string &sql)
 {
     sqlite3 *raw = nullptr;
@@ -210,6 +236,29 @@ int fixtureSql(const fs::path &path, const std::string &sql)
 }
 
 } // namespace
+
+int main(int argc, char **argv)
+{
+    if (argc == 2 && (std::string_view(argv[1]) == "--ingest-crash-before-commit" ||
+                      std::string_view(argv[1]) == "--ingest-crash-after-commit"))
+    {
+        const auto root = fs::current_path();
+        Database db(utf8(root / "mosaicraft.db"), Database::OpenMode::Recover);
+        if (!db.isOpen())
+        {
+            return 1;
+        }
+        LibraryIngest ingest(db, root);
+        if (!publishIngestFixture(db, ingest) ||
+            (std::string_view(argv[1]) == "--ingest-crash-after-commit" && !db.commitTransaction()))
+        {
+            return 1;
+        }
+        // 仅测试目标：跳过析构和 SQLite close，保留进程崩溃时的磁盘状态。
+        std::_Exit(86);
+    }
+    return doctest::Context(argc, argv).run();
+}
 
 TEST_CASE("new libraries reject incompatible structures and remain portable")
 {
@@ -239,6 +288,14 @@ TEST_CASE("new libraries reject incompatible structures and remain portable")
         REQUIRE(fixtureSql(workspace.dbPath(), "DROP TABLE target_runs") == SQLITE_OK);
         incompatible = true;
     }
+    SUBCASE("desktop maintenance rejects a version-1 library without image_features")
+    {
+        REQUIRE(fixtureSql(workspace.dbPath(), "DROP TABLE image_features") == SQLITE_OK);
+        const auto result = maintainDesktopLibrary({{"request", {{"inputDir", ""}, {"outputDir", utf8(workspace.libraryDir())}}}});
+        REQUIRE(result.at("ok") == false);
+        CHECK(result.at("diagnostic").at("code") == "library_incompatible");
+        incompatible = true;
+    }
     SUBCASE("missing required column")
     {
         REQUIRE(fixtureSql(workspace.dbPath(), "ALTER TABLE images DROP COLUMN contrast") == SQLITE_OK);
@@ -256,8 +313,12 @@ TEST_CASE("new libraries reject incompatible structures and remain portable")
         for (auto mode : {Database::OpenMode::Existing, Database::OpenMode::Build})
         {
             Database blocked(build.dbPath, mode);
-            CHECK_FALSE(blocked.isOpen());
-            CHECK(std::string(blocked.errorCode()) == "library_incompatible");
+            const bool damagedRow = blocked.isOpen() && !blocked.invalidFeatureIds().empty();
+            CHECK((!blocked.isOpen() || damagedRow));
+            if (!blocked.isOpen())
+            {
+                CHECK(std::string(blocked.errorCode()) == "library_incompatible");
+            }
         }
         std::vector<ImageRecord> rows;
         Database matching(build.dbPath, Database::OpenMode::ReadOnly, &rows);
@@ -294,47 +355,6 @@ TEST_CASE("new libraries reject incompatible structures and remain portable")
     build.outputDir = utf8(moved);
     build.appendMode = true;
     REQUIRE(BuildService().run(build).ok);
-}
-
-TEST_CASE("feature payloads validate type version count finite values and exact length")
-{
-    TempWorkspace workspace;
-    const auto tinyPath = utf8(workspace.outputDir() / "fixture.tiny");
-    const auto lbpPath = utf8(workspace.outputDir() / "fixture.lbp");
-    std::array<uint8_t, 256> tiny{};
-    std::array<float, 256> lbp{};
-    lbp[0] = 1.0f;
-    writeFeature(tinyPath, FeatureKind::Tiny, tiny.data());
-    writeFeature(lbpPath, FeatureKind::Lbp, lbp.data());
-    CHECK(fs::file_size(u8path(tinyPath)) == 272);
-    CHECK(fs::file_size(u8path(lbpPath)) == 1040);
-    CHECK(readFeature(tinyPath, FeatureKind::Tiny, tiny.data()));
-    CHECK(readFeature(lbpPath, FeatureKind::Lbp, lbp.data()));
-    std::ifstream payload(u8path(lbpPath), std::ios::binary);
-    const std::vector<char> encoded(std::istreambuf_iterator<char>(payload), {});
-    payload.close();
-    REQUIRE(encoded.size() == 1040);
-    CHECK(encoded[16] == 0);
-    CHECK(encoded[17] == 0);
-    CHECK(static_cast<uint8_t>(encoded[18]) == 128);
-    CHECK(encoded[19] == 63);
-    CHECK_FALSE(readFeature(tinyPath, FeatureKind::Lbp, lbp.data()));
-    {
-        std::fstream corrupt(u8path(tinyPath), std::ios::binary | std::ios::in | std::ios::out);
-        corrupt.seekp(8);
-        corrupt.put(99);
-    }
-    CHECK_FALSE(readFeature(tinyPath, FeatureKind::Tiny, tiny.data()));
-    writeFeature(tinyPath, FeatureKind::Tiny, tiny.data());
-    {
-        std::ofstream extra(u8path(tinyPath), std::ios::binary | std::ios::app);
-        extra.put(0);
-    }
-    CHECK_FALSE(readFeature(tinyPath, FeatureKind::Tiny, tiny.data()));
-    fs::resize_file(u8path(lbpPath), 10);
-    CHECK_FALSE(readFeature(lbpPath, FeatureKind::Lbp, lbp.data()));
-    lbp[0] = std::numeric_limits<float>::quiet_NaN();
-    CHECK_THROWS_AS(writeFeature(lbpPath, FeatureKind::Lbp, lbp.data()), std::runtime_error);
 }
 
 TEST_CASE("match-only uses feature payloads without photos output or usage writes")
@@ -689,13 +709,18 @@ TEST_CASE("compatible CUDA scores are exact and failures never publish partial r
         return;
     }
     TempWorkspace workspace;
+    fs::create_directories(workspace.libraryDir());
+    Database database(utf8(workspace.dbPath()));
+    REQUIRE(database.createTables());
+    REQUIRE(database.beginImmediateTransaction());
+    std::vector<TextureFeatures> textures(67);
     std::vector<ImageRecord> records(67);
     cv::RNG rng(5739);
     for (size_t i = 0; i < records.size(); ++i)
     {
         cv::Mat image(17, 31, CV_8UC3);
         rng.fill(image, cv::RNG::UNIFORM, 0, 256);
-        FeatureExtractor().compute(image, records[i], utf8(workspace.outputDir()), std::to_string(i));
+        FeatureExtractor().compute(image, records[i], &textures[i]);
         records[i].id = static_cast<int>(i);
         records[i].useCount = static_cast<int>(i * 37);
         if (i % 2)
@@ -706,10 +731,16 @@ TEST_CASE("compatible CUDA scores are exact and failures never publish partial r
             }
         }
     }
-    records[3] = records[2];
-    records[3].id = 3; // 完全平分的两个图库索引。
-    REQUIRE(FeaturePack::buildCache(utf8(workspace.outputDir()), records));
-    FeaturePack::Reader reader(utf8(workspace.outputDir()), records);
+    records[3] = records[2]; // 完全平分的两个图库索引。
+    textures[3] = textures[2];
+    for (size_t i = 0; i < records.size(); ++i)
+    {
+        records[i].id = static_cast<int>(i + 1);
+        records[i].filePath = utf8(workspace.libraryDir() / (std::to_string(i) + ".png"));
+        REQUIRE(database.insertImage(records[i], textures[i]));
+    }
+    REQUIRE(database.commitTransaction());
+    LibraryFeatureStore::Reader reader(database, records);
     const int candidates = 73;
     MatchingBuffers tiles;
     tiles.resize(256, 0, candidates, false, false);
@@ -844,7 +875,7 @@ TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encode
         build.backend = BackendPolicy::Cpu;
     }
     REQUIRE(BuildService().run(build).ok);
-    auto bytes = [](const fs::path &path)
+    const auto bytes = [](const fs::path &path)
     {
         std::ifstream input(path, std::ios::binary);
         return std::vector<char>(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
@@ -857,14 +888,17 @@ TEST_CASE("dynamic CUDA keeps CPU library records selections analysis and encode
         for (const auto &record : original)
         {
             ImageRecord expected;
-            FeatureExtractor().compute(imreadUnicode(record.filePath), expected, utf8(workspace.outputDir()), "cpu");
+            TextureFeatures texture;
+            FeatureExtractor().compute(imreadUnicode(record.filePath), expected, &texture);
+            std::unordered_map<int, TextureFeatures> payloads;
+            REQUIRE(db.readTextures({record.id}, payloads));
+            CHECK(payloads.at(record.id).tiny == texture.tiny);
+            CHECK(payloads.at(record.id).lbp == texture.lbp);
             CHECK(record.avgL == expected.avgL);
             CHECK(record.avgA == expected.avgA);
             CHECK(record.avgB == expected.avgB);
             CHECK(record.gridLab == expected.gridLab);
             CHECK(record.edgeDensity == expected.edgeDensity);
-            CHECK(bytes(u8path(record.tinyPath)) == bytes(u8path(expected.tinyPath)));
-            CHECK(bytes(u8path(record.lbpPath)) == bytes(u8path(expected.lbpPath)));
         }
     }
     build.appendMode = true;
@@ -1280,9 +1314,11 @@ TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
     const auto request = makeBuildRequest(workspace);
     REQUIRE(BuildService().run(request).ok);
     std::vector<ImageRecord> records;
+    std::string libraryUuid;
     {
         Database database(request.dbPath);
         records = database.allRecords();
+        libraryUuid = database.getMeta("library_uuid");
     }
     std::vector<std::vector<uint8_t>> imageBytes;
     for (const auto &record : records)
@@ -1292,7 +1328,7 @@ TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
     const std::string token = "112233";
     const auto staging = workspace.libraryDir() / (".mosaicraft-color-order-" + token);
     fs::create_directory(staging);
-    nlohmann::json journal = {{"version", 1}, {"database", utf8(fs::weakly_canonical(workspace.dbPath()))},
+    nlohmann::json journal = {{"version", 1}, {"uuid", libraryUuid}, {"database", utf8(fs::weakly_canonical(workspace.dbPath()))},
         {"token", token}, {"output", utf8(workspace.libraryDir())}, {"staging", utf8(staging)},
         {"phase", "staging"}, {"entries", nlohmann::json::array()}};
     for (int i = 0; i < 2; ++i)
@@ -1391,8 +1427,6 @@ TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
         CHECK(readBytesUnicode(request.dbPath) == databaseBytes);
         for (const auto &record : records)
         {
-            CHECK(fs::is_regular_file(u8path(record.tinyPath)));
-            CHECK(fs::is_regular_file(u8path(record.lbpPath)));
         }
     }
     auto append = request;
@@ -1409,8 +1443,6 @@ TEST_CASE("color reorder preserves records and recovers interrupted name swaps")
         {
             CHECK(restored[i].id == records[i].id);
             CHECK(restored[i].fileHash == records[i].fileHash);
-            CHECK(restored[i].tinyPath == records[i].tinyPath);
-            CHECK(restored[i].lbpPath == records[i].lbpPath);
             CHECK(readBytesUnicode(restored[i].filePath) == imageBytes[i]);
         }
     }
@@ -1463,10 +1495,14 @@ TEST_CASE("color reorder handles occupied paths and releases library locks")
     {
         auto changed = records[0];
         changed.avgA += 0.1;
-        REQUIRE(database.insertImage(changed));
+        sqlite3 *raw = nullptr;
+        REQUIRE(sqlite3_open(database.path().c_str(), &raw) == SQLITE_OK);
+        const auto sql = "UPDATE images SET avg_a=" + std::to_string(changed.avgA) + " WHERE id=" + std::to_string(changed.id);
+        REQUIRE(sqlite3_exec(raw, sql.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+        sqlite3_close(raw);
         REQUIRE_MESSAGE(reorderLibraryByColor(database, request.outputDir, result, error), error);
         CHECK(result.computed == 1);
-        CHECK(database.imageColorOrders().at(changed.id).sourceA == changed.avgA);
+        CHECK(database.imageColorOrders().at(changed.id).sourceA == doctest::Approx(changed.avgA));
         ColorOrderResult repeated;
         REQUIRE(reorderLibraryByColor(database, request.outputDir, repeated, error));
         CHECK(repeated.computed == 0);
@@ -1557,7 +1593,7 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
         const auto build = BuildService().run(request);
         REQUIRE_MESSAGE(build.ok, build.message);
         std::vector<ImageRecord> before;
-        std::unordered_map<std::string, fs::file_time_type> featureTimes;
+        std::unordered_map<int, TextureFeatures> originalTextures;
         {
             Database database(request.dbPath);
             before = database.allRecords();
@@ -1585,15 +1621,7 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
                     CHECK(cv::norm(full, rgba, cv::NORM_INF) == 0);
                     CHECK(readBytesUnicode(png) == originalPng);
                 }
-                CHECK(fs::exists(u8path(record.tinyPath)));
-                CHECK(fs::exists(u8path(record.lbpPath)));
-                for (const auto& path : {record.tinyPath, record.lbpPath})
-                {
-                    // 固定旧时间，能识别追加时即使内容相同的无谓重写。
-                    const auto stamp = fs::file_time_type::clock::now() - std::chrono::hours(1);
-                    fs::last_write_time(u8path(path), stamp);
-                    featureTimes.emplace(path, fs::last_write_time(u8path(path)));
-                }
+                REQUIRE(database.readTextures({record.id}, originalTextures));
             }
             REQUIRE(database.recordRunUsage({{before[0].id, 3}}, "target", "target.png"));
         }
@@ -1641,10 +1669,10 @@ TEST_CASE("same-size builds deduplicate saved pixels and preserve existing recor
                 CHECK(record.filePath == old->filePath);
                 CHECK(record.fileHash == old->fileHash);
                 CHECK(record.gridLab == old->gridLab);
-                CHECK(record.tinyPath == old->tinyPath);
-                CHECK(record.lbpPath == old->lbpPath);
-                CHECK(fs::last_write_time(u8path(record.tinyPath)) == featureTimes.at(record.tinyPath));
-                CHECK(fs::last_write_time(u8path(record.lbpPath)) == featureTimes.at(record.lbpPath));
+                std::unordered_map<int, TextureFeatures> currentTextures;
+                REQUIRE(database.readTextures({record.id}, currentTextures));
+                CHECK(originalTextures.at(record.id).tiny == currentTextures.at(record.id).tiny);
+                CHECK(originalTextures.at(record.id).lbp == currentTextures.at(record.id).lbp);
                 CHECK(readBytesUnicode(record.filePath) == expected.at(record.fileHash));
             }
         }
@@ -1769,12 +1797,8 @@ TEST_CASE("default color build and append keep bytes IDs usage and feature refer
             REQUIRE(found != records.end());
             CHECK(bytes(found->filePath) == originalBytes.at(before.id));
             CHECK(found->fileHash == before.fileHash);
-            CHECK(found->tinyPath == before.tinyPath);
-            CHECK(found->lbpPath == before.lbpPath);
             CHECK(found->gridLab == before.gridLab);
             CHECK(found->useCount == before.useCount);
-            CHECK(fs::exists(u8path(found->tinyPath)));
-            CHECK(fs::exists(u8path(found->lbpPath)));
         }
     }
     CHECK(fs::exists(input / "z_red.jpg"));
@@ -2640,210 +2664,90 @@ TEST_CASE("bounded grid comparisons preserve thresholds and ordered selections")
     }
 }
 
-TEST_CASE("usage cache releases final references and shares loading failures")
+TEST_CASE("SQLite features reject malformed or absent payloads without failing metadata reads")
 {
-    ImageCache cache(1024, true);
-    cache.setUseCounts({{1, 1}, {2, 2}, {3, 2}});
-    auto pixels = []()
+    TempWorkspace workspace;
+    writeLibraryImages(workspace.inputDir());
+    auto build = makeBuildRequest(workspace);
+    build.backend = BackendPolicy::Cpu;
+    REQUIRE(BuildService().run(build).ok);
+    const auto path = workspace.dbPath();
+    SUBCASE("length constraint")
     {
-        return cv::Mat(8, 8, CV_8UC3, cv::Scalar(1, 2, 3));
-    };
-    REQUIRE(cache.getSharedWithLoader(1, 8, 8, pixels));
-    CHECK(cache.cachedBytes() == 0);
-    auto first = cache.getSharedWithLoader(2, 8, 8, pixels);
-    REQUIRE(first);
-    cache.finishUse(2, 8, 8);
-    CHECK(cache.getSharedWithLoader(2, 8, 8, pixels) == first);
-    cache.finishUse(2, 8, 8);
-    CHECK(cache.cachedBytes() == 0);
-    CHECK(first->at<cv::Vec3b>(0, 0)[0] == 1);
-    for (bool fail : {false, true})
+        CHECK(fixtureSql(path, "UPDATE image_features SET tiny=zeroblob(255) WHERE image_id=1") == SQLITE_CONSTRAINT);
+    }
+    SUBCASE("non-finite float")
     {
-        std::promise<void> started, release;
-        auto released = release.get_future().share();
-        auto owner = std::async(std::launch::async, [&]()
-        {
-            return cache.getSharedWithLoader(3, 8, 8, [&]() -> cv::Mat
-            {
-                started.set_value();
-                released.wait();
-                if (fail)
-                {
-                    throw std::runtime_error("decode failure");
-                }
-                return pixels();
-            });
-        });
-        started.get_future().wait();
-        const auto shares = cache.stats().sharedLoads;
-        auto waiter = std::async(std::launch::async, [&]()
-        {
-            return cache.getSharedWithLoader(3, 8, 8, pixels);
-        });
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-        while (cache.stats().sharedLoads == shares && std::chrono::steady_clock::now() < deadline)
-        {
-            std::this_thread::yield();
-        }
-        release.set_value();
-        CHECK(cache.stats().sharedLoads == shares + 1);
-        if (fail)
-        {
-            CHECK_THROWS_AS(owner.get(), std::runtime_error);
-            CHECK_THROWS_AS(waiter.get(), std::runtime_error);
-        }
-        else
-        {
-            CHECK(owner.get() == waiter.get());
-        }
-        cache.clear();
+        REQUIRE(fixtureSql(path, "UPDATE image_features SET lbp=CAST(x'0000807f'||zeroblob(1020) AS BLOB) WHERE image_id=1") == SQLITE_OK);
+    }
+    SUBCASE("missing row")
+    {
+        REQUIRE(fixtureSql(path, "DELETE FROM image_features WHERE image_id=1") == SQLITE_OK);
+    }
+    Database db(build.dbPath, Database::OpenMode::ReadOnly);
+    REQUIRE(db.isOpen());
+    const auto rows = db.metadataRecords();
+    REQUIRE(rows.size() == 10);
+    LibraryFeatureStore::Reader reader(db, rows, LibraryFeatureStore::Reader::rowBytes);
+    if (db.invalidFeatureIds().empty())
+    {
+        reader.prepare({0});
+        CHECK(reader.preparedRow(0));
+        reader.prepare({1});
+        CHECK_FALSE(reader.preparedRow(0));
+        const std::vector<int> candidates{2, -1, 0, 3, 2};
+        std::vector<int> scored;
+        reader.scoreBatches(candidates.data(), candidates.size(), false,
+            [&](size_t, int index, const TextureFeatures &) { scored.push_back(index); });
+        CHECK(scored == std::vector<int>{2, 0, 3, 2});
+        CHECK(reader.stats().peakBytes == LibraryFeatureStore::Reader::rowBytes);
+    }
+    else
+    {
+        CHECK(db.invalidFeatureIds() == std::vector<int>{1});
+        CHECK_THROWS_AS(reader.prepare({0}), InvalidLibraryFeatures);
     }
 }
 
-TEST_CASE("feature generations validate sources legacy caches corruption and publication failure")
+TEST_CASE("library ingest recovery preserves only the committed batch")
 {
     TempWorkspace workspace;
-    const auto folder = workspace.inputDir() / u8path("中文特征");
-    fs::create_directory(folder);
-    const auto dir = utf8(folder);
-    std::vector<ImageRecord> records(513);
-    for (int i = 0; i < static_cast<int>(records.size()); ++i)
+    writeLibraryImages(workspace.inputDir());
+    const auto build = makeBuildRequest(workspace);
+    REQUIRE(BuildService().run(build).ok);
+    bool commit = false;
+    SUBCASE("before SQLite commit")
     {
-        records[i].id = i * 7 + 1;
-        records[i].featureVersion = FeatureExtractor::featureVersion();
-        records[i].fileHash = "image-" + std::to_string(i);
-        records[i].tinyPath = dir + "/" + std::to_string(i) + ".tiny";
-        records[i].lbpPath = dir + "/" + std::to_string(i) + ".hist";
-        std::vector<uint8_t> tiny(256, static_cast<uint8_t>(i + 1));
-        std::vector<float> lbp(256, 0.25f);
-        writeFeature(records[i].tinyPath, FeatureKind::Tiny, tiny.data());
-        writeFeature(records[i].lbpPath, FeatureKind::Lbp, lbp.data());
+        commit = false;
     }
-    const auto manifestPath = folder / "features.pack";
-    auto publishedPath = [&](const char *suffix)
+    SUBCASE("after SQLite commit")
     {
-        std::ifstream manifest(manifestPath);
-        std::string magic, generation;
-        int version;
-        int libraryVersion, featureVersion, gridDimension, tinyDimension, lbpDimension;
-        manifest >> magic >> version >> libraryVersion >> featureVersion >> gridDimension >> tinyDimension >> lbpDimension >> generation;
-        return folder / ("features-" + generation + suffix);
-    };
-    // Unverified v2 bytes cannot override refreshed source files with the same IDs.
+        commit = true;
+    }
+    const auto published = workspace.libraryDir() / ingestFixtureName;
     {
-        uint32_t count = static_cast<uint32_t>(records.size());
-        std::ofstream old(folder / "tiny.bin", std::ios::binary);
-        old.write(reinterpret_cast<const char *>(&count), 4);
-        for (const auto &record : records)
+        Database db(build.dbPath, Database::OpenMode::Recover);
+        REQUIRE(db.isOpen());
+        LibraryIngest ingest(db, workspace.libraryDir());
+        REQUIRE(publishIngestFixture(db, ingest));
+        if (commit)
         {
-            std::array<uint8_t, 256> zero{};
-            old.write(reinterpret_cast<const char *>(&record.id), 4);
-            old.write(reinterpret_cast<const char *>(zero.data()), 256);
+            REQUIRE(db.commitTransaction());
+            REQUIRE(db.beginTransaction()); // 模拟提交完成但恢复对象尚未清理的进程退出。
         }
     }
-    const std::vector<int> needed{2, 0, 2};
-    CandidateFeatures legacy(records, needed, dir);
-    CHECK(legacy.tiny(2)[0] == 3);
-    FeaturePack::Reader legacyReader(dir, records);
-    CHECK_FALSE(legacyReader.stats().preloaded);
-    CHECK(legacyReader.get(2).tiny[0] == 3);
-    REQUIRE(FeaturePack::buildCache(dir, records));
-    const auto oldGeneration = publishedPath(".tiny.bin");
-    const auto manifestTime = fs::last_write_time(manifestPath);
-    FeaturePack::Stats cacheStats;
-    REQUIRE(FeaturePack::buildCache(dir, records, &cacheStats));
-    CHECK(cacheStats.reused);
-    CHECK(fs::last_write_time(manifestPath) == manifestTime);
-    CHECK(publishedPath(".tiny.bin") == oldGeneration);
-    CandidateFeatures cached(records, needed, dir);
-    CHECK(cached.hasTiny(2));
-    CHECK(cached.lbp(0)[0] == 0.25f);
-    FeaturePack::Reader preloaded(dir, records);
-    REQUIRE(preloaded.stats().preloaded);
-    preloaded.prepare(needed);
-    CHECK(preloaded.get(2).tiny[0] == cached.tiny(2)[0]);
-    CHECK(preloaded.get(0).lbp[0] == cached.lbp(0)[0]);
-    CHECK(preloaded.stats().sourceReads == 0);
-    FeaturePack::Reader::Session session;
-    constexpr size_t sessionBudget = 1024 * 1024;
+    REQUIRE(fs::exists(published));
     {
-        FeaturePack::Reader first(dir, records, sessionBudget, nullptr, &session);
-        CHECK_FALSE(first.stats().sessionHit);
-        CHECK(first.get(0).tiny[0] == 1);
+        Database blocked(build.dbPath, Database::OpenMode::ReadOnly);
+        CHECK_FALSE(blocked.isOpen());
     }
-    {
-        auto reordered = records;
-        std::swap(reordered[0], reordered[2]);
-        FeaturePack::Reader second(dir, reordered, sessionBudget, nullptr, &session);
-        REQUIRE(second.stats().sessionHit);
-        second.prepare({0, 2});
-        REQUIRE(second.preparedRow(0));
-        CHECK(second.preparedRow(0)->tiny[0] == 3);
-        CHECK(second.get(2).tiny[0] == 1);
-    }
-    FeaturePack::Reader limited(dir, records, 2 * sizeof(FeaturePack::Reader::Row));
-    CHECK_FALSE(limited.stats().preloaded);
-    CHECK(limited.get(2).tiny[0] == 3);
-    CHECK(limited.get(0).tiny[0] == 1);
-    limited.prepare({0, 1});
-    CHECK(limited.get(0).tiny[0] == 1);
-    CHECK(limited.get(1).tiny[0] == 2);
-    CHECK(limited.stats().evictions == 1);
-    CHECK(limited.stats().sourceReads == 0);
-    CHECK(limited.stats().peakBytes <= 2 * sizeof(FeaturePack::Reader::Row));
-    {
-        std::fstream pack(oldGeneration, std::ios::binary | std::ios::in | std::ios::out);
-        pack.seekp(8);
-        pack.put(99);
-    }
-    CandidateFeatures corrupt(records, needed, dir);
-    CHECK(corrupt.tiny(0)[0] == 1);
-    FeaturePack::Reader corruptReader(dir, records, sessionBudget, nullptr, &session);
-    CHECK_FALSE(corruptReader.stats().sessionHit);
-    CHECK(corruptReader.get(0).tiny[0] == 1);
-    CHECK(corruptReader.stats().sourceReads == 2);
-    {
-        std::vector<uint8_t> changed(256, 42);
-        writeFeature(records[2].tinyPath, FeatureKind::Tiny, changed.data());
-    }
-    ++records[2].featureVersion;
-    REQUIRE(FeaturePack::buildCache(dir, records));
-    CandidateFeatures refreshed(records, needed, dir);
-    CHECK(refreshed.tiny(2)[0] == 42);
-    CHECK(fs::exists(oldGeneration));
-    FeaturePack::Reader beforeChange(dir, records);
-    REQUIRE(beforeChange.stats().preloaded);
-    const auto sourceTime = fs::last_write_time(u8path(records[1].tinyPath));
-    {
-        std::vector<uint8_t> changed(256, 99);
-        writeFeature(records[1].tinyPath, FeatureKind::Tiny, changed.data());
-    }
-    fs::last_write_time(u8path(records[1].tinyPath), sourceTime + std::chrono::seconds(1));
-    beforeChange.prepare({1});
-    CHECK(beforeChange.get(1).tiny[0] == 99);
-    CHECK(beforeChange.stats().sourceReads == 2);
-#ifdef _WIN32
-    const auto generationBefore = publishedPath(".tiny.bin");
-    ++records[0].featureVersion;
-    HANDLE blocker = CreateFileW(manifestPath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-                                 FILE_ATTRIBUTE_NORMAL, nullptr);
-    REQUIRE(blocker != INVALID_HANDLE_VALUE);
-    const bool published = FeaturePack::buildCache(dir, records);
-    CloseHandle(blocker);
-    CHECK_FALSE(published);
-    CHECK(publishedPath(".tiny.bin") == generationBefore);
-#endif
-    // A complete but unpublished generation is ignored after an interrupted writer.
-    std::ofstream interrupted(folder / "features-123-456.tiny.bin");
-    interrupted << "partial";
-    interrupted.close();
-    fs::remove(u8path(records[0].lbpPath));
-    fs::resize_file(u8path(records[0].tinyPath), 5);
-    CHECK_THROWS_AS(CandidateFeatures(records, needed, dir), std::runtime_error);
-    FeaturePack::Reader missingReader(dir, records);
-    CHECK_THROWS_AS(missingReader.get(0), std::runtime_error);
-    fs::resize_file(publishedPath(".lbp.bin"), 5);
-    CHECK_THROWS_AS(CandidateFeatures(records, needed, dir), std::runtime_error);
+    Database restored(build.dbPath, Database::OpenMode::Recover);
+    REQUIRE(restored.isOpen());
+    std::string error;
+    REQUIRE_MESSAGE(recoverLibraryIngest(restored, error), error);
+    CHECK(fs::exists(published) == commit);
+    CHECK(restored.totalCount() == (commit ? 11 : 10));
+    CHECK(recoverLibraryIngest(restored, error));
 }
 
 TEST_CASE("CPU build rolls back a failing ordered batch")
@@ -3052,8 +2956,8 @@ TEST_CASE("PNG multirow writing preserves refresh boundaries and encoded bytes")
     cv::randu(rgb, 0, 255);
     const auto oldPath = utf8(workspace.outputDir() / "rows.png");
     const auto newPath = utf8(workspace.outputDir() / "blocks.png");
-    PngStreamWriter rows(oldPath, rgb.cols, rgb.rows);
-    PngStreamWriter blocks(newPath, rgb.cols, rgb.rows);
+    PngStreamWriter rows(oldPath, rgb.cols, rgb.rows, 1);
+    PngStreamWriter blocks(newPath, rgb.cols, rgb.rows, 1);
     for (int y = 0; y < rgb.rows; ++y)
     {
         REQUIRE(rows.writeRow(rgb.ptr<uint8_t>(y)));
@@ -3064,12 +2968,109 @@ TEST_CASE("PNG multirow writing preserves refresh boundaries and encoded bytes")
     }
     REQUIRE(rows.close());
     REQUIRE(blocks.close());
-    PngStreamWriter partial(utf8(workspace.outputDir() / "partial.png"), rgb.cols, rgb.rows);
+    PngStreamWriter partial(utf8(workspace.outputDir() / "partial.png"), rgb.cols, rgb.rows, 1);
     REQUIRE(partial.writeRows(rgb.ptr<uint8_t>(), rgb.step, rgb.rows - 1));
     CHECK_FALSE(partial.close());
     CHECK_FALSE(partial.close());
     std::ifstream a(u8path(oldPath), std::ios::binary), b(u8path(newPath), std::ios::binary);
     CHECK(std::string(std::istreambuf_iterator<char>(a), {}) == std::string(std::istreambuf_iterator<char>(b), {}));
+}
+
+TEST_CASE("Parallel PNG round-trips all compression levels across row and block boundaries")
+{
+    TempWorkspace workspace;
+    cv::Mat padded(197, 261, CV_8UC3);
+    cv::Mat rgb = padded.colRange(0, 257); // 给编码器带填充的跨行步幅。
+    cv::RNG(123).fill(rgb, cv::RNG::UNIFORM, 0, 256);
+    for (int y = 1; y < rgb.rows; y += 3)
+    {
+        rgb.row(y - 1).copyTo(rgb.row(y));
+    }
+    cv::Mat expected;
+    cv::cvtColor(rgb, expected, cv::COLOR_RGB2BGR);
+
+    const ParallelPngPlan plan{3, 47, 0};
+    WorkerPool pool(3);
+    const auto path = utf8(workspace.outputDir() / "并行.png");
+    for (int level = 1; level <= 9; ++level)
+    {
+        CAPTURE(level);
+        ParallelPngWriter writer(path, rgb.cols, rgb.rows, level, level == 1, plan, pool);
+        for (int y = 0; y < rgb.rows; y += 13)
+        {
+            writer.writeRows(rgb.ptr<uint8_t>(y), rgb.step, std::min(13, rgb.rows - y));
+        }
+        REQUIRE(writer.close());
+        const auto decoded = imreadUnicode(path);
+        REQUIRE(decoded.size() == expected.size());
+        CHECK(cv::norm(decoded, expected, cv::NORM_INF) == 0);
+    }
+
+    ParallelPngWriter partial(path, rgb.cols, rgb.rows, 6, false, plan, pool);
+    partial.writeRows(rgb.data, rgb.step, rgb.rows - 1);
+    CHECK_FALSE(partial.close());
+    CHECK_FALSE(partial.close());
+}
+
+TEST_CASE("PNG planner fills worker slots before increasing block size")
+{
+    constexpr uint64_t MiB = 1024 * 1024;
+    const auto medium = planParallelPng(1024, 768, 32, 64 * MiB);
+    CHECK(medium.workers == 32);
+    CHECK(medium.blockRows == 24);
+    CHECK(planParallelPng(1024, 768, 4, 64 * MiB).workers == 4);
+    const auto limited = planParallelPng(1024, 768, 32, 2 * MiB);
+    CHECK(limited.workers == 3);
+    CHECK(limited.bufferBytes <= 2 * MiB);
+    CHECK(planParallelPng(64, 64, 32, 64 * MiB).workers == 0);
+    const auto wide = planParallelPng(2000000, 4, 32, 64 * MiB);
+    CHECK(wide.workers == 4);
+    CHECK(wide.blockRows == 1);
+}
+
+TEST_CASE("PNG output uses the same pixels in serial, stream and batch modes")
+{
+    TempWorkspace workspace;
+    const cv::Mat tile(256, 256, CV_8UC3, cv::Scalar(20, 90, 210));
+    const auto source = workspace.inputDir() / "tile.png";
+    requireWriteImage(source, tile);
+    ImageRecord record;
+    record.id = 1;
+    record.filePath = utf8(source);
+    const std::vector<int> selected(12, 0);
+    MosaicEngine::Config config;
+    config.outputFormat = "png";
+    config.formatExplicit = true;
+    OutputStats stats;
+    cv::Mat expected;
+    for (int threads : {1, 2, 0})
+    {
+        CAPTURE(threads);
+        config.threads = threads;
+        config.writeMode = threads == 0 ? "batch" : "stream";
+        config.pngCompressionLevel = threads == 2 ? 9 : 6;
+        const auto path = utf8(workspace.outputDir() / (std::to_string(threads) + ".png"));
+        detail::OutputPlan plan;
+        std::string error;
+        REQUIRE(detail::makeOutputPlan({"png", "explicit"}, path, 4, 3, tile.cols, tile.rows, true, plan, error));
+        const auto expectedWorkers = std::max<size_t>(1, outputBudget(config, plan, 0, 0).png.workers);
+        REQUIRE(writeIndexedMosaicOutput(config, plan, {record}, selected, {}, stats));
+        CHECK(stats.pngWorkerSlots == expectedWorkers);
+        CHECK(stats.pngWorkerSlots <= stats.workerSlots);
+        CHECK((stats.pngBufferBytes != 0) == (stats.pngWorkerSlots > 1));
+        if (threads > 0)
+        {
+            CHECK(stats.pngWorkerSlots <= static_cast<size_t>(threads));
+        }
+        const auto decoded = imreadUnicode(path);
+        REQUIRE(decoded.size() == cv::Size(1024, 768));
+        if (threads == 1)
+        {
+            expected = decoded;
+            CHECK(decoded.at<cv::Vec3b>(0, 0) == tile.at<cv::Vec3b>(0, 0));
+        }
+        CHECK(cv::norm(decoded, expected, cv::NORM_INF) == 0);
+    }
 }
 #include "test_portable_regression.inc"
 #include "test_release_regression.inc"

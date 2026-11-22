@@ -181,6 +181,7 @@ void setWeights(MatchingBuffers &buffers, const MosaicEngine::Config &config)
 ServiceResult previewCandidates(const MosaicRequest &request, const MosaicSelection &selection,
                                 const PreviewWorkspace &workspace, size_t position, size_t limit,
                                 PreviewCandidateRow &result)
+try
 {
     const auto &config = request.config;
     result = {};
@@ -229,7 +230,7 @@ ServiceResult previewCandidates(const MosaicRequest &request, const MosaicSelect
     const auto records = database.allRecords(config.usePenalty > 0);
     if (!readLibraryDimensions(database, featureWidth, featureHeight) ||
         featureWidth != selection.featureWidth || featureHeight != selection.featureHeight ||
-        records.empty() || previewLibraryVersion(records, featureWidth, featureHeight, config.usePenalty > 0) != selection.libraryVersion)
+        records.empty() || previewLibraryVersion(database.assetKey(), records, featureWidth, featureHeight, config.usePenalty > 0) != selection.libraryVersion)
     {
         return ServiceResult::failure(1, "the preview library changed", "preview_stale");
     }
@@ -240,7 +241,7 @@ ServiceResult previewCandidates(const MosaicRequest &request, const MosaicSelect
         return ServiceResult::failure(1, "the preview target changed", "preview_stale");
     }
 
-    const auto featureDirectory = u8path(records.front().tinyPath).parent_path();
+    const auto featureDirectory = u8path(database.path()).parent_path() / "index";
     auto &indices = buffers.indices;
     const auto count = indices.size();
     if (workspace.candidates && position < workspace.candidates->data.size() / count)
@@ -268,7 +269,7 @@ ServiceResult previewCandidates(const MosaicRequest &request, const MosaicSelect
         filterCandidateLightness(index, records, buffers.l[0], config.lRange);
     }
     setWeights(buffers, config);
-    FeaturePack::Reader reader(pathToUtf8(featureDirectory), records, 32ULL * 1024 * 1024);
+    LibraryFeatureStore::Reader reader(database, records, 32ULL * 1024 * 1024);
     reader.prepare(indices);
     std::optional<RowHistory> history;
     if (config.scoreMode == ScoreMode::Fast)
@@ -293,5 +294,9 @@ ServiceResult previewCandidates(const MosaicRequest &request, const MosaicSelect
     result.source = PreviewScoreSource::CpuRecomputed;
     rank({indices.data(), values.data(), values.size()}, records);
     return ServiceResult::success();
+}
+catch (const InvalidLibraryFeatures &error)
+{
+    return ServiceResult::failure(2, error.what(), "library_incompatible", "dbPath");
 }
 } // namespace mosaicraft

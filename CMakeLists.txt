@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/contracts.json" MOSAICRAFT_CONTRACTS_JSON)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/contracts.json")
 foreach(key IN ITEMS softwareVersion libraryVersion featureVersion apiVersion apiMajorVersion annVersion
-        featurePackVersion colorOrderVersion journalVersion studySchemaVersion checkpointPathsVersion uiStateVersion)
+        colorOrderVersion journalVersion studySchemaVersion checkpointPathsVersion uiStateVersion)
     string(JSON ${key} GET "${MOSAICRAFT_CONTRACTS_JSON}" ${key})
 endforeach()
 if(CMAKE_HOST_WIN32 AND VCPKG_TARGET_TRIPLET MATCHES "^(x64|arm64)-windows-release$" AND NOT DEFINED VCPKG_HOST_TRIPLET)
@@ -253,7 +253,7 @@ add_library(mosaicraft_core STATIC
     core/Database.cpp
     core/DatabaseService.cpp
     core/FeatureExtractor.cpp
-    core/FeaturePack.cpp
+    core/LibraryFeatureStore.cpp
     core/ExecutablePath.cpp
     core/InspectService.cpp
     core/JobManager.cpp
@@ -263,6 +263,7 @@ add_library(mosaicraft_core STATIC
     core/DatabaseSchema.cpp
     core/LibraryColorOrder.cpp
     core/MosaicOutput.cpp
+    core/ParallelPngWriter.cpp
     core/OutputPlan.cpp
     core/MosaicPlanning.cpp
     core/MosaicSampling.cpp
@@ -313,7 +314,7 @@ set_property(SOURCE core/MosaicOutput.cpp APPEND PROPERTY COMPILE_DEFINITIONS
 option(MOSAICRAFT_TRIAL_MATCH_READ "Read matching rows in the validated snapshot for small CPU creates" ON)
 set_property(SOURCE core/MosaicEngine.cpp APPEND PROPERTY COMPILE_DEFINITIONS MOSAICRAFT_TRIAL_MATCH_READ=$<BOOL:${MOSAICRAFT_TRIAL_MATCH_READ}>)
 option(MOSAICRAFT_TRIAL_LIBRARY_PATHS "Use validated sequential reads for the existing library format" ON)
-set_property(SOURCE core/LibraryPaths.cpp core/FeaturePack.cpp core/Database.cpp core/DatabaseSchema.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+set_property(SOURCE core/LibraryPaths.cpp APPEND PROPERTY COMPILE_DEFINITIONS
     MOSAICRAFT_TRIAL_LIBRARY_PATHS=$<BOOL:${MOSAICRAFT_TRIAL_LIBRARY_PATHS}>)
 option(MOSAICRAFT_TRIAL_BUILD_AHEAD "Benchmark bounded build normalization lookahead" OFF)
 option(MOSAICRAFT_TRIAL_BUILD_HASH "Hash new CPU library inputs in producer slots" ON)
@@ -491,7 +492,7 @@ endif()
 if(MOSAICRAFT_LEGACY_SCRIPT_TESTS AND Python3_Interpreter_FOUND)
     add_test(NAME documentation COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/check-docs.py")
     add_test(NAME portable_library COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/portable_library.py"
-        --cli "$<TARGET_FILE:mosaicraft>")
+        --cli "$<TARGET_FILE:mosaicraft>" --regression "$<TARGET_FILE:mosaicraft_regression_tests>")
     set_tests_properties(portable_library PROPERTIES TIMEOUT 120)
     add_test(NAME portable_project COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/portable_project.py"
         --cli "$<TARGET_FILE:mosaicraft>")
@@ -514,9 +515,6 @@ endif()
 # 显式性能采样目标，不增加默认构建或 CTest 的负担。
 add_executable(mosaicraft_ann_benchmark EXCLUDE_FROM_ALL scripts/benchmark_ann.cpp)
 target_link_libraries(mosaicraft_ann_benchmark PRIVATE mosaicraft_core mosaicraft_cuda)
-
-add_executable(mosaicraft_features_benchmark EXCLUDE_FROM_ALL scripts/benchmark_features.cpp)
-target_link_libraries(mosaicraft_features_benchmark PRIVATE mosaicraft_core mosaicraft_cuda)
 
 add_executable(mosaicraft_match_benchmark EXCLUDE_FROM_ALL scripts/benchmark_match.cpp)
 target_link_libraries(mosaicraft_match_benchmark PRIVATE mosaicraft_core mosaicraft_cuda)

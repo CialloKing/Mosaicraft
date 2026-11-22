@@ -18,7 +18,7 @@ struct LibraryIndexSession
 {
     std::string database, device;
     std::shared_ptr<FeatureIndex> index;
-    FeaturePack::Reader::Session features;
+    LibraryFeatureStore::Reader::Session features;
 };
 
 class MosaicEngine
@@ -86,7 +86,7 @@ public:
 
         // 目标图上采样因子：>1 时先将原图放大 n×，再以 tileW×tileH 格分割
         // 2× = 4× tile 密度，输出分辨率不变（配合 nativeTile 等比缩小）
-        int pngCompressionLevel = 1;  // PNG 压缩级别 1-9，默认 1（最快速度）
+        int pngCompressionLevel = 6;  // 成品 PNG 默认兼顾压缩耗时和体积。
         std::string writeMode = "auto";  // 写入模式：auto(内存自适应) / stream(低内存) / batch(全量)，对 PNG/TIFF 生效
 
         void print() const

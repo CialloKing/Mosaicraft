@@ -96,8 +96,9 @@ bool containsOnlyGeneratedFiles(const fs::path &directory)
 
     std::set<std::string> files{".mosaicraft-output.json", "mosaicraft.db.library.lock", "mosaicraft.db-wal",
         "mosaicraft.db-shm", "features/lib.ann196", "features/lib.ann196.meta", "features/lib.ann196.tmp",
-        "features/lib.ann196.meta.tmp"};
-    std::set<fs::path> directories;
+        "features/lib.ann196.meta.tmp", "index/lib.ann196", "index/lib.ann196.meta", "index/lib.ann196.tmp",
+        "index/lib.ann196.meta.tmp"};
+    std::set<fs::path> directories{"index"};
     for (const auto &entry : *entries)
     {
         if (!entry.is_string()) return false;

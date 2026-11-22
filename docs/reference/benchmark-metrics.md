@@ -7,6 +7,7 @@
 | 指标 | 口径 |
 | --- | --- |
 | `threadsRequested`；`featureWorkerSlots`、`annWorkerSlots`、`cpuBaseScoreWorkerSlots`、`matchingPrefetchWorkerSlots`、`outputWorkerSlots` | 请求值 `0` 表示自动。槽位是各阶段实际配置的工作名额，不是活跃线程数；共享池不可重复相加。CPU `fast` 的分派看 `runtime.kernelVersion`，实际后端和回退另看 `featureBackend`、`scoreBackend` 和 `fallbackReason`。 |
+| `pngWorkerSlots`、`pngBufferBytes` | 成品 PNG 的压缩工作槽位（`1` 表示串行回退）和并行编码缓冲预算。并行 PNG 复用放置线程池，不能与 `outputWorkerSlots` 相加；不报告串行预算，也不是进程内存峰值。 |
 | `placementMs`、`encodingMs` | 放置和写出区间。流式放置和编码可以并行；Deep Zoom 的放置包含构建金字塔，`deepZoomLevel<N>Ms` 是子区间。 |
 | `decodeWorkerMs`、`resizeWorkerMs`、`outputLoadingWorkerMs` | 前两个只统计单图管线实际加载方的工时，不包含等其他线程填充缓存；`outputLoadingWorkerMs` 覆盖缓存访问，包含等待。均是可重叠的工作线程工时。 |
 | `codecWriteMs`、`outputColorMs`、`outputPreviewMs` | 已启用的写出子阶段。`codecWriteMs` 只计行编码调用；整体编码看 `encodingMs`，预览已经计入其中。 |

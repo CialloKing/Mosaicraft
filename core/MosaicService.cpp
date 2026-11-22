@@ -14,7 +14,7 @@ namespace mosaicraft
 
 std::mutex& pipelineMutex()
 {
-    // FeaturePack 的写入器属于整条管线；同步 HTTP 调用也保持一次只运行一个任务。
+    // 匹配工作区属于整条管线；同步 HTTP 调用也保持一次只运行一个任务。
     static std::mutex mutex;
     return mutex;
 }
@@ -112,6 +112,11 @@ static ServiceResult runMosaic(const MosaicRequest &request, RuntimeContext &run
                   : ServiceResult::failure(code, diagnostic.message.empty() ? "mosaic generation failed"
                                                                             : diagnostic.message);
     }
+    catch (const InvalidLibraryFeatures &error)
+    {
+        runtime.discardArtifacts();
+        return runtimeFailure(runtime, 2, error.what(), "library_incompatible", "dbPath", request.dbPath);
+    }
     catch (const std::bad_alloc&)
     {
         runtime.discardArtifacts();
@@ -173,6 +178,10 @@ ServiceResult MosaicService::preview(const MosaicRequest &request, uint32_t seed
         const int code = diagnostic.code.rfind("gpu_", 0) == 0 || diagnostic.code.rfind("cuda_", 0) == 0 ? 4 : 1;
         return runtimeResult(ok ? ServiceResult::success() :
             ServiceResult::failure(code, diagnostic.message), runtime);
+    }
+    catch (const InvalidLibraryFeatures &error)
+    {
+        return runtimeResult(runtimeFailure(runtime, 2, error.what(), "library_incompatible", "dbPath", request.dbPath), runtime);
     }
     catch (const std::bad_alloc &)
     {

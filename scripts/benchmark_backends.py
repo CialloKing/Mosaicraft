@@ -207,7 +207,6 @@ def main():
     else:
         print("Preparing isolated library and caches...", flush=True)
         snapshot, count = private_library(source, root / "library", images=True)
-        run([quality, "--prepare-cache", snapshot], root / "prepare-cache.log")
     report["library_rows"] = count
     report["library_snapshot"] = str(snapshot)
     report["snapshot_sha256"] = digest(snapshot)

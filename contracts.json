@@ -1,11 +1,10 @@
 {
-  "softwareVersion": "1.15.11",
+  "softwareVersion": "1.15.13",
   "libraryVersion": 1,
   "featureVersion": 1,
-  "apiVersion": "1.6",
+  "apiVersion": "1.7",
   "apiMajorVersion": 1,
   "annVersion": 1,
-  "featurePackVersion": 1,
   "colorOrderVersion": 1,
   "journalVersion": 1,
   "studySchemaVersion": 1,
