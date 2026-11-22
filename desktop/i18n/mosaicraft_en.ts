@@ -487,8 +487,20 @@
         <translation>Save changes to “%1”?</translation>
     </message>
     <message>
-        <source>任务仍在运行，请等待完成后关闭。</source>
-        <translation>A job is still running. Wait for it to finish before closing.</translation>
+        <source>任务进度</source>
+        <translation>Task progress</translation>
+    </message>
+    <message>
+        <source>正在结束任务…</source>
+        <translation>Stopping tasks…</translation>
+    </message>
+    <message>
+        <source>正在更新预览图…</source>
+        <translation>Updating preview…</translation>
+    </message>
+    <message>
+        <source>正在加载候选素材…</source>
+        <translation>Loading candidate images…</translation>
     </message>
     <message>
         <source>该文件已移动或删除。</source>

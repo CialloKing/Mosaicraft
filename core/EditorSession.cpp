@@ -197,7 +197,7 @@ struct EditorFrame
     }
 
     void compose(const MosaicSelection &selection, const MosaicRequest &request, const PreviewWorkspace &workspace,
-                 std::filesystem::path files, ImageCache &cache)
+                 std::filesystem::path files, ImageCache &cache, RuntimeContext &runtime)
     {
         if (!std::filesystem::is_directory(files) || !std::filesystem::is_empty(files))
             throw std::invalid_argument("editor preview requires an empty temporary directory");
@@ -230,6 +230,7 @@ struct EditorFrame
         index.exceptions(std::ios::failbit | std::ios::badbit);
         for (size_t position = 0; position < selection.imageIds.size(); ++position)
         {
+            runtime.checkCanceled();
             const auto key = writeTile(selection, position, cache);
             index.write(reinterpret_cast<const char *>(&key), sizeof(key));
         }
@@ -240,6 +241,7 @@ struct EditorFrame
         if (!nativeReference.empty()) cv::resize(nativeReference, reference, size, 0, 0, cv::INTER_AREA);
         for (int top = 0; top < size.height;)
         {
+            runtime.checkCanceled();
             const int row = static_cast<int>(int64_t(top) * selection.rows / size.height);
             for (int left = 0; left < size.width;)
             {
@@ -255,12 +257,12 @@ struct EditorFrame
 class EditorSession
 {
 public:
-    json dispatch(const json &payload)
+    json dispatch(const json &payload, RuntimeContext &runtime)
     {
         const auto operation = payload.at("op").get<std::string>();
         if (operation == "maintain-library")
         {
-            return maintainDesktopLibrary(payload);
+            return maintainDesktopLibrary(payload, runtime);
         }
         if (operation == "preview")
         {
@@ -269,7 +271,7 @@ public:
             nextRequest.config.seed = seed;
             MosaicSelection nextSelection;
             auto nextWorkspace = std::exchange(workspace, PreviewWorkspace{});
-            const auto status = MosaicService().preview(nextRequest, seed, nextWorkspace, canceled, nextSelection);
+            const auto status = MosaicService().preview(nextRequest, seed, nextWorkspace, canceled, nextSelection, runtime);
             if (!status.ok)
             {
                 return serviceResultToJson(status);
@@ -305,7 +307,7 @@ public:
             EditorFrame nextFrame;
             auto nextCache = std::make_unique<ImageCache>(64ULL * 1024 * 1024);
             nextFrame.compose(nextSelection, nextRequest, nextWorkspace,
-                              u8path(payload.at("previewDirectory").get<std::string>()), *nextCache);
+                              u8path(payload.at("previewDirectory").get<std::string>()), *nextCache, runtime);
             auto response = json{{"ok", true}, {"image", encodeImage(nextFrame.image)},
                                  {"reference", encodeBase64(nextSelection.referenceJpeg)}, {"seed", seed},
                                  {"columns", nextSelection.columns}, {"rows", nextSelection.rows},
@@ -327,7 +329,6 @@ public:
         {
             auto output = parseEditorRequest(payload);
             output.config.seed = request.config.seed;
-            RuntimeContext runtime(false);
             TaskResourceMonitor monitor(runtime, output.resourceMonitor);
             return serviceResultToJson(MosaicService().run(output, runtime, &selection));
         }
@@ -414,19 +415,21 @@ private:
 };
 }
 
-int runEditorSession(std::istream &input, std::ostream &output)
+int runEditorSession(std::istream &input, std::ostream &output, const std::filesystem::path &cancelFile)
 {
     EditorSession session;
     std::string line;
     while (std::getline(input, line))
     {
+        RuntimeContext runtime(false, cancelFile);
         try
         {
             if (line.size() > 16 * 1024 * 1024)
             {
                 throw std::invalid_argument("editor request is too large");
             }
-            const auto result = session.dispatch(json::parse(line));
+            runtime.checkCanceled();
+            const auto result = session.dispatch(json::parse(line), runtime);
             output << result.dump(-1, ' ', false, json::error_handler_t::replace) << std::endl;
         }
         catch (const std::exception &error)
@@ -434,6 +437,7 @@ int runEditorSession(std::istream &input, std::ostream &output)
             output << json{{"ok", false}, {"message", error.what()}}.dump(-1, ' ', false, json::error_handler_t::replace)
                    << std::endl;
         }
+        if (runtime.cancellationRequested()) break;
     }
     return 0;
 }

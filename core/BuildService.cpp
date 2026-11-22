@@ -235,6 +235,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         {
             for (const auto &entry : entries)
             {
+                runtime.checkCanceled();
                 if (!entry.is_regular_file())
                 {
                     continue;
@@ -633,6 +634,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                     recs.reserve(GPU_BATCH);
                     auto flush = [&]()
                     {
+                        runtime.checkCanceled();
                         if (imgs.empty())
                         {
                             return;
@@ -728,6 +730,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                     };
                     while (true)
                     {
+                        runtime.checkCanceled();
                         NormItem item;
                         {
                             std::unique_lock<std::mutex> lk(queueMtx);
@@ -817,7 +820,10 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                 {
                     // 后台异常必须回传；唤醒生产者后退出，避免队列满时永远等待。
                     gpuError = std::current_exception();
-                    normPhaseDone.store(true);
+                    {
+                        std::lock_guard<std::mutex> lock(queueMtx);
+                        normPhaseDone.store(true);
+                    }
                     queueFullCV.notify_all();
                 }
             });
@@ -837,7 +843,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         {
             workers.emplace_back([&, t]()
             {
-                for (;;)
+                while (!runtime.cancellationRequested())
                 {
                     size_t fi = nextFileIdx.fetch_add(1);
                     if (fi >= files.size())
@@ -891,6 +897,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         runtime.advance("normalization", files.size(), files.size(), "images", true);
         for (size_t i = 0; i < files.size(); ++i)
         {
+            if (runtime.cancellationRequested()) break;
             if (gpuOk && !request.normalizeOnly)
             {
                 cv::Mat image;
@@ -931,11 +938,15 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         }
     }
 
-    normPhaseDone.store(true);
+    {
+        std::lock_guard<std::mutex> lock(queueMtx);
+        normPhaseDone.store(true);
+    }
     queueCV.notify_all();
     if (gpuOk && !request.normalizeOnly)
     {
         gpuThread.join();
+        runtime.checkCanceled();
         if (gpuError)
         {
             try
@@ -1049,6 +1060,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
             }
             normalizers->start(count, [&, first](size_t i)
             {
+                runtime.checkCanceled();
                 if (normalizeOne(first + i, &pending.images[i], profile ? &timings[i] : nullptr) && producerHash)
                 {
                     pending.records[i].fileHash = hashMatForBuild(pending.images[i]);
@@ -1061,6 +1073,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         }
         for (size_t first = 0; first < files.size(); first += batchLimit)
         {
+            runtime.checkCanceled();
             const size_t count = std::min(batchLimit, files.size() - first);
             std::vector<cv::Mat> images(count);
             std::vector<ImageRecord> records(count);
@@ -1101,6 +1114,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                 }
                 normalizers->run(count, [&](size_t i)
                 {
+                    runtime.checkCanceled();
                     normalizeOne(first + i, &images[i], profile ? &timings[i] : nullptr);
                     hashReady(i);
                 });
@@ -1111,6 +1125,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
             {
                 workers.run(count, [&](size_t i)
                 {
+                    runtime.checkCanceled();
                     if (!okFlags[first + i])
                     {
                         return;
@@ -1344,6 +1359,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         }
     }
 
+    runtime.checkCanceled();
     if (request.normalizeOnly)
     {
         visuals.normalized = normDone.load();

@@ -214,6 +214,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         };
         auto load = [&](size_t i) -> std::shared_ptr<const cv::Mat>
         {
+            if (runtime) runtime->checkCanceled();
             if (selected[i] < 0)
             {
                 ++failures;
@@ -341,6 +342,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         {
             if (runtime)
             {
+                runtime->checkCanceled();
                 runtime->advance("output_rows", offset + rows.rows, height, "rows", offset + rows.rows == height);
             }
             if (config.generatePreview)

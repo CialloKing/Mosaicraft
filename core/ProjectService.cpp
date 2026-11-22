@@ -85,7 +85,7 @@ MosaicEngine::Config targetConfig(const json &manifest)
     return config;
 }
 
-Project loadProject(const std::string &input)
+Project loadProject(const std::string &input, RuntimeContext *runtime = nullptr)
 {
     auto path = fs::absolute(u8path(input));
     if (!fs::is_directory(path))
@@ -135,6 +135,7 @@ Project loadProject(const std::string &input)
     std::unordered_map<std::string, const json *> resourceTable;
     for (const auto &resource : m.at("resources"))
     {
+        if (runtime) runtime->checkCanceled();
         const auto name = resource.at("path").get<std::string>();
         resourcePath(path, name);
         const auto hash = resource.at("sha256").get<std::string>();
@@ -163,6 +164,7 @@ Project loadProject(const std::string &input)
     requireResource(m.at("entry"));
     for (const auto &asset : m.at("assets"))
     {
+        if (runtime) runtime->checkCanceled();
         requireResource(asset.at("path"));
         const auto &resource = *resourceTable.at(asset.at("path").get<std::string>());
         if (asset.at("sha256") != resource.at("sha256") || asset.at("width") != resource.at("width") ||
@@ -367,6 +369,7 @@ bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &dir
         };
         const auto copyAsset = [&](int index, int id, const std::string &hash)
         {
+            runtime.checkCanceled();
             const auto source = u8path(library.at(index).filePath);
             const std::string name = "assets/" + std::to_string(id) + "/" + pathToUtf8(source.filename());
             const auto dest = resourcePath(root, name);
@@ -411,6 +414,7 @@ bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &dir
             std::vector<std::string> digests(unique.size());
             pool.run(unique.size(), [&](size_t i)
             {
+                runtime.checkCanceled();
                 digests[i] = sha256File(u8path(library.at(unique[i]).filePath));
             });
             // 编号只取决于第一次出现的位置，不能依赖复制完成的顺序。
@@ -442,6 +446,7 @@ bool writeHtmlProject(const MosaicEngine::Config &config, const std::string &dir
         {
             for (int index : selection)
             {
+                runtime.checkCanceled();
                 if (index < 0)
                 {
                     manifest["layout"].push_back(-1);
@@ -699,7 +704,7 @@ ServiceResult ProjectService::render(const ProjectRequest &request, RuntimeConte
     {
         std::lock_guard<std::mutex> lock(pipelineMutex());
         ExecutionScope scope;
-        const auto project = loadProject(request.projectPath);
+        const auto project = loadProject(request.projectPath, &runtime);
         auto config = request.config;
         const auto &manifest = project.manifest;
         if (!request.outputTileExplicit)
@@ -741,6 +746,7 @@ ServiceResult ProjectService::render(const ProjectRequest &request, RuntimeConte
         runtime.stage("validating_project");
         for (const auto &resource : manifest["resources"])
         {
+            runtime.checkCanceled();
             if (required.count(resource["path"]))
             {
                 verifyResource(project, resource, true);

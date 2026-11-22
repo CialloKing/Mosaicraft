@@ -6,6 +6,7 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
@@ -367,7 +368,22 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         return 1;
     }
     const auto firstLibrary = activeLibrary();
-    if (!require(checkLibraryAndWait() && activeLibrary() == firstLibrary &&
+    bool blockedDuringLibraryCheck = false;
+    const auto positionBeforeCheck = pos();
+    const auto sizeBeforeCheck = size();
+    if (!require(waitForWork([&] {
+                     checkLibrary();
+                     resize(sizeBeforeCheck + QSize(32, 24));
+                     move(positionBeforeCheck + QPoint(12, 10));
+                     const auto caption = menuBar()->cornerWidget();
+                     blockedDuringLibraryCheck = taskDialog->isVisible() && taskDialog->geometry() == ui->workspaceRoot->geometry() &&
+                         !ui->workspaceRoot->isEnabled() && !ui->fileMenu->menuAction()->isEnabled() &&
+                         isEnabled() && menuBar()->isEnabled() && (!caption || caption->isEnabled()) &&
+                         !QApplication::activeModalWidget() && !openPath(target) && capture("10-library-check", this);
+                     move(positionBeforeCheck);
+                     resize(sizeBeforeCheck);
+                 }) && blockedDuringLibraryCheck && taskDialog->isHidden() && ui->workspaceRoot->isEnabled() &&
+                 ui->fileMenu->menuAction()->isEnabled() && activeLibrary() == firstLibrary &&
                  libraryStatus == tr("素材库完整性检查通过。"), "startup reuses an unchanged, healthy library"))
     {
         qWarning().noquote() << libraryStatus;
@@ -560,9 +576,42 @@ int MainWindow::smokeTest(const QString &captureDirectory)
     const auto portableExport = root.filePath("portable");
     ui->outputMode->setCurrentIndex(ui->outputMode->findData("html"));
     ui->outputPath->setText(portableExport);
-    if (!require(waitForWork([&] { exportDocument(); }) && QFileInfo::exists(QDir(portableExport).filePath("project.json")),
-                 "export edited selection as a portable project") ||
-        !require(openPath(portableExport) && !documents[activeDocument].manifest.isEmpty(), "open portable project"))
+    ui->targetBlend->setValue(0.35);
+    const auto manifest = QDir(portableExport).filePath("project.json");
+    const auto entry = QDir(portableExport).filePath("index.html");
+    if (!require(waitForWork([&] { exportDocument(); }) && QFileInfo::exists(manifest),
+                 "export edited selection as a portable project"))
+    {
+        qWarning().noquote() << ui->taskLog->toPlainText();
+        return 1;
+    }
+    const auto openPortable = [&](const QString &path, bool checkLibraryAtStartup) {
+        bool previewStarted = false;
+        const auto finished = waitForWork([&] {
+            previewStarted = openPath(path) && job.type == Job::PortablePreview && taskDialog->isVisible();
+            if (checkLibraryAtStartup) checkLibrary();
+        });
+        const auto &document = documents[activeDocument];
+        return finished && previewStarted && !libraryCheckPending && document.manifest == manifest &&
+            QFileInfo(document.target).dir() == QDir(portableExport) && document.view == ViewMode::Result &&
+            document.preview && document.preview->size() == QSize(192, 160) && ui->exportPreview->hasImage() &&
+            ui->targetWidth->value() == 96 && ui->targetHeight->value() == 72 &&
+            ui->matchWidth->value() == 12 && ui->matchHeight->value() == 16 &&
+            ui->tileWidth->value() == 24 && ui->tileHeight->value() == 32 &&
+            ui->seedEdit->text() == "1024" && ui->targetBlend->value() == 0.35;
+    };
+    if (!require(openPortable(entry, true), "open index.html with saved parameters and automatic preview"))
+    {
+        qWarning().noquote() << ui->taskLog->toPlainText();
+        return 1;
+    }
+    const auto htmlPreview = nativePreviewTile(*documents[activeDocument].preview, {24, 32});
+    ui->targetModeButton->click();
+    if (!require(canvasScene->sceneRect().size() == QSizeF(960, 720), "portable project retains the original target")) return 1;
+    closeDocument(activeDocument);
+    if (!require(openPortable(manifest, false) &&
+                 nativePreviewTile(*documents[activeDocument].preview, {24, 32}) == htmlPreview,
+                 "open project.json with the same preview and parameters"))
     {
         qWarning().noquote() << ui->taskLog->toPlainText();
         return 1;
@@ -574,7 +623,22 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         qWarning().noquote() << ui->taskLog->toPlainText();
         return 1;
     }
-    closePreviewSession();
-    previewFiles.reset();
+    for (auto &document : documents) document.dirty = false;
+    const auto libraryBeforeClose = activeLibrary();
+    QElapsedTimer closeTime;
+    QString canceledPreviewPath;
+    if (!require(waitForWork([&] {
+                     generatePreview();
+                     if (pendingPreview) canceledPreviewPath = pendingPreview->path();
+                     closeTime.start();
+                     if (auto captionClose = findChild<QToolButton *>("captionClose")) captionClose->click();
+                     else close();
+                 }) && !canceledPreviewPath.isEmpty() && !isVisible() && closeTime.elapsed() < 5000 &&
+                 process->state() == QProcess::NotRunning && editor->state() == QProcess::NotRunning &&
+                 !QFileInfo::exists(canceledPreviewPath) && activeLibrary() == libraryBeforeClose,
+                 "window closes promptly during preview and cleans up both workers"))
+    {
+        return 1;
+    }
     return 0;
 }

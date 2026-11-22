@@ -48,12 +48,14 @@ json readJson(const fs::path &path)
     return value.is_object() ? std::move(value) : json::object();
 }
 
-std::pair<std::string, size_t> sourceSnapshot(const fs::path &source, const fs::path &managed, const BuildRequest &request)
+std::pair<std::string, size_t> sourceSnapshot(const fs::path &source, const fs::path &managed,
+                                             const BuildRequest &request, RuntimeContext &runtime)
 {
     std::vector<fs::path> images;
     const auto collect = [&](const auto &entries) {
         for (const auto &entry : entries)
         {
+            runtime.checkCanceled();
             if (entry.is_regular_file() && !ImageNormalizer::libraryOutputExtension(pathToUtf8(entry.path())).empty())
             {
                 if (entry.is_symlink() && pathWithin(entry.path(), managed))
@@ -73,6 +75,7 @@ std::pair<std::string, size_t> sourceSnapshot(const fs::path &source, const fs::
     hash.process(options.begin(), options.end());
     for (const auto &image : images)
     {
+        runtime.checkCanceled();
         const auto record = json::array({image.lexically_relative(source).generic_u8string(), sha256File(image)}).dump();
         hash.process(record.begin(), record.end());
     }
@@ -120,12 +123,13 @@ bool containsOnlyGeneratedFiles(const fs::path &directory)
     return true;
 }
 
-void removeObsolete(const fs::path &directory, const std::string &active)
+void removeObsolete(const fs::path &directory, const std::string &active, const RuntimeContext &runtime)
 {
     try
     {
         for (const auto &generation : fs::directory_iterator(directory))
         {
+            if (runtime.cancellationRequested()) return;
             const auto path = generation.path();
             const auto name = pathToUtf8(path.filename());
             std::error_code error;
@@ -163,7 +167,7 @@ json verifiedLibrary(const fs::path &database, const DatabaseHealthResult &healt
 }
 } // namespace
 
-json maintainDesktopLibrary(const json &payload)
+json maintainDesktopLibrary(const json &payload, RuntimeContext &runtime)
 {
     BuildRequest request;
     RequestError error;
@@ -181,7 +185,7 @@ json maintainDesktopLibrary(const json &payload)
         fs::create_directories(directory);
     }
 
-    const auto verify = [](const fs::path &db) { return DatabaseService().health({pathToUtf8(db), true}); };
+    const auto verify = [&](const fs::path &db) { return DatabaseService().health({pathToUtf8(db), true}, &runtime); };
     if (!fs::exists(directory))
         return verifiedLibrary(root / databaseFile, verify(root / databaseFile), false);
 
@@ -194,12 +198,12 @@ json maintainDesktopLibrary(const json &payload)
     if (request.inputDir.empty()) return verifiedLibrary(database, health, false);
 
     const auto source = fs::canonical(u8path(request.inputDir));
-    const auto snapshot = sourceSnapshot(source, directory, request);
+    const auto snapshot = sourceSnapshot(source, directory, request, runtime);
     auto receipt = readJson(activePath / receiptFile);
     if (health.status.ok && !active.empty() && receipt["generation"] == active &&
         receipt["sourceHash"] == snapshot.first && receipt["records"] == health.health.total)
     {
-        removeObsolete(directory, active);
+        removeObsolete(directory, active, runtime);
         return verifiedLibrary(database, health, false);
     }
 
@@ -210,7 +214,6 @@ json maintainDesktopLibrary(const json &payload)
     OutputPublication publication(pathToUtf8(directory / generation), true, false, {pathToUtf8(source)});
     const auto stage = u8path(publication.workPath());
     const auto stagedDb = stage / databaseFile;
-    RuntimeContext runtime(false);
     if (snapshot.second == 0)
     {
         Database empty(pathToUtf8(stagedDb), Database::OpenMode::Build);
@@ -231,7 +234,7 @@ json maintainDesktopLibrary(const json &payload)
     }
     const auto rebuilt = verify(stagedDb);
     if (!rebuilt.status.ok) return serviceResultToJson(rebuilt.status);
-    if (snapshot != sourceSnapshot(source, directory, request))
+    if (snapshot != sourceSnapshot(source, directory, request, runtime))
         throw std::runtime_error("the material source changed during the rebuild");
 
     writeFile(stage / receiptFile, json{{"generation", generation}, {"sourceHash", snapshot.first},
@@ -241,7 +244,7 @@ json maintainDesktopLibrary(const json &payload)
     publication.commit(runtime, [&] {
         fs::rename(directory / generation / activeLibraryFile, directory / activeLibraryFile);
     });
-    removeObsolete(directory, generation);
+    removeObsolete(directory, generation, runtime);
     return verifiedLibrary(directory / generation / databaseFile, rebuilt, true);
 }
 } // namespace mosaicraft

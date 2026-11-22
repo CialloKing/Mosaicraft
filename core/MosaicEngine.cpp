@@ -321,7 +321,7 @@ bool MosaicEngine::generateAttempt(const std::string &targetPath, const std::str
     auto tStart = Clock::now();
     const auto canceled = [&]()
     {
-        return m_cancelPreview && m_cancelPreview->load(std::memory_order_relaxed);
+        return runtime.cancellationRequested() || (m_cancelPreview && m_cancelPreview->load(std::memory_order_relaxed));
     };
     const bool useGpu = !vulkanFallback && cfg.useGpu && cfg.backend != BackendPolicy::Cpu && cfg.device != "cpu" && !m_renderSelection;
     const bool autoVulkan = useGpu && compute::automaticVulkan(cfg.backend, cfg.device);

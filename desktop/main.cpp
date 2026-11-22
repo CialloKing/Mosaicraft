@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
     QCommandLineParser parser;
     parser.addHelpOption();
     parser.addVersionOption();
-    parser.addPositionalArgument("file", "Desktop project (.mscproj), portable project directory or target image.");
+    parser.addPositionalArgument("file", "Desktop project (.mscproj), portable project (directory, project.json or index.html), or target image.");
     parser.addOption({"smoke-test", "Run local UI smoke checks without user settings."});
     parser.addOption({"capture-dir", "Save smoke-test workspace captures in this folder.", "directory"});
     parser.process(app);

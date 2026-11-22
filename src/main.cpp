@@ -533,7 +533,7 @@ int runMain(const std::vector<std::string> &argv)
     ServiceResult result;
     json data;
     Arguments args;
-    RuntimeContext runtime(false);
+    RuntimeContext runtime(false, desktopTaskCancellationFile());
     try
     {
         if (argv.size() == 2 && (argv[1] == "--version" || argv[1] == "-V"))
@@ -558,6 +558,7 @@ int runMain(const std::vector<std::string> &argv)
         } guard{std::cout.rdbuf(&buffer)};
         ConsoleQuickEditGuard console;
         TaskResourceMonitor resources(runtime, args.has("resource-monitor"));
+        runtime.checkCanceled();
         result = execute(args, data, runtime);
     }
     catch (const std::bad_alloc &)

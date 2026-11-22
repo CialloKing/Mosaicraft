@@ -4,25 +4,161 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QGridLayout>
 #include <QJsonDocument>
+#include <QLabel>
 #include <QMessageBox>
 #include <QProcess>
+#include <QProgressBar>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QTemporaryDir>
 #include <QTextCursor>
+#include <QTimer>
+#include <QVBoxLayout>
 
 #include <utility>
 
 namespace
 {
 constexpr qint64 responseLimit = 64LL * 1024 * 1024;
+constexpr auto cancellationFile = "cancel";
+constexpr int shutdownGraceMs = 1800;
+}
+
+void MainWindow::setupTaskDialog()
+{
+    // A child overlay leaves the window frame and the Windows caption buttons interactive.
+    taskDialog = new QWidget(this);
+    taskDialog->setObjectName("taskDialog");
+    taskDialog->setAttribute(Qt::WA_StyledBackground);
+    taskDialog->setFocusPolicy(Qt::StrongFocus);
+    taskDialog->setAccessibleName(tr("任务进度"));
+    taskDialog->setStyleSheet(
+        "QWidget#taskDialog { background: rgba(0, 0, 0, 116); }"
+        "QFrame#taskDialogPanel { background: #303030; border: 1px solid #686868; border-radius: 5px; }");
+    auto layout = new QGridLayout(taskDialog);
+    auto panel = new QFrame(taskDialog);
+    panel->setObjectName("taskDialogPanel");
+    panel->setMinimumWidth(330);
+    auto panelLayout = new QVBoxLayout(panel);
+    panelLayout->setContentsMargins(24, 20, 24, 20);
+    panelLayout->setSpacing(14);
+    taskMessage = new QLabel(panel);
+    auto progress = new QProgressBar(panel);
+    progress->setAccessibleName(tr("任务进度"));
+    progress->setRange(0, 0);
+    progress->setTextVisible(false);
+    panelLayout->addWidget(taskMessage);
+    panelLayout->addWidget(progress);
+    layout->addWidget(panel, 0, 0, Qt::AlignCenter);
+    taskDialog->hide();
+    ui->workspaceRoot->installEventFilter(this);
+
+    shutdownTimer = new QTimer(this);
+    shutdownTimer->setSingleShot(true);
+    connect(shutdownTimer, &QTimer::timeout, this, [this] {
+        for (auto child : {process, editor})
+        {
+            if (child->state() != QProcess::NotRunning) child->kill();
+        }
+    });
+    for (auto child : {process, editor})
+    {
+        connect(child, &QProcess::stateChanged, this, [this](QProcess::ProcessState state) {
+            if (closing && state == QProcess::NotRunning)
+                QTimer::singleShot(0, this, &MainWindow::finishClosing);
+        });
+    }
+}
+
+void MainWindow::setTaskMessage(const QString &message)
+{
+    taskMessage->setText(message);
+    if (!taskDialog->isHidden()) return;
+
+    statusBar()->clearMessage();
+    for (auto action : ui->menuBar->actions()) action->setEnabled(false);
+    ui->workspaceRoot->setEnabled(false);
+    taskDialog->setGeometry(ui->workspaceRoot->geometry());
+    taskDialog->show();
+    taskDialog->raise();
+    taskDialog->setFocus();
+}
+
+void MainWindow::dismissTaskDialog()
+{
+    taskDialog->hide();
+    ui->workspaceRoot->setEnabled(true);
+    for (auto action : ui->menuBar->actions()) action->setEnabled(true);
+    if (libraryCheckPending && !closing)
+    {
+        QTimer::singleShot(0, this, [this] {
+            if (libraryCheckPending && !closing && isVisible()) checkLibrary();
+        });
+    }
+}
+
+void MainWindow::prepareTaskProcess(QProcess *child)
+{
+    if (!taskControl) taskControl = std::make_unique<QTemporaryDir>();
+    if (!taskControl->isValid()) return;
+    auto environment = QProcessEnvironment::systemEnvironment();
+    environment.insert("MOSAICRAFT_DESKTOP_CANCEL_FILE", taskControl->filePath(cancellationFile));
+    child->setProcessEnvironment(environment);
+}
+
+void MainWindow::stopTasks()
+{
+    closing = true;
+    setTaskMessage(tr("正在结束任务…"));
+    if (taskControl && taskControl->isValid())
+    {
+        QFile request(taskControl->filePath(cancellationFile));
+        if (request.open(QIODevice::WriteOnly)) request.close();
+    }
+    editor->closeWriteChannel();
+    shutdownTimer->start(shutdownGraceMs);
+    QTimer::singleShot(0, this, &MainWindow::finishClosing);
+}
+
+void MainWindow::finishClosing()
+{
+    if (!closing || process->state() != QProcess::NotRunning || editor->state() != QProcess::NotRunning) return;
+
+    shutdownTimer->stop();
+    if (job.type == Job::LibraryCheck)
+    {
+        libraryStatus.clear();
+        libraryCheckPending = true;
+    }
+    job = {};
+    editorCommand.clear();
+    editorResponse.clear();
+    editorRequest = {};
+    editorOperation.clear();
+    editorOwner = -1;
+    pendingExport.clear();
+    pendingPreview.reset();
+    taskControl.reset();
+    ui->exportProgress->hide();
+    ui->summaryState->setText(activeDocument >= 0 && !documents[activeDocument].resultMessage.isEmpty()
+        ? documents[activeDocument].resultMessage : tr("等待导出"));
+    statusBar()->clearMessage();
+    dismissTaskDialog();
+    closing = false;
+    updateEditorControls();
+    updateOutputControls();
+    close();
 }
 
 void MainWindow::setupJobProcess()
 {
     connect(process, &QProcess::readyReadStandardOutput, this, [this] {
         const auto bytes = process->readAllStandardOutput();
+        if (closing) return;
         if (job.response.size() <= responseLimit)
         {
             job.response.append(bytes);
@@ -30,6 +166,7 @@ void MainWindow::setupJobProcess()
     });
     connect(process, &QProcess::readyReadStandardError, this, [this] {
         auto text = QString::fromUtf8(process->readAllStandardError());
+        if (closing) return;
         text.replace('\r', '\n');
         job.diagnostics = (job.diagnostics + text).right(16000);
         if (job.type == Job::LibraryCheck) return;
@@ -56,7 +193,7 @@ void MainWindow::setupJobProcess()
 
 bool MainWindow::busy() const
 {
-    return job.type != Job::None || !editorOperation.isEmpty();
+    return closing || job.type != Job::None || !editorOperation.isEmpty();
 }
 
 QString MainWindow::resolveCli() const
@@ -117,17 +254,19 @@ void MainWindow::runJob(Job type, const QStringList &args, const QString &destin
     {
         message = tr("正在生成预览图…");
     }
-    statusBar()->showMessage(message);
+    setTaskMessage(message);
+    prepareTaskProcess(process);
     process->start(cli, args + QStringList{"--json"}, QIODevice::ReadOnly);
 }
 
 void MainWindow::finishJob(bool processSucceeded, const QString &failure)
 {
-    if (job.type == Job::None)
+    if (closing || job.type == Job::None)
     {
         return;
     }
     const auto completed = std::exchange(job, JobState{});
+    dismissTaskDialog();
     const auto body = QJsonDocument::fromJson(completed.response).object();
     bool ok = processSucceeded && body["ok"].toBool();
     auto message = failure.isEmpty() ? body["message"].toString() : failure;

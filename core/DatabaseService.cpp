@@ -101,8 +101,9 @@ DatabaseStatsResult DatabaseService::stats(const DatabaseRequest& request) const
     return out;
 }
 
-DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) const
+DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request, RuntimeContext *runtime) const
 {
+    if (runtime) runtime->checkCanceled();
     DatabaseHealthResult out;
     Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::ReadOnly);
     if (!db.isOpen())
@@ -118,6 +119,7 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
         return out;
     }
     std::vector<int> invalid;
+    if (runtime) runtime->checkCanceled();
     try
     {
         invalid = db.invalidFeatureIds();
@@ -132,6 +134,7 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
     {
         out.health.warnings.push_back("Invalid features for image " + std::to_string(invalid[i]));
     }
+    if (runtime) runtime->checkCanceled();
     if (!db.checkIntegrity())
     {
         out.status = ServiceResult::failure(2, "SQLite integrity or foreign key check failed", "library_incompatible", "dbPath");
@@ -148,6 +151,7 @@ DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) con
     out.health.maxA = out.health.maxB = 0.0;
     for (const auto& r : all)
     {
+        if (runtime) runtime->checkCanceled();
         const auto status = inspectLibraryFile(r.filePath);
         if (status == LibraryFileState::Missing)
         {

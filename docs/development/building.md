@@ -113,7 +113,7 @@ Windows 桌面构建会把 Qt DLL、`qt.conf` 和 `plugins/` 放在可执行文�
 
 在「设置 → 素材库设置」选择原始素材目录和素材库目录。素材库目录留空时，程序将生成的素材库存放在本机应用数据目录。每次启动会检查素材图片和数据库中的特征数据，并核对原图内容与建库设置。首次创建、出现损坏或检测到变化时会构建新的版本，校验通过后再启用。只选择已有图库目录时，启动会检查该图库的完整性，自动重建需要设置原始素材目录。
 
-「保存」将本地文件引用、参数和手动换图记录写入 `.mscproj` 工程文件。导出 HTML 可将最终排列和素材打包为便携工程目录。已有便携工程可从目录或 `project.json` 打开，ZIP 需先解压。
+「保存」将本地文件引用、参数和手动换图记录写入 `.mscproj` 工程文件。导出 HTML 可将最终排列和素材打包为便携工程目录。从目录、`index.html` 或 `project.json` 打开便携工程时，桌面版会载入包内目标图和参数，并按保存的素材排列恢复成品预览。ZIP 需先解压。
 
 Windows 构建完成后，运行 `ctest --test-dir build/windows-desktop -C Release -R "^desktop_smoke$" --output-on-failure`。根构建会自动为测试提供 CLI 路径，覆盖真实建库、预览、换图、保存、重开和导出。也可使用 `cmake -S desktop` 单独构建 GUI，独立构建时可设置 `MOSAICRAFT_DESKTOP_SMOKE_CLI` 为配有 worker 的 CLI 完整路径来启用同样的端到端检查。
 

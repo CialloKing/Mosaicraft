@@ -548,11 +548,14 @@ void MainWindow::setupPreviewSession()
     ui->candidateList->setItemDelegate(new CandidateDelegate(ui->candidateList));
     connect(ui->candidateList, &QListWidget::itemActivated, this, &MainWindow::replaceTile);
     connect(editor, &QProcess::started, this, [this] {
+        if (closing) return;
         editor->write(editorCommand);
         editorCommand.clear();
     });
     connect(editor, &QProcess::readyReadStandardOutput, this, [this] {
-        editorResponse.append(editor->readAllStandardOutput());
+        const auto bytes = editor->readAllStandardOutput();
+        if (closing) return;
+        editorResponse.append(bytes);
         const auto newline = editorResponse.indexOf('\n');
         if (newline >= 0)
         {
@@ -563,7 +566,7 @@ void MainWindow::setupPreviewSession()
     });
     connect(editor, &QProcess::readyReadStandardError, this, [this] {
         const auto message = QString::fromUtf8(editor->readAllStandardError()).replace('\r', '\n');
-        if (!message.trimmed().isEmpty()) ui->taskLog->appendPlainText(message.trimmed());
+        if (!closing && !message.trimmed().isEmpty()) ui->taskLog->appendPlainText(message.trimmed());
     });
     connect(editor, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) editorDisconnected(editor->errorString());
@@ -589,18 +592,22 @@ void MainWindow::sendEditorRequest(QJsonObject request)
     editorRequest = std::move(request);
     editorOperation = editorRequest["op"].toString();
     editorCommand = QJsonDocument(editorRequest).toJson(QJsonDocument::Compact) + '\n';
-    if (editorOperation == "preview") statusBar()->showMessage(tr("正在生成预览图…"));
+    QString message = tr("正在更新预览图…");
+    if (editorOperation == "preview") message = tr("正在生成预览图…");
+    if (editorOperation == "candidates") message = tr("正在加载候选素材…");
     if (editorOperation == "export")
     {
         ui->exportProgress->show();
         ui->summaryState->setText(tr("正在处理…"));
-        statusBar()->showMessage(tr("正在导出作品…"));
+        message = tr("正在导出作品…");
     }
+    setTaskMessage(message);
     updateEditorControls();
     updateOutputControls();
     if (editor->state() == QProcess::NotRunning)
     {
         editorResponse.clear();
+        prepareTaskProcess(editor);
         editor->start(worker);
     }
     else
@@ -612,7 +619,7 @@ void MainWindow::sendEditorRequest(QJsonObject request)
 
 void MainWindow::receiveEditorReply(const QJsonObject &reply)
 {
-    if (editorOperation.isEmpty() || activeDocument < 0) return;
+    if (closing || editorOperation.isEmpty() || activeDocument < 0) return;
     auto &document = documents[activeDocument];
     const auto operation = std::exchange(editorOperation, QString{});
     const auto request = std::exchange(editorRequest, QJsonObject{});
@@ -631,6 +638,7 @@ void MainWindow::receiveEditorReply(const QJsonObject &reply)
         finishJob(true);
         return;
     }
+    dismissTaskDialog();
 
     auto message = reply["message"].toString(tr("未收到有效的 CLI 结果。"));
     bool ok = reply["ok"].toBool();
@@ -745,6 +753,7 @@ void MainWindow::receiveEditorReply(const QJsonObject &reply)
 
 void MainWindow::editorDisconnected(const QString &error)
 {
+    if (closing) return;
     editorOwner = -1;
     editorResponse.clear();
     if (!editorOperation.isEmpty())

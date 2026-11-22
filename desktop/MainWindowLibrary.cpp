@@ -29,7 +29,13 @@ QJsonObject MainWindow::libraryMaintenanceRequest() const
 
 void MainWindow::checkLibrary()
 {
-    if (busy()) return;
+    if (closing) return;
+    if (busy())
+    {
+        libraryCheckPending = true;
+        return;
+    }
+    libraryCheckPending = false;
     const auto request = libraryMaintenanceRequest();
     if (request["inputDir"].toString().isEmpty() && settings.value("library/directory").toString().isEmpty() &&
         defaultLibraryDatabase(settings).isEmpty())
@@ -45,10 +51,11 @@ void MainWindow::checkLibrary()
     }
     job.type = Job::LibraryCheck;
     libraryStatus = tr("正在检查素材库，必要时会重建…");
-    statusBar()->showMessage(libraryStatus);
+    setTaskMessage(libraryStatus);
     updateEditorControls();
     updateOutputControls();
     const QJsonObject payload{{"op", "maintain-library"}, {"request", request}};
+    prepareTaskProcess(process);
     process->start(worker, {}, QIODevice::ReadWrite);
     process->write(QJsonDocument(payload).toJson(QJsonDocument::Compact) + '\n');
     process->closeWriteChannel();

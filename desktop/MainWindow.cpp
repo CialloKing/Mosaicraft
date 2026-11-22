@@ -26,6 +26,7 @@
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QSignalBlocker>
+#include <QTimer>
 #include <QUrl>
 #include <QVersionNumber>
 
@@ -127,12 +128,19 @@ MainWindow::MainWindow(QSettings &settings, QWidget *parent)
     setupDocumentOptions();
     setupJobProcess();
     setupPreviewSession();
+    setupTaskDialog();
     showDocument(-1);
     statusBar()->showMessage(tr("就绪"));
 }
 
 MainWindow::~MainWindow()
 {
+    process->disconnect(this);
+    if (process->state() != QProcess::NotRunning)
+    {
+        process->kill();
+        process->waitForFinished(1000);
+    }
     editor->disconnect(this);
     closePreviewSession();
 }
@@ -416,20 +424,31 @@ bool MainWindow::openPath(const QString &path)
         document.target = target;
         document.projectGrid = {grid["columns"].toInt(), grid["rows"].toInt()};
         document.projectTile = sizeFromArray(manifest["outputTile"]);
-        if (!desktopProject)
-        {
-            const auto appearance = manifest["appearance"].toObject();
-            document.options["targetBlend"] = appearance["targetBlend"].toDouble();
-            document.options["brightnessJitter"] = appearance["brightnessJitter"].toDouble();
-        }
+        const auto restore = [&](const char *field, const QJsonValue &value) {
+            if (!value.isUndefined() && !document.options.contains(field)) document.options.insert(field, value);
+        };
+        const auto restoreSize = [&](const char *width, const char *height, QSize size) {
+            if (size.isEmpty()) return;
+            restore(width, size.width());
+            restore(height, size.height());
+        };
+        restoreSize("targetWidth", "targetHeight", sizeFromArray(manifest["targetPreparation"].toObject()["resize"]));
+        restoreSize("matchWidth", "matchHeight", sizeFromArray(grid["matchTile"]));
+        const auto appearance = manifest["appearance"].toObject();
+        restore("targetBlend", appearance["targetBlend"]);
+        restore("brightnessJitter", appearance["brightnessJitter"]);
+        const auto seed = manifest["seed"].toInteger(-1);
+        if (seed >= 0 && seed <= 4294967295LL) restore("seedEdit", QString::number(seed));
     }
     if (document.target.isEmpty())
     {
         QMessageBox::warning(this, windowTitle(), tr("该工程没有目标图。"));
         return false;
     }
+    const bool restorePreview = !document.manifest.isEmpty();
     addDocument(std::move(document));
     rememberFile(absolute);
+    if (restorePreview) generatePreview();
     return true;
 }
 
@@ -474,8 +493,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
 {
     if (busy())
     {
-        statusBar()->showMessage(tr("任务仍在运行，请等待完成后关闭。"), 5000);
         event->ignore();
+        if (!closing) stopTasks();
         return;
     }
     for (int index = 0; index < documents.size(); ++index)
@@ -483,6 +502,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
         if (!confirmClose(index))
         {
             event->ignore();
+            if (libraryCheckPending) QTimer::singleShot(0, this, &MainWindow::checkLibrary);
             return;
         }
     }
@@ -532,6 +552,10 @@ void MainWindow::updateRecentMenu()
 
 bool MainWindow::eventFilter(QObject *object, QEvent *event)
 {
+    if (object == ui->workspaceRoot && (event->type() == QEvent::Resize || event->type() == QEvent::Move))
+    {
+        taskDialog->setGeometry(ui->workspaceRoot->geometry());
+    }
     return handleCanvasEvent(object, event) || QMainWindow::eventFilter(object, event);
 }
 
@@ -631,7 +655,12 @@ void MainWindow::formChanged()
         return;
     }
     auto &document = documents[activeDocument];
+    const auto savedBlend = document.options.value("targetBlend");
     document.options = captureOptions();
+    if (!document.manifest.isEmpty() && sender() != ui->targetBlend && savedBlend.isDouble())
+    {
+        document.options.insert("targetBlend", savedBlend);
+    }
     document.dirty = true;
     if (!previewCurrent() && document.selectedTile >= 0)
     {
@@ -664,6 +693,7 @@ void MainWindow::checkUpdates()
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         reply->deleteLater();
         ui->actionCheckUpdates->setEnabled(true);
+        if (closing) return;
         statusBar()->clearMessage();
         if (reply->error() != QNetworkReply::NoError)
         {

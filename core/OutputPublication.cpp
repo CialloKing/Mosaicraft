@@ -189,6 +189,7 @@ std::string OutputPublication::workPath() const
 
 void OutputPublication::commit(RuntimeContext &runtime, const std::function<void()> &beforeFinalize)
 {
+    runtime.checkCanceled();
     std::vector<std::pair<fs::path, fs::path>> moves, backups;
     if (directory)
     {
@@ -224,14 +225,17 @@ void OutputPublication::commit(RuntimeContext &runtime, const std::function<void
                 {
                     verifyOwnedDirectory(to);
                 }
+                runtime.checkCanceled();
                 auto backup = staging.parent_path() /
                               (pathToUtf8(staging.filename()) + "-backup-" + std::to_string(backups.size()));
                 fs::rename(to, backup);
                 backups.emplace_back(backup, to);
             }
+            runtime.checkCanceled();
             fs::rename(from, to);
             ++published;
         }
+        runtime.checkCanceled();
         if (beforeFinalize)
         {
             beforeFinalize();

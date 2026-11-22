@@ -2,7 +2,9 @@
 #include "Database.h"
 #include "UnicodeIO.h"
 #include <algorithm>
+#include <cstdlib>
 #include <iostream>
+#include <stdexcept>
 
 namespace mosaicraft
 {
@@ -19,6 +21,40 @@ size_t eventBytes(const Diagnostic &event)
            event.path.size() + sizeof(Diagnostic);
 }
 } // namespace
+
+std::filesystem::path desktopTaskCancellationFile()
+{
+#ifdef _WIN32
+    const auto value = _wgetenv(L"MOSAICRAFT_DESKTOP_CANCEL_FILE");
+#else
+    const auto value = std::getenv("MOSAICRAFT_DESKTOP_CANCEL_FILE");
+#endif
+    return value ? std::filesystem::path(value) : std::filesystem::path{};
+}
+
+bool RuntimeContext::cancellationRequested() const noexcept
+{
+    if (m_cancelFile.empty()) return false;
+    if (m_canceled.load(std::memory_order_relaxed)) return true;
+    const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    auto next = m_nextCancelCheck.load(std::memory_order_relaxed);
+    if (next <= now && m_nextCancelCheck.compare_exchange_strong(next, now + 20, std::memory_order_relaxed))
+    {
+        std::error_code error;
+        if (std::filesystem::exists(m_cancelFile, error)) m_canceled.store(true, std::memory_order_relaxed);
+    }
+    return m_canceled.load(std::memory_order_relaxed);
+}
+
+void RuntimeContext::checkCanceled()
+{
+    if (cancellationRequested())
+    {
+        fail("task_canceled", "task canceled");
+        throw std::runtime_error("task canceled");
+    }
+}
 
 std::string truncateUtf8(const std::string &text, size_t bytes)
 {

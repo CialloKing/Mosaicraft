@@ -291,7 +291,9 @@ TEST_CASE("new libraries reject incompatible structures and remain portable")
     SUBCASE("desktop maintenance rejects a version-1 library without image_features")
     {
         REQUIRE(fixtureSql(workspace.dbPath(), "DROP TABLE image_features") == SQLITE_OK);
-        const auto result = maintainDesktopLibrary({{"request", {{"inputDir", ""}, {"outputDir", utf8(workspace.libraryDir())}}}});
+        RuntimeContext runtime(false);
+        const auto result = maintainDesktopLibrary({{"request", {{"inputDir", ""}, {"outputDir", utf8(workspace.libraryDir())}}}},
+                                                   runtime);
         REQUIRE(result.at("ok") == false);
         CHECK(result.at("diagnostic").at("code") == "library_incompatible");
         incompatible = true;
@@ -1210,6 +1212,28 @@ TEST_CASE("rebuilding preserves indexed files and source files")
         // Windows 临时目录可能使用 8.3 短路径；验证目录身份而非路径拼写。
         CHECK(fs::equivalent(u8path(record.filePath).parent_path(), workspace.inputDir()));
     }
+}
+
+TEST_CASE("a canceled publication preserves an existing export")
+{
+    TempWorkspace workspace;
+    const auto destination = workspace.mosaicPath();
+    std::ofstream(destination, std::ios::binary) << "existing";
+    const auto cancelFile = workspace.root / "cancel";
+    RuntimeContext runtime(false, cancelFile);
+    fs::path staging;
+    {
+        OutputPublication publication(utf8(destination), false, true);
+        const auto unpublished = u8path(publication.workPath());
+        staging = unpublished.parent_path();
+        std::ofstream(unpublished, std::ios::binary) << "replacement";
+        std::ofstream(cancelFile, std::ios::binary).close();
+        CHECK_THROWS_WITH(publication.commit(runtime), "task canceled");
+        CHECK(runtime.snapshot().diagnostic.code == "task_canceled");
+    }
+    CHECK_FALSE(fs::exists(staging));
+    const auto data = readBytesUnicode(utf8(destination));
+    CHECK(std::string(data.begin(), data.end()) == "existing");
 }
 
 #ifndef _WIN32

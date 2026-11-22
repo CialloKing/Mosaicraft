@@ -2,6 +2,7 @@
 #include "ColorDistribution.h"
 #include "OutputPlan.h"
 #include "TaskResources.h"
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <deque>
@@ -89,7 +90,10 @@ struct EventPage
 class RuntimeContext
 {
   public:
-    explicit RuntimeContext(bool console = true) : m_console(console) {}
+    explicit RuntimeContext(bool console = true, const std::filesystem::path &cancelFile = {})
+        : m_console(console), m_cancelFile(cancelFile) {}
+    bool cancellationRequested() const noexcept;
+    void checkCanceled();
     void stage(const std::string &name) noexcept;
     void advance(const std::string &id, uint64_t completed, int64_t total, const std::string &unit,
                  bool force = false) noexcept;
@@ -119,6 +123,9 @@ class RuntimeContext
 
   private:
     bool m_console;
+    const std::filesystem::path m_cancelFile;
+    mutable std::atomic<int64_t> m_nextCancelCheck{0};
+    mutable std::atomic_bool m_canceled{false};
     std::string m_usageDb, m_usageHash, m_usageTarget;
     std::unordered_map<int, int> m_pendingUsage;
     mutable std::mutex m_mutex;
@@ -131,6 +138,7 @@ class RuntimeContext
 };
 
 std::string truncateUtf8(const std::string &text, size_t bytes);
+std::filesystem::path desktopTaskCancellationFile();
 
 // 解析器在读取字段时记录字段名，避免从面向人的英文错误中反推字段。
 struct RequestError

@@ -172,6 +172,7 @@ public:
             const auto started = benchmark ? Clock::now() : Clock::time_point{};
             auto writeTile = [&](size_t i)
             {
+                if (runtime) runtime->checkCanceled();
                 const int c = static_cast<int>(i % columns), r = static_cast<int>(i / columns);
                 const int x = c * dziTileSize, y = r * dziTileSize;
                 const int w = std::min(dziTileSize, current.width - x);

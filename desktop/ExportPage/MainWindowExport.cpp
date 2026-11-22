@@ -303,7 +303,12 @@ void MainWindow::collectExportOptions(ExportOptions &options, const Document &do
     }
     collectExecutionOptions(options, !portable);
     options.size("--output-tile", "nativeTileW", "nativeTileH", ui->tileWidth->value(), ui->tileHeight->value());
-    options.set("--target-blend", "overlayStrength", ui->targetBlend->value());
+    const auto blend = portable ? document.options.value("targetBlend").toDouble(ui->targetBlend->value())
+                                : ui->targetBlend->value();
+    if (portable && !options.structured)
+        options.set("--target-blend", "overlayStrength", QString::number(blend, 'g', QLocale::FloatingPointShortest));
+    else
+        options.set("--target-blend", "overlayStrength", blend);
     if (!html)
     {
         const auto strength = ui->brightnessJitter->value();

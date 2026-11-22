@@ -14,11 +14,13 @@ class QDragEnterEvent;
 class QDropEvent;
 class QGraphicsScene;
 class QGraphicsView;
+class QLabel;
 class QListWidgetItem;
 class QNetworkAccessManager;
 class QProcess;
 class QSettings;
 class QTemporaryDir;
+class QTimer;
 class PreviewImage;
 
 namespace Ui { class MainWindow; }
@@ -90,6 +92,12 @@ private:
     void setupExport();
     void setupDocumentOptions();
     void setupJobProcess();
+    void setupTaskDialog();
+    void setTaskMessage(const QString &message);
+    void dismissTaskDialog();
+    void prepareTaskProcess(QProcess *child);
+    void stopTasks();
+    void finishClosing();
     void switchWorkspace(Workspace workspace);
     void newDocument();
     void addDocument(Document document);
@@ -155,6 +163,10 @@ private:
     QNetworkAccessManager *network;
     QProcess *process;
     QProcess *editor;
+    QWidget *taskDialog = nullptr;
+    QLabel *taskMessage = nullptr;
+    QTimer *shutdownTimer = nullptr;
+    std::unique_ptr<QTemporaryDir> taskControl;
     std::unique_ptr<QTemporaryDir> previewFiles;
     std::shared_ptr<QTemporaryDir> pendingPreview;
     QList<QWidget *> fields;
@@ -176,6 +188,8 @@ private:
     int nextDocumentId = 0;
     int activeDocument = -1;
     bool fitView = true;
+    bool libraryCheckPending = false;
+    bool closing = false;
 };
 
 QPixmap loadPreviewImage(const QString &path, QSize limit, QSize *sourceSize = nullptr);

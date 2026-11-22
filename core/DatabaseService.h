@@ -177,7 +177,7 @@ class DatabaseService
 {
 public:
     DatabaseStatsResult stats(const DatabaseRequest& request) const;
-    DatabaseHealthResult health(const DatabaseRequest& request) const;
+    DatabaseHealthResult health(const DatabaseRequest& request, RuntimeContext *runtime = nullptr) const;
     DatabaseUsageResult usage(const DatabaseUsageRequest& request) const;
     DatabaseUsageExportResult exportUsage(const DatabaseUsageExportRequest& request) const;
     DatabasePurgeResult purge(const DatabasePurgeRequest& request) const;
