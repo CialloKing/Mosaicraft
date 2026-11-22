@@ -31,7 +31,7 @@ node tests/test_command_shell.js
 
 Windows 正式 CUDA 包使用 CUDA 13.5 SDK 与 Required 验收，在实际 GPU 上完整运行，不能跳过 CTest、smoke 或解压验证。云端 BuildOnly 保留 not-run；Linux 的未实机 CUDA 正式附件须按脚本的显式准入流程执行。
 
-Windows/Linux x64 正式 Vulkan 包启用 Vulkan → CPU，并在独立无驱动环境验证回退；Metal 及普通 `-Vulkan` 构建仍为候选。不得把本机限定场景、其他品牌 GPU 的结果或编译通过写成该平台实机验收。两项 1% 质量门槛、CUDA 5% 回归门槛以及新后端性能准入详见[四后端验收](portable-gpu.md)。
+Windows/Linux x64 正式 Vulkan 包启用 Vulkan → CPU，并在独立无驱动环境验证回退；Metal 及普通 `-Vulkan` 构建仍为候选。不得把本机限定场景、其他品牌 GPU 的结果或编译通过写成该平台实机验收。跨后端 1% 质量门槛（素材 ID 差异仅作诊断）、CUDA 5% 回归门槛以及新后端性能准入详见[四后端验收](portable-gpu.md)。
 
 ```powershell
 # Windows 本机正式 CUDA 包
