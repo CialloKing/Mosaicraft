@@ -19,7 +19,7 @@ class PngStreamWriter
     PngStreamWriter(const PngStreamWriter &) = delete;
     PngStreamWriter &operator=(const PngStreamWriter &) = delete;
 
-    PngStreamWriter(const std::string &path, int w, int h, int compressionLevel = 1,
+    PngStreamWriter(const std::string &path, int w, int h, int compressionLevel,
                     int filters = PNG_ALL_FILTERS, bool finalFlushOnly = false) : m_w(w), m_h(h), m_finalFlushOnly(finalFlushOnly)
     {
 #ifdef _WIN32
@@ -52,7 +52,6 @@ class PngStreamWriter
             throw std::runtime_error("Png init");
         }
         png_init_io(m_png, m_fp);
-        // 压缩级别：1=最快 9=最小，默认 1
         png_set_compression_level(m_png, compressionLevel);
         // 滤波器只改变编码成本和文件大小；不改变 RGB 像素。
         png_set_filter(m_png, PNG_FILTER_TYPE_BASE, filters);

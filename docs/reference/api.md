@@ -149,7 +149,7 @@ The API requires a local Host with the current port. Browser Origin must match t
 | `topNRandom` | `1..10000` |
 | `neighborWindow` | `0..1000000` |
 | `quality` | `1..100` |
-| `pngLevel` | 成品 `1..9`，建库和追加 `0..9` |
+| `pngLevel` | 成品 `1..9`（默认 `6`），建库和追加 `0..9`（默认 `9`） |
 | `lRange` | `0..255`, candidate L difference limit |
 | weights | finite, nonnegative, positive finite sum |
 | `usePenalty`, `neighborPenalty` | finite, `>= 0` |

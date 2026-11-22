@@ -284,6 +284,7 @@ int MainWindow::smokeTest(const QString &captureDirectory)
     const auto create = buildExportArgs(documents[activeDocument], root.filePath("作品.png"));
     if (!require(ui->workspaces->currentWidget() == ui->exportPage && create.front() == "create" &&
                  create.contains("--match-tile") && create.contains("12x16") && create.contains("--png-compression") &&
+                 create.value(create.indexOf("--png-compression") + 1) == "6" &&
                  create.contains("--seed") && !create.contains("--target-upscale") && !create.contains("--lbp-weight") &&
                  exportImage.isNull() && ui->outputQuality->isHidden(), "single image export arguments") ||
         !require(capture("02-export", this), "export capture"))

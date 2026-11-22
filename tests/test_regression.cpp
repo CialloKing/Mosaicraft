@@ -2947,8 +2947,8 @@ TEST_CASE("PNG multirow writing preserves refresh boundaries and encoded bytes")
     cv::randu(rgb, 0, 255);
     const auto oldPath = utf8(workspace.outputDir() / "rows.png");
     const auto newPath = utf8(workspace.outputDir() / "blocks.png");
-    PngStreamWriter rows(oldPath, rgb.cols, rgb.rows);
-    PngStreamWriter blocks(newPath, rgb.cols, rgb.rows);
+    PngStreamWriter rows(oldPath, rgb.cols, rgb.rows, 1);
+    PngStreamWriter blocks(newPath, rgb.cols, rgb.rows, 1);
     for (int y = 0; y < rgb.rows; ++y)
     {
         REQUIRE(rows.writeRow(rgb.ptr<uint8_t>(y)));
@@ -2959,7 +2959,7 @@ TEST_CASE("PNG multirow writing preserves refresh boundaries and encoded bytes")
     }
     REQUIRE(rows.close());
     REQUIRE(blocks.close());
-    PngStreamWriter partial(utf8(workspace.outputDir() / "partial.png"), rgb.cols, rgb.rows);
+    PngStreamWriter partial(utf8(workspace.outputDir() / "partial.png"), rgb.cols, rgb.rows, 1);
     REQUIRE(partial.writeRows(rgb.ptr<uint8_t>(), rgb.step, rgb.rows - 1));
     CHECK_FALSE(partial.close());
     CHECK_FALSE(partial.close());

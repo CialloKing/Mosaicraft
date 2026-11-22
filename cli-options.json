@@ -176,7 +176,7 @@
     "type": "int",
     "field": "pngLevel",
     "commands": "create render build add",
-    "help": "PNG compression: build/add 0..9 (default 9), create/render 1..9 (default 1)",
+    "help": "PNG compression: build/add 0..9 (default 9), create/render 1..9 (default 6)",
     "advanced": true
   },
   {
