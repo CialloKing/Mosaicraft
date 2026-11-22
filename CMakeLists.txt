@@ -60,6 +60,17 @@ configure_file(cmake/PortableViewer.h.in generated/PortableViewer.h @ONLY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/cli-options.json")
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/cli-options.json" mosaicCliOptionsJson)
 configure_file(cmake/CliOptionsData.h.in generated/CliOptionsData.h @ONLY)
+# Keep the Web UI's presets in sync with the compiled CUDA dispatch table.
+set(cudaTemplateSizeFile "${CMAKE_CURRENT_SOURCE_DIR}/compute/TemplateFeatureSizes.h")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${cudaTemplateSizeFile}")
+file(READ "${cudaTemplateSizeFile}" cudaTemplateSizeSource)
+string(REGEX MATCHALL "X\\([0-9]+, *[0-9]+\\)" cudaTemplateSizeRows "${cudaTemplateSizeSource}")
+set(cudaTemplateSizeValues)
+foreach(row IN LISTS cudaTemplateSizeRows)
+    string(REGEX REPLACE "X\\(([0-9]+), *([0-9]+)\\)" "\"\\1x\\2\"" size "${row}")
+    list(APPEND cudaTemplateSizeValues "${size}")
+endforeach()
+string(JOIN ", " cudaTemplateSizesJson ${cudaTemplateSizeValues})
 configure_file(tools/command-builder/index.html generated/index.html @ONLY)
 
 # C++17

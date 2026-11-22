@@ -147,6 +147,10 @@ main:has(#panel-preview.active) { max-width: 1660px; }
 .btn-primary:hover { filter: brightness(1.1); }
 .btn-secondary { background: var(--indigo); color: var(--fg); }
 .btn-secondary:hover { background: var(--hover); }
+.size-presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.size-presets .btn { padding: 4px 9px; }
+.size-presets .btn[aria-pressed="true"] { background: var(--accent); color: var(--bg); }
+.size-presets .btn:disabled { opacity: .55; cursor: not-allowed; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn-inline
 {
@@ -573,6 +577,8 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <div class="field"><label>线程上限 --threads</label><input type="number" id="b-threads" min="0" max="256" placeholder="0 = 自动"></div>
       <div class="field"><label>后端 --backend</label><select id="b-backend"><option value="auto">自动回退</option><option value="cpu">CPU</option><option value="cuda">必须使用 CUDA</option><option value="vulkan">必须使用 Vulkan</option><option value="metal">Metal（未实机验收）</option></select></div><div class="field"><label>GPU 设备 --device</label><select id="b-device"><option value="auto">自动选择</option></select></div>
     </div>
+    <p class="hint">CUDA 分辨率模板：<strong id="b-size-mode" role="status"></strong></p>
+    <div class="size-presets" id="b-size-presets" role="group" aria-label="CUDA 分辨率模板"></div>
     <div class="chk-row">
       <label><input type="checkbox" id="b-recursive"> 递归扫描子目录 -r</label>
       <label><input type="checkbox" id="b-monitor"> 资源监控</label>
@@ -787,11 +793,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
     </table></div>
     <h4 id="help-cuda-templates">CUDA 分辨率模板</h4>
     <p>CUDA 可用时，程序按图库的归一化尺寸自动选择模板提取和评分。建库时填写对应的 <code>--size</code>，生成和实时预览时直接读取图库尺寸。匹配 Tile 和输出 Tile 的尺寸可分别设置。</p>
-    <ul class="help-template-sizes">
-      <li>正方形：<code>256x256</code>、<code>512x512</code></li>
-      <li>竖屏（9:16）：<code>180x320</code>、<code>270x480</code>、<code>360x640</code>、<code>540x960</code></li>
-      <li>横屏（16:9）：<code>320x180</code>、<code>480x270</code>、<code>640x360</code>、<code>960x540</code></li>
-    </ul>
+    <p id="help-template-sizes"></p>
     <p>其他合法尺寸可使用与 CPU 结果一致的通用 CUDA 提取和评分。CUDA 不可用时使用 CPU。</p>
     <p>旧版图库结构不兼容时，请在新目录正常重建；不要只修改版本标记。建库中断并留下颜色排序恢复清单时，恢复文件访问后使用原建库参数并勾选增量模式继续，让程序完成恢复。</p>
   </section>
@@ -2440,8 +2442,38 @@ function clearFieldErrors() {
   document.querySelectorAll('[aria-invalid]').forEach(element => element.removeAttribute('aria-invalid'));
   document.querySelectorAll('.field-error').forEach(element => element.remove());
 }
+const cudaTemplateSizes = [@cudaTemplateSizesJson@];
+const buildSizePresets = document.getElementById('b-size-presets');
+for (const size of cudaTemplateSizes) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'btn btn-secondary';
+  button.textContent = size;
+  button.dataset.size = size;
+  button.addEventListener('click', () => {
+    document.getElementById('b-normsize').value = size;
+    generateCommand();
+  });
+  buildSizePresets.append(button);
+}
+document.getElementById('help-template-sizes').textContent = cudaTemplateSizes.join('、');
+
+function syncBuildSizePresets() {
+  const append = val('b-mode') === 'add';
+  const input = document.getElementById('b-normsize');
+  input.disabled = append;
+  const match = val(input.id).match(/^(\d+)x(\d+)$/i);
+  const size = match ? `${Number(match[1])}x${Number(match[2])}` : '';
+  document.getElementById('b-size-mode').textContent = append ? '沿用现有图库尺寸'
+    : cudaTemplateSizes.includes(size) ? '已选 ' + size : '自定义';
+  for (const button of buildSizePresets.children) {
+    button.disabled = append;
+    button.setAttribute('aria-pressed', !append && button.dataset.size === size);
+  }
+}
+
 function syncPreviewOption() {
-  document.getElementById('b-normsize').disabled = val('b-mode') === 'add';
+  syncBuildSizePresets();
   document.getElementById('b-benchmark').disabled = val('b-mode') !== 'add';
   const normalizeOnly = val('b-mode') === 'normalize';
   document.getElementById('b-backend').disabled = normalizeOnly;
