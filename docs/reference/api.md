@@ -15,7 +15,11 @@ Both entries call the same core services for mosaic generation, library building
 `/api/info` 在 `entryPoints` 中暴露相同的入口边界，调用方可据此区分当前入口和支持的可执行入口集合。
 `/api/info` exposes the same entry point boundary in `entryPoints`, so callers can distinguish the current entry from the supported executable entry set.
 
-当前源码的 API 版本为 **1.6**，主版本仍为 **1**。此版本有一项不兼容变更：生成、规划、覆盖分析和预览请求用统一的 `targetSize`（例如 `"50%"` 或 `"1200xauto"`）；旧 `upscale` 字段即使是 `1` 也会被拒绝。`outW` / `outH` 仍可单独使用，不能与 `targetSize` 同传。单独使用旧 `upscale: 2` 的请求可改为 `targetSize: "200%"` 以得到相同工作尺寸，但不保证缩放后的像素或选图一致。
+当前源码 API 为 **1.7**，主版本保持 **1**，`/api/*` 路由不变。`POST /api/db/purge` 及 CLI purge 的 `orphanPreview` 不再返回 `tinyPath`、`lbpPath`；`GET /api/info` 的 `versions` 不再返回 `featurePack`。依赖这些字段的客户端需要更新。图库版本仍为 1，但缺少 `image_features` 的旧图库必须在新目录重建。
+
+API **1.7** removes `tinyPath` and `lbpPath` from purge preview entries and `featurePack` from version discovery. Routes and API major version are unchanged. Rebuild file-backed libraries in a new directory.
+
+从 **1.6** 起，生成、规划、覆盖分析和预览请求用统一的 `targetSize`（例如 `"50%"` 或 `"1200xauto"`）；旧 `upscale` 字段即使是 `1` 也会被拒绝。`outW` / `outH` 仍可单独使用，不能与 `targetSize` 同传。单独使用旧 `upscale: 2` 的请求可改为 `targetSize: "200%"` 以得到相同工作尺寸，但不保证缩放后的像素或选图一致。
 
 API **1.6** keeps major version **1** but removes `upscale` from mosaic requests. Use `targetSize` with the same syntax as `--target-size`, or keep `outW` / `outH` without `targetSize`. The `/api/*` paths and library schema version are unchanged. New requests that omit `scoreMode` use `fast`; saved legacy requests missing that field are restored as `compatible`.
 
@@ -45,7 +49,7 @@ Returns service version, entry name, structured API status, API contract version
 | 字段 | 说明 |
 |------|------|
 | `contractVersion` | HTTP/服务合约的语义版本 / semantic version of the HTTP/service contract |
-| `contractMajorVersion` | 主兼容版本。通常在破坏性变更时递增；1.6 删除 `upscale` 是保留主版本的例外 / normally increments for breaking changes; removal of `upscale` in 1.6 is an exception |
+| `contractMajorVersion` | 主兼容版本。通常在破坏性变更时递增；1.6 的请求字段移除和 1.7 的旧特征字段移除是例外 / the field removals in 1.6 and 1.7 are exceptions |
 | `compatibility` | 稳定性标签，供生成客户端和 UI 适配器使用 / stability label for generated clients and UI adapters |
 | `stable` | 当前合约是否面向常规调用方 / whether the current contract is intended for regular callers |
 

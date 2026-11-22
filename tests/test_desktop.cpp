@@ -62,7 +62,7 @@ QImage makeFixture(int index, const QSize &size)
     return image;
 }
 
-bool createFixtureLibrary(const QString &directory)
+bool createFixtureLibrary(const QString &directory, bool blobLayout = true)
 {
     if (!QDir().mkpath(directory))
     {
@@ -80,9 +80,9 @@ bool createFixtureLibrary(const QString &directory)
              query.exec("INSERT INTO meta VALUES ('feature_w','180'), ('feature_h','320')") &&
              query.exec("CREATE TABLE images(id INTEGER, file_path TEXT, src_width INTEGER, src_height INTEGER, "
                         "file_size INTEGER, created_at TEXT)") &&
-             query.exec("CREATE TABLE image_features(image_id INTEGER PRIMARY KEY, grid_lab BLOB, tiny BLOB, lbp BLOB)") &&
+             (!blobLayout || query.exec("CREATE TABLE image_features(image_id INTEGER PRIMARY KEY, grid_lab BLOB, tiny BLOB, lbp BLOB)")) &&
              query.prepare("INSERT INTO images VALUES (?,?,?,?,?,?)");
-        for (int index = 1; ok && index <= 45; ++index)
+        for (int index = 1; ok && blobLayout && index <= 45; ++index)
         {
             const auto filename = QString("Tile-%1.png").arg(index, 3, 10, QChar('0'));
             const auto path = QDir(directory).filePath(filename);
@@ -299,6 +299,13 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         return 1;
     }
 
+    const auto oldLayout = root.filePath("old-library");
+    LibraryCatalog refused;
+    if (!require(createFixtureLibrary(oldLayout, false) && !readLibrary(oldLayout, refused).isEmpty(),
+                 "version-1 catalog without image_features is rejected"))
+    {
+        return 1;
+    }
     ui->libraryWorkspaceButton->click();
     if (!require(ui->workspaces->currentWidget() == ui->libraryPage && loadLibrary(library, false) &&
                  catalog.assets.size() == 45 && ui->assetList->count() == 45, "continuous gallery") ||

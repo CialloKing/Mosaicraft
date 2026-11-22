@@ -2,6 +2,12 @@
 
 本页区分当前源码与公开安装包，详细历史记录见[历史档案](archive/README.md)。软件与数据版本的唯一来源是根目录 contracts.json；安装后的实际能力以该包 BUILD_INFO.txt、contracts.json 和 --help-all 为准。
 
+## v1.15.12（本地候选）
+
+- 图库特征统一存入 SQLite 的 `image_features`，不再生成 `.tiny`、`.lbp` 或 FeaturePack。图库及特征版本号仍为 1，但旧布局**不能打开或原地升级**。请按[重建步骤](guides/portable-libraries.md#从旧图库重建)建到新目录。
+- HTTP API 升至 1.7（主版本 1）；purge 预览删除 `tinyPath`、`lbpPath`，服务版本信息删除 `featurePack`，路由与 CLI 命令不变。
+- 素材仍是普通文件，ANN 移到可重建的 `index/`。增删按批次提交，追加时恢复未完成的素材发布，匹配按需要分批读取 BLOB。详见[本地验收与性能记录](performance/sqlite-blob-1.15.12.md)。
+
 ## v1.15.11
 
 提供三个 CPU 版 Qt 桌面包（Windows x64、Linux x64、macOS ARM64），以及两个 CUDA + Vulkan 双后端 Qt 桌面包（Windows x64、Linux x64）。原来的七个 Web UI / CLI 包保持不变。[下载与校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.11) · [Qt 桌面包说明](development/packaging.md#qt-桌面发布包)

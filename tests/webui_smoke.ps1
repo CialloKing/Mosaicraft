@@ -386,6 +386,7 @@ try {
     Assert-True ($info.info.api.structured -eq $true) "structured API is not enabled"
     Assert-True ([int]$info.info.api.contractMajorVersion -eq $Versions.apiMajorVersion) "unexpected API contract major version"
     Assert-True ($info.info.api.contractVersion -eq $Versions.apiVersion) "unexpected API contract version"
+    Assert-True ($info.info.versions.PSObject.Properties.Name -notcontains 'featurePack') 'removed featurePack version'
     Assert-True ($info.info.PSObject.Properties.Name -notcontains 'projectFormatVersion') 'unexpected project format version'
     Assert-True ($info.info.features -contains 'output-format-policy') "output policy capability missing"
     Assert-True ($info.info.features -contains 'interactive-preview') "interactive preview capability missing"
@@ -884,6 +885,12 @@ try {
     Assert-True ($saved.runtime.quality.scored -eq 4 -and $saved.request.inputPath -eq $targetPath) "history omitted the job summary"
     $cleared = Invoke-Api -Method 'DELETE' -Path '/api/history'
     Assert-True ($cleared.removed -eq $history.Count -and (Test-Path -LiteralPath $main.path)) "clearing history affected saved output"
+    $missing = Get-ChildItem -LiteralPath $libraryDir -File | Where-Object Extension -Match '^\.(jpg|jpeg|png|webp)$' | Select-Object -First 1
+    Assert-True ($null -ne $missing) 'purge fixture is missing'
+    Move-Item -LiteralPath $missing.FullName -Destination (Join-Path $outputDir 'missing-for-purge')
+    $purge = (Invoke-Api -Method 'POST' -Path '/api/db/purge' -Body @{ dbPath = $dbPath; dryRun = $true }).purge
+    Assert-True ($purge.orphanCount -eq 1 -and $purge.orphanPreview[0].filePath -eq $missing.FullName) 'purge preview must identify only the missing asset'
+    Assert-True (($purge.orphanPreview[0].PSObject.Properties.Name | Sort-Object) -join ',' -eq 'filePath,id') 'purge preview contains obsolete feature paths'
     Invoke-Api -Method "DELETE" -Path "/api/jobs" | Out-Null
     Write-Host "Web UI/API smoke passed: $script:BaseUrl"
 }

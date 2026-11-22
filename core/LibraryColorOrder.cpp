@@ -304,6 +304,12 @@ void requireSize(const fs::path& path, const Json& entry)
     }
 }
 
+std::uint64_t ingestWriteTime(const fs::path &path)
+{
+    // 文件时钟的宽度和单位依平台而异，只在本机比较原始计数的低 64 位。
+    return static_cast<std::uint64_t>(fs::last_write_time(path).time_since_epoch().count());
+}
+
 } // namespace
 
 bool recoverLibraryIngest(Database &db, std::string &error)
@@ -365,7 +371,7 @@ bool recoverLibraryIngest(Database &db, std::string &error)
             const auto info = fileInformation(final);
             if (info.volume != entry.at("volume").get<uint64_t>() || info.fileId != entry.at("file_id").get<uint64_t>() ||
                 info.size != entry.at("size").get<uint64_t>() ||
-                fs::last_write_time(final).time_since_epoch().count() != entry.at("time").get<int64_t>())
+                ingestWriteTime(final) != entry.at("time").get<uint64_t>())
             {
                 throw std::runtime_error("ingest destination changed");
             }
@@ -450,7 +456,7 @@ void LibraryIngest::publish(const std::vector<ImageRecord *> &records)
         const auto info = fileInformation(pending);
         manifest["entries"].push_back({{"path", paths.store(pathToUtf8(final))},
             {"size", info.size}, {"volume", info.volume}, {"file_id", info.fileId},
-            {"time", fs::last_write_time(pending).time_since_epoch().count()}});
+            {"time", ingestWriteTime(pending)}});
         finals.push_back(final);
     }
     persistJournal(libraryIngestJournalPath(m_db.path()), manifest);
