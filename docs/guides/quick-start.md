@@ -12,7 +12,7 @@
 | Linux x64 | Ubuntu 22.04 / glibc 2.35 | `_linux-x64_cpu-only.tar.gz` | `_linux-x64_cuda.tar.gz` | `_linux-x64_vulkan.tar.gz` |
 | macOS ARM64 | macOS 13 | `_macos-arm64_cpu-only.tar.gz` | — | — |
 
-需要 Qt 界面时，选择对应平台的 `_qt` CPU 包，或 Windows/Linux x64 的 `_qt_cuda-vulkan` 双后端包，无需另装 Qt。双后端包的「自动」依次尝试 CUDA、CPU；用 Vulkan 时请在设置的「默认后端」中显式选择。独立的原生 `_vulkan` 包默认优先 Vulkan，启动计算前不可用则回退 CPU。Metal 不随正式包发布。见[桌面包说明](../development/packaging.md#qt-桌面发布包)和[本版校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.11)。
+需要 Qt 界面时，选择对应平台的 `_qt` CPU 包，或 Windows/Linux x64 的 `_qt_cuda-vulkan` 双后端包，无需另装 Qt。双后端包的「自动」依次尝试 CUDA、CPU；用 Vulkan 时请在设置的「默认后端」中显式选择。独立的原生 `_vulkan` 包默认优先 Vulkan，启动计算前不可用则回退 CPU。Metal 不随正式包发布。见[桌面包说明](../development/packaging.md#qt-桌面发布包)和[本版校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.14)。
 
 ## Qt 桌面预览的内存
 
