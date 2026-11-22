@@ -39,6 +39,9 @@ protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dropEvent(QDropEvent *event) override;
     bool eventFilter(QObject *object, QEvent *event) override;
+#ifdef Q_OS_WIN
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
+#endif
 
 private:
     enum class Workspace { Edit, Export };
@@ -80,6 +83,9 @@ private:
     };
 
     void setupMenu();
+#ifdef Q_OS_WIN
+    void setupWindowsTitleBar();
+#endif
     void setupEditor();
     void setupExport();
     void setupDocumentOptions();

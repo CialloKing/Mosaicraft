@@ -84,17 +84,18 @@ $qtRoot = 'C:/Qt/6.12.0/msvc2022_64'
 cmake --preset $preset -B build/windows-desktop -DMOSAICRAFT_BUILD_DESKTOP=ON "-DCMAKE_PREFIX_PATH=$qtRoot"
 cmake --build build/windows-desktop --config Release --target MosaicraftDesktop --parallel
 
-$env:PATH = "$qtRoot/bin;$env:PATH"
 ./build/windows-desktop/Release/bin/MosaicraftDesktop.exe
 ```
 
-便携工程渲染使用 `mosaicraft`。素材库检查与重建，以及普通工程的成品预览、候选查询和换图后导出使用 `mosaicraft_desktop_worker`。也可在「设置 → 通用设置」选择 `build/<preset>/Release/bin/mosaicraft.exe`，匹配程序会从同目录加载。WebP 和 TIFF 预览使用相应的 Qt 图像格式插件。
+Windows 桌面构建会把 Qt DLL、`qt.conf` 和 `plugins/` 放在可执行文件旁，可直接启动程序。需要 WebP 和 TIFF 预览时，请在构建用的 Qt SDK 中安装 Qt Image Formats 组件。
+
+便携工程渲染使用 `mosaicraft`。素材库检查与重建，以及普通工程的成品预览、候选查询和换图后导出使用 `mosaicraft_desktop_worker`。也可在「设置 → 通用设置」选择 `build/<preset>/Release/bin/mosaicraft.exe`，匹配程序会从同目录加载。
 
 在「设置 → 素材库设置」选择原始素材目录和素材库目录。素材库目录留空时，程序将生成的素材库存放在本机应用数据目录。每次启动会检查数据库、素材和特征文件，并核对原图内容与建库设置。首次创建、出现损坏或检测到变化时会构建新的版本，校验通过后再启用。只选择已有图库目录时，启动会检查该图库的完整性，自动重建需要设置原始素材目录。
 
 「保存」将本地文件引用、参数和手动换图记录写入 `.mscproj` 工程文件。导出 HTML 可将最终排列和素材打包为便携工程目录。已有便携工程可从目录或 `project.json` 打开，ZIP 需先解压。
 
-Windows 设置上述 Qt PATH 后，运行 `ctest --test-dir build/windows-desktop -C Release -R "^desktop_smoke$" --output-on-failure`。根构建会自动为测试提供 CLI 路径，覆盖真实建库、预览、换图、保存、重开和导出。仍可使用 `cmake -S desktop` 单独构建 GUI；独立构建时，可设置 `MOSAICRAFT_DESKTOP_SMOKE_CLI` 为配有 worker 的 CLI 完整路径来启用同样的端到端检查。
+Windows 构建完成后，运行 `ctest --test-dir build/windows-desktop -C Release -R "^desktop_smoke$" --output-on-failure`。根构建会自动为测试提供 CLI 路径，覆盖真实建库、预览、换图、保存、重开和导出。也可使用 `cmake -S desktop` 单独构建 GUI，独立构建时可设置 `MOSAICRAFT_DESKTOP_SMOKE_CLI` 为配有 worker 的 CLI 完整路径来启用同样的端到端检查。
 
 ## 构建和运行测试
 

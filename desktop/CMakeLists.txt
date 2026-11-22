@@ -38,6 +38,10 @@ qt_add_executable(MosaicraftDesktop WIN32 MACOSX_BUNDLE
     ui/SettingsDialog.ui
 )
 target_link_libraries(MosaicraftDesktop PRIVATE Qt6::Widgets Qt6::Network)
+if(WIN32)
+    target_sources(MosaicraftDesktop PRIVATE WindowsTitleBar.cpp)
+    target_link_libraries(MosaicraftDesktop PRIVATE user32)
+endif()
 target_include_directories(MosaicraftDesktop PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_definitions(MosaicraftDesktop PRIVATE
     MOSAICRAFT_DESKTOP_VERSION="${mosaicraft_version}"
@@ -45,7 +49,11 @@ target_compile_definitions(MosaicraftDesktop PRIVATE
 if(MSVC)
     target_compile_options(MosaicraftDesktop PRIVATE /utf-8)
 endif()
-qt_add_translations(MosaicraftDesktop
+if(Qt6_VERSION VERSION_GREATER_EQUAL 6.7)
+    # Avoid deferred target discovery splitting build paths that contain spaces.
+    set(translation_source_targets SOURCE_TARGETS MosaicraftDesktop)
+endif()
+qt_add_translations(MosaicraftDesktop ${translation_source_targets}
     TS_FILES i18n/mosaicraft_en.ts
     RESOURCE_PREFIX "/i18n"
 )
@@ -65,6 +73,33 @@ if(TARGET Qt6::qmake)
                 FILES "${qt_chinese_catalog}"
             )
         endif()
+    endif()
+endif()
+
+if(WIN32 AND QT6_IS_SHARED_LIBS_BUILD)
+    qt6_generate_deploy_script(TARGET MosaicraftDesktop OUTPUT_SCRIPT build_deploy_script
+        CONTENT [[
+            set(QT_DEPLOY_PREFIX "$<TARGET_FILE_DIR:MosaicraftDesktop>")
+            set(QT_DEPLOY_BIN_DIR ".")
+            set(QT_DEPLOY_PLUGINS_DIR "plugins")
+            qt6_deploy_runtime_dependencies(
+                EXECUTABLE "$<TARGET_FILE:MosaicraftDesktop>"
+                GENERATE_QT_CONF
+            )
+        ]]
+    )
+    add_custom_command(TARGET MosaicraftDesktop POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -P "${build_deploy_script}"
+        COMMENT "Deploying the Qt runtime beside MosaicraftDesktop"
+        VERBATIM
+    )
+    # windeployqt selects qwindows by default. The desktop smoke test uses offscreen.
+    if(TARGET Qt6::QOffscreenIntegrationPlugin)
+        add_custom_command(TARGET MosaicraftDesktop POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:Qt6::QOffscreenIntegrationPlugin>"
+                "$<TARGET_FILE_DIR:MosaicraftDesktop>/plugins/platforms/"
+            VERBATIM
+        )
     endif()
 endif()
 

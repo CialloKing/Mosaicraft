@@ -40,6 +40,9 @@ QPushButton[primary="true"]:disabled { background: #404040; color: #929292; bord
 QToolButton:checked { background: #4e4e4e; color: #f6f6f6; border-color: #777777; }
 QToolButton:checked:disabled { background: #353535; color: #818181; border-color: #474747; }
 QToolButton#newTabButton { padding: 3px; min-width: 24px; max-width: 28px; }
+QWidget#captionControls QToolButton { font: 10px "Segoe MDL2 Assets"; background: transparent; border: 0; border-radius: 0; padding: 0; }
+QWidget#captionControls QToolButton:hover { background: #464646; }
+QWidget#captionControls QToolButton#captionClose:hover { background: #c42b1c; }
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {
  padding: 5px 7px; background: #242424; border: 1px solid #515151; border-radius: 3px; selection-background-color: #606060;
 }

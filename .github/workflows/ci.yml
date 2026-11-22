@@ -92,5 +92,4 @@ jobs:
         run: |
           cmake --preset windows-x64 -B build/windows-desktop-ci -DMOSAICRAFT_BUILD_DESKTOP=ON "-DCMAKE_PREFIX_PATH=$env:MOSAICRAFT_QT_ROOT"
           cmake --build build/windows-desktop-ci --config Release --target MosaicraftDesktop --parallel
-          $env:PATH = "$env:MOSAICRAFT_QT_ROOT/bin;$env:PATH"
           ctest --test-dir build/windows-desktop-ci -C Release -R '^desktop_smoke$' --no-tests=error --output-on-failure --timeout 180
