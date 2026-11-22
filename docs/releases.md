@@ -2,7 +2,7 @@
 
 本页区分当前源码与公开安装包，详细历史记录见[历史档案](archive/README.md)。软件与数据版本的唯一来源是根目录 contracts.json；安装后的实际能力以该包 BUILD_INFO.txt、contracts.json 和 --help-all 为准。
 
-## v1.15.12（本地候选）
+## v1.15.12
 
 - 图库特征统一存入 SQLite 的 `image_features`，不再生成 `.tiny`、`.lbp` 或 FeaturePack。图库及特征版本号仍为 1，但旧布局**不能打开或原地升级**。请按[重建步骤](guides/portable-libraries.md#从旧图库重建)建到新目录。
 - HTTP API 升至 1.7（主版本 1）；purge 预览删除 `tinyPath`、`lbpPath`，服务版本信息删除 `featurePack`，路由与 CLI 命令不变。
