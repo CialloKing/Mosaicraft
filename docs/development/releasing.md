@@ -60,4 +60,6 @@ cmake "-DTAG=v1.15.10" -DASSET=<release-asset-name> -DCHECK_TOOL=<native-check> 
 
 为既有 Release 补发双后端桌面包时，手动运行 Native packages 并填 `desktop_release_tag`。该流程只构建和验包，不发布；核对两个归档的源提交均与原标签一致后，再追加附件并更新校验清单和发布说明，不移动标签。若还需从同一标签补建原生 CUDA 包，同时勾选 `include_native_cuda`。SDK 准备使用当前发布工具，产品和依赖锁仍取自原标签；Windows 正式包仍须实机验收。
 
+如需在发布前重新独立验收整套原生 Actions 归档，运行 `Verify published release` 并填写原标签与完整打包的 `artifact_run` ID。它检查原标签提交，不把 Windows 云端 CUDA 候选当作正式包。
+
 发布后运行 Verify published release 下载真实附件验证，并核对页面的候选、驱动和 not-run 说明。撤下候选时保留真实历史验收记录，更新[版本状态](../releases.md)，不要伪装为从未执行过测试。
