@@ -241,6 +241,7 @@ add_library(mosaicraft_core STATIC
     core/DatabaseSchema.cpp
     core/LibraryColorOrder.cpp
     core/MosaicOutput.cpp
+    core/ParallelPngWriter.cpp
     core/OutputPlan.cpp
     core/MosaicPlanning.cpp
     core/MosaicSampling.cpp

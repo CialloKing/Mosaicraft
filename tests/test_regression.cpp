@@ -15,6 +15,7 @@
 #include "../core/MatchingAccess.h"
 #include "../core/MosaicOutput.h"
 #include "../core/MosaicSelection.h"
+#include "../core/ParallelPngWriter.h"
 #include "../core/PngStreamWriter.h"
 #include "../core/PreviewAccumulator.h"
 #include "../core/PreviewCandidates.h"
@@ -2964,6 +2965,87 @@ TEST_CASE("PNG multirow writing preserves refresh boundaries and encoded bytes")
     CHECK_FALSE(partial.close());
     std::ifstream a(u8path(oldPath), std::ios::binary), b(u8path(newPath), std::ios::binary);
     CHECK(std::string(std::istreambuf_iterator<char>(a), {}) == std::string(std::istreambuf_iterator<char>(b), {}));
+}
+
+TEST_CASE("Parallel PNG round-trips all compression levels across row and block boundaries")
+{
+    TempWorkspace workspace;
+    cv::Mat padded(197, 261, CV_8UC3);
+    cv::Mat rgb = padded.colRange(0, 257); // 给编码器带填充的跨行步幅。
+    cv::RNG(123).fill(rgb, cv::RNG::UNIFORM, 0, 256);
+    for (int y = 1; y < rgb.rows; y += 3)
+    {
+        rgb.row(y - 1).copyTo(rgb.row(y));
+    }
+    cv::Mat expected;
+    cv::cvtColor(rgb, expected, cv::COLOR_RGB2BGR);
+
+    const ParallelPngPlan plan{3, 47, 0};
+    WorkerPool pool(3);
+    const auto path = utf8(workspace.outputDir() / "并行.png");
+    for (int level = 1; level <= 9; ++level)
+    {
+        CAPTURE(level);
+        ParallelPngWriter writer(path, rgb.cols, rgb.rows, level, level == 1, plan, pool);
+        for (int y = 0; y < rgb.rows; y += 13)
+        {
+            writer.writeRows(rgb.ptr<uint8_t>(y), rgb.step, std::min(13, rgb.rows - y));
+        }
+        REQUIRE(writer.close());
+        const auto decoded = imreadUnicode(path);
+        REQUIRE(decoded.size() == expected.size());
+        CHECK(cv::norm(decoded, expected, cv::NORM_INF) == 0);
+    }
+
+    ParallelPngWriter partial(path, rgb.cols, rgb.rows, 6, false, plan, pool);
+    partial.writeRows(rgb.data, rgb.step, rgb.rows - 1);
+    CHECK_FALSE(partial.close());
+    CHECK_FALSE(partial.close());
+}
+
+TEST_CASE("PNG output uses the same pixels in serial, stream and batch modes")
+{
+    TempWorkspace workspace;
+    const cv::Mat tile(512, 512, CV_8UC3, cv::Scalar(20, 90, 210));
+    const auto source = workspace.inputDir() / "tile.png";
+    requireWriteImage(source, tile);
+    ImageRecord record;
+    record.id = 1;
+    record.filePath = utf8(source);
+    const std::vector<int> selected(12, 0);
+    MosaicEngine::Config config;
+    config.outputFormat = "png";
+    config.formatExplicit = true;
+    OutputStats stats;
+    cv::Mat expected;
+    for (int threads : {1, 2, 0})
+    {
+        CAPTURE(threads);
+        config.threads = threads;
+        config.writeMode = threads == 0 ? "batch" : "stream";
+        config.pngCompressionLevel = threads == 2 ? 9 : 6;
+        const auto path = utf8(workspace.outputDir() / (std::to_string(threads) + ".png"));
+        detail::OutputPlan plan;
+        std::string error;
+        REQUIRE(detail::makeOutputPlan({"png", "explicit"}, path, 4, 3, tile.cols, tile.rows, true, plan, error));
+        const auto expectedWorkers = std::max<size_t>(1, outputBudget(config, plan, 0, 0).png.workers);
+        REQUIRE(writeIndexedMosaicOutput(config, plan, {record}, selected, {}, stats));
+        CHECK(stats.pngWorkerSlots == expectedWorkers);
+        CHECK(stats.pngWorkerSlots <= stats.workerSlots);
+        CHECK((stats.pngBufferBytes != 0) == (stats.pngWorkerSlots > 1));
+        if (threads > 0)
+        {
+            CHECK(stats.pngWorkerSlots <= static_cast<size_t>(threads));
+        }
+        const auto decoded = imreadUnicode(path);
+        REQUIRE(decoded.size() == cv::Size(2048, 1536));
+        if (threads == 1)
+        {
+            expected = decoded;
+            CHECK(decoded.at<cv::Vec3b>(0, 0) == tile.at<cv::Vec3b>(0, 0));
+        }
+        CHECK(cv::norm(decoded, expected, cv::NORM_INF) == 0);
+    }
 }
 #include "test_portable_regression.inc"
 #include "test_release_regression.inc"

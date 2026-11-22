@@ -51,6 +51,14 @@ void reportOutputBenchmark(const OutputStats &stats, const MosaicEngine::Config 
     }
     std::cout << "  Output benchmark:\n" << std::fixed << std::setprecision(1);
     metric(runtime, "outputWorkerSlots", "Output worker slots", stats.workerSlots, "");
+    if (stats.pngWorkerSlots)
+    {
+        metric(runtime, "pngWorkerSlots", "PNG compression worker slots", stats.pngWorkerSlots, "");
+        if (stats.pngBufferBytes)
+        {
+            metric(runtime, "pngBufferBytes", "PNG compression buffer budget", stats.pngBufferBytes, " bytes");
+        }
+    }
     metric(runtime, "placementMs", "Placement", stats.placementMs);
     if (config.outputMode == OutputMode::Image)
     {

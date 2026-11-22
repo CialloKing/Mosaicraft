@@ -15,6 +15,9 @@
 #include <chrono>
 #include <iostream>
 #include <limits>
+#ifdef __linux__
+#include <sched.h>
+#endif
 
 
 namespace mosaicraft
@@ -27,6 +30,45 @@ double milliseconds(Clock::time_point start)
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
 }
 
+unsigned pngWorkers(int requested)
+{
+    unsigned detected = std::max(1u, std::thread::hardware_concurrency());
+#ifdef _WIN32
+    const auto process = GetCurrentProcess();
+    const auto activeGroups = GetActiveProcessorGroupCount();
+    std::array<USHORT, 64> groups{};
+    USHORT count = static_cast<USHORT>(groups.size());
+    if (activeGroups > 1 && GetProcessGroupAffinity(process, &count, groups.data()) && count > 1)
+    {
+        // 跨组时进程掩码只代表主组，不能用它作为总线程数。
+        detected = 0;
+        for (USHORT i = 0; i < count; ++i)
+        {
+            detected += GetActiveProcessorCount(groups[i]);
+        }
+    }
+    else
+    {
+        DWORD_PTR processMask = 0, systemMask = 0;
+        if (GetProcessAffinityMask(process, &processMask, &systemMask) && processMask)
+        {
+            detected = 0;
+            for (; processMask; processMask &= processMask - 1)
+            {
+                ++detected;
+            }
+        }
+    }
+#elif defined(__linux__)
+    cpu_set_t cpus;
+    if (sched_getaffinity(0, sizeof(cpus), &cpus) == 0)
+    {
+        detected = std::max(1, CPU_COUNT(&cpus));
+    }
+#endif
+    detected = std::max(1u, detected);
+    return requested > 0 ? std::min(detected, static_cast<unsigned>(requested)) : detected;
+}
 
 } // namespace
 
@@ -50,7 +92,17 @@ OutputBudget outputBudget(const MosaicEngine::Config &config, const detail::Outp
     const uint64_t memory = availableMemory();
     const bool stream = plan.format != "webp" && (config.writeMode == "stream" ||
         (config.writeMode == "auto" && (memory ? batchBytes > memory : rawBytes > 500ULL * 1024 * 1024)));
-    return {rawBytes, rowBytes, batchBytes, streamBytes, rgbRows, stream};
+    ParallelPngPlan png;
+    if (config.outputMode == OutputMode::Image && plan.format == "png")
+    {
+        // 编码缓冲和像素条带/画布同时存在，内存不足时缩减并行度或保留旧编码器。
+        constexpr uint64_t cap = 256ULL * 1024 * 1024;
+        const uint64_t base = stream ? streamBytes : batchBytes;
+        const uint64_t budget = memory ? (memory > base ? std::min(cap, (memory - base) / 4) : 0) : cap / 4;
+        png = planParallelPng(plan.width, plan.height, pngWorkers(config.threads), budget);
+    }
+    return {rawBytes, rowBytes, batchBytes + std::min(maximum - batchBytes, png.bufferBytes),
+            streamBytes + std::min(maximum - streamBytes, png.bufferBytes), rgbRows, stream, png};
 }
 
 static bool writeOutput(const MosaicEngine::Config &config, const std::string &requestedPath, int tilesX, int tilesY,
@@ -97,15 +149,18 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         {
             throw std::invalid_argument("overlayStrength must be finite and between 0 and 1");
         }
-        const unsigned workers = static_cast<unsigned>(
-            std::min<size_t>(count, config.threads > 0 ? static_cast<unsigned>(config.threads)
-                : std::min(8u, std::max(1u, std::thread::hardware_concurrency()))));
+        const bool pngImage = config.outputMode == OutputMode::Image && plan.format == "png";
+        const unsigned outputThreads = pngImage ? pngWorkers(config.threads) :
+            (config.threads > 0 ? static_cast<unsigned>(config.threads)
+                               : std::min(8u, std::max(1u, std::thread::hardware_concurrency())));
+        const unsigned placementThreads = pngImage && config.threads == 0 ? std::min(8u, outputThreads) : outputThreads;
+        const unsigned workers = static_cast<unsigned>(std::min<size_t>(count, placementThreads));
         std::unique_ptr<TileCompositor> compositor;
         if (config.overlayStrength > 0)
         {
             compositor = std::make_unique<TileCompositor>(target, tilesX, tilesY, cv::Size(tileW, tileH));
             stats.overlayReferenceBytes = target.total() * target.elemSize();
-            stats.overlayWorkingBytes = workers * TileCompositor::workingBytes(cv::Size(tileW, tileH));
+            stats.overlayWorkingBytes = std::min<size_t>(count, outputThreads) * TileCompositor::workingBytes(cv::Size(tileW, tileH));
         }
         ImageCache cache(ImageCache::kDefaultBudget, config.benchmark);
         std::unordered_map<int, size_t> useCounts;
@@ -129,10 +184,11 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         {
             budget = outputBudget(config, plan, stats.overlayReferenceBytes, stats.overlayWorkingBytes);
         }
-        const bool reserveEncoder = MOSAICRAFT_TRIAL_STREAM && budget.stream && config.threads > 1 &&
-                                    (plan.format == "png" || plan.format == "jpg");
-        // 生产者仅协调；编码占一个执行位，显式单线程仍然顺序写出。
-        WorkerPool pool(reserveEncoder ? std::min<unsigned>(workers, config.threads - 1) : workers);
+        const bool reserveEncoder = MOSAICRAFT_TRIAL_STREAM && !budget.png.workers && budget.stream &&
+                                    config.threads > 1 && outputThreads > 1 && (pngImage || plan.format == "jpg");
+        // 旧双缓冲为串行编码预留一个执行位；并行 PNG 则分阶段复用同一线程池。
+        WorkerPool pool(reserveEncoder ? std::min(workers, outputThreads - 1)
+                                       : static_cast<unsigned>(std::max<size_t>(workers, budget.png.workers)));
         stats.workerSlots = pool.size();
         std::atomic<int> failures{0};
         std::atomic<int64_t> loadingNs{0}, decodeNs{0}, resizeNs{0};
@@ -263,8 +319,8 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         const auto &format = plan.format;
         const int rgbRows = budget.rgbRows;
         const bool stream = budget.stream;
-        const bool rgbStream = stream && format == "png";
-        std::cout << "  output: " << (stream ? "stream (two tile rows)" : "batch") << std::endl;
+        const bool rgbOutput = (stream && format == "png") || budget.png.workers;
+        std::cout << "  output: " << (stream ? "stream" : "batch") << std::endl;
 
         std::unique_ptr<PreviewAccumulator> preview;
         auto previewRows = [&](const cv::Mat &rows, int offset)
@@ -295,7 +351,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
                          if (image)
                          {
                              auto region = destination(cv::Rect(static_cast<int>(x) * tileW, 0, tileW, tileH));
-                             if (rgbStream)
+                             if (rgbOutput)
                              {
                                  // 直接填编码器需要的通道顺序，省去读写整条带的二次转换。
                                  cv::cvtColor(*image, region, cv::COLOR_BGR2RGB);
@@ -310,6 +366,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         };
 
         std::unique_ptr<PngStreamWriter> png;
+        std::unique_ptr<ParallelPngWriter> parallelPng;
         std::unique_ptr<JpgStreamWriter> jpg;
         std::unique_ptr<BigTiffWriter> tiff;
         cv::Mat rgb;
@@ -317,9 +374,30 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         {
             if (format == "png")
             {
-                // 默认一级压缩优先速度；显式提高压缩级别时保留自适应滤波以优先文件大小。
+                const bool fixedSub = stream && MOSAICRAFT_TRIAL_PNG_SUB && config.pngCompressionLevel == 1;
+                if (budget.png.workers)
+                {
+                    try
+                    {
+                        parallelPng = std::make_unique<ParallelPngWriter>(stats.path, width, height,
+                                                                        config.pngCompressionLevel, fixedSub, budget.png, pool);
+                    }
+                    catch (const std::bad_alloc &)
+                    {
+                        // 并行写入器在打开文件前分配缓冲，失败可以安全回退。
+                    }
+                    if (parallelPng)
+                    {
+                        stats.pngWorkerSlots = budget.png.workers;
+                        stats.pngBufferBytes = budget.png.bufferBytes;
+                        std::cout << "  PNG compression workers: " << stats.pngWorkerSlots << std::endl;
+                        return;
+                    }
+                }
+                stats.pngWorkerSlots = 1;
+                // 显式提高压缩级别时保留自适应滤波以优先文件大小。
                 png = std::make_unique<PngStreamWriter>(stats.path, width, height, config.pngCompressionLevel,
-                    stream && MOSAICRAFT_TRIAL_PNG_SUB && config.pngCompressionLevel == 1 ? PNG_FILTER_SUB : PNG_ALL_FILTERS,
+                    fixedSub ? PNG_FILTER_SUB : PNG_ALL_FILTERS,
                     stream && MOSAICRAFT_TRIAL_PNG_FINAL_FLUSH);
             }
             else if (format == "jpg")
@@ -333,6 +411,13 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         };
         auto writeRows = [&](const cv::Mat &rows, int offset)
         {
+            if (parallelPng)
+            {
+                const auto codecStart = now();
+                parallelPng->writeRows(rows.data, rows.step, rows.rows);
+                stats.codecMs += elapsed(codecStart);
+                return;
+            }
             if (png)
             {
                 const auto encodeRows = [&](const cv::Mat &pixels)
@@ -345,7 +430,7 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
                         throw std::runtime_error("PNG rows write failed");
                     }
                 };
-                if (rgbStream)
+                if (rgbOutput)
                 {
                     encodeRows(rows);
                 }
@@ -380,10 +465,14 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
                 }
             }
         };
-        if (stream && config.threads > 0 && !reserveEncoder)
+        if (stream)
         {
-            // 显式线程预算下分阶段合成和编码，编码器不额外占用一个并行工作线程。
             openWriter();
+        }
+        if (stream && (parallelPng || (pngImage && outputThreads == 1) || (config.threads > 0 && !reserveEncoder)))
+        {
+            // PNG 拼贴与并行编码复用同一线程池，不在同一时刻各占一套线程。
+            // 显式线程预算的串行编码也保留现有的分阶段行为。
             cv::Mat rows(tileH, width, CV_8UC3);
             for (int y = 0; y < tilesY; ++y)
             {
@@ -399,7 +488,6 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
         else if (stream)
         {
             stats.parallelStream = true;
-            openWriter();
             std::array<cv::Mat, 2> rows{cv::Mat(tileH, width, CV_8UC3), cv::Mat(tileH, width, CV_8UC3)};
             std::array<bool, 2> ready{false, false};
             std::mutex mutex;
@@ -484,8 +572,16 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
                          auto image = load(i);
                          if (image)
                          {
-                             image->copyTo(canvas(cv::Rect(static_cast<int>(i % tilesX) * tileW,
-                                                           static_cast<int>(i / tilesX) * tileH, tileW, tileH)));
+                             auto region = canvas(cv::Rect(static_cast<int>(i % tilesX) * tileW,
+                                                           static_cast<int>(i / tilesX) * tileH, tileW, tileH));
+                             if (rgbOutput)
+                             {
+                                 cv::cvtColor(*image, region, cv::COLOR_BGR2RGB);
+                             }
+                             else
+                             {
+                                 image->copyTo(region);
+                             }
                          }
                          finish(i);
                      });
@@ -515,13 +611,15 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
             }
             stats.encodingMs = elapsed(encodeStart);
         }
-        stats.rowCodec = png || jpg || tiff;
-        stats.rowColorConversion = (png && !rgbStream) || jpg;
+        stats.rowCodec = parallelPng || png || jpg || tiff;
+        stats.rowColorConversion = (png && !rgbOutput) || jpg;
         const auto closeStart = now();
-        if ((png && !png->close()) || (jpg && !jpg->close()) || (tiff && !tiff->close()))
+        if ((parallelPng && !parallelPng->close()) || (png && !png->close()) ||
+            (jpg && !jpg->close()) || (tiff && !tiff->close()))
         {
             throw std::runtime_error("image close failed");
         }
+        parallelPng.reset();
         tiff.reset();
         stats.encodingMs += elapsed(closeStart);
         if (runtime)
@@ -545,11 +643,11 @@ static bool writeOutput(const MosaicEngine::Config &config, const std::string &r
                 // 主图已关闭成功，预览失败只报告错误，不删除已经成功的主图。
                 const auto &pixels = preview->image();
                 cv::Mat bgr;
-                if (rgbStream)
+                if (rgbOutput)
                 {
                     cv::cvtColor(pixels, bgr, cv::COLOR_RGB2BGR);
                 }
-                if (!imwriteUnicode(previewPath, rgbStream ? bgr : pixels,
+                if (!imwriteUnicode(previewPath, rgbOutput ? bgr : pixels,
                                     {cv::IMWRITE_JPEG_QUALITY, PreviewAccumulator::kJpegQuality}))
                 {
                     throw std::runtime_error("JPEG could not be written");
