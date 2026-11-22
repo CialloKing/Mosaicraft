@@ -7,11 +7,10 @@
 - 保持工作区干净，确认将要发布的提交及分支。
 - 版本唯一来源为 contracts.json；同步当前指南、API 参考和 docs/releases.md 的适用范围。
 - 更新版本状态中的对应软件版本标题和高层变更摘要，链接详细实现与验收。
-- 更新受影响的验收记录，编译、实机和候选状态分别说明。
+- 更新受影响的验收记录，编译、实机和候选状态分别说明。运行[原生文档检查](documentation.md#检查与打包)。
 
 ```powershell
 git status --short --branch
-python scripts/check-docs.py
 ./scripts/release.ps1 -InspectOnly
 ```
 

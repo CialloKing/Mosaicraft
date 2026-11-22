@@ -26,11 +26,14 @@ third_party 内 SOURCE.md 与许可证属于依赖来源声明，保留在依赖
 ## 检查与打包
 
 ```sh
-python scripts/check-docs.py
-python scripts/check-docs.py --root <解压目录>
+cmake -S tools/release-check -B build/check-docs -DCMAKE_BUILD_TYPE=Release
+cmake --build build/check-docs --config Release
+./build/check-docs/mosaicraft_release_check --docs .
 ```
 
-检查本地 Markdown 链接、锚点和页面可达性，不联网探测外链。日常 CI 的 Linux job 和安装了 Python 的 CTest 均复用此检查，新增页面或失效链接会使检查失败。二进制包也复制完整 docs/ 树，保持相同导航与相对路径。命令、参数、平台能力变更仍需对应功能测试，链接检查不能验证程序行为。
+使用 Visual Studio 生成器时，运行 `build/check-docs/Release/mosaicraft_release_check.exe --docs .`。检查解包文档时，把 `--docs` 的参数换成解压目录。
+
+检查本地 Markdown 链接、锚点和页面可达性，不联网探测外链。日常 CI 和 CTest 的 `documentation_native` 均复用此工具，不需要 Python。二进制包也复制完整 docs/ 树，保持相同导航与相对路径。命令、参数、平台能力变更仍需对应功能测试，链接检查不能验证程序行为。
 
 源码文件引用优先使用行内路径说明；需要可点击代码链接时使用仓库链接，避免二进制包内出现指向未交付源码的相对链接。历史数据中的绝对路径只作为当时的证据，不改写成可运行示例。
 

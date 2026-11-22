@@ -581,7 +581,7 @@ try {
             $buildTargets = @("mosaicraft", "MosaicraftWebUI")
             if (-not $SkipTests)
             {
-                $buildTargets += @("mosaicraft_tests", "mosaicraft_regression_tests")
+                $buildTargets = @("mosaicraft_test_targets")
             }
             Invoke-Native -FilePath "cmake" -Arguments (@(
                 "--build", $buildPath,

@@ -478,8 +478,8 @@ if(TESTS)
 endif()
 add_custom_target(mosaicraft_test_targets ${_test_targets_default} DEPENDS mosaicraft MosaicraftWebUI
     mosaicraft_tests mosaicraft_regression_tests mosaicraft_release_check)
+add_test(NAME documentation_native COMMAND mosaicraft_release_check --docs "${CMAKE_SOURCE_DIR}")
 if(NOT MOSAICRAFT_LEGACY_SCRIPT_TESTS)
-    add_test(NAME documentation_native COMMAND mosaicraft_release_check --docs "${CMAKE_SOURCE_DIR}")
     add_test(NAME cuda_build_info_native COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_build_info.cmake")
     add_test(NAME webui_native_smoke COMMAND mosaicraft_release_check
         "$<TARGET_FILE:MosaicraftWebUI>" "${CMAKE_SOURCE_DIR}/contracts.json" --current)
@@ -490,7 +490,6 @@ if(MOSAICRAFT_LEGACY_SCRIPT_TESTS)
     find_program(POWERSHELL_COMMAND NAMES pwsh powershell)
 endif()
 if(MOSAICRAFT_LEGACY_SCRIPT_TESTS AND Python3_Interpreter_FOUND)
-    add_test(NAME documentation COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/check-docs.py")
     add_test(NAME portable_library COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/portable_library.py"
         --cli "$<TARGET_FILE:mosaicraft>" --regression "$<TARGET_FILE:mosaicraft_regression_tests>")
     set_tests_properties(portable_library PROPERTIES TIMEOUT 120)
