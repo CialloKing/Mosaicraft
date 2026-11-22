@@ -8,7 +8,11 @@
 
 namespace mosaicraft
 {
-enum class PreviewPixels { Canvas, Worker };
+enum class PreviewPixels
+{
+    Canvas,
+    Worker
+};
 
 // 只预算能随时从文件重建的桌面像素，不把匹配工作区或导出缓冲冒充缓存。
 inline size_t desktopPixelBudget(PreviewPixels owner, uint64_t total, uint64_t available, uint64_t resident)

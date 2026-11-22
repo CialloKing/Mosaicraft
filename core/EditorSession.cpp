@@ -328,7 +328,7 @@ public:
                                  {"reference", encodeBase64(nextSelection.referenceJpeg)}, {"seed", seed},
                                  {"columns", nextSelection.columns}, {"rows", nextSelection.rows},
                                  {"tileWidth", nextFrame.tileSize.width}, {"tileHeight", nextFrame.tileSize.height},
-                                 {"layout", layout}};
+                                 {"layout", layout}, {"distinctTiles", nextFrame.nextTile}};
             selection = std::move(nextSelection);
             request = std::move(nextRequest);
             workspace = std::move(nextWorkspace);

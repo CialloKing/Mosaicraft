@@ -581,21 +581,23 @@ void MainWindow::distributePreviewMemory(qsizetype budget)
     // 后台项目只保留已有热块，不给每个标签页都分配一份可增长的额度。
     const auto idleShare = inactive ? budget / 4 / inactive : 0;
     auto remaining = budget;
+    qsizetype retained = 0;
     for (const auto &document : std::as_const(documents))
     {
         if (document.preview && document.preview.get() != active)
         {
-            document.preview->setCacheLimitKiB(qMin(idleShare, document.preview->cachedKiB()));
-            remaining -= document.preview->cachedKiB();
+            remaining -= document.preview->setCacheLimitKiB(qMin(idleShare, document.preview->cachedKiB()));
+            retained += document.preview->cachedKiB();
         }
     }
     if (active)
     {
-        active->setCacheLimitKiB(remaining);
+        remaining -= active->setCacheLimitKiB(remaining);
+        retained += active->cachedKiB();
     }
-    const auto retained = budget - remaining + (active ? active->cachedKiB() : 0);
     ui->canvasInfo->setToolTip(tr("所有工程的贴图缓存：%1 MiB / 自动预算 %2 MiB")
-        .arg((retained + 1023) / 1024).arg(budget / 1024));
+        .arg(QLocale().toString(retained / 1024.0, 'f', 1))
+        .arg(QLocale().toString((budget - remaining) / 1024.0, 'f', 1)));
 }
 
 void MainWindow::setupPreviewSession()
@@ -710,7 +712,8 @@ void MainWindow::receiveEditorReply(const QJsonObject &reply)
         if (operation == "preview")
         {
             const QSize tile(reply["tileWidth"].toInt(), reply["tileHeight"].toInt());
-            auto preview = PreviewImage::openMosaic(std::move(files), grid, tile, image);
+            auto preview = PreviewImage::openMosaic(std::move(files), grid, tile, image,
+                                                    reply["distinctTiles"].toInteger(-1));
             ok = bool(preview);
             if (ok)
             {

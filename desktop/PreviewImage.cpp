@@ -13,7 +13,7 @@
 #include <utility>
 
 std::shared_ptr<PreviewImage> PreviewImage::openMosaic(std::shared_ptr<QTemporaryDir> directory, QSize grid,
-                                                        QSize tileSize, QPixmap overview)
+                                                        QSize tileSize, QPixmap overview, qint64 distinctTiles)
 {
     const qint64 width = qint64(grid.width()) * tileSize.width();
     const qint64 height = qint64(grid.height()) * tileSize.height();
@@ -30,6 +30,7 @@ std::shared_ptr<PreviewImage> PreviewImage::openMosaic(std::shared_ptr<QTemporar
     auto image = std::make_shared<PreviewImage>();
     image->dimensions = {int(width), int(height)};
     image->grid = grid;
+    image->tileCount = distinctTiles < 0 ? cells : qMin(cells, distinctTiles);
     image->tileSize = tileSize;
     image->overview = std::move(overview);
     image->tileKeys = std::move(keys);
@@ -55,15 +56,34 @@ std::shared_ptr<PreviewImage> PreviewImage::openPyramid(std::shared_ptr<QTempora
     auto image = std::make_shared<PreviewImage>();
     image->dimensions = size;
     image->tileSize = {edge, edge};
-    image->topLevel = int(mosaicraft::deepZoomLevels(size.width(), size.height()).size()) - 1;
+    const auto levels = mosaicraft::deepZoomLevels(size.width(), size.height());
+    image->topLevel = int(levels.size()) - 1;
+    for (const auto &level : levels)
+    {
+        image->tileCount += level.files();
+    }
     image->directory = std::move(directory);
     return image;
+}
+
+qsizetype PreviewImage::setCacheLimitKiB(qsizetype limit)
+{
+    // 素材重复引用不会增加解码工作集；金字塔边缘块按完整块估算上界。
+    const quint64 tileKiB = (quint64(tileSize.width()) * tileSize.height() + 255) / 256;
+    if (tileKiB && tileCount <= quint64(limit) / tileKiB)
+    {
+        limit = qsizetype(tileCount * tileKiB);
+    }
+    tiles.setMaxCost(limit);
+    return limit;
 }
 
 bool PreviewImage::replaceTile(int position, quint32 key, QPixmap newOverview)
 {
     if (!isMosaic() || position < 0 || position >= tileKeys.size() / qsizetype(sizeof(key)) || newOverview.isNull())
         return false;
+    // 新素材可能扩大工作集；worker 的 key 顺序分配，已存在的素材不会增加估值。
+    tileCount = qMin<quint64>(tileKeys.size() / sizeof(key), qMax(tileCount, quint64(key)));
     std::memcpy(tileKeys.data() + qsizetype(position) * sizeof(key), &key, sizeof(key));
     overview = std::move(newOverview);
     return true;
