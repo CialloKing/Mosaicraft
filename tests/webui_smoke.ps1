@@ -889,7 +889,10 @@ try {
     Assert-True ($null -ne $missing) 'purge fixture is missing'
     Move-Item -LiteralPath $missing.FullName -Destination (Join-Path $outputDir 'missing-for-purge')
     $purge = (Invoke-Api -Method 'POST' -Path '/api/db/purge' -Body @{ dbPath = $dbPath; dryRun = $true }).purge
-    Assert-True ($purge.orphanCount -eq 1 -and $purge.orphanPreview[0].filePath -eq $missing.FullName) 'purge preview must identify only the missing asset'
+    # macOS may expose the same temporary directory through /var and /private/var.
+    Assert-True ($purge.orphanCount -eq 1) "purge preview expected one missing asset, got $($purge.orphanCount)"
+    $purgePath = $purge.orphanPreview[0].filePath
+    Assert-True ([IO.Path]::IsPathFullyQualified($purgePath) -and [IO.Path]::GetFileName($purgePath) -ceq $missing.Name) "purge preview returned the wrong asset: $purgePath"
     Assert-True (($purge.orphanPreview[0].PSObject.Properties.Name | Sort-Object) -join ',' -eq 'filePath,id') 'purge preview contains obsolete feature paths'
     Invoke-Api -Method "DELETE" -Path "/api/jobs" | Out-Null
     Write-Host "Web UI/API smoke passed: $script:BaseUrl"
