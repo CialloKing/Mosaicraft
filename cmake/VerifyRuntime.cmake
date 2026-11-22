@@ -5,6 +5,8 @@ function(verify_runtime root host suffix)
         set(ENV{PATH} "$ENV{WINDIR}/System32;$ENV{WINDIR}")
         return()
     endif()
+    # Compare canonical paths on both sides: macOS temporary roots may start with /var, a link to /private/var.
+    file(REAL_PATH "${root}" root)
     set(ENV{PATH} "/usr/bin:/bin:/usr/sbin:/sbin")
     set(ENV{LD_PRELOAD} "")
     set(ENV{LD_LIBRARY_PATH} "")
