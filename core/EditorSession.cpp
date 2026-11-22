@@ -1,23 +1,31 @@
 #include "EditorSession.h"
-#include "core/PreviewCandidates.h"
-#include "core/ApiJson.h"
-#include "core/ApiRequestParser.h"
-#include "core/BrightnessAdjustment.h"
-#include "core/ImageCache.h"
-#include "core/MosaicPlanning.h"
-#include "core/MosaicSelection.h"
-#include "core/UnicodeIO.h"
+
+#include "ApiJson.h"
+#include "ApiRequestParser.h"
+#include "Base64.h"
+#include "BrightnessAdjustment.h"
+#include "ImageCache.h"
+#include "LibraryMaintenance.h"
+#include "MosaicPlanning.h"
+#include "MosaicSelection.h"
+#include "PreviewCandidates.h"
+#include "TileCompositor.h"
+#include "UnicodeIO.h"
+
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <array>
 #include <climits>
+#include <fstream>
 #include <iostream>
 #include <random>
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
 
-using namespace mosaicraft;
+namespace mosaicraft
+{
 using nlohmann::json;
 
 namespace
@@ -55,24 +63,6 @@ FileStamp fileStamp(const std::string &path)
 std::array<FileStamp, 3> inputStamps(const MosaicRequest &request, const MosaicSelection &selection)
 {
     return {fileStamp(request.inputPath), fileStamp(selection.dbPath), fileStamp(selection.dbPath + "-wal")};
-}
-
-std::string encodeBase64(const std::vector<unsigned char> &bytes)
-{
-    constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string output;
-    output.reserve((bytes.size() + 2) / 3 * 4);
-    for (size_t offset = 0; offset < bytes.size(); offset += 3)
-    {
-        const unsigned first = bytes[offset];
-        const unsigned second = offset + 1 < bytes.size() ? bytes[offset + 1] : 0;
-        const unsigned third = offset + 2 < bytes.size() ? bytes[offset + 2] : 0;
-        output += alphabet[first >> 2];
-        output += alphabet[((first & 3) << 4) | (second >> 4)];
-        output += offset + 1 < bytes.size() ? alphabet[((second & 15) << 2) | (third >> 6)] : '=';
-        output += offset + 2 < bytes.size() ? alphabet[third & 63] : '=';
-    }
-    return output;
 }
 
 std::string encodeImage(const cv::Mat &image)
@@ -134,10 +124,14 @@ int boundary(int cell, int cells, int pixels)
 
 struct EditorFrame
 {
-    cv::Mat image, reference;
+    cv::Mat image, reference, nativeReference;
+    std::filesystem::path directory;
+    cv::Size tileSize;
+    MosaicEngine::Config renderConfig;
+    std::unordered_map<int, uint32_t> sharedTiles;
+    uint32_t nextTile = 0;
 
-    void paint(const MosaicSelection &selection, const MosaicEngine::Config &config, size_t position,
-               ImageCache &cache)
+    void paintOverview(const MosaicSelection &selection, size_t position, ImageCache &cache)
     {
         const auto column = static_cast<int>(position % selection.columns);
         const auto row = static_cast<int>(position / selection.columns);
@@ -158,13 +152,13 @@ struct EditorFrame
             if (auto pixels = cache.getShared(id, asset->second.path, region.width, region.height))
             {
                 pixels->copyTo(tile);
-                if (config.colorAdjust)
+                if (renderConfig.colorAdjust)
                 {
-                    detail::adjustBrightnessAt(tile, config.colorStrength, config.seed.value_or(0), position);
+                    detail::adjustBrightnessAt(tile, renderConfig.colorStrength, renderConfig.seed.value_or(0), position);
                 }
-                if (config.overlayStrength > 0)
+                if (!reference.empty())
                 {
-                    cv::addWeighted(tile, 1 - config.overlayStrength, reference(region), config.overlayStrength, 0, tile);
+                    cv::addWeighted(tile, 1 - renderConfig.overlayStrength, reference(region), renderConfig.overlayStrength, 0, tile);
                 }
                 return;
             }
@@ -172,22 +166,85 @@ struct EditorFrame
         tile.setTo(cv::Scalar());
     }
 
-    void compose(const MosaicSelection &selection, MosaicEngine::Config config, ImageCache &cache)
+    uint32_t writeTile(const MosaicSelection &selection, size_t position, ImageCache &cache)
     {
-        orientOutputTile(config, selection.featureWidth, selection.featureHeight);
-        const double width = double(config.nativeTileW) * selection.columns;
-        const double height = double(config.nativeTileH) * selection.rows;
-        const double scale = std::min(1.0, previewEdge / std::max(width, height));
+        const int id = selection.imageIds[position];
+        const auto asset = selection.assets.find(id);
+        if (asset == selection.assets.end()) return 0;
+        const bool shared = !renderConfig.colorAdjust && nativeReference.empty();
+        if (shared)
+        {
+            const auto previous = sharedTiles.find(id);
+            if (previous != sharedTiles.end()) return previous->second;
+        }
+        const auto native = cache.getShared(id, asset->second.path, tileSize.width, tileSize.height);
+        if (!native) return 0;
+        auto pixels = shared ? *native : native->clone();
+        if (renderConfig.colorAdjust)
+            detail::adjustBrightnessAt(pixels, renderConfig.colorStrength, renderConfig.seed.value_or(0), position);
+        if (!nativeReference.empty())
+        {
+            cv::Mat targetTile;
+            TileCompositor(nativeReference, selection.columns, selection.rows, tileSize).sample(position, targetTile);
+            cv::addWeighted(pixels, 1 - renderConfig.overlayStrength, targetTile, renderConfig.overlayStrength, 0, pixels);
+        }
+        const auto key = ++nextTile;
+        const auto file = pathToUtf8(directory / (std::to_string(key) + ".png"));
+        if (!key || !imwriteUnicode(file, pixels, {cv::IMWRITE_PNG_COMPRESSION, 1}))
+            throw std::runtime_error("cannot write original-size preview tile");
+        if (shared) sharedTiles.emplace(id, key);
+        return key;
+    }
+
+    void compose(const MosaicSelection &selection, const MosaicRequest &request, const PreviewWorkspace &workspace,
+                 std::filesystem::path files, ImageCache &cache)
+    {
+        if (!std::filesystem::is_directory(files) || !std::filesystem::is_empty(files))
+            throw std::invalid_argument("editor preview requires an empty temporary directory");
+        directory = std::move(files);
+        renderConfig = request.config;
+        orientOutputTile(renderConfig, selection.featureWidth, selection.featureHeight);
+        tileSize = {renderConfig.nativeTileW, renderConfig.nativeTileH};
+        const auto width = int64_t(tileSize.width) * selection.columns;
+        const auto height = int64_t(tileSize.height) * selection.rows;
+        if (width <= 0 || height <= 0 || width > INT_MAX || height > INT_MAX)
+            throw std::invalid_argument("editor preview dimensions exceed INT_MAX");
+        if (renderConfig.overlayStrength > 0)
+        {
+            nativeReference = workspace.target;
+            if (nativeReference.empty())
+            {
+                nativeReference = imreadUnicode(request.inputPath, cv::IMREAD_COLOR);
+                TargetGeometry geometry;
+                std::string error;
+                if (nativeReference.empty() || !resolveTargetGeometry(nativeReference.cols, nativeReference.rows,
+                                                                      renderConfig, geometry, error))
+                    throw std::runtime_error("cannot prepare the editor overlay reference");
+                resizeTarget(nativeReference, geometry);
+            }
+            padTarget(nativeReference, renderConfig, selection.columns, selection.rows);
+        }
+
+        // The GUI reads native tiles when zoomed in. Only the fit overview is reduced.
+        std::ofstream index(directory / "cells.bin", std::ios::binary);
+        index.exceptions(std::ios::failbit | std::ios::badbit);
+        for (size_t position = 0; position < selection.imageIds.size(); ++position)
+        {
+            const auto key = writeTile(selection, position, cache);
+            index.write(reinterpret_cast<const char *>(&key), sizeof(key));
+        }
+        index.close();
+        const double scale = std::min(1.0, double(previewEdge) / std::max(width, height));
         const cv::Size size(std::max(1, cvRound(width * scale)), std::max(1, cvRound(height * scale)));
         image.create(size, CV_8UC3);
-        cv::resize(cv::imdecode(selection.referenceJpeg, cv::IMREAD_COLOR), reference, size, 0, 0, cv::INTER_LINEAR);
+        if (!nativeReference.empty()) cv::resize(nativeReference, reference, size, 0, 0, cv::INTER_AREA);
         for (int top = 0; top < size.height;)
         {
             const int row = static_cast<int>(int64_t(top) * selection.rows / size.height);
             for (int left = 0; left < size.width;)
             {
                 const int column = static_cast<int>(int64_t(left) * selection.columns / size.width);
-                paint(selection, config, size_t(row) * selection.columns + column, cache);
+                paintOverview(selection, size_t(row) * selection.columns + column, cache);
                 left = boundary(column + 1, selection.columns, size.width);
             }
             top = boundary(row + 1, selection.rows, size.height);
@@ -201,6 +258,10 @@ public:
     json dispatch(const json &payload)
     {
         const auto operation = payload.at("op").get<std::string>();
+        if (operation == "maintain-library")
+        {
+            return maintainDesktopLibrary(payload);
+        }
         if (operation == "preview")
         {
             auto nextRequest = parseEditorRequest(payload);
@@ -243,10 +304,12 @@ public:
             }
             EditorFrame nextFrame;
             auto nextCache = std::make_unique<ImageCache>(64ULL * 1024 * 1024);
-            nextFrame.compose(nextSelection, nextRequest.config, *nextCache);
+            nextFrame.compose(nextSelection, nextRequest, nextWorkspace,
+                              u8path(payload.at("previewDirectory").get<std::string>()), *nextCache);
             auto response = json{{"ok", true}, {"image", encodeImage(nextFrame.image)},
                                  {"reference", encodeBase64(nextSelection.referenceJpeg)}, {"seed", seed},
                                  {"columns", nextSelection.columns}, {"rows", nextSelection.rows},
+                                 {"tileWidth", nextFrame.tileSize.width}, {"tileHeight", nextFrame.tileSize.height},
                                  {"layout", layout}};
             selection = std::move(nextSelection);
             request = std::move(nextRequest);
@@ -270,9 +333,29 @@ public:
         }
         if (operation == "replace")
         {
-            const auto position = replaceAsset(selection, payload);
-            frame.paint(selection, request.config, position, *cache);
-            return {{"ok", true}, {"image", encodeImage(frame.image)}, {"imageId", selection.imageIds[position]}};
+            const auto position = readPosition(payload, selection);
+            const auto previousId = selection.imageIds[position];
+            const auto previousIndex = selection.indices[position];
+            const auto previousEdits = selection.manualEdits;
+            replaceAsset(selection, payload);
+            auto oldOverview = frame.image;
+            try
+            {
+                const auto key = frame.writeTile(selection, position, *cache);
+                if (!key) throw std::runtime_error("cannot read replacement preview tile");
+                frame.image = oldOverview.clone();
+                frame.paintOverview(selection, position, *cache);
+                return {{"ok", true}, {"image", encodeImage(frame.image)}, {"tileKey", key},
+                        {"imageId", selection.imageIds[position]}};
+            }
+            catch (...)
+            {
+                selection.imageIds[position] = previousId;
+                selection.indices[position] = previousIndex;
+                selection.manualEdits = previousEdits;
+                frame.image = std::move(oldOverview);
+                throw;
+            }
         }
         if (operation == "candidates")
         {
@@ -354,3 +437,4 @@ int runEditorSession(std::istream &input, std::ostream &output)
     }
     return 0;
 }
+} // namespace mosaicraft

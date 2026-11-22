@@ -9,11 +9,12 @@
 ```powershell
 # 新构建目录默认通用配置
 $env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5'
-cmake --preset windows-cuda
+cmake --preset windows-x64 -B build/windows-x64-cuda -DMOSAICRAFT_CUDA=ON
 # 开发者可只构建 RTX 30；保留原参数形式
-cmake --preset windows-cuda -B build/rtx30 -DCUDA_ARCH=sm_86
+cmake --preset windows-x64 -B build/rtx30 -DMOSAICRAFT_CUDA=ON -DCUDA_ARCH=sm_86
 # 覆盖旧目录中的 sm_89 缓存（PowerShell 需要引号保护分号）
-cmake --preset windows-cuda "-DCUDA_ARCH=sm_75;sm_80;sm_86;sm_89;sm_90;sm_100;sm_120"
+cmake --preset windows-x64 -B build/windows-x64-cuda -DMOSAICRAFT_CUDA=ON "-DCUDA_ARCH=sm_75;sm_80;sm_86;sm_89;sm_90;sm_100;sm_120"
+cmake --build build/windows-x64-cuda --config Release
 ```
 
 CUDA_ARCH 去重并按计算能力排序；每个原生目标同时生成对应 PTX，驱动在 JIT 时选择匹配的虚拟架构。四个手动 nvcc 命令共享生成参数，架构/编译器配置文件是对象依赖；变更目标会重新编译全部四个模块。非法目标在配置时失败。兼容评分仍关闭 FMA 并保留精确除法/平方根、非 FTZ 参数，模板算法与其原编译选项不变。

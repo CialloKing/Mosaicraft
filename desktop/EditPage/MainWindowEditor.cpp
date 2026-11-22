@@ -1,10 +1,12 @@
 #include "CanvasImageItem.h"
+#include "DimensionEdit.h"
 #include "MainWindow.h"
+#include "PreviewImage.h"
 #include "ui_MainWindow.h"
 
+#include <QAbstractButton>
 #include <QApplication>
 #include <QCache>
-#include <QDir>
 #include <QFileInfo>
 #include <QGraphicsScene>
 #include <QJsonDocument>
@@ -12,6 +14,7 @@
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QProcess>
+#include <QRegularExpressionValidator>
 #include <QSignalBlocker>
 #include <QStyledItemDelegate>
 #include <QTemporaryDir>
@@ -65,14 +68,11 @@ QPixmap replyPixmap(const QJsonObject &reply, const QString &member)
     return image;
 }
 
-void addImage(QGraphicsScene *scene, const QPixmap &pixmap, const QRectF &area)
+void addImage(QGraphicsScene *scene, CanvasImageItem *item, const QRectF &area)
 {
-    if (!pixmap.isNull())
-    {
-        auto item = new CanvasImageItem(pixmap);
-        scene->addItem(item);
-        item->setTransform(QTransform::fromScale(area.width() / pixmap.width(), area.height() / pixmap.height()));
-    }
+    scene->addItem(item);
+    const auto size = item->boundingRect().size();
+    item->setTransform(QTransform::fromScale(area.width() / size.width(), area.height() / size.height()));
     scene->setSceneRect(area);
 }
 
@@ -88,11 +88,105 @@ void markCurrentCandidate(QListWidget *list, int imageId)
     }
     list->setCurrentItem(current);
 }
+
+void recordRatio(DimensionEdit *width, DimensionEdit *height, QAbstractButton *lock)
+{
+    lock->setProperty("aspectRatio", double(width->value()) / height->value());
 }
 
-bool MainWindow::busy() const
+void connectRatio(DimensionEdit *width, DimensionEdit *height, QAbstractButton *lock)
 {
-    return job.type != Job::None || !editorOperation.isEmpty();
+    QObject::connect(lock, &QAbstractButton::toggled, lock, [=](bool enabled) {
+        if (enabled) recordRatio(width, height, lock);
+    });
+    const auto link = [lock](DimensionEdit *source, DimensionEdit *other, bool fromWidth) {
+        QObject::connect(source, &DimensionEdit::valueChanged, lock, [=](int value) {
+            if (!lock->isChecked()) return;
+            const auto ratio = lock->property("aspectRatio").toDouble();
+            const double scale = fromWidth ? 1 / ratio : ratio;
+            const QSignalBlocker blockSource(source);
+            const QSignalBlocker blockOther(other);
+            const int bounded = qMax(DimensionEdit::minimum, int(qMin(double(value), DimensionEdit::maximum / scale)));
+            if (bounded != value) source->setValue(bounded);
+            other->setValue(qRound(qMin(double(DimensionEdit::maximum), source->value() * scale)));
+        });
+    };
+    recordRatio(width, height, lock);
+    link(width, height, true);
+    link(height, width, false);
+}
+}
+
+void MainWindow::setupEditor()
+{
+    ui->editorSplitter->setStretchFactor(0, 1);
+    ui->editorSplitter->setSizes({1060, 370});
+    ui->editorImageView->setScene(canvasScene);
+    ui->compareImageView->setScene(compareScene);
+    ui->compareSplitter->setStretchFactor(0, 1);
+    ui->compareSplitter->setStretchFactor(1, 1);
+    for (auto view : {ui->editorImageView, ui->compareImageView})
+    {
+        view->viewport()->installEventFilter(this);
+        view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        view->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        view->setTransformationAnchor(QGraphicsView::NoAnchor);
+        view->setResizeAnchor(QGraphicsView::NoAnchor);
+        view->viewport()->setCursor(Qt::OpenHandCursor);
+    }
+    ui->seedEdit->setValidator(new QRegularExpressionValidator(QRegularExpression("[0-9]{0,10}"), ui->seedEdit));
+    ui->scoreMode->setItemData(0, QStringLiteral("fast"));
+    ui->scoreMode->setItemData(1, QStringLiteral("compatible"));
+
+    connectRatio(ui->targetWidth, ui->targetHeight, ui->targetLock);
+    connectRatio(ui->matchWidth, ui->matchHeight, ui->matchLock);
+    connectRatio(ui->tileWidth, ui->tileHeight, ui->tileLock);
+    fields = {ui->matchWidth, ui->matchHeight, ui->matchLock, ui->targetWidth, ui->targetHeight, ui->targetLock,
+              ui->tileWidth, ui->tileHeight, ui->tileLock, ui->candidates, ui->randomTop, ui->lightnessRange,
+              ui->scoreMode, ui->seedEdit, ui->labWeight, ui->gridWeight, ui->tinyWeight, ui->edgeWeight,
+              ui->neighborWindow, ui->neighborPenalty, ui->reusePenalty, ui->adaptiveWeights};
+
+    connect(ui->projectTabs, &QTabBar::currentChanged, this, &MainWindow::showDocument);
+    connect(ui->projectTabs, &QTabBar::tabCloseRequested, this, &MainWindow::closeDocument);
+    connect(ui->newTabButton, &QToolButton::clicked, this, &MainWindow::newDocument);
+    connect(ui->generatePreviewButton, &QPushButton::clicked, this, &MainWindow::generatePreview);
+    connect(ui->targetModeButton, &QToolButton::clicked, this, [this] { setViewMode(ViewMode::Target); });
+    connect(ui->resultModeButton, &QToolButton::clicked, this, [this] { setViewMode(ViewMode::Result); });
+    connect(ui->compareModeButton, &QToolButton::clicked, this, [this] { setViewMode(ViewMode::Compare); });
+    connect(ui->inspectorTabs, &QTabWidget::currentChanged, this, [this] {
+        if (activeDocument >= 0 && ui->inspectorTabs->currentWidget() == ui->candidatesTab &&
+            documents[activeDocument].view == ViewMode::Target && ui->resultModeButton->isEnabled())
+        {
+            setViewMode(ViewMode::Result);
+        }
+        refreshCanvas(true);
+    });
+    connect(ui->candidateList, &QListWidget::itemClicked, this, &MainWindow::replaceTile);
+    connect(ui->zoomPicker, &QComboBox::activated, this, [this](int index) {
+        if (index == 0)
+        {
+            fitCanvas();
+        }
+        else
+        {
+            setZoom(ui->zoomPicker->itemText(index).chopped(1).toDouble() / 100, false);
+        }
+    });
+    connect(ui->zoomPicker->lineEdit(), &QLineEdit::returnPressed, this, [this] {
+        auto value = ui->zoomPicker->currentText().trimmed();
+        if (value.endsWith('%')) value.chop(1);
+        bool ok = false;
+        const auto percent = QLocale().toDouble(value, &ok);
+        if (ok && percent > 0) setZoom(percent / 100, false);
+        else fitCanvas();
+    });
+}
+
+void MainWindow::updateEditorAspectRatios()
+{
+    recordRatio(ui->targetWidth, ui->targetHeight, ui->targetLock);
+    recordRatio(ui->matchWidth, ui->matchHeight, ui->matchLock);
+    recordRatio(ui->tileWidth, ui->tileHeight, ui->tileLock);
 }
 
 bool MainWindow::previewCurrent() const
@@ -109,7 +203,7 @@ void MainWindow::updateEditorControls()
     const auto document = activeDocument < 0 ? nullptr : &documents[activeDocument];
     const bool open = document && QFileInfo(document->target).isFile();
     const bool available = !busy();
-    const bool hasResult = open && (!document->preview.isNull() || !document->resultImage.isEmpty());
+    const bool hasResult = open && (document->preview || !document->resultImage.isEmpty());
     const bool portable = document && !document->manifest.isEmpty();
     const bool canReplace = open && !portable && previewCurrent();
     ui->actionNew->setEnabled(available);
@@ -162,12 +256,6 @@ void MainWindow::updateEditorControls()
     ui->candidateTitle->setText(tile < 0 ? tr("当前选格")
         : tr("第 %1 行 · 第 %2 列").arg(tile / document->previewGrid.width() + 1)
                                   .arg(tile % document->previewGrid.width() + 1));
-    ui->exportControls->setEnabled(open && available);
-    ui->importAssetsButton->setEnabled(available);
-    ui->chooseLibraryButton->setEnabled(available);
-    ui->reloadLibraryButton->setEnabled(available && !catalog.databasePath.isEmpty());
-    ui->useLibraryButton->setEnabled(available && open && !portable && !catalog.databasePath.isEmpty());
-    ui->exportSelectedButton->setEnabled(available && !selectedAssets.isEmpty());
 }
 
 void MainWindow::setViewMode(ViewMode mode)
@@ -187,12 +275,14 @@ void MainWindow::refreshCanvas(bool preserveView)
     const bool comparing = mode == ViewMode::Compare;
     const bool changing = ui->compareImageView->isHidden() == comparing;
 
-    QPixmap left, right;
+    QPixmap left, output;
+    std::shared_ptr<PreviewImage> preview;
     if (document)
     {
         if (mode != ViewMode::Target)
         {
-            right = document->preview.isNull() ? loadPreviewImage(document->resultImage, {4096, 4096}) : document->preview;
+            preview = document->preview;
+            if (!preview) output = loadPreviewImage(document->resultImage, {});
         }
         if (mode == ViewMode::Target || comparing)
         {
@@ -200,8 +290,9 @@ void MainWindow::refreshCanvas(bool preserveView)
                                                                : loadPreviewImage(document->target, {4096, 4096});
         }
     }
-    const auto &primary = mode == ViewMode::Result ? right : left;
-    const bool ready = !primary.isNull() && (!comparing || !right.isNull());
+    const auto resultSize = preview ? preview->size() : output.size();
+    const bool ready = mode == ViewMode::Result ? !resultSize.isEmpty()
+                       : !left.isNull() && (!comparing || !resultSize.isEmpty());
     ui->canvasViews->setCurrentIndex(ready ? 1 : 0);
     ui->compareImageView->setVisible(comparing && ready);
     ui->zoomPicker->setEnabled(ready);
@@ -215,12 +306,13 @@ void MainWindow::refreshCanvas(bool preserveView)
         return;
     }
 
-    const QRectF area(QPointF{}, comparing ? right.size() : primary.size());
-    addImage(canvasScene, primary, area);
+    const QRectF area(QPointF{}, mode == ViewMode::Target ? left.size() : resultSize);
+    const auto resultItem = [&] { return preview ? new CanvasImageItem(preview) : new CanvasImageItem(output); };
+    addImage(canvasScene, mode == ViewMode::Result ? resultItem() : new CanvasImageItem(left), area);
     auto resultScene = canvasScene;
     if (comparing)
     {
-        addImage(compareScene, right, area);
+        addImage(compareScene, resultItem(), area);
         resultScene = compareScene;
         if (changing)
         {
@@ -271,7 +363,7 @@ void MainWindow::setZoom(qreal factor, bool fit)
 {
     if (ui->canvasViews->currentIndex() != 1) return;
     fitView = fit;
-    zoom = qBound(0.001, factor, 16.0);
+    zoom = qBound(0.000000001, factor, 16.0);
     const QSignalBlocker block(ui->zoomPicker);
     ui->zoomPicker->setEditText(QLocale().toString(zoom * 100, 'f', 2) + "%");
     placeCanvas();
@@ -293,7 +385,7 @@ void MainWindow::placeCanvas()
     }
 }
 
-bool MainWindow::eventFilter(QObject *object, QEvent *event)
+bool MainWindow::handleCanvasEvent(QObject *object, QEvent *event)
 {
     QGraphicsView *view = nullptr;
     if (object == ui->editorImageView->viewport()) view = ui->editorImageView;
@@ -308,14 +400,10 @@ bool MainWindow::eventFilter(QObject *object, QEvent *event)
                 else placeCanvas();
             });
         }
-        else if (object == ui->exportPreview && !exportImage.isNull())
-        {
-            showExportImage();
-        }
     }
     if (!view || ui->canvasViews->currentIndex() != 1 || !view->isEnabled())
     {
-        return QMainWindow::eventFilter(object, event);
+        return false;
     }
     switch (event->type())
     {
@@ -325,7 +413,7 @@ bool MainWindow::eventFilter(QObject *object, QEvent *event)
         const auto factor = std::pow(1.25, wheel->angleDelta().y() / 120.0);
         const auto point = wheel->position().toPoint();
         const auto focus = view->mapToScene(point);
-        const auto next = qBound(0.001, zoom * factor, 16.0);
+        const auto next = qBound(0.000000001, zoom * factor, 16.0);
         const auto delta = QPointF(point) - QPointF(view->viewport()->rect().center());
         canvasCenter = focus - delta / next;
         setZoom(next, false);
@@ -373,7 +461,7 @@ bool MainWindow::eventFilter(QObject *object, QEvent *event)
     default:
         break;
     }
-    return QMainWindow::eventFilter(object, event);
+    return false;
 }
 
 void MainWindow::selectTile(QGraphicsView *view, const QPoint &point)
@@ -382,7 +470,8 @@ void MainWindow::selectTile(QGraphicsView *view, const QPoint &point)
     auto &document = documents[activeDocument];
     if (document.view == ViewMode::Target || (document.view == ViewMode::Compare && view != ui->compareImageView)) return;
     const auto pixel = view->mapToScene(point);
-    const auto size = document.preview.size();
+    if (!document.preview) return;
+    const auto size = document.preview->size();
     if (pixel.x() < 0 || pixel.y() < 0 || pixel.x() >= size.width() || pixel.y() >= size.height()) return;
     const auto grid = document.previewGrid;
     const int column = int(qint64(pixel.x()) * grid.width() / size.width());
@@ -410,28 +499,47 @@ void MainWindow::generatePreview()
     if (busy() || activeDocument < 0) return;
     auto &document = documents[activeDocument];
     if (!QFileInfo(document.target).isFile()) return;
-    if (!document.manifest.isEmpty())
+    if (!previewFiles) previewFiles = std::make_unique<QTemporaryDir>();
+    if (previewFiles->isValid())
     {
-        if (!previewFiles) previewFiles = std::make_unique<QTemporaryDir>();
-        if (!previewFiles->isValid())
-        {
-            QMessageBox::warning(this, windowTitle(), tr("无法创建预览文件目录。"));
-            return;
-        }
-        const auto path = previewFiles->filePath(QString("preview-%1.png").arg(document.id));
-        runJob(Job::PortablePreview, buildExportArgs(document, path, true), path);
+        pendingPreview = std::make_shared<QTemporaryDir>(previewFiles->filePath("preview-XXXXXX"));
+    }
+    if (!pendingPreview || !pendingPreview->isValid())
+    {
+        pendingPreview.reset();
+        QMessageBox::warning(this, windowTitle(), tr("无法创建预览文件目录。"));
         return;
     }
-    if (document.library.isEmpty() && !catalog.databasePath.isEmpty())
+    if (!document.manifest.isEmpty())
     {
-        document.library = catalog.databasePath;
-        document.dirty = true;
-        updateSummaries();
-        updateTab();
+        const auto path = pendingPreview->filePath("pyramid");
+        runJob(Job::PortablePreview, buildExportArgs(document, path, true), path);
+        if (!busy()) pendingPreview.reset();
+        return;
     }
     sendEditorRequest({{"op", "preview"},
                        {"request", buildEditorRequest(document, previewName, true)},
+                       {"previewDirectory", pendingPreview->path()},
                        {"layout", document.layout}, {"edits", document.edits}});
+    if (!busy()) pendingPreview.reset();
+}
+
+bool MainWindow::finishPortablePreview(const JobState &completed, bool ok, QString &message)
+{
+    auto files = std::exchange(pendingPreview, {});
+    auto preview = ok ? PreviewImage::openPyramid(std::move(files)) : nullptr;
+    if (!preview)
+    {
+        if (ok) message = tr("无法读取生成的预览图。");
+        return false;
+    }
+
+    auto &document = documents[completed.documentIndex];
+    document.preview = std::move(preview);
+    document.view = ViewMode::Result;
+    refreshCanvas();
+    refreshExportPreview();
+    return true;
 }
 
 void MainWindow::setupPreviewSession()
@@ -463,23 +571,6 @@ void MainWindow::setupPreviewSession()
     connect(editor, &QProcess::finished, this, [this] {
         editorDisconnected(tr("预览进程已结束。请确认桌面匹配程序与当前版本配套。"));
     });
-}
-
-QString MainWindow::resolveEditorWorker() const
-{
-#ifdef Q_OS_WIN
-    const auto name = QStringLiteral("mosaicraft_desktop_worker.exe");
-#else
-    const auto name = QStringLiteral("mosaicraft_desktop_worker");
-#endif
-    const auto cli = resolveCli();
-    if (!cli.isEmpty())
-    {
-        const QFileInfo besideCli(QFileInfo(cli).dir().filePath(name));
-        if (besideCli.isFile() && besideCli.isExecutable()) return besideCli.absoluteFilePath();
-    }
-    const QFileInfo besideGui(QDir(QCoreApplication::applicationDirPath()).filePath(name));
-    return besideGui.isFile() && besideGui.isExecutable() ? besideGui.absoluteFilePath() : QString{};
 }
 
 void MainWindow::sendEditorRequest(QJsonObject request)
@@ -541,20 +632,33 @@ void MainWindow::receiveEditorReply(const QJsonObject &reply)
         return;
     }
 
-    const auto message = reply["message"].toString(tr("未收到有效的 CLI 结果。"));
+    auto message = reply["message"].toString(tr("未收到有效的 CLI 结果。"));
     bool ok = reply["ok"].toBool();
+    auto files = operation == "preview" ? std::exchange(pendingPreview, {}) : nullptr;
     if (ok && (operation == "preview" || operation == "replace"))
     {
         const auto image = replyPixmap(reply, "image");
-        ok = !image.isNull();
+        const QSize grid(reply["columns"].toInt(), reply["rows"].toInt());
+        if (operation == "preview")
+        {
+            const QSize tile(reply["tileWidth"].toInt(), reply["tileHeight"].toInt());
+            auto preview = PreviewImage::openMosaic(std::move(files), grid, tile, image);
+            ok = bool(preview);
+            if (ok) document.preview = std::move(preview);
+        }
+        else
+        {
+            ok = document.preview && document.preview->replaceTile(request["position"].toInt(-1),
+                quint32(reply["tileKey"].toDouble()), image);
+        }
+        if (!ok) message = tr("无法读取生成的预览图。");
         if (ok)
         {
-            document.preview = image;
             if (operation == "preview")
             {
                 editorOwner = document.id;
                 document.reference = replyPixmap(reply, "reference");
-                document.previewGrid = {reply["columns"].toInt(), reply["rows"].toInt()};
+                document.previewGrid = grid;
                 document.layout = reply["layout"].toString();
                 document.selectedTile = -1;
                 ui->candidateList->clear();
@@ -650,6 +754,7 @@ void MainWindow::editorDisconnected(const QString &error)
     else
     {
         updateEditorControls();
+        updateOutputControls();
     }
 }
 

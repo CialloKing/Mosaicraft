@@ -2,9 +2,11 @@
 
 本页描述当前源码的边界。细节以 contracts.json、cli-options.json 和实现为准；旧版本的逐次演进保留在[历史百科](../archive/releases/encyclopedia.md)。
 
-## 两个入口，共用服务
+## 应用入口与核心服务
 
-CLI 从 src/main.cpp 进入，Web UI 与 HTTP API 从 src/server.cpp 进入；两者复用 core 中的建库、生成、预览、检查和工程服务。CLI 选项定义集中在 cli-options.json，避免命令行和页面重复维护参数定义。HTTP 端点及请求字段见[接口参考](../reference/api.md)。
+CLI 和 Web UI 的入口分别在 `src/main.cpp` 和 `src/server.cpp`。两者复用 `core` 中的建库、生成、预览、检查和工程服务。CLI 选项定义集中在 `cli-options.json`。HTTP 端点及请求字段见[接口参考](../reference/api.md)。
+
+桌面界面和 Qt 适配代码位于 `desktop/`。桌面工作进程的入口为 `src/desktop_worker.cpp`，调用 `core` 中的编辑会话和素材库维护实现。
 
 ## 建库与图库读取
 

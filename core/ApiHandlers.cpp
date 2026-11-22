@@ -1,6 +1,7 @@
 #include "ApiHandlers.h"
 
 #include "ApiJson.h"
+#include "Base64.h"
 #include "BatchProcessor.h"
 #include "MosaicPlanning.h"
 #include "LibraryVisuals.h"
@@ -284,20 +285,7 @@ ApiResponse previewImageNotFound()
 
 std::string jpegDataUrl(const std::vector<unsigned char> &bytes)
 {
-    constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string value = "data:image/jpeg;base64,";
-    value.reserve(value.size() + (bytes.size() + 2) / 3 * 4);
-    for (size_t i = 0; i < bytes.size(); i += 3)
-    {
-        const unsigned left = bytes[i];
-        const unsigned middle = i + 1 < bytes.size() ? bytes[i + 1] : 0;
-        const unsigned right = i + 2 < bytes.size() ? bytes[i + 2] : 0;
-        value += alphabet[left >> 2];
-        value += alphabet[((left & 3) << 4) | (middle >> 4)];
-        value += i + 1 < bytes.size() ? alphabet[((middle & 15) << 2) | (right >> 6)] : '=';
-        value += i + 2 < bytes.size() ? alphabet[right & 63] : '=';
-    }
-    return value;
+    return encodeBase64(bytes, "data:image/jpeg;base64,");
 }
 
 ApiResponse previewQuality(const std::string &body, JobManager &jobs)

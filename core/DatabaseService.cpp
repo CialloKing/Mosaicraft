@@ -104,7 +104,7 @@ DatabaseStatsResult DatabaseService::stats(const DatabaseRequest& request) const
 DatabaseHealthResult DatabaseService::health(const DatabaseRequest& request) const
 {
     DatabaseHealthResult out;
-    Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::Existing);
+    Database db(resolveDbPathForService(request.dbPath), Database::OpenMode::ReadOnly);
     if (!db.isOpen())
     {
         out.status = ServiceResult::failure(2, db.error(), db.errorCode(), "dbPath");

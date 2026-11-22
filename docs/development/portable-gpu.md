@@ -68,7 +68,9 @@
 
 CPU 构建不引入 GPU SDK。Vulkan 使用 1.1 基线，动态加载系统驱动，GLSL 离线编译并嵌入 SPIR-V。Windows 的 `scripts/setup-vulkan.ps1` 固定 Vulkan-Headers 提交及 glslang 16.6.0 下载哈希。Metal 仅在 macOS 使用完整 Xcode 的 metal/metallib 工具离线编译并嵌入，无快速数学和浮点收缩。
 
-新增 presets：`windows-vulkan`、`windows-cuda-vulkan`、`linux-vulkan`、`macos-metal`。新增 `Portable GPU candidates` CI，复用发布、CTest、smoke 和归档校验。`release.ps1 -NoCuda -Vulkan`、`release.ps1 -Vulkan` 或 macOS 的 `release.ps1 -NoCuda -Metal` 均生成 `_candidate` 包，记录 `PortableGpuValidation: not-run` 和 `PortableAutoSelection: disabled`。包状态不能替代本机限定范围的验收记录。
+在平台预设上通过 `-DMOSAICRAFT_VULKAN=ON` 或 `-DMOSAICRAFT_METAL=ON` 开启后端。CUDA 与 Vulkan 的组合再加 `-DMOSAICRAFT_CUDA=ON`。 [GPU 构建参数](building.md#gpu-后端与编译配置)
+
+`Portable GPU candidates` CI 复用发布、CTest、smoke 和归档校验。`release.ps1 -NoCuda -Vulkan`、`release.ps1 -Vulkan` 或 macOS 的 `release.ps1 -NoCuda -Metal` 均生成 `_candidate` 包，记录 `PortableGpuValidation: not-run` 和 `PortableAutoSelection: disabled`。包状态不能替代本机限定范围的验收记录。
 
 使用固定清单复现：
 

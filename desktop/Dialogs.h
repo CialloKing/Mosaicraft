@@ -17,6 +17,5 @@ struct LibraryBuildOptions
     int webpQuality = 0;
 };
 
-bool editSettings(QWidget *parent, QSettings &settings, SettingsPage page);
+bool editSettings(QWidget *parent, QSettings &settings, SettingsPage page, const QString &libraryStatus);
 LibraryBuildOptions libraryBuildOptions(const QSettings &settings);
-void editLibrarySettings(QWidget *parent, QSettings &settings);

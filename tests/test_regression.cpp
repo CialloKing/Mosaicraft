@@ -38,6 +38,7 @@
 #include "../core/ColorOrder.h"
 #include "../core/LibraryColorOrder.h"
 #include "../core/LibraryAccess.h"
+#include "../core/LibraryMaintenance.h"
 #include "../core/OutputPublication.h"
 #include "../core/DeepZoomWriter.h"
 #include "json.hpp"
@@ -285,6 +286,14 @@ TEST_CASE("new libraries reject incompatible structures and remain portable")
     SUBCASE("missing required table")
     {
         REQUIRE(fixtureSql(workspace.dbPath(), "DROP TABLE target_runs") == SQLITE_OK);
+        incompatible = true;
+    }
+    SUBCASE("desktop maintenance rejects a version-1 library without image_features")
+    {
+        REQUIRE(fixtureSql(workspace.dbPath(), "DROP TABLE image_features") == SQLITE_OK);
+        const auto result = maintainDesktopLibrary({{"request", {{"inputDir", ""}, {"outputDir", utf8(workspace.libraryDir())}}}});
+        REQUIRE(result.at("ok") == false);
+        CHECK(result.at("diagnostic").at("code") == "library_incompatible");
         incompatible = true;
     }
     SUBCASE("missing required column")

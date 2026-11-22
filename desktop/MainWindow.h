@@ -1,12 +1,9 @@
 #pragma once
 
-#include "LibraryCatalog.h"
-
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QMainWindow>
 #include <QPixmap>
-#include <QSet>
 #include <QStringList>
 
 #include <memory>
@@ -22,6 +19,7 @@ class QNetworkAccessManager;
 class QProcess;
 class QSettings;
 class QTemporaryDir;
+class PreviewImage;
 
 namespace Ui { class MainWindow; }
 
@@ -33,6 +31,7 @@ public:
     explicit MainWindow(QSettings &settings, QWidget *parent = nullptr);
     ~MainWindow() override;
     bool openPath(const QString &path);
+    void checkLibrary();
     int smokeTest(const QString &captureDirectory);
 
 protected:
@@ -40,10 +39,13 @@ protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dropEvent(QDropEvent *event) override;
     bool eventFilter(QObject *object, QEvent *event) override;
+#ifdef Q_OS_WIN
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
+#endif
 
 private:
-    enum class Workspace { Edit, Export, Library };
-    enum class Job { None, Export, Import, PortablePreview };
+    enum class Workspace { Edit, Export };
+    enum class Job { None, Export, PortablePreview, LibraryCheck };
     enum class ViewMode { Target, Result, Compare };
 
     struct Document
@@ -59,7 +61,8 @@ private:
         QSize projectGrid;
         QSize projectTile;
         QSize previewGrid;
-        QPixmap preview, reference;
+        std::shared_ptr<PreviewImage> preview;
+        QPixmap reference;
         QJsonObject previewRequest;
         QJsonArray edits;
         QString layout;
@@ -80,9 +83,13 @@ private:
     };
 
     void setupMenu();
+#ifdef Q_OS_WIN
+    void setupWindowsTitleBar();
+#endif
     void setupEditor();
     void setupExport();
-    void setupLibrary();
+    void setupDocumentOptions();
+    void setupJobProcess();
     void switchWorkspace(Workspace workspace);
     void newDocument();
     void addDocument(Document document);
@@ -103,9 +110,12 @@ private:
     void fitCanvas();
     void setZoom(qreal factor, bool fit);
     void placeCanvas();
+    bool handleCanvasEvent(QObject *object, QEvent *event);
+    void updateEditorAspectRatios();
     void setupPreviewSession();
     void closePreviewSession();
     void generatePreview();
+    bool finishPortablePreview(const JobState &completed, bool ok, QString &message);
     void selectTile(QGraphicsView *view, const QPoint &point);
     void replaceTile(QListWidgetItem *item);
     void sendEditorRequest(QJsonObject request);
@@ -117,7 +127,6 @@ private:
     void updateSummaries();
     void updateOutputControls();
     void refreshExportPreview();
-    void showExportImage();
     void chooseOutput();
     QString suggestedOutput() const;
     struct ExportOptions;
@@ -128,24 +137,16 @@ private:
     QStringList buildExportArgs(const Document &document, const QString &destination, bool preview = false) const;
     void exportDocument();
     void runExport(const QString &destination);
-    void appendExecutionArgs(QStringList &args, bool useDevice) const;
+    void finishExport(const JobState &completed, bool ok, const QJsonObject &body, const QString &message);
     void runJob(Job type, const QStringList &args, const QString &destination);
     void finishJob(bool processSucceeded, const QString &failure = {});
+    QJsonObject libraryMaintenanceRequest() const;
+    void finishLibraryCheck(bool ok, const QJsonObject &result, const QString &message);
+    QString documentLibrary(const Document &document) const;
     QString resolveCli() const;
     QString resolveEditorWorker() const;
     void showAbout();
     void checkUpdates();
-    void chooseLibrary();
-    bool loadLibrary(const QString &path, bool showError = true);
-    void sortAssets();
-    void renderAssets();
-    const LibraryAsset *activeAsset() const;
-    void updateAssetSelection();
-    void openAsset();
-    QStringList buildLibraryArgs(const QString &source, const QString &destination, bool append) const;
-    void importAssets();
-    void exportSelectedAssets();
-    void useCurrentLibrary();
 
     std::unique_ptr<Ui::MainWindow> ui;
     QSettings &settings;
@@ -155,14 +156,13 @@ private:
     QProcess *process;
     QProcess *editor;
     std::unique_ptr<QTemporaryDir> previewFiles;
+    std::shared_ptr<QTemporaryDir> pendingPreview;
     QList<QWidget *> fields;
     QVector<Document> documents;
     QJsonObject defaultOptions;
-    LibraryCatalog catalog;
-    QSet<qint64> selectedAssets;
+    QString libraryStatus;
     QStringList recentFiles;
     JobState job;
-    QPixmap exportImage;
     QPointF canvasCenter;
     QPoint mouseStart;
     QPointF panStart;

@@ -13,73 +13,23 @@
     </message>
 </context>
 <context>
-    <name>LibraryCatalog</name>
-    <message>
-        <source>不支持此图库版本。请选择由当前版本创建的图库。</source>
-        <translation>This library version is not supported. Choose a library created with the current version.</translation>
-    </message>
-    <message>
-        <source>目录中没有 mosaicraft.db。请先导入素材建库。</source>
-        <translation>No mosaicraft.db was found. Import photos to create a library first.</translation>
-    </message>
-</context>
-<context>
-    <name>LibrarySettingsDialog</name>
-    <message>
-        <source>素材库设置</source>
-        <translation>Library Settings</translation>
-    </message>
-    <message>
-        <source>建库与追加设置</source>
-        <translation>Library Build and Import</translation>
-    </message>
-    <message>
-        <source>仅影响以后导入的素材。追加素材时使用已有图库的归一化尺寸。</source>
-        <translation>Applies to future imports. Existing libraries keep their normalization size.</translation>
-    </message>
-    <message>
-        <source>归一化与扫描</source>
-        <translation>Sizing and Scan</translation>
-    </message>
-    <message>
-        <source>新图库尺寸</source>
-        <translation>New Library Size</translation>
-    </message>
-    <message>
-        <source>归一化宽度</source>
-        <translation>Normalization Width</translation>
-    </message>
-    <message>
-        <source>归一化高度</source>
-        <translation>Normalization Height</translation>
-    </message>
-    <message>
-        <source>递归扫描子目录</source>
-        <translation>Include subfolders</translation>
-    </message>
-    <message>
-        <source>素材编码</source>
-        <translation>Asset Encoding</translation>
-    </message>
-    <message>
-        <source>JPEG 质量</source>
-        <translation>JPEG Quality</translation>
-    </message>
-    <message>
-        <source>PNG 压缩级别</source>
-        <translation>PNG Compression Level</translation>
-    </message>
-    <message>
-        <source>WebP 质量</source>
-        <translation>WebP Quality</translation>
-    </message>
-    <message>
-        <source>无损</source>
-        <translation>Lossless</translation>
-    </message>
-</context>
-<context>
     <name>MainWindow</name>
+    <message>
+        <source>最小化</source>
+        <translation>Minimize</translation>
+    </message>
+    <message>
+        <source>最大化</source>
+        <translation>Maximize</translation>
+    </message>
+    <message>
+        <source>还原</source>
+        <translation>Restore</translation>
+    </message>
+    <message>
+        <source>关闭</source>
+        <translation>Close</translation>
+    </message>
     <message>
         <source>编辑</source>
         <translation>Edit</translation>
@@ -87,10 +37,6 @@
     <message>
         <source>导出</source>
         <translation>Export</translation>
-    </message>
-    <message>
-        <source>素材库</source>
-        <translation>Library</translation>
     </message>
     <message>
         <source>新建工程</source>
@@ -369,10 +315,6 @@
         <translation>Preview</translation>
     </message>
     <message>
-        <source>结果</source>
-        <translation>Result</translation>
-    </message>
-    <message>
         <source>导出摘要 · 素材信息</source>
         <translation>Export Summary and Assets</translation>
     </message>
@@ -399,90 +341,6 @@
     <message>
         <source>计算进度和诊断将显示在这里。</source>
         <translation>Progress and diagnostics appear here.</translation>
-    </message>
-    <message>
-        <source>导入…</source>
-        <translation>Import…</translation>
-    </message>
-    <message>
-        <source>选择</source>
-        <translation>Select</translation>
-    </message>
-    <message>
-        <source>开启多选，随后可导出所选素材的副本</source>
-        <translation>Enable multi-selection to copy selected assets</translation>
-    </message>
-    <message>
-        <source>视图</source>
-        <translation>View</translation>
-    </message>
-    <message>
-        <source>视图：缩略图</source>
-        <translation>View: Thumbnails</translation>
-    </message>
-    <message>
-        <source>视图：列表</source>
-        <translation>View: List</translation>
-    </message>
-    <message>
-        <source>排序方式</source>
-        <translation>Sort By</translation>
-    </message>
-    <message>
-        <source>排序：文件名</source>
-        <translation>Sort: Filename</translation>
-    </message>
-    <message>
-        <source>排序：最近入库</source>
-        <translation>Sort: Date Added</translation>
-    </message>
-    <message>
-        <source>排序：文件大小</source>
-        <translation>Sort: File Size</translation>
-    </message>
-    <message>
-        <source>设置…</source>
-        <translation>Settings…</translation>
-    </message>
-    <message>
-        <source>建库与追加素材设置</source>
-        <translation>Settings for new libraries and imports</translation>
-    </message>
-    <message>
-        <source>用于当前工程</source>
-        <translation>Use for Current Project</translation>
-    </message>
-    <message>
-        <source>将当前图库设为工程的匹配素材来源</source>
-        <translation>Use this library to match tiles in the current project</translation>
-    </message>
-    <message>
-        <source>导出所选…</source>
-        <translation>Export Selected…</translation>
-    </message>
-    <message>
-        <source>将所选素材复制到其他目录</source>
-        <translation>Copy the selected assets to another folder</translation>
-    </message>
-    <message>
-        <source>图库浏览</source>
-        <translation>Browse Library</translation>
-    </message>
-    <message>
-        <source>刷新</source>
-        <translation>Refresh</translation>
-    </message>
-    <message>
-        <source>打开图库…</source>
-        <translation>Open Library…</translation>
-    </message>
-    <message>
-        <source>尚未打开图库。可以打开已有图库，或导入图片目录新建图库。</source>
-        <translation>No library is open. Open a library or import a folder to create one.</translation>
-    </message>
-    <message>
-        <source>0 张素材</source>
-        <translation>0 assets</translation>
     </message>
     <message>
         <source>文件</source>
@@ -565,12 +423,12 @@
         <translation>Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.bmp);;All Files (*)</translation>
     </message>
     <message>
-        <source>选择工程素材库（可取消并使用当前素材库）</source>
-        <translation>Choose a project library (cancel to use the current library)</translation>
+        <source>选择工程素材库（取消则使用默认素材库）</source>
+        <translation>Choose a project library (Cancel uses the default library)</translation>
     </message>
     <message>
-        <source>该目录没有 mosaicraft.db，请先在素材库页导入图片。</source>
-        <translation>This folder has no mosaicraft.db. Import photos in Library first.</translation>
+        <source>该目录没有 mosaicraft.db。可在「设置 → 素材库设置」选择原始素材目录并建库。</source>
+        <translation>This folder has no mosaicraft.db. Choose a source image folder in Settings → Library Settings to build a library.</translation>
     </message>
     <message>
         <source>未命名工程</source>
@@ -757,12 +615,20 @@
         <translation>Default Library</translation>
     </message>
     <message>
-        <source>最近一次导出</source>
-        <translation>Last Export</translation>
+        <source>未收到有效的任务结果。</source>
+        <translation>No valid task result was received.</translation>
     </message>
     <message>
-        <source>成品预览</source>
-        <translation>Result Preview</translation>
+        <source>适合窗口</source>
+        <translation>Fit Window</translation>
+    </message>
+    <message>
+        <source>放大</source>
+        <translation>Zoom In</translation>
+    </message>
+    <message>
+        <source>缩小</source>
+        <translation>Zoom Out</translation>
     </message>
     <message>
         <source>随机种子需在 0 到 4294967295 之间。</source>
@@ -783,10 +649,6 @@
         <translation>Mosaicraft CLI not found. Build it or select it in Settings → General.</translation>
     </message>
     <message>
-        <source>正在导入素材…</source>
-        <translation>Importing assets…</translation>
-    </message>
-    <message>
         <source>无法读取生成的预览图。</source>
         <translation>Could not load the generated preview.</translation>
     </message>
@@ -805,10 +667,6 @@
     <message>
         <source>%1 × %2 px（实际）</source>
         <translation>%1 × %2 px (actual)</translation>
-    </message>
-    <message>
-        <source>素材导入完成</source>
-        <translation>Import complete</translation>
     </message>
     <message>
         <source>Mosaicraft Desktop %1
@@ -845,82 +703,28 @@ Uses the Mosaicraft CLI for library builds, matching, and exports.</translation>
         <translation>No newer Mosaicraft release was found.</translation>
     </message>
     <message>
-        <source>打开图库目录</source>
-        <translation>Open Library Folder</translation>
+        <source>找不到桌面匹配程序 mosaicraft_desktop_worker。</source>
+        <translation>Could not find mosaicraft_desktop_worker.</translation>
     </message>
     <message>
-        <source>无法打开图库</source>
-        <translation>Cannot Open Library</translation>
+        <source>正在检查素材库，必要时会重建…</source>
+        <translation>Checking the library and rebuilding if needed…</translation>
     </message>
     <message>
-        <source>  ·  归一化 %1 × %2 px</source>
-        <translation>  ·  Normalized to %1 × %2 px</translation>
+        <source>素材库检查或重建失败。%1</source>
+        <translation>Could not check or rebuild the library. %1</translation>
     </message>
     <message>
-        <source>%1 张素材</source>
-        <translation>Assets: %1</translation>
+        <source>素材库为空。请将图片添加到原始素材目录。</source>
+        <translation>The library is empty. Add images to the source folder.</translation>
     </message>
     <message>
-        <source>%1 张素材 · 已选 %2</source>
-        <translation>Assets: %1 · Selected: %2</translation>
+        <source>素材库已重建。</source>
+        <translation>Library rebuilt.</translation>
     </message>
     <message>
-        <source>无法打开素材：%1</source>
-        <translation>Could not open asset: %1</translation>
-    </message>
-    <message>
-        <source>100%</source>
-        <translation>100%</translation>
-    </message>
-    <message>
-        <source>关闭</source>
-        <translation>Close</translation>
-    </message>
-    <message>
-        <source>选择要导入的图片目录</source>
-        <translation>Choose Source Image Folder</translation>
-    </message>
-    <message>
-        <source>指定新图库目录名称</source>
-        <translation>Name New Library Folder</translation>
-    </message>
-    <message>
-        <source>新图库必须写入新目录或空目录。</source>
-        <translation>A new library requires a new or empty folder.</translation>
-    </message>
-    <message>
-        <source>图片来源目录与图库目录不能重叠。</source>
-        <translation>The source and library folders cannot overlap.</translation>
-    </message>
-    <message>
-        <source>追加素材</source>
-        <translation>Add Assets</translation>
-    </message>
-    <message>
-        <source>追加到此图库？入库后可能重新排列图库内的文件编号。
-%1</source>
-        <translation>Add files to this library? Import may renumber its managed files.
-%1</translation>
-    </message>
-    <message>
-        <source>将所选素材复制到</source>
-        <translation>Copy Selected Assets To</translation>
-    </message>
-    <message>
-        <source>请选择图库之外的目录，避免复制出未索引的文件。</source>
-        <translation>Choose a location outside the library to avoid creating unindexed files.</translation>
-    </message>
-    <message>
-        <source>导出所选素材</source>
-        <translation>Export Selected Assets</translation>
-    </message>
-    <message>
-        <source>已复制 %1 张。跳过 %2 张（同名、缺失或不可写）。</source>
-        <translation>Copied %1. Skipped %2 (duplicate name, missing, or not writable).</translation>
-    </message>
-    <message>
-        <source>切换图库并清除当前工程的手动换图记录？</source>
-        <translation>Switch libraries and clear the current project’s manual tile replacements?</translation>
+        <source>素材库完整性检查通过。</source>
+        <translation>Library integrity check passed.</translation>
     </message>
 </context>
 <context>
@@ -1020,6 +824,66 @@ Uses the Mosaicraft CLI for library builds, matching, and exports.</translation>
     <message>
         <source>设备标识无效，或与所选后端不一致。</source>
         <translation>The device ID is invalid or does not match the selected backend.</translation>
+    </message>
+    <message>
+        <source>归一化与扫描</source>
+        <translation>Sizing and Scan</translation>
+    </message>
+    <message>
+        <source>每次启动都会检查素材库。设置原始素材目录后，发现损坏或素材、建库设置有变化时会自动重建。</source>
+        <translation>The library is checked at startup. With a source folder configured, damaged libraries are rebuilt, as are libraries whose source images or build settings have changed.</translation>
+    </message>
+    <message>
+        <source>原始素材目录</source>
+        <translation>Source image folder</translation>
+    </message>
+    <message>
+        <source>素材库目录</source>
+        <translation>Library folder</translation>
+    </message>
+    <message>
+        <source>归一化尺寸</source>
+        <translation>Normalized size</translation>
+    </message>
+    <message>
+        <source>归一化宽度</source>
+        <translation>Normalization Width</translation>
+    </message>
+    <message>
+        <source>归一化高度</source>
+        <translation>Normalization Height</translation>
+    </message>
+    <message>
+        <source>递归扫描子目录</source>
+        <translation>Include subfolders</translation>
+    </message>
+    <message>
+        <source>素材编码</source>
+        <translation>Asset Encoding</translation>
+    </message>
+    <message>
+        <source>JPEG 质量</source>
+        <translation>JPEG Quality</translation>
+    </message>
+    <message>
+        <source>PNG 压缩级别</source>
+        <translation>PNG Compression Level</translation>
+    </message>
+    <message>
+        <source>WebP 质量</source>
+        <translation>WebP Quality</translation>
+    </message>
+    <message>
+        <source>无损</source>
+        <translation>Lossless</translation>
+    </message>
+    <message>
+        <source>选择原始素材目录</source>
+        <translation>Choose source image folder</translation>
+    </message>
+    <message>
+        <source>选择素材库目录</source>
+        <translation>Choose library folder</translation>
     </message>
 </context>
 </TS>

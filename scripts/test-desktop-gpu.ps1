@@ -12,8 +12,12 @@ function Get-Devices {
 }
 function Assert-Preview([string]$Backend) {
     $request.backend = $Backend
-    $reply = @{op='preview'; request=$request} | ConvertTo-Json -Compress | & $worker 2>$stderr | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0 -or !$reply.ok -or !$reply.image) {
+    $previewDirectory = Join-Path $work "preview-$Backend-$([guid]::NewGuid().ToString('N'))"
+    [IO.Directory]::CreateDirectory($previewDirectory) | Out-Null
+    $reply = @{op='preview'; request=$request; previewDirectory=$previewDirectory} |
+        ConvertTo-Json -Compress | & $worker 2>$stderr | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or !$reply.ok -or !$reply.image -or
+        !(Test-Path -LiteralPath (Join-Path $previewDirectory 'cells.bin') -PathType Leaf)) {
         Get-Content -LiteralPath $stderr | Out-Host
         throw "Packaged worker preview failed for ${Backend}: $($reply.message)"
     }
