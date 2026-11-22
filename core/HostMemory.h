@@ -11,6 +11,11 @@
 #include <sys/sysctl.h>
 #else
 #include <unistd.h>
+#ifdef __linux__
+#include <fstream>
+#include <limits>
+#include <string>
+#endif
 #endif
 
 namespace mosaicraft
@@ -18,6 +23,10 @@ namespace mosaicraft
 // 调用方需要按机器容量分档时，同时取得总物理内存。
 inline uint64_t availableMemory(uint64_t *total = nullptr)
 {
+    if (total)
+    {
+        *total = 0;
+    }
 #ifdef _WIN32
     MEMORYSTATUSEX memory{sizeof(memory)};
     if (!GlobalMemoryStatusEx(&memory))
@@ -45,6 +54,27 @@ inline uint64_t availableMemory(uint64_t *total = nullptr)
     // Inactive pages are reclaimable; do not count compressed or wired memory.
     return valid ? (static_cast<uint64_t>(statistics.free_count) + statistics.inactive_count) * pageSize : 0;
 #else
+#ifdef __linux__
+    if (total)
+    {
+        // Linux 空闲页不包括可回收的文件缓存；桌面预算优先使用内核的可用量估计。
+        std::ifstream info("/proc/meminfo");
+        std::string name;
+        uint64_t kib = 0;
+        while (info >> name >> kib)
+        {
+            if (name == "MemTotal:")
+            {
+                *total = kib * 1024;
+            }
+            else if (name == "MemAvailable:" && *total)
+            {
+                return kib * 1024;
+            }
+            info.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        }
+    }
+#endif
     const long pages = sysconf(_SC_AVPHYS_PAGES), size = sysconf(_SC_PAGESIZE);
     if (total && pages >= 0 && size > 0)
     {
