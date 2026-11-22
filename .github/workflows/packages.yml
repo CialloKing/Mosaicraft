@@ -4,11 +4,6 @@ on:
     tags: ['v*']
   workflow_dispatch:
     inputs:
-      skip_tests:
-        description: Skip CTest, smoke and archive validation
-        required: false
-        type: boolean
-        default: false
       desktop_release_tag:
         description: Build only CUDA + Vulkan Qt packages from this existing release tag (no publishing)
         required: false
@@ -24,13 +19,13 @@ jobs:
       matrix:
         include:
           - platform: windows-x64
-            runtime: cpu
+            runtime: cpu-only
             runner: windows-2025-vs2026
           - platform: linux-x64
-            runtime: cpu
+            runtime: cpu-only
             runner: ubuntu-22.04
           - platform: macos-arm64
-            runtime: cpu
+            runtime: cpu-only
             runner: macos-15
           - platform: windows-x64
             runtime: vulkan
@@ -46,31 +41,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/native-dependencies
       - name: Install packaging tool
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          $tools = @('patchelf')
+          $tools = @('ninja-build', 'patchelf')
           if ('${{ matrix.runtime }}' -eq 'vulkan') { $tools += 'glslang-tools' }
           sudo apt-get install -y --no-install-recommends @tools
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: ./.github/actions/native-dependencies
       - name: Prepare pinned Vulkan headers and offline compiler
         if: matrix.runtime == 'vulkan'
         run: cmake -DMODE=Vulkan -P cmake/PrepareRelease.cmake
       - name: Build, test and package native Release
-        run: |
-          $releaseOptions = @{}
-          if ('${{ matrix.runtime }}' -eq 'vulkan') { $releaseOptions.VulkanRelease = $true }
-          elseif ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.skip_tests }}' -eq 'true') {
-            $releaseOptions.SkipTests = $true
-            $releaseOptions.SkipSmoke = $true
-            $releaseOptions.SkipArchiveValidation = $true
-          }
-          ./scripts/release.ps1 -BuildDir build/package-${{ matrix.runtime }} -NoCuda -OutputDir build/archives @releaseOptions
+        run: cmake -DRUNTIME=${{ matrix.runtime }} -DBUILD_DIR=build/package-${{ matrix.runtime }} -P cmake/Release.cmake
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ matrix.runtime }}-${{ matrix.platform }}
+          name: ${{ matrix.runtime == 'cpu-only' && 'cpu' || matrix.runtime }}-${{ matrix.platform }}
           path: build/archives/*
           if-no-files-found: error
       - name: Upload build diagnostics
@@ -81,7 +68,6 @@ jobs:
           path: |
             build/dependency-state/
             build/package-${{ matrix.runtime }}/Testing/Temporary/
-            build/package-${{ matrix.runtime }}/release-timings.json
           if-no-files-found: ignore
   native-verify:
     if: ${{ !inputs.desktop_release_tag }}
@@ -98,18 +84,14 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: ${{ matrix.runtime }}-${{ matrix.platform }}
+          name: ${{ matrix.runtime == 'cpu-only' && 'cpu' || matrix.runtime }}-${{ matrix.platform }}
           path: build/download
-      # Do not install vcpkg or project build dependencies in this fresh job.
-      - name: Verify archive without build dependencies
-        if: matrix.runtime == 'vulkan' || github.event_name != 'workflow_dispatch' || inputs.skip_tests != true
-        run: |
-          $archive = @(Get-ChildItem build/download -File | Where-Object { $_.Name -match '\.(zip|tar\.gz)$' })
-          if ($archive.Count -ne 1) { throw 'Expected exactly one native archive' }
-          $hash = ((Get-Content "$($archive[0].FullName).sha256" -Raw) -split '\s+')[0]
-          $runtime = if ('${{ matrix.runtime }}' -eq 'vulkan') { 'vulkan' } else { 'cpu-only' }
-          $validation = if ($runtime -eq 'vulkan') { 'not-run' } else { 'not-applicable' }
-          ./scripts/verify-release-asset.ps1 -ArchivePath $archive[0].FullName -ExpectedSha256 $hash -ExpectedCommit '${{ github.sha }}' -ExpectedRuntime $runtime -ExpectedGpuValidation $validation -RequireStandalone
+      # Build only the independent checker, without project dependencies.
+      - uses: ./.github/actions/verify-native-package
+        with:
+          runtime: ${{ matrix.runtime }}
+          gpu-validation: ${{ matrix.runtime == 'vulkan' && 'not-run' || 'not-applicable' }}
+          channel: stable
   cuda-package:
     if: ${{ !inputs.desktop_release_tag }}
     name: Package ${{ matrix.platform }} CUDA
@@ -129,33 +111,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/native-dependencies
-      - name: Install hash-locked CUDA 13.5.37 compiler and runtime
-        run: cmake -DMODE=CUDA -P cmake/PrepareRelease.cmake
       - name: Install packaging tool
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends patchelf
+          sudo apt-get install -y --no-install-recommends ninja-build patchelf
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Build seven-architecture CUDA package and inspect native/PTX images
+      - uses: ./.github/actions/native-dependencies
+      - name: Install hash-locked CUDA 13.5.37 compiler and runtime
+        run: cmake -DMODE=CUDA -P cmake/PrepareRelease.cmake
+      - name: Build and verify seven CUDA architectures
+        shell: bash
         run: |
-          $releaseOptions = @{}
-          if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.skip_tests }}' -eq 'true') {
-            $releaseOptions.SkipTests = $true
-            $releaseOptions.SkipSmoke = $true
-            $releaseOptions.SkipArchiveValidation = $true
-            $releaseOptions.AllowUntestedRelease = $true
-          }
-          if ($IsLinux) { $releaseOptions.AllowUnvalidatedCudaRelease = $true }
-          ./scripts/release.ps1 -BuildDir build/package-cuda -CudaValidation BuildOnly -OutputDir build/archives @releaseOptions
-      - name: Prove Required mode rejects a runner without GPU
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_tests != true }}
-        run: |
-          $extension = if ($IsWindows) { '.exe' } else { '' }
-          $probe = & "./build/package-cuda/Release/bin/mosaicraft_tests$extension" --require-cuda 2>&1 | Out-String
-          if ($LASTEXITCODE -eq 0 -or $probe -notmatch 'requires an available CUDA device') { throw "Unexpected GPU-required result: $probe" }
-          $global:LASTEXITCODE = 0
+          options=(-DCHANNEL=candidate)
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            options=(-DCHANNEL=stable -DALLOW_UNVALIDATED_LINUX_CUDA=ON)
+          fi
+          cmake -DRUNTIME=cuda -DBUILD_DIR=build/package-cuda -DCUDA_VALIDATION=BuildOnly "${options[@]}" -P cmake/Release.cmake
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cuda-${{ matrix.platform }}
@@ -169,12 +141,11 @@ jobs:
           path: |
             build/dependency-state/
             build/package-cuda/Testing/Temporary/
-            build/package-cuda/release-timings.json
             build/package-cuda/cuda-architectures.txt
           if-no-files-found: ignore
   cuda-verify:
     name: Standalone ${{ matrix.platform }} CUDA
-    if: ${{ !inputs.desktop_release_tag && (github.event_name != 'workflow_dispatch' || inputs.skip_tests != true) }}
+    if: ${{ !inputs.desktop_release_tag }}
     needs: cuda-package
     strategy:
       fail-fast: false
@@ -196,13 +167,11 @@ jobs:
         with:
           name: cuda-${{ matrix.platform }}
           path: build/download
-      - name: Verify CUDA package without CUDA toolkit or GPU
-        run: |
-          $pattern = if ($IsLinux) { '_linux-x64_cuda\.tar\.gz$' } else { '_windows-x64_cuda_candidate\.zip$' }
-          $archive = @(Get-ChildItem build/download -File | Where-Object { $_.Name -match $pattern })
-          if ($archive.Count -ne 1) { throw 'Expected exactly one CUDA package with the platform release policy' }
-          $hash = ((Get-Content "$($archive[0].FullName).sha256" -Raw) -split '\s+')[0]
-          ./scripts/verify-release-asset.ps1 -ArchivePath $archive[0].FullName -ExpectedSha256 $hash -ExpectedCommit '${{ github.sha }}' -ExpectedRuntime cuda -ExpectedGpuValidation not-run -RequireStandalone
+      - uses: ./.github/actions/verify-native-package
+        with:
+          runtime: cuda
+          gpu-validation: not-run
+          channel: ${{ runner.os == 'Windows' && 'candidate' || 'stable' }}
   qt-package:
     name: Package ${{ matrix.platform }} Qt Desktop (${{ matrix.runtime }})
     strategy:
@@ -236,15 +205,12 @@ jobs:
           ref: ${{ format('refs/tags/{0}', inputs.desktop_release_tag) }}
           path: build/package-source
           persist-credentials: false
-      - uses: ./.github/actions/native-dependencies
-        with:
-          source-directory: ${{ inputs.desktop_release_tag && 'build/package-source' || '.' }}
       - name: Install Linux linker and display libraries (no system Qt)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends patchelf libgl-dev libegl-dev libopengl-dev \
+          sudo apt-get install -y --no-install-recommends ninja-build patchelf libgl-dev libegl-dev libopengl-dev \
             libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-render-util0 libxcb-xkb1 libxcb-xinerama0 libxcb-xinput0 \
             libx11-xcb1 libxcb-randr0 libxcb-shape0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 \
@@ -252,6 +218,9 @@ jobs:
           if [[ '${{ matrix.runtime }}' == 'cuda-vulkan' ]]; then
             sudo apt-get install -y --no-install-recommends glslang-tools xvfb xauth
           fi
+      - uses: ./.github/actions/native-dependencies
+        with:
+          source-directory: ${{ inputs.desktop_release_tag && 'build/package-source' || '.' }}
       - name: Prepare locked Qt SDK
         run: cmake "-DSOURCE_DIR=$env:PACKAGE_SOURCE" -DMODE=Qt "-DDESTINATION=$env:RUNNER_TEMP/mosaicraft-qt" -P cmake/PrepareRelease.cmake
       - name: Check Qt XCB host libraries before compiling

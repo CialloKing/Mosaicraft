@@ -69,6 +69,9 @@ release_capture(commit "${git}" -C "${MOSAICRAFT_REPO}" rev-parse HEAD)
 file(READ "${MOSAICRAFT_REPO}/contracts.json" contracts)
 string(JSON version GET "${contracts}" softwareVersion)
 file(STRINGS "${MOSAICRAFT_REPO}/docs/releases.md" release_titles REGEX "^## v")
+if("$ENV{GITHUB_REF_TYPE}" STREQUAL "tag" AND NOT "$ENV{GITHUB_REF_NAME}" STREQUAL "v${version}")
+    message(FATAL_ERROR "Release tag does not match contracts.json")
+endif()
 if(NOT "## v${version}" IN_LIST release_titles)
     message(FATAL_ERROR "No release heading for v${version} in docs/releases.md")
 endif()
@@ -136,12 +139,12 @@ execute_process(COMMAND "${CMAKE_COMMAND}" --preset "${preset}" -S "${repo}" -B 
     "-DVCPKG_TARGET_TRIPLET=${triplet}" "-DVCPKG_HOST_TRIPLET=${triplet}" -DVCPKG_MANIFEST_INSTALL=OFF
     "-DMOSAICRAFT_CUDA:BOOL=${cuda}" "-DMOSAICRAFT_VULKAN:BOOL=${vulkan}" "-DMOSAICRAFT_METAL:BOOL=${metal}"
     "-DMOSAICRAFT_VULKAN_AUTO:BOOL=${vulkan_auto}" -DMOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON
-    -DMOSAICRAFT_LEGACY_SCRIPT_TESTS:BOOL=OFF ${sdk_args}
+    -DMOSAICRAFT_DESKTOP_BACKEND_INSTALL:BOOL=OFF -DMOSAICRAFT_BUILD_DESKTOP:BOOL=OFF ${sdk_args}
     COMMAND_ERROR_IS_FATAL ANY)
 file(STRINGS "${BUILD_DIR}/CMakeCache.txt" cache)
 set(expected_cache "MOSAICRAFT_CUDA:BOOL=${cuda}" "MOSAICRAFT_VULKAN:BOOL=${vulkan}"
     "MOSAICRAFT_METAL:BOOL=${metal}" "MOSAICRAFT_VULKAN_AUTO:BOOL=${vulkan_auto}"
-    "MOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON" "MOSAICRAFT_LEGACY_SCRIPT_TESTS:BOOL=OFF")
+    "MOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON" "MOSAICRAFT_DESKTOP_BACKEND_INSTALL:BOOL=OFF")
 foreach(entry IN LISTS expected_cache)
     if(NOT entry IN_LIST cache)
         message(FATAL_ERROR "Release cache does not contain ${entry}")
@@ -189,6 +192,13 @@ if(cuda)
             message(FATAL_ERROR "CUDA GPU probe did not pass")
         endif()
         set(ENV{MOSAICRAFT_REQUIRE_CUDA} 1)
+    else()
+        # BuildOnly must never be mistaken for successful real-device acceptance.
+        execute_process(COMMAND "${CMAKE_COMMAND}" -E env CUDA_VISIBLE_DEVICES=-1
+            "${bin}/mosaicraft_tests${suffix}" --require-cuda RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE error)
+        if(status STREQUAL "0" OR NOT "${output}\n${error}" MATCHES "requires an available CUDA device")
+            message(FATAL_ERROR "Unexpected CUDA-required result without a device: ${status}\n${output}\n${error}")
+        endif()
         set(gpu_validation passed)
     endif()
 endif()
@@ -308,6 +318,7 @@ release_file("${archive_dir}/${name}")
 file(SHA256 "${archive_dir}/${name}" sha)
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DARCHIVE=${archive_dir}/${name}" "-DEXPECTED_SHA256=${sha}"
     "-DEXPECTED_COMMIT=${commit}" "-DEXPECTED_RUNTIME=${RUNTIME}" "-DEXPECTED_GPU_VALIDATION=${gpu_validation}"
+    "-DEXPECTED_CHANNEL=${CHANNEL}"
     "-DCHECK_TOOL=${bin}/mosaicraft_release_check${suffix}" "-DWORK_ROOT=${work}" -DREQUIRE_CURRENT=ON
     -P "${CMAKE_CURRENT_LIST_DIR}/VerifyPackage.cmake" COMMAND_ERROR_IS_FATAL ANY)
 release_capture(current "${git}" -C "${repo}" rev-parse HEAD)

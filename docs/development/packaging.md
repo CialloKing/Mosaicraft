@@ -12,14 +12,9 @@
 
 ## 正式包后端范围
 
-v1.15.11 保留七个原生包，另提供五个 Qt 桌面包。原生 CPU/CUDA 包关闭 Vulkan 和 Metal；原生 Vulkan 包启用 `MOSAICRAFT_VULKAN_AUTO`，`auto` 优先 Vulkan 并回退 CPU，不编译 CUDA/Metal。`release.ps1` 显式设置这些开关并核对实际 CMake 缓存。
+v1.15.11 保留七个原生包，另提供五个 Qt 桌面包。原生 CPU/CUDA 包关闭 Vulkan 和 Metal；原生 Vulkan 包启用 `MOSAICRAFT_VULKAN_AUTO`，`auto` 优先 Vulkan 并回退 CPU，不编译 CUDA/Metal。`Release.cmake` 显式设置这些开关并核对实际 CMake 缓存。
 
-```powershell
-cmake -DMODE=Vulkan -P cmake/PrepareRelease.cmake
-./scripts/release.ps1 -BuildDir build/package-vulkan -NoCuda -VulkanRelease -OutputDir build/archives
-```
-
-正式 Vulkan 包不带 `_candidate` 后缀，`BUILD_INFO.txt` 记录 `PortableAutoSelection: vulkan-to-cpu` 和 `PortableGpuValidation: not-run`。独立验收隐藏 Vulkan ICD，验证默认建库和生成自动回退 CPU；实机 GPU 测试另记。原 `-Vulkan`/`-Metal` 参数仍生成仅显式选择的候选包，不得用候选替代正式附件。
+正式 Vulkan 包不带 `_candidate` 后缀，`BUILD_INFO.txt` 记录 `PortableAutoSelection: vulkan-to-cpu` 和 `PortableGpuValidation: not-run`。独立验收隐藏 Vulkan ICD，验证默认建库和生成自动回退 CPU；实机 GPU 测试另记。`-DCHANNEL=candidate`仍生成仅显式选择的候选包，不得用候选替代正式附件。
 
 ## 固定依赖与缓存
 
@@ -32,47 +27,45 @@ cmake -DMODE=Vulkan -P cmake/PrepareRelease.cmake
 ```powershell
 cmake -DMODE=Prepare -DVCPKG_ROOT=<pinned-vcpkg> -P cmake/PrepareRelease.cmake
 cmake -DMODE=Install -DVCPKG_ROOT=<pinned-vcpkg> -P cmake/PrepareRelease.cmake
-./scripts/release.ps1 -BuildDir build/package-cpu -NoCuda -OutputDir build/archives
+cmake -DRUNTIME=cpu-only -DVCPKG_ROOT=<pinned-vcpkg> -P cmake/Release.cmake
 ```
 
 准备入口自动选择本机平台的 Release triplet。Linux 打包还需要 patchelf。每种运行时使用独立构建目录。CMake 递归收集第三方运行库，Linux 使用相对 RPATH，macOS 修正加载路径后签名；Unix tar.gz 保留执行权限和符号链接。包内附有第三方许可证。
 
-Linux/macOS 的日常源码构建使用 CMake 3.21+。发布脚本使用 PowerShell 7，并向 CMake 显式传入固定依赖工具链和运行库打包选项。Windows Preset 的 Visual Studio 2026 生成器需要 CMake 4.2+。 [源码构建](building.md)
+Linux/macOS 的日常源码构建使用 CMake 3.21+。发布使用 CMake/CTest/CPack，并显式使用固定依赖工具链。Windows Preset 的 Visual Studio 2026 生成器需要 CMake 4.2+。 [源码构建](building.md)
 
-## CMake 发布入口（迁移验证）
+## CMake 发布入口
 
-此入口先验证干净提交和实际构建配置，再运行必选 CTest、安装到临时目录、由 CPack 归档，最后用独立工具验证解包后的程序。只有通过验收的归档和 `.sha256` 才进入输出目录。没有跳过测试、冒烟或验包的选项。
+`Release.cmake` 校验干净的源提交和实际构建配置，运行必选 CTest，由 CPack 归档，再用独立工具验收解包后的程序。只有通过验收的归档和 `.sha256` 才会进入输出目录。没有跳过测试、冒烟或验包的选项。
 
-先按[源码构建说明](building.md)运行 `Prepare` 和 `Install`。Linux 打包另需系统的 Ninja 和 patchelf。未准备依赖时，发布配置不会自动开始下载和编译 OpenCV。
+先按[源码构建](building.md)运行 `Prepare` 和 `Install`，再执行：
 
 ```sh
-cmake -DVCPKG_ROOT=build/tools/vcpkg -DRUNTIME=cpu-only -DOUTPUT_DIR=build/migration-cpu -P cmake/Release.cmake
+cmake -DVCPKG_ROOT=build/tools/vcpkg -DRUNTIME=cpu-only -P cmake/Release.cmake
 cmake -DVCPKG_ROOT=build/tools/vcpkg -DRUNTIME=vulkan -DMOSAICRAFT_VULKAN_INCLUDE=<headers-include> -DMOSAICRAFT_GLSLANG=<glslang> -P cmake/Release.cmake
 cmake -DVCPKG_ROOT=build/tools/vcpkg -DRUNTIME=metal -DCHANNEL=candidate -P cmake/Release.cmake
 ```
 
-`RUNTIME` 必填，`CHANNEL` 默认为 `stable`。可传入 `BUILD_DIR`、`OUTPUT_DIR`、`VCPKG_INSTALLED_DIR`；可以提供现有 SDK，也可用 `PrepareRelease.cmake` 的 `CUDA`、`Vulkan` 模式准备。CUDA 发布用 `-DCUDAToolkit_ROOT=<sdk>` 指定 SDK；Windows 正式包默认且必须 `Required`。Linux 未实机且要输出正式命名时须同时传入 `-DCUDA_VALIDATION=BuildOnly -DALLOW_UNVALIDATED_LINUX_CUDA=ON`，标记为 `not-run`。Windows 组合包须显式选 `-DRUNTIME=cuda-vulkan -DCHANNEL=candidate`，如无设备验证再加 `-DCUDA_VALIDATION=BuildOnly`。
+可传入 `BUILD_DIR`、`OUTPUT_DIR`、`VCPKG_INSTALLED_DIR`。默认输出 `build/archives/`，`CHANNEL` 默认为 `stable`。`PrepareRelease.cmake` 的 `CUDA`、`Vulkan` 模式会打印 SDK 路径；本机请显式传入这些路径或设置相应环境变量，GitHub Actions 会自动传递给后续步骤。
 
-打开 **Compare CMake and legacy release packages**，按 `cpu` → `portable` → `cuda` 依次运行。对照以同一提交的两个归档为输入，新的独立 job 不安装 OpenCV 或 GPU SDK，对照完毕再用旧验收器核验新包。`cold` 模式跳过二进制缓存；Linux 会审计依赖准备、发布及独立验收的实际子进程。可传入 `published-tag` 验证现有正式附件。此工作流仅上传对照用的 Actions artifacts，不发布或替换附件。未完成跨平台对照前保持现有 `Native packages`、`Portable GPU candidates` 和 `Verify published release` 不变；Windows 正式 CUDA 还必须单独通过实机 `Required`。
+`Audit CMake release packages` 可分 CPU、portable、CUDA 运行；Linux 冷运行审计子进程和依赖缓存。Windows 正式 CUDA 附件仍须在实机以 `Required` 模式打包。
 
 ## CUDA 验收状态
 
 云端与本机编译器固定 CUDA Toolkit 13.5.0/nvcc 13.5.37，使用 NVIDIA 官方重分发组件和锁定 SHA256；云端不安装显卡驱动。默认包含 sm_75、sm_80、sm_86、sm_89、sm_90、sm_100、sm_120 原生内核及对应七种 PTX，原算术编译参数保持不变。`cmake/cuda-13.5.json` 同时锁定 cudart、cuobjdump 13.5.37；打包前逐模块和最终程序核对架构，缺少任何目标即失败。
 
-```powershell
-# Windows 云端候选：完整 CPU 回退测试，但不声称 GPU 通过验收
-cmake -DMODE=CUDA -P cmake/PrepareRelease.cmake
-./scripts/release.ps1 -BuildDir build/package-cuda -CudaValidation BuildOnly -OutputDir build/archives
+```sh
+# Windows 云端候选（SDK 路径替换成实际安装目录）
+cmake -DRUNTIME=cuda -DCHANNEL=candidate -DCUDA_VALIDATION=BuildOnly -DCUDAToolkit_ROOT=<sdk> -P cmake/Release.cmake
 
 # Linux CUDA 正式附件：完整测试，GPU 状态仍为 not-run
-./scripts/release.ps1 -BuildDir build/package-linux-cuda -CudaValidation BuildOnly -AllowUnvalidatedCudaRelease -OutputDir build/archives
+cmake -DRUNTIME=cuda -DCUDA_VALIDATION=BuildOnly -DALLOW_UNVALIDATED_LINUX_CUDA=ON -DCUDAToolkit_ROOT=<sdk> -P cmake/Release.cmake
 
-# 本机 Windows 正式 CUDA 包：默认 Required，必须有可用 GPU
-$env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.5'
-./scripts/release.ps1 -BuildDir build/package-cuda-local -CudaValidation Required -OutputDir build/archives
+# Windows 实机正式 CUDA 包
+cmake -DRUNTIME=cuda -DCUDA_VALIDATION=Required -DCUDAToolkit_ROOT=<sdk> -P cmake/Release.cmake
 ```
 
-`BUILD_INFO.txt` 的 `GpuValidation` 为 `passed`、`not-run` 或 `not-applicable`。`CudaArchitectures`、`CudaPtx` 记录实际编译目标；`GpuValidationDevice`、`GpuValidationComputeCapability`、`GpuValidationDriver` 记录 Required 模式实际通过预检的设备，未经 GPU 实机验收的包均为 `not-run`。`passed` 仅表示所记录设备通过验收；其他架构不因此获得实机验证结论。旧包缺少新增字段时仍可普通验收。BuildOnly 自动添加 `_candidate` 文件名后缀；Required 在无 GPU 时失败，且禁止跳过 CTest、smoke 或解压验证。正式 Windows CUDA 包必须来自同一提交并通过本机 GPU 完整回归；Linux CUDA 从 v1.14.8 起进入正式 Release，保持 `not-run`，并在页面明确说明尚未做 Linux 实机 GPU 验收。显式 `-AllowUnvalidatedCudaRelease` 仅允许原生 Linux x64 tar.gz，不允许跳过 CTest、smoke 或解压验证，也不放宽 Windows CUDA 的 Required 门禁。
+`BUILD_INFO.txt` 的 `GpuValidation` 为 `passed`、`not-run` 或 `not-applicable`。`CudaArchitectures`、`CudaPtx` 记录实际编译目标；`GpuValidationDevice`、`GpuValidationComputeCapability`、`GpuValidationDriver` 记录 Required 模式实际通过预检的设备，未经 GPU 实机验收的包均为 `not-run`。`passed` 仅表示所记录设备通过验收；其他架构不因此获得实机验证结论。旧包缺少新增字段时仍可普通验收。Windows BuildOnly 仅允许候选包；Required 在无 GPU 时失败，且禁止跳过 CTest、smoke 或解压验证。正式 Windows CUDA 包必须来自同一提交并通过本机 GPU 完整回归；Linux CUDA 从 v1.14.8 起进入正式 Release，保持 `not-run`，并在页面明确说明尚未做 Linux 实机 GPU 验收。显式 `-DALLOW_UNVALIDATED_LINUX_CUDA=ON` 仅允许原生 Linux x64 tar.gz，不允许跳过 CTest、smoke 或解压验证，也不放宽 Windows CUDA 的 Required 门禁。
 
 新包另记录 `CudaToolkit`（编译器组件版本 13.5.37）、`CudaRuntimeMode`（Windows `hybrid` / Linux `shared`）和 `GpuValidationRuntime`（实机运行时 API 版本，未验收为 `not-run`）。Driver 字段同样是 CUDA API 版本整数，均不是 nvidia-smi 的驱动包版本。Windows hybrid 从显示驱动加载运行时，包内不分发显示驱动或盲目复制 SDK DLL；Linux 仍收集实际共享运行库并设置相对 RPATH。历史包缺少这组字段仍可普通验收。迁移验证与成本见 [CUDA 13.5 迁移报告](../archive/gpu/cuda-13-5-migration.md)。
 
@@ -86,7 +79,7 @@ $env:CUDAToolkit_ROOT = 'C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.
 | Linux x64 | `_linux-x64_qt.tar.gz` | `_linux-x64_qt_cuda-vulkan.tar.gz` | `./bin/MosaicraftDesktop` |
 | macOS ARM64 | `_macos-arm64_qt.tar.gz` | — | `MosaicraftDesktop.app` |
 
-桌面包均用 [锁定的 Qt SDK](../../cmake/qt-sdk.json)，随包部署 Qt 共享库、平台插件、SQLite、WebP、TIFF、CLI、桌面匹配程序及后端依赖。保持解压后的目录结构，无需另装 Qt 或 CUDA Toolkit。Linux 以 Ubuntu 24.04 上的构建为基线，仍需要操作系统的显示服务和驱动；macOS `.app` 为临时签名（ad-hoc），未公证。
+桌面包均用 `cmake/qt-sdk.json` 锁定的 Qt SDK，随包部署 Qt 共享库、平台插件、SQLite、WebP、TIFF、CLI、桌面匹配程序及后端依赖。保持解压后的目录结构，无需另装 Qt 或 CUDA Toolkit。Linux 以 Ubuntu 24.04 上的构建为基线，仍需要操作系统的显示服务和驱动；macOS `.app` 为临时签名（ad-hoc），未公证。
 
 双后端包的 CLI 和 worker 均编入 CUDA 和 Vulkan；`auto` 使用 CUDA → CPU，需通过桌面设置显式选择 Vulkan。不分发显卡驱动，使用 GPU 时需安装相应驱动。
 
@@ -112,12 +105,7 @@ Windows/Linux 双后端构建另需准备锁定的 CUDA SDK、Vulkan 头文件�
 
 三个 CPU、两个 CUDA 和两个 Vulkan 包均在独立的新 job 下载附件，不安装项目依赖或 CUDA Toolkit。验证 CLI、API、图片生成、中文与空格路径、依赖加载位置，以及 Unix 执行权限和 macOS 签名。CUDA 候选在无 GPU 环境验证回退运行，仍标记 `not-run`。
 
-```powershell
-./scripts/verify-release-asset.ps1 -ArchivePath <archive> -RequireStandalone
-./scripts/verify-release-asset.ps1 -Tag v<version> -AssetName <exact-archive-name>
-```
-
-`-ZipPath` 保留为 `-ArchivePath` 别名；旧包缺少 GPU 状态时仍可普通验收。多个附件必须指定 `-AssetName`。`release.ps1 -ArchiveFormat auto|zip|tar.gz` 默认 Windows ZIP、Unix tar.gz；包旁生成 `.sha256`，包内记录版本、提交、平台、架构和运行时。
+用 [独立原生验包器](releasing.md#使用原生验包器)验收本地归档或已发布的附件。历史包缺少新 GPU 证据字段时仍可普通验收；要求指定验收状态时，则必须匹配该状态。
 
 正式发布后，手动运行 `Verify published release` 并传入版本标签，可在三个原生平台下载、验收真实 Release 上的七个正式附件（旧版本跳过尚未提供的附件）。该流程只读取 Release，不上传或修改附件。
 
@@ -125,6 +113,6 @@ Windows/Linux 双后端构建另需准备锁定的 CUDA SDK、Vulkan 头文件�
 
 ## 文档归档布局
 
-新包复制完整 docs/ 树，文档中心、当前指南与历史报告保留同一相对位置，不再维护易遗漏的文件名清单。根目录只保留 README 等启动和许可文件；API 和历史百科从 docs/ 导航。版本摘要检查使用 docs/releases.md。独立验收脚本同时识别旧包布局，不能要求历史包凭空增加新目录。
+新包复制完整 docs/ 树，文档中心、当前指南与历史报告保留同一相对位置，不再维护易遗漏的文件名清单。根目录只保留 README 等启动和许可文件；API 和历史百科从 docs/ 导航。版本摘要检查使用 docs/releases.md。独立验收入口同时识别旧包布局，不能要求历史包凭空增加新目录。
 
 Vulkan/Metal 候选编译与验收状态见[四后端实现](portable-gpu.md)。

@@ -90,10 +90,9 @@ HTML 界面使用“窗口浏览”。查看器不设置位图缓存大小上限
 
 ```powershell
 ctest --test-dir build/windows-x64 -C Release --output-on-failure
-pwsh -NoProfile -File tests/webui_smoke.ps1 -WebUiExe build/windows-x64/Release/bin/MosaicraftWebUI.exe
 node tests/browser_project.cjs <已导出的合成工程目录> [http://localhost:8080]
 ```
 
-浏览器检查使用可选的 Playwright Chromium/Firefox；常规 CTest 仅使用原有 doctest 和 Python 标准库。`portable_project` 使用运行时合成图片，覆盖移动、原图库不可用、PNG 确定性、损坏资源、路径越界、ZIP 解压回导和覆盖保护。ZIP64 计数流测试覆盖 65,536 项和超过 4 GiB 的偏移，不生成数 GiB 临时文件。
+浏览器检查使用可选的 Playwright Chromium/Firefox；常规 CTest 运行原生 CLI 和 Web API 回归；启用 `-DMOSAICRAFT_PYTHON_TESTS=ON` 后额外运行 Python 集成测试。`portable_project` 使用运行时合成图片，覆盖移动、原图库不可用、PNG 确定性、损坏资源、路径越界、ZIP 解压回导和覆盖保护。ZIP64 计数流测试覆盖 65,536 项和超过 4 GiB 的偏移，不生成数 GiB 临时文件。
 
 平台运行和 GPU 实机验证必须独立记录，不能以编译成功代替运行验收。

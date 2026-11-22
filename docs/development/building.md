@@ -92,7 +92,7 @@ cmake --build build/linux-x64-relwithdebinfo
 
 ## Qt Widgets 桌面端
 
-桌面端位于 `desktop/`，编辑页和导出页的实现分别位于 `desktop/EditPage/` 和 `desktop/ExportPage/`。根目录构建默认不查找 Qt，启用 `MOSAICRAFT_BUILD_DESKTOP` 才构建桌面端。Qt Designer 可直接打开主窗口和设置窗口，素材库配置位于设置窗口的 `librarySettingsPage`。在主窗口表单中选中 `workspaces`，用 `currentIndex` 切换编辑（0）和导出（1）。[主窗口](../../desktop/ui/MainWindow.ui) · [设置窗口](../../desktop/ui/SettingsDialog.ui)
+桌面端位于 `desktop/`，编辑页和导出页的实现分别位于 `desktop/EditPage/` 和 `desktop/ExportPage/`。根目录构建默认不查找 Qt，启用 `MOSAICRAFT_BUILD_DESKTOP` 才构建桌面端。Qt Designer 可直接打开主窗口和设置窗口，素材库配置位于设置窗口的 `librarySettingsPage`。在主窗口表单中选中 `workspaces`，用 `currentIndex` 切换编辑（0）和导出（1）。源文件位于 `desktop/ui/`。
 
 Windows 使用与目标架构匹配的 MSVC Qt 6.5+，包含 Widgets、Sql、Network 与 Linguist Tools。先准备依赖，再从仓库根目录运行以下 PowerShell 命令。需要 CUDA 时按前一节添加后端参数并指定 SDK。
 

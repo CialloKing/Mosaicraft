@@ -11,10 +11,9 @@
 
 ```powershell
 git status --short --branch
-./scripts/release.ps1 -InspectOnly
 ```
 
-InspectOnly 检查工具链、必要文档、许可证及版本说明。完整发布仍需固定依赖、测试、打包和独立验证，不能用预检代替。
+完整发布必须通过固定依赖准备、构建测试、打包和独立验证。
 
 ## 构建和回归
 
@@ -22,26 +21,16 @@ InspectOnly 检查工具链、必要文档、许可证及版本说明。完整�
 
 ```powershell
 ctest --test-dir build/windows-x64 -C Release --output-on-failure
-pwsh -NoProfile -File tests/webui_smoke.ps1 -WebUiExe build/windows-x64/Release/bin/MosaicraftWebUI.exe
 node tests/test_command_shell.js
 ```
 
 ## CUDA 与新后端
 
-Windows 正式 CUDA 包使用 CUDA 13.5 SDK 与 Required 验收，在实际 GPU 上完整运行，不能跳过 CTest、smoke 或解压验证。云端 BuildOnly 保留 not-run；Linux 的未实机 CUDA 正式附件须按脚本的显式准入流程执行。
+Windows 正式 CUDA 包使用 CUDA 13.5 SDK 与 Required 验收，在实际 GPU 上完整运行，不能跳过 CTest、smoke 或解压验证。云端 BuildOnly 保留 not-run；Linux 的未实机 CUDA 正式附件须按 CMake 入口的显式准入流程执行。
 
-Windows/Linux x64 正式 Vulkan 包启用 Vulkan → CPU，并在独立无驱动环境验证回退；Metal 及普通 `-Vulkan` 构建仍为候选。不得把本机限定场景、其他品牌 GPU 的结果或编译通过写成该平台实机验收。跨后端 1% 质量门槛（素材 ID 差异仅作诊断）、CUDA 5% 回归门槛以及新后端性能准入详见[四后端验收](portable-gpu.md)。
+Windows/Linux x64 正式 Vulkan 包启用 Vulkan → CPU，并在独立无驱动环境验证回退；Metal 及显式选择的 Vulkan 构建仍为候选。不得把本机限定场景、其他品牌 GPU 的结果或编译通过写成该平台实机验收。跨后端 1% 质量门槛（素材 ID 差异仅作诊断）、CUDA 5% 回归门槛以及新后端性能准入详见[四后端验收](portable-gpu.md)。
 
-```powershell
-# Windows 本机正式 CUDA 包
-./scripts/release.ps1 -BuildDir build/package-cuda-local -CudaValidation Required -OutputDir build/archives
-# CPU 包
-./scripts/release.ps1 -BuildDir build/package-cpu -NoCuda -OutputDir build/archives
-# 正式 Vulkan 包（先运行 PrepareRelease.cmake 的 Vulkan 模式）
-./scripts/release.ps1 -BuildDir build/package-vulkan -NoCuda -VulkanRelease -OutputDir build/archives
-```
-
-使用 CUDA 时先显式设置 CUDAToolkit_ROOT。候选编译工作流和 Apple 未实机状态见[打包说明](packaging.md)。
+使用 [CMake 发布入口](packaging.md#cmake-发布入口)构建 CPU、CUDA 和 Vulkan 包。
 
 ## 归档包检查
 
@@ -52,11 +41,7 @@ Windows/Linux x64 正式 Vulkan 包启用 Vulkan → CPU，并在独立无驱动
 - SHA256、版本、提交、平台、架构、运行时和验收字段一致。
 - 在没有开发依赖的独立环境验证程序、中文/空格路径、Unix 权限和 macOS 签名。
 
-```powershell
-./scripts/verify-release-asset.ps1 -ArchivePath <archive> -RequireStandalone
-```
-
-## 使用原生验包器进行迁移验收
+## 使用原生验包器
 
 用同提交构建产物中的 `mosaicraft_release_check`，或在独立的本机构建中生成它。这个工具不依赖 OpenCV、CUDA 或 Vulkan，也不从待验包取出。使用 Windows 时将工具路径指向 `.exe`，多配置生成器一般放在 `Release` 子目录。
 
@@ -67,7 +52,7 @@ cmake -DARCHIVE=<archive> -DEXPECTED_SHA256=<sha256> -DEXPECTED_COMMIT=<commit> 
 cmake -DTAG=v1.15.10 -DASSET=<release-asset-name> -DCHECK_TOOL=<native-check> -P cmake/VerifyPackage.cmake
 ```
 
-本地模式不联网，SHA256 应取自信任的旁文件或发布记录，提交来自对应的构建记录或版本标签。标签模式使用 `gh` 获取发布附件及摘要、解析标签提交。两种方式都在隔离的中文及空格目录内执行 CLI 和 Web UI/API 验收；正式 Vulkan 会隐藏 ICD 验证回退。迁移对照通过后才切换相应正式路径，详见[打包说明](packaging.md#cmake-发布入口迁移验证)。
+本地模式不联网，SHA256 应取自信任的旁文件或发布记录，提交来自对应的构建记录或版本标签。标签模式使用 `gh` 获取发布附件及摘要、解析标签提交。两种方式都在隔离的中文及空格目录内执行 CLI 和 Web UI/API 验收；正式 Vulkan 会隐藏 ICD 验证回退。从 Actions 下载的目录也可以用 `-DARCHIVE_DIR=<目录>` 自动读取唯一归档和同名 `.sha256`。
 
 ## 发布与复核
 

@@ -1,0 +1,44 @@
+name: Verify native Mosaicraft archive
+description: Build the independent verifier and test an Actions artifact or a published attachment.
+inputs:
+  runtime:
+    description: Expected backend.
+    required: true
+  gpu-validation:
+    description: Expected GPU validation state.
+    required: true
+  channel:
+    description: Expected stable or candidate channel.
+    required: true
+  tag:
+    description: Published tag; when empty, verify the artifact in build/download instead.
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Build independent verifier
+      shell: bash
+      run: |
+        cmake -S tools/release-check -B build/check-tool -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="$PWD/build/check-tool/bin" \
+          -DCMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE="$PWD/build/check-tool/bin"
+        cmake --build build/check-tool --config Release --parallel 2
+    - name: Verify archive without project dependencies
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_TAG: ${{ inputs.tag }}
+        RUNTIME: ${{ inputs.runtime }}
+        GPU_VALIDATION: ${{ inputs.gpu-validation }}
+        CHANNEL: ${{ inputs.channel }}
+      run: |
+        suffix=
+        if [[ "$RUNNER_OS" == Windows ]]; then suffix=.exe; fi
+        if [[ -n "$RELEASE_TAG" ]]; then
+          source=("-DTAG=$RELEASE_TAG" "-DREPOSITORY=$GITHUB_REPOSITORY")
+        else
+          source=(-DARCHIVE_DIR=build/download "-DEXPECTED_COMMIT=$GITHUB_SHA" -DREQUIRE_CURRENT=ON)
+        fi
+        cmake "${source[@]}" "-DEXPECTED_RUNTIME=$RUNTIME" "-DEXPECTED_GPU_VALIDATION=$GPU_VALIDATION" \
+          "-DEXPECTED_CHANNEL=$CHANNEL" "-DCHECK_TOOL=build/check-tool/bin/mosaicraft_release_check$suffix" \
+          -P cmake/VerifyPackage.cmake

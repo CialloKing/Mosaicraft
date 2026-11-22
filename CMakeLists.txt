@@ -452,7 +452,7 @@ option(MOSAICRAFT_BUILD_DESKTOP "Build the Qt Widgets desktop application" OFF)
 if(MOSAICRAFT_BUILD_DESKTOP)
     add_subdirectory(desktop)
 endif()
-option(MOSAICRAFT_LEGACY_SCRIPT_TESTS "Register optional interpreter-based tests during release migration" OFF)
+option(MOSAICRAFT_PYTHON_TESTS "Register optional Python integration and study tests" OFF)
 add_test(NAME cuda_architecture_config COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_architectures.cmake")
 add_test(NAME cuda_toolkit_config COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_toolkit.cmake")
 add_test(NAME mosaicraft_tests COMMAND mosaicraft_tests)
@@ -479,17 +479,12 @@ endif()
 add_custom_target(mosaicraft_test_targets ${_test_targets_default} DEPENDS mosaicraft MosaicraftWebUI
     mosaicraft_tests mosaicraft_regression_tests mosaicraft_release_check)
 add_test(NAME documentation_native COMMAND mosaicraft_release_check --docs "${CMAKE_SOURCE_DIR}")
-if(NOT MOSAICRAFT_LEGACY_SCRIPT_TESTS)
-    add_test(NAME cuda_build_info_native COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_build_info.cmake")
-    add_test(NAME webui_native_smoke COMMAND mosaicraft_release_check
-        "$<TARGET_FILE:MosaicraftWebUI>" "${CMAKE_SOURCE_DIR}/contracts.json" --current)
-    set_tests_properties(webui_native_smoke PROPERTIES TIMEOUT 240)
-endif()
-if(MOSAICRAFT_LEGACY_SCRIPT_TESTS)
-    find_package(Python3 COMPONENTS Interpreter QUIET)
-    find_program(POWERSHELL_COMMAND NAMES pwsh powershell)
-endif()
-if(MOSAICRAFT_LEGACY_SCRIPT_TESTS AND Python3_Interpreter_FOUND)
+add_test(NAME cuda_build_info_native COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_build_info.cmake")
+add_test(NAME webui_native_smoke COMMAND mosaicraft_release_check
+    "$<TARGET_FILE:MosaicraftWebUI>" "${CMAKE_SOURCE_DIR}/contracts.json" --current)
+set_tests_properties(webui_native_smoke PROPERTIES TIMEOUT 240)
+if(MOSAICRAFT_PYTHON_TESTS)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
     add_test(NAME portable_library COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/portable_library.py"
         --cli "$<TARGET_FILE:mosaicraft>" --regression "$<TARGET_FILE:mosaicraft_regression_tests>")
     set_tests_properties(portable_library PROPERTIES TIMEOUT 120)
@@ -497,18 +492,6 @@ if(MOSAICRAFT_LEGACY_SCRIPT_TESTS AND Python3_Interpreter_FOUND)
         --cli "$<TARGET_FILE:mosaicraft>")
     set_tests_properties(portable_project PROPERTIES TIMEOUT 180)
     add_test(NAME study_paths COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/test_study_paths.py")
-endif()
-
-if(MOSAICRAFT_LEGACY_SCRIPT_TESTS AND POWERSHELL_COMMAND)
-    add_test(NAME cuda_build_info COMMAND "${POWERSHELL_COMMAND}" -NoProfile -File "${CMAKE_SOURCE_DIR}/tests/test_cuda_build_info.ps1")
-    add_custom_target(mosaicraft_webui_smoke
-        COMMAND "${POWERSHELL_COMMAND}" -NoProfile -ExecutionPolicy Bypass
-            -File "${CMAKE_SOURCE_DIR}/tests/webui_smoke.ps1"
-            -WebUiExe "$<TARGET_FILE:MosaicraftWebUI>"
-        DEPENDS MosaicraftWebUI mosaicraft
-        USES_TERMINAL
-        COMMENT "Running Web UI/API smoke test..."
-    )
 endif()
 
 # 显式性能采样目标，不增加默认构建或 CTest 的负担。

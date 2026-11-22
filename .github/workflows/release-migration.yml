@@ -1,4 +1,4 @@
-name: Compare CMake and legacy release packages
+name: Audit CMake release packages
 on:
   workflow_dispatch:
     inputs:
@@ -46,13 +46,12 @@ jobs:
           esac
           printf 'packages=%s\n' "$(jq -c . <<<"$packages")" >> "$GITHUB_OUTPUT"
   package:
-    name: ${{ matrix.package.id }} (${{ matrix.entry }})
+    name: ${{ matrix.package.id }}
     needs: select
     strategy:
       fail-fast: false
       matrix:
         package: ${{ fromJSON(needs.select.outputs.packages) }}
-        entry: [native, legacy]
     runs-on: ${{ matrix.package.runner }}
     defaults:
       run:
@@ -74,10 +73,10 @@ jobs:
           printf '%s\n' /usr/bin >> "$GITHUB_PATH"
       - uses: ./.github/actions/native-dependencies
         with:
-          cold: ${{ inputs.cold && matrix.entry == 'native' }}
+          cold: ${{ inputs.cold }}
       - name: Prepare locked GPU SDKs
         env:
-          AUDIT: ${{ inputs.cold && matrix.entry == 'native' }}
+          AUDIT: ${{ inputs.cold }}
         run: |
           prepare_sdk() {
             local mode=$1
@@ -94,7 +93,6 @@ jobs:
             xcrun -sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
           fi
       - name: Build, test and archive with CMake
-        if: matrix.entry == 'native'
         env:
           COLD: ${{ inputs.cold }}
         run: |
@@ -110,45 +108,12 @@ jobs:
           else
             "${command[@]}"
           fi
-      - name: Require failure when CUDA is not visible
-        if: matrix.entry == 'native' && startsWith(matrix.package.runtime, 'cuda')
-        env:
-          CUDA_VISIBLE_DEVICES: '-1'
-        run: |
-          suffix=
-          if [[ "$RUNNER_OS" == Windows ]]; then suffix=.exe; fi
-          probe="build/package-migration/Release/bin/mosaicraft_tests$suffix"
-          if "$probe" --require-cuda > build/dependency-state/no-device.log 2>&1; then
-            printf '%s\n' 'A CUDA-required probe unexpectedly succeeded without devices' >&2
-            exit 1
-          fi
-          grep -F 'requires an available CUDA device' build/dependency-state/no-device.log
-      - name: Build, test and archive with the baseline
-        if: matrix.entry == 'legacy'
-        shell: pwsh
-        run: |
-          $options = @{}
-          switch ($env:RUNTIME) {
-            'cpu-only' { $options.NoCuda = $true }
-            'metal' { $options.NoCuda = $true; $options.Metal = $true }
-            'vulkan' {
-              $options.NoCuda = $true
-              if ($env:CHANNEL -eq 'stable') { $options.VulkanRelease = $true } else { $options.Vulkan = $true }
-            }
-            'cuda-vulkan' { $options.Vulkan = $true; $options.CudaValidation = 'BuildOnly' }
-            'cuda' {
-              $options.CudaValidation = 'BuildOnly'
-              if ($IsLinux) { $options.AllowUnvalidatedCudaRelease = $true }
-            }
-          }
-          ./scripts/release.ps1 -BuildDir build/package-migration -OutputDir build/migration-archives @options
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: migration-${{ matrix.package.id }}-${{ matrix.entry }}
+          name: migration-${{ matrix.package.id }}
           path: build/migration-archives/*
           if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: matrix.entry == 'native'
         with:
           name: migration-${{ matrix.package.id }}-check-tool
           path: build/package-migration/Release/bin/mosaicraft_release_check*
@@ -156,13 +121,13 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: migration-${{ matrix.package.id }}-${{ matrix.entry }}-diagnostics
+          name: migration-${{ matrix.package.id }}-diagnostics
           path: |
             build/dependency-state/
             build/package-migration/Testing/Temporary/
           if-no-files-found: ignore
-  compare:
-    name: Standalone ${{ matrix.package.id }} comparison
+  verify:
+    name: Standalone ${{ matrix.package.id }} verification
     needs: [select, package]
     strategy:
       fail-fast: false
@@ -181,10 +146,10 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: migration-${{ matrix.package.id }}-*
+          pattern: migration-${{ matrix.package.id }}*
           merge-multiple: false
           path: build/comparison
-      - name: Check both archives without project dependencies
+      - name: Check archive without project dependencies
         env:
           PACKAGE_ID: ${{ matrix.package.id }}
           COLD: ${{ inputs.cold }}
@@ -205,18 +170,11 @@ jobs:
             sudo apt-get install -y --no-install-recommends strace
             prefix=(bash scripts/audit-native-release.sh)
           fi
-          for layout in native legacy; do
-            archives=("$base-$layout/"*".$extension")
-            [[ "${#archives[@]}" == 1 ]]
-            archive=${archives[0]}
-            read -r sha _ < "$archive.sha256"
-            audit=()
-            if (( ${#prefix[@]} )); then audit=("${prefix[@]}" "build/$layout-verify-execve.log"); fi
-            "${audit[@]}" cmake "-DARCHIVE=$archive" "-DEXPECTED_SHA256=$sha" "-DEXPECTED_COMMIT=$GITHUB_SHA" \
-              "-DEXPECTED_RUNTIME=$EXPECT_RUNTIME" "-DEXPECTED_GPU_VALIDATION=$EXPECT_GPU" "-DCHECK_TOOL=$tool" \
-              -DREQUIRE_CURRENT=ON -P cmake/VerifyPackage.cmake
-          done
-          cmake "-DNEW_ARCHIVE=$base-native/${archive##*/}" "-DLEGACY_ARCHIVE=$archive" -P cmake/ComparePackages.cmake
+          audit=()
+          if (( ${#prefix[@]} )); then audit=("${prefix[@]}" build/standalone-verify-execve.log); fi
+          "${audit[@]}" cmake "-DARCHIVE_DIR=$base" "-DEXPECTED_COMMIT=$GITHUB_SHA" \
+            "-DEXPECTED_RUNTIME=$EXPECT_RUNTIME" "-DEXPECTED_GPU_VALIDATION=$EXPECT_GPU" \
+            "-DEXPECTED_CHANNEL=$CHANNEL" "-DCHECK_TOOL=$tool" -DREQUIRE_CURRENT=ON -P cmake/VerifyPackage.cmake
           if [[ -n "$PUBLISHED_TAG" && ( "$CHANNEL" == stable || "$PACKAGE_ID" == windows-cuda ) ]]; then
             gpu=$EXPECT_GPU
             if [[ "$PACKAGE_ID" == windows-cuda ]]; then gpu=passed; fi
@@ -225,15 +183,6 @@ jobs:
               "-DEXPECTED_RUNTIME=$EXPECT_RUNTIME" "-DEXPECTED_GPU_VALIDATION=$gpu" "-DCHECK_TOOL=$tool" \
               -P cmake/VerifyPackage.cmake
           fi
-      - name: Run the old verifier on the new archive
-        shell: pwsh
-        env:
-          PACKAGE_ID: ${{ matrix.package.id }}
-        run: |
-          $archive = @(Get-ChildItem "build/comparison/migration-$env:PACKAGE_ID-native" -File | Where-Object { $_.Name -match '\.(zip|tar\.gz)$' })
-          if ($archive.Count -ne 1) { throw 'Expected exactly one native archive' }
-          $hash = ((Get-Content "$($archive[0].FullName).sha256" -Raw) -split '\s+')[0]
-          ./scripts/verify-release-asset.ps1 -ArchivePath $archive[0].FullName -ExpectedSha256 $hash -ExpectedCommit $env:GITHUB_SHA -ExpectedRuntime $env:EXPECT_RUNTIME -ExpectedGpuValidation $env:EXPECT_GPU -RequireStandalone
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && runner.os == 'Linux' && inputs.cold
         with:
