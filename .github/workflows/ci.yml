@@ -40,8 +40,10 @@ jobs:
             runner: windows-2025-vs2026
           - platform: linux-x64
             runner: ubuntu-22.04
+            jobs: 2
           - platform: macos-arm64
             runner: macos-15
+            jobs: 2
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,20 +53,28 @@ jobs:
         if: runner.os == 'Windows'
         with:
           cache-namespace: ${{ inputs.cache-namespace || 'deps-v1' }}
+      - name: Install Ubuntu build dependencies
+        if: runner.os == 'Linux'
+        shell: sh
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build \
+            libopencv-dev libsqlite3-dev libtiff-dev libpng-dev libjpeg-dev zlib1g-dev
+          echo /usr/bin >> "$GITHUB_PATH"
+      - name: Install macOS build dependencies
+        if: runner.os == 'macOS'
+        shell: sh
+        run: brew install cmake ninja opencv@4 sqlite libtiff libpng jpeg-turbo
       - name: Configure CPU Release
-        if: runner.os == 'Windows'
         shell: bash
         run: cmake --preset '${{ matrix.platform }}'
       - name: Build CLI and Web UI
-        if: runner.os == 'Windows'
         shell: bash
-        run: cmake --build --preset '${{ matrix.platform }}' --target mosaicraft MosaicraftWebUI --parallel
-      - name: Build with system packages
+        run: cmake --build --preset '${{ matrix.platform }}' --target mosaicraft MosaicraftWebUI --parallel ${{ matrix.jobs }}
+      - name: Smoke-test the system build
         if: runner.os != 'Windows'
         shell: sh
         run: |
-          if [ "$RUNNER_OS" = Linux ]; then export PATH="/usr/bin:$PATH"; fi
-          ./scripts/build-native.sh --install-deps
           ./build/${{ matrix.platform }}/Release/bin/mosaicraft --version
           ./build/${{ matrix.platform }}/Release/bin/MosaicraftWebUI --help
       - name: Upload diagnostics

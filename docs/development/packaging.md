@@ -1,6 +1,6 @@
 # CI 与原生发布包
 
-日常 `CI` 在 Windows x64、Linux x64 和 macOS ARM64 上编译 CPU 版 CLI 与 Web UI。Linux 和 macOS 通过 `scripts/build-native.sh` 使用系统依赖，Windows 使用固定的 vcpkg 依赖。推送 `v*` 版本标签会触发 `Native packages`，执行完整 CTest、Web UI/API smoke、打包和独立包验收。维护者使用通过验收的 Actions artifacts 创建 GitHub Release。
+日常 `CI` 在 Windows x64、Linux x64 和 macOS ARM64 上编译 CPU 版 CLI 与 Web UI。三个平台均直接使用 CMake 平台预设；Linux 和 macOS 使用系统依赖，Windows 使用固定的 vcpkg 依赖。推送 `v*` 版本标签会触发 `Native packages`，执行完整 CTest、Web UI/API smoke、打包和独立包验收。维护者使用通过验收的 Actions artifacts 创建 GitHub Release。
 
 | 平台 | runner | CPU 包 | 云端 CUDA 包 | Vulkan 包 |
 | --- | --- | --- | --- | --- |

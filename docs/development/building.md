@@ -16,16 +16,36 @@
 
 源码构建使用 C++17 编译器、CMake 3.21+、Ninja，以及系统提供的 OpenCV 4、SQLite、TIFF、PNG 和 JPEG 开发库。Ubuntu 22.04 自带的软件源满足 CMake 版本要求。macOS 请先安装 Xcode Command Line Tools（`xcode-select --install`）和 Homebrew。
 
+首次构建时，按系统安装依赖；已安装可跳过：
+
 ```sh
-git clone https://github.com/CialloKing/Mosaicraft.git
-cd Mosaicraft
-./scripts/build-native.sh --install-deps
+# Debian / Ubuntu
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build \
+  libopencv-dev libsqlite3-dev libtiff-dev libpng-dev libjpeg-dev zlib1g-dev
+
+# Fedora
+sudo dnf install -y gcc-c++ cmake ninja-build opencv-devel sqlite-devel \
+  libtiff-devel libpng-devel libjpeg-turbo-devel zlib-devel
+
+# macOS
+brew install cmake ninja opencv@4 sqlite libtiff libpng jpeg-turbo
 ```
 
-`--install-deps` 在 Debian/Ubuntu 上调用 apt，在 Fedora 上调用 dnf，在 macOS 上调用 Homebrew。开发库已安装时，直接运行 `./scripts/build-native.sh`，脚本会按本机平台和架构选择预设。也可手动执行 `cmake --preset linux-x64` 和 `cmake --build --preset linux-x64`，或换成对应的 ARM64、macOS 预设。自定义依赖位置可通过 `CMAKE_PREFIX_PATH` 提供。
+从源码根目录配置和构建，下面以 Linux x64 为例。其他平台或架构请选择上表对应的预设名；自定义依赖位置可通过 `CMAKE_PREFIX_PATH` 提供。
+
+```sh
+cmake --preset linux-x64
+cmake --build --preset linux-x64 --target mosaicraft MosaicraftWebUI --parallel 2
+```
 
 - Linux 预设要求工具链的目标架构匹配预设名。交叉编译时用 `-DCMAKE_TOOLCHAIN_FILE=<文件>` 指定目标编译器和系统库。macOS 预设直接设置目标架构，依赖库也须提供相同架构。
-- Linux CUDA 构建先安装 CUDA Toolkit 13.5.0（nvcc 13.5.37），再运行 `CUDAToolkit_ROOT=/usr/local/cuda-13.5 ./scripts/build-native.sh --cuda`。将路径换成实际安装位置。产物在 `build/<preset>-cuda/Release/bin`。 [CUDA 工具链](../archive/gpu/cuda-13-5-migration.md)
+- Linux CUDA 构建先安装 CUDA Toolkit 13.5.0（nvcc 13.5.37），配置时在基础预设上启用 CUDA 并指定 SDK，使用独立目录： [CUDA 工具链](../archive/gpu/cuda-13-5-migration.md)
+
+  ```sh
+  cmake --preset linux-x64 -B build/linux-x64-cuda -DMOSAICRAFT_CUDA=ON -DCUDAToolkit_ROOT=/usr/local/cuda-13.5
+  cmake --build build/linux-x64-cuda --target mosaicraft MosaicraftWebUI --parallel 2
+  ```
 
 ## Windows
 
