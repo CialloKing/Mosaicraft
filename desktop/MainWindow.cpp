@@ -19,19 +19,15 @@
 #include <QJsonDocument>
 #include <QMessageBox>
 #include <QMimeData>
-#include <QMouseEvent>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QProcess>
 #include <QSaveFile>
 #include <QSettings>
-#include <QStyleHints>
 #include <QTemporaryDir>
 #include <QSignalBlocker>
 #include <QUrl>
 #include <QVersionNumber>
-#include <QWindow>
-#include <QtMath>
 
 #include <algorithm>
 
@@ -144,27 +140,10 @@ MainWindow::~MainWindow()
 void MainWindow::setupMenu()
 {
     ui->menuBar->setNativeMenuBar(false);
-#if defined(Q_OS_WIN) && QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+#ifdef Q_OS_WIN
     if (QGuiApplication::platformName() == QStringLiteral("windows"))
     {
-        QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
-        setWindowFlags(windowFlags() | Qt::CustomizeWindowHint | Qt::WindowMinMaxButtonsHint |
-                       Qt::WindowCloseButtonHint | Qt::ExpandedClientAreaHint | Qt::NoTitleBarBackgroundHint);
-        setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea, false);
-        winId();
-        auto nativeWindow = windowHandle();
-        // QWidget restores the title hint when window buttons are present. The native window accepts them separately.
-        nativeWindow->setFlag(Qt::WindowTitleHint, false);
-        const auto menuMargins = ui->menuBar->contentsMargins();
-        const auto reserveCaption = [this, menuMargins](QMargins margins) {
-            // The Windows Qt platform places three buttons, each 1.5 title-bar heights wide.
-            const int controls = qMax(144, qMax(margins.right(), qCeil(margins.top() * 4.5)));
-            ui->menuBar->setContentsMargins(menuMargins + QMargins(margins.left(), 0, controls, 0));
-            ui->menuBar->setMinimumHeight(margins.top());
-        };
-        connect(nativeWindow, &QWindow::safeAreaMarginsChanged, this, reserveCaption);
-        reserveCaption(nativeWindow->safeAreaMargins());
-        ui->menuBar->installEventFilter(this);
+        setupWindowsTitleBar();
     }
 #endif
     connect(ui->actionNew, &QAction::triggered, this, &MainWindow::newDocument);
@@ -553,19 +532,6 @@ void MainWindow::updateRecentMenu()
 
 bool MainWindow::eventFilter(QObject *object, QEvent *event)
 {
-    if (object == ui->menuBar &&
-        (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonDblClick) &&
-        static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton &&
-        !ui->menuBar->actionAt(static_cast<QMouseEvent *>(event)->position().toPoint()))
-    {
-        if (event->type() == QEvent::MouseButtonDblClick)
-        {
-            if (isMaximized()) showNormal();
-            else showMaximized();
-            return true;
-        }
-        return windowHandle()->startSystemMove();
-    }
     return handleCanvasEvent(object, event) || QMainWindow::eventFilter(object, event);
 }
 
