@@ -6,7 +6,6 @@
 #include "third_party/picosha2/picosha2.h"
 
 #include <algorithm>
-#include <cmath>
 #include <fstream>
 #include <new>
 #include <string>
@@ -27,16 +26,11 @@ bool smartCropAvailable() noexcept
 namespace
 {
 constexpr int kForegroundSize = 320;
-constexpr int kRealMaxEdge = 640;
+// Non-square and not stride-aligned so the preflight exercises detector padding.
+const cv::Size kFaceProbeSize(352, 239);
 // The locked anime model concatenates one prediction per cell at these three strides.
 constexpr int kAnimeStrides[] = {8, 16, 32};
 constexpr int kAnimeAlignment = kAnimeStrides[2];
-
-cv::Size realInputSize(cv::Size image)
-{
-    const double scale = std::min(1.0, static_cast<double>(kRealMaxEdge) / std::max(image.width, image.height));
-    return cv::Size(std::max(1, cvRound(image.width * scale)), std::max(1, cvRound(image.height * scale)));
-}
 
 int alignAnimeInput(int length)
 {
@@ -134,11 +128,11 @@ struct SmartCropInference::Impl
 
     std::vector<cv::Rect2d> realFaces(const cv::Mat &image)
     {
-        const cv::Size size = realInputSize(image.size());
-        cv::Mat reduced, detections;
-        cv::resize(image, reduced, size, 0, 0, cv::INTER_AREA);
+        const cv::Size size = image.size();
+        // YuNet pads internally on the right and bottom, so its boxes stay in the original coordinates.
+        cv::Mat detections;
         real->setInputSize(size);
-        real->detect(reduced, detections);
+        real->detect(image, detections);
         if (!detections.empty() && (detections.type() != CV_32F || detections.cols != 15 || !cv::checkRange(detections)))
         {
             throw SmartCropError("smart_crop_inference", "unexpected YuNet detection tensor");
@@ -222,7 +216,7 @@ SmartCropInference::SmartCropInference(const SmartCropModelPair &models) try
     m_impl->saliency = cpuNet(models.saliency);
     if (models.mode == CropMode::SmartReal)
     {
-        m_impl->real = cv::FaceDetectorYN::create("onnx", models.face, {}, cv::Size(kRealMaxEdge, kRealMaxEdge),
+        m_impl->real = cv::FaceDetectorYN::create("onnx", models.face, {}, kFaceProbeSize,
                                                 0.9f, 0.3f, 300, cv::dnn::DNN_BACKEND_OPENCV, cv::dnn::DNN_TARGET_CPU);
     }
     else
@@ -253,9 +247,7 @@ void SmartCropInference::probe()
     // Force a forward pass as ONNX import alone cannot verify output compatibility.
     try
     {
-        // Also exercise padding and a non-square tensor in the anime preflight.
-        const cv::Size size = m_impl->real ? cv::Size(320, 320) : cv::Size(352, 239);
-        analyze(cv::Mat::zeros(size, CV_8UC3));
+        analyze(cv::Mat::zeros(kFaceProbeSize, CV_8UC3));
     }
     catch (const SmartCropError &error)
     {

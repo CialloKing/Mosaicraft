@@ -77,22 +77,15 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
     {
         return runtimeFailure(runtime, 1, "no supported images found", "input_unreadable");
     }
-    const bool smart = request.cropMode != CropMode::Center;
-    auto slots = std::min(files.size(), static_cast<size_t>(normalizationWorkerCount(request.threads)));
-    std::vector<std::unique_ptr<SmartCropInference>> sessions;
-    if (smart)
+    std::unique_ptr<SmartCropInference> session;
+    if (request.cropMode != CropMode::Center)
     {
-        // Each DNN instance retains its largest buffers. Avoid multiplying the cost of full-size inputs.
-        slots = request.cropMode == CropMode::SmartAnime ? 1 : std::min<size_t>(slots, 4);
         runtime.stage("loading_crop_models");
         try
         {
             const auto models = loadSmartCropModelPair(request.cropMode);
-            for (size_t slot = 0; slot < slots; ++slot)
-            {
-                sessions.push_back(std::make_unique<SmartCropInference>(models));
-            }
-            sessions.front()->probe();
+            session = std::make_unique<SmartCropInference>(models);
+            session->probe();
         }
         catch (const SmartCropError &problem)
         {
@@ -100,29 +93,7 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
         }
     }
     fs::create_directories(output);
-    std::atomic<size_t> completed{0}, failed{0}, next{0};
-    std::vector<SmartCropStats> stats(smart ? slots : 0);
-    const auto emitStats = [&]()
-    {
-        if (!smart)
-        {
-            return;
-        }
-        SmartCropStats sum;
-        for (const auto &slot : stats)
-        {
-            sum.facesFound += slot.facesFound;
-            sum.moved += slot.moved;
-            sum.centered += slot.centered;
-            sum.mainFaceClipped += slot.mainFaceClipped;
-            sum.inferenceMs += slot.inferenceMs;
-        }
-        runtime.metric("smartCropFacesFound", static_cast<double>(sum.facesFound));
-        runtime.metric("smartCropMoved", static_cast<double>(sum.moved));
-        runtime.metric("smartCropCentered", static_cast<double>(sum.centered));
-        runtime.metric("smartCropMainFaceClipped", static_cast<double>(sum.mainFaceClipped));
-        runtime.metric("smartCropInferenceWorkerMs", sum.inferenceMs);
-    };
+    std::atomic<size_t> completed{0}, failed{0};
     const auto process = [&](size_t index, ImageNormalizer &normalizer)
     {
         const auto destination = output / (std::to_string(index) + pathToUtf8(files[index].extension()));
@@ -132,10 +103,11 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
         }
         runtime.advance("images", ++completed, files.size(), "images");
     };
-    WorkerPool workers(static_cast<unsigned>(slots));
     runtime.stage("normalizing");
-    if (!smart)
+    if (!session)
     {
+        const auto slots = std::min(files.size(), static_cast<size_t>(normalizationWorkerCount(request.threads)));
+        WorkerPool workers(static_cast<unsigned>(slots));
         workers.run(files.size(), [&](size_t index)
         {
             ImageNormalizer normalizer(request.normalizeWidth, request.normalizeHeight);
@@ -144,25 +116,23 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
     }
     else
     {
+        SmartCropStats stats;
+        const auto emitStats = [&]()
+        {
+            runtime.metric("smartCropFacesFound", static_cast<double>(stats.facesFound));
+            runtime.metric("smartCropMoved", static_cast<double>(stats.moved));
+            runtime.metric("smartCropCentered", static_cast<double>(stats.centered));
+            runtime.metric("smartCropMainFaceClipped", static_cast<double>(stats.mainFaceClipped));
+            runtime.metric("smartCropInferenceWorkerMs", stats.inferenceMs);
+        };
         try
         {
-            // A slot never shares the mutable networks with any other task or slot.
-            workers.run(slots, [&](size_t slot)
+            // Reuse just one pair of networks: each instance retains its largest full-resolution buffers.
+            ImageNormalizer normalizer(request.normalizeWidth, request.normalizeHeight, session.get(), &stats);
+            for (size_t index = 0; index < files.size(); ++index)
             {
-                ImageNormalizer normalizer(request.normalizeWidth, request.normalizeHeight, sessions[slot].get(), &stats[slot]);
-                try
-                {
-                    for (size_t index = next.fetch_add(1); index < files.size(); index = next.fetch_add(1))
-                    {
-                        process(index, normalizer);
-                    }
-                }
-                catch (...)
-                {
-                    next.store(files.size());
-                    throw;
-                }
-            });
+                process(index, normalizer);
+            }
         }
         catch (const SmartCropError &problem)
         {
