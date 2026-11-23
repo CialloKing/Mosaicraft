@@ -36,7 +36,7 @@ CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，�
 ./mosaicraft library normalize photos -o normalized --size 180x320
 ```
 
-仅归一化支持 `--crop center|smart-real|smart-anime`。例如：`mosaicraft library normalize photos -o normalized --size 180x320 --crop smart-real`。两种智能模式都使用 U²-NetP 保留主体，并分别保护真人或动漫脸。按目录手动分批选择，不自动分类；中心裁剪仍是默认。保持原图比例、输出尺寸和同尺寸快路径；固定比例容不下主体时仍可能裁掉部分内容。智能模式需要支持该功能的构建及本地模型，缺失时会报错。
+仅归一化支持 `--crop center|smart-real|smart-anime`。例如：`mosaicraft library normalize photos -o normalized --size 180x320 --crop smart-real`。两种智能模式都使用 U²-NetP 保留主体，并分别使用原图尺寸检测真人或动漫脸，不限制最长边。智能模式每批逐张推理，大图可能明显增加耗时和内存。按目录手动分批选择，不自动分类；中心裁剪仍是默认。保持原图比例、输出尺寸和同尺寸快路径；固定比例容不下主体时仍可能裁掉部分内容。智能模式需要支持该功能的构建及本地模型，缺失时会报错。
 
 建库归一化尺寸默认 180×320，每轴 1～8192。`library build` 和 `library add` 保留 JPG/JPEG、PNG、WebP 的格式及后缀拼写，将 BMP 和 TIFF/TIF 转为 PNG。同尺寸的 JPG/JPEG、PNG、WebP 通常直接复制原字节。若 PNG 含超过解码器上限的 `iTXt` 文本块，建库、追加或单独归一化时会先在内存中的副本移除这些块；移除文本不改变像素，原图不改动；此类素材需要使用独立输出目录。原地建库要求新素材已经符合目标尺寸及格式，需要转换或缩放时请使用独立输出目录。历史图库素材继续可读。
 
