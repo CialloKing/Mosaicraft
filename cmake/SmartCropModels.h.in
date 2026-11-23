@@ -1,0 +1,6 @@
+#pragma once
+
+namespace mosaicraft
+{
+inline constexpr char kSmartCropModelManifest[] = R"MOSAIC_MODELS(@MOSAICRAFT_SMART_CROP_MODELS_JSON@)MOSAIC_MODELS";
+}

@@ -103,7 +103,16 @@ if(APPLE AND NOT CMAKE_TOOLCHAIN_FILE AND NOT OpenCV_DIR)
         endif()
     endif()
 endif()
-find_package(OpenCV 4 REQUIRED CONFIG COMPONENTS core imgproc imgcodecs HINTS "${_opencv_brew_prefix}")
+option(MOSAICRAFT_SMART_CROP "Enable OpenCV DNN smart image normalization" OFF)
+if(MOSAICRAFT_SMART_CROP)
+    find_package(OpenCV 4.12 REQUIRED CONFIG COMPONENTS core imgproc imgcodecs dnn objdetect HINTS "${_opencv_brew_prefix}")
+    set(_smart_crop_lock "${CMAKE_CURRENT_SOURCE_DIR}/cmake/smart-crop-models.json")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_smart_crop_lock}")
+    file(READ "${_smart_crop_lock}" MOSAICRAFT_SMART_CROP_MODELS_JSON)
+    configure_file(cmake/SmartCropModels.h.in generated/SmartCropModels.h @ONLY)
+else()
+    find_package(OpenCV 4 REQUIRED CONFIG COMPONENTS core imgproc imgcodecs HINTS "${_opencv_brew_prefix}")
+endif()
 # sqlite3：优先 vcpkg (unofficial-sqlite3)，回退到系统包 (SQLite3)
 find_package(unofficial-sqlite3 CONFIG QUIET)
 if(NOT unofficial-sqlite3_FOUND)
@@ -256,6 +265,7 @@ add_library(mosaicraft_core STATIC
     core/ApiMetadata.cpp
     core/ApiRequestParser.cpp
     core/ImageNormalizer.cpp
+    core/SmartCropInference.cpp
     core/LibraryPng.cpp
     core/BatchProcessor.cpp
     core/NormalizeService.cpp
@@ -340,6 +350,8 @@ include(cmake/PortableCompute.cmake)
 target_compile_definitions(mosaicraft_core PRIVATE
     $<$<BOOL:${MOSAICRAFT_CUDA}>:MOSAICRAFT_CUDA>
 )
+
+target_compile_definitions(mosaicraft_core PRIVATE MOSAICRAFT_SMART_CROP=$<BOOL:${MOSAICRAFT_SMART_CROP}>)
 
 target_include_directories(mosaicraft_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

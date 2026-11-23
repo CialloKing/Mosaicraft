@@ -9,5 +9,13 @@
       "features": ["jpeg", "png", "tiff", "webp", "intrinsics", "thread"]
     },
     "sqlite3", "tiff", "libpng", "libjpeg-turbo", "zlib"
-  ]
+  ],
+  "features": {
+    "smart-crop": {
+      "description": "Enable offline CPU smart image cropping",
+      "dependencies": [
+        { "name": "opencv4", "default-features": false, "features": ["dnn"] }
+      ]
+    }
+  }
 }

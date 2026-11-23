@@ -1,0 +1,40 @@
+{
+  "models": [
+    {
+      "id": "saliency",
+      "file": "u2netp.onnx",
+      "url": "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx",
+      "upstream": "https://github.com/xuebinqin/U-2-Net/issues/208",
+      "revision": "rembg v0.0.0, u2netp.onnx",
+      "size": 4574861,
+      "sha256": "309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8",
+      "license": "Apache-2.0 (original weights; exported artifact provenance pending)",
+      "notice": "",
+      "redistributionVerified": false
+    },
+    {
+      "id": "real",
+      "file": "face_detection_yunet_2023mar.onnx",
+      "url": "https://media.githubusercontent.com/media/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+      "upstream": "https://github.com/opencv/opencv_zoo/tree/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_detection_yunet",
+      "revision": "48b10fa505aeb51fbd127fc60a5c660040e823b7",
+      "size": 232589,
+      "sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+      "license": "MIT",
+      "notice": "",
+      "redistributionVerified": false
+    },
+    {
+      "id": "anime",
+      "file": "anime-face-v1.4-n.onnx",
+      "url": "https://huggingface.co/deepghs/anime_face_detection/resolve/784dc4c0bb692351ddcdbe6131a050b17d3025d5/face_detect_v1.4_n/model.onnx",
+      "upstream": "https://huggingface.co/deepghs/anime_face_detection/tree/784dc4c0bb692351ddcdbe6131a050b17d3025d5/face_detect_v1.4_n",
+      "revision": "784dc4c0bb692351ddcdbe6131a050b17d3025d5",
+      "size": 12102558,
+      "sha256": "fd860b650a4377046842c3cd80d01b0b408bdfbdb4acee5759630f82c6ef04a9",
+      "license": "MIT (model card; upstream weight provenance pending)",
+      "notice": "",
+      "redistributionVerified": false
+    }
+  ]
+}
