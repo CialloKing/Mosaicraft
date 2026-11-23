@@ -82,7 +82,8 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
     std::vector<std::unique_ptr<SmartCropInference>> sessions;
     if (smart)
     {
-        slots = std::min<size_t>(slots, 4);
+        // Each DNN instance retains its largest buffers. Avoid multiplying the cost of full-size inputs.
+        slots = request.cropMode == CropMode::SmartAnime ? 1 : std::min<size_t>(slots, 4);
         runtime.stage("loading_crop_models");
         try
         {

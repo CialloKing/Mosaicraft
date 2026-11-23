@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <new>
+#include <string>
 #include "json.hpp"
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
@@ -25,7 +27,31 @@ bool smartCropAvailable() noexcept
 namespace
 {
 constexpr int kForegroundSize = 320;
-constexpr int kFaceSize = 640;
+constexpr int kRealMaxEdge = 640;
+// The locked anime model concatenates one prediction per cell at these three strides.
+constexpr int kAnimeStrides[] = {8, 16, 32};
+constexpr int kAnimeAlignment = kAnimeStrides[2];
+
+cv::Size realInputSize(cv::Size image)
+{
+    const double scale = std::min(1.0, static_cast<double>(kRealMaxEdge) / std::max(image.width, image.height));
+    return cv::Size(std::max(1, cvRound(image.width * scale)), std::max(1, cvRound(image.height * scale)));
+}
+
+int alignAnimeInput(int length)
+{
+    return ((length + kAnimeAlignment - 1) / kAnimeAlignment) * kAnimeAlignment;
+}
+
+int animePredictionCount(cv::Size input)
+{
+    int count = 0;
+    for (const int stride : kAnimeStrides)
+    {
+        count += (input.width / stride) * (input.height / stride);
+    }
+    return count;
+}
 
 std::vector<unsigned char> readModel(const nlohmann::json &manifest, const char *id)
 {
@@ -108,8 +134,7 @@ struct SmartCropInference::Impl
 
     std::vector<cv::Rect2d> realFaces(const cv::Mat &image)
     {
-        const double scale = std::min(1.0, static_cast<double>(kFaceSize) / std::max(image.cols, image.rows));
-        const cv::Size size(std::max(1, cvRound(image.cols * scale)), std::max(1, cvRound(image.rows * scale)));
+        const cv::Size size = realInputSize(image.size());
         cv::Mat reduced, detections;
         cv::resize(image, reduced, size, 0, 0, cv::INTER_AREA);
         real->setInputSize(size);
@@ -133,16 +158,26 @@ struct SmartCropInference::Impl
 
     std::vector<cv::Rect2d> animeFaces(const cv::Mat &image)
     {
-        const cv::Size size(kFaceSize, kFaceSize);
-        cv::Mat resized;
-        // The detector's fixed-size preprocessing is separate from the aspect-preserving output.
-        cv::resize(image, resized, size, 0, 0, cv::INTER_CUBIC);
-        anime.setInput(cv::dnn::blobFromImage(resized, 1.0 / 255, size, cv::Scalar(), true));
+        const cv::Size content = image.size();
+        const cv::Size input(alignAnimeInput(content.width), alignAnimeInput(content.height));
+        const int extraWidth = input.width - content.width;
+        const int extraHeight = input.height - content.height;
+        const cv::Point padding(extraWidth / 2, extraHeight / 2);
+        cv::Mat padded = image;
+        if (extraWidth || extraHeight)
+        {
+            // Keep the original pixels; only the model tensor needs stride-aligned dimensions.
+            cv::copyMakeBorder(image, padded, padding.y, extraHeight - padding.y,
+                               padding.x, extraWidth - padding.x, cv::BORDER_CONSTANT | cv::BORDER_ISOLATED,
+                               cv::Scalar::all(114));
+        }
+        anime.setInput(cv::dnn::blobFromImage(padded, 1.0 / 255, input, cv::Scalar(), true));
         const auto out = anime.forward("output0");
         if (out.type() != CV_32F || out.dims != 3 || out.size[0] != 1 || out.size[1] != 5 ||
-            out.size[2] != 8400 || !cv::checkRange(out))
+            out.size[2] != animePredictionCount(input) || !cv::checkRange(out))
         {
-            throw SmartCropError("smart_crop_inference", "unexpected Anime Face Detection tensor");
+            throw SmartCropError("smart_crop_inference", "unexpected Anime Face Detection tensor for " +
+                                 std::to_string(input.width) + "x" + std::to_string(input.height));
         }
         const auto rows = out.reshape(1, 5);
         const auto *x = rows.ptr<float>(0), *y = rows.ptr<float>(1);
@@ -153,7 +188,9 @@ struct SmartCropInference::Impl
         {
             if (score[i] > 0.25f)
             {
-                const auto box = normalizedBox(cv::Rect2d(x[i] - w[i] / 2, y[i] - h[i] / 2, w[i], h[i]), size);
+                // Return fractions of the picture, not of the padded detector input.
+                const auto box = normalizedBox(cv::Rect2d(x[i] - w[i] / 2 - padding.x,
+                                                          y[i] - h[i] / 2 - padding.y, w[i], h[i]), content);
                 if (!box.empty())
                 {
                     boxes.push_back(box);
@@ -185,7 +222,7 @@ SmartCropInference::SmartCropInference(const SmartCropModelPair &models) try
     m_impl->saliency = cpuNet(models.saliency);
     if (models.mode == CropMode::SmartReal)
     {
-        m_impl->real = cv::FaceDetectorYN::create("onnx", models.face, {}, cv::Size(kFaceSize, kFaceSize),
+        m_impl->real = cv::FaceDetectorYN::create("onnx", models.face, {}, cv::Size(kRealMaxEdge, kRealMaxEdge),
                                                 0.9f, 0.3f, 300, cv::dnn::DNN_BACKEND_OPENCV, cv::dnn::DNN_TARGET_CPU);
     }
     else
@@ -206,13 +243,19 @@ catch (const cv::Exception &error)
 {
     throw SmartCropError("smart_crop_inference", std::string("OpenCV smart crop inference failed: ") + error.what());
 }
+catch (const std::bad_alloc &)
+{
+    throw SmartCropError("smart_crop_inference", "not enough memory for smart crop inference");
+}
 
 void SmartCropInference::probe()
 {
     // Force a forward pass as ONNX import alone cannot verify output compatibility.
     try
     {
-        analyze(cv::Mat::zeros(320, 320, CV_8UC3));
+        // Also exercise padding and a non-square tensor in the anime preflight.
+        const cv::Size size = m_impl->real ? cv::Size(320, 320) : cv::Size(352, 239);
+        analyze(cv::Mat::zeros(size, CV_8UC3));
     }
     catch (const SmartCropError &error)
     {
