@@ -2,13 +2,14 @@
 
 #include "BenchmarkTimer.h"
 #include "LibraryEncodingOptions.h"
+#include <functional>
 #include <opencv2/core.hpp>
 #include <string>
 #include <vector>
 
 namespace mosaicraft
 {
-class SmartCropInference;
+struct SmartCropAnalysis;
 struct SmartCropStats;
 
 // ImageNormalizer — 将任意尺寸/格式的图片归一化为统一规格（默认 180×320）。
@@ -16,9 +17,11 @@ struct SmartCropStats;
 class ImageNormalizer
 {
 public:
+    using SmartAnalysis = std::function<SmartCropAnalysis(const cv::Mat &)>;
+
     // 默认目标尺寸与 Mosaicraft 图库规格一致
     explicit ImageNormalizer(int targetWidth = 180, int targetHeight = 320,
-                             SmartCropInference *smartCrop = nullptr, SmartCropStats *stats = nullptr);
+                             SmartAnalysis smartCrop = {}, SmartCropStats *stats = nullptr);
 
     // 同尺寸、同格式时原字节保存；否则缩放、裁剪后编码。
     // storedPixels 按需返回实际保存内容的解码像素，供特征流水线使用。
@@ -61,7 +64,7 @@ private:
     cv::Mat normalize(const cv::Mat& src);
     int m_targetWidth;
     int m_targetHeight;
-    SmartCropInference *m_smartCrop;
+    SmartAnalysis m_smartCrop;
     SmartCropStats *m_smartStats;
 };
 

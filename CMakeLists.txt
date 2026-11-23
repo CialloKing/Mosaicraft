@@ -265,7 +265,6 @@ add_library(mosaicraft_core STATIC
     core/ApiRequestParser.cpp
     core/ImageNormalizer.cpp
     core/SmartCropInference.cpp
-    core/SmartCropGeometry.cpp
     core/LibraryPng.cpp
     core/BatchProcessor.cpp
     core/NormalizeService.cpp
@@ -351,6 +350,12 @@ target_compile_definitions(mosaicraft_core PRIVATE
     $<$<BOOL:${MOSAICRAFT_CUDA}>:MOSAICRAFT_CUDA>
 )
 
+if(MOSAICRAFT_SMART_CROP)
+    target_sources(mosaicraft_core PRIVATE core/SmartCropGeometry.cpp)
+endif()
+if(MOSAICRAFT_SMART_CROP_CUDA)
+    target_sources(mosaicraft_core PRIVATE core/SmartCropCudaRecovery.cpp)
+endif()
 target_compile_definitions(mosaicraft_core PRIVATE
     MOSAICRAFT_SMART_CROP=$<BOOL:${MOSAICRAFT_SMART_CROP}>
     MOSAICRAFT_SMART_CROP_CUDA=$<BOOL:${MOSAICRAFT_SMART_CROP_CUDA}>)
@@ -461,6 +466,9 @@ add_dependencies(MosaicraftWebUI mosaicraft_webui_html)
 add_executable(mosaicraft_tests EXCLUDE_FROM_ALL
     tests/test_core.cpp
 )
+target_compile_definitions(mosaicraft_tests PRIVATE
+    MOSAICRAFT_SMART_CROP=$<BOOL:${MOSAICRAFT_SMART_CROP}>
+    MOSAICRAFT_SMART_CROP_CUDA=$<BOOL:${MOSAICRAFT_SMART_CROP_CUDA}>)
 target_link_libraries(mosaicraft_tests PRIVATE
     mosaicraft_core
     mosaicraft_cuda

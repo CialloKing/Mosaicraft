@@ -1,3 +1,6 @@
+#if MOSAICRAFT_SMART_CROP_CUDA
+#include "core/SmartCropCudaRecovery.h"
+#endif
 #include "../core/FeatureIndex.h"
 #include "../compute/CudaBackend.h"
 #include "../compute/CompatibleFeatures.h"
@@ -2734,6 +2737,8 @@ TEST_CASE("CUDA device Canny returns CPU edge counts without host-side tile imag
     }
 }
 
+
+#if MOSAICRAFT_SMART_CROP
 TEST_CASE("smart crop ranks complete faces before foreground and limits camera moves")
 {
     using namespace mosaicraft;
@@ -2764,6 +2769,46 @@ TEST_CASE("smart crop ranks complete faces before foreground and limits camera m
     analysis.foreground(cv::Rect(0, 30, 20, 10)).setTo(1.f);
     CHECK(chooseSmartCrop(cv::Size(200, 400), cv::Size(200, 100), analysis).roi.y == 300);
 }
+
+#endif
+
+#if MOSAICRAFT_SMART_CROP_CUDA
+TEST_CASE("smart crop retries a temporary GPU failure and confirms recovery on a real image")
+{
+    using namespace mosaicraft;
+    using namespace std::chrono_literals;
+    SmartCropCudaRecovery::Clock::time_point now{};
+    RuntimeContext runtime(false);
+    std::atomic<int> probes{0}, analyses{0};
+    SmartCropCudaRecovery recovery({[&]() { ++probes; }, [&](const cv::Mat &)
+    {
+        if (++analyses == 2)
+        {
+            throw SmartCropError("test_oom", "device out of memory", SmartCropCudaFault::Retryable);
+        }
+        return SmartCropAnalysis{};
+    }, []() {}}, runtime, [&]() { return now; });
+    REQUIRE(recovery.initialize());
+    CHECK(recovery.tryAnalyze({}).has_value());
+    CHECK_FALSE(recovery.tryAnalyze({}).has_value());
+    CHECK(runtime.snapshot().metrics.at("smartCropCudaFallbacks") == 1);
+    now += 4s;
+    CHECK_FALSE(recovery.tryAnalyze({}).has_value());
+    CHECK(probes.load() == 1);
+    now += 1s;
+    CHECK_FALSE(recovery.tryAnalyze({}).has_value()); // The CPU need not wait for the probe.
+    CHECK(runtime.snapshot().metrics.count("smartCropCudaRecoveries") == 0);
+    bool recovered = false;
+    for (int i = 0; i < 1000 && !recovered; ++i)
+    {
+        recovered = recovery.tryAnalyze({}).has_value();
+        std::this_thread::sleep_for(1ms);
+    }
+    REQUIRE(recovered);
+    CHECK(probes.load() == 2);
+    CHECK(runtime.snapshot().metrics.at("smartCropCudaRecoveries") == 1);
+}
+#endif
 
 TEST_CASE("normalize crop mode is optional, round-trips and is exclusive to normalization")
 {

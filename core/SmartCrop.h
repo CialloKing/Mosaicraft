@@ -48,12 +48,17 @@ inline const char *cropModeName(CropMode mode)
 
 enum class CropDevice
 {
+    Auto,
     Cpu,
     Cuda
 };
 
 inline std::optional<CropDevice> parseCropDevice(std::string_view name)
 {
+    if (name == "auto")
+    {
+        return CropDevice::Auto;
+    }
     if (name == "cpu")
     {
         return CropDevice::Cpu;
@@ -67,13 +72,26 @@ inline std::optional<CropDevice> parseCropDevice(std::string_view name)
 
 inline const char *cropDeviceName(CropDevice device)
 {
-    return device == CropDevice::Cuda ? "cuda" : "cpu";
+    switch (device)
+    {
+    case CropDevice::Auto: return "auto";
+    case CropDevice::Cuda: return "cuda";
+    default: return "cpu";
+    }
 }
+
+enum class SmartCropCudaFault
+{
+    None,
+    Retryable,
+    RestartRequired
+};
 
 class SmartCropError : public std::runtime_error
 {
 public:
-    SmartCropError(const char *code, const std::string &message) : std::runtime_error(message), m_code(code)
+    SmartCropError(const char *code, const std::string &message, SmartCropCudaFault fault = SmartCropCudaFault::None)
+        : std::runtime_error(message), m_code(code), m_fault(fault)
     {
     }
     const char *code() const noexcept
@@ -81,8 +99,14 @@ public:
         return m_code;
     }
 
+    SmartCropCudaFault cudaFault() const noexcept
+    {
+        return m_fault;
+    }
+
 private:
     const char *m_code;
+    SmartCropCudaFault m_fault;
 };
 
 struct SmartCropAnalysis

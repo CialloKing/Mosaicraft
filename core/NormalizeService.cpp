@@ -3,6 +3,9 @@
 #include "OutputPublication.h"
 #include "RequestValidation.h"
 #include "SmartCrop.h"
+#if MOSAICRAFT_SMART_CROP_CUDA
+#include "SmartCropCudaRecovery.h"
+#endif
 #include "UnicodeIO.h"
 #include "WorkerPool.h"
 #include <algorithm>
@@ -78,19 +81,44 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
     {
         return runtimeFailure(runtime, 1, "no supported images found", "input_unreadable");
     }
-    const auto device = request.cropDevice.value_or(CropDevice::Cpu);
-    const char *diagnosticField = device == CropDevice::Cuda ? "cropDevice" : "cropMode";
+    const auto policy = request.cropDevice.value_or(CropDevice::Auto);
+    const char *diagnosticField = policy == CropDevice::Cuda ? "cropDevice" : "cropMode";
+    std::optional<SmartCropModelPair> models;
     std::unique_ptr<SmartCropInference> session;
+#if MOSAICRAFT_SMART_CROP_CUDA
+    std::unique_ptr<SmartCropCudaRecovery> autoCuda;
+#endif
+    const auto useSession = [&](CropDevice device)
+    {
+        auto next = std::make_unique<SmartCropInference>(*models, device);
+        next->probe();
+        session = std::move(next);
+    };
     if (request.cropMode != CropMode::Center)
     {
+        runtime.metric("smartCropCudaFallbacks", 0);
+        runtime.metric("smartCropCudaRecoveries", 0);
         runtime.stage("loading_crop_models");
         try
         {
-            requireSmartCropDevice(device);
-            const auto models = loadSmartCropModelPair(request.cropMode);
-            session = std::make_unique<SmartCropInference>(models, device);
-            session->probe();
-            runtime.computeIdentity(cropDeviceName(device), "fp32", "opencv-dnn");
+            if (policy == CropDevice::Cuda)
+            {
+                requireSmartCropDevice(CropDevice::Cuda);
+            }
+            models = loadSmartCropModelPair(request.cropMode);
+            CropDevice initial = policy == CropDevice::Cuda ? CropDevice::Cuda : CropDevice::Cpu;
+#if MOSAICRAFT_SMART_CROP_CUDA
+            if (policy == CropDevice::Auto)
+            {
+                autoCuda = std::make_unique<SmartCropCudaRecovery>(*models, runtime);
+                initial = autoCuda->initialize() ? CropDevice::Cuda : CropDevice::Cpu;
+            }
+            if (!autoCuda || initial == CropDevice::Cpu)
+#endif
+            {
+                useSession(initial);
+            }
+            runtime.computeIdentity(cropDeviceName(initial), "fp32", "opencv-dnn");
         }
         catch (const SmartCropError &problem)
         {
@@ -111,7 +139,7 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
         runtime.advance("images", processed, files.size(), "images", processed == files.size());
     };
     runtime.stage("normalizing");
-    if (!session)
+    if (!models)
     {
         const auto slots = std::min(files.size(), static_cast<size_t>(normalizationWorkerCount(request.threads)));
         WorkerPool workers(static_cast<unsigned>(slots));
@@ -124,9 +152,16 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
     else
     {
         SmartCropStats stats;
+        size_t cpuImages = 0, cudaImages = 0;
         const auto processStart = std::chrono::steady_clock::now();
         const auto emitStats = [&]()
         {
+            runtime.metric("smartCropCpuImages", static_cast<double>(cpuImages));
+            runtime.metric("smartCropCudaImages", static_cast<double>(cudaImages));
+            if (cpuImages && cudaImages)
+            {
+                runtime.computeIdentity("mixed", "fp32", "opencv-dnn");
+            }
             runtime.metric("smartCropFacesFound", static_cast<double>(stats.facesFound));
             runtime.metric("smartCropMoved", static_cast<double>(stats.moved));
             runtime.metric("smartCropCentered", static_cast<double>(stats.centered));
@@ -139,8 +174,37 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
         };
         try
         {
-            // Reuse just one pair of networks: each instance retains its largest full-resolution buffers.
-            ImageNormalizer normalizer(request.normalizeWidth, request.normalizeHeight, session.get(), &stats);
+            const auto analyze = [&](const cv::Mat &image)
+            {
+#if MOSAICRAFT_SMART_CROP_CUDA
+                if (autoCuda)
+                {
+                    if (auto result = autoCuda->tryAnalyze(image))
+                    {
+                        ++cudaImages;
+                        session.reset(); // A dormant CPU session can retain large input buffers.
+                        runtime.computeIdentity("cuda", "fp32", "opencv-dnn");
+                        return std::move(*result);
+                    }
+                    runtime.computeIdentity("cpu", "fp32", "opencv-dnn");
+                }
+#endif
+                if (!session)
+                {
+                    useSession(CropDevice::Cpu);
+                }
+                auto result = session->analyze(image);
+                if (policy == CropDevice::Cuda)
+                {
+                    ++cudaImages;
+                }
+                else
+                {
+                    ++cpuImages;
+                }
+                return result;
+            };
+            ImageNormalizer normalizer(request.normalizeWidth, request.normalizeHeight, analyze, &stats);
             for (size_t index = 0; index < files.size(); ++index)
             {
                 process(index, normalizer);

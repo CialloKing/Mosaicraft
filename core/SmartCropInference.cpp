@@ -22,6 +22,30 @@
 
 namespace mosaicraft
 {
+#if MOSAICRAFT_SMART_CROP_CUDA
+namespace
+{
+SmartCropCudaFault cudaFault(const cv::Exception &error)
+{
+    // OpenCV wraps the NVIDIA status in a cv::Exception and does not retain the numeric code.
+    const std::string_view message(error.what());
+    for (const auto *fatal : {"an illegal memory access", "device-side assert", "unspecified launch failure",
+                              "launch timed out", "context is destroyed", "context has been destroyed",
+                              "CUDA_ERROR_ILLEGAL_ADDRESS", "CUDA_ERROR_ASSERT", "CUDA_ERROR_LAUNCH_FAILED",
+                              "CUDA_ERROR_LAUNCH_TIMEOUT", "CUDA_ERROR_CONTEXT_IS_DESTROYED",
+                              "misaligned address", "hardware stack error", "illegal instruction",
+                              "invalid address space", "invalid program counter"})
+    {
+        if (message.find(fatal) != std::string_view::npos)
+        {
+            return SmartCropCudaFault::RestartRequired;
+        }
+    }
+    return SmartCropCudaFault::Retryable;
+}
+}
+#endif
+
 bool smartCropAvailable() noexcept
 {
     return MOSAICRAFT_SMART_CROP;
@@ -43,17 +67,19 @@ void requireSmartCropDevice(CropDevice device)
     {
         if (cv::cuda::getCudaEnabledDeviceCount() <= 0 || !cv::cuda::DeviceInfo().isCompatible())
         {
-            throw SmartCropError("smart_crop_cuda_device", "no CUDA device with a compatible driver and OpenCV architecture");
+            throw SmartCropError("smart_crop_cuda_device", "no CUDA device with a compatible driver and OpenCV architecture",
+                                 SmartCropCudaFault::Retryable);
         }
         const auto targets = cv::dnn::getAvailableTargets(cv::dnn::DNN_BACKEND_CUDA);
         if (std::find(targets.begin(), targets.end(), cv::dnn::DNN_TARGET_CUDA) == targets.end())
         {
-            throw SmartCropError("smart_crop_cuda_device", "OpenCV CUDA DNN FP32 is unavailable");
+            throw SmartCropError("smart_crop_cuda_device", "OpenCV CUDA DNN FP32 is unavailable", SmartCropCudaFault::Retryable);
         }
     }
     catch (const cv::Exception &error)
     {
-        throw SmartCropError("smart_crop_cuda_device", std::string("CUDA smart crop device check failed: ") + error.what());
+        throw SmartCropError("smart_crop_cuda_device", std::string("CUDA smart crop device check failed: ") + error.what(),
+                             cudaFault(error));
     }
 #else
     throw SmartCropError("smart_crop_cuda_unavailable", "this build does not support CUDA smart crop");
@@ -117,15 +143,20 @@ cv::dnn::Net modelNet(const std::vector<unsigned char> &bytes, CropDevice device
 {
     // The OpenCV 5 graph engine preserves the original ONNX input dimensions.
     auto net = cv::dnn::readNetFromONNX(bytes, cv::dnn::ENGINE_OPENCV);
+#if MOSAICRAFT_SMART_CROP_CUDA
     if (device == CropDevice::Cuda)
     {
         net.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
         net.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
         net.enableTF32(false);
     }
+#else
+    (void)device;
+#endif
     return net;
 }
 
+#if MOSAICRAFT_SMART_CROP_CUDA
 void requireCudaConvolutions(const cv::Ptr<const cv::dnn::Graph> &graph, const char *model)
 {
     bool ranConvolution = false;
@@ -148,8 +179,35 @@ void requireCudaConvolutions(const cv::Ptr<const cv::dnn::Graph> &graph, const c
     if (!ranConvolution)
     {
         // OpenCV can execute a whole unsupported graph on the CPU even after setPreferableTarget().
-        throw SmartCropError("smart_crop_cuda_fallback", std::string(model) + " did not execute all convolutions on CUDA");
+        throw SmartCropError("smart_crop_cuda_fallback", std::string(model) + " did not execute all convolutions on CUDA",
+                             SmartCropCudaFault::Retryable);
     }
+}
+#endif
+
+template<class Forward>
+auto runDnn(CropDevice device, Forward &&forward)
+{
+#if MOSAICRAFT_SMART_CROP_CUDA
+    if (device == CropDevice::Cuda)
+    {
+        try
+        {
+            return forward();
+        }
+        catch (const cv::Exception &error)
+        {
+            if (error.code == cv::Error::StsNoMem)
+            {
+                throw; // A host allocation failure is not a CUDA device failure.
+            }
+            throw SmartCropError("smart_crop_cuda_inference", error.what(), cudaFault(error));
+        }
+    }
+#else
+    (void)device;
+#endif
+    return forward();
 }
 
 cv::Rect2d normalizedBox(cv::Rect2d box, cv::Size input)
@@ -189,11 +247,17 @@ struct SmartCropInference::Impl
         }
         cv::merge(channels, rgb);
         saliency.setInput(cv::dnn::blobFromImage(rgb));
-        const auto out = saliency.forward("1959"); // Fused d1 output of this exact ONNX export.
+        // Fused d1 output of this exact ONNX export.
+        const auto out = runDnn(device, [&]()
+        {
+            return saliency.forward("1959");
+        });
+#if MOSAICRAFT_SMART_CROP_CUDA
         if (device == CropDevice::Cuda)
         {
             requireCudaConvolutions(saliency.getMainGraph(), "U2-NetP");
         }
+#endif
         if (out.type() != CV_32F || out.dims != 4 || out.size[0] != 1 || out.size[1] != 1 ||
             out.size[2] != kForegroundSize || out.size[3] != kForegroundSize || !cv::checkRange(out, true, nullptr, 0, 1.001))
         {
@@ -208,7 +272,10 @@ struct SmartCropInference::Impl
         // YuNet pads internally on the right and bottom, so its boxes stay in the original coordinates.
         cv::Mat detections;
         real->setInputSize(size);
-        real->detect(image, detections);
+        runDnn(device, [&]()
+        {
+            return real->detect(image, detections);
+        });
 #if MOSAICRAFT_SMART_CROP_CUDA
         if (device == CropDevice::Cuda)
         {
@@ -248,11 +315,16 @@ struct SmartCropInference::Impl
                                cv::Scalar::all(114));
         }
         anime.setInput(cv::dnn::blobFromImage(padded, 1.0 / 255, input, cv::Scalar(), true));
-        const auto out = anime.forward("output0");
+        const auto out = runDnn(device, [&]()
+        {
+            return anime.forward("output0");
+        });
+#if MOSAICRAFT_SMART_CROP_CUDA
         if (device == CropDevice::Cuda)
         {
             requireCudaConvolutions(anime.getMainGraph(), "DeepGHS");
         }
+#endif
         if (out.type() != CV_32F || out.dims != 3 || out.size[0] != 1 || out.size[1] != 5 ||
             out.size[2] != animePredictionCount(input) || !cv::checkRange(out))
         {
@@ -337,9 +409,7 @@ SmartCropAnalysis SmartCropInference::analyze(const cv::Mat &image) try
 }
 catch (const cv::Exception &error)
 {
-    const bool cuda = m_impl->device == CropDevice::Cuda;
-    throw SmartCropError(cuda ? "smart_crop_cuda_inference" : "smart_crop_inference",
-                         std::string(cuda ? "OpenCV CUDA smart crop inference failed for " : "OpenCV smart crop inference failed for ") +
+    throw SmartCropError("smart_crop_inference", std::string("OpenCV smart crop inference failed for ") +
                              std::to_string(image.cols) + "x" + std::to_string(image.rows) + ": " + error.what());
 }
 catch (const std::bad_alloc &)
@@ -356,8 +426,11 @@ void SmartCropInference::probe()
     }
     catch (const SmartCropError &error)
     {
-        const bool cudaError = std::string_view(error.code()).rfind("smart_crop_cuda_", 0) == 0;
-        throw SmartCropError(cudaError ? error.code() : "smart_crop_model", error.what());
+        if (error.cudaFault() != SmartCropCudaFault::None)
+        {
+            throw;
+        }
+        throw SmartCropError("smart_crop_model", error.what());
     }
 }
 #else
