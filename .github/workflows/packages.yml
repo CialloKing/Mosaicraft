@@ -58,8 +58,8 @@ jobs:
         if: env.SMART_CROP == 'ON'
         run: |
           cmake -DMODE=SmartCropGate -P cmake/PrepareRelease.cmake
-          python -m pip install -r scripts/requirements-smart-crop.txt -r scripts/requirements-smart-crop-verification.txt
-          cmake -DMODE=Models -DMODEL_PYTHON="$(command -v python)" -P cmake/PrepareRelease.cmake
+          python -m pip install -r scripts/requirements-smart-crop-verification.txt
+          cmake -DMODE=Models -P cmake/PrepareRelease.cmake
       - uses: ./.github/actions/native-dependencies
         with:
           smart-crop: ${{ env.SMART_CROP }}
@@ -151,8 +151,8 @@ jobs:
         if: env.SMART_CROP == 'ON'
         run: |
           cmake -DMODE=SmartCropGate -P cmake/PrepareRelease.cmake
-          python -m pip install -r scripts/requirements-smart-crop.txt -r scripts/requirements-smart-crop-verification.txt
-          cmake -DMODE=Models -DMODEL_PYTHON="$(command -v python)" -P cmake/PrepareRelease.cmake
+          python -m pip install -r scripts/requirements-smart-crop-verification.txt
+          cmake -DMODE=Models -P cmake/PrepareRelease.cmake
       - uses: ./.github/actions/native-dependencies
         with:
           source-directory: ${{ env.PACKAGE_SOURCE }}

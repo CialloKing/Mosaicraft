@@ -57,10 +57,8 @@ std::vector<unsigned char> readModel(const nlohmann::json &manifest, const char 
 
 cv::dnn::Net cpuNet(const std::vector<unsigned char> &bytes)
 {
-    auto net = cv::dnn::readNetFromONNX(bytes);
-    net.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
-    net.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
-    return net;
+    // The OpenCV 5 engine handles dynamic ONNX graphs and uses CPU by default.
+    return cv::dnn::readNetFromONNX(bytes, cv::dnn::ENGINE_OPENCV);
 }
 
 cv::Rect2d normalizedBox(cv::Rect2d box, cv::Size input)
