@@ -15,9 +15,9 @@ Both entries call the same core services for mosaic generation, library building
 `/api/info` 在 `entryPoints` 中暴露相同的入口边界，调用方可据此区分当前入口和支持的可执行入口集合。
 `/api/info` exposes the same entry point boundary in `entryPoints`, so callers can distinguish the current entry from the supported executable entry set.
 
-当前源码 API 为 **1.8**，主版本保持 **1**。1.8 新增仅归一化任务的 `cropMode`；`/api/*` 路由不变。1.7 的变化如下：`POST /api/db/purge` 及 CLI purge 的 `orphanPreview` 不再返回 `tinyPath`、`lbpPath`；`GET /api/info` 的 `versions` 不再返回 `featurePack`。依赖这些字段的客户端需要更新。图库版本仍为 1，但缺少 `image_features` 的旧图库必须在新目录重建。
+当前源码 API 为 **1.9**，主版本保持 **1**。1.9 新增智能裁剪的 `cropDevice`；1.8 新增仅归一化任务的 `cropMode`；`/api/*` 路由不变。1.7 的变化如下：`POST /api/db/purge` 及 CLI purge 的 `orphanPreview` 不再返回 `tinyPath`、`lbpPath`；`GET /api/info` 的 `versions` 不再返回 `featurePack`。依赖这些字段的客户端需要更新。图库版本仍为 1，但缺少 `image_features` 的旧图库必须在新目录重建。
 
-API **1.8** adds `cropMode` to normalization requests. API **1.7** removes `tinyPath` and `lbpPath` from purge preview entries and `featurePack` from version discovery. Routes and API major version are unchanged. Rebuild file-backed libraries in a new directory.
+API **1.9** adds `cropDevice` to smart normalization. API **1.8** adds `cropMode` to normalization requests. API **1.7** removes `tinyPath` and `lbpPath` from purge preview entries and `featurePack` from version discovery. Routes and API major version are unchanged. Rebuild file-backed libraries in a new directory.
 
 从 **1.6** 起，生成、规划、覆盖分析和预览请求用统一的 `targetSize`（例如 `"50%"` 或 `"1200xauto"`）；旧 `upscale` 字段即使是 `1` 也会被拒绝。`outW` / `outH` 仍可单独使用，不能与 `targetSize` 同传。单独使用旧 `upscale: 2` 的请求可改为 `targetSize: "200%"` 以得到相同工作尺寸，但不保证缩放后的像素或选图一致。
 
@@ -261,6 +261,8 @@ render 接受 outputMode、format、nativeTileW/H、quality、pngLevel、writeMo
 可选 `benchmark: true` 仅用于 `appendMode: true` 且非 `normalizeOnly` 的请求；其他模式开启时返回 `400`，`diagnostic.field` 为 `benchmark`。默认为 `false`，与 `resourceMonitor` 独立。成功后在 `job.runtime.metrics` 返回[图库追加分段指标](benchmark-metrics.md#图库追加)。
 
 可选 `cropMode` 为 `center`（默认）、`smart-real` 或 `smart-anime`，仅允许 `normalizeOnly: true` 且未追加；其他模式或无效值返回 `400`（`diagnostic.field: cropMode`）。`GET /api/info` 的 `features` 含 `smart-crop` 表示当前后端编译了模型推理支持，不代表模型文件已就绪。模型或推理异常使异步任务失败，不会静默降级。
+
+仅 `smart-real` 和 `smart-anime` 接受 `cropDevice`：`cpu`（默认）或 `cuda`。中心裁剪、建库和追加请求携带此字段返回 `400`（`diagnostic.field: cropDevice`）。`/api/info` 的 `smart-crop-cuda` 表示编译了 CUDA 推理，不代表运行设备或模型已通过预检。旧服务未声明该标记时，请省略字段，不要把已选择 CUDA 的任务静默改为 CPU。
 
 智能任务在 `job.runtime.metrics` 返回 `smartCropFacesFound`（检测到脸的图片数）、`smartCropMoved`、`smartCropCentered`、`smartCropMainFaceClipped` 和 `smartCropInferenceWorkerMs`（推理工作线程耗时总和，不等于墙钟时间）。无需裁边的图片不计入裁剪统计；失败时可能有 `normalized-partial` 目录产物。
 

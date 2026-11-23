@@ -20,6 +20,7 @@ struct BuildRequest
     bool appendMode = false;
     bool normalizeOnly = false;
     CropMode cropMode = CropMode::Center;
+    std::optional<CropDevice> cropDevice;
     bool forceMode = false;
     bool recursive = false;
     bool allowPrompt = false;

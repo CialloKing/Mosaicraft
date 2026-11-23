@@ -7,6 +7,7 @@
 #include "WorkerPool.h"
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <set>
 #include <thread>
 
@@ -25,10 +26,10 @@ int normalizationWorkerCount(int requestedThreads)
 ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runtime)
 {
     namespace fs = std::filesystem;
-    std::string error;
-    if (!validateBuildRequest(request, error))
+    std::string error, field;
+    if (!validateBuildRequest(request, error, &field))
     {
-        return runtimeFailure(runtime, 1, error, "invalid_argument");
+        return runtimeFailure(runtime, 1, error, "invalid_argument", field);
     }
     const auto input = fs::weakly_canonical(u8path(request.inputDir));
     const auto output = fs::weakly_canonical(u8path(request.outputDir));
@@ -77,19 +78,23 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
     {
         return runtimeFailure(runtime, 1, "no supported images found", "input_unreadable");
     }
+    const auto device = request.cropDevice.value_or(CropDevice::Cpu);
+    const char *diagnosticField = device == CropDevice::Cuda ? "cropDevice" : "cropMode";
     std::unique_ptr<SmartCropInference> session;
     if (request.cropMode != CropMode::Center)
     {
         runtime.stage("loading_crop_models");
         try
         {
+            requireSmartCropDevice(device);
             const auto models = loadSmartCropModelPair(request.cropMode);
-            session = std::make_unique<SmartCropInference>(models);
+            session = std::make_unique<SmartCropInference>(models, device);
             session->probe();
+            runtime.computeIdentity(cropDeviceName(device), "fp32", "opencv-dnn");
         }
         catch (const SmartCropError &problem)
         {
-            return runtimeFailure(runtime, 1, problem.what(), problem.code(), "cropMode");
+            return runtimeFailure(runtime, 1, problem.what(), problem.code(), diagnosticField);
         }
     }
     fs::create_directories(output);
@@ -101,7 +106,9 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
         {
             ++failed;
         }
-        runtime.advance("images", ++completed, files.size(), "images");
+        const auto processed = ++completed;
+        // Fast CUDA batches can finish within the progress throttle interval.
+        runtime.advance("images", processed, files.size(), "images", processed == files.size());
     };
     runtime.stage("normalizing");
     if (!session)
@@ -117,6 +124,7 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
     else
     {
         SmartCropStats stats;
+        const auto processStart = std::chrono::steady_clock::now();
         const auto emitStats = [&]()
         {
             runtime.metric("smartCropFacesFound", static_cast<double>(stats.facesFound));
@@ -124,6 +132,10 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
             runtime.metric("smartCropCentered", static_cast<double>(stats.centered));
             runtime.metric("smartCropMainFaceClipped", static_cast<double>(stats.mainFaceClipped));
             runtime.metric("smartCropInferenceWorkerMs", stats.inferenceMs);
+            runtime.metric("smartCropSaliencyMs", stats.saliencyMs);
+            runtime.metric("smartCropFaceMs", stats.faceMs);
+            const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - processStart).count();
+            runtime.metric("smartCropImagesPerSecond", seconds > 0 ? (completed.load() - failed.load()) / seconds : 0);
         };
         try
         {
@@ -137,13 +149,15 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
         catch (const SmartCropError &problem)
         {
             emitStats();
-            const auto saved = completed.load() - failed.load();
+            const auto processed = completed.load();
+            runtime.advance("images", processed, files.size(), "images", true);
+            const auto saved = processed - failed.load();
             if (saved)
             {
                 runtime.artifact("normalized-partial", "directory", pathToUtf8(output));
             }
             return runtimeFailure(runtime, 1, std::string(problem.what()) + "; " + std::to_string(saved) +
-                                  " completed outputs kept in " + pathToUtf8(output), problem.code(), "cropMode");
+                                  " completed outputs kept in " + pathToUtf8(output), problem.code(), diagnosticField);
         }
         emitStats();
     }

@@ -55,6 +55,15 @@ inline bool validateBuildRequest(const BuildRequest &request, std::string &error
         error = "smart crop requires normalize-only mode without append";
         return false;
     }
+    if (request.cropDevice && (!request.normalizeOnly || request.appendMode || request.cropMode == CropMode::Center))
+    {
+        if (field)
+        {
+            *field = "cropDevice";
+        }
+        error = "crop device is only available for smart normalize mode without append";
+        return false;
+    }
     if (request.benchmark && (!request.appendMode || request.normalizeOnly))
     {
         if (field)

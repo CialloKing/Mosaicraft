@@ -652,7 +652,7 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata()
             endpoint("POST", "/api/jobs/build", "start library build job", "jobs", ApiOperation::SubmitBuildJob,
                      ApiRequestShape::Body,
                      {"inputDir", "outputDir", "dbPath", "threads", "normalizeWidth", "normalizeHeight", "appendMode",
-                      "recursive", "normalizeOnly", "cropMode", "forceMode", "resourceMonitor", "benchmark", "backend", "device",
+                      "recursive", "normalizeOnly", "cropMode", "cropDevice", "forceMode", "resourceMonitor", "benchmark", "backend", "device",
                       "jpgQuality", "webpQuality", "pngLevel"},
                      {"inputDir"}, true, true),
             endpoint("GET", "/api/jobs", "list jobs", "jobs", ApiOperation::ListJobs, ApiRequestShape::None),
@@ -813,6 +813,10 @@ std::vector<std::string> apiFeatureList()
     if (smartCropAvailable())
     {
         features.push_back("smart-crop");
+    }
+    if (smartCropCudaAvailable())
+    {
+        features.push_back("smart-crop-cuda");
     }
     return features;
 }

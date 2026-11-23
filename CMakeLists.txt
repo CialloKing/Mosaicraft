@@ -92,6 +92,7 @@ if (MSVC)
 endif()
 
 option(MOSAICRAFT_SMART_CROP "Enable OpenCV DNN smart image normalization" OFF)
+option(MOSAICRAFT_SMART_CROP_CUDA "Enable native CUDA inference for smart crop (requires CUDA OpenCV and cuDNN)" OFF)
 set(_opencv_components core imgproc imgcodecs)
 if(MOSAICRAFT_SMART_CROP)
     list(APPEND _opencv_components dnn objdetect)
@@ -102,6 +103,10 @@ if(MOSAICRAFT_SMART_CROP)
 endif()
 # Use one OpenCV ABI for all build variants, including the optional DNN adapter.
 find_package(OpenCV 5.1.0 EXACT REQUIRED CONFIG COMPONENTS ${_opencv_components})
+if(MOSAICRAFT_SMART_CROP_CUDA AND (NOT OpenCV_CUDA_VERSION VERSION_EQUAL "13.5.37" OR
+                                  NOT OpenCV_USE_CUDNN OR NOT OpenCV_CUDNN_VERSION VERSION_EQUAL "9.28.1"))
+    message(FATAL_ERROR "Use the locked opencv5[dnn-cuda] build with CUDA 13.5.37 and cuDNN 9.28.1")
+endif()
 # sqlite3：优先 vcpkg (unofficial-sqlite3)，回退到系统包 (SQLite3)
 find_package(unofficial-sqlite3 CONFIG QUIET)
 if(NOT unofficial-sqlite3_FOUND)
@@ -116,6 +121,11 @@ find_package(Threads REQUIRED)
 # CUDA 选项
 # ============================================================
 option(MOSAICRAFT_CUDA "Enable CUDA GPU acceleration (requires NVIDIA GPU + CUDA Toolkit)" "${WIN32}")
+
+if(MOSAICRAFT_SMART_CROP_CUDA AND (NOT MOSAICRAFT_SMART_CROP OR NOT MOSAICRAFT_CUDA OR
+    NOT CMAKE_SYSTEM_NAME MATCHES "^(Windows|Linux)$" OR NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64)$"))
+    message(FATAL_ERROR "MOSAICRAFT_SMART_CROP_CUDA requires MOSAICRAFT_SMART_CROP and MOSAICRAFT_CUDA on Windows or Linux x64")
+endif()
 
 if (MOSAICRAFT_CUDA)
     include(cmake/CudaToolkit.cmake)
@@ -341,7 +351,9 @@ target_compile_definitions(mosaicraft_core PRIVATE
     $<$<BOOL:${MOSAICRAFT_CUDA}>:MOSAICRAFT_CUDA>
 )
 
-target_compile_definitions(mosaicraft_core PRIVATE MOSAICRAFT_SMART_CROP=$<BOOL:${MOSAICRAFT_SMART_CROP}>)
+target_compile_definitions(mosaicraft_core PRIVATE
+    MOSAICRAFT_SMART_CROP=$<BOOL:${MOSAICRAFT_SMART_CROP}>
+    MOSAICRAFT_SMART_CROP_CUDA=$<BOOL:${MOSAICRAFT_SMART_CROP_CUDA}>)
 
 target_include_directories(mosaicraft_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

@@ -881,6 +881,18 @@ bool parseBuildRequestJson(const std::string &body, BuildRequest &request, Reque
         }
         request.cropMode = *crop;
     }
+    if (values.contains("cropDevice") && error.empty())
+    {
+        const auto &value = values.at("cropDevice");
+        const auto device = value.is_string() ? parseCropDevice(value.get<std::string>()) : std::nullopt;
+        if (!device)
+        {
+            error.field = "cropDevice";
+            error = "cropDevice must be cpu or cuda";
+            return false;
+        }
+        request.cropDevice = *device;
+    }
     if (request.normalizeOnly && error.empty())
     {
         for (const auto *key : {"jpgQuality", "webpQuality", "pngLevel"})

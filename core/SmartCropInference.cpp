@@ -6,13 +6,18 @@
 #include "third_party/picosha2/picosha2.h"
 
 #include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <new>
 #include <string>
+#include <utility>
 #include "json.hpp"
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/objdetect/face.hpp>
+#if MOSAICRAFT_SMART_CROP_CUDA
+#include <opencv2/core/cuda.hpp>
+#endif
 #endif
 
 namespace mosaicraft
@@ -20,6 +25,39 @@ namespace mosaicraft
 bool smartCropAvailable() noexcept
 {
     return MOSAICRAFT_SMART_CROP;
+}
+
+bool smartCropCudaAvailable() noexcept
+{
+    return MOSAICRAFT_SMART_CROP_CUDA;
+}
+
+void requireSmartCropDevice(CropDevice device)
+{
+    if (device != CropDevice::Cuda)
+    {
+        return;
+    }
+#if MOSAICRAFT_SMART_CROP_CUDA
+    try
+    {
+        if (cv::cuda::getCudaEnabledDeviceCount() <= 0 || !cv::cuda::DeviceInfo().isCompatible())
+        {
+            throw SmartCropError("smart_crop_cuda_device", "no CUDA device with a compatible driver and OpenCV architecture");
+        }
+        const auto targets = cv::dnn::getAvailableTargets(cv::dnn::DNN_BACKEND_CUDA);
+        if (std::find(targets.begin(), targets.end(), cv::dnn::DNN_TARGET_CUDA) == targets.end())
+        {
+            throw SmartCropError("smart_crop_cuda_device", "OpenCV CUDA DNN FP32 is unavailable");
+        }
+    }
+    catch (const cv::Exception &error)
+    {
+        throw SmartCropError("smart_crop_cuda_device", std::string("CUDA smart crop device check failed: ") + error.what());
+    }
+#else
+    throw SmartCropError("smart_crop_cuda_unavailable", "this build does not support CUDA smart crop");
+#endif
 }
 
 #if MOSAICRAFT_SMART_CROP
@@ -75,10 +113,43 @@ std::vector<unsigned char> readModel(const nlohmann::json &manifest, const char 
     throw SmartCropError("smart_crop_model", std::string("model missing from the built-in manifest: ") + id);
 }
 
-cv::dnn::Net cpuNet(const std::vector<unsigned char> &bytes)
+cv::dnn::Net modelNet(const std::vector<unsigned char> &bytes, CropDevice device)
 {
-    // The OpenCV 5 engine handles dynamic ONNX graphs and uses CPU by default.
-    return cv::dnn::readNetFromONNX(bytes, cv::dnn::ENGINE_OPENCV);
+    // The OpenCV 5 graph engine preserves the original ONNX input dimensions.
+    auto net = cv::dnn::readNetFromONNX(bytes, cv::dnn::ENGINE_OPENCV);
+    if (device == CropDevice::Cuda)
+    {
+        net.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+        net.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
+        net.enableTF32(false);
+    }
+    return net;
+}
+
+void requireCudaConvolutions(const cv::Ptr<const cv::dnn::Graph> &graph, const char *model)
+{
+    bool ranConvolution = false;
+    if (graph)
+    {
+        const auto &ops = graph->prog();
+        for (size_t i = 0; i < ops.size(); ++i)
+        {
+            if (ops[i] && ops[i]->type == "Conv2")
+            {
+                ranConvolution = true;
+                if (graph->opBackend(static_cast<int>(i)) != cv::dnn::DNN_BACKEND_CUDA)
+                {
+                    ranConvolution = false;
+                    break;
+                }
+            }
+        }
+    }
+    if (!ranConvolution)
+    {
+        // OpenCV can execute a whole unsupported graph on the CPU even after setPreferableTarget().
+        throw SmartCropError("smart_crop_cuda_fallback", std::string(model) + " did not execute all convolutions on CUDA");
+    }
 }
 
 cv::Rect2d normalizedBox(cv::Rect2d box, cv::Size input)
@@ -94,6 +165,7 @@ cv::Rect2d normalizedBox(cv::Rect2d box, cv::Size input)
 
 struct SmartCropInference::Impl
 {
+    CropDevice device = CropDevice::Cpu;
     cv::dnn::Net saliency;
     cv::Ptr<cv::FaceDetectorYN> real;
     cv::dnn::Net anime;
@@ -118,6 +190,10 @@ struct SmartCropInference::Impl
         cv::merge(channels, rgb);
         saliency.setInput(cv::dnn::blobFromImage(rgb));
         const auto out = saliency.forward("1959"); // Fused d1 output of this exact ONNX export.
+        if (device == CropDevice::Cuda)
+        {
+            requireCudaConvolutions(saliency.getMainGraph(), "U2-NetP");
+        }
         if (out.type() != CV_32F || out.dims != 4 || out.size[0] != 1 || out.size[1] != 1 ||
             out.size[2] != kForegroundSize || out.size[3] != kForegroundSize || !cv::checkRange(out, true, nullptr, 0, 1.001))
         {
@@ -133,6 +209,12 @@ struct SmartCropInference::Impl
         cv::Mat detections;
         real->setInputSize(size);
         real->detect(image, detections);
+#if MOSAICRAFT_SMART_CROP_CUDA
+        if (device == CropDevice::Cuda)
+        {
+            requireCudaConvolutions(real->getDnnGraph(), "YuNet");
+        }
+#endif
         if (!detections.empty() && (detections.type() != CV_32F || detections.cols != 15 || !cv::checkRange(detections)))
         {
             throw SmartCropError("smart_crop_inference", "unexpected YuNet detection tensor");
@@ -167,6 +249,10 @@ struct SmartCropInference::Impl
         }
         anime.setInput(cv::dnn::blobFromImage(padded, 1.0 / 255, input, cv::Scalar(), true));
         const auto out = anime.forward("output0");
+        if (device == CropDevice::Cuda)
+        {
+            requireCudaConvolutions(anime.getMainGraph(), "DeepGHS");
+        }
         if (out.type() != CV_32F || out.dims != 3 || out.size[0] != 1 || out.size[1] != 5 ||
             out.size[2] != animePredictionCount(input) || !cv::checkRange(out))
         {
@@ -210,18 +296,27 @@ SmartCropModelPair loadSmartCropModelPair(CropMode mode)
                               readModel(manifest, mode == CropMode::SmartReal ? "real" : "anime")};
 }
 
-SmartCropInference::SmartCropInference(const SmartCropModelPair &models) try
+SmartCropInference::SmartCropInference(const SmartCropModelPair &models, CropDevice device) try
     : m_impl(std::make_unique<Impl>())
 {
-    m_impl->saliency = cpuNet(models.saliency);
+    m_impl->device = device;
+    m_impl->saliency = modelNet(models.saliency, device);
     if (models.mode == CropMode::SmartReal)
     {
-        m_impl->real = cv::FaceDetectorYN::create("onnx", models.face, {}, kFaceProbeSize,
-                                                0.9f, 0.3f, 300, cv::dnn::DNN_BACKEND_OPENCV, cv::dnn::DNN_TARGET_CPU);
+        const bool cuda = device == CropDevice::Cuda;
+        m_impl->real = cv::FaceDetectorYN::create("onnx", models.face, {}, kFaceProbeSize, 0.9f, 0.3f, 300,
+                                                cuda ? cv::dnn::DNN_BACKEND_CUDA : cv::dnn::DNN_BACKEND_OPENCV,
+                                                cuda ? cv::dnn::DNN_TARGET_CUDA : cv::dnn::DNN_TARGET_CPU);
+#if MOSAICRAFT_SMART_CROP_CUDA
+        if (cuda)
+        {
+            m_impl->real->enableDnnTF32(false);
+        }
+#endif
     }
     else
     {
-        m_impl->anime = cpuNet(models.face);
+        m_impl->anime = modelNet(models.face, device);
     }
 }
 catch (const cv::Exception &error)
@@ -231,11 +326,21 @@ catch (const cv::Exception &error)
 
 SmartCropAnalysis SmartCropInference::analyze(const cv::Mat &image) try
 {
-    return SmartCropAnalysis{m_impl->foreground(image), m_impl->real ? m_impl->realFaces(image) : m_impl->animeFaces(image)};
+    using Clock = std::chrono::steady_clock;
+    const auto start = Clock::now();
+    auto mask = m_impl->foreground(image);
+    const auto afterMask = Clock::now();
+    auto faces = m_impl->real ? m_impl->realFaces(image) : m_impl->animeFaces(image);
+    return SmartCropAnalysis{std::move(mask), std::move(faces),
+                             std::chrono::duration<double, std::milli>(afterMask - start).count(),
+                             std::chrono::duration<double, std::milli>(Clock::now() - afterMask).count()};
 }
 catch (const cv::Exception &error)
 {
-    throw SmartCropError("smart_crop_inference", std::string("OpenCV smart crop inference failed: ") + error.what());
+    const bool cuda = m_impl->device == CropDevice::Cuda;
+    throw SmartCropError(cuda ? "smart_crop_cuda_inference" : "smart_crop_inference",
+                         std::string(cuda ? "OpenCV CUDA smart crop inference failed for " : "OpenCV smart crop inference failed for ") +
+                             std::to_string(image.cols) + "x" + std::to_string(image.rows) + ": " + error.what());
 }
 catch (const std::bad_alloc &)
 {
@@ -251,7 +356,8 @@ void SmartCropInference::probe()
     }
     catch (const SmartCropError &error)
     {
-        throw SmartCropError("smart_crop_model", error.what());
+        const bool cudaError = std::string_view(error.code()).rfind("smart_crop_cuda_", 0) == 0;
+        throw SmartCropError(cudaError ? error.code() : "smart_crop_model", error.what());
     }
 }
 #else
@@ -264,7 +370,7 @@ SmartCropModelPair loadSmartCropModelPair(CropMode)
     throw SmartCropError("smart_crop_unavailable", "this build does not support smart crop");
 }
 
-SmartCropInference::SmartCropInference(const SmartCropModelPair &)
+SmartCropInference::SmartCropInference(const SmartCropModelPair &, CropDevice)
 {
     throw SmartCropError("smart_crop_unavailable", "this build does not support smart crop");
 }
