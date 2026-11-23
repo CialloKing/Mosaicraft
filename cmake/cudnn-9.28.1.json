@@ -1,0 +1,19 @@
+{
+  "release": "9.28.1.4",
+  "variant": "cuda13",
+  "source": "https://developer.download.nvidia.com/compute/cudnn/redist/redistrib_9.28.1.json",
+  "license": "NVIDIA cuDNN Software License Agreement",
+  "licensePath": "cudnn/LICENSE.txt",
+  "platforms": {
+    "windows-x86_64": {
+      "relative_path": "cudnn/windows-x86_64/cudnn-windows-x86_64-9.28.1.4_cuda13-archive.zip",
+      "sha256": "5963a8776803a2c3772a5b71ecbb27cba81977321612f5d794c0468af4e5e66b",
+      "size": 1299382450
+    },
+    "linux-x86_64": {
+      "relative_path": "cudnn/linux-x86_64/cudnn-linux-x86_64-9.28.1.4_cuda13-archive.tar.xz",
+      "sha256": "324d85cd0f3415c28cf5b193584ea5a2903feb92ac77fb8995017fd3ecbb4283",
+      "size": 901892424
+    }
+  }
+}

@@ -7,6 +7,10 @@
     "sqlite3", "tiff", "libpng", "libjpeg-turbo", "zlib"
   ],
   "features": {
+    "smart-crop-cuda": {
+      "description": "Enable native CUDA DNN smart image cropping",
+      "dependencies": [{ "name": "opencv5", "features": ["dnn-cuda"] }]
+    },
     "smart-crop": {
       "description": "Enable offline CPU smart image cropping",
       "dependencies": [

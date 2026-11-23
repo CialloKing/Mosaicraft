@@ -1,0 +1,62 @@
+--- a/opencv/modules/objdetect/include/opencv2/objdetect/face.hpp
++++ b/opencv/modules/objdetect/include/opencv2/objdetect/face.hpp
+@@ -6,6 +6,7 @@
+ #define OPENCV_OBJDETECT_FACE_HPP
+
+ #include <opencv2/core.hpp>
++#include <opencv2/dnn.hpp>
+
+ namespace cv
+ {
+@@ -21,6 +22,10 @@
+ {
+ public:
+     virtual ~FaceDetectorYN() {}
++
++    // Inspect the graph that actually ran without exposing the mutable Net.
++    virtual Ptr<const dnn::Graph> getDnnGraph() const = 0;
++    virtual void enableDnnTF32(bool enable) = 0;
+
+     /** @brief Set the size for the network input, which overwrites the input size of creating model. Call this method when the size of input image does not match the input size when creating model
+      *
+--- a/opencv/modules/objdetect/src/face_detect.cpp
++++ b/opencv/modules/objdetect/src/face_detect.cpp
+@@ -83,6 +83,16 @@
+         topK = top_k;
+     }
+
++    Ptr<const dnn::Graph> getDnnGraph() const override
++    {
++        return net.getMainGraph();
++    }
++
++    void enableDnnTF32(bool enable) override
++    {
++        net.enableTF32(enable);
++    }
++
+     void setInputSize(const Size& input_size) override
+     {
+         inputW = input_size.width;
+@@ -159,6 +169,21 @@
+         std::vector<Mat> output_blobs;
+         net.setInput(input_blob);
+         net.forward(output_blobs, output_names);
++
++        // Validate the raw tensor extent before postProcess indexes it by the padded input size.
++        CV_CheckEQ(output_blobs.size(), output_names.size(), "Unexpected YuNet output count");
++        constexpr size_t valuesPerCell[] = {1, 1, 4, 10};
++        for (size_t i = 0; i < strides.size(); ++i)
++        {
++            const size_t cells = static_cast<size_t>(padW / strides[i]) * (padH / strides[i]);
++            for (size_t head = 0; head < 4; ++head)
++            {
++                const Mat& tensor = output_blobs[head * strides.size() + i];
++                CV_CheckEQ(tensor.type(), CV_32FC1, "Unexpected YuNet output type");
++                CV_CheckEQ(tensor.total(), cells * valuesPerCell[head], "Unexpected YuNet output shape");
++                CV_Assert(tensor.isContinuous());
++            }
++        }
+
+         // Post process
+         Mat results = postProcess(output_blobs);

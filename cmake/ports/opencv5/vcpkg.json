@@ -10,6 +10,10 @@
     "libjpeg-turbo", "libpng", "libwebp", "tiff", "zlib"
   ],
   "features": {
+    "dnn-cuda": {
+      "description": "Build the native CUDA DNN executors with the locked CUDA and cuDNN SDKs",
+      "dependencies": [{ "name": "opencv5", "features": ["dnn"] }]
+    },
     "dnn": {
       "description": "Build the CPU ONNX importer and face detector",
       "dependencies": ["protobuf"]

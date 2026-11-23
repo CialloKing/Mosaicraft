@@ -1,0 +1,148 @@
+--- a/opencv/modules/dnn/src/cuda4dnn/primitives/resize.hpp
++++ b/opencv/modules/dnn/src/cuda4dnn/primitives/resize.hpp
+@@ -29,8 +29,6 @@
+     template <class T>
+     class ResizeOp final : public CUDABackendNode {
+     public:
+-        using wrapper_type = GetCUDABackendWrapperType<T>;
+-
+         ResizeOp(csl::Stream stream_, const ResizeConfiguration& config)
+             : stream(std::move(stream_))
+         {
+@@ -40,18 +38,16 @@
+         }
+
+         void forward(
+-            const std::vector<cv::Ptr<BackendWrapper>>& inputs,
+-            const std::vector<cv::Ptr<BackendWrapper>>& outputs,
++            const std::vector<UMat>& inputs,
++            const std::vector<UMat>& outputs,
+             csl::Workspace& workspace) override
+         {
+             // sometimes the target shape is taken from the second input; we don't use it however
+             CV_Assert((inputs.size() == 1 || inputs.size() == 2) && outputs.size() == 1);
+
+-            auto input_wrapper = inputs[0].dynamicCast<wrapper_type>();
+-            auto input = input_wrapper->getView();
+-
+-            auto output_wrapper = outputs[0].dynamicCast<wrapper_type>();
+-            auto output = output_wrapper->getSpan();
++            // Use the same device views for both graph and legacy wrapper dispatch.
++            auto input = csl::viewOf<T>(inputs[0]);
++            auto output = csl::spanOf<T>(outputs[0]);
+
+             const auto compute_scale = [this](std::size_t input_size, std::size_t output_size) {
+                 return (align_corners && output_size > 1) ?
+--- a/opencv/modules/dnn/src/layers/resize2_layer.cpp
++++ b/opencv/modules/dnn/src/layers/resize2_layer.cpp
+@@ -1108,7 +1108,14 @@
+     virtual bool supportBackend(int backendId) CV_OVERRIDE
+     {
+         if (backendId == DNN_BACKEND_CUDA)
+-            return interpolation == "nearest" || interpolation == "bilinear" || interpolation == "opencv_linear";
++        {
++            // The existing kernel matches ONNX asymmetric floor at integer upscales.
++            // Do not select it for other Resize2 rounding/coordinate policies.
++            return interpolation == "nearest" && coordTransModeE == CoordTransMode::ASYMMETRIC &&
++                   nearestModeE == NearestMode::FLOOR && !alignCorners && !antialias && !dynamicROI &&
++                   zoomFactorWidth >= 1 && zoomFactorWidth == std::floor(zoomFactorWidth) &&
++                   zoomFactorHeight >= 1 && zoomFactorHeight == std::floor(zoomFactorHeight);
++        }
+
+         if (backendId == DNN_BACKEND_CANN)
+             return interpolation == "nearest" || interpolation == "bilinear" || interpolation == "opencv_linear";
+@@ -1503,6 +1510,13 @@
+
+
+ #ifdef HAVE_CUDA
++    // Graph and legacy APIs use different tensor wrappers. Resize only needs the stream.
++    Ptr<BackendNode> initCUDA(void *context, InputArrayOfArrays, InputArrayOfArrays) CV_OVERRIDE
++    {
++        const std::vector<Ptr<BackendWrapper>> unused;
++        return initCUDA(context, unused, unused);
++    }
++
+     Ptr<BackendNode> initCUDA(
+         void *context_,
+         const std::vector<Ptr<BackendWrapper>>& inputs,
+--- a/opencv/modules/dnn/src/layers/resize_layer.cpp
++++ b/opencv/modules/dnn/src/layers/resize_layer.cpp
+@@ -544,6 +544,13 @@
+
+
+ #ifdef HAVE_CUDA
++    // Graph and legacy APIs use different tensor wrappers. Resize only needs the stream.
++    Ptr<BackendNode> initCUDA(void *context, InputArrayOfArrays, InputArrayOfArrays) CV_OVERRIDE
++    {
++        const std::vector<Ptr<BackendWrapper>> unused;
++        return initCUDA(context, unused, unused);
++    }
++
+     Ptr<BackendNode> initCUDA(
+         void *context_,
+         const std::vector<Ptr<BackendWrapper>>& inputs,
+--- a/opencv/modules/dnn/src/net_impl2.cpp
++++ b/opencv/modules/dnn/src/net_impl2.cpp
+@@ -619,11 +619,11 @@
+         // a dynamic op stays on CUDA only if getMemoryShapes() reads its value inputs through
+         // argTensor(), i.e. the host copies forwardGraph() downloads before the op runs
+         static const std::set<std::string> hostSizedDynamicOps = {
+-            "Reshape2", "Expand2", "Squeeze", "Unsqueeze", "Slice2", "ConstantOfShape", "Tile2"
++            "Reshape2", "Expand2", "Squeeze", "Unsqueeze", "Slice2", "ConstantOfShape", "Tile2", "Resize"
+         };
+         // Shape and the small ops on its values run on the host, so the dynamic ops they size never wait for the device
+         static const std::set<std::string> hostShapeOpTypes = {
+-            "Shape", "Gather2", "Concat2", "Unsqueeze", "Squeeze", "Slice2", "Cast2", "NaryEltwise", "Not", "Reshape2"
++            "Shape", "Gather2", "Concat2", "Unsqueeze", "Squeeze", "Slice2", "Cast2", "NaryEltwise", "Not", "Reshape2", "Range"
+         };
+         std::vector<uchar> hostArg(args.size(), 0);
+         std::vector<int> producer(args.size(), -1);
+@@ -680,6 +680,12 @@
+                     Arg inp = op->inputs[j];
+                     if (inp.empty() || !hostArg[inp.idx] || (sizedOnHost && (j > 0 || ninp == 1)))
+                         continue;
++                    // Dynamic coordinate axes are cheap to generate from host shapes; only the
++                    // resulting 1-D index vector is uploaded, not the downstream feature maps.
++                    if (prog[producer[inp.idx]]->type == "Range")
++                    {
++                        continue;
++                    }
+                     unmarkHostOp((size_t)producer[inp.idx]);
+                     changed = true;
+                 }
+@@ -1685,8 +1691,10 @@
+             return;
+         }
+     }
+-    std::vector<UMat> inpG(inputs.size()), outG(outputs.size());
+-    for (size_t i = 0; i < inputs.size(); i++) {
++    // Resize sizes/scales are consumed by getMemoryShapes on the host, not by the device kernel.
++    const bool resize = exec->type == "Resize" || exec->type == "Resize2";
++    std::vector<UMat> inpG(resize ? 1 : inputs.size()), outG(outputs.size());
++    for (size_t i = 0; i < inpG.size(); i++) {
+         if (inpMats[i].empty())
+             continue;
+         netimpl->cudaUploadArg(inputs[i], inpMats[i]);   // H2D only if host-authoritative
+@@ -1864,8 +1872,9 @@
+             // shape/data. This must happen before allocateLayerOutputs(), which may fit()
+             // an in-place op's output onto this very buffer and rewrite its header.
+             // A host Shape op reads only the header, which the host shadow already carries.
+-            const bool headerOnly = opidx < gimpl->hostShapeOp_.size() && gimpl->hostShapeOp_[opidx] &&
+-                                    op->type == "Shape";
++            const bool headerOnly = (opidx < gimpl->hostShapeOp_.size() && gimpl->hostShapeOp_[opidx] &&
++                                     op->type == "Shape") ||
++                                    (op->type == "Resize" && ninputs == 2 && i == 1 && argTensor(inp).dims == 4);
+             if (!headerOnly && (opBackend != DNN_BACKEND_CUDA || (dynamicOnCuda && (i > 0 || ninputs == 1))))
+                 cudaDownloadArg(inp, argTensor(inp));
+ #endif
+--- a/opencv/modules/dnn/src/op_cuda.cpp
++++ b/opencv/modules/dnn/src/op_cuda.cpp
+@@ -74,6 +74,8 @@
+     CV_DNN_REGISTER_EXEC_CLASS(NaryEltwise, DNN_BACKEND_CUDA, CUDALegacyExec);
+     CV_DNN_REGISTER_EXEC_CLASS(Flatten,     DNN_BACKEND_CUDA, CUDALegacyExec);
+     CV_DNN_REGISTER_EXEC_CLASS(Reshape2,    DNN_BACKEND_CUDA, CUDALegacyExec);
++    CV_DNN_REGISTER_EXEC_CLASS(Resize,      DNN_BACKEND_CUDA, CUDALegacyExec);
++    CV_DNN_REGISTER_EXEC_CLASS(Resize2,     DNN_BACKEND_CUDA, CUDALegacyExec);
+     CV_DNN_REGISTER_EXEC_CLASS(BatchNorm2,  DNN_BACKEND_CUDA, CUDALegacyExec);
+     CV_DNN_REGISTER_EXEC_CLASS(MaxPool,     DNN_BACKEND_CUDA, CUDALegacyExec);
+     CV_DNN_REGISTER_EXEC_CLASS(Gemm,        DNN_BACKEND_CUDA, CUDALegacyExec);
