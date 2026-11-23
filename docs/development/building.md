@@ -14,38 +14,45 @@
 
 ## Linux 与 macOS
 
-源码构建使用 C++17 编译器、CMake 3.21+、Ninja，以及系统提供的 OpenCV 4、SQLite、TIFF、PNG 和 JPEG 开发库。Ubuntu 22.04 自带的软件源满足 CMake 版本要求。macOS 请先安装 Xcode Command Line Tools（`xcode-select --install`）和 Homebrew。
+源码构建使用 C++17 编译器、CMake 3.21+、Ninja。依赖使用与 CI 同一套锁定的 vcpkg 配置，其中 OpenCV 版本为 **5.1.0**。macOS 请先安装 Xcode Command Line Tools（`xcode-select --install`）和 Homebrew。
 
-首次构建时，按系统安装依赖；已安装可跳过：
+首次构建时，安装工具链；已安装可跳过：
 
 ```sh
 # Debian / Ubuntu
 sudo apt-get update
-sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build \
-  libopencv-dev libsqlite3-dev libtiff-dev libpng-dev libjpeg-dev zlib1g-dev
+sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build git curl zip unzip tar pkg-config
 
 # Fedora
-sudo dnf install -y gcc-c++ cmake ninja-build opencv-devel sqlite-devel \
-  libtiff-devel libpng-devel libjpeg-turbo-devel zlib-devel
+sudo dnf install -y gcc-c++ cmake ninja-build git curl zip unzip tar pkgconf-pkg-config
 
 # macOS
-brew install cmake ninja opencv@4 sqlite libtiff libpng jpeg-turbo
+brew install cmake ninja
 ```
 
-从源码根目录配置和构建，下面以 Linux x64 为例。其他平台或架构请选择上表对应的预设名；自定义依赖位置可通过 `CMAKE_PREFIX_PATH` 提供。
+从仓库根目录准备依赖并构建。把预设改为本机系统和架构；此流程不要求安装系统 OpenCV。
 
 ```sh
-cmake --preset linux-x64
-cmake --build --preset linux-x64 --target mosaicraft MosaicraftWebUI --parallel 2
+git clone https://github.com/microsoft/vcpkg.git build/tools/vcpkg
+git -C build/tools/vcpkg checkout a0400024711b283056538ac19ced80b91a83c24c
+cmake -DMODE=Prepare -DVCPKG_ROOT=build/tools/vcpkg -P cmake/PrepareRelease.cmake
+cmake -DMODE=Install -DVCPKG_ROOT=build/tools/vcpkg -P cmake/PrepareRelease.cmake
+
+preset=linux-x64
+triplet=x64-linux-release # 与准备步骤打印的 triplet 一致；macOS 使用 *-osx-release
+cmake --preset "$preset" \
+  "-DCMAKE_TOOLCHAIN_FILE=$PWD/build/tools/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+  "-DVCPKG_INSTALLED_DIR=$PWD/third_party/vcpkg_installed" \
+  "-DVCPKG_TARGET_TRIPLET=$triplet" "-DVCPKG_HOST_TRIPLET=$triplet" -DVCPKG_MANIFEST_INSTALL=OFF
+cmake --build --preset "$preset" --target mosaicraft MosaicraftWebUI --parallel 2
 ```
+
+也可自行提供 OpenCV **5.1.0**（`core`、`imgproc`、`imgcodecs`）和 SQLite、TIFF、PNG、JPEG、Zlib 开发库。不要使用系统的 OpenCV 4.x；必要时用 `-DOpenCV_DIR=<包含 OpenCVConfig.cmake 的目录>` 指定 5.1.0 安装。升级旧工作区后建议使用新构建目录，避免沿用曾指向 4.x 的 CMake 缓存。
 
 - Linux 预设要求工具链的目标架构匹配预设名。交叉编译时用 `-DCMAKE_TOOLCHAIN_FILE=<文件>` 指定目标编译器和系统库。macOS 预设直接设置目标架构，依赖库也须提供相同架构。
 - Linux CUDA 构建先安装 CUDA Toolkit 13.5.0（nvcc 13.5.37），配置时在基础预设上启用 CUDA 并指定 SDK，使用独立目录： [CUDA 工具链](../archive/gpu/cuda-13-5-migration.md)
 
-  ```sh
-  cmake --preset linux-x64 -B build/linux-x64-cuda -DMOSAICRAFT_CUDA=ON -DCUDAToolkit_ROOT=/usr/local/cuda-13.5
-  cmake --build build/linux-x64-cuda --target mosaicraft MosaicraftWebUI --parallel 2
-  ```
+  在上方的配置命令中追加 `-B build/linux-x64-cuda -DMOSAICRAFT_CUDA=ON -DCUDAToolkit_ROOT=/usr/local/cuda-13.5`，再运行 `cmake --build build/linux-x64-cuda --target mosaicraft MosaicraftWebUI --parallel 2`。
 
 ## Windows
 
@@ -68,7 +75,7 @@ Windows x64 依赖装到 `third_party/vcpkg_installed/`，ARM64 依赖装到独�
 
 ## 智能裁剪（可选）
 
-`MOSAICRAFT_SMART_CROP` 默认关闭。启用时需要带 `dnn` 和 `objdetect` 的 OpenCV 4.12，以及单独准备的模型文件。参见[智能裁剪本地构建和验收](smart-crop.md)。
+`MOSAICRAFT_SMART_CROP` 默认关闭。启用时需要带 `dnn` 和 `objdetect` 的 OpenCV 5.1.0，以及单独准备的模型文件。参见[智能裁剪本地构建和验收](smart-crop.md)。
 
 ## GPU 后端与编译配置
 

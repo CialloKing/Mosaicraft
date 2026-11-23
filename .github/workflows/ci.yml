@@ -49,36 +49,40 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/native-dependencies
-        if: runner.os == 'Windows'
-        with:
-          cache-namespace: ${{ inputs.cache-namespace || 'deps-v1' }}
-      - name: Install Ubuntu build dependencies
+      - name: Install Ubuntu toolchain prerequisites
         if: runner.os == 'Linux'
         shell: sh
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build \
-            libopencv-dev libsqlite3-dev libtiff-dev libpng-dev libjpeg-dev zlib1g-dev
+          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build
           echo /usr/bin >> "$GITHUB_PATH"
-      - name: Install macOS build dependencies
+      - name: Install macOS toolchain prerequisites
         if: runner.os == 'macOS'
         shell: sh
-        run: brew install cmake ninja opencv@4 sqlite libtiff libpng jpeg-turbo
+        run: brew install cmake ninja
+      - uses: ./.github/actions/native-dependencies
+        with:
+          cache-namespace: ${{ inputs.cache-namespace || 'deps-v1' }}
       - name: Configure CPU Release
         shell: bash
-        run: cmake --preset '${{ matrix.platform }}'
+        run: |
+          cmake --preset '${{ matrix.platform }}' \
+            "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            "-DVCPKG_INSTALLED_DIR=$MOSAICRAFT_VCPKG_INSTALLED_DIR" \
+            "-DVCPKG_OVERLAY_TRIPLETS=$VCPKG_OVERLAY_TRIPLETS" \
+            "-DVCPKG_TARGET_TRIPLET=$VCPKG_DEFAULT_TRIPLET" \
+            "-DVCPKG_HOST_TRIPLET=$VCPKG_DEFAULT_HOST_TRIPLET" -DVCPKG_MANIFEST_INSTALL=OFF
       - name: Build CLI and Web UI
         shell: bash
         run: cmake --build --preset '${{ matrix.platform }}' --target mosaicraft MosaicraftWebUI --parallel ${{ matrix.jobs }}
-      - name: Smoke-test the system build
+      - name: Smoke-test the native build
         if: runner.os != 'Windows'
         shell: sh
         run: |
           ./build/${{ matrix.platform }}/Release/bin/mosaicraft --version
           ./build/${{ matrix.platform }}/Release/bin/MosaicraftWebUI --help
       - name: Upload diagnostics
-        if: always() && runner.os == 'Windows'
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-${{ matrix.platform }}-${{ github.sha }}
