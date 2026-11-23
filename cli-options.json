@@ -135,6 +135,15 @@
     "advanced": false
   },
   {
+    "name": "crop",
+    "short": "",
+    "type": "string",
+    "field": "cropMode",
+    "commands": "normalize",
+    "help": "Crop mode: center (default), smart-real or smart-anime",
+    "advanced": false
+  },
+  {
     "name": "recursive",
     "short": "r",
     "type": "bool",

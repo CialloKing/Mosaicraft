@@ -2,12 +2,14 @@
 #include "LibraryPng.h"
 #include "UnicodeIO.h"
 #include "RequestValidation.h"
+#include "SmartCrop.h"
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
@@ -130,9 +132,11 @@ cv::Mat ImageNormalizer::readLibrarySource(const std::string& inputPath, bool* r
     }
 }
 
-ImageNormalizer::ImageNormalizer(int targetWidth, int targetHeight)
+ImageNormalizer::ImageNormalizer(int targetWidth, int targetHeight, SmartCropInference *smartCrop, SmartCropStats *stats)
     : m_targetWidth(targetWidth)
     , m_targetHeight(targetHeight)
+    , m_smartCrop(smartCrop)
+    , m_smartStats(stats)
 {
 }
 
@@ -222,6 +226,11 @@ bool ImageNormalizer::processImpl(const std::string& inputPath, const std::strin
         }
         return true;
     }
+    catch (const SmartCropError &error)
+    {
+        // A broken inference is a batch failure, not an unreadable source or a center fallback.
+        throw SmartCropError(error.code(), inputPath + ": " + error.what());
+    }
     catch (const std::exception& error)
     {
         std::cerr << "ERROR: Cannot normalize " << inputPath << " -> " << outputPath << ": " << error.what() << std::endl;
@@ -269,7 +278,28 @@ cv::Mat ImageNormalizer::normalize(const cv::Mat& src)
         return src;
     }
     cv::Mat covered = resizeToCover(src);
-    return centerCrop(covered);
+    const cv::Size target(m_targetWidth, m_targetHeight);
+    if (!m_smartCrop || covered.size() == target)
+    {
+        return centerCrop(covered);
+    }
+    const auto start = std::chrono::steady_clock::now();
+    const auto analysis = m_smartCrop->analyze(src);
+    if (m_smartStats)
+    {
+        m_smartStats->inferenceMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    }
+    const auto decision = chooseSmartCrop(covered.size(), target, analysis);
+    if (m_smartStats)
+    {
+        const bool moved = decision.roi.x != (covered.cols - target.width) / 2 ||
+                           decision.roi.y != (covered.rows - target.height) / 2;
+        m_smartStats->facesFound += decision.faceFound;
+        m_smartStats->mainFaceClipped += decision.mainFaceClipped;
+        m_smartStats->moved += moved;
+        m_smartStats->centered += !moved;
+    }
+    return covered(decision.roi).clone();
 }
 
 cv::Mat ImageNormalizer::resizeToCover(const cv::Mat& src)

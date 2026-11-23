@@ -2733,3 +2733,34 @@ TEST_CASE("CUDA device Canny returns CPU edge counts without host-side tile imag
         CHECK_THROWS_AS(pipeline.deviceView(0, 1), std::invalid_argument);
     }
 }
+
+TEST_CASE("smart crop ranks complete faces before foreground and limits camera moves")
+{
+    using namespace mosaicraft;
+    const cv::Size image(400, 200), target(100, 200);
+    SmartCropAnalysis analysis;
+    analysis.foreground = cv::Mat::zeros(20, 40, CV_32F);
+    analysis.foreground(cv::Rect(0, 0, 10, 20)).setTo(1.f);
+    CHECK(chooseSmartCrop(image, target, analysis).roi.x == 0);
+
+    analysis.faces = {cv::Rect2d(0.75, 0.20, 0.14, 0.50), cv::Rect2d(0.66, 0.20, 0.07, 0.44)};
+    const auto group = chooseSmartCrop(image, target, analysis);
+    CHECK(group.faceFound);
+    CHECK_FALSE(group.mainFaceClipped);
+    CHECK((group.roi & cv::Rect(264, 40, 28, 88)) == cv::Rect(264, 40, 28, 88));
+    CHECK((group.roi & cv::Rect(300, 40, 56, 100)) == cv::Rect(300, 40, 56, 100));
+
+    analysis.faces = {cv::Rect2d(0.55, 0.20, 0.40, 0.50)};
+    const auto large = chooseSmartCrop(image, target, analysis);
+    CHECK(large.mainFaceClipped);
+    CHECK(large.roi.x == 220);
+
+    analysis.faces.clear();
+    analysis.foreground.setTo(0.50f);
+    analysis.foreground(cv::Rect(0, 0, 10, 20)).setTo(0.56f);
+    CHECK(chooseSmartCrop(image, target, analysis).roi.x == 150);
+    analysis.foreground = analysis.foreground.t();
+    analysis.foreground.setTo(0.f);
+    analysis.foreground(cv::Rect(0, 30, 20, 10)).setTo(1.f);
+    CHECK(chooseSmartCrop(cv::Size(200, 400), cv::Size(200, 100), analysis).roi.y == 300);
+}

@@ -2,6 +2,7 @@
 
 #include "LibraryEncodingOptions.h"
 #include "MosaicService.h"
+#include "SmartCrop.h"
 
 #include <string>
 
@@ -18,6 +19,7 @@ struct BuildRequest
     std::string device = "auto";
     bool appendMode = false;
     bool normalizeOnly = false;
+    CropMode cropMode = CropMode::Center;
     bool forceMode = false;
     bool recursive = false;
     bool allowPrompt = false;

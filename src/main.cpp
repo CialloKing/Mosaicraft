@@ -410,6 +410,15 @@ ServiceResult execute(const Arguments &args, json &data, RuntimeContext &runtime
         request.outputDir = args.get("output", "library");
         request.appendMode = cmd == "add";
         request.normalizeOnly = cmd == "normalize";
+        if (args.has("crop"))
+        {
+            const auto crop = parseCropMode(args.get("crop"));
+            if (!crop)
+            {
+                throw std::invalid_argument("--crop requires center, smart-real or smart-anime");
+            }
+            request.cropMode = *crop;
+        }
         if (args.has("jpg-quality"))
         {
             request.encoding.jpgQuality = integer(args.get("jpg-quality"));

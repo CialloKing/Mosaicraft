@@ -75,6 +75,20 @@ struct SmartCropModelPair
     std::vector<unsigned char> face;
 };
 
+struct SmartCropDecision
+{
+    cv::Rect roi;
+    bool faceFound;
+    bool mainFaceClipped;
+};
+
+struct SmartCropStats
+{
+    size_t facesFound = 0, moved = 0, centered = 0, mainFaceClipped = 0;
+    double inferenceMs = 0;
+};
+
+SmartCropDecision chooseSmartCrop(cv::Size covered, cv::Size target, const SmartCropAnalysis &analysis);
 bool smartCropAvailable() noexcept;
 SmartCropModelPair loadSmartCropModelPair(CropMode mode);
 
