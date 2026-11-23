@@ -52,6 +52,45 @@ cmake --install build/windows-smart-crop --config Release --prefix build/smart-c
 - 同批 HighLikes 分层抽样 96 张，`180×320`、4 线程：中心和动漫智能裁剪各有 96/96 张与 4.12 对应输出逐字节一致，96 张样本原图哈希未变；同批普通建库的 `grid_lab`、`tiny`、`lbp` 特征也逐条一致。动漫智能模式检测到 77 张、移动 34 张。按检测框复算，能完整放进裁剪窗口的 73 个主脸，中心保全 58 个、智能裁剪保全 73 个；未新切断中心已保全的主脸。另有 4 个主脸大于裁剪窗口。这是同模型复算，不是独立人工质量标注，也不代表全库。
 - 样本单次动漫批处理约 35.49 秒，进程峰值工作集约 1.29 GiB；当时有其他构建活动，不作为版本性能比较。相同工具压缩的两份 Windows x64 私人安装树分别为 9,863,890 和 31,722,528 字节，智能版本增加约 20.85 MiB。Linux、macOS、Windows ARM64、GPU 和 Qt 变体未在这次复验中运行。
 
+### CUDA 智能裁剪（开发构建，不进入发布包）
+
+只针对 Windows/Linux x64。`MOSAICRAFT_SMART_CROP_CUDA` 默认关闭，普通智能裁剪仍用 CPU。需要带 `dnn-cuda` 的 `opencv5`，以及锁定的 CUDA 13.5.37 SDK（含 cuBLAS）和 cuDNN 9.28.1.4 CUDA 13。cuDNN 用 `cmake -DMODE=CuDNN -P cmake/PrepareRelease.cmake` 下载、校验并解包；普通依赖安装不会下载 cuDNN。以下示例假定已准备锁定的 vcpkg 和模型：
+
+```powershell
+$env:MOSAICRAFT_CUDA_SDK = $env:CUDA_PATH.Replace('\','/')
+$env:MOSAICRAFT_CUDNN_SDK = "$($PWD.Path.Replace('\','/'))/build/tools/cudnn-9.28.1.4"
+$env:VCPKG_ROOT = "$PWD/build/tools/vcpkg"
+$deps = "$PWD/third_party/vcpkg_installed/smart-crop-cuda"
+cmake -DMODE=Install -DSMART_CROP=ON -DSMART_CROP_CUDA=ON -P cmake/PrepareRelease.cmake
+# 独立构建，不复用 CPU 构建缓存。
+cmake --preset windows-x64 -B build/windows-smart-crop-cuda -DVCPKG_MANIFEST_INSTALL=OFF `
+  "-DVCPKG_INSTALLED_DIR=$deps" -DMOSAICRAFT_CUDA=ON -DMOSAICRAFT_SMART_CROP=ON `
+  -DMOSAICRAFT_SMART_CROP_CUDA=ON -DMOSAICRAFT_BUNDLE_RUNTIME=OFF `
+  "-DCUDAToolkit_ROOT=$env:MOSAICRAFT_CUDA_SDK" `
+  "-DMOSAICRAFT_SMART_CROP_MODELS_DIR=$PWD/build/smart-crop-models/prepared"
+cmake --build build/windows-smart-crop-cuda --config Release --target mosaicraft MosaicraftWebUI
+cmake --install build/windows-smart-crop-cuda --config Release --prefix build/windows-smart-crop-cuda/local
+```
+
+从本地安装运行前，Windows 在 `PATH` 加入 `$deps/x64-windows-release/bin`、SDK 的 `bin/x64`、cuDNN 的 `bin/x64`；Linux 使用 `linux-x64` preset，并按 SDK 布局设置 `LD_LIBRARY_PATH`。CUDA 版是本地验证构建，不是可再分发的安装包。指定 `--crop-device cuda --json` 后，只有图中卷积已选择 CUDA 执行器才接收输出。排查回退时，可设置 `OPENCV_LOG_LEVEL=INFO` 查第一个不支持的算子。
+
+**性能与发布门槛：**先复验两类正例，逐张核对 CPU 已保全的标注主脸没有被 CUDA 新切断，再测试不同尺寸连续切换、无卡、缺库、显存不足和部分输出。按模式分别运行 `python scripts/bench_smart_crop_cuda.py <cli> <input> <new-work-dir> --mode smart-anime`（真人替换为 `smart-real`，Python 3.11+ 仅用于验收）。脚本交错三轮，比较整条流程的中位吞吐，要求实际后端正确、零失败且比值至少 1.5；记录逐次模型耗时、设备级采样显存、输入 SHA-256 和完整 CLI 日志。显存采样含桌面与其它进程，可能漏掉瞬时峰值，不等同于进程精确峰值。正式比较时应排除后台负载，动漫输入包含 HighLikes 的 96 张样本与 `6534×8802` 最大图；真人用独立标注样本与同等级大图。开发机短测通过后再隔离复跑 HighLikes 全量；已有 CPU 全量任务不停止。
+
+Windows 和 Linux 必须分别在真实 GPU、无 Toolkit/cuDNN 的清洁环境断网解包验收。现有权重授权和人工质量门禁仍生效；在批准 NVIDIA 运行时文件清单（包括延迟加载的依赖）并取得实测结果前，`Release.cmake` 和 runtime bundle 安装均拒绝智能裁剪 CUDA，不套用马赛克 CUDA 的 `BuildOnly` 放行逻辑。
+
+#### Windows 开发机实测（2026-11-24）
+
+RTX 4060 Laptop 8188 MiB、驱动 621.14、CUDA 13.5.37、cuDNN 9.28.1.4。原生 OpenCV 5.1.0 未补丁时三个图都因 `Resize`/`Resize2` 整图回落；补入设备 Resize 和主机生成的动态坐标轴后，前向结束时 U²-NetP 119/119、YuNet 53/53、DeepGHS 64/64 个卷积在 CUDA。真人与动漫分别在同一会话正反切换形状，DeepGHS 的动态网格随输入变化。两份独立标注的偏侧正例均以输出像素复核保全主脸。真人三个衍生尺寸也与原尺寸 CPU 结果逐字节相同。
+
+| 输入 | CPU 中位墙钟 / 张每秒 | CUDA 中位墙钟 / 张每秒 | 中位吞吐比 | CUDA 设备级采样峰值 | 失败 |
+|---|---:|---:|---:|---:|---:|
+| 动漫：HighLikes 96 张 + `6534×8802` 原图 | 316.02 s / 0.307 | 27.75 s / 3.495 | 11.39× | 7617 MiB | 0 |
+| 真人：同一照片和四张衍生图（最大 `6534×8802`） | 13.36 s / 0.374 | 2.87 s / 1.741 | 4.65× | 5662 MiB | 0 |
+
+每个配置各三轮、`180×320`、一个会话。两个模式每轮 CPU/CUDA 输出逐字节相同，参加测试的输入 SHA-256 未变。U²-NetP / 人脸适配器耗时中位数（整批累计，含预处理和解析）：动漫 CPU 92.81/211.14 s、CUDA 2.83/14.61 s；真人 CPU 5.04/6.25 s、CUDA 0.11/1.17 s。采样值含桌面与其他进程；既有 HighLikes CPU 批次未停止，因此结果不是独占机器的正式性能报告。真人样本同源，不能替代独立真人质量评审。
+
+隐藏 GPU 和使用未补算子的 DLL 都在创建输出前明确失败，未降级。移除开发运行环境中的 cuDNN 路径时，Windows 加载器以 `0xC0000135` 拒绝启动，未生成输出；此情况下程序本身无法返回 JSON。真实显存耗尽后的部分输出、Linux GPU 和无 Toolkit/cuDNN 的离线解包尚未验收，官方包保持禁发。
+
 ### 真人与动漫原尺寸推理复验
 
 - Windows x64 OpenCV 5.1.0 智能版原生构建通过 7/7 项 CTest，安装目录的 CLI 从另一工作目录运行，两种模式都保全了各自偏侧正例的人工标注主脸。HTTP API 两路实际完成推理，三种非法用法仍返回 `400`。

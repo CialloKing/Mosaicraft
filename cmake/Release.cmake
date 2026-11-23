@@ -60,6 +60,11 @@ if(DEFINED CUDA_VALIDATION AND NOT cuda)
     message(FATAL_ERROR "CUDA_VALIDATION is only meaningful for a CUDA build")
 endif()
 
+# Reusing a build directory must not enable an unreleased inference backend.
+if(SMART_CROP_CUDA)
+    message(FATAL_ERROR "CUDA smart crop release is blocked pending per-platform GPU, quality, speed, and offline runtime redistribution validation")
+endif()
+
 find_program(git git REQUIRED)
 release_capture(status "${git}" -C "${MOSAICRAFT_REPO}" status --porcelain --untracked-files=normal)
 if(NOT status STREQUAL "")
@@ -153,12 +158,13 @@ execute_process(COMMAND "${CMAKE_COMMAND}" --preset "${preset}" -S "${repo}" -B 
     "-DMOSAICRAFT_CUDA:BOOL=${cuda}" "-DMOSAICRAFT_VULKAN:BOOL=${vulkan}" "-DMOSAICRAFT_METAL:BOOL=${metal}"
     "-DMOSAICRAFT_VULKAN_AUTO:BOOL=${vulkan_auto}" -DMOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON
     -DMOSAICRAFT_DESKTOP_BACKEND_INSTALL:BOOL=OFF -DMOSAICRAFT_BUILD_DESKTOP:BOOL=OFF
+    -DMOSAICRAFT_SMART_CROP_CUDA:BOOL=OFF
     "-DMOSAICRAFT_SMART_CROP:BOOL=${SMART_CROP}" "-DMOSAICRAFT_SMART_CROP_MODELS_DIR:PATH=${SMART_CROP_MODELS_DIR}" ${sdk_args}
     COMMAND_ERROR_IS_FATAL ANY)
 file(STRINGS "${BUILD_DIR}/CMakeCache.txt" cache)
 set(expected_cache "MOSAICRAFT_CUDA:BOOL=${cuda}" "MOSAICRAFT_VULKAN:BOOL=${vulkan}"
     "MOSAICRAFT_METAL:BOOL=${metal}" "MOSAICRAFT_VULKAN_AUTO:BOOL=${vulkan_auto}"
-    "MOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON" "MOSAICRAFT_DESKTOP_BACKEND_INSTALL:BOOL=OFF" "MOSAICRAFT_SMART_CROP:BOOL=${SMART_CROP}")
+    "MOSAICRAFT_SMART_CROP_CUDA:BOOL=OFF" "MOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON" "MOSAICRAFT_DESKTOP_BACKEND_INSTALL:BOOL=OFF" "MOSAICRAFT_SMART_CROP:BOOL=${SMART_CROP}")
 foreach(entry IN LISTS expected_cache)
     if(NOT entry IN_LIST cache)
         message(FATAL_ERROR "Release cache does not contain ${entry}")
