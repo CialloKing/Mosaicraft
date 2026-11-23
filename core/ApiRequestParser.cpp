@@ -888,7 +888,7 @@ bool parseBuildRequestJson(const std::string &body, BuildRequest &request, Reque
         if (!device)
         {
             error.field = "cropDevice";
-            error = "cropDevice must be cpu or cuda";
+            error = "cropDevice must be auto, cpu or cuda";
             return false;
         }
         request.cropDevice = *device;

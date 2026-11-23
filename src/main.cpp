@@ -424,7 +424,7 @@ ServiceResult execute(const Arguments &args, json &data, RuntimeContext &runtime
             request.cropDevice = parseCropDevice(args.get("crop-device"));
             if (!request.cropDevice)
             {
-                throw std::invalid_argument("--crop-device requires cpu or cuda");
+                throw std::invalid_argument("--crop-device requires auto, cpu or cuda");
             }
         }
         if (args.has("jpg-quality"))

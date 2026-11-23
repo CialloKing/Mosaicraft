@@ -598,8 +598,9 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <div class="field field-full">
         <label for="b-crop-device">推理设备 --crop-device</label>
         <select id="b-crop-device" aria-describedby="b-crop-device-hint">
-          <option value="cpu">CPU（默认）</option>
-          <option value="cuda">NVIDIA CUDA</option>
+          <option value="auto">自动（CUDA 优先）</option>
+          <option value="cpu">仅 CPU</option>
+          <option value="cuda">仅 CUDA（不可用时报错）</option>
         </select>
         <span id="b-crop-device-hint" class="hint"></span>
       </div>
@@ -1088,7 +1089,9 @@ function renderGeneratedCommand(tab, payload) {
   const validation = document.getElementById('command-validation');
   const button = document.getElementById('btn-copy-command');
   try {
-    output.textContent = commandFromPayload(tab, payload);
+    const commandPayload = tab === 'build' && payload.normalizeOnly && payload.cropMode
+      ? {...payload, cropDevice: val('b-crop-device')} : payload;
+    output.textContent = commandFromPayload(tab, commandPayload);
     validation.textContent = '';
     button.disabled = false;
   } catch (error) {
@@ -1953,12 +1956,16 @@ function buildBuildPayload() {
       throw uiFieldError('b-crop', '当前服务不支持智能裁剪，请改选中心裁剪或更换支持的发布包。');
     }
     payload.cropMode = val('b-crop');
-    if (val('b-crop-device') === 'cuda') {
+    const cropDevice = val('b-crop-device');
+    if (cropDevice === 'cuda') {
       if (serverAvailable && !hasFeature('smart-crop-cuda')) {
         throw uiFieldError('b-crop-device', '当前服务不支持 CUDA 智能裁剪，请明确选择 CPU 或更换发布包。');
       }
       payload.cropDevice = 'cuda';
+    } else if (!serverAvailable || hasFeature('smart-crop-device-auto')) {
+      payload.cropDevice = cropDevice;
     }
+    // Older servers use CPU on omission and may not recognize cropDevice at all.
   }
   if (!payload.normalizeOnly) {
     payload.backend = val('b-backend');
@@ -2235,6 +2242,14 @@ function computeStatusLabel(state) {
 function renderComputeStatusDetails(runtime, state) {
   if (state === 'queued') return '<p class="hint">等待任务开始，实际后端将在资源准备后确认。</p>';
   runtime = runtime || {};
+  if (runtime.kernelVersion === 'opencv-dnn') {
+    const m = runtime.metrics || {};
+    const device = runtime.device === 'mixed' ? 'CUDA + CPU（混用）' : String(runtime.device || '待确认').toUpperCase();
+    return '<p>推理设备 · ' + escapeHtml(device) + '</p><p>CUDA ' + Number(m.smartCropCudaImages || 0) +
+      ' 张 · CPU ' + Number(m.smartCropCpuImages || 0) + ' 张 · 回退 ' + Number(m.smartCropCudaFallbacks || 0) +
+      ' 次 · 恢复 ' + Number(m.smartCropCudaRecoveries || 0) + ' 次</p>' +
+      (runtime.fallbackReason ? '<p class="hint">最近回退 · ' + escapeHtml(runtime.fallbackReason) + '</p>' : '');
+  }
   const features = runtime.featureBackend, scoring = runtime.scoreBackend;
   let html = '<div class="compute-status-grid"><span>特征提取<strong>' + escapeHtml(matchingBackendName(features)) + '</strong></span>' +
     '<span>候选评分<strong>' + escapeHtml(matchingBackendName(scoring)) + '</strong></span></div>';
@@ -2417,7 +2432,8 @@ function restoreRequestParameters(job) {
     document.getElementById('b-mode').value = request.normalizeOnly ? 'normalize' : request.appendMode ? 'add' : 'build';
     document.getElementById('b-crop').value = request.normalizeOnly &&
       ['smart-real', 'smart-anime'].includes(request.cropMode) ? request.cropMode : 'center';
-    document.getElementById('b-crop-device').value = request.cropDevice === 'cuda' ? 'cuda' : 'cpu';
+    document.getElementById('b-crop-device').value = ['auto', 'cpu', 'cuda'].includes(request.cropDevice)
+      ? request.cropDevice : (request.cropMode && request.cropMode !== 'center' ? 'cpu' : 'auto');
     document.getElementById('b-backend').value = request.backend || 'auto';
     restoreDevice('b-device', request.device);
   }
@@ -2590,8 +2606,10 @@ function syncPreviewOption() {
   const cudaOption = cropDevice.querySelector('[value="cuda"]');
   cudaOption.hidden = cropCudaUnsupported && cropDevice.value !== 'cuda';
   cudaOption.disabled = cropCudaUnsupported;
-  document.getElementById('b-crop-device-hint').textContent = cropCudaUnsupported
-    ? '当前服务未编译 CUDA 智能裁剪。' : 'CUDA 需要支持此功能的安装包和兼容 NVIDIA 驱动；失败不会切换到 CPU。';
+  document.getElementById('b-crop-device-hint').textContent = serverAvailable && !hasFeature('smart-crop-device-auto')
+    ? '当前服务版本不支持自动切换；自动选项沿用旧服务默认的 CPU。'
+    : cropCudaUnsupported ? '当前服务未编译 CUDA 智能裁剪；自动使用 CPU。'
+    : '自动优先 CUDA，故障时用 CPU 继续，恢复后切回。仅 CUDA 遇到故障会停止。';
   document.getElementById('b-encoding').style.display = normalizeOnly ? 'none' : '';
   document.getElementById('b-encoding-hint').hidden = normalizeOnly;
   const preview = document.getElementById('m-preview');

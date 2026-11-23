@@ -262,7 +262,9 @@ render 接受 outputMode、format、nativeTileW/H、quality、pngLevel、writeMo
 
 可选 `cropMode` 为 `center`（默认）、`smart-real` 或 `smart-anime`，仅允许 `normalizeOnly: true` 且未追加；其他模式或无效值返回 `400`（`diagnostic.field: cropMode`）。`GET /api/info` 的 `features` 含 `smart-crop` 表示当前后端编译了模型推理支持，不代表模型文件已就绪。模型或推理异常使异步任务失败，不会静默降级。
 
-仅 `smart-real` 和 `smart-anime` 接受 `cropDevice`：`cpu`（默认）或 `cuda`。中心裁剪、建库和追加请求携带此字段返回 `400`（`diagnostic.field: cropDevice`）。`/api/info` 的 `smart-crop-cuda` 表示编译了 CUDA 推理，不代表运行设备或模型已通过预检。旧服务未声明该标记时，请省略字段，不要把已选择 CUDA 的任务静默改为 CPU。
+仅 `smart-real` 和 `smart-anime` 接受 `cropDevice`：`auto`（省略时默认）、`cpu`（不探测 CUDA）、`cuda`（严格 CUDA，不回退）。中心裁剪、建库和追加请求携带此字段返回 `400`（`diagnostic.field: cropDevice`）。`smart-crop-device-auto` 表示支持上述策略，`smart-crop-cuda` 仅表示编译了 CUDA 推理，均不代表运行设备或模型已通过预检。与不识别自动策略的旧服务交换请求时，省略自动字段以沿用其 CPU 默认值；不得静默降级为 CPU 后重发显式 CUDA 请求。
+
+自动模式优先用 CUDA。可捕获的 CUDA 故障触发 CPU 回退，并在后台探测恢复；恢复后从后续图片切回 CUDA。模型问题和 CPU 推理错误不回退。`job.request.cropDevice` 保存请求策略，`job.runtime.device` 报告执行设备；混用批次完成时为 `mixed`。计数 `smartCropCpuImages`、`smartCropCudaImages`、`smartCropCudaFallbacks`、`smartCropCudaRecoveries` 不含预检推理。
 
 智能任务在 `job.runtime.metrics` 返回 `smartCropFacesFound`（检测到脸的图片数）、`smartCropMoved`、`smartCropCentered`、`smartCropMainFaceClipped` 和 `smartCropInferenceWorkerMs`（推理工作线程耗时总和，不等于墙钟时间）。无需裁边的图片不计入裁剪统计；失败时可能有 `normalized-partial` 目录产物。
 

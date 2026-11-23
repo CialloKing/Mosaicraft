@@ -181,7 +181,7 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
                 {
                     if (auto result = autoCuda->tryAnalyze(image))
                     {
-                        ++cudaImages;
+                        runtime.metric("smartCropCudaImages", static_cast<double>(++cudaImages));
                         session.reset(); // A dormant CPU session can retain large input buffers.
                         runtime.computeIdentity("cuda", "fp32", "opencv-dnn");
                         return std::move(*result);
@@ -196,11 +196,11 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
                 auto result = session->analyze(image);
                 if (policy == CropDevice::Cuda)
                 {
-                    ++cudaImages;
+                    runtime.metric("smartCropCudaImages", static_cast<double>(++cudaImages));
                 }
                 else
                 {
-                    ++cpuImages;
+                    runtime.metric("smartCropCpuImages", static_cast<double>(++cpuImages));
                 }
                 return result;
             };

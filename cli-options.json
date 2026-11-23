@@ -149,7 +149,7 @@
     "type": "string",
     "field": "cropDevice",
     "commands": "normalize",
-    "help": "Smart crop inference device: cpu (default) or cuda",
+    "help": "Smart crop inference device: auto (default, CUDA preferred), cpu or cuda (strict)",
     "advanced": false
   },
   {

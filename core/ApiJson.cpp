@@ -356,9 +356,9 @@ nlohmann::json buildRequestToJson(const BuildRequest &request)
     if (request.normalizeOnly && !request.appendMode)
     {
         value["cropMode"] = cropModeName(request.cropMode);
-        if (request.cropDevice)
+        if (request.cropMode != CropMode::Center)
         {
-            value["cropDevice"] = cropDeviceName(*request.cropDevice);
+            value["cropDevice"] = cropDeviceName(request.cropDevice.value_or(CropDevice::Auto));
         }
     }
     if (!request.normalizeOnly)
