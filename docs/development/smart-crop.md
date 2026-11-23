@@ -76,7 +76,7 @@ cmake --install build/windows-smart-crop-cuda --config Release --prefix build/wi
 
 **性能与发布门槛：**先复验两类正例，逐张核对 CPU 已保全的标注主脸没有被 CUDA 新切断，再测试不同尺寸连续切换、无卡、缺库、显存不足和部分输出。按模式分别运行 `python scripts/bench_smart_crop_cuda.py <cli> <input> <new-work-dir> --mode smart-anime`（真人替换为 `smart-real`，Python 3.11+ 仅用于验收）。脚本交错三轮，比较整条流程的中位吞吐，要求实际后端正确、零失败且比值至少 1.5；记录逐次模型耗时、设备级采样显存、输入 SHA-256 和完整 CLI 日志。显存采样含桌面与其它进程，可能漏掉瞬时峰值，不等同于进程精确峰值。正式比较时应排除后台负载，动漫输入包含 HighLikes 的 96 张样本与 `6534×8802` 最大图；真人用独立标注样本与同等级大图。开发机短测通过后再隔离复跑 HighLikes 全量；已有 CPU 全量任务不停止。
 
-Windows 和 Linux 必须分别在真实 GPU、无 Toolkit/cuDNN 的清洁环境断网解包验收。现有权重授权和人工质量门禁仍生效；在批准 NVIDIA 运行时文件清单（包括延迟加载的依赖）并取得实测结果前，`Release.cmake` 和 runtime bundle 安装均拒绝智能裁剪 CUDA，不套用马赛克 CUDA 的 `BuildOnly` 放行逻辑。
+Windows 和 Linux 必须分别在真实 GPU、无 Toolkit/cuDNN 的清洁环境断网解包验收。现有权重授权和人工质量门禁仍生效；`Release.cmake` 只在锁定并校验 Windows NVIDIA 运行库（包括延迟加载的依赖）后生成本地候选；独立验包要求同一个 ZIP 的真实 GPU 断网证据，不套用马赛克 CUDA 的 `BuildOnly` 放行逻辑。见[发布证据与候选命令](smart-crop-release-evidence.md)。
 
 #### Windows 开发机实测（2026-11-24）
 

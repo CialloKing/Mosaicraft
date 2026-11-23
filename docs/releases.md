@@ -2,6 +2,10 @@
 
 本页区分当前源码与公开安装包，详细历史记录见[历史档案](archive/README.md)。软件与数据版本的唯一来源是根目录 contracts.json；安装后的实际能力以该包 BUILD_INFO.txt、contracts.json 和 --help-all 为准。
 
+## v1.15.15
+
+准备中，尚未发布。CLI / Web 的可选智能裁剪支持手动选择真人或动漫；中心裁剪仍为默认。包含 CUDA DNN 时，自动策略会优先用 CUDA，故障后用 CPU 继续并尝试恢复；显式 CUDA 不回退。HTTP API 为 1.9，图库格式不变。Windows 智能裁剪附件必须通过[发布证据门禁](development/smart-crop-release-evidence.md)；普通 CUDA 马赛克包不携带 cuDNN。
+
 ## v1.15.14
 
 - Qt 生成预览按物理内存、系统余量和工程实际需要分配贴图缓存。多个格子引用同一张贴图只计一份，多个标签页共享预算，优先保留当前工程；在画布底部缩放框旁可查看用量。贴图和 worker 素材像素缓存合计最多占物理内存的四分之一，上限 8 GiB，不预分配。这不是整个进程的内存上限。[预览内存说明](guides/quick-start.md#qt-桌面预览的内存)

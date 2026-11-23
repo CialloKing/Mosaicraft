@@ -60,9 +60,18 @@ if(DEFINED CUDA_VALIDATION AND NOT cuda)
     message(FATAL_ERROR "CUDA_VALIDATION is only meaningful for a CUDA build")
 endif()
 
-# Reusing a build directory must not enable an unreleased inference backend.
 if(SMART_CROP_CUDA)
-    message(FATAL_ERROR "CUDA smart crop release is blocked pending per-platform GPU, quality, speed, and offline runtime redistribution validation")
+    if(NOT SMART_CROP OR NOT platform STREQUAL "windows" OR NOT arch STREQUAL "x64" OR
+       NOT RUNTIME STREQUAL "cuda" OR NOT CHANNEL STREQUAL "candidate" OR
+       NOT CUDA_VALIDATION STREQUAL "Required" OR "$ENV{GITHUB_ACTIONS}" STREQUAL "true" OR
+       NOT IS_ABSOLUTE "${SMART_CROP_CUDA_REDIST}")
+        message(FATAL_ERROR "CUDA smart crop requires an explicit local Windows x64 CUDA candidate, real GPU, and an approved redist tree")
+    endif()
+    set(SMART_CROP_CUDA ON)
+    include("${CMAKE_CURRENT_LIST_DIR}/SmartCropRelease.cmake")
+    smart_crop_cuda_redist("${MOSAICRAFT_REPO}" "${SMART_CROP_CUDA_REDIST}" approved_dlls approved_notices)
+else()
+    set(SMART_CROP_CUDA OFF)
 endif()
 
 find_program(git git REQUIRED)
@@ -158,13 +167,14 @@ execute_process(COMMAND "${CMAKE_COMMAND}" --preset "${preset}" -S "${repo}" -B 
     "-DMOSAICRAFT_CUDA:BOOL=${cuda}" "-DMOSAICRAFT_VULKAN:BOOL=${vulkan}" "-DMOSAICRAFT_METAL:BOOL=${metal}"
     "-DMOSAICRAFT_VULKAN_AUTO:BOOL=${vulkan_auto}" -DMOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON
     -DMOSAICRAFT_DESKTOP_BACKEND_INSTALL:BOOL=OFF -DMOSAICRAFT_BUILD_DESKTOP:BOOL=OFF
-    -DMOSAICRAFT_SMART_CROP_CUDA:BOOL=OFF
+    "-DMOSAICRAFT_SMART_CROP_CUDA:BOOL=${SMART_CROP_CUDA}"
+    "-DMOSAICRAFT_SMART_CROP_CUDA_REDIST:PATH=${SMART_CROP_CUDA_REDIST}"
     "-DMOSAICRAFT_SMART_CROP:BOOL=${SMART_CROP}" "-DMOSAICRAFT_SMART_CROP_MODELS_DIR:PATH=${SMART_CROP_MODELS_DIR}" ${sdk_args}
     COMMAND_ERROR_IS_FATAL ANY)
 file(STRINGS "${BUILD_DIR}/CMakeCache.txt" cache)
 set(expected_cache "MOSAICRAFT_CUDA:BOOL=${cuda}" "MOSAICRAFT_VULKAN:BOOL=${vulkan}"
     "MOSAICRAFT_METAL:BOOL=${metal}" "MOSAICRAFT_VULKAN_AUTO:BOOL=${vulkan_auto}"
-    "MOSAICRAFT_SMART_CROP_CUDA:BOOL=OFF" "MOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON" "MOSAICRAFT_DESKTOP_BACKEND_INSTALL:BOOL=OFF" "MOSAICRAFT_SMART_CROP:BOOL=${SMART_CROP}")
+    "MOSAICRAFT_SMART_CROP_CUDA:BOOL=${SMART_CROP_CUDA}" "MOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON" "MOSAICRAFT_DESKTOP_BACKEND_INSTALL:BOOL=OFF" "MOSAICRAFT_SMART_CROP:BOOL=${SMART_CROP}")
 foreach(entry IN LISTS expected_cache)
     if(NOT entry IN_LIST cache)
         message(FATAL_ERROR "Release cache does not contain ${entry}")
@@ -244,7 +254,9 @@ foreach(document IN LISTS documents)
 endforeach()
 
 set(package "Mosaicraft_v${version}_${platform}-${arch}_${RUNTIME}")
-if(CHANNEL STREQUAL "candidate")
+if(SMART_CROP_CUDA)
+    string(APPEND package "-smart-crop")
+elseif(CHANNEL STREQUAL "candidate")
     string(APPEND package "_candidate")
 endif()
 if(platform STREQUAL "windows")
@@ -265,6 +277,9 @@ endforeach()
 set(info "Name: Mosaicraft\nVersion: ${version}\nPackage: ${name}\nPlatform: ${platform}\nArch: ${arch}\nRuntime: ${RUNTIME}\nVulkanBackend: ${vulkan_status}\nMetalBackend: ${metal_status}\nGpuValidation: ${gpu_validation}\nConfiguration: Release\nCommit: ${commit}\nGeneratedAtUtc: ${generated}\n")
 if(SMART_CROP)
     string(APPEND info "SmartCrop: enabled\n")
+endif()
+if(SMART_CROP_CUDA)
+    string(APPEND info "SmartCropCuda: enabled\n")
 endif()
 string(JSON length LENGTH "${contracts}")
 math(EXPR last "${length} - 1")
@@ -314,7 +329,7 @@ release_file("${archive_dir}/${name}")
 file(SHA256 "${archive_dir}/${name}" sha)
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DARCHIVE=${archive_dir}/${name}" "-DEXPECTED_SHA256=${sha}"
     "-DEXPECTED_COMMIT=${commit}" "-DEXPECTED_RUNTIME=${RUNTIME}" "-DEXPECTED_GPU_VALIDATION=${gpu_validation}"
-    "-DEXPECTED_CHANNEL=${CHANNEL}"
+    "-DEXPECTED_CHANNEL=${CHANNEL}" "-DLOCAL_SMART_CROP_CUDA_CANDIDATE=${SMART_CROP_CUDA}"
     "-DCHECK_TOOL=${bin}/mosaicraft_release_check${suffix}" "-DWORK_ROOT=${work}" -DREQUIRE_CURRENT=ON
     -P "${CMAKE_CURRENT_LIST_DIR}/VerifyPackage.cmake" COMMAND_ERROR_IS_FATAL ANY)
 release_capture(current "${git}" -C "${repo}" rev-parse HEAD)

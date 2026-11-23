@@ -19,7 +19,7 @@ jobs:
     if: ${{ !inputs.desktop_release_tag }}
     name: Package ${{ matrix.platform }} ${{ matrix.runtime }}
     env:
-      SMART_CROP: ${{ vars.MOSAICRAFT_SMART_CROP_RELEASE == '1' && 'ON' || 'OFF' }}
+      SMART_CROP: ${{ matrix.platform == 'windows-x64' && matrix.runtime == 'cpu-only' && vars.MOSAICRAFT_SMART_CROP_RELEASE == '1' && 'ON' || 'OFF' }}
     strategy: &native_matrix
       fail-fast: false
       matrix:
@@ -112,7 +112,7 @@ jobs:
       source-commit: ${{ steps.product.outputs.commit || github.sha }}
     env:
       PACKAGE_SOURCE: ${{ inputs.desktop_release_tag && 'build/package-source' || '.' }}
-      SMART_CROP: ${{ !inputs.desktop_release_tag && vars.MOSAICRAFT_SMART_CROP_RELEASE == '1' && 'ON' || 'OFF' }}
+      SMART_CROP: 'OFF'
     strategy:
       fail-fast: false
       matrix:
