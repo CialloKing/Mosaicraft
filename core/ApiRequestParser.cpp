@@ -863,6 +863,24 @@ bool parseBuildRequestJson(const std::string &body, BuildRequest &request, Reque
     {
         request.normalizeOnly = boolValue;
     }
+    if (values.contains("cropMode") && error.empty())
+    {
+        if (!request.normalizeOnly || request.appendMode)
+        {
+            error.field = "cropMode";
+            error = "cropMode is only available for normalizeOnly without appendMode";
+            return false;
+        }
+        const auto &value = values.at("cropMode");
+        const auto crop = value.is_string() ? parseCropMode(value.get<std::string>()) : std::nullopt;
+        if (!crop)
+        {
+            error.field = "cropMode";
+            error = "cropMode must be center, smart-real or smart-anime";
+            return false;
+        }
+        request.cropMode = *crop;
+    }
     if (request.normalizeOnly && error.empty())
     {
         for (const auto *key : {"jpgQuality", "webpQuality", "pngLevel"})

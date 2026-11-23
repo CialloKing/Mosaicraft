@@ -353,6 +353,10 @@ nlohmann::json buildRequestToJson(const BuildRequest &request)
                             {"normalizeHeight", request.normalizeHeight},
                             {"resourceMonitor", request.resourceMonitor},
                             {"benchmark", request.benchmark}};
+    if (request.normalizeOnly && !request.appendMode)
+    {
+        value["cropMode"] = cropModeName(request.cropMode);
+    }
     if (!request.normalizeOnly)
     {
         value["jpgQuality"] = request.encoding.jpgQuality;

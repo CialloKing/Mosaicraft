@@ -1,4 +1,5 @@
 #include "ApiMetadata.h"
+#include "SmartCrop.h"
 
 #include <algorithm>
 #include "Version.h"
@@ -651,7 +652,7 @@ std::vector<ApiEndpointMetadata> apiEndpointMetadata()
             endpoint("POST", "/api/jobs/build", "start library build job", "jobs", ApiOperation::SubmitBuildJob,
                      ApiRequestShape::Body,
                      {"inputDir", "outputDir", "dbPath", "threads", "normalizeWidth", "normalizeHeight", "appendMode",
-                      "recursive", "normalizeOnly", "forceMode", "resourceMonitor", "benchmark", "backend", "device",
+                      "recursive", "normalizeOnly", "cropMode", "forceMode", "resourceMonitor", "benchmark", "backend", "device",
                       "jpgQuality", "webpQuality", "pngLevel"},
                      {"inputDir"}, true, true),
             endpoint("GET", "/api/jobs", "list jobs", "jobs", ApiOperation::ListJobs, ApiRequestShape::None),
@@ -800,7 +801,7 @@ std::vector<std::string> validateApiEndpointMetadata(const std::vector<ApiEndpoi
 
 std::vector<std::string> apiFeatureList()
 {
-    return {"preview-comparison",   "task-history",     "task-resources",
+    std::vector<std::string> features{"preview-comparison",   "task-history",     "task-resources",
             "preview-quality",      "library-visuals",  "mosaic-plan",
             "mosaic-size-sample",   "mosaic-jobs",      "build-jobs",
             "job-management",       "job-diagnostics",  "job-progress",
@@ -809,6 +810,11 @@ std::vector<std::string> apiFeatureList()
             "database-health",      "database-usage",   "database-maintenance",
             "output-format-policy", "portable-project", "project-render",
             "project-check",        "project-pack",     "local-path-browser"};
+    if (smartCropAvailable())
+    {
+        features.push_back("smart-crop");
+    }
+    return features;
 }
 
 std::vector<ApiEntryPointMetadata> apiEntryPointMetadata()

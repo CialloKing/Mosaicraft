@@ -583,6 +583,17 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <label><input type="checkbox" id="b-monitor"> 资源监控</label>
       <label><input type="checkbox" id="b-benchmark" disabled> 追加性能分析 --benchmark</label>
     </div>
+    <div class="row" id="b-crop-row" style="display:none">
+      <div class="field field-full">
+        <label for="b-crop">裁剪方式 --crop</label>
+        <select id="b-crop" aria-describedby="b-crop-hint">
+          <option value="center">中心裁剪（默认）</option>
+          <option value="smart-real">智能裁剪·真人</option>
+          <option value="smart-anime">智能裁剪·动漫</option>
+        </select>
+        <span id="b-crop-hint" class="hint"></span>
+      </div>
+    </div>
     <div class="row" id="b-encoding">
       <div class="field"><label for="b-jpg-quality">JPG 质量 --jpg-quality</label><input type="number" id="b-jpg-quality" min="1" max="100" placeholder="默认 100"></div>
       <div class="field"><label for="b-webp-quality">WebP 质量 --webp-quality</label><input type="number" id="b-webp-quality" min="1" max="100" placeholder="留空无损，1～100 有损"></div>
@@ -1927,6 +1938,12 @@ function buildBuildPayload() {
   if (payload.appendMode) setIfChecked(payload, 'benchmark', 'b-benchmark');
   setIfChecked(payload, 'recursive', 'b-recursive');
   payload.normalizeOnly = val('b-mode') === 'normalize';
+  if (payload.normalizeOnly && val('b-crop') !== 'center') {
+    if (serverAvailable && !hasFeature('smart-crop')) {
+      throw uiFieldError('b-crop', '当前服务不支持智能裁剪，请改选中心裁剪或更换支持的发布包。');
+    }
+    payload.cropMode = val('b-crop');
+  }
   if (!payload.normalizeOnly) {
     payload.backend = val('b-backend');
     payload.device = val('b-device');
@@ -2307,7 +2324,7 @@ document.addEventListener('click', event => {
 });
 
 
-const FORM_FIELDS = {"mosaic": {"inputPath": "m-input", "dbPath": "m-db", "outputPath": "m-output", "format": "m-format", "writeMode": "m-writemode", "tileW": "m-tilew", "tileH": "m-tileh", "candidates": "m-candidates", "topNRandom": "m-topn", "lRange": "m-lrange", "neighborWindow": "m-nwin", "neighborPenalty": "m-npen", "labWeight": "m-labw", "gridWeight": "m-gridw", "tinyWeight": "m-tinyw", "edgeWeight": "m-edgew", "lbpWeight": "m-lbpw", "usePenalty": "m-penalty", "quality": "m-quality", "pngLevel": "m-pnglevel", "colorStrength": "m-colorstr", "overlayStrength": "m-overlaystr", "tiled": "m-tiled", "deepZoom": "m-deepzoom", "analyze": "m-analyze", "adaptiveWeights": "m-adaptive", "benchmark": "m-benchmark", "resourceMonitor": "m-monitor", "colorAdjust": "m-coloradj", "generatePreview": "m-preview"}, "build": {"inputDir": "b-input", "outputDir": "b-output", "threads": "b-threads", "appendMode": "b-append", "recursive": "b-recursive", "normalizeOnly": "b-normonly"}};
+const FORM_FIELDS = {"mosaic": {"inputPath": "m-input", "dbPath": "m-db", "outputPath": "m-output", "format": "m-format", "writeMode": "m-writemode", "tileW": "m-tilew", "tileH": "m-tileh", "candidates": "m-candidates", "topNRandom": "m-topn", "lRange": "m-lrange", "neighborWindow": "m-nwin", "neighborPenalty": "m-npen", "labWeight": "m-labw", "gridWeight": "m-gridw", "tinyWeight": "m-tinyw", "edgeWeight": "m-edgew", "lbpWeight": "m-lbpw", "usePenalty": "m-penalty", "quality": "m-quality", "pngLevel": "m-pnglevel", "colorStrength": "m-colorstr", "overlayStrength": "m-overlaystr", "tiled": "m-tiled", "deepZoom": "m-deepzoom", "analyze": "m-analyze", "adaptiveWeights": "m-adaptive", "benchmark": "m-benchmark", "resourceMonitor": "m-monitor", "colorAdjust": "m-coloradj", "generatePreview": "m-preview"}, "build": {"inputDir": "b-input", "outputDir": "b-output", "threads": "b-threads", "appendMode": "b-append", "recursive": "b-recursive", "normalizeOnly": "b-normonly", "cropMode": "b-crop"}};
 
 Object.assign(FORM_FIELDS.mosaic, {outputMode:'m-mode',backend:'m-backend',device:'m-device',scoreMode:'m-score-mode',threads:'m-threads',seed:'m-seed',overwrite:'m-overwrite'});
 delete FORM_FIELDS.mosaic.colorAdjust;
@@ -2382,6 +2399,8 @@ function restoreRequestParameters(job) {
     if (request.appendMode && request.dbPath)
       document.getElementById('b-output').value = libraryDirectory(request.dbPath);
     document.getElementById('b-mode').value = request.normalizeOnly ? 'normalize' : request.appendMode ? 'add' : 'build';
+    document.getElementById('b-crop').value = request.normalizeOnly &&
+      ['smart-real', 'smart-anime'].includes(request.cropMode) ? request.cropMode : 'center';
     document.getElementById('b-backend').value = request.backend || 'auto';
     restoreDevice('b-device', request.device);
   }
@@ -2540,6 +2559,14 @@ function syncPreviewOption() {
   const normalizeOnly = val('b-mode') === 'normalize';
   document.getElementById('b-backend').disabled = normalizeOnly;
   document.getElementById('b-device').disabled = normalizeOnly;
+  document.getElementById('b-crop-row').style.display = normalizeOnly ? '' : 'none';
+  const cropUnsupported = serverAvailable && !hasFeature('smart-crop');
+  for (const option of document.getElementById('b-crop').options) {
+    option.disabled = option.value !== 'center' && cropUnsupported;
+  }
+  document.getElementById('b-crop-hint').textContent = cropUnsupported
+    ? '当前服务仅支持中心裁剪。'
+    : '每批手动选择一种类型；真人、动漫混合目录请分批处理。智能裁剪离线使用 CPU，仅移动裁剪框。';
   document.getElementById('b-encoding').style.display = normalizeOnly ? 'none' : '';
   document.getElementById('b-encoding-hint').hidden = normalizeOnly;
   const preview = document.getElementById('m-preview');

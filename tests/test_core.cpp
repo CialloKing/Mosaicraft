@@ -2764,3 +2764,31 @@ TEST_CASE("smart crop ranks complete faces before foreground and limits camera m
     analysis.foreground(cv::Rect(0, 30, 20, 10)).setTo(1.f);
     CHECK(chooseSmartCrop(cv::Size(200, 400), cv::Size(200, 100), analysis).roi.y == 300);
 }
+
+TEST_CASE("normalize crop mode is optional, round-trips and is exclusive to normalization")
+{
+    using namespace mosaicraft;
+    BuildRequest request;
+    RequestError error;
+    REQUIRE(parseBuildRequestJson(R"({"inputDir":"photos","normalizeOnly":true})", request, error));
+    CHECK(request.cropMode == CropMode::Center);
+    for (const auto *mode : {"center", "smart-real", "smart-anime"})
+    {
+        BuildRequest parsed;
+        RequestError detail;
+        const nlohmann::json body = {{"inputDir", "photos"}, {"normalizeOnly", true}, {"cropMode", mode}};
+        REQUIRE(parseBuildRequestJson(body.dump(), parsed, detail));
+        CHECK(buildRequestToJson(parsed).at("cropMode") == mode);
+    }
+    for (const auto *body : {R"({"inputDir":"photos","normalizeOnly":true,"cropMode":"auto"})",
+                             R"({"inputDir":"photos","cropMode":"center"})",
+                             R"({"inputDir":"photos","normalizeOnly":true,"appendMode":true,"cropMode":"smart-anime"})"})
+    {
+        BuildRequest parsed;
+        RequestError detail;
+        CHECK_FALSE(parseBuildRequestJson(body, parsed, detail));
+        CHECK(detail.field == "cropMode");
+    }
+    const auto features = apiFeatureList();
+    CHECK((std::find(features.begin(), features.end(), "smart-crop") != features.end()) == smartCropAvailable());
+}
