@@ -1,0 +1,2 @@
+# Used only to verify annotations against the extracted package's PNG output.
+Pillow==12.2.0

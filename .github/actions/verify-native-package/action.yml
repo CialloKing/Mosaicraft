@@ -26,6 +26,10 @@ runs:
           -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="$PWD/build/check-tool/bin" \
           -DCMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE="$PWD/build/check-tool/bin"
         cmake --build build/check-tool --config Release --parallel 2
+    - name: Prepare the annotation verifier when smart crop has been approved
+      if: ${{ hashFiles('tests/fixtures/smart-crop/*.png') != '' }}
+      shell: bash
+      run: python -m pip install -r scripts/requirements-smart-crop-verification.txt
     - name: Verify archive without project dependencies
       shell: bash
       env:

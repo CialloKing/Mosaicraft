@@ -14,7 +14,7 @@
     "smart-crop": {
       "description": "Enable offline CPU smart image cropping",
       "dependencies": [
-        { "name": "opencv4", "default-features": false, "features": ["dnn"] }
+        { "name": "opencv4", "default-features": false, "features": ["dnn", "calib3d"] }
       ]
     }
   }

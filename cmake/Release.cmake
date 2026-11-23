@@ -132,6 +132,19 @@ if(vulkan)
         endif()
     endforeach()
 endif()
+if(SMART_CROP)
+    set(SMART_CROP ON)
+    include("${CMAKE_CURRENT_LIST_DIR}/SmartCropRelease.cmake")
+    file(READ "${repo}/cmake/smart-crop-models.json" smart_crop_lock)
+    smart_crop_release_gate("${repo}" "${smart_crop_lock}")
+    if(NOT DEFINED SMART_CROP_MODELS_DIR)
+        set(SMART_CROP_MODELS_DIR "${repo}/build/smart-crop-models/prepared")
+    endif()
+    cmake_path(ABSOLUTE_PATH SMART_CROP_MODELS_DIR BASE_DIRECTORY "${repo}" NORMALIZE)
+    smart_crop_verified_models("${smart_crop_lock}" "${SMART_CROP_MODELS_DIR}" validated_models)
+else()
+    set(SMART_CROP OFF)
+endif()
 message(STATUS "Building v${version} ${platform}-${arch} ${RUNTIME} (${CHANNEL}) at ${commit}")
 execute_process(COMMAND "${CMAKE_COMMAND}" --preset "${preset}" -S "${repo}" -B "${BUILD_DIR}"
     "-DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
@@ -139,12 +152,13 @@ execute_process(COMMAND "${CMAKE_COMMAND}" --preset "${preset}" -S "${repo}" -B 
     "-DVCPKG_TARGET_TRIPLET=${triplet}" "-DVCPKG_HOST_TRIPLET=${triplet}" -DVCPKG_MANIFEST_INSTALL=OFF
     "-DMOSAICRAFT_CUDA:BOOL=${cuda}" "-DMOSAICRAFT_VULKAN:BOOL=${vulkan}" "-DMOSAICRAFT_METAL:BOOL=${metal}"
     "-DMOSAICRAFT_VULKAN_AUTO:BOOL=${vulkan_auto}" -DMOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON
-    -DMOSAICRAFT_DESKTOP_BACKEND_INSTALL:BOOL=OFF -DMOSAICRAFT_BUILD_DESKTOP:BOOL=OFF ${sdk_args}
+    -DMOSAICRAFT_DESKTOP_BACKEND_INSTALL:BOOL=OFF -DMOSAICRAFT_BUILD_DESKTOP:BOOL=OFF
+    "-DMOSAICRAFT_SMART_CROP:BOOL=${SMART_CROP}" "-DMOSAICRAFT_SMART_CROP_MODELS_DIR:PATH=${SMART_CROP_MODELS_DIR}" ${sdk_args}
     COMMAND_ERROR_IS_FATAL ANY)
 file(STRINGS "${BUILD_DIR}/CMakeCache.txt" cache)
 set(expected_cache "MOSAICRAFT_CUDA:BOOL=${cuda}" "MOSAICRAFT_VULKAN:BOOL=${vulkan}"
     "MOSAICRAFT_METAL:BOOL=${metal}" "MOSAICRAFT_VULKAN_AUTO:BOOL=${vulkan_auto}"
-    "MOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON" "MOSAICRAFT_DESKTOP_BACKEND_INSTALL:BOOL=OFF")
+    "MOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON" "MOSAICRAFT_DESKTOP_BACKEND_INSTALL:BOOL=OFF" "MOSAICRAFT_SMART_CROP:BOOL=${SMART_CROP}")
 foreach(entry IN LISTS expected_cache)
     if(NOT entry IN_LIST cache)
         message(FATAL_ERROR "Release cache does not contain ${entry}")
@@ -243,6 +257,9 @@ foreach(backend IN ITEMS vulkan metal)
     endif()
 endforeach()
 set(info "Name: Mosaicraft\nVersion: ${version}\nPackage: ${name}\nPlatform: ${platform}\nArch: ${arch}\nRuntime: ${RUNTIME}\nVulkanBackend: ${vulkan_status}\nMetalBackend: ${metal_status}\nGpuValidation: ${gpu_validation}\nConfiguration: Release\nCommit: ${commit}\nGeneratedAtUtc: ${generated}\n")
+if(SMART_CROP)
+    string(APPEND info "SmartCrop: enabled\n")
+endif()
 string(JSON length LENGTH "${contracts}")
 math(EXPR last "${length} - 1")
 foreach(index RANGE 0 ${last})

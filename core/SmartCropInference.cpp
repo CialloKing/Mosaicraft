@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
-#include <nlohmann/json.hpp>
+#include "json.hpp"
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/objdetect/face.hpp>

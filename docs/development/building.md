@@ -66,6 +66,10 @@ Windows x64 依赖装到 `third_party/vcpkg_installed/`，ARM64 依赖装到独�
 
 发布包使用独立的固定依赖和验收流程，推送 `v*` 版本标签会触发打包。 [发布清单](releasing.md)
 
+## 智能裁剪（可选）
+
+`MOSAICRAFT_SMART_CROP` 默认关闭。启用时需要带 `dnn` 和 `objdetect` 的 OpenCV 4.12，以及单独准备的模型文件。参见[智能裁剪本地构建和验收](smart-crop.md)。
+
 ## GPU 后端与编译配置
 
 配置时可在基础预设上添加 GPU 开关。CPU 后端始终可用。 [GPU 后端与验收](portable-gpu.md)

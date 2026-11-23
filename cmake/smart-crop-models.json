@@ -21,8 +21,8 @@
       "size": 232589,
       "sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
       "license": "MIT",
-      "notice": "",
-      "redistributionVerified": false
+      "notice": "yunet.txt",
+      "redistributionVerified": true
     },
     {
       "id": "anime",
@@ -30,11 +30,16 @@
       "url": "https://huggingface.co/deepghs/anime_face_detection/resolve/784dc4c0bb692351ddcdbe6131a050b17d3025d5/face_detect_v1.4_n/model.onnx",
       "upstream": "https://huggingface.co/deepghs/anime_face_detection/tree/784dc4c0bb692351ddcdbe6131a050b17d3025d5/face_detect_v1.4_n",
       "revision": "784dc4c0bb692351ddcdbe6131a050b17d3025d5",
-      "size": 12102558,
-      "sha256": "fd860b650a4377046842c3cd80d01b0b408bdfbdb4acee5759630f82c6ef04a9",
+      "size": 12188989,
+      "sha256": "eec713ea17985d72425cfdba2f80604bd2bc6216e0331df52f7fb4ea2e547645",
       "license": "MIT (model card; upstream weight provenance pending)",
       "notice": "",
-      "redistributionVerified": false
+      "redistributionVerified": false,
+      "sourceSize": 12102558,
+      "sourceSha256": "fd860b650a4377046842c3cd80d01b0b408bdfbdb4acee5759630f82c6ef04a9",
+      "transform": "deepghs-fixed-640-v1"
     }
-  ]
+  ],
+  "fixtures": [],
+  "qualityReview": null
 }

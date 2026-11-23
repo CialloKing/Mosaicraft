@@ -7,6 +7,9 @@ inputs:
   cache-namespace:
     description: Override only to isolate a cold/warm validation pair.
     default: deps-v1
+  smart-crop:
+    description: Install isolated OpenCV DNN dependencies for gated smart crop packages.
+    default: 'OFF'
   cold:
     description: Bypass Actions cache restore and save for a fresh dependency audit.
     default: 'false'
@@ -30,10 +33,11 @@ runs:
       shell: bash
       env:
         COLD: ${{ inputs.cold }}
+        SMART_CROP: ${{ inputs.smart-crop }}
         SOURCE_DIR: ${{ inputs.source-directory }}
         CACHE_NAMESPACE: ${{ inputs.cache-namespace }}
       run: |
-        command=(cmake -DMODE=Prepare "-DSOURCE_DIR=$SOURCE_DIR" -DVCPKG_ROOT=build/tools/vcpkg "-DCACHE_NAMESPACE=$CACHE_NAMESPACE" -P cmake/PrepareRelease.cmake)
+        command=(cmake -DMODE=Prepare "-DSMART_CROP=$SMART_CROP" "-DSOURCE_DIR=$SOURCE_DIR" -DVCPKG_ROOT=build/tools/vcpkg "-DCACHE_NAMESPACE=$CACHE_NAMESPACE" -P cmake/PrepareRelease.cmake)
         if [[ "$RUNNER_OS" == Linux && "$COLD" == true ]]; then
           cmake -DLOG=build/dependency-state/prepare-execve.log -P cmake/AuditRelease.cmake -- "${command[@]}"
         else
@@ -50,9 +54,10 @@ runs:
       shell: bash
       env:
         COLD: ${{ inputs.cold }}
+        SMART_CROP: ${{ inputs.smart-crop }}
         SOURCE_DIR: ${{ inputs.source-directory }}
       run: |
-        command=(cmake -DMODE=Install "-DSOURCE_DIR=$SOURCE_DIR" -P cmake/PrepareRelease.cmake)
+        command=(cmake -DMODE=Install "-DSMART_CROP=$SMART_CROP" "-DSOURCE_DIR=$SOURCE_DIR" -P cmake/PrepareRelease.cmake)
         if [[ "$RUNNER_OS" == Linux && "$COLD" == true ]]; then
           cmake -DLOG=build/dependency-state/execve.log -P cmake/AuditRelease.cmake -- "${command[@]}"
           grep -Eq '"restoredPackages":0}' build/dependency-state/x64-linux-release/install-summary.json

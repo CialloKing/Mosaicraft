@@ -1,0 +1,3 @@
+# Build-only dependencies. The installed CLI and Web UI use OpenCV DNN, not Python or ORT.
+onnx==1.20.1
+onnxruntime==1.24.4

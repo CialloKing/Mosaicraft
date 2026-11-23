@@ -32,6 +32,10 @@ Windows/Linux x64 正式 Vulkan 包启用 Vulkan → CPU，并在独立无驱动
 
 使用 [CMake 发布入口](packaging.md#cmake-发布入口)构建 CPU、CUDA 和 Vulkan 包。
 
+## 智能裁剪发布门禁
+
+CLI／Web 发布包只有在权重再分发、人工质量审核和各目标平台解包验证都通过后才可开启智能裁剪。未通过时保留原发布配置。参见[智能裁剪发布条件](smart-crop.md#模型锁与发布条件)。
+
 ## 归档包检查
 
 - 包含 CLI、Web UI、页面资源、依赖、许可证、BUILD_INFO.txt 与 contracts.json。
