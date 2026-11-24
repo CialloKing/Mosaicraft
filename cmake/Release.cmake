@@ -80,6 +80,9 @@ if(SMART_CROP_CUDA)
     set(SMART_CROP_CUDA ON)
     include("${CMAKE_CURRENT_LIST_DIR}/SmartCropRelease.cmake")
     smart_crop_cuda_redist("${MOSAICRAFT_REPO}" "${SMART_CROP_CUDA_REDIST}" approved_dlls approved_notices)
+    # Tests load OpenCV DNN before the install tree exists, so expose only the
+    # audited smart-crop CUDA runtime while the release checks execute.
+    set(ENV{PATH} "${SMART_CROP_CUDA_REDIST};$ENV{PATH}")
 else()
     set(SMART_CROP_CUDA OFF)
 endif()
