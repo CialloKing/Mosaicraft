@@ -12,6 +12,10 @@ on:
         description: Also rebuild native CUDA packages when supplementing a release tag
         type: boolean
         default: false
+      include_smart_crop:
+        description: Include smart crop in the Windows CPU package (requires approved release evidence)
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -19,7 +23,7 @@ jobs:
     if: ${{ !inputs.desktop_release_tag }}
     name: Package ${{ matrix.platform }} ${{ matrix.runtime }}
     env:
-      SMART_CROP: ${{ matrix.platform == 'windows-x64' && matrix.runtime == 'cpu-only' && vars.MOSAICRAFT_SMART_CROP_RELEASE == '1' && 'ON' || 'OFF' }}
+      SMART_CROP: ${{ matrix.platform == 'windows-x64' && matrix.runtime == 'cpu-only' && inputs.include_smart_crop && 'ON' || 'OFF' }}
     strategy: &native_matrix
       fail-fast: false
       matrix:
