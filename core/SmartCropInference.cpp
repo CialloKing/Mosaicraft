@@ -168,7 +168,9 @@ cv::dnn::Net modelNet(const std::vector<unsigned char> &bytes, CropDevice device
 #if MOSAICRAFT_SMART_CROP_CUDA
 void requireCudaConvolutions(const cv::Ptr<const cv::dnn::Graph> &graph, const char *model)
 {
-    bool ranConvolution = false;
+    size_t convolutionCount = 0;
+    size_t cudaConvolutionCount = 0;
+    std::string firstUnsupported;
     if (graph)
     {
         const auto &ops = graph->prog();
@@ -176,19 +178,25 @@ void requireCudaConvolutions(const cv::Ptr<const cv::dnn::Graph> &graph, const c
         {
             if (ops[i] && ops[i]->type == "Conv2")
             {
-                ranConvolution = true;
-                if (graph->opBackend(static_cast<int>(i)) != cv::dnn::DNN_BACKEND_CUDA)
+                ++convolutionCount;
+                if (graph->opBackend(static_cast<int>(i)) == cv::dnn::DNN_BACKEND_CUDA)
                 {
-                    ranConvolution = false;
-                    break;
+                    ++cudaConvolutionCount;
+                }
+                else if (firstUnsupported.empty())
+                {
+                    firstUnsupported = "op=" + std::to_string(i) + ", backend=" +
+                        std::to_string(graph->opBackend(static_cast<int>(i)));
                 }
             }
         }
     }
-    if (!ranConvolution)
+    if (convolutionCount == 0 || cudaConvolutionCount != convolutionCount)
     {
         // OpenCV can execute a whole unsupported graph on the CPU even after setPreferableTarget().
-        throw SmartCropError("smart_crop_cuda_fallback", std::string(model) + " did not execute all convolutions on CUDA",
+        const auto detail = " (CUDA Conv2 nodes: " + std::to_string(cudaConvolutionCount) + "/" +
+            std::to_string(convolutionCount) + (firstUnsupported.empty() ? "" : "; first unsupported " + firstUnsupported) + ")";
+        throw SmartCropError("smart_crop_cuda_fallback", std::string(model) + " did not execute all convolutions on CUDA" + detail,
                              SmartCropCudaFault::Retryable);
     }
 }
