@@ -23,6 +23,7 @@
 - [发布清单](development/releasing.md)：版本、验收、包内容与发布步骤。
 - [文档维护](development/documentation.md)：分类、更新和链接检查规则。
 - [版本状态](releases.md)：当前源码与公开发布的区别。
+- [v1.15.15 智能裁剪预发布审核](verification/smart-crop-v1-15-15-preliminary.md)：Windows x64 CUDA 智能裁剪包及 CPU 回退的审核证据。
 
 ## 历史与原始数据
 
