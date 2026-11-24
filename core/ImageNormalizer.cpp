@@ -146,84 +146,14 @@ bool ImageNormalizer::process(const std::string& inputPath, const std::string& o
     return processImpl(inputPath, outputPath, writeParams, storedPixels, false);
 }
 
-bool ImageNormalizer::processImpl(const std::string& inputPath, const std::string& outputPath,
-                                  const std::vector<int>& writeParams, cv::Mat* storedPixels, bool compactPng,
-                                  const LibraryEncodingOptions* encoding, LibraryTimings* timings)
+namespace
 {
-    if (storedPixels)
-    {
-        storedPixels->release();
-    }
+template<class Action>
+bool normalizeStage(const std::string& inputPath, const std::string& outputPath, Action action)
+{
     try
     {
-        const auto write = [&](const std::vector<uint8_t> &bytes)
-        {
-            BenchmarkTimer timer(timings ? &timings->write : nullptr);
-            return writeBytesUnicode(outputPath, bytes);
-        };
-        // 保存与解码共用同一份字节，源文件随后变化也不会使特征与图库副本错配。
-        auto encoded = readBytesUnicode(inputPath);
-        const auto inputFormat = imageFormat(inputPath);
-        const auto outputFormat = imageFormat(outputPath);
-        const auto format = signedImageFormat(encoded);
-        if (encoding && (format.empty() || format != inputFormat))
-        {
-            throw std::runtime_error("input signature does not match the file extension");
-        }
-        const bool requiresPngRewrite = format == ".png" && stripOversizedPngText(encoded);
-        cv::Mat src = encoded.empty() ? cv::Mat() : cv::imdecode(encoded, cv::IMREAD_COLOR);
-        if (src.empty())
-        {
-            throw std::runtime_error("cannot decode input");
-        }
-        const bool sameSizeAndFormat = src.cols == m_targetWidth && src.rows == m_targetHeight && inputFormat == outputFormat;
-        std::error_code ec;
-        const bool sameFile = (sameSizeAndFormat || requiresPngRewrite) &&
-                              std::filesystem::equivalent(u8path(inputPath), u8path(outputPath), ec);
-        if (sameFile && requiresPngRewrite)
-        {
-            throw std::runtime_error("PNG has oversized iTXt; use a separate output file");
-        }
-        if (sameSizeAndFormat)
-        {
-            if (!sameFile && compactPng)
-            {
-                compactLibraryPng(encoded, src.total());
-            }
-            if (!sameFile && !write(encoded))
-            {
-                throw std::runtime_error("cannot save original bytes");
-            }
-            if (storedPixels)
-            {
-                *storedPixels = std::move(src);
-            }
-            return true;
-        }
-        // 不再需要原编码数据，避免它与缩放、编码的临时缓冲同时存活。
-        std::vector<uint8_t>().swap(encoded);
-        const cv::Mat normalized = normalize(src);
-        const auto extension = u8path(outputPath).extension().string();
-        const bool encodedOk = [&]()
-        {
-            BenchmarkTimer timer(timings ? &timings->encode : nullptr);
-            return cv::imencode(extension, normalized, encoded,
-                                encoding ? libraryWriteParams(outputFormat, *encoding) : writeParams);
-        }();
-        if (!encodedOk || !write(encoded))
-        {
-            throw std::runtime_error("cannot save normalized image");
-        }
-        if (storedPixels)
-        {
-            // PNG 对三通道八位像素无损；其他格式解码实际写出的同一份字节。
-            cv::Mat saved = outputFormat == ".png" ? normalized : cv::imdecode(encoded, cv::IMREAD_COLOR);
-            if (saved.empty())
-            {
-                throw std::runtime_error("cannot decode saved image");
-            }
-            *storedPixels = std::move(saved);
-        }
+        action();
         return true;
     }
     catch (const SmartCropError &error)
@@ -238,6 +168,147 @@ bool ImageNormalizer::processImpl(const std::string& inputPath, const std::strin
     }
 }
 
+std::vector<int> standaloneWriteParams(const std::string& format)
+{
+    if (format == ".png")
+    {
+        return {cv::IMWRITE_PNG_COMPRESSION, 9};
+    }
+    if (format == ".jpg")
+    {
+        return {cv::IMWRITE_JPEG_QUALITY, 100};
+    }
+    return {};
+}
+} // namespace
+
+std::size_t ImageNormalizer::PreparedImage::bufferBytes() const
+{
+    return bytes.capacity() + (pixels.empty() ? 0 : static_cast<std::size_t>(pixels.datalimit - pixels.datastart));
+}
+
+std::size_t ImageNormalizer::standaloneOutputPixelBytes() const
+{
+    return static_cast<std::size_t>(m_targetWidth) * m_targetHeight * 3;
+}
+
+ImageNormalizer::PreparedImage ImageNormalizer::prepareImage(const std::string& inputPath,
+                                                             const std::string& outputPath, bool library)
+{
+    // 保存与解码共用同一份字节，源文件随后变化也不会使特征与图库副本错配。
+    auto encoded = readBytesUnicode(inputPath);
+    const auto inputFormat = imageFormat(inputPath);
+    const auto outputFormat = imageFormat(outputPath);
+    const auto format = signedImageFormat(encoded);
+    if (library && (format.empty() || format != inputFormat))
+    {
+        throw std::runtime_error("input signature does not match the file extension");
+    }
+    const bool requiresPngRewrite = format == ".png" && stripOversizedPngText(encoded);
+    auto src = encoded.empty() ? cv::Mat() : cv::imdecode(encoded, cv::IMREAD_COLOR);
+    if (src.empty())
+    {
+        throw std::runtime_error("cannot decode input");
+    }
+    const bool sameSizeAndFormat = src.cols == m_targetWidth && src.rows == m_targetHeight && inputFormat == outputFormat;
+    std::error_code ec;
+    const bool sameFile = (sameSizeAndFormat || requiresPngRewrite) &&
+                          std::filesystem::equivalent(u8path(inputPath), u8path(outputPath), ec);
+    if (sameFile && requiresPngRewrite)
+    {
+        throw std::runtime_error("PNG has oversized iTXt; use a separate output file");
+    }
+    if (!sameSizeAndFormat)
+    {
+        // 推理与写盘不需要保留将被重新编码的原始字节。
+        std::vector<uint8_t>().swap(encoded);
+    }
+    return PreparedImage{std::move(src), std::move(encoded), sameSizeAndFormat, sameFile};
+}
+
+void ImageNormalizer::cropImage(PreparedImage& image)
+{
+    if (!image.copyOriginal)
+    {
+        image.pixels = normalize(image.pixels);
+    }
+}
+
+void ImageNormalizer::saveImage(const std::string& outputPath, PreparedImage& image,
+                                const std::vector<int>& writeParams, cv::Mat* storedPixels, bool compactPng,
+                                LibraryTimings* timings)
+{
+    const auto write = [&]()
+    {
+        BenchmarkTimer timer(timings ? &timings->write : nullptr);
+        return writeBytesUnicode(outputPath, image.bytes);
+    };
+    if (image.copyOriginal)
+    {
+        if (!image.sameFile && compactPng)
+        {
+            compactLibraryPng(image.bytes, image.pixels.total());
+        }
+        if (!image.sameFile && !write())
+        {
+            throw std::runtime_error("cannot save original bytes");
+        }
+        if (storedPixels)
+        {
+            *storedPixels = std::move(image.pixels);
+        }
+        return;
+    }
+    const auto extension = u8path(outputPath).extension().string();
+    const bool encodedOk = [&]()
+    {
+        BenchmarkTimer timer(timings ? &timings->encode : nullptr);
+        return cv::imencode(extension, image.pixels, image.bytes, writeParams);
+    }();
+    if (!encodedOk || !write())
+    {
+        throw std::runtime_error("cannot save normalized image");
+    }
+    if (storedPixels)
+    {
+        // PNG 对三通道八位像素无损；其他格式解码实际写出的同一份字节。
+        const auto format = imageFormat(outputPath);
+        cv::Mat saved = format == ".png" ? image.pixels : cv::imdecode(image.bytes, cv::IMREAD_COLOR);
+        if (saved.empty())
+        {
+            throw std::runtime_error("cannot decode saved image");
+        }
+        *storedPixels = std::move(saved);
+    }
+}
+
+bool ImageNormalizer::processImpl(const std::string& inputPath, const std::string& outputPath,
+                                  const std::vector<int>& writeParams, cv::Mat* storedPixels, bool compactPng,
+                                  const LibraryEncodingOptions* encoding, LibraryTimings* timings,
+                                  StandaloneTimings* standalone)
+{
+    if (storedPixels)
+    {
+        storedPixels->release();
+    }
+    return normalizeStage(inputPath, outputPath, [&]()
+    {
+        auto image = [&]()
+        {
+            BenchmarkTimer timer(standalone ? &standalone->readDecodeMs : nullptr);
+            return prepareImage(inputPath, outputPath, encoding != nullptr);
+        }();
+        {
+            BenchmarkTimer timer(standalone ? &standalone->cropMs : nullptr);
+            cropImage(image);
+        }
+        BenchmarkTimer timer(standalone ? &standalone->encodeWriteMs : nullptr);
+        saveImage(outputPath, image, !image.copyOriginal && encoding ? libraryWriteParams(imageFormat(outputPath), *encoding)
+                                                                    : writeParams,
+                  storedPixels, compactPng, timings);
+    });
+}
+
 bool ImageNormalizer::processLibraryImage(const std::string& inputPath, const std::string& outputPath,
                                           const LibraryEncodingOptions& encoding, cv::Mat* storedPixels,
                                           LibraryTimings* timings)
@@ -247,18 +318,42 @@ bool ImageNormalizer::processLibraryImage(const std::string& inputPath, const st
 }
 
 bool ImageNormalizer::processStandaloneImage(const std::string& inputPath, const std::string& outputPath,
-                                             cv::Mat* storedPixels)
+                                             cv::Mat* storedPixels, StandaloneTimings* timings)
 {
     const auto format = imageFormat(outputPath);
-    if (format == ".png")
+    return processImpl(inputPath, outputPath, standaloneWriteParams(format), storedPixels,
+                       format == ".png", nullptr, nullptr, timings);
+}
+
+bool ImageNormalizer::prepareStandaloneImage(const std::string& inputPath, const std::string& outputPath,
+                                             PreparedImage& image, StandaloneTimings& timings)
+{
+    BenchmarkTimer timer(&timings.readDecodeMs);
+    return normalizeStage(inputPath, outputPath, [&]()
     {
-        return processImpl(inputPath, outputPath, {cv::IMWRITE_PNG_COMPRESSION, 9}, storedPixels, true);
-    }
-    if (format == ".jpg")
+        image = prepareImage(inputPath, outputPath, false);
+    });
+}
+
+bool ImageNormalizer::cropStandaloneImage(const std::string& inputPath, const std::string& outputPath,
+                                          PreparedImage& image, StandaloneTimings& timings)
+{
+    BenchmarkTimer timer(&timings.cropMs);
+    return normalizeStage(inputPath, outputPath, [&]()
     {
-        return processImpl(inputPath, outputPath, {cv::IMWRITE_JPEG_QUALITY, 100}, storedPixels, false);
-    }
-    return processImpl(inputPath, outputPath, {}, storedPixels, false);
+        cropImage(image);
+    });
+}
+
+bool ImageNormalizer::saveStandaloneImage(const std::string& inputPath, const std::string& outputPath,
+                                          PreparedImage& image, StandaloneTimings& timings)
+{
+    BenchmarkTimer timer(&timings.encodeWriteMs);
+    return normalizeStage(inputPath, outputPath, [&]()
+    {
+        const auto format = imageFormat(outputPath);
+        saveImage(outputPath, image, standaloneWriteParams(format), nullptr, format == ".png", nullptr);
+    });
 }
 
 cv::Mat ImageNormalizer::processToMat(const std::string& inputPath)

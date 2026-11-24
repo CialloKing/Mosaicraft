@@ -46,8 +46,28 @@ public:
     static cv::Mat readLibrarySource(const std::string& inputPath, bool* requiresPngRewrite = nullptr);
     bool processLibraryImage(const std::string& inputPath, const std::string& outputPath,
                              const LibraryEncodingOptions& encoding, cv::Mat* storedPixels, LibraryTimings* timings);
+    struct StandaloneTimings
+    {
+        double readDecodeMs = 0, cropMs = 0, encodeWriteMs = 0, waitInputMs = 0, waitOutputMs = 0;
+    };
+    struct PreparedImage
+    {
+        cv::Mat pixels;
+        std::vector<uint8_t> bytes;
+        bool copyOriginal = false;
+        bool sameFile = false;
+
+        std::size_t bufferBytes() const;
+    };
     bool processStandaloneImage(const std::string& inputPath, const std::string& outputPath,
-                                cv::Mat* storedPixels = nullptr);
+                                cv::Mat* storedPixels = nullptr, StandaloneTimings* timings = nullptr);
+    bool prepareStandaloneImage(const std::string& inputPath, const std::string& outputPath,
+                                PreparedImage& image, StandaloneTimings& timings);
+    bool cropStandaloneImage(const std::string& inputPath, const std::string& outputPath,
+                             PreparedImage& image, StandaloneTimings& timings);
+    bool saveStandaloneImage(const std::string& inputPath, const std::string& outputPath,
+                             PreparedImage& image, StandaloneTimings& timings);
+    std::size_t standaloneOutputPixelBytes() const;
 
     // 返回归一化后的 cv::Mat（不写磁盘），供流水线使用
     cv::Mat processToMat(const std::string& inputPath);
@@ -60,7 +80,12 @@ public:
 private:
     bool processImpl(const std::string& inputPath, const std::string& outputPath,
                      const std::vector<int>& writeParams, cv::Mat* storedPixels, bool compactPng,
-                     const LibraryEncodingOptions* encoding = nullptr, LibraryTimings* timings = nullptr);
+                     const LibraryEncodingOptions* encoding = nullptr, LibraryTimings* timings = nullptr,
+                     StandaloneTimings* standalone = nullptr);
+    PreparedImage prepareImage(const std::string& inputPath, const std::string& outputPath, bool library);
+    void cropImage(PreparedImage& image);
+    void saveImage(const std::string& outputPath, PreparedImage& image, const std::vector<int>& writeParams,
+                   cv::Mat* storedPixels, bool compactPng, LibraryTimings* timings);
     cv::Mat normalize(const cv::Mat& src);
     int m_targetWidth;
     int m_targetHeight;

@@ -34,6 +34,10 @@ class BenchmarkTimer
         : BenchmarkTimer(enabled ? &total : nullptr, nullptr)
     {
     }
+    explicit BenchmarkTimer(double *total)
+        : BenchmarkTimer(total, nullptr)
+    {
+    }
     explicit BenchmarkTimer(BenchmarkSample *sample)
         : BenchmarkTimer(sample ? &sample->ms : nullptr, sample)
     {

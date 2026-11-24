@@ -1,5 +1,4 @@
 #include "NormalizeService.h"
-#include "ImageNormalizer.h"
 #include "OutputPublication.h"
 #include "RequestValidation.h"
 #include "SmartCrop.h"
@@ -11,6 +10,8 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <string_view>
 #include <set>
 #include <thread>
 
@@ -24,6 +25,96 @@ int normalizationWorkerCount(int requestedThreads)
     }
     // 与建库和追加共用自动策略，不受通用线程池的 8 线程默认上限限制。
     return std::max(2, static_cast<int>(std::thread::hardware_concurrency()));
+}
+
+void detail::runSmartCropPipeline(ImageNormalizer &normalizer, std::size_t count,
+                                  const std::function<NormalizePaths(std::size_t)> &paths,
+                                  const std::function<void(bool)> &complete, ImageNormalizer::StandaloneTimings &timings,
+                                  std::size_t queueBytes)
+{
+    if (!count)
+    {
+        return;
+    }
+    struct Item
+    {
+        NormalizePaths paths;
+        ImageNormalizer::PreparedImage image;
+        bool ok = false;
+    };
+    Item decoded, cropped;
+    WorkerPool reader(1), writer(1);
+    const auto readAhead = [&](std::size_t index)
+    {
+        reader.start(1, [&, index](std::size_t)
+        {
+            decoded.paths = paths(index);
+            decoded.ok = normalizer.prepareStandaloneImage(decoded.paths.first, decoded.paths.second, decoded.image, timings);
+        });
+    };
+    const auto waitForWriter = [&]()
+    {
+        BenchmarkTimer timer(&timings.waitOutputMs);
+        writer.wait();
+    };
+    const auto save = [&](Item item)
+    {
+        complete(item.ok && normalizer.saveStandaloneImage(item.paths.first, item.paths.second, item.image, timings));
+    };
+    // Reserve half for each slot so external work never lets one queue starve the other.
+    const auto slotLimit = queueBytes / 2;
+    const bool largeOutput = normalizer.standaloneOutputPixelBytes() > slotLimit;
+    readAhead(0);
+    try
+    {
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            {
+                BenchmarkTimer timer(&timings.waitInputMs);
+                reader.wait();
+            }
+            auto item = std::exchange(decoded, Item{});
+            const bool exclusive = item.ok && (largeOutput || item.image.bufferBytes() > slotLimit);
+            const bool more = index + 1 < count;
+            if (exclusive)
+            {
+                // Decoding discovers the real allocation size. Keep it and drain instead of decoding twice.
+                waitForWriter();
+            }
+            else if (more)
+            {
+                readAhead(index + 1);
+            }
+            if (item.ok)
+            {
+                item.ok = normalizer.cropStandaloneImage(item.paths.first, item.paths.second, item.image, timings);
+            }
+            if (exclusive)
+            {
+                save(std::move(item));
+                if (more)
+                {
+                    readAhead(index + 1);
+                }
+            }
+            else
+            {
+                waitForWriter();
+                cropped = std::move(item);
+                writer.start(1, [&](std::size_t)
+                {
+                    save(std::exchange(cropped, Item{}));
+                });
+            }
+        }
+    }
+    catch (...)
+    {
+        // Do not lose the preceding output if the ordered inference fails. Never publish a prefetched successor.
+        waitForWriter();
+        throw;
+    }
+    waitForWriter();
 }
 
 ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runtime)
@@ -94,6 +185,7 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
         next->probe();
         session = std::move(next);
     };
+    [[maybe_unused]] CropDevice initial = CropDevice::Cpu;
     if (request.cropMode != CropMode::Center)
     {
         runtime.metric("smartCropCudaFallbacks", 0);
@@ -106,7 +198,7 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
                 requireSmartCropDevice(CropDevice::Cuda);
             }
             models = loadSmartCropModelPair(request.cropMode);
-            CropDevice initial = policy == CropDevice::Cuda ? CropDevice::Cuda : CropDevice::Cpu;
+            initial = policy == CropDevice::Cuda ? CropDevice::Cuda : CropDevice::Cpu;
 #if MOSAICRAFT_SMART_CROP_CUDA
             if (policy == CropDevice::Auto)
             {
@@ -127,16 +219,25 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
     }
     fs::create_directories(output);
     std::atomic<size_t> completed{0}, failed{0};
-    const auto process = [&](size_t index, ImageNormalizer &normalizer)
+    const auto paths = [&](std::size_t index)
     {
         const auto destination = output / (std::to_string(index) + pathToUtf8(files[index].extension()));
-        if (!normalizer.processStandaloneImage(pathToUtf8(files[index]), pathToUtf8(destination)))
+        return detail::NormalizePaths{pathToUtf8(files[index]), pathToUtf8(destination)};
+    };
+    const auto complete = [&](bool ok)
+    {
+        if (!ok)
         {
             ++failed;
         }
         const auto processed = ++completed;
         // Fast CUDA batches can finish within the progress throttle interval.
         runtime.advance("images", processed, files.size(), "images", processed == files.size());
+    };
+    const auto process = [&](std::size_t index, ImageNormalizer &normalizer, ImageNormalizer::StandaloneTimings *timings)
+    {
+        const auto [source, destination] = paths(index);
+        complete(normalizer.processStandaloneImage(source, destination, nullptr, timings));
     };
     runtime.stage("normalizing");
     if (!models)
@@ -146,11 +247,20 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
         workers.run(files.size(), [&](size_t index)
         {
             ImageNormalizer normalizer(request.normalizeWidth, request.normalizeHeight);
-            process(index, normalizer);
+            process(index, normalizer, nullptr);
         });
     }
     else
     {
+        const char *setting = std::getenv("MOSAICRAFT_SMART_CROP_PIPELINE");
+        const std::string_view trial = setting ? setting : "";
+        bool pipeline = false;
+#if MOSAICRAFT_SMART_CROP_CUDA && defined(_WIN32) && (defined(_M_X64) || defined(__x86_64__))
+        pipeline = trial == "1" && initial == CropDevice::Cuda && files.size() >= 8 &&
+                   normalizationWorkerCount(request.threads) >= 3;
+#endif
+        const bool measure = pipeline || trial == "0" || trial == "1";
+        ImageNormalizer::StandaloneTimings timings;
         SmartCropStats stats;
         size_t cpuImages = 0, cudaImages = 0;
         const auto processStart = std::chrono::steady_clock::now();
@@ -170,6 +280,15 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
             runtime.metric("smartCropInferenceWorkerMs", stats.inferenceMs);
             runtime.metric("smartCropSaliencyMs", stats.saliencyMs);
             runtime.metric("smartCropFaceMs", stats.faceMs);
+            if (measure)
+            {
+                runtime.metric("smartCropPipeline", pipeline ? 1 : 0);
+                runtime.metric("smartCropReadDecodeMs", timings.readDecodeMs);
+                runtime.metric("smartCropCropMs", timings.cropMs);
+                runtime.metric("smartCropEncodeWriteMs", timings.encodeWriteMs);
+                runtime.metric("smartCropWaitInputMs", timings.waitInputMs);
+                runtime.metric("smartCropWaitOutputMs", timings.waitOutputMs);
+            }
             const auto end = processingEnd == processStart ? std::chrono::steady_clock::now() : processingEnd;
             const double seconds = std::chrono::duration<double>(end - processStart).count();
             runtime.metric("smartCropImagesPerSecond", seconds > 0 ? (completed.load() - failed.load()) / seconds : 0);
@@ -207,9 +326,16 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
                 return result;
             };
             ImageNormalizer normalizer(request.normalizeWidth, request.normalizeHeight, analyze, &stats);
-            for (size_t index = 0; index < files.size(); ++index)
+            if (pipeline)
             {
-                process(index, normalizer);
+                detail::runSmartCropPipeline(normalizer, files.size(), paths, complete, timings);
+            }
+            else
+            {
+                for (size_t index = 0; index < files.size(); ++index)
+                {
+                    process(index, normalizer, measure ? &timings : nullptr);
+                }
             }
             processingEnd = std::chrono::steady_clock::now();
 #if MOSAICRAFT_SMART_CROP_CUDA

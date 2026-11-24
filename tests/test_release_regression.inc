@@ -1,5 +1,6 @@
 #include "../core/NormalizeService.h"
 #include "../core/ProjectService.h"
+#include "../core/SmartCrop.h"
 #include <future>
 #include <memory>
 #include <png.h>
@@ -99,6 +100,67 @@ TEST_CASE("same-size PNG normalization preserves indexed pixels and ancillary ch
     CHECK(length == scanlines.size());
     CHECK(restored == scanlines);
     CHECK(readBytesUnicode(source) == original);
+
+    ImageNormalizer normalizer(32, 32);
+    ImageNormalizer::StandaloneTimings timings;
+    const auto pipelineOutput = utf8(workspace.outputDir() / "pipeline.PNG");
+    bool saved = false;
+    detail::runSmartCropPipeline(normalizer, 1, [&](size_t) { return detail::NormalizePaths{source, pipelineOutput}; },
+                                 [&](bool ok) { saved = ok; }, timings);
+    REQUIRE(saved);
+    CHECK(readBytesUnicode(pipelineOutput) == packed);
+}
+
+TEST_CASE("smart crop pipeline preserves order, skips bad input and drains only earlier outputs on inference failure")
+{
+    TempWorkspace workspace;
+    const auto output = workspace.root / "pipelined";
+    fs::create_directory(output);
+    requireWriteImage(workspace.inputDir() / "0.png", cv::Mat(24, 36, CV_8UC3, cv::Scalar(1, 12, 23)));
+    REQUIRE(writeBytesUnicode(utf8(workspace.inputDir() / "1.png"), {0, 1, 2}));
+    requireWriteImage(workspace.inputDir() / "2.png", cv::Mat(96, 53, CV_8UC3, cv::Scalar(2, 10, 20)));
+    requireWriteImage(workspace.inputDir() / "3.png", cv::Mat(36, 27, CV_8UC3, cv::Scalar(3, 10, 20)));
+    const auto paths = [&](size_t index)
+    {
+        const auto name = std::to_string(index) + ".png";
+        return detail::NormalizePaths{utf8(workspace.inputDir() / name), utf8(output / name)};
+    };
+    bool injectFailure = false;
+    ImageNormalizer normalizer(16, 16, [&](const cv::Mat &image)
+    {
+        if (injectFailure && image.at<cv::Vec3b>(0, 0)[0] == 2)
+        {
+            throw SmartCropError("smart_crop_cuda_inference", "injected strict CUDA fault", SmartCropCudaFault::Retryable);
+        }
+        return SmartCropAnalysis{};
+    });
+    ImageNormalizer::StandaloneTimings timings;
+    std::vector<int> completed;
+    const auto complete = [&](bool ok) { completed.push_back(ok); };
+    // Force the larger image to use the over-budget path without a large fixture.
+    detail::runSmartCropPipeline(normalizer, 4, paths, complete, timings, 8192);
+    CHECK(completed == std::vector<int>{1, 0, 1, 1});
+    for (size_t i : {0, 2, 3})
+    {
+        const auto [input, pipelined] = paths(i);
+        const auto serial = utf8(workspace.outputDir() / (std::to_string(i) + ".png"));
+        REQUIRE(normalizer.processStandaloneImage(input, serial));
+        CHECK(readBytesUnicode(pipelined) == readBytesUnicode(serial));
+    }
+    if (smartCropAvailable())
+    {
+        for (const auto &entry : fs::directory_iterator(output))
+        {
+            fs::remove(entry.path());
+        }
+        injectFailure = true;
+        completed.clear();
+        CHECK_THROWS_AS(detail::runSmartCropPipeline(normalizer, 4, paths, complete, timings), SmartCropError);
+        CHECK(completed == std::vector<int>{1, 0});
+        CHECK(fs::exists(output / "0.png"));
+        CHECK_FALSE(fs::exists(output / "2.png"));
+        CHECK_FALSE(fs::exists(output / "3.png"));
+    }
 }
 
 TEST_CASE("library add drops only oversized PNG iTXt from the saved copy")
