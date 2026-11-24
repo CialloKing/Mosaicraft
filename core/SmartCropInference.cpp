@@ -197,9 +197,11 @@ auto runDnn(CropDevice device, Forward &&forward)
         }
         catch (const cv::Exception &error)
         {
-            if (error.code == cv::Error::StsNoMem)
+            // The locked OpenCV backend reports CUDA, cuBLAS and cuDNN failures with GPU status codes.
+            // The same forward pass can also throw graph/shape errors or fail a host allocation.
+            if (error.code != cv::Error::GpuApiCallError && error.code != cv::Error::GpuNotSupported)
             {
-                throw; // A host allocation failure is not a CUDA device failure.
+                throw;
             }
             throw SmartCropError("smart_crop_cuda_inference", error.what(), cudaFault(error));
         }
@@ -252,17 +254,17 @@ struct SmartCropInference::Impl
         {
             return saliency.forward("1959");
         });
+        if (out.type() != CV_32F || out.dims != 4 || out.size[0] != 1 || out.size[1] != 1 ||
+            out.size[2] != kForegroundSize || out.size[3] != kForegroundSize || !cv::checkRange(out, true, nullptr, 0, 1.001))
+        {
+            throw SmartCropError("smart_crop_inference", "unexpected U2-NetP foreground tensor");
+        }
 #if MOSAICRAFT_SMART_CROP_CUDA
         if (device == CropDevice::Cuda)
         {
             requireCudaConvolutions(saliency.getMainGraph(), "U2-NetP");
         }
 #endif
-        if (out.type() != CV_32F || out.dims != 4 || out.size[0] != 1 || out.size[1] != 1 ||
-            out.size[2] != kForegroundSize || out.size[3] != kForegroundSize || !cv::checkRange(out, true, nullptr, 0, 1.001))
-        {
-            throw SmartCropError("smart_crop_inference", "unexpected U2-NetP foreground tensor");
-        }
         return out.reshape(1, kForegroundSize).clone();
     }
 
@@ -276,16 +278,16 @@ struct SmartCropInference::Impl
         {
             return real->detect(image, detections);
         });
+        if (!detections.empty() && (detections.type() != CV_32F || detections.cols != 15 || !cv::checkRange(detections)))
+        {
+            throw SmartCropError("smart_crop_inference", "unexpected YuNet detection tensor");
+        }
 #if MOSAICRAFT_SMART_CROP_CUDA
         if (device == CropDevice::Cuda)
         {
             requireCudaConvolutions(real->getDnnGraph(), "YuNet");
         }
 #endif
-        if (!detections.empty() && (detections.type() != CV_32F || detections.cols != 15 || !cv::checkRange(detections)))
-        {
-            throw SmartCropError("smart_crop_inference", "unexpected YuNet detection tensor");
-        }
         std::vector<cv::Rect2d> faces;
         for (int i = 0; i < detections.rows; ++i)
         {
@@ -319,18 +321,18 @@ struct SmartCropInference::Impl
         {
             return anime.forward("output0");
         });
-#if MOSAICRAFT_SMART_CROP_CUDA
-        if (device == CropDevice::Cuda)
-        {
-            requireCudaConvolutions(anime.getMainGraph(), "DeepGHS");
-        }
-#endif
         if (out.type() != CV_32F || out.dims != 3 || out.size[0] != 1 || out.size[1] != 5 ||
             out.size[2] != animePredictionCount(input) || !cv::checkRange(out))
         {
             throw SmartCropError("smart_crop_inference", "unexpected Anime Face Detection tensor for " +
                                  std::to_string(input.width) + "x" + std::to_string(input.height));
         }
+#if MOSAICRAFT_SMART_CROP_CUDA
+        if (device == CropDevice::Cuda)
+        {
+            requireCudaConvolutions(anime.getMainGraph(), "DeepGHS");
+        }
+#endif
         const auto rows = out.reshape(1, 5);
         const auto *x = rows.ptr<float>(0), *y = rows.ptr<float>(1);
         const auto *w = rows.ptr<float>(2), *h = rows.ptr<float>(3), *score = rows.ptr<float>(4);

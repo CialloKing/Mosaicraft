@@ -26,6 +26,7 @@ public:
                           std::function<Clock::time_point()> now);
     ~SmartCropCudaRecovery();
     bool initialize();
+    void finish();
     std::optional<SmartCropAnalysis> tryAnalyze(const cv::Mat &image);
 
 private:

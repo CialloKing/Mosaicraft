@@ -154,6 +154,7 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
         SmartCropStats stats;
         size_t cpuImages = 0, cudaImages = 0;
         const auto processStart = std::chrono::steady_clock::now();
+        auto processingEnd = processStart;
         const auto emitStats = [&]()
         {
             runtime.metric("smartCropCpuImages", static_cast<double>(cpuImages));
@@ -169,7 +170,8 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
             runtime.metric("smartCropInferenceWorkerMs", stats.inferenceMs);
             runtime.metric("smartCropSaliencyMs", stats.saliencyMs);
             runtime.metric("smartCropFaceMs", stats.faceMs);
-            const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - processStart).count();
+            const auto end = processingEnd == processStart ? std::chrono::steady_clock::now() : processingEnd;
+            const double seconds = std::chrono::duration<double>(end - processStart).count();
             runtime.metric("smartCropImagesPerSecond", seconds > 0 ? (completed.load() - failed.load()) / seconds : 0);
         };
         try
@@ -209,6 +211,13 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
             {
                 process(index, normalizer);
             }
+            processingEnd = std::chrono::steady_clock::now();
+#if MOSAICRAFT_SMART_CROP_CUDA
+            if (autoCuda)
+            {
+                autoCuda->finish();
+            }
+#endif
         }
         catch (const SmartCropError &problem)
         {

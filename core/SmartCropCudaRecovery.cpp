@@ -46,6 +46,15 @@ bool SmartCropCudaRecovery::initialize()
     return m_gpuReady;
 }
 
+void SmartCropCudaRecovery::finish()
+{
+    if (m_probe.valid())
+    {
+        // A model contract error must still surface if the final CPU image finished first.
+        finishProbe();
+    }
+}
+
 void SmartCropCudaRecovery::startProbe()
 {
     const auto task = std::make_shared<std::packaged_task<void()>>([&]()
