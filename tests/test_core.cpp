@@ -2808,6 +2808,59 @@ TEST_CASE("smart crop retries a temporary GPU failure and confirms recovery on a
     CHECK(probes.load() == 2);
     CHECK(runtime.snapshot().metrics.at("smartCropCudaRecoveries") == 1);
 }
+
+TEST_CASE("smart crop backs off failed probes and stops retrying when a restart is required")
+{
+    using namespace mosaicraft;
+    using namespace std::chrono_literals;
+    SmartCropCudaRecovery::Clock::time_point now{};
+    RuntimeContext runtime(false);
+    int probes = 0;
+    SmartCropCudaRecovery recovery({[&]()
+    {
+        const auto fault = ++probes == 8 ? SmartCropCudaFault::RestartRequired : SmartCropCudaFault::Retryable;
+        throw SmartCropError("test_cuda_fault", "CUDA unavailable", fault);
+    }, [](const cv::Mat &) { return SmartCropAnalysis{}; }, []() {}}, runtime, [&]() { return now; });
+    REQUIRE_FALSE(recovery.initialize());
+    int expected = 1;
+    for (auto delay : {5s, 10s, 20s, 40s, 60s, 60s, 60s})
+    {
+        now += delay - 1s;
+        CHECK_FALSE(recovery.tryAnalyze({}).has_value());
+        CHECK(probes == expected);
+        now += 1s;
+        CHECK_FALSE(recovery.tryAnalyze({}).has_value());
+        recovery.finish();
+        CHECK(probes == ++expected);
+    }
+    now += 100s;
+    CHECK_FALSE(recovery.tryAnalyze({}).has_value());
+    recovery.finish();
+    CHECK(probes == expected);
+    CHECK(runtime.snapshot().metrics.at("smartCropCudaFallbacks") == 1);
+    CHECK(runtime.snapshot().metrics.count("smartCropCudaRecoveries") == 0);
+}
+
+TEST_CASE("smart crop surfaces a model contract error even after the final CPU image")
+{
+    using namespace mosaicraft;
+    using namespace std::chrono_literals;
+    SmartCropCudaRecovery::Clock::time_point now{};
+    RuntimeContext runtime(false);
+    int probes = 0;
+    SmartCropCudaRecovery recovery({[&]()
+    {
+        if (++probes == 1)
+        {
+            throw SmartCropError("test_cuda_fault", "CUDA unavailable", SmartCropCudaFault::Retryable);
+        }
+        throw SmartCropError("smart_crop_model", "unexpected tensor shape");
+    }, [](const cv::Mat &) { return SmartCropAnalysis{}; }, []() {}}, runtime, [&]() { return now; });
+    REQUIRE_FALSE(recovery.initialize());
+    now += 5s;
+    CHECK_FALSE(recovery.tryAnalyze({}).has_value());
+    CHECK_THROWS_WITH(recovery.finish(), "unexpected tensor shape");
+}
 #endif
 
 TEST_CASE("normalize crop mode is optional, round-trips and is exclusive to normalization")
