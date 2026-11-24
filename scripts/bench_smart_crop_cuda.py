@@ -46,7 +46,7 @@ def run(args, name, parts):
             stack.callback(stop, monitor)
         start = time.perf_counter()
         for device, pipeline, source, indices in parts:
-            prefix = args.work / f"{name}-{device}"
+            prefix = args.work / (name if len(parts) == 1 else f"{name}-{device}")
             stdout = stack.enter_context(prefix.with_suffix(".json").open("wb"))
             stderr = stack.enter_context(prefix.with_suffix(".log").open("wb"))
             env = {**os.environ, "CUDA_VISIBLE_DEVICES": args.gpu_uuid, "OPENCV_LOG_LEVEL": "WARNING",
@@ -99,11 +99,15 @@ def run(args, name, parts):
                          and len(saved) == expected and all(metrics.get(k, 0) > 0 for k in
                                                            ("smartCropSaliencyMs", "smartCropFaceMs"))
                          and (args.study == "devices" or metrics.get("smartCropPipeline") == int(pipeline))})
-    return {"name": name, "wallSeconds": elapsed, "imagesPerSecond": len(outputs) / elapsed,
+    result = {"name": name, "wallSeconds": elapsed, "imagesPerSecond": len(outputs) / elapsed,
             "gpuBaselineMiB": baseline, "gpuSampledPeakMiB": max(memory, default=None),
             "peakWorkingSetBytes": sum(peaks) if all(peaks) else None, "children": children,
             "passed": all(child["passed"] for child in children) and (not has_cuda or bool(memory))
-            and len(outputs) == len(args.sources)}, outputs
+            and len(outputs) == len(args.sources)}
+    if args.study == "devices":
+        # Keep the original CPU/CUDA report's per-run fields for existing consumers.
+        result.update(children[0], passed=result["passed"])
+    return result, outputs
 
 
 def staged_input(args, name, indices):
@@ -217,16 +221,23 @@ def main():
                                        for label, runs in grouped.items()}
     report["wallSavings"] = {label: 1 - medians[label] / medians[labels[0]] for label in labels[1:]}
     report["speedup"] = medians[labels[0]] / medians[labels[1]]
-    if args.study == "pipeline":
-        pairs = zip(grouped["serial"], grouped["pipeline"])
-        deltas = [b["peakWorkingSetBytes"] - a["peakWorkingSetBytes"] if a["peakWorkingSetBytes"] and
-                  b["peakWorkingSetBytes"] else None for a, b in pairs]
-        report["workingSetIncreaseBytesByRound"] = deltas
-        gates = report["wallSavings"]["pipeline"] >= .10 and all(d is not None and d <= 512 * 1024**2 for d in deltas)
-    elif args.study == "hybrid":
-        report["hybridCandidates"] = [label for label in labels[1:] if report["wallSavings"][label] >= .05
-                                      and all(r["passed"] and r["identical"] for r in grouped[label])]
-        gates = bool(report["hybridCandidates"]) and all(r["passed"] and r["identical"] for r in grouped["pipeline"])
+    if args.study in {"pipeline", "hybrid"}:
+        def working_set_deltas(label):
+            pairs = zip(grouped[labels[0]], grouped[label])
+            return [b["peakWorkingSetBytes"] - a["peakWorkingSetBytes"] if a["peakWorkingSetBytes"] and
+                    b["peakWorkingSetBytes"] else None for a, b in pairs]
+
+        deltas = {label: working_set_deltas(label) for label in labels[1:]}
+        report["workingSetIncreaseBytesByVariant"] = deltas
+        acceptable = [label for label in labels[1:]
+                      if all(r["passed"] and r["identical"] for r in grouped[label])
+                      and all(d is not None and d <= 512 * 1024**2 for d in deltas[label])]
+        if args.study == "pipeline":
+            gates = "pipeline" in acceptable and report["wallSavings"]["pipeline"] >= .10
+        else:
+            # For multi-process runs, the sum of both individual peaks is a conservative ceiling.
+            report["hybridCandidates"] = [label for label in acceptable if report["wallSavings"][label] >= .05]
+            gates = bool(report["hybridCandidates"]) and all(r["passed"] and r["identical"] for r in grouped["pipeline"])
     else:
         gates = report["speedup"] >= 1.5
     if args.study != "hybrid":
