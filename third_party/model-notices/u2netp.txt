@@ -1,0 +1,13 @@
+U2-NetP saliency model notice
+
+The upstream xuebinqin/U-2-Net repository declares Apache License 2.0. The
+bundled ONNX file is downloaded from the rembg v0.0.0 release asset and is
+locked by size and SHA-256 in cmake/smart-crop-models.json. The exact export
+and release-asset provenance has not been independently confirmed. The project
+maintainer has approved distribution of this pinned file for the Windows x64
+CUDA smart-crop package with that limitation recorded in the release evidence.
+
+Upstream references:
+- https://github.com/xuebinqin/U-2-Net/blob/master/LICENSE
+- https://github.com/danielgatis/rembg/releases/tag/v0.0.0
+- https://github.com/danielgatis/rembg/issues/837

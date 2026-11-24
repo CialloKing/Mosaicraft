@@ -8,8 +8,8 @@
       "revision": "rembg v0.0.0, u2netp.onnx",
       "size": 4574861,
       "sha256": "309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8",
-      "license": "Apache-2.0 (original weights; exported artifact provenance pending)",
-      "notice": "",
+      "license": "Apache-2.0 (upstream project; exact exported artifact provenance not independently confirmed)",
+      "notice": "u2netp.txt",
       "redistributionVerified": false
     },
     {
@@ -32,11 +32,38 @@
       "revision": "784dc4c0bb692351ddcdbe6131a050b17d3025d5",
       "size": 12102558,
       "sha256": "fd860b650a4377046842c3cd80d01b0b408bdfbdb4acee5759630f82c6ef04a9",
-      "license": "MIT (model card; upstream weight provenance pending)",
-      "notice": "",
+      "license": "MIT (upstream model card; exact weight provenance not independently confirmed)",
+      "notice": "anime-face.txt",
       "redistributionVerified": false
     }
   ],
-  "fixtures": [],
-  "qualityReview": null
+  "fixtures": [
+    {
+      "mode": "smart-real",
+      "file": "real/input/positive.png",
+      "size": 195976,
+      "sha256": "1a626af7a4ac96f6f5befbb612e8802f5094f497721b318ddd74a8768c306da0",
+      "mainFace": [72, 92, 225, 287]
+    },
+    {
+      "mode": "smart-anime",
+      "file": "anime/input/positive.png",
+      "size": 325380,
+      "sha256": "b436af30944c17ddafd856e2dd8cfcf9a92a51ffc8bf094871fac68f6dbe2757",
+      "mainFace": [550, 105, 671, 202]
+    }
+  ],
+  "qualityReview": {
+    "status": "preliminary-approved",
+    "file": "docs/verification/smart-crop-v1-15-15-preliminary.md",
+    "size": 2146,
+    "sha256": "a524acfaf103329094f7c06e26917e44da8ed785f89fa45fbfe73562a19efff4"
+  },
+  "releaseApproval": {
+    "status": "approved-with-limitations",
+    "approver": "CialloKing",
+    "date": "2026-11-24",
+    "scope": "windows-x64-cuda-smart-crop",
+    "acceptedUnverifiedModelRights": ["saliency", "anime"]
+  }
 }

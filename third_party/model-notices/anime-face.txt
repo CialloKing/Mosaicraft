@@ -1,0 +1,11 @@
+DeepGHS anime face model notice
+
+The deepghs/anime_face_detection model card declares MIT. The bundled
+face_detect_v1.4_n/model.onnx is pinned to an upstream revision and locked by
+size and SHA-256 in cmake/smart-crop-models.json. Independent provenance for
+the exact weight file has not been confirmed. The project maintainer has
+approved distribution of this pinned file for the Windows x64 CUDA smart-crop
+package with that limitation recorded in the release evidence.
+
+Upstream reference:
+- https://huggingface.co/deepghs/anime_face_detection
