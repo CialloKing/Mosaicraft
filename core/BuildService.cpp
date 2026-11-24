@@ -11,6 +11,7 @@
 #include "LibraryColorOrder.h"
 #include "MosaicPlanning.h"
 #include "RequestValidation.h"
+#include "SmartCropSession.h"
 #include "UnicodeIO.h"
 #include "WorkerPool.h"
 #include "compute/CudaBackend.h"
@@ -170,7 +171,7 @@ static bool stdinIsTty()
 
 } // namespace
 
-static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
+static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime) try
 {
     runtime.stage("validating");
     if (request.normalizeOnly)
@@ -330,6 +331,12 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         files.erase(next, files.end());
     }
 
+    std::optional<SmartCropSession> smartCrop;
+    if (request.cropMode != CropMode::Center)
+    {
+        // 模型或指定的推理设备不可用时，在写入图库前结束任务。
+        smartCrop.emplace(request.cropMode, request.cropDevice.value_or(CropDevice::Auto), runtime, false);
+    }
     ec.clear();
     fs::create_directories(output, ec);
     if (ec)
@@ -390,7 +397,8 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     std::chrono::steady_clock::time_point tGpuStart = tBuildStart;
     std::chrono::steady_clock::time_point tNormEnd = tBuildStart;
     std::chrono::steady_clock::duration batchNormalization{};
-    ImageNormalizer normalizer(request.normalizeWidth, request.normalizeHeight);
+    auto normalizer = smartCrop ? smartCrop->normalizer(request.normalizeWidth, request.normalizeHeight)
+                                : ImageNormalizer(request.normalizeWidth, request.normalizeHeight);
     std::vector<std::string> outPaths(files.size());
     std::vector<uint8_t> okFlags(files.size(), 0);
     // 新图片先用临时名字，避免失败文件和旧编号阻碍最终全库颜色排序。
@@ -464,6 +472,10 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                 runtime.emit("warning", "source_skipped", "normalization failed", "inputDir", input);
             }
         }
+        catch (const SmartCropError &)
+        {
+            throw; // 推理故障必须中止建库，不能当成单张素材解码失败。
+        }
         catch (const std::exception &error)
         {
             runtime.emit("warning", "source_skipped", error.what(), "inputDir", input);
@@ -481,11 +493,6 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         }
         return saved;
     };
-
-    if (request.normalizeOnly)
-    {
-        std::cout << "Normalize only mode" << std::endl;
-    }
 
     struct NormItem
     {
@@ -518,9 +525,9 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     FeatureExtractor extractor;
     compute::Device portableDevice;
     bool portableRequested = false;
-    const bool autoVulkan = !request.normalizeOnly && compute::automaticVulkan(request.backend, request.device);
-    if (!request.normalizeOnly && (autoVulkan || request.backend == BackendPolicy::Vulkan ||
-                                   request.backend == BackendPolicy::Metal || request.device != "auto"))
+    const bool autoVulkan = compute::automaticVulkan(request.backend, request.device);
+    if (autoVulkan || request.backend == BackendPolicy::Vulkan ||
+        request.backend == BackendPolicy::Metal || request.device != "auto")
     {
         try
         {
@@ -532,7 +539,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
             return runtimeFailure(runtime, 4, error.what(), "gpu_required", "device");
         }
     }
-    const auto preflight = autoVulkan || portableRequested || request.normalizeOnly || request.backend == BackendPolicy::Cpu || request.device == "cpu"
+    const auto preflight = autoVulkan || portableRequested || request.backend == BackendPolicy::Cpu || request.device == "cpu"
         ? cuda::CudaAvailability{} : cuda::queryCudaAvailability();
     if (request.backend == BackendPolicy::Cuda && !preflight.available)
     {
@@ -543,7 +550,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     {
         runtime.gpuDevice(preflight.pciBus);
     }
-    if (!portableRequested && !request.normalizeOnly && request.backend != BackendPolicy::Cpu && request.device != "cpu" && !preflight.available)
+    if (!portableRequested && request.backend != BackendPolicy::Cpu && request.device != "cpu" && !preflight.available)
     {
         const auto &reason = autoVulkan ? portableDevice.reason : preflight.reason;
         runtime.emit("warning", autoVulkan ? "vulkan_unavailable" : "cuda_unavailable", reason);
@@ -563,11 +570,8 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         // CUDA 管线的消费者也执行哈希和提交，给它保留一个 CPU 工作名额。
         normThreads = request.threads - 1;
     }
-    runtime.backends(request.normalizeOnly ? "none"
-                     : gpuOk               ? "template_cuda"
-                                           : "cpu",
-                     "none");
-    if (request.appendMode && !request.normalizeOnly)
+    runtime.backends(gpuOk ? "template_cuda" : "cpu", "none");
+    if (request.appendMode)
     {
         visuals.before = summarizeColors(db.averageColors());
     }
@@ -615,8 +619,8 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     };
 
     std::thread gpuThread;
-    std::exception_ptr gpuError;
-    if (gpuOk && !request.normalizeOnly)
+    std::exception_ptr gpuError, normalizationError;
+    if (gpuOk)
     {
         if (profile)
         {
@@ -832,58 +836,64 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
             });
     }
 
-    if (!inputIsOutput && (gpuOk || request.normalizeOnly))
+    if (!inputIsOutput && gpuOk)
     {
-        if (!gpuOk || request.normalizeOnly)
-        {
-            std::cout << "Normalizing (" << normThreads << " threads)..." << std::endl;
-        }
         std::atomic<size_t> nextFileIdx{0};
-        std::vector<std::thread> workers;
         std::vector<ImageNormalizer::LibraryTimings> timings(profile ? normThreads : 0);
         std::vector<BenchmarkSample> waits(profile ? normThreads : 0);
-        for (int t = 0; t < normThreads; ++t)
+        const auto produce = [&](size_t slot)
         {
-            workers.emplace_back([&, t]()
+            while (!runtime.cancellationRequested() && !normPhaseDone.load())
             {
-                while (!runtime.cancellationRequested())
+                const size_t index = nextFileIdx.fetch_add(1);
+                if (index >= files.size())
                 {
-                    size_t fi = nextFileIdx.fetch_add(1);
-                    if (fi >= files.size())
+                    break;
+                }
+                cv::Mat result;
+                if (!normalizeOne(index, &result, profile ? &timings[slot] : nullptr))
+                {
+                    continue;
+                }
+                try
+                {
+                    std::unique_lock<std::mutex> lock(queueMtx);
+                    waitForQueueSpace(lock, profile ? &waits[slot] : nullptr);
+                    if (normPhaseDone.load())
                     {
                         break;
                     }
-                    cv::Mat result;
-                    const bool needPixels = gpuOk && !request.normalizeOnly;
-                    if (normalizeOne(fi, needPixels ? &result : nullptr, profile ? &timings[t] : nullptr) && needPixels)
-                    {
-                        try
-                        {
-                            std::unique_lock<std::mutex> lock(queueMtx);
-                            waitForQueueSpace(lock, profile ? &waits[t] : nullptr);
-                            if (normPhaseDone.load())
-                            {
-                                break;
-                            }
-                            normQueue.push({std::move(result), outPaths[fi]});
-                            lock.unlock();
-                            queueCV.notify_one();
-                        }
-                        catch (const std::exception &error)
-                        {
-                            runtime.emit("warning", "source_skipped", error.what(), "inputDir", files[fi]);
-                        }
-                    }
+                    normQueue.push({std::move(result), outPaths[index]});
+                    lock.unlock();
+                    queueCV.notify_one();
                 }
-            });
-        }
-        for (auto& w : workers)
+                catch (const std::exception &error)
+                {
+                    runtime.emit("warning", "source_skipped", error.what(), "inputDir", files[index]);
+                }
+            }
+        };
+        try
         {
-            w.join();
+            if (smartCrop)
+            {
+                // 主线程持有推理会话，特征消费者仍可并行读取已落盘的像素。
+                produce(0);
+            }
+            else
+            {
+                WorkerPool workers(static_cast<unsigned>(normThreads));
+                workers.run(workers.size(), produce);
+            }
+        }
+        catch (...)
+        {
+            // 先通知并收束特征消费者，再传播模型或设备错误。
+            normalizationError = std::current_exception();
         }
         if (profile)
         {
-            profile->normalizeSlots = workers.size();
+            profile->normalizeSlots = timings.size();
             for (size_t i = 0; i < timings.size(); ++i)
             {
                 profile->normalization.merge(timings[i]);
@@ -900,8 +910,11 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         runtime.advance("normalization", files.size(), files.size(), "images", true);
         for (size_t i = 0; i < files.size(); ++i)
         {
-            if (runtime.cancellationRequested()) break;
-            if (gpuOk && !request.normalizeOnly)
+            if (runtime.cancellationRequested())
+            {
+                break;
+            }
+            if (gpuOk)
             {
                 cv::Mat image;
                 {
@@ -946,10 +959,14 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         normPhaseDone.store(true);
     }
     queueCV.notify_all();
-    if (gpuOk && !request.normalizeOnly)
+    if (gpuOk)
     {
         gpuThread.join();
         runtime.checkCanceled();
+        if (normalizationError)
+        {
+            std::rethrow_exception(normalizationError);
+        }
         if (gpuError)
         {
             try
@@ -965,7 +982,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         runtime.advance("features", gpuDone.load(), gpuDone.load(), "images", true);
     }
 
-    if (!gpuOk && !request.normalizeOnly)
+    if (!gpuOk)
     {
         tGpuStart = std::chrono::steady_clock::now();
         constexpr size_t pixelBudget = 64ULL * 1024 * 1024;
@@ -973,7 +990,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         size_t batchLimit =
             inputIsOutput ? 1 : std::min<size_t>(256, std::max<size_t>(1, pixelBudget / pixelsPerImage));
         const int slots = request.threads ? request.threads : std::min(8, normThreads);
-        const bool overlap = MOSAICRAFT_TRIAL_BUILD_AHEAD && !inputIsOutput && !portableRequested &&
+        const bool overlap = MOSAICRAFT_TRIAL_BUILD_AHEAD && !inputIsOutput && !smartCrop && !portableRequested &&
                              slots >= 4 && pixelsPerImage <= pixelBudget / 2 && files.size() > batchLimit;
         if (overlap)
         {
@@ -982,7 +999,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         const int producers = overlap ? slots / 2 : normThreads;
         WorkerPool workers(overlap ? slots - producers - 1 : request.threads);
         std::unique_ptr<WorkerPool> normalizers;
-        if (!inputIsOutput)
+        if (!inputIsOutput && !smartCrop)
         {
             normalizers = std::make_unique<WorkerPool>(static_cast<unsigned>(producers));
         }
@@ -1106,7 +1123,7 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                     startNext(first + count);
                 }
             }
-            else if (normalizers)
+            else if (!inputIsOutput)
             {
                 // 只保留当前有界批次的落盘像素，让顺序去重和提交继续使用原路径。
                 const auto started = std::chrono::steady_clock::now();
@@ -1114,12 +1131,24 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
                 {
                     timings.assign(count, {});
                 }
-                normalizers->run(count, [&](size_t i)
+                const auto prepare = [&](size_t i)
                 {
                     runtime.checkCanceled();
                     normalizeOne(first + i, &images[i], profile ? &timings[i] : nullptr);
                     hashReady(i);
-                });
+                };
+                if (smartCrop)
+                {
+                    // 同一会话逐张推理，避免为每个归一化线程复制模型和大图缓冲。
+                    for (size_t i = 0; i < count; ++i)
+                    {
+                        prepare(i);
+                    }
+                }
+                else
+                {
+                    normalizers->run(count, prepare);
+                }
                 batchNormalization += std::chrono::steady_clock::now() - started;
                 mergeTimings();
             }
@@ -1362,15 +1391,10 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
     }
 
     runtime.checkCanceled();
-    if (request.normalizeOnly)
+    if (smartCrop)
     {
-        visuals.normalized = normDone.load();
-        runtime.buildVisuals(std::move(visuals));
-        std::cout << "Normalize only: " << normDone.load()
-                  << " images written to " << outputDir << std::endl;
-        runtime.stage("finalizing");
-        runtime.artifact("normalized", "directory", outputDir);
-        return ServiceResult::success("normalize completed");
+        smartCrop->report();
+        smartCrop->finish();
     }
     std::string ingestError;
     if (ingest && !ingest->finish(ingestError))
@@ -1454,6 +1478,11 @@ static ServiceResult runBuild(BuildRequest request, RuntimeContext &runtime)
         profile->report(runtime, request.threads);
     }
     return ServiceResult::success("build completed");
+}
+catch (const SmartCropError &error)
+{
+    return runtimeFailure(runtime, 1, error.what(), error.code(),
+                          request.cropDevice == CropDevice::Cuda ? "cropDevice" : "cropMode");
 }
 
 ServiceResult BuildService::run(const BuildRequest &request) const

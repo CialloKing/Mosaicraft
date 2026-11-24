@@ -139,7 +139,7 @@
     "short": "",
     "type": "string",
     "field": "cropMode",
-    "commands": "normalize",
+    "commands": "build normalize",
     "help": "Crop mode: center (default), smart-real or smart-anime",
     "advanced": false
   },
@@ -148,7 +148,7 @@
     "short": "",
     "type": "string",
     "field": "cropDevice",
-    "commands": "normalize",
+    "commands": "build normalize",
     "help": "Smart crop inference device: auto (default, CUDA preferred), cpu or cuda (strict)",
     "advanced": false
   },

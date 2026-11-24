@@ -36,7 +36,15 @@ CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，�
 ./mosaicraft library normalize photos -o normalized --size 180x320
 ```
 
-仅归一化支持 `--crop center|smart-real|smart-anime`。例如：`mosaicraft library normalize photos -o normalized --size 180x320 --crop smart-real`。两种智能模式都使用 U²-NetP 保留主体，并分别使用原图尺寸检测真人或动漫脸，不限制最长边。智能模式每批逐张推理，大图可能明显增加耗时和内存。按目录手动分批选择，不自动分类；中心裁剪仍是默认。保持原图比例、输出尺寸和同尺寸快路径；固定比例容不下主体时仍可能裁掉部分内容。智能模式需要支持该功能的构建及本地模型，缺失时会报错。可用 `--crop-device auto|cpu|cuda` 选择智能裁剪推理设备。`auto`（默认）优先 CUDA，遇到可捕获的 GPU 故障后用 CPU 继续并探测恢复，恢复后从后续图片切回；`cpu` 不探测 CUDA；`cuda` 不可用时明确失败。自动切换不改变人脸输入尺寸。它与生成马赛克的 `--device` 无关，中心裁剪、建库和追加不接受此选项。CUDA 需要独立启用的构建及兼容 NVIDIA 设备。自动策略不覆盖随包 DLL 缺失造成的启动失败或进程崩溃。
+`library build` 和 `library normalize` 支持 `--crop center|smart-real|smart-anime`，默认中心裁剪。建库时，裁剪后的素材按图库编码设置保存，再提取特征并入库。
+
+```sh
+./mosaicraft library build photos -o library/180x320 --crop smart-real --crop-device auto
+```
+
+两种智能模式都使用 U²-NetP 保留主体，并分别以原图尺寸检测真人或动漫脸。每批手动选择一种类型，逐张推理。大图会增加耗时和内存用量。同尺寸快路径仍然适用。固定比例容不下主体时，裁剪框仍可能切掉部分内容。智能模式需要支持该功能的构建及本地模型。
+
+`--crop-device auto|cpu|cuda` 仅用于智能裁剪，建库特征提取设备由 `--backend` 和 `--device` 控制。`auto` 默认优先 CUDA，遇到可捕获的 GPU 故障后用 CPU 继续并探测恢复。`cpu` 跳过 CUDA 探测。`cuda` 需要支持 CUDA 推理的构建及兼容设备，推理故障会终止任务。
 
 建库归一化尺寸默认 180×320，每轴 1～8192。`library build` 和 `library add` 保留 JPG/JPEG、PNG、WebP 的格式及后缀拼写，将 BMP 和 TIFF/TIF 转为 PNG。同尺寸的 JPG/JPEG、PNG、WebP 通常直接复制原字节。若 PNG 含超过解码器上限的 `iTXt` 文本块，建库、追加或单独归一化时会先在内存中的副本移除这些块；移除文本不改变像素，原图不改动；此类素材需要使用独立输出目录。原地建库要求新素材已经符合目标尺寸及格式，需要转换或缩放时请使用独立输出目录。历史图库素材继续可读。
 

@@ -46,22 +46,22 @@ inline bool validateDevice(BackendPolicy backend, const std::string &device, boo
 
 inline bool validateBuildRequest(const BuildRequest &request, std::string &error, std::string *field = nullptr)
 {
-    if (request.cropMode != CropMode::Center && (!request.normalizeOnly || request.appendMode))
+    if (request.appendMode && request.cropMode != CropMode::Center)
     {
         if (field)
         {
             *field = "cropMode";
         }
-        error = "smart crop requires normalize-only mode without append";
+        error = "smart crop is only available for library build or normalize";
         return false;
     }
-    if (request.cropDevice && (!request.normalizeOnly || request.appendMode || request.cropMode == CropMode::Center))
+    if (request.cropDevice && request.cropMode == CropMode::Center)
     {
         if (field)
         {
             *field = "cropDevice";
         }
-        error = "crop device is only available for smart normalize mode without append";
+        error = "crop device requires smart-real or smart-anime";
         return false;
     }
     if (request.benchmark && (!request.appendMode || request.normalizeOnly))

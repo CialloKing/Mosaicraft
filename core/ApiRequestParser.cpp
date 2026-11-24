@@ -865,10 +865,10 @@ bool parseBuildRequestJson(const std::string &body, BuildRequest &request, Reque
     }
     if (values.contains("cropMode") && error.empty())
     {
-        if (!request.normalizeOnly || request.appendMode)
+        if (request.appendMode)
         {
             error.field = "cropMode";
-            error = "cropMode is only available for normalizeOnly without appendMode";
+            error = "cropMode is only available for library build or normalize";
             return false;
         }
         const auto &value = values.at("cropMode");

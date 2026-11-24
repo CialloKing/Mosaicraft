@@ -2896,38 +2896,46 @@ TEST_CASE("smart crop surfaces a model contract error even after the final CPU i
 }
 #endif
 
-TEST_CASE("normalize crop mode is optional, round-trips and is exclusive to normalization")
+TEST_CASE("smart crop requests round-trip for build and normalize")
 {
     using namespace mosaicraft;
     BuildRequest request;
     RequestError error;
     REQUIRE(parseBuildRequestJson(R"({"inputDir":"photos","normalizeOnly":true})", request, error));
     CHECK(request.cropMode == CropMode::Center);
-    for (const auto *mode : {"center", "smart-real", "smart-anime"})
+    for (const bool normalizeOnly : {false, true})
+    {
+        for (const auto *mode : {"smart-real", "smart-anime"})
+        {
+            for (const auto *device : {"auto", "cpu", "cuda"})
+            {
+                BuildRequest parsed;
+                RequestError detail;
+                const nlohmann::json body = {{"inputDir", "photos"}, {"normalizeOnly", normalizeOnly},
+                                             {"cropMode", mode}, {"cropDevice", device}};
+                REQUIRE(parseBuildRequestJson(body.dump(), parsed, detail));
+                const auto saved = buildRequestToJson(parsed);
+                CHECK(saved.at("cropMode") == mode);
+                CHECK(saved.at("cropDevice") == device);
+            }
+        }
+    }
+    CHECK(buildRequestToJson(request).at("cropMode") == "center");
     {
         BuildRequest parsed;
         RequestError detail;
-        const nlohmann::json body = {{"inputDir", "photos"}, {"normalizeOnly", true}, {"cropMode", mode}};
-        REQUIRE(parseBuildRequestJson(body.dump(), parsed, detail));
-        CHECK(buildRequestToJson(parsed).at("cropMode") == mode);
+        REQUIRE(parseBuildRequestJson(R"({"inputDir":"photos","cropMode":"center"})", parsed, detail));
+        CHECK(parsed.cropMode == CropMode::Center);
+        CHECK_FALSE(buildRequestToJson(parsed).contains("cropMode"));
     }
-    for (const auto *body : {R"({"inputDir":"photos","normalizeOnly":true,"cropMode":"auto"})",
-                             R"({"inputDir":"photos","cropMode":"center"})",
-                             R"({"inputDir":"photos","normalizeOnly":true,"appendMode":true,"cropMode":"smart-anime"})"})
+    for (const auto *body : {R"({"inputDir":"photos","cropMode":"auto"})",
+                             R"({"inputDir":"photos","appendMode":true,"cropMode":"center"})",
+                             R"({"inputDir":"photos","appendMode":true,"cropMode":"smart-anime"})"})
     {
         BuildRequest parsed;
         RequestError detail;
         CHECK_FALSE(parseBuildRequestJson(body, parsed, detail));
         CHECK(detail.field == "cropMode");
-    }
-    for (const auto *device : {"auto", "cpu", "cuda"})
-    {
-        BuildRequest parsed;
-        RequestError detail;
-        const nlohmann::json body = {{"inputDir", "photos"}, {"normalizeOnly", true},
-                                     {"cropMode", "smart-anime"}, {"cropDevice", device}};
-        REQUIRE(parseBuildRequestJson(body.dump(), parsed, detail));
-        CHECK(buildRequestToJson(parsed).at("cropDevice") == device);
     }
     for (const auto *body : {R"({"inputDir":"photos","normalizeOnly":true,"cropDevice":"cpu"})",
                              R"({"inputDir":"photos","cropDevice":"cuda"})",
@@ -2940,6 +2948,7 @@ TEST_CASE("normalize crop mode is optional, round-trips and is exclusive to norm
     }
     const auto features = apiFeatureList();
     CHECK((std::find(features.begin(), features.end(), "smart-crop") != features.end()) == smartCropAvailable());
+    CHECK((std::find(features.begin(), features.end(), "smart-crop-build") != features.end()) == smartCropAvailable());
     CHECK((std::find(features.begin(), features.end(), "smart-crop-device-auto") != features.end()) == smartCropAvailable());
     CHECK((std::find(features.begin(), features.end(), "smart-crop-cuda") != features.end()) == smartCropCudaAvailable());
 }

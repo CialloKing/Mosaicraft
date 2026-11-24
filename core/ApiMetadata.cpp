@@ -813,6 +813,7 @@ std::vector<std::string> apiFeatureList()
     if (smartCropAvailable())
     {
         features.push_back("smart-crop");
+        features.push_back("smart-crop-build");
         features.push_back("smart-crop-device-auto");
     }
     if (smartCropCudaAvailable())

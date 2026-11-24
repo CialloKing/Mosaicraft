@@ -353,7 +353,7 @@ nlohmann::json buildRequestToJson(const BuildRequest &request)
                             {"normalizeHeight", request.normalizeHeight},
                             {"resourceMonitor", request.resourceMonitor},
                             {"benchmark", request.benchmark}};
-    if (request.normalizeOnly && !request.appendMode)
+    if (!request.appendMode && (request.normalizeOnly || request.cropMode != CropMode::Center))
     {
         value["cropMode"] = cropModeName(request.cropMode);
         if (request.cropMode != CropMode::Center)
