@@ -12,10 +12,6 @@ on:
         description: Also rebuild native CUDA packages when supplementing a release tag
         type: boolean
         default: false
-      include_smart_crop:
-        description: Include smart crop in the Windows CPU package (requires approved release evidence)
-        type: boolean
-        default: false
 permissions:
   contents: read
 jobs:
@@ -23,7 +19,7 @@ jobs:
     if: ${{ !inputs.desktop_release_tag }}
     name: Package ${{ matrix.platform }} ${{ matrix.runtime }}
     env:
-      SMART_CROP: ${{ matrix.platform == 'windows-x64' && matrix.runtime == 'cpu-only' && inputs.include_smart_crop && 'ON' || 'OFF' }}
+      SMART_CROP: 'OFF'
     strategy: &native_matrix
       fail-fast: false
       matrix:
@@ -58,12 +54,6 @@ jobs:
           tools=(ninja-build patchelf)
           if [[ '${{ matrix.runtime }}' == vulkan ]]; then tools+=(glslang-tools); fi
           sudo apt-get install -y --no-install-recommends "${tools[@]}"
-      - name: Verify and prepare locked offline smart crop models
-        if: env.SMART_CROP == 'ON'
-        run: |
-          cmake -DMODE=SmartCropGate -P cmake/PrepareRelease.cmake
-          python -m pip install -r scripts/requirements-smart-crop-verification.txt
-          cmake -DMODE=Models -P cmake/PrepareRelease.cmake
       - uses: ./.github/actions/native-dependencies
         with:
           smart-crop: ${{ env.SMART_CROP }}
@@ -73,7 +63,6 @@ jobs:
       - name: Build, test and package native Release
         run: |
           build_dir=build/package-${{ matrix.runtime }}
-          if [[ "$SMART_CROP" == ON ]]; then build_dir+=-smart-crop; fi
           cmake -DRUNTIME=${{ matrix.runtime }} "-DBUILD_DIR=$build_dir" "-DSMART_CROP=$SMART_CROP" -DSMART_CROP_CUDA=OFF -P cmake/Release.cmake
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -154,16 +143,10 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends ninja-build patchelf
-      - name: Verify and prepare locked offline smart crop models
-        if: env.SMART_CROP == 'ON'
-        run: |
-          cmake -DMODE=SmartCropGate -P cmake/PrepareRelease.cmake
-          python -m pip install -r scripts/requirements-smart-crop-verification.txt
-          cmake -DMODE=Models -P cmake/PrepareRelease.cmake
       - uses: ./.github/actions/native-dependencies
         with:
           source-directory: ${{ env.PACKAGE_SOURCE }}
-          smart-crop: ${{ env.SMART_CROP }}
+          smart-crop: 'OFF'
       - name: Install hash-locked CUDA 13.5.37 compiler and runtime
         run: cmake "-DSOURCE_DIR=$PACKAGE_SOURCE" -DMODE=CUDA -P cmake/PrepareRelease.cmake
       - name: Build and verify seven CUDA architectures
