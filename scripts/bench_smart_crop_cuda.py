@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare smart-normalize devices, CUDA I/O pipelining, or disjoint CPU/CUDA work."""
+"""Compare smart-normalize devices, CUDA pipelining, hybrid work, or Conv2 weight reuse."""
 
 import argparse
 from contextlib import ExitStack
@@ -42,7 +42,7 @@ def stop(process, kill=False):
     process.wait()
 
 
-def run(args, name, parts):
+def run(args, name, parts, *, reuse_weights=None):
     samples_path = args.work / f"{name}-vram.csv"
     has_cuda = any(device == "cuda" for device, *_ in parts)
     baseline = None
@@ -61,6 +61,8 @@ def run(args, name, parts):
             stderr = stack.enter_context(prefix.with_suffix(".log").open("wb"))
             env = {**os.environ, "CUDA_VISIBLE_DEVICES": args.gpu_uuid, "OPENCV_LOG_LEVEL": "WARNING",
                    "MOSAICRAFT_SMART_CROP_PIPELINE": str(int(pipeline))}
+            if reuse_weights is not None:
+                env["OPENCV_DNN_CUDA_REUSE_CONV2_WEIGHTS"] = str(int(reuse_weights))
             if device == "cpu" and args.study == "hybrid":
                 env["OPENCV_FOR_THREADS_NUM"] = "2"
             command = [str(args.exe), "library", "normalize", str(source), "--recursive",
@@ -173,8 +175,8 @@ def main():
     for name in ("exe", "input", "work"):
         parser.add_argument(name, type=lambda path: Path(path).resolve())
     parser.add_argument("--mode", choices=("smart-real", "smart-anime"), required=True)
-    parser.add_argument("--study", choices=("devices", "pipeline", "hybrid"), default="devices",
-                        help="CPU vs CUDA, serial vs pipelined CUDA, or pipelined CUDA vs two split variants")
+    parser.add_argument("--study", choices=("devices", "pipeline", "hybrid", "weights"), default="devices",
+                        help="device, pipelining, CPU/GPU split or CUDA Conv2 weight reuse comparison")
     parser.add_argument("--rounds", type=int, default=3)
     parser.add_argument("--size", default="180x320")
     parser.add_argument("--gpu", default="0", help="nvidia-smi index/UUID of the only visible GPU")
@@ -182,6 +184,9 @@ def main():
     args = parser.parse_args()
     if not args.exe.is_file() or not args.input.is_dir() or shutil.which("nvidia-smi") is None:
         parser.error("CLI, input directory and nvidia-smi must exist")
+    dnn = args.exe.with_name("opencv_dnn5.dll")
+    if args.study == "weights" and (os.name != "nt" or not dnn.is_file()):
+        parser.error("the weights study requires a Windows CUDA CLI beside the experimental opencv_dnn5.dll")
     if args.work.is_relative_to(args.input) or args.input.is_relative_to(args.work):
         parser.error("work and input must not overlap")
     args.sources = sorted((p for p in args.input.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS),
@@ -203,6 +208,9 @@ def main():
     elif args.study == "pipeline":
         variants = {label: [("cuda", pipeline, args.input, None)]
                     for label, pipeline in (("serial", False), ("pipeline", True))}
+    elif args.study == "weights":
+        report["opencvDnnSha256"] = sha256(dnn)
+        variants = {label: [("cuda", True, args.input, None)] for label in ("pipeline", "reuse-weights")}
     else:
         variants = {device: [(device, False, args.input, None)] for device in ("cpu", "cuda")}
     labels = list(variants)
@@ -212,7 +220,8 @@ def main():
         offset = cycle % len(labels)
         for label in labels[offset:] + labels[:offset]:
             name = f"{cycle + 1}-{label}"
-            result, outputs = run(args, name, variants[label])
+            reuse_weights = label == "reuse-weights" if args.study == "weights" else None
+            result, outputs = run(args, name, variants[label], reuse_weights=reuse_weights)
             if reference is None:
                 reference = outputs
                 report["referenceOutputSha256"] = reference
@@ -231,7 +240,7 @@ def main():
                                        for label, runs in grouped.items()}
     report["wallSavings"] = {label: 1 - medians[label] / medians[labels[0]] for label in labels[1:]}
     report["speedup"] = medians[labels[0]] / medians[labels[1]]
-    if args.study in {"pipeline", "hybrid"}:
+    if args.study in {"pipeline", "hybrid", "weights"}:
         def working_set_deltas(label):
             pairs = zip(grouped[labels[0]], grouped[label])
             return [b["peakWorkingSetBytes"] - a["peakWorkingSetBytes"] if a["peakWorkingSetBytes"] and
@@ -244,6 +253,8 @@ def main():
                       and all(d is not None and d <= 512 * 1024**2 for d in deltas[label])]
         if args.study == "pipeline":
             gates = "pipeline" in acceptable and report["wallSavings"]["pipeline"] >= .10
+        elif args.study == "weights":
+            gates = "reuse-weights" in acceptable and report["wallSavings"]["reuse-weights"] >= .05
         else:
             # For multi-process runs, the sum of both individual peaks is a conservative ceiling.
             report["hybridCandidates"] = [label for label in acceptable if report["wallSavings"][label] >= .05]
