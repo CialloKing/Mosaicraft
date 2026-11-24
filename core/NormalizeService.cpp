@@ -256,8 +256,8 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
         const std::string_view trial = setting ? setting : "";
         bool pipeline = false;
 #if MOSAICRAFT_SMART_CROP_CUDA && defined(_WIN32) && (defined(_M_X64) || defined(__x86_64__))
-        // 真人已通过独立样本门槛；动漫还需全量对照才能打开默认路径。
-        const bool defaultPipeline = request.cropMode == CropMode::SmartReal;
+        // 只为分别通过同后端字节一致性与性能门槛的模式默认开启。
+        const bool defaultPipeline = request.cropMode == CropMode::SmartReal || request.cropMode == CropMode::SmartAnime;
         pipeline = trial != "0" && (defaultPipeline || trial == "1") && initial == CropDevice::Cuda &&
                    files.size() >= 8 && normalizationWorkerCount(request.threads) >= 3;
 #endif
