@@ -122,3 +122,17 @@ RTX 4060 Laptop 8188 MiB、驱动 621.14、CUDA 13.5.37、cuDNN 9.28.1.4。原�
 - 该动漫批次约 168 秒，峰值工作集约 3.12 GiB，运行时有其他构建和测试任务，不作为独立性能基准。合并两种原尺寸方案后，在最终安装树复测该批最大原图 `4299×6068`（对齐至 `4320×6080`），输出与动漫批次逐字节一致；该图未达可靠人脸阈值。
 
 本轮自动设备策略的复验、缺失证据及实际放行状态见[发布证据](smart-crop-release-evidence.md)。
+
+
+### CUDA I/O 流水线：开发机基准
+
+Windows x64 CUDA 智能版可设 `MOSAICRAFT_SMART_CROP_PIPELINE=1` 测试，`=0` 强制串行。只有启动时预检选中 CUDA、至少 8 个输入且应用线程预算至少为 3 才使用流水线。读图解码和输出保存各使用一条线程，原图识别仍按输入顺序由同一个会话处理；`auto` 仍只在 CUDA 故障时改用 CPU。读、写接力槽各保留一张、各有 128 MiB 缓冲额度；超额度图片不再并发推理和编解码，直接消化已解码图。额度不含编解码临时内存、DNN 工作区或显存。
+
+```text
+python scripts/bench_smart_crop_cuda.py <cli> <input> <new-work-dir> --mode smart-anime --study pipeline
+python scripts/bench_smart_crop_cuda.py <cli> <input> <new-work-dir> --mode smart-anime --study hybrid
+```
+
+`pipeline` 对比同一 CLI 的串行／流水线；全量成对复验用 `--rounds 1 --timeout 5400`，不能用单轮代替样本三轮。`hybrid` 额外需要 Pillow，把 5%／10% 的输入像素工作量分给 CPU（不分配最大档），限制 CPU 子进程的 OpenCV 并行线程数并把较慢子进程的尾部也计入墙钟。两套试验都逐文件对比 SHA-256，记录 Windows 进程峰值工作集和设备级采样显存；混合工作集使用两个子进程各自峰值之和作为上界。混合试验不改变生产调度。
+
+启用开发开关时，`smartCropPipeline` 报告实际路径（0 或 1）。`smartCropReadDecodeMs`、`smartCropCropMs`（含推理）、`smartCropEncodeWriteMs` 是各阶段累计时间，`smartCropWaitInputMs`／`smartCropWaitOutputMs` 是协调线程的等待时间；阶段时间有重叠，不能相加作为墙钟。
