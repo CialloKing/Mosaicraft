@@ -158,7 +158,7 @@ diff --git a/opencv/modules/dnn/src/layers/conv2_layer.cpp b/opencv/modules/dnn/
 +            Conv2LayerImpl::CudaWeights* cache = nullptr;
 +#if defined(HAVE_CUDNN)
 +            static const bool reuseWeights =
-+                utils::getConfigurationParameterBool("OPENCV_DNN_CUDA_REUSE_CONV2_WEIGHTS", false);
++                utils::getConfigurationParameterBool("OPENCV_DNN_CUDA_REUSE_CONV2_WEIGHTS", true);
 +            if (reuseWeights && preferableTarget == DNN_TARGET_CUDA)
 +            {
 +                // The cuDNN descriptors depend on H/W; the FP32 weights belong to this executor.
