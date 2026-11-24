@@ -4,7 +4,7 @@
 
 ## v1.15.15
 
-准备中，尚未发布。CLI / Web 的可选智能裁剪支持手动选择真人或动漫；中心裁剪仍为默认。包含 CUDA DNN 时，自动策略会优先用 CUDA，故障后用 CPU 继续并尝试恢复；显式 CUDA 不回退。HTTP API 为 1.9，图库格式不变。Windows 智能裁剪附件必须通过[发布证据门禁](development/smart-crop-release-evidence.md)；普通 CUDA 马赛克包不携带 cuDNN。
+准备中，尚未发布。CLI / Web 的可选智能裁剪支持手动选择真人或动漫；中心裁剪仍为默认。包含 CUDA DNN 时，自动策略会优先用 CUDA，故障后用 CPU 继续并尝试恢复；显式 CUDA 不回退。HTTP API 为 1.9，图库格式不变。Windows 智能裁剪附件必须通过[发布证据门禁](development/smart-crop-release-evidence.md)；普通 CUDA 马赛克包不携带 cuDNN。Windows 开发机已复验自动策略及两种设备推理；模型附件证据与正式离线验收未齐，不提供智能裁剪候选下载。
 
 ## v1.15.14
 

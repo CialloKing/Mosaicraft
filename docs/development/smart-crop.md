@@ -25,15 +25,29 @@ cmake --install build/windows-smart-crop --config Release --prefix build/smart-c
 
 运行摘要中的 `smartCropFacesFound`、`smartCropMoved`、`smartCropCentered` 和 `smartCropMainFaceClipped` 按图片计数。无需裁边的图片不计入；`smartCropInferenceWorkerMs` 是逐图推理耗时之和，不包括启动时的模型校验和探测，也不等于批处理的墙钟时间。同尺寸特快路径保留旧归一化的行为，包括已有的 PNG 紧凑化规则。
 
+## 设备策略（v1.15.15）
+
+中心裁剪仍为默认，且不接受设备选项。选择 `smart-real` 或 `smart-anime` 后，`--crop-device`（HTTP 1.9 的 `cropDevice`）可取 `auto`、`cpu`、`cuda`，省略等同于 `auto`。
+
+| 策略 | 行为 |
+|---|---|
+| `auto` | CUDA 智能版先用 CUDA；可捕获的 CUDA 故障会释放 GPU 会话，当前图用 CPU 重试。CPU 版直接使用 CPU，不探测。 |
+| `cpu` | 全程只用 CPU，不探测 CUDA。 |
+| `cuda` | 预检失败不创建输出；批中失败停止并报告保留的部分输出，不回退。 |
+
+`auto` 在 CPU 续跑时由同一个 GPU worker 串行探测，最短重试间隔为 5、10、20、40、60 秒，之后最多每 60 秒重试一次。探测通过后只在下一张需要推理的图片试用，真实图片成功才计为恢复。模型与输出契约错误、CPU 推理错误仍终止；已知需要重启进程的 CUDA 错误不再探测。Windows 加载器拒绝启动或进程崩溃也不属于自动回退。
+
+摘要中的 `smartCropCpuImages`、`smartCropCudaImages` 只计成功推理的正式图片，不含探测和跳过推理的图片；两边都用过时，实际设备为 `mixed`。`smartCropCudaFallbacks` 和 `smartCropCudaRecoveries` 统计设备切换，日志记录原因。Web 根据 `smart-crop-device-auto` 和 `smart-crop-cuda` 两个功能标记展示选项，恢复任务保留请求策略，不用实际后端覆盖它。
+
 ## 人脸检测输入
 
 - `smart-real` 将原图直接交给 YuNet，不缩放，不限制最长边。YuNet 在推理内部向右、向下补齐到 32 的倍数，检测框仍位于原图坐标系。
 - `smart-anime` 同样不缩放、不限制最长边。仅在推理时用灰色像素将宽高补齐到 32 的倍数；检测框撤销补边偏移后映射回原图。OpenCV 5.1.0 DNN 直接加载锁定的 DeepGHS 原版动态 ONNX，按对齐后的尺寸校验 `output0` 为 `1×5×N`，其中 `N` 是步长 8、16、32 的特征图网格数之和。此前 OpenCV 4.12 实验使用固定形状转换产物，模型哈希不同。
-- U²-NetP 的 `320×320` 主体图输入不变；检测用补边不会进入输出。两种智能模式各用一套模型逐张处理，避免多份原尺寸张量同时占用内存；`--threads` 仍可控制中心裁剪的并行度。大图耗时和内存会上升，推理失败时明确报错并保留已完成的输出，不降分辨率重试。
+- U²-NetP 的 `320×320` 主体图输入不变；检测用补边不会进入输出。两种智能模式各用一套模型逐张处理，避免多份原尺寸张量同时占用内存；`--threads` 仍可控制中心裁剪的并行度。大图耗时和内存会上升。自动策略只允许整张原图改由 CPU 推理，不降分辨率重试；终止任务时会报告已完成的输出。
 
 ## 模型锁与发布条件
 
-- `cmake/smart-crop-models.json` 锁定三个权重的来源、大小和哈希。YuNet `2023mar` 有对应的 MIT 声明。原 U²-Net 权重的授权说明不能单独证明 rembg 发布附件的导出来源；DeepGHS 仓库模型卡标为 MIT，但所选权重的上游权利链还需核对。当前两项均未获准再分发。禁止把私人测试安装目录当作可发布附件。
+- `cmake/smart-crop-models.json` 锁定三个权重的来源、大小和哈希。YuNet `2023mar` 有对应的 MIT 声明。原 U²-Net 权重的授权说明不能单独证明 rembg 发布附件的导出来源；DeepGHS 仓库模型卡标为 MIT，但所选权重的上游权利链还需核对。维护者已确认可分发，但对应锁定文件的许可声明和人工审核附件还未归档，因此发布门禁仍拒绝。禁止把私人测试安装目录当作可发布附件。
 - 三份权重的再分发依据和许可证齐备、独立人工标注的质量审核文档及两份可再分发的正例通过后，才可设置仓库变量 `MOSAICRAFT_SMART_CROP_RELEASE=1`（本地发布入口对应 `-DSMART_CROP=ON`）。归档验收用 `scripts/requirements-smart-crop-verification.txt` 的 Pillow 对照像素与人工标注，不属于解包后的运行依赖。
 - 初审须覆盖偏侧真人、偏侧动漫、多人、主脸比窗口宽、无脸主体及无明显主体。分别统计两个模式在可保全主脸的样本上是否优于中心裁剪，以及中心裁剪已保全的主脸是否有新切断；另记录无脸主体效果、误移动率、批耗时及峰值内存。把批准的审核文档路径、大小和 SHA-256 写入 `qualityReview`；不得用两个解包正例代替总体质量审核。
 - 解包正例锁定 PNG 和人工标注的 `mainFace: [left, top, right, bottom]`（半开坐标）。每张图高 320、宽大于 180，主脸能完整落入 `180×320`，但中心裁剪切脸。发布和独立验包从其他工作目录运行，以输出像素核对实际裁剪位置和完整主脸，同时检查检测和移动指标。任何目标平台失败都不能交付宣称完整支持的包。复验已有智能裁剪版本时，使用该版本的源码锁及标注。
@@ -52,7 +66,7 @@ cmake --install build/windows-smart-crop --config Release --prefix build/smart-c
 - 同批 HighLikes 分层抽样 96 张，`180×320`、4 线程：中心和动漫智能裁剪各有 96/96 张与 4.12 对应输出逐字节一致，96 张样本原图哈希未变；同批普通建库的 `grid_lab`、`tiny`、`lbp` 特征也逐条一致。动漫智能模式检测到 77 张、移动 34 张。按检测框复算，能完整放进裁剪窗口的 73 个主脸，中心保全 58 个、智能裁剪保全 73 个；未新切断中心已保全的主脸。另有 4 个主脸大于裁剪窗口。这是同模型复算，不是独立人工质量标注，也不代表全库。
 - 样本单次动漫批处理约 35.49 秒，进程峰值工作集约 1.29 GiB；当时有其他构建活动，不作为版本性能比较。相同工具压缩的两份 Windows x64 私人安装树分别为 9,863,890 和 31,722,528 字节，智能版本增加约 20.85 MiB。Linux、macOS、Windows ARM64、GPU 和 Qt 变体未在这次复验中运行。
 
-### CUDA 智能裁剪（开发构建，不进入发布包）
+### CUDA 智能裁剪（开发构建与候选包）
 
 只针对 Windows/Linux x64。`MOSAICRAFT_SMART_CROP_CUDA` 默认关闭，普通智能裁剪仍用 CPU。需要带 `dnn-cuda` 的 `opencv5`，以及锁定的 CUDA 13.5.37 SDK（含 cuBLAS）和 cuDNN 9.28.1.4 CUDA 13。cuDNN 用 `cmake -DMODE=CuDNN -P cmake/PrepareRelease.cmake` 下载、校验并解包；普通依赖安装不会下载 cuDNN。以下示例假定已准备锁定的 vcpkg 和模型：
 
@@ -76,9 +90,9 @@ cmake --install build/windows-smart-crop-cuda --config Release --prefix build/wi
 
 **性能与发布门槛：**先复验两类正例，逐张核对 CPU 已保全的标注主脸没有被 CUDA 新切断，再测试不同尺寸连续切换、无卡、缺库、显存不足和部分输出。按模式分别运行 `python scripts/bench_smart_crop_cuda.py <cli> <input> <new-work-dir> --mode smart-anime`（真人替换为 `smart-real`，Python 3.11+ 仅用于验收）。脚本交错三轮，比较整条流程的中位吞吐，要求实际后端正确、零失败且比值至少 1.5；记录逐次模型耗时、设备级采样显存、输入 SHA-256 和完整 CLI 日志。显存采样含桌面与其它进程，可能漏掉瞬时峰值，不等同于进程精确峰值。正式比较时应排除后台负载，动漫输入包含 HighLikes 的 96 张样本与 `6534×8802` 最大图；真人用独立标注样本与同等级大图。开发机短测通过后再隔离复跑 HighLikes 全量；已有 CPU 全量任务不停止。
 
-Windows 和 Linux 必须分别在真实 GPU、无 Toolkit/cuDNN 的清洁环境断网解包验收。现有权重授权和人工质量门禁仍生效；`Release.cmake` 只在锁定并校验 Windows NVIDIA 运行库（包括延迟加载的依赖）后生成本地候选；独立验包要求同一个 ZIP 的真实 GPU 断网证据，不套用马赛克 CUDA 的 `BuildOnly` 放行逻辑。见[发布证据与候选命令](smart-crop-release-evidence.md)。
+v1.15.15 只准备 Windows x64 CLI / Web 智能裁剪包。Windows CUDA 智能包必须在有真实 GPU、无 Toolkit/cuDNN 的干净环境断网解包；Linux 独立验收，不纳入本轮发布。现有权重授权和人工质量门禁仍生效；`Release.cmake` 只在锁定并校验 Windows NVIDIA 运行库（包括延迟加载的依赖）后生成本地候选；独立验包要求同一个 ZIP 的真实 GPU 断网证据，不套用马赛克 CUDA 的 `BuildOnly` 放行逻辑。见[发布证据与候选命令](smart-crop-release-evidence.md)。
 
-#### Windows 开发机实测（2026-11-24）
+#### 自动策略变更前的 Windows 开发基线（2026-11-24）
 
 RTX 4060 Laptop 8188 MiB、驱动 621.14、CUDA 13.5.37、cuDNN 9.28.1.4。原生 OpenCV 5.1.0 未补丁时三个图都因 `Resize`/`Resize2` 整图回落；补入设备 Resize 和主机生成的动态坐标轴后，前向结束时 U²-NetP 119/119、YuNet 53/53、DeepGHS 64/64 个卷积在 CUDA。真人与动漫分别在同一会话正反切换形状，DeepGHS 的动态网格随输入变化。两份独立标注的偏侧正例均以输出像素复核保全主脸。真人三个衍生尺寸也与原尺寸 CPU 结果逐字节相同。
 
@@ -98,4 +112,4 @@ RTX 4060 Laptop 8188 MiB、驱动 621.14、CUDA 13.5.37、cuDNN 9.28.1.4。原�
 - 动漫原尺寸实现复跑同一 HighLikes 分层抽样 96 张，`180×320`：96/96 张都生成输出，中心裁剪与旧版逐字节一致，原图哈希未变。动漫智能模式检测到 67 张、移动 33 张；按原尺寸模型框复算，能放进窗口的 63 个主脸中，中心保全 51 个，智能保全 63 个。改用旧版固定输入的检测框作为参照，旧版保全 73 个，新版保全 69 个；说明两种输入会漏检或选择不同人脸，不能据此宣称原尺寸全面胜出。这些数据不是独立人工标注，也不代表全库。
 - 该动漫批次约 168 秒，峰值工作集约 3.12 GiB，运行时有其他构建和测试任务，不作为独立性能基准。合并两种原尺寸方案后，在最终安装树复测该批最大原图 `4299×6068`（对齐至 `4320×6080`），输出与动漫批次逐字节一致；该图未达可靠人脸阈值。
 
-正式质量审核、三平台发布验收以及两份权重的再分发核对仍未完成。当前启用官方智能裁剪发布会被门禁拒绝。
+本轮自动设备策略的复验、缺失证据及实际放行状态见[发布证据](smart-crop-release-evidence.md)。
