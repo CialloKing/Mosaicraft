@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <limits>
 #include <opencv2/imgproc.hpp>
 #include <tuple>
 
@@ -11,6 +10,8 @@ namespace mosaicraft
 {
 namespace
 {
+constexpr int kAnimeHeadRetentionPercent = 75;
+
 cv::Rect pixelFace(const cv::Rect2d &face, cv::Size covered, double side = 0, double above = 0, double below = 0)
 {
     const int l = static_cast<int>(std::floor((face.x - face.width * side) * covered.width + 1e-8));
@@ -125,11 +126,12 @@ SmartCropDecision chooseSmartCrop(cv::Size covered, cv::Size target, const Smart
                integralAt(integral, r, t) + integralAt(integral, l, t);
     };
     cv::Point headAnchor(-1, -1);
+    const auto head = protectHead && mainFace >= 0 ? padded[mainFace] : cv::Rect();
+    const int headGoal = static_cast<int>((static_cast<int64_t>(head.area()) * kAnimeHeadRetentionPercent + 99) / 100);
     bool headTooWide = false, headTooTall = false;
-    if (protectHead && mainFace >= 0)
+    if (headGoal > 0)
     {
         const auto &face = faces[mainFace];
-        const auto &head = padded[mainFace];
         headTooWide = head.width > target.width;
         headTooTall = head.height > target.height;
         // For oversized estimates, avoid sliding a tied crop away from the face toward the body.
@@ -143,14 +145,22 @@ SmartCropDecision chooseSmartCrop(cv::Size covered, cv::Size target, const Smart
         for (int i = 0; i < static_cast<int>(faces.size()); ++i)
         {
             other += i != mainFace && (faces[i] & roi) == faces[i];
-            margins += (padded[i] & roi) == padded[i];
+            // Do not reward keeping the entire anime main head through a second margin score.
+            if (!protectHead || i != mainFace)
+            {
+                margins += (padded[i] & roi) == padded[i];
+            }
         }
-        // Extra headroom cannot cost a face, but body saliency cannot take it away either.
+        // Below the goal keep as much head as possible; above it let composition decide.
         const int faceCoverage = mainFace >= 0 ? (faces[mainFace] & roi).area() : 0;
-        const int headCoverage = protectHead && mainFace >= 0 ? (padded[mainFace] & roi).area() : 0;
-        const int headDrift = (headTooWide ? std::abs(roi.x - headAnchor.x) : 0) +
-                              (headTooTall ? std::abs(roi.y - headAnchor.y) : 0);
-        return std::make_tuple(faceCoverage, other, headCoverage, -headDrift, margins);
+        const int headCoverage = (head & roi).area();
+        int headDrift = 0;
+        if (headCoverage < headGoal)
+        {
+            headDrift = (headTooWide ? std::abs(roi.x - headAnchor.x) : 0) +
+                        (headTooTall ? std::abs(roi.y - headAnchor.y) : 0);
+        }
+        return std::make_tuple(faceCoverage, other, std::min(headCoverage, headGoal), -headDrift, margins);
     };
     const auto distance = [&](const cv::Rect &roi)
     {
@@ -163,33 +173,73 @@ SmartCropDecision chooseSmartCrop(cv::Size covered, cv::Size target, const Smart
     auto baseline = center, best = center;
     auto rank = priority(center);
     double bestMass = mass(center);
+    const auto consider = [&](int x, int y)
+    {
+        const cv::Rect roi(x, y, target.width, target.height);
+        const auto candidate = priority(roi);
+        if (candidate < rank)
+        {
+            return;
+        }
+        const double score = mass(roi);
+        if (candidate > rank)
+        {
+            rank = candidate;
+            baseline = best = roi;
+            bestMass = score;
+            return;
+        }
+        if (distance(roi) < distance(baseline))
+        {
+            baseline = roi;
+        }
+        if (score > bestMass + 1e-8 || (std::abs(score - bestMass) <= 1e-8 && distance(roi) < distance(best)))
+        {
+            best = roi;
+            bestMass = score;
+        }
+    };
+    const auto considerHeadEdges = [&](int fixed, bool horizontal)
+    {
+        const auto cross = horizontal ? cv::Range(head.y, head.br().y) : cv::Range(head.x, head.br().x);
+        const int overlap = (cross & cv::Range(fixed, fixed + (horizontal ? target.height : target.width))).size();
+        if (overlap == 0)
+        {
+            return;
+        }
+        // The coverage goal can fall between two heatmap or face boundaries.
+        const int minimum = (headGoal + overlap - 1) / overlap;
+        const auto along = horizontal ? cv::Range(head.x, head.br().x) : cv::Range(head.y, head.br().y);
+        const int span = horizontal ? target.width : target.height;
+        const int limit = (horizontal ? covered.width : covered.height) - span;
+        if (minimum > std::min(span, along.size()))
+        {
+            return;
+        }
+        const auto considerOffset = [&](int offset)
+        {
+            const int moving = std::clamp(offset, 0, limit);
+            consider(horizontal ? moving : fixed, horizontal ? fixed : moving);
+        };
+        considerOffset(along.start + minimum - span);
+        considerOffset(along.end - minimum);
+    };
     for (const int x : xs)
     {
         for (const int y : ys)
         {
-            const cv::Rect roi(x, y, target.width, target.height);
-            const auto candidate = priority(roi);
-            if (candidate < rank)
-            {
-                continue;
-            }
-            const double score = mass(roi);
-            if (candidate > rank)
-            {
-                rank = candidate;
-                baseline = best = roi;
-                bestMass = score;
-                continue;
-            }
-            if (distance(roi) < distance(baseline))
-            {
-                baseline = roi;
-            }
-            if (score > bestMass + 1e-8 || (std::abs(score - bestMass) <= 1e-8 && distance(roi) < distance(best)))
-            {
-                best = roi;
-                bestMass = score;
-            }
+            consider(x, y);
+        }
+        if (headGoal > 0 && covered.height > target.height)
+        {
+            considerHeadEdges(x, false);
+        }
+    }
+    if (headGoal > 0 && covered.width > target.width)
+    {
+        for (const int y : ys)
+        {
+            considerHeadEdges(y, true);
         }
     }
     const auto roi = total > 0 && bestMass - mass(baseline) >= 0.05 * total ? best : baseline;

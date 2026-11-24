@@ -2770,7 +2770,7 @@ TEST_CASE("smart crop ranks complete faces before foreground and limits camera m
     CHECK(chooseSmartCrop(cv::Size(200, 400), cv::Size(200, 100), analysis).roi.y == 300);
 }
 
-TEST_CASE("anime crop protects headroom before strong body saliency")
+TEST_CASE("anime crop protects the face while allowing bounded loss of headroom")
 {
     using namespace mosaicraft;
     const cv::Size image(200, 400), target(200, 100);
@@ -2784,18 +2784,24 @@ TEST_CASE("anime crop protects headroom before strong body saliency")
     analysis.mode = CropMode::SmartAnime;
     const cv::Rect head(22, 66, 116, 78);
     const auto anime = chooseSmartCrop(image, target, analysis);
-    CHECK((anime.roi & head) == head);
-    CHECK_FALSE(anime.mainFaceClipped);
-
-    // When the window is too short for the head, the face still has to fit.
     const cv::Rect face(60, 100, 40, 40);
-    const auto narrow = chooseSmartCrop(image, cv::Size(200, 60), analysis);
+    CHECK((anime.roi & face) == face);
+    CHECK((anime.roi & head).height == 59);
+    CHECK(anime.roi.y == 85);
+
+    // Below the 75% goal the window still keeps as much of the head as possible.
+    const auto narrow = chooseSmartCrop(image, cv::Size(200, 55), analysis);
     CHECK((narrow.roi & face) == face);
-    CHECK((narrow.roi & head).height == 60);
+    CHECK((narrow.roi & head).height == 55);
 
     analysis.faces.front() = cv::Rect2d(0.70, 0.20, 0.125, 0.20);
     analysis.foreground = analysis.foreground.t();
     CHECK(chooseSmartCrop(cv::Size(400, 200), cv::Size(100, 200), analysis).roi.x == 255);
+
+    // With no heatmap the nearest eligible horizontal crop can still trim headroom.
+    analysis.faces.front() = cv::Rect2d(0.25, 0.30, 0.10, 0.20);
+    analysis.foreground.release();
+    CHECK(chooseSmartCrop(cv::Size(400, 200), cv::Size(140, 200), analysis).roi.x == 91);
 }
 #endif
 
