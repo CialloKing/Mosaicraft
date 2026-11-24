@@ -87,6 +87,7 @@ bool editSettings(QWidget *parent, QSettings &settings, SettingsPage page, const
     form.defaultThreads->setValue(settings.value("preferences/threads", 0).toInt());
     form.confirmOverwrite->setChecked(settings.value("preferences/confirmOverwrite", true).toBool());
     chooseData(form.interfaceLanguage, {"system", "zh_CN", "en"}, settings.value("language/locale", "zh_CN").toString());
+    form.openLogWindow->setChecked(settings.value(openLogWindowSetting).toBool());
 
     QObject::connect(form.settingsNavigation, &QListWidget::currentRowChanged, form.settingsPages, &QStackedWidget::setCurrentIndex);
     form.settingsNavigation->setCurrentRow(static_cast<int>(page));
@@ -131,6 +132,7 @@ bool editSettings(QWidget *parent, QSettings &settings, SettingsPage page, const
         settings.setValue("preferences/threads", form.defaultThreads->value());
         settings.setValue("preferences/confirmOverwrite", form.confirmOverwrite->isChecked());
         settings.setValue("language/locale", form.interfaceLanguage->currentData().toString());
+        settings.setValue(openLogWindowSetting, form.openLogWindow->isChecked());
         saveLibrarySettings(form, settings);
         return true;
     }

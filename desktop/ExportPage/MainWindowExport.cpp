@@ -39,11 +39,11 @@ void MainWindow::setupExport()
     ui->exportSplitter->setStretchFactor(1, 1);
     ui->exportSplitter->setSizes({355, 1050});
     ui->exportRightSplitter->setStretchFactor(0, 1);
-    ui->exportRightSplitter->setSizes({570, 230});
     for (auto label : {ui->summaryLibrary, ui->summaryState})
     {
         label->setTextFormat(Qt::PlainText);
     }
+    ui->exportRightSplitter->setSizes({height(), ui->exportDetailsPanel->sizeHint().height()});
     initializeCombo(ui->outputMode, {"image", "html", "deepzoom", "tiles"});
     initializeCombo(ui->outputFormat, {"png", "jpg", "webp", "tiff"});
     initializeCombo(ui->writeMode, {"auto", "stream", "batch"});
@@ -53,7 +53,6 @@ void MainWindow::setupExport()
                ui->allowOverwrite, ui->targetBlend, ui->brightnessJitter, ui->analyzeExport, ui->benchmarkExport,
                ui->monitorExport};
 
-    ui->exportProgress->hide();
     auto view = ui->exportPreview;
     connect(ui->exportZoomIn, &QToolButton::clicked, view, &ImagePreviewView::zoomIn);
     connect(ui->exportZoomOut, &QToolButton::clicked, view, &ImagePreviewView::zoomOut);
@@ -117,7 +116,8 @@ void MainWindow::updateOutputControls()
     const auto mode = ui->outputMode->currentData().toString();
     const bool image = mode == "image";
     const bool html = mode == "html";
-    const bool portable = activeDocument >= 0 && !documents[activeDocument].manifest.isEmpty();
+    const auto document = activeDocument >= 0 ? &documents[activeDocument] : nullptr;
+    const bool portable = document && !document->manifest.isEmpty();
     const auto format = ui->outputFormat->currentData().toString();
     const bool quality = !html && (!image || format == "jpg" || format == "webp");
     const bool png = image && format == "png";
@@ -135,8 +135,23 @@ void MainWindow::updateOutputControls()
     ui->analyzeExport->setVisible(!portable);
     ui->monitorExport->setVisible(!portable);
     ui->outputPath->setPlaceholderText(QDir::toNativeSeparators(suggestedOutput()));
-    ui->exportControls->setEnabled(!busy() && activeDocument >= 0 &&
-                                   QFileInfo(documents[activeDocument].target).isFile());
+    ui->exportControls->setEnabled(!busy() && document && QFileInfo(document->target).isFile());
+
+    const bool preparing = !pendingExport.isEmpty() && editorOperation == "preview";
+    const bool exporting = job.type == Job::Export || editorOperation == "export";
+    if (preparing || exporting)
+    {
+        ui->exportProgress->setRange(0, 0);
+        ui->summaryState->setText(closing ? tr("正在结束任务…") :
+                                  preparing ? tr("正在生成预览图…") : tr("正在导出作品…"));
+    }
+    else
+    {
+        ui->exportProgress->setRange(0, 1);
+        ui->exportProgress->setValue(document && document->exportSucceeded ? 1 : 0);
+        ui->summaryState->setText(document && !document->resultMessage.isEmpty()
+            ? document->resultMessage.simplified() : tr("等待导出"));
+    }
 }
 
 void MainWindow::updateSummaries()
@@ -405,10 +420,11 @@ void MainWindow::collectExecutionOptions(ExportOptions &options, bool useDevice)
     }
 }
 
-void MainWindow::finishExport(const JobState &completed, bool ok, const QJsonObject &body, const QString &message)
+void MainWindow::finishExport(const JobState &completed, bool ok, const QJsonObject &body)
 {
     auto &document = documents[completed.documentIndex];
-    document.resultMessage = ok ? tr("导出完成") : tr("导出失败：%1").arg(message);
+    document.resultMessage = ok ? tr("导出完成") : tr("导出失败");
+    document.exportSucceeded = ok;
     if (ok)
     {
         document.resultImage.clear();
@@ -445,7 +461,6 @@ void MainWindow::finishExport(const JobState &completed, bool ok, const QJsonObj
             document.resultMessage += " / " + device;
         }
     }
-    ui->summaryState->setText(document.resultMessage);
     if (ok && document.resultSize.isValid())
     {
         ui->summaryCanvas->setText(tr("%1 × %2 px（实际）").arg(document.resultSize.width()).arg(document.resultSize.height()));

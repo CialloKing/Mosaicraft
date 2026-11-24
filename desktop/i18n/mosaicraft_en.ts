@@ -335,16 +335,12 @@
         <translation>Material Source</translation>
     </message>
     <message>
-        <source>任务状态</source>
-        <translation>Job Status</translation>
+        <source>导出进度</source>
+        <translation>Export Progress</translation>
     </message>
     <message>
         <source>等待导出</source>
         <translation>Ready to Export</translation>
-    </message>
-    <message>
-        <source>计算进度和诊断将显示在这里。</source>
-        <translation>Progress and diagnostics appear here.</translation>
     </message>
     <message>
         <source>文件</source>
@@ -403,6 +399,10 @@
         <translation>Language…</translation>
     </message>
     <message>
+        <source>开发者选项…</source>
+        <translation>Developer Options…</translation>
+    </message>
+    <message>
         <source>关于 Mosaicraft</source>
         <translation>About Mosaicraft</translation>
     </message>
@@ -413,6 +413,10 @@
     <message>
         <source>就绪</source>
         <translation>Ready</translation>
+    </message>
+    <message>
+        <source>Mosaicraft 日志</source>
+        <translation>Mosaicraft Log</translation>
     </message>
     <message>
         <source>设置已保存</source>
@@ -547,16 +551,8 @@
         <translation>Could not create the preview directory.</translation>
     </message>
     <message>
-        <source>预览进程已结束。请确认桌面匹配程序与当前版本配套。</source>
-        <translation>The preview process ended. Check that the matching worker is from the same build.</translation>
-    </message>
-    <message>
-        <source>未找到桌面匹配程序。请检查 mosaicraft_desktop_worker 是否在桌面程序或 Mosaicraft CLI 的同目录。</source>
-        <translation>Matching worker unavailable. Check for mosaicraft_desktop_worker alongside the desktop app or Mosaicraft CLI.</translation>
-    </message>
-    <message>
-        <source>正在处理…</source>
-        <translation>Processing…</translation>
+        <source>预览进程已结束。请确认当前 CLI 来自桌面版构建。</source>
+        <translation>The preview process ended. Check that the CLI was built with desktop support.</translation>
     </message>
     <message>
         <source>正在导出作品…</source>
@@ -661,8 +657,8 @@
 %1</translation>
     </message>
     <message>
-        <source>未找到 Mosaicraft CLI。请先编译 CLI 或在「设置 → 通用设置」选择程序。</source>
-        <translation>Mosaicraft CLI not found. Build it or select it in Settings → General.</translation>
+        <source>未找到 Mosaicraft CLI。请在「设置 → 通用设置」选择桌面版的程序。</source>
+        <translation>Mosaicraft CLI not found. Select the CLI built with desktop support in Settings → General.</translation>
     </message>
     <message>
         <source>无法读取生成的预览图。</source>
@@ -673,8 +669,8 @@
         <translation>Export complete</translation>
     </message>
     <message>
-        <source>导出失败：%1</source>
-        <translation>Export failed: %1</translation>
+        <source>导出失败</source>
+        <translation>Export failed</translation>
     </message>
     <message>
         <source> · 后端 %1</source>
@@ -719,10 +715,6 @@ Uses the Mosaicraft CLI for library builds, matching, and exports.</translation>
         <translation>No newer Mosaicraft release was found.</translation>
     </message>
     <message>
-        <source>找不到桌面匹配程序 mosaicraft_desktop_worker。</source>
-        <translation>Could not find mosaicraft_desktop_worker.</translation>
-    </message>
-    <message>
         <source>正在检查素材库，必要时会重建…</source>
         <translation>Checking the library and rebuilding if needed…</translation>
     </message>
@@ -764,6 +756,14 @@ Uses the Mosaicraft CLI for library builds, matching, and exports.</translation>
     <message>
         <source>素材库设置</source>
         <translation>Library Settings</translation>
+    </message>
+    <message>
+        <source>开发者选项</source>
+        <translation>Developer Options</translation>
+    </message>
+    <message>
+        <source>打开日志窗口</source>
+        <translation>Open Log Window</translation>
     </message>
     <message>
         <source>设置本地 CLI 和默认的文件保存行为。</source>

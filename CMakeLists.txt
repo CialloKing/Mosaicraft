@@ -297,7 +297,6 @@ add_library(mosaicraft_core STATIC
     core/PreviewCandidates.cpp
     core/PreviewCache.cpp
     core/MosaicService.cpp
-    core/EditorSession.cpp
 )
 if (NOT MOSAICRAFT_CUDA)
     target_sources(mosaicraft_core PRIVATE core/CudaStubs.cpp)
@@ -415,9 +414,17 @@ endif()
 # ============================================================
 # 可执行文件
 # ============================================================
+option(MOSAICRAFT_BUILD_DESKTOP "Build the Qt Widgets desktop application" OFF)
+option(MOSAICRAFT_DESKTOP_BACKEND_INSTALL "Install the desktop-capable CLI without the Web UI" OFF)
 add_executable(mosaicraft
     src/main.cpp
 )
+set(_desktop_worker_enabled OFF)
+if(MOSAICRAFT_BUILD_DESKTOP OR MOSAICRAFT_DESKTOP_BACKEND_INSTALL)
+    set(_desktop_worker_enabled ON)
+    target_sources(mosaicraft PRIVATE core/EditorSession.cpp)
+    target_compile_definitions(mosaicraft PRIVATE MOSAICRAFT_DESKTOP_WORKER)
+endif()
 
 target_compile_definitions(mosaicraft PRIVATE
     $<$<BOOL:${MOSAICRAFT_CUDA}>:MOSAICRAFT_CUDA>
@@ -427,9 +434,6 @@ target_link_libraries(mosaicraft PRIVATE
     mosaicraft_core
     mosaicraft_cuda
 )
-
-add_executable(mosaicraft_desktop_worker EXCLUDE_FROM_ALL src/desktop_worker.cpp)
-target_link_libraries(mosaicraft_desktop_worker PRIVATE mosaicraft_core mosaicraft_cuda)
 
 # Windows 13.5 uses the hybrid loader from CUDA::cudart. Its driver runtime
 # is not an SDK DLL dependency; Packaging.cmake deploys actual non-driver imports.
@@ -481,13 +485,14 @@ target_include_directories(mosaicraft_tests PRIVATE
 
 # CTest 集成
 enable_testing()
-option(MOSAICRAFT_BUILD_DESKTOP "Build the Qt Widgets desktop application" OFF)
 if(MOSAICRAFT_BUILD_DESKTOP)
     add_subdirectory(desktop)
 endif()
 option(MOSAICRAFT_PYTHON_TESTS "Register optional Python integration and study tests" OFF)
 add_test(NAME cuda_architecture_config COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_architectures.cmake")
 add_test(NAME cuda_toolkit_config COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_SOURCE_DIR}/tests/test_cuda_toolkit.cmake")
+add_test(NAME desktop_worker_command COMMAND "${CMAKE_COMMAND}" "-DCLI=$<TARGET_FILE:mosaicraft>"
+    "-DWORKER_ENABLED=${_desktop_worker_enabled}" -P "${CMAKE_SOURCE_DIR}/tests/test_desktop_worker.cmake")
 add_test(NAME mosaicraft_tests COMMAND mosaicraft_tests)
 
 add_executable(mosaicraft_regression_tests EXCLUDE_FROM_ALL

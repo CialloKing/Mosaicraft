@@ -4,12 +4,14 @@
 #include <QJsonArray>
 #include <QMainWindow>
 #include <QPixmap>
+#include <QStringConverter>
 #include <QStringList>
 
 #include <memory>
 
 class QAction;
 class QCloseEvent;
+class QDialog;
 class QDragEnterEvent;
 class QDropEvent;
 class QGraphicsScene;
@@ -17,6 +19,7 @@ class QGraphicsView;
 class QLabel;
 class QListWidgetItem;
 class QNetworkAccessManager;
+class QPlainTextEdit;
 class QProcess;
 class QSettings;
 class QTemporaryDir;
@@ -72,6 +75,7 @@ private:
         int id = -1;
         int selectedTile = -1;
         ViewMode view = ViewMode::Target;
+        bool exportSucceeded = false;
         bool dirty = false;
     };
 
@@ -92,6 +96,10 @@ private:
     void setupExport();
     void setupDocumentOptions();
     void setupJobProcess();
+    void setupLogWindow();
+    void updateLogWindow();
+    void appendLog(const QString &text, bool completeLine = true);
+    void readTaskOutput(QProcess *child);
     void setupTaskDialog();
     void setTaskMessage(const QString &message);
     void dismissTaskDialog();
@@ -147,14 +155,13 @@ private:
     QStringList buildExportArgs(const Document &document, const QString &destination, bool preview = false) const;
     void exportDocument();
     void runExport(const QString &destination);
-    void finishExport(const JobState &completed, bool ok, const QJsonObject &body, const QString &message);
+    void finishExport(const JobState &completed, bool ok, const QJsonObject &body);
     void runJob(Job type, const QStringList &args, const QString &destination);
     void finishJob(bool processSucceeded, const QString &failure = {});
     QJsonObject libraryMaintenanceRequest() const;
     void finishLibraryCheck(bool ok, const QJsonObject &result, const QString &message);
     QString documentLibrary(const Document &document) const;
     QString resolveCli() const;
-    QString resolveEditorWorker() const;
     void showAbout();
     void checkUpdates();
 
@@ -165,6 +172,10 @@ private:
     QNetworkAccessManager *network;
     QProcess *process;
     QProcess *editor;
+    QDialog *logWindow = nullptr;
+    QPlainTextEdit *logOutput = nullptr;
+    QStringDecoder jobOutputDecoder{QStringDecoder::Utf8};
+    QStringDecoder editorOutputDecoder{QStringDecoder::Utf8};
     QWidget *taskDialog = nullptr;
     QLabel *taskMessage = nullptr;
     QTimer *shutdownTimer = nullptr;

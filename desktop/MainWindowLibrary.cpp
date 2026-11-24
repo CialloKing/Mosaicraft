@@ -43,10 +43,10 @@ void MainWindow::checkLibrary()
         libraryStatus.clear();
         return;
     }
-    const auto worker = resolveEditorWorker();
-    if (worker.isEmpty())
+    const auto cli = resolveCli();
+    if (cli.isEmpty())
     {
-        finishLibraryCheck(false, {}, tr("找不到桌面匹配程序 mosaicraft_desktop_worker。"));
+        finishLibraryCheck(false, {}, tr("未找到 Mosaicraft CLI。请在「设置 → 通用设置」选择桌面版的程序。"));
         return;
     }
     job.type = Job::LibraryCheck;
@@ -56,7 +56,7 @@ void MainWindow::checkLibrary()
     updateOutputControls();
     const QJsonObject payload{{"op", "maintain-library"}, {"request", request}};
     prepareTaskProcess(process);
-    process->start(worker, {}, QIODevice::ReadWrite);
+    process->start(cli, {"desktop-worker"}, QIODevice::ReadWrite);
     process->write(QJsonDocument(payload).toJson(QJsonDocument::Compact) + '\n');
     process->closeWriteChannel();
 }
@@ -66,7 +66,6 @@ void MainWindow::finishLibraryCheck(bool ok, const QJsonObject &result, const QS
     if (!ok)
     {
         libraryStatus = tr("素材库检查或重建失败。%1").arg(message);
-        ui->taskLog->appendPlainText(libraryStatus);
     }
     else if (result["empty"].toBool())
     {
@@ -76,7 +75,7 @@ void MainWindow::finishLibraryCheck(bool ok, const QJsonObject &result, const QS
     {
         libraryStatus = result["state"].toString() == "rebuilt" ? tr("素材库已重建。") : tr("素材库完整性检查通过。");
     }
-    statusBar()->showMessage(libraryStatus, 8000);
+    appendLog(libraryStatus);
     updateSummaries();
     updateEditorControls();
     updateOutputControls();

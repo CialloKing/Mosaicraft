@@ -79,9 +79,9 @@ cmake -DRUNTIME=cuda -DCUDA_VALIDATION=Required -DCUDAToolkit_ROOT=<sdk> -P cmak
 | Linux x64 | `_linux-x64_qt.tar.gz` | `_linux-x64_qt_cuda-vulkan.tar.gz` | `./bin/MosaicraftDesktop` |
 | macOS ARM64 | `_macos-arm64_qt.tar.gz` | — | `MosaicraftDesktop.app` |
 
-桌面包均用 `cmake/qt-sdk.json` 锁定的 Qt SDK，随包部署 Qt 共享库、平台插件、SQLite、WebP、TIFF、CLI、桌面匹配程序及后端依赖。保持解压后的目录结构，无需另装 Qt 或 CUDA Toolkit。Linux 以 Ubuntu 24.04 上的构建为基线，仍需要操作系统的显示服务和驱动；macOS `.app` 为临时签名（ad-hoc），未公证。
+桌面包均用 `cmake/qt-sdk.json` 锁定的 Qt SDK，随包部署 Qt 共享库、平台插件、SQLite、WebP、TIFF、支持内部 `desktop-worker` 模式的 CLI 及后端依赖。保持解压后的目录结构，无需另装 Qt 或 CUDA Toolkit。Linux 以 Ubuntu 24.04 上的构建为基线，仍需要操作系统的显示服务和驱动；macOS `.app` 为临时签名（ad-hoc），未公证。
 
-双后端包的 CLI 和 worker 均编入 CUDA 和 Vulkan；`auto` 使用 CUDA → CPU，需通过桌面设置显式选择 Vulkan。不分发显卡驱动，使用 GPU 时需安装相应驱动。
+双后端包的 CLI 编入 CUDA 和 Vulkan，覆盖普通命令和桌面工作模式。`auto` 使用 CUDA → CPU，Vulkan 可通过桌面设置显式选择。使用 GPU 时需安装相应显卡驱动。
 
 所有桌面包都核对归档布局、Qt 库、插件及许可证，并生成 `.sha256`。双后端包另检查 CUDA 的七种原生架构及 PTX，解包后运行 GUI 和无 GPU 时的 CPU 回退测试。Windows 云端产物以 `_candidate` 结尾，正式包需实机通过 CUDA 和 Vulkan 预览；Linux 云端包的 GPU 实机状态记录为 `not-run`。可复查下载的桌面附件：
 

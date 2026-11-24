@@ -27,7 +27,7 @@ QPushButton:default { background: #575757; border-color: #727272; }
    <item>
     <layout class="QHBoxLayout" name="settingsBody" stretch="0,1">
      <property name="spacing"><number>16</number></property>
-     <item><widget class="QListWidget" name="settingsNavigation"><property name="minimumSize"><size><width>144</width><height>0</height></size></property><property name="maximumSize"><size><width>170</width><height>16777215</height></size></property><item><property name="text"><string>通用设置</string></property></item><item><property name="text"><string>首选项</string></property></item><item><property name="text"><string>语言</string></property></item><item><property name="text"><string>素材库设置</string></property></item></widget></item>
+     <item><widget class="QListWidget" name="settingsNavigation"><property name="minimumSize"><size><width>144</width><height>0</height></size></property><property name="maximumSize"><size><width>170</width><height>16777215</height></size></property><item><property name="text"><string>通用设置</string></property></item><item><property name="text"><string>首选项</string></property></item><item><property name="text"><string>语言</string></property></item><item><property name="text"><string>素材库设置</string></property></item><item><property name="text"><string>开发者选项</string></property></item></widget></item>
      <item>
       <widget class="QStackedWidget" name="settingsPages">
        <property name="currentIndex"><number>0</number></property>
@@ -113,6 +113,14 @@ QPushButton:default { background: #575757; border-color: #727272; }
            </layout>
           </widget>
          </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="developerPage">
+        <layout class="QVBoxLayout" name="developerLayout">
+         <property name="leftMargin"><number>9</number></property><property name="topMargin"><number>9</number></property><property name="rightMargin"><number>9</number></property><property name="bottomMargin"><number>9</number></property>
+         <item><widget class="QLabel" name="developerTitle"><property name="text"><string>开发者选项</string></property><property name="sectionTitle" stdset="0"><bool>true</bool></property></widget></item>
+         <item><widget class="QCheckBox" name="openLogWindow"><property name="text"><string>打开日志窗口</string></property></widget></item>
+         <item><spacer name="developerSpacer"><property name="orientation"><enum>Qt::Orientation::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>16</height></size></property></spacer></item>
         </layout>
        </widget>
       </widget>

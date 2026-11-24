@@ -1,4 +1,5 @@
 #include "CanvasImageItem.h"
+#include "Dialogs.h"
 #include "LibraryLocation.h"
 #include "MainWindow.h"
 #include "PreviewImage.h"
@@ -18,8 +19,10 @@
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPlainTextEdit>
 #include <QProcess>
 #include <QSettings>
+#include <QStatusBar>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QTranslator>
@@ -94,6 +97,10 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         QApplication::processEvents();
         return captureDirectory.isEmpty() || widget->grab().save(QDir(captureDirectory).filePath(name + ".png"));
     };
+    if (!require(!findChild<QStatusBar *>() && logWindow->isHidden(), "status bar removed and log window closed by default"))
+    {
+        return 1;
+    }
 
     QImage checker(2, 2, QImage::Format_RGB32);
     checker.fill(Qt::black);
@@ -273,6 +280,8 @@ int MainWindow::smokeTest(const QString &captureDirectory)
                  create.value(create.indexOf("--png-compression") + 1) == "6" &&
                  create.contains("--seed") && !create.contains("--target-upscale") && !create.contains("--lbp-weight") &&
                  !ui->exportPreview->hasImage() && ui->outputQuality->isHidden(), "single image export arguments") ||
+        !require(ui->exportProgress->isVisible() && ui->exportProgress->value() == 0 && !ui->summaryState->wordWrap(),
+                 "export shows an idle progress bar and a single task line") ||
         !require(capture("02-export", this), "export capture"))
     {
         return 1;
@@ -286,7 +295,8 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         return 1;
     }
 
-    const QList<QAction *> settingActions{ui->actionGeneralSettings, ui->actionPreferences, ui->actionLanguage, ui->actionLibrarySettings};
+    const QList<QAction *> settingActions{ui->actionGeneralSettings, ui->actionPreferences, ui->actionLanguage,
+                                          ui->actionLibrarySettings, ui->actionDeveloperOptions};
     for (int index = 0; index < settingActions.size(); ++index)
     {
         bool correctPage = false;
@@ -308,6 +318,14 @@ int MainWindow::smokeTest(const QString &captureDirectory)
                                   dialog->findChild<QLineEdit *>("librarySource") &&
                                   dialog->findChild<QLineEdit *>("libraryDirectory") && capture("05-library-settings", dialog);
                 }
+                if (index == 4)
+                {
+                    const auto option = dialog->findChild<QCheckBox *>("openLogWindow");
+                    correctPage = correctPage && option && !option->isChecked();
+                    if (option) option->setChecked(true);
+                    dialog->accept();
+                    return;
+                }
                 dialog->reject();
             }
         });
@@ -316,6 +334,11 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         {
             return 1;
         }
+    }
+    if (!require(logWindow->isWindow() && logWindow->isVisible() && !logWindow->isModal() && logOutput->isReadOnly() &&
+                 settings.value(openLogWindowSetting).toBool(), "developer option opens a separate modeless log window"))
+    {
+        return 1;
     }
     if (cli.isEmpty())
     {
@@ -377,6 +400,17 @@ int MainWindow::smokeTest(const QString &captureDirectory)
                  indexedImages().size() == 2, "saving library settings builds the default library"))
     {
         qWarning().noquote() << libraryStatus;
+        return 1;
+    }
+    if (!require(logOutput->toPlainText().contains("Found 2 image(s)") &&
+                 capture("11-developer-log", logWindow), "library process diagnostics appear in the log window"))
+    {
+        return 1;
+    }
+    logWindow->close();
+    if (!require(logWindow->isHidden() && isVisible() && !settings.value(openLogWindowSetting).toBool(),
+                 "closing the log clears its setting and keeps the main window open"))
+    {
         return 1;
     }
     const auto firstLibrary = activeLibrary();
@@ -472,7 +506,7 @@ int MainWindow::smokeTest(const QString &captureDirectory)
                  documents[activeDocument].preview->size() == QSize(2080, 160) &&
                  canvasScene->sceneRect().size() == QSizeF(2080, 160), "original-size editor preview above 1800 pixels"))
     {
-        qWarning().noquote() << ui->taskLog->toPlainText();
+        qWarning().noquote() << logOutput->toPlainText();
         return 1;
     }
     auto previousPreview = documents[activeDocument].preview;
@@ -481,7 +515,7 @@ int MainWindow::smokeTest(const QString &captureDirectory)
                  documents[activeDocument].previewGrid == QSize(8, 5) && documents[activeDocument].preview,
                  "CLI preview selection and composition"))
     {
-        qWarning().noquote() << ui->taskLog->toPlainText();
+        qWarning().noquote() << logOutput->toPlainText();
         return 1;
     }
     // 严格的小预算可复现多标签页的回收，不依赖测试机器的空闲内存。
@@ -550,7 +584,7 @@ int MainWindow::smokeTest(const QString &captureDirectory)
                  documents[activeDocument].selectedTile == 0,
                  "candidate score list, clicked position and selected asset"))
     {
-        qWarning().noquote() << ui->taskLog->toPlainText();
+        qWarning().noquote() << logOutput->toPlainText();
         return 1;
     }
     const int oldId = currentCandidate;
@@ -565,7 +599,7 @@ int MainWindow::smokeTest(const QString &captureDirectory)
                  "replace candidate and update native preview tile") ||
         !require(capture("07-candidates", this), "candidate capture"))
     {
-        qWarning().noquote() << ui->taskLog->toPlainText();
+        qWarning().noquote() << logOutput->toPlainText();
         return 1;
     }
 
@@ -589,12 +623,17 @@ int MainWindow::smokeTest(const QString &captureDirectory)
         const auto b = result.pixelColor(12, 16);
         return qAbs(a.red() - b.red()) + qAbs(a.green() - b.green()) + qAbs(a.blue() - b.blue()) <= 18;
     };
-    if (!require(waitForWork([&] { exportDocument(); }) && matchesReplacement(output) && ui->exportPreview->hasImage(),
+    bool exporting = false;
+    if (!require(waitForWork([&] {
+                     exportDocument();
+                     exporting = ui->exportProgress->maximum() == 0 && ui->summaryState->text() == tr("正在导出作品…");
+                 }) && exporting && ui->exportProgress->value() == 1 && ui->summaryState->text().startsWith(tr("导出完成")) &&
+                 matchesReplacement(output) && ui->exportPreview->hasImage(),
                  "export uses the manually selected tile") ||
         !require(saveDocument(activeDocument, false), "save project with tile replacement") ||
         !require(capture("08-export-result", this), "export with result capture"))
     {
-        qWarning().noquote() << ui->taskLog->toPlainText();
+        qWarning().noquote() << logOutput->toPlainText();
         return 1;
     }
     closeDocument(activeDocument);
@@ -607,7 +646,7 @@ int MainWindow::smokeTest(const QString &captureDirectory)
     if (!require(waitForWork([&] { exportDocument(); }) && matchesReplacement(secondOutput),
                  "export saved replacement after reopening project"))
     {
-        qWarning().noquote() << ui->taskLog->toPlainText();
+        qWarning().noquote() << logOutput->toPlainText();
         return 1;
     }
     const auto portableExport = root.filePath("portable");
@@ -619,7 +658,7 @@ int MainWindow::smokeTest(const QString &captureDirectory)
     if (!require(waitForWork([&] { exportDocument(); }) && QFileInfo::exists(manifest),
                  "export edited selection as a portable project"))
     {
-        qWarning().noquote() << ui->taskLog->toPlainText();
+        qWarning().noquote() << logOutput->toPlainText();
         return 1;
     }
     const auto openPortable = [&](const QString &path, bool checkLibraryAtStartup) {
@@ -642,7 +681,7 @@ int MainWindow::smokeTest(const QString &captureDirectory)
     };
     if (!require(openPortable(entry, true), "open index.html with saved parameters and automatic preview"))
     {
-        qWarning().noquote() << ui->taskLog->toPlainText();
+        qWarning().noquote() << logOutput->toPlainText();
         return 1;
     }
     const auto htmlPreview = nativePreviewTile(*documents[activeDocument].preview, {24, 32});
@@ -653,14 +692,14 @@ int MainWindow::smokeTest(const QString &captureDirectory)
                  nativePreviewTile(*documents[activeDocument].preview, {24, 32}) == htmlPreview,
                  "open project.json with the same preview and parameters"))
     {
-        qWarning().noquote() << ui->taskLog->toPlainText();
+        qWarning().noquote() << logOutput->toPlainText();
         return 1;
     }
     ui->tileWidth->setValue(260);
     if (!require(waitForWork([&] { generatePreview(); }) && documents[activeDocument].preview &&
                  documents[activeDocument].preview->size() == QSize(2080, 160), "original-size portable preview"))
     {
-        qWarning().noquote() << ui->taskLog->toPlainText();
+        qWarning().noquote() << logOutput->toPlainText();
         return 1;
     }
     for (auto &document : documents) document.dirty = false;

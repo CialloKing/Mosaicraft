@@ -133,15 +133,15 @@ if(MOSAICRAFT_DEPLOY_QT)
     install(SCRIPT "${deploy_script}")
 endif()
 
-if(TARGET mosaicraft AND TARGET mosaicraft_desktop_worker)
-    add_dependencies(MosaicraftDesktop mosaicraft mosaicraft_desktop_worker)
+if(TARGET mosaicraft)
+    add_dependencies(MosaicraftDesktop mosaicraft)
     if(APPLE)
         # Stage on every requested build, even when only the backend changed.
         set(backend_dir "$<TARGET_BUNDLE_CONTENT_DIR:MosaicraftDesktop>/MacOS")
         add_custom_target(mosaicraft_desktop_backend
             COMMAND ${CMAKE_COMMAND} -E make_directory "${backend_dir}"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "$<TARGET_FILE:mosaicraft>" "$<TARGET_FILE:mosaicraft_desktop_worker>" "${backend_dir}"
+                "$<TARGET_FILE:mosaicraft>" "${backend_dir}"
             VERBATIM
         )
         add_dependencies(MosaicraftDesktop mosaicraft_desktop_backend)
@@ -151,7 +151,7 @@ endif()
 include(CTest)
 if(BUILD_TESTING)
     add_test(NAME desktop_smoke COMMAND MosaicraftDesktop --smoke-test -platform offscreen)
-    if(TARGET mosaicraft AND TARGET mosaicraft_desktop_worker)
+    if(TARGET mosaicraft)
         set_tests_properties(desktop_smoke PROPERTIES
             ENVIRONMENT "MOSAICRAFT_DESKTOP_SMOKE_CLI=$<TARGET_FILE_DIR:MosaicraftDesktop>/$<TARGET_FILE_NAME:mosaicraft>")
     endif()

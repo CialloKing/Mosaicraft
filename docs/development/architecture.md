@@ -6,7 +6,7 @@
 
 CLI 和 Web UI 的入口分别在 `src/main.cpp` 和 `src/server.cpp`。两者复用 `core` 中的建库、生成、预览、检查和工程服务。CLI 选项定义集中在 `cli-options.json`。HTTP 端点及请求字段见[接口参考](../reference/api.md)。
 
-桌面界面和 Qt 适配代码位于 `desktop/`。桌面工作进程的入口为 `src/desktop_worker.cpp`，调用 `core` 中的编辑会话和素材库维护实现。
+桌面界面和 Qt 适配代码位于 `desktop/`。桌面版的 `mosaicraft` 在 `src/main.cpp` 提供内部 `desktop-worker` 模式，调用 `core` 中的编辑会话和素材库维护实现。Qt 将其作为子进程启动，通过标准输入和输出交换逐行 JSON。
 
 ## 建库与图库读取
 

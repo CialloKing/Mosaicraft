@@ -6,7 +6,9 @@
 class QSettings;
 class QWidget;
 
-enum class SettingsPage { General, Preferences, Language, Library };
+enum class SettingsPage { General, Preferences, Language, Library, Developer };
+
+inline constexpr auto openLogWindowSetting = "developer/openLogWindow";
 
 struct LibraryBuildOptions
 {

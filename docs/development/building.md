@@ -120,7 +120,7 @@ cmake --build build/windows-desktop --config Release --target MosaicraftDesktop 
 
 Windows 桌面构建会把 Qt DLL、`qt.conf` 和 `plugins/` 放在可执行文件旁，可直接启动程序。需要 WebP 和 TIFF 预览时，请在构建用的 Qt SDK 中安装 Qt Image Formats 组件。
 
-便携工程渲染使用 `mosaicraft`。素材库检查与重建，以及普通工程的成品预览、候选查询和换图后导出使用 `mosaicraft_desktop_worker`。也可在「设置 → 通用设置」选择 `build/<preset>/Release/bin/mosaicraft.exe`，匹配程序会从同目录加载。
+桌面构建将素材库维护和编辑会话编入 `mosaicraft` 的内部 `desktop-worker` 模式。桌面端也用同一个程序执行 `render` 等普通 CLI 命令。若在「设置 → 通用设置」指定程序路径，请选择桌面构建产出的 `build/<preset>/Release/bin/mosaicraft.exe`。
 
 在「设置 → 素材库设置」选择原始素材目录和素材库目录。素材库目录留空时，程序将生成的素材库存放在本机应用数据目录。每次启动会检查素材图片和数据库中的特征数据，并核对原图内容与建库设置。首次创建、出现损坏或检测到变化时会构建新的版本，校验通过后再启用。只选择已有图库目录时，启动会检查该图库的完整性，自动重建需要设置原始素材目录。
 

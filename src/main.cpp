@@ -2,6 +2,9 @@
 #include "core/ApiRequestParser.h"
 #include "core/CliOptions.h"
 #include "core/ConsoleGuard.h"
+#ifdef MOSAICRAFT_DESKTOP_WORKER
+#include "core/EditorSession.h"
+#endif
 #include "core/LibraryVisuals.h"
 #include "core/NumericParsing.h"
 #include "core/ProjectService.h"
@@ -545,6 +548,23 @@ ServiceResult execute(const Arguments &args, json &data, RuntimeContext &runtime
 
 int runMain(const std::vector<std::string> &argv)
 {
+    struct StreamGuard
+    {
+        std::streambuf *previous;
+        ~StreamGuard()
+        {
+            std::cout.rdbuf(previous);
+        }
+    };
+#ifdef MOSAICRAFT_DESKTOP_WORKER
+    if (argv.size() == 2 && argv[1] == "desktop-worker")
+    {
+        // Keep diagnostics off the JSON reply stream.
+        const StreamGuard guard{std::cout.rdbuf(std::cerr.rdbuf())};
+        std::ostream protocol(guard.previous);
+        return runEditorSession(std::cin, protocol, desktopTaskCancellationFile());
+    }
+#endif
     bool asJson = std::find(argv.begin(), argv.end(), "--json") != argv.end();
     bool quiet = std::find(argv.begin(), argv.end(), "--quiet") != argv.end();
     ServiceResult result;
@@ -565,14 +585,7 @@ int runMain(const std::vector<std::string> &argv)
             return 0;
         }
         DiagnosticBuffer buffer(quiet);
-        struct StreamGuard
-        {
-            std::streambuf *previous;
-            ~StreamGuard()
-            {
-                std::cout.rdbuf(previous);
-            }
-        } guard{std::cout.rdbuf(&buffer)};
+        const StreamGuard guard{std::cout.rdbuf(&buffer)};
         ConsoleQuickEditGuard console;
         TaskResourceMonitor resources(runtime, args.has("resource-monitor"));
         runtime.checkCanceled();

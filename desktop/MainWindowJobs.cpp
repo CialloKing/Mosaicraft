@@ -1,21 +1,27 @@
 #include "MainWindow.h"
 
+#include "Dialogs.h"
 #include "ui_MainWindow.h"
 
 #include <QCoreApplication>
+#include <QDialog>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QFontDatabase>
 #include <QGridLayout>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QProcess>
 #include <QProgressBar>
+#include <QScrollBar>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTextCursor>
+#include <QTextDocument>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -26,6 +32,61 @@ namespace
 constexpr qint64 responseLimit = 64LL * 1024 * 1024;
 constexpr auto cancellationFile = "cancel";
 constexpr int shutdownGraceMs = 1800;
+constexpr int logCharacterLimit = 256 * 1024;
+}
+
+void MainWindow::setupLogWindow()
+{
+    logWindow = new QDialog(this, Qt::Window);
+    logWindow->setObjectName("developerLogWindow");
+    logWindow->setWindowTitle(tr("Mosaicraft 日志"));
+    logWindow->setAttribute(Qt::WA_QuitOnClose, false);
+    logWindow->resize(780, 460);
+    logOutput = new QPlainTextEdit(logWindow);
+    logOutput->setReadOnly(true);
+    logOutput->setLineWrapMode(QPlainTextEdit::NoWrap);
+    logOutput->setMaximumBlockCount(1000);
+    logOutput->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    auto layout = new QVBoxLayout(logWindow);
+    layout->addWidget(logOutput);
+    connect(logWindow, &QDialog::finished, this, [this] {
+        settings.setValue(openLogWindowSetting, false);
+    });
+}
+
+void MainWindow::updateLogWindow()
+{
+    logWindow->setVisible(settings.value(openLogWindowSetting).toBool());
+}
+
+void MainWindow::appendLog(const QString &text, bool completeLine)
+{
+    if (text.isEmpty()) return;
+    auto scrollbar = logOutput->verticalScrollBar();
+    const bool followTail = scrollbar->value() == scrollbar->maximum();
+    auto document = logOutput->document();
+    QTextCursor cursor(document);
+    cursor.movePosition(QTextCursor::End);
+    if (completeLine && cursor.positionInBlock() > 0) cursor.insertBlock();
+    cursor.insertText(text.right(logCharacterLimit));
+    if (completeLine && cursor.positionInBlock() > 0) cursor.insertBlock();
+    const int excess = document->characterCount() - 1 - logCharacterLimit;
+    if (excess > 0)
+    {
+        cursor.setPosition(0);
+        cursor.setPosition(excess, QTextCursor::KeepAnchor);
+        cursor.removeSelectedText();
+    }
+    if (followTail) scrollbar->setValue(scrollbar->maximum());
+}
+
+void MainWindow::readTaskOutput(QProcess *child)
+{
+    auto &decoder = child == process ? jobOutputDecoder : editorOutputDecoder;
+    QString text = decoder(child->readAllStandardError());
+    text.replace("\r\n", "\n").replace('\r', '\n');
+    if (child == process) job.diagnostics = (job.diagnostics + text).right(16000);
+    appendLog(text, false);
 }
 
 void MainWindow::setupTaskDialog()
@@ -78,9 +139,9 @@ void MainWindow::setTaskMessage(const QString &message)
 {
     refreshPreviewMemory();
     taskMessage->setText(message);
+    appendLog(message);
     if (!taskDialog->isHidden()) return;
 
-    statusBar()->clearMessage();
     for (auto action : ui->menuBar->actions()) action->setEnabled(false);
     ui->workspaceRoot->setEnabled(false);
     taskDialog->setGeometry(ui->workspaceRoot->geometry());
@@ -104,6 +165,8 @@ void MainWindow::dismissTaskDialog()
 
 void MainWindow::prepareTaskProcess(QProcess *child)
 {
+    auto &decoder = child == process ? jobOutputDecoder : editorOutputDecoder;
+    decoder.resetState();
     if (!taskControl) taskControl = std::make_unique<QTemporaryDir>();
     if (!taskControl->isValid()) return;
     auto environment = QProcessEnvironment::systemEnvironment();
@@ -115,6 +178,7 @@ void MainWindow::stopTasks()
 {
     closing = true;
     setTaskMessage(tr("正在结束任务…"));
+    updateOutputControls();
     if (taskControl && taskControl->isValid())
     {
         QFile request(taskControl->filePath(cancellationFile));
@@ -144,10 +208,6 @@ void MainWindow::finishClosing()
     pendingExport.clear();
     pendingPreview.reset();
     taskControl.reset();
-    ui->exportProgress->hide();
-    ui->summaryState->setText(activeDocument >= 0 && !documents[activeDocument].resultMessage.isEmpty()
-        ? documents[activeDocument].resultMessage : tr("等待导出"));
-    statusBar()->clearMessage();
     dismissTaskDialog();
     closing = false;
     updateEditorControls();
@@ -166,14 +226,7 @@ void MainWindow::setupJobProcess()
         }
     });
     connect(process, &QProcess::readyReadStandardError, this, [this] {
-        auto text = QString::fromUtf8(process->readAllStandardError());
-        if (closing) return;
-        text.replace('\r', '\n');
-        job.diagnostics = (job.diagnostics + text).right(16000);
-        if (job.type == Job::LibraryCheck) return;
-        ui->taskLog->moveCursor(QTextCursor::End);
-        ui->taskLog->insertPlainText(text);
-        ui->taskLog->ensureCursorVisible();
+        readTaskOutput(process);
     });
     connect(process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart)
@@ -183,6 +236,7 @@ void MainWindow::setupJobProcess()
         }
     });
     connect(process, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus status) {
+        readTaskOutput(process);
         const auto bytes = process->readAllStandardOutput();
         if (job.response.size() <= responseLimit)
         {
@@ -214,48 +268,19 @@ QString MainWindow::resolveCli() const
     return adjacent.isFile() && adjacent.isExecutable() ? adjacent.absoluteFilePath() : QStandardPaths::findExecutable(filename);
 }
 
-QString MainWindow::resolveEditorWorker() const
-{
-#ifdef Q_OS_WIN
-    const auto name = QStringLiteral("mosaicraft_desktop_worker.exe");
-#else
-    const auto name = QStringLiteral("mosaicraft_desktop_worker");
-#endif
-    const auto cli = resolveCli();
-    if (!cli.isEmpty())
-    {
-        const QFileInfo besideCli(QFileInfo(cli).dir().filePath(name));
-        if (besideCli.isFile() && besideCli.isExecutable()) return besideCli.absoluteFilePath();
-    }
-    const QFileInfo besideGui(QDir(QCoreApplication::applicationDirPath()).filePath(name));
-    return besideGui.isFile() && besideGui.isExecutable() ? besideGui.absoluteFilePath() : QString{};
-}
-
 void MainWindow::runJob(Job type, const QStringList &args, const QString &destination)
 {
     if (busy()) return;
     const auto cli = resolveCli();
     if (cli.isEmpty())
     {
-        QMessageBox::warning(this, windowTitle(), tr("未找到 Mosaicraft CLI。请先编译 CLI 或在「设置 → 通用设置」选择程序。"));
+        QMessageBox::warning(this, windowTitle(), tr("未找到 Mosaicraft CLI。请在「设置 → 通用设置」选择桌面版的程序。"));
         return;
     }
     job = {type, activeDocument, destination, {}, {}};
-    ui->taskLog->clear();
     updateEditorControls();
     updateOutputControls();
-    QString message;
-    if (type == Job::Export)
-    {
-        ui->exportProgress->show();
-        ui->summaryState->setText(tr("正在处理…"));
-        message = tr("正在导出作品…");
-    }
-    else
-    {
-        message = tr("正在生成预览图…");
-    }
-    setTaskMessage(message);
+    setTaskMessage(type == Job::Export ? tr("正在导出作品…") : tr("正在生成预览图…"));
     prepareTaskProcess(process);
     process->start(cli, args + QStringList{"--json"}, QIODevice::ReadOnly);
 }
@@ -280,24 +305,22 @@ void MainWindow::finishJob(bool processSucceeded, const QString &failure)
         finishLibraryCheck(ok, body, message);
         return;
     }
-    ui->exportProgress->hide();
     if (completed.type == Job::PortablePreview)
     {
         ok = finishPortablePreview(completed, ok, message);
     }
     if (completed.type == Job::Export)
     {
-        finishExport(completed, ok, body, message);
+        finishExport(completed, ok, body);
     }
     if (ok)
     {
-        const auto done = completed.type == Job::Export ? tr("导出完成") : tr("预览图已生成");
-        statusBar()->showMessage(done, 6000);
+        appendLog(completed.type == Job::Export ? tr("导出完成") : tr("预览图已生成"));
     }
     else
     {
-        statusBar()->showMessage(tr("任务失败"), 6000);
-        ui->taskLog->appendPlainText(message);
+        appendLog(tr("任务失败") + '\n' + message);
+        updateOutputControls();
         QMessageBox::warning(this, windowTitle(), message);
     }
     updateEditorControls();

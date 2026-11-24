@@ -196,7 +196,7 @@ bool MainWindow::previewCurrent() const
     if (activeDocument < 0) return false;
     const auto &document = documents[activeDocument];
     return document.manifest.isEmpty() && document.id == editorOwner && editor->state() == QProcess::Running &&
-           editor->program() == resolveEditorWorker() &&
+           editor->program() == resolveCli() &&
            document.previewRequest == buildEditorRequest(document, previewName, true);
 }
 
@@ -627,26 +627,26 @@ void MainWindow::setupPreviewSession()
         }
     });
     connect(editor, &QProcess::readyReadStandardError, this, [this] {
-        const auto message = QString::fromUtf8(editor->readAllStandardError()).replace('\r', '\n');
-        if (!closing && !message.trimmed().isEmpty()) ui->taskLog->appendPlainText(message.trimmed());
+        readTaskOutput(editor);
     });
     connect(editor, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) editorDisconnected(editor->errorString());
     });
     connect(editor, &QProcess::finished, this, [this] {
-        editorDisconnected(tr("预览进程已结束。请确认桌面匹配程序与当前版本配套。"));
+        readTaskOutput(editor);
+        editorDisconnected(tr("预览进程已结束。请确认当前 CLI 来自桌面版构建。"));
     });
 }
 
 void MainWindow::sendEditorRequest(QJsonObject request)
 {
-    const auto worker = resolveEditorWorker();
-    if (worker.isEmpty())
+    const auto cli = resolveCli();
+    if (cli.isEmpty())
     {
-        QMessageBox::warning(this, windowTitle(), tr("未找到桌面匹配程序。请检查 mosaicraft_desktop_worker 是否在桌面程序或 Mosaicraft CLI 的同目录。"));
+        QMessageBox::warning(this, windowTitle(), tr("未找到 Mosaicraft CLI。请在「设置 → 通用设置」选择桌面版的程序。"));
         return;
     }
-    if (editor->state() == QProcess::Running && editor->program() != worker)
+    if (editor->state() == QProcess::Running && editor->program() != cli)
     {
         closePreviewSession();
         if (editor->state() != QProcess::NotRunning) return;
@@ -659,8 +659,6 @@ void MainWindow::sendEditorRequest(QJsonObject request)
     if (editorOperation == "candidates") message = tr("正在加载候选素材…");
     if (editorOperation == "export")
     {
-        ui->exportProgress->show();
-        ui->summaryState->setText(tr("正在处理…"));
         message = tr("正在导出作品…");
     }
     setTaskMessage(message);
@@ -670,7 +668,7 @@ void MainWindow::sendEditorRequest(QJsonObject request)
     {
         editorResponse.clear();
         prepareTaskProcess(editor);
-        editor->start(worker);
+        editor->start(cli, {"desktop-worker"});
     }
     else
     {
@@ -748,7 +746,7 @@ void MainWindow::receiveEditorReply(const QJsonObject &reply)
                 // 记录实际发出的请求；缺省种子由已完成的预览确定。
                 document.previewRequest = request["request"].toObject();
                 document.previewRequest.insert("seed", reply["seed"]);
-                statusBar()->showMessage(tr("预览图已生成"), 4500);
+                appendLog(tr("预览图已生成"));
             }
             else
             {
@@ -788,14 +786,19 @@ void MainWindow::receiveEditorReply(const QJsonObject &reply)
         }
         currentCandidate = reply["imageId"].toInt();
         markCurrentCandidate(ui->candidateList, currentCandidate);
-        if (candidates.isEmpty()) statusBar()->showMessage(tr("该子图没有候选素材。"), 4000);
     }
     updateEditorControls();
     updateOutputControls();
+    if (ok && operation == "candidates" && ui->candidateList->count() == 0)
+    {
+        const auto hint = tr("该子图没有候选素材。");
+        ui->candidateHint->setText(hint);
+        appendLog(hint);
+    }
     if (!ok)
     {
         if (diagnostic == "preview_stale") refreshCanvas(true);
-        statusBar()->showMessage(tr("任务失败"), 4500);
+        appendLog(tr("任务失败") + '\n' + message);
         if (reply["code"].toString() == "saved_edits_stale" &&
             QMessageBox::question(this, windowTitle(), tr("目标图、切块或素材库已变更。清除以前的换图记录并重新生成预览？"),
                                   QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes)
@@ -809,7 +812,6 @@ void MainWindow::receiveEditorReply(const QJsonObject &reply)
             return;
         }
         pendingExport.clear();
-        ui->taskLog->appendPlainText(message);
         QMessageBox::warning(this, windowTitle(), message);
     }
     else if (operation == "preview" && !pendingExport.isEmpty())

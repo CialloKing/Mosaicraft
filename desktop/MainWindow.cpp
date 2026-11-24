@@ -8,6 +8,7 @@
 #include <QAbstractButton>
 #include <QCloseEvent>
 #include <QDesktopServices>
+#include <QDialog>
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QFile>
@@ -125,12 +126,14 @@ MainWindow::MainWindow(QSettings &settings, QWidget *parent)
     setupMenu();
     setupEditor();
     setupExport();
+    setupLogWindow();
     setupDocumentOptions();
     setupJobProcess();
     setupPreviewSession();
     setupTaskDialog();
     showDocument(-1);
-    statusBar()->showMessage(tr("就绪"));
+    appendLog(tr("就绪"));
+    QTimer::singleShot(0, this, &MainWindow::updateLogWindow);
 }
 
 MainWindow::~MainWindow()
@@ -167,7 +170,8 @@ void MainWindow::setupMenu()
             updateEditorControls();
             updateOutputControls();
             updateSummaries();
-            statusBar()->showMessage(tr("设置已保存"), 3500);
+            appendLog(tr("设置已保存"));
+            updateLogWindow();
             if (page == SettingsPage::Library || previous != libraryMaintenanceRequest())
             {
                 checkLibrary();
@@ -178,6 +182,7 @@ void MainWindow::setupMenu()
     connect(ui->actionPreferences, &QAction::triggered, this, [openSettings] { openSettings(SettingsPage::Preferences); });
     connect(ui->actionLanguage, &QAction::triggered, this, [openSettings] { openSettings(SettingsPage::Language); });
     connect(ui->actionLibrarySettings, &QAction::triggered, this, [openSettings] { openSettings(SettingsPage::Library); });
+    connect(ui->actionDeveloperOptions, &QAction::triggered, this, [openSettings] { openSettings(SettingsPage::Developer); });
     connect(ui->actionAbout, &QAction::triggered, this, &MainWindow::showAbout);
     connect(ui->actionCheckUpdates, &QAction::triggered, this, &MainWindow::checkUpdates);
     connect(ui->editWorkspaceButton, &QToolButton::clicked, this, [this] { switchWorkspace(Workspace::Edit); });
@@ -278,7 +283,6 @@ void MainWindow::showDocument(int index)
     applyOptions(document ? document->options : defaultOptions);
     if (document) documents[activeDocument].selectedTile = -1;
     ui->candidateList->clear();
-    ui->summaryState->setText(document && !document->resultMessage.isEmpty() ? document->resultMessage : tr("等待导出"));
     updateEditorControls();
     updateOutputControls();
     updateSummaries();
@@ -343,7 +347,7 @@ bool MainWindow::saveDocument(int index, bool saveAs)
     ui->projectTabs->setTabText(index, documentName(document));
     rememberFile(document.file);
     updateTab();
-    statusBar()->showMessage(tr("工程已保存"), 3500);
+    appendLog(tr("工程已保存"));
     return true;
 }
 
@@ -507,6 +511,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
             return;
         }
     }
+    logWindow->hide();
     event->accept();
 }
 
@@ -685,7 +690,7 @@ void MainWindow::showAbout()
 void MainWindow::checkUpdates()
 {
     ui->actionCheckUpdates->setEnabled(false);
-    statusBar()->showMessage(tr("正在检查更新…"));
+    appendLog(tr("正在检查更新…"));
     QNetworkRequest request(QUrl("https://api.github.com/repos/CialloKing/Mosaicraft/releases/latest"));
     request.setRawHeader("Accept", "application/vnd.github+json");
     request.setHeader(QNetworkRequest::UserAgentHeader, "Mosaicraft Desktop");
@@ -695,7 +700,6 @@ void MainWindow::checkUpdates()
         reply->deleteLater();
         ui->actionCheckUpdates->setEnabled(true);
         if (closing) return;
-        statusBar()->clearMessage();
         if (reply->error() != QNetworkReply::NoError)
         {
             QMessageBox::warning(this, tr("检查更新"), tr("无法检查更新：%1").arg(reply->errorString()));
