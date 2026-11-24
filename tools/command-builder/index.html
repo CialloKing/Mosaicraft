@@ -583,7 +583,7 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
       <label><input type="checkbox" id="b-monitor"> 资源监控</label>
       <label><input type="checkbox" id="b-benchmark" disabled> 追加性能分析 --benchmark</label>
     </div>
-    <div class="row" id="b-crop-row" style="display:none">
+    <div class="row" id="b-crop-row">
       <div class="field field-full">
         <label for="b-crop">裁剪方式 --crop</label>
         <select id="b-crop" aria-describedby="b-crop-hint">
@@ -1089,7 +1089,7 @@ function renderGeneratedCommand(tab, payload) {
   const validation = document.getElementById('command-validation');
   const button = document.getElementById('btn-copy-command');
   try {
-    const commandPayload = tab === 'build' && payload.normalizeOnly && payload.cropMode
+    const commandPayload = tab === 'build' && payload.cropMode
       ? {...payload, cropDevice: val('b-crop-device')} : payload;
     output.textContent = commandFromPayload(tab, commandPayload);
     validation.textContent = '';
@@ -1941,21 +1941,27 @@ document.addEventListener('click', event => {
   if (pack) selectProject(pack.dataset.packProject, 'pack');
 });
 
+function supportsSmartCrop(mode) {
+  return !serverAvailable || hasFeature(mode === 'build' ? 'smart-crop-build' : 'smart-crop');
+}
+
 function buildBuildPayload() {
   const payload = {};
+  const mode = val('b-mode');
   payload.inputDir = requireValue('b-input', '图片目录');
   setIfValue(payload, 'outputDir', 'b-output');
   setIfNumber(payload, 'threads', 'b-threads', '线程数', { integer: true, min: 0, max:256 });
-  payload.appendMode = val('b-mode') === 'add';
+  payload.appendMode = mode === 'add';
   const normSize = payload.appendMode ? null : setIfSize(payload, 'normalizeSize', 'b-normsize', '归一化尺寸');
   if (payload.appendMode) setIfChecked(payload, 'benchmark', 'b-benchmark');
   setIfChecked(payload, 'recursive', 'b-recursive');
-  payload.normalizeOnly = val('b-mode') === 'normalize';
-  if (payload.normalizeOnly && val('b-crop') !== 'center') {
-    if (serverAvailable && !hasFeature('smart-crop')) {
-      throw uiFieldError('b-crop', '当前服务不支持智能裁剪，请改选中心裁剪或更换支持的发布包。');
+  payload.normalizeOnly = mode === 'normalize';
+  const cropMode = val('b-crop');
+  if (!payload.appendMode && cropMode !== 'center') {
+    if (!supportsSmartCrop(mode)) {
+      throw uiFieldError('b-crop', '当前服务在此操作中仅支持中心裁剪。请选择中心裁剪或更换支持的发布包。');
     }
-    payload.cropMode = val('b-crop');
+    payload.cropMode = cropMode;
     const cropDevice = val('b-crop-device');
     if (cropDevice === 'cuda') {
       if (serverAvailable && !hasFeature('smart-crop-cuda')) {
@@ -2239,15 +2245,18 @@ function computeStatusLabel(state) {
   return !serverAvailable ? '上次状态 · 已断开' :
     ({queued:'等待执行',running:'运行中',succeeded:'本次使用',failed:'失败时状态',canceled:'取消时状态',stale:'上次预览'}[state] || '本次使用');
 }
+function renderSmartCropStatus(metrics, device) {
+  return '<p>裁剪推理 · ' + escapeHtml(device) + '</p><p>CUDA ' + Number(metrics.smartCropCudaImages || 0) +
+    ' 张 · CPU ' + Number(metrics.smartCropCpuImages || 0) + ' 张 · 回退 ' + Number(metrics.smartCropCudaFallbacks || 0) +
+    ' 次 · 恢复 ' + Number(metrics.smartCropCudaRecoveries || 0) + ' 次</p>';
+}
 function renderComputeStatusDetails(runtime, state) {
   if (state === 'queued') return '<p class="hint">等待任务开始，实际后端将在资源准备后确认。</p>';
   runtime = runtime || {};
+  const metrics = runtime.metrics || {};
   if (runtime.kernelVersion === 'opencv-dnn') {
-    const m = runtime.metrics || {};
     const device = runtime.device === 'mixed' ? 'CUDA + CPU（混用）' : String(runtime.device || '待确认').toUpperCase();
-    return '<p>推理设备 · ' + escapeHtml(device) + '</p><p>CUDA ' + Number(m.smartCropCudaImages || 0) +
-      ' 张 · CPU ' + Number(m.smartCropCpuImages || 0) + ' 张 · 回退 ' + Number(m.smartCropCudaFallbacks || 0) +
-      ' 次 · 恢复 ' + Number(m.smartCropCudaRecoveries || 0) + ' 次</p>' +
+    return renderSmartCropStatus(metrics, device) +
       (runtime.fallbackReason ? '<p class="hint">最近回退 · ' + escapeHtml(runtime.fallbackReason) + '</p>' : '');
   }
   const features = runtime.featureBackend, scoring = runtime.scoreBackend;
@@ -2263,6 +2272,10 @@ function renderComputeStatusDetails(runtime, state) {
   if (mode && scoring && scoring !== 'none') html += '<p>评分模式 · ' + escapeHtml(mode) + '</p>';
   if (!backends.length && !deviceId) html += '<p class="hint">正在确认执行设备与后端…</p>';
   if (runtime.fallbackReason) html += '<p class="hint">CPU 回退 · ' + escapeHtml(runtime.fallbackReason) + '</p>';
+  if (metrics.smartCropCudaFallbacks !== undefined) {
+    const devices = [metrics.smartCropCudaImages ? 'CUDA' : '', metrics.smartCropCpuImages ? 'CPU' : ''].filter(Boolean);
+    html += renderSmartCropStatus(metrics, devices.join(' + ') || '暂无图片完成推理');
+  }
   return html;
 }
 function renderComputeStatus(runtime, state = 'running') {
@@ -2430,7 +2443,7 @@ function restoreRequestParameters(job) {
     if (request.appendMode && request.dbPath)
       document.getElementById('b-output').value = libraryDirectory(request.dbPath);
     document.getElementById('b-mode').value = request.normalizeOnly ? 'normalize' : request.appendMode ? 'add' : 'build';
-    document.getElementById('b-crop').value = request.normalizeOnly &&
+    document.getElementById('b-crop').value = !request.appendMode &&
       ['smart-real', 'smart-anime'].includes(request.cropMode) ? request.cropMode : 'center';
     document.getElementById('b-crop-device').value = ['auto', 'cpu', 'cuda'].includes(request.cropDevice)
       ? request.cropDevice : (request.cropMode && request.cropMode !== 'center' ? 'cpu' : 'auto');
@@ -2588,21 +2601,23 @@ function syncBuildSizePresets() {
 
 function syncPreviewOption() {
   syncBuildSizePresets();
-  document.getElementById('b-benchmark').disabled = val('b-mode') !== 'add';
-  const normalizeOnly = val('b-mode') === 'normalize';
+  const mode = val('b-mode');
+  const adding = mode === 'add';
+  const normalizeOnly = mode === 'normalize';
+  document.getElementById('b-benchmark').disabled = !adding;
   document.getElementById('b-backend').disabled = normalizeOnly;
   document.getElementById('b-device').disabled = normalizeOnly;
-  document.getElementById('b-crop-row').style.display = normalizeOnly ? '' : 'none';
-  const cropUnsupported = serverAvailable && !hasFeature('smart-crop');
+  document.getElementById('b-crop-row').hidden = adding;
+  const cropUnsupported = !supportsSmartCrop(mode);
   for (const option of document.getElementById('b-crop').options) {
     option.disabled = option.value !== 'center' && cropUnsupported;
   }
   document.getElementById('b-crop-hint').textContent = cropUnsupported
-    ? '当前服务仅支持中心裁剪。'
+    ? '当前服务在此操作中仅支持中心裁剪。'
     : '每批手动选择一种类型；真人、动漫混合目录请分批处理。智能裁剪离线推理，仅移动裁剪框。';
   const cropCudaUnsupported = serverAvailable && !hasFeature('smart-crop-cuda');
   const cropDevice = document.getElementById('b-crop-device');
-  document.getElementById('b-crop-device-row').hidden = !normalizeOnly || val('b-crop') === 'center';
+  document.getElementById('b-crop-device-row').hidden = adding || val('b-crop') === 'center';
   const cudaOption = cropDevice.querySelector('[value="cuda"]');
   cudaOption.hidden = cropCudaUnsupported && cropDevice.value !== 'cuda';
   cudaOption.disabled = cropCudaUnsupported;
