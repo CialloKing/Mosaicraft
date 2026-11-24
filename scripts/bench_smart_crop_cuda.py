@@ -22,6 +22,16 @@ def sha256(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def write_report(path, report):
+    # Preserve the last complete checkpoint if a long benchmark is interrupted.
+    temporary = path.with_suffix(".tmp")
+    with temporary.open("w", encoding="utf-8") as stream:
+        json.dump(report, stream, indent=2)
+        stream.flush()
+        os.fsync(stream.fileno())
+    temporary.replace(path)
+
+
 def nvidia_query(gpu, query):
     return ["nvidia-smi", "-i", gpu, f"--query-gpu={query}", "--format=csv,noheader,nounits"]
 
@@ -211,7 +221,7 @@ def main():
                                                   if reference.get(k) != outputs.get(k)))
             report["runs"].append(result)
             print(f"{name}: {result['wallSeconds']:.2f}s, run OK={result['passed']}, identical={result['identical']}", flush=True)
-            report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+            write_report(report_path, report)
     report["inputUnchanged"] = input_hashes() == source_hashes
     grouped = {label: sorted((r for r in report["runs"] if r["variant"] == label), key=lambda r: r["round"])
                for label in labels}
@@ -243,7 +253,7 @@ def main():
     if args.study != "hybrid":
         gates &= all(r["passed"] and (args.study == "devices" or r["identical"]) for r in report["runs"])
     report["passed"] = report["inputUnchanged"] and gates
-    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    write_report(report_path, report)
     return 0 if report["passed"] else 1
 
 
