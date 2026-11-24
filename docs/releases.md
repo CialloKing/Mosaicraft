@@ -2,6 +2,12 @@
 
 本页区分当前源码与公开安装包，详细历史记录见[历史档案](archive/README.md)。软件与数据版本的唯一来源是根目录 contracts.json；安装后的实际能力以该包 BUILD_INFO.txt、contracts.json 和 --help-all 为准。
 
+## v1.15.16
+
+- Windows x64 的 CUDA 智能裁剪源码构建默认让读图解码、单会话推理和写盘重叠。仅在 CUDA 启动预检通过、至少 8 张图且应用线程预算至少为 3 时启用。设 `MOSAICRAFT_SMART_CROP_PIPELINE=0` 可恢复串行。中心裁剪与 CPU 智能裁剪路径、推理模型、裁剪规则及编码参数不变。
+- RTX 4060 Laptop 开发机对照中，真人 32 张的三轮墙钟中位数缩短 16.5%，HighLikes 动漫 200 张的单轮成对复验缩短 24.0%；各自与同后端串行输出逐字节一致。这是抽样结果，不是全库实测。见[流水线实测](development/smart-crop.md#cuda-io-流水线开发机基准)。
+- 普通原生包与 Qt 桌面包不含智能裁剪模型和 CUDA DNN。本版不随这些归档分发智能裁剪补充包；该补充包仍须通过绑定本版 ZIP 的干净 Windows 离线 GPU 验收。HTTP API 仍为 1.9，图库格式不变。
+
 ## v1.15.15
 
 已发布普通原生包。CLI / Web 的可选智能裁剪支持手动选择真人或动漫；中心裁剪仍为默认。包含 CUDA DNN 时，自动策略会优先用 CUDA，故障后用 CPU 继续并尝试恢复；显式 CUDA 不回退。HTTP API 为 1.9，图库格式不变。普通原生 CUDA 包不携带 cuDNN。v1.15.15 不发布单独的 CPU 智能裁剪包；追加的 Windows x64 CUDA 智能裁剪包同时包含 CPU 推理回退和模型。该包经开发机真实 GPU 与解包验证，干净系统离线 GPU 验收留待后续版本；模型来源与质量审核限制见[发布证据](development/smart-crop-release-evidence.md)。发布附件、校验值和验收状态以对应 GitHub Release 及包内 `BUILD_INFO.txt` 为准。

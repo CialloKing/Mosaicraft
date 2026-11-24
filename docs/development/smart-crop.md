@@ -25,7 +25,7 @@ cmake --install build/windows-smart-crop --config Release --prefix build/smart-c
 
 运行摘要中的 `smartCropFacesFound`、`smartCropMoved`、`smartCropCentered` 和 `smartCropMainFaceClipped` 按图片计数。无需裁边的图片不计入；`smartCropInferenceWorkerMs` 是逐图推理耗时之和，不包括启动时的模型校验和探测，也不等于批处理的墙钟时间。同尺寸特快路径保留旧归一化的行为，包括已有的 PNG 紧凑化规则。
 
-## 设备策略（v1.15.15）
+## 设备策略（自 v1.15.15 起）
 
 中心裁剪仍为默认，且不接受设备选项。选择 `smart-real` 或 `smart-anime` 后，`--crop-device`（HTTP 1.9 的 `cropDevice`）可取 `auto`、`cpu`、`cuda`，省略等同于 `auto`。
 
