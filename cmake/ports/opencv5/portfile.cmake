@@ -7,7 +7,8 @@ if("dnn-cuda" IN_LIST FEATURES)
         FILENAME "opencv_contrib_python_headless-5.1.0.95.tar.gz"
         SHA512 6ac405b261dc2ff2cc019cdee16efc1ec3c473d76d296eaf93630713cd1c25ef1d50648c2193ad2d4b42338aeafa552606c4a773302fc925e1649b35fc11a64b
     )
-    vcpkg_extract_source_archive(source ARCHIVE "${archive}" PATCHES face-detector-dnn-graph.patch smart-crop-cuda-operators.patch)
+    vcpkg_extract_source_archive(source ARCHIVE "${archive}" PATCHES
+        face-detector-dnn-graph.patch smart-crop-cuda-operators.patch smart-crop-cuda-reuse-weights.patch)
     set(extra_modules "${source}/opencv_contrib/modules/cudev")
 else()
     vcpkg_download_distfile(archive

@@ -1,0 +1,180 @@
+diff --git a/opencv/modules/dnn/src/cuda4dnn/primitives/convolution.hpp b/opencv/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
+--- a/opencv/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
++++ b/opencv/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
+@@ -95,7 +95,13 @@
+     template <class T>
+     class ConvolutionOp final : public CUDABackendNode {
+     public:
+-        ConvolutionOp(csl::Stream stream_, csl::cudnn::Handle handle_, const ConvolutionConfiguration& config, const Mat& filters, const Mat& bias)
++        struct DeviceWeights
++        {
++            csl::Tensor<T> filters, bias;
++        };
++
++        ConvolutionOp(csl::Stream stream_, csl::cudnn::Handle handle_, const ConvolutionConfiguration& config,
++                      const Mat& filters, const Mat& bias, std::shared_ptr<const DeviceWeights>* cache = nullptr)
+             : stream(std::move(stream_)), cudnnHandle(std::move(handle_))
+         {
+             const auto& kernel_size = config.kernel_size;
+@@ -121,14 +127,23 @@
+             const auto input_feature_maps_per_group = input_feature_maps / groups;
+             CV_Assert(input_feature_maps % groups == 0);
+
+-            filtersTensor = csl::makeTensorHeader<T>(filters);
+-            csl::copyMatToTensor<T>(filters, filtersTensor, stream);
+-
+-            if (!bias.empty())
+-            {
+-                biasTensor = csl::makeTensorHeader<T>(bias);
+-                csl::copyMatToTensor<T>(bias, biasTensor, stream);
+-            }
++            if (cache && *cache)
++            {
++                deviceWeights = *cache;
++            }
++            else
++            {
++                auto uploaded = std::make_shared<DeviceWeights>();
++                uploaded->filters = csl::makeTensorHeader<T>(filters);
++                csl::copyMatToTensor<T>(filters, uploaded->filters, stream);
++                if (!bias.empty())
++                {
++                    uploaded->bias = csl::makeTensorHeader<T>(bias);
++                    csl::copyMatToTensor<T>(bias, uploaded->bias, stream);
++                }
++                deviceWeights = std::move(uploaded);
++            }
++            const auto& biasTensor = deviceWeights->bias;
+
+             /* left and right are misleading as the padding is applicable for any number of dimensions
+              * but we use those identifiers to avoid confusion with `pads_begin` and `pads_end`
+@@ -336,7 +351,7 @@
+                 auto fshape_cl   = toChannelLast(fshape);
+                 jitFilterKRSC = csl::Tensor<T>(fshape_cl.begin(), fshape_cl.end());
+
+-                csl::TensorView<T> filter_oihw(filtersTensor.get(), fshape.begin(), fshape.end());
++                csl::TensorView<T> filter_oihw(deviceWeights->filters.get(), fshape.begin(), fshape.end());
+                 if (filter_oihw.size() == 1)
+                     kernels::copy<T>(stream, jitFilterKRSC, filter_oihw);
+                 else
+@@ -362,6 +377,10 @@
+             builder.require(convoluter.get_workspace_size());
+ #endif
+             scratch_mem_in_bytes = builder.required_workspace_size();
++            if (cache)
++            {
++                *cache = deviceWeights;
++            }
+         }
+
+         void forward(
+@@ -373,6 +392,8 @@
+             CV_Assert(inputs.size() == 1 || inputs.size() == 2);
+             CV_Assert(outputs.size() == 1);
+
++            const auto& filtersTensor = deviceWeights->filters;
++            const auto& biasTensor = deviceWeights->bias;
+             csl::WorkspaceAllocator allocator(workspace);
+
+             auto input = csl::viewOf<T>(inputs[0]);
+@@ -668,7 +689,7 @@
+     private:
+         csl::Stream stream;
+         csl::cudnn::Handle cudnnHandle;
+-        csl::Tensor<T> filtersTensor, biasTensor;
++        std::shared_ptr<const DeviceWeights> deviceWeights;
+         csl::Convolution<T> convoluter;
+
+         std::vector<std::size_t> transformed_shape;
+diff --git a/opencv/modules/dnn/src/layers/conv2_layer.cpp b/opencv/modules/dnn/src/layers/conv2_layer.cpp
+--- a/opencv/modules/dnn/src/layers/conv2_layer.cpp
++++ b/opencv/modules/dnn/src/layers/conv2_layer.cpp
+@@ -15,6 +15,7 @@
+ #include "../op_cuda.hpp"
+ #include <opencv2/dnn/layer.details.hpp>  // CV_DNN_REGISTER_EXEC_CLASS
+ #ifdef HAVE_CUDA
++#include <opencv2/core/utils/configuration.private.hpp>
+ #include "../cuda4dnn/primitives/convolution.hpp"
+ using namespace cv::dnn::cuda4dnn;
+ #endif
+@@ -1210,8 +1211,10 @@
+         return true;
+     }
+
++    using CudaWeights = std::shared_ptr<const ConvolutionOp<float>::DeviceWeights>;
++
+     Ptr<BackendNode> initCudaConvNode(void* context_, const MatShape& inpShape,
+-                                      const MatShape& outShape, int targetId)
++                                      const MatShape& outShape, int targetId, CudaWeights* cache)
+     {
+         csl::CSLContext context = *reinterpret_cast<csl::CSLContext*>(context_);
+         const int nspatial = wshape0.dims - 2;
+@@ -1242,7 +1245,8 @@
+         config.groups = (size_t)ngroups;
+
+         Mat filters = origWeights, biasMat = bias;
+-        if (fusedBatchNorm) {
++        if (fusedBatchNorm && !(cache && *cache))
++        {
+             filters = origWeights.clone();
+             const int Cout = wshape0[0];
+             const size_t inner = filters.total() / (size_t)Cout;
+@@ -1289,7 +1293,13 @@
+         else
+             config.fusion_mode = ConvolutionConfiguration::FusionMode::NONE;
+
+-        return make_cuda_node<cuda4dnn::ConvolutionOp>(
++        if (cache)
++        {
++            CV_Assert(targetId == DNN_TARGET_CUDA);
++            return makePtr<ConvolutionOp<float>>(std::move(context.stream), std::move(context.cudnn_handle),
++                                                 config, filters, biasMat, cache);
++        }
++        return make_cuda_node<ConvolutionOp>(
+             targetId, std::move(context.stream), std::move(context.cudnn_handle),
+             config, filters, biasMat);
+     }
+@@ -1343,6 +1353,12 @@
+         return layer;
+     }
+
++    void prepackWeights() CV_OVERRIDE
++    {
++        // Invalidate the device weights when the graph replaces its blobs, not on a shape change.
++        weights.reset();
++    }
++
+     void finalize(InputArrayOfArrays, OutputArrayOfArrays) CV_OVERRIDE
+     {
+         // the node bakes in the input/output shapes; rebuild it for a new input signature
+@@ -1360,8 +1376,20 @@
+         CV_Assert(!inputs.empty() && !outputs.empty());
+
+         auto& ws = *reinterpret_cast<cuda4dnn::csl::Workspace*>(workspace);
+-        if (!node) {
+-            node = conv->initCudaConvNode(ctx, cv::dnn::shape(inputs[0]), cv::dnn::shape(outputs[0]), preferableTarget);
++        if (!node)
++        {
++            Conv2LayerImpl::CudaWeights* cache = nullptr;
++#if defined(HAVE_CUDNN)
++            static const bool reuseWeights =
++                utils::getConfigurationParameterBool("OPENCV_DNN_CUDA_REUSE_CONV2_WEIGHTS", false);
++            if (reuseWeights && preferableTarget == DNN_TARGET_CUDA)
++            {
++                // The cuDNN descriptors depend on H/W; the FP32 weights belong to this executor.
++                cache = &weights;
++            }
++#endif
++            node = conv->initCudaConvNode(ctx, cv::dnn::shape(inputs[0]), cv::dnn::shape(outputs[0]),
++                                         preferableTarget, cache);
+             cudaNode = node.dynamicCast<CUDABackendNode>();
+             CV_Assert(cudaNode);
+             ws.require(cudaNode->get_workspace_memory_in_bytes());
+@@ -1371,6 +1399,7 @@
+
+     Ptr<Conv2LayerImpl> conv;
+     void* ctx;
++    Conv2LayerImpl::CudaWeights weights;
+     Ptr<BackendNode> node;
+     Ptr<CUDABackendNode> cudaNode;
+ };
