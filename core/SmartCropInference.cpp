@@ -95,6 +95,15 @@ const cv::Size kFaceProbeSize(352, 239);
 // The locked anime model concatenates one prediction per cell at these three strides.
 constexpr int kAnimeStrides[] = {8, 16, 32};
 constexpr int kAnimeAlignment = kAnimeStrides[2];
+constexpr float kAnimeMinFaceScore = 0.25f;
+constexpr float kAnimeConfidentFaceScore = 0.50f;
+constexpr int kAnimeRecoveryLongEdge = 1024;
+
+struct AnimeDetections
+{
+    std::vector<cv::Rect2d> faces;
+    float strongest = 0.0f;
+};
 
 int alignAnimeInput(int length)
 {
@@ -301,7 +310,7 @@ struct SmartCropInference::Impl
         return faces;
     }
 
-    std::vector<cv::Rect2d> animeFaces(const cv::Mat &image)
+    AnimeDetections detectAnimeFaces(const cv::Mat &image, float minScore)
     {
         const cv::Size content = image.size();
         const cv::Size input(alignAnimeInput(content.width), alignAnimeInput(content.height));
@@ -340,7 +349,7 @@ struct SmartCropInference::Impl
         std::vector<float> scores;
         for (int i = 0; i < rows.cols; ++i)
         {
-            if (score[i] > 0.25f)
+            if (score[i] > minScore)
             {
                 // Return fractions of the picture, not of the padded detector input.
                 const auto box = normalizedBox(cv::Rect2d(x[i] - w[i] / 2 - padding.x,
@@ -353,13 +362,37 @@ struct SmartCropInference::Impl
             }
         }
         std::vector<int> keep;
-        cv::dnn::NMSBoxes(boxes, scores, 0.25f, 0.7f, keep, 1.f, 300);
-        std::vector<cv::Rect2d> faces;
+        cv::dnn::NMSBoxes(boxes, scores, minScore, 0.7f, keep, 1.f, 300);
+        AnimeDetections detections;
+        detections.faces.reserve(keep.size());
         for (const int i : keep)
         {
-            faces.push_back(boxes[i]);
+            detections.faces.push_back(boxes[i]);
+            detections.strongest = std::max(detections.strongest, scores[i]);
         }
-        return faces;
+        return detections;
+    }
+
+    std::vector<cv::Rect2d> animeFaces(const cv::Mat &image)
+    {
+        auto native = detectAnimeFaces(image, kAnimeMinFaceScore);
+        const int longEdge = std::max(image.cols, image.rows);
+        if (native.strongest < kAnimeConfidentFaceScore && longEdge >= 2 * kAnimeRecoveryLongEdge)
+        {
+            // A close-up drawn across hundreds of pixels can miss the native detector's scale range.
+            // Keep native small-face recall; let a second scale replace weak hits only with confident ones.
+            const double scale = static_cast<double>(kAnimeRecoveryLongEdge) / longEdge;
+            const cv::Size size(std::max(1, cvRound(image.cols * scale)),
+                                std::max(1, cvRound(image.rows * scale)));
+            cv::Mat overview;
+            cv::resize(image, overview, size, 0, 0, cv::INTER_AREA);
+            auto recovered = detectAnimeFaces(overview, kAnimeConfidentFaceScore);
+            if (!recovered.faces.empty())
+            {
+                return std::move(recovered.faces);
+            }
+        }
+        return std::move(native.faces);
     }
 };
 
