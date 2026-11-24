@@ -1,0 +1,85 @@
+{
+  "cublas": {
+    "version": "13.10.0.20",
+    "catalog": "https://developer.download.nvidia.com/compute/cuda/redist/redistrib_13.5.0.json",
+    "relative_path": "libcublas/windows-x86_64/libcublas-windows-x86_64-13.10.0.20-archive.zip",
+    "size": 426404439,
+    "sha256": "468d90ff5680fd08fd9130e6e443c6e0c934f2f98b6ae4189960b9d9039e8969"
+  },
+  "files": [
+    {
+      "file": "cublas64_13.dll",
+      "component": "cublas",
+      "size": 55212656,
+      "sha256": "db5a1d5a0ed0ef126e005fc7449d3584353aaeb8739a18d716fe74be1254a3da"
+    },
+    {
+      "file": "cublasLt64_13.dll",
+      "component": "cublas",
+      "size": 499102832,
+      "sha256": "ca478e1ea932f883ef4fc284f8f33d910079df4e77f9a2ec38d9b4387795f96f"
+    },
+    {
+      "file": "cudnn64_9.dll",
+      "component": "cudnn",
+      "size": 272496,
+      "sha256": "4a9e4377b8dd01bbbfacfef70fc5ce0bcedac0c4a6467b08be64ee9b3a21d012"
+    },
+    {
+      "file": "cudnn_cnn64_9.dll",
+      "component": "cudnn",
+      "size": 1462384,
+      "sha256": "557cc789dd5151ba9d512f831f3b50cbbf94a1919b6577d4d19227445324434b"
+    },
+    {
+      "file": "cudnn_engines_precompiled64_9.dll",
+      "component": "cudnn",
+      "size": 219385456,
+      "sha256": "6def0d87bef6e51c0615e04089b621ef02a5e4a5edbf1525960d33817b79ad4d"
+    },
+    {
+      "file": "cudnn_engines_runtime_compiled64_9.dll",
+      "component": "cudnn",
+      "size": 38390896,
+      "sha256": "01e81f1a691174e5b259d24323f483a10dfa8a34313bf2eba2a2f1d86eae12e4"
+    },
+    {
+      "file": "cudnn_engines_tensor_ir64_9.dll",
+      "component": "cudnn",
+      "size": 156784,
+      "sha256": "2acad24ea4bdf289476b15d16bb2fe5ffea0e8b1f4aa76c65a06eb2b8d2e815f"
+    },
+    {
+      "file": "cudnn_graph64_9.dll",
+      "component": "cudnn",
+      "size": 125943920,
+      "sha256": "6413db6e0b4bb57750797084d0b88ed7bf1e90d714f48b6d5795eae06049cc84"
+    },
+    {
+      "file": "cudnn_heuristic64_9.dll",
+      "component": "cudnn",
+      "size": 94795376,
+      "sha256": "0946e0391135f4a813eae28f727fbff8dfa208ad31ffb450007f43336946fe3c"
+    },
+    {
+      "file": "cudnn_ops64_9.dll",
+      "component": "cudnn",
+      "size": 33099376,
+      "sha256": "cca7dd430d34a3a95808d119537776e0d469e147a8adab25b304ec9a81897f3c"
+    }
+  ],
+  "notices": [
+    {
+      "file": "cublas.txt",
+      "component": "cublas",
+      "size": 82497,
+      "sha256": "b305b6a8403837284106bed3b03aca0f7692ee321895a21aa9091757a5eebd64"
+    },
+    {
+      "file": "cudnn.txt",
+      "component": "cudnn",
+      "size": 29574,
+      "sha256": "295a1b7118d3417f5d6a943e5f87b59e2a0631fb277129c3b15dee6248adc7cf"
+    }
+  ]
+}
