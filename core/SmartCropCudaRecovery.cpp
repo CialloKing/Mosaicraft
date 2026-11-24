@@ -4,7 +4,8 @@
 
 namespace mosaicraft
 {
-SmartCropCudaRecovery::SmartCropCudaRecovery(const SmartCropModelPair &models, RuntimeContext &runtime)
+SmartCropCudaRecovery::SmartCropCudaRecovery(const SmartCropModelPair &models, RuntimeContext &runtime,
+                                             bool reportFallback)
     : SmartCropCudaRecovery([&]()
       {
           auto session = std::make_shared<std::unique_ptr<SmartCropInference>>();
@@ -20,13 +21,13 @@ SmartCropCudaRecovery::SmartCropCudaRecovery(const SmartCropModelPair &models, R
                   return (*session)->analyze(image);
               },
               [session]() { session->reset(); }};
-      }(), runtime, Clock::now)
+      }(), runtime, Clock::now, reportFallback)
 {
 }
 
 SmartCropCudaRecovery::SmartCropCudaRecovery(Operations operations, RuntimeContext &runtime,
-                                             std::function<Clock::time_point()> now)
-    : m_operations(std::move(operations)), m_runtime(runtime), m_now(std::move(now))
+                                             std::function<Clock::time_point()> now, bool reportFallback)
+    : m_operations(std::move(operations)), m_runtime(runtime), m_now(std::move(now)), m_reportFallback(reportFallback)
 {
 }
 
@@ -109,7 +110,11 @@ void SmartCropCudaRecovery::fallback(const SmartCropError &error)
     {
         m_runtime.emit("warning", "smart_crop_cuda_restart_required", error.what(), "cropDevice");
     }
-    m_runtime.backends({}, {}, error.what());
+    // 建库回退通过裁剪事件报告，不能覆盖特征提取的后端状态。
+    if (m_reportFallback)
+    {
+        m_runtime.backends({}, {}, error.what());
+    }
 }
 
 std::optional<SmartCropAnalysis> SmartCropCudaRecovery::tryAnalyze(const cv::Mat &image)

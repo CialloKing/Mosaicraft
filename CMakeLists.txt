@@ -265,6 +265,7 @@ add_library(mosaicraft_core STATIC
     core/ApiRequestParser.cpp
     core/ImageNormalizer.cpp
     core/SmartCropInference.cpp
+    core/SmartCropSession.cpp
     core/LibraryPng.cpp
     core/BatchProcessor.cpp
     core/NormalizeService.cpp
