@@ -67,7 +67,10 @@ jobs:
         if: matrix.runtime == 'vulkan'
         run: cmake -DMODE=Vulkan -P cmake/PrepareRelease.cmake
       - name: Build, test and package native Release
-        run: cmake -DRUNTIME=${{ matrix.runtime }} -DBUILD_DIR=build/package-${{ matrix.runtime }} "-DSMART_CROP=$SMART_CROP" -P cmake/Release.cmake
+        run: |
+          build_dir=build/package-${{ matrix.runtime }}
+          if [[ "$SMART_CROP" == ON ]]; then build_dir+=-smart-crop; fi
+          cmake -DRUNTIME=${{ matrix.runtime }} "-DBUILD_DIR=$build_dir" "-DSMART_CROP=$SMART_CROP" -DSMART_CROP_CUDA=OFF -P cmake/Release.cmake
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.runtime == 'cpu-only' && 'cpu' || matrix.runtime }}-${{ matrix.platform }}
@@ -80,7 +83,7 @@ jobs:
           name: ${{ matrix.runtime }}-diagnostics-${{ matrix.platform }}
           path: |
             build/dependency-state/
-            build/package-${{ matrix.runtime }}/Testing/Temporary/
+            build/package-${{ matrix.runtime }}*/Testing/Temporary/
           if-no-files-found: ignore
   native-verify:
     if: ${{ !inputs.desktop_release_tag }}
@@ -167,7 +170,7 @@ jobs:
             options=(-DCHANNEL=stable -DALLOW_UNVALIDATED_LINUX_CUDA=ON)
           fi
           cd "$PACKAGE_SOURCE"
-          cmake -DRUNTIME=cuda -DBUILD_DIR=build/package-cuda -DCUDA_VALIDATION=BuildOnly "-DSMART_CROP=$SMART_CROP" "${options[@]}" -P cmake/Release.cmake
+          cmake -DRUNTIME=cuda -DBUILD_DIR=build/package-cuda -DCUDA_VALIDATION=BuildOnly "-DSMART_CROP=$SMART_CROP" -DSMART_CROP_CUDA=OFF "${options[@]}" -P cmake/Release.cmake
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cuda-${{ matrix.platform }}

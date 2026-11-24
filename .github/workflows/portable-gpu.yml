@@ -45,7 +45,7 @@ jobs:
         run: |
           xcrun -sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
       - name: Build, test and archive explicit-only candidate
-        run: cmake -DRUNTIME=${{ matrix.backend }} -DCHANNEL=candidate -DBUILD_DIR=build/package-portable -P cmake/Release.cmake
+        run: cmake -DRUNTIME=${{ matrix.backend }} -DCHANNEL=candidate -DBUILD_DIR=build/package-portable -DSMART_CROP=OFF -DSMART_CROP_CUDA=OFF -P cmake/Release.cmake
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: portable-${{ matrix.platform }}-${{ matrix.backend }}

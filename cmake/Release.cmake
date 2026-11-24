@@ -60,6 +60,10 @@ if(DEFINED CUDA_VALIDATION AND NOT cuda)
     message(FATAL_ERROR "CUDA_VALIDATION is only meaningful for a CUDA build")
 endif()
 
+if(SMART_CROP AND (NOT platform STREQUAL "windows" OR NOT arch STREQUAL "x64" OR
+                   (NOT RUNTIME STREQUAL "cpu-only" AND NOT SMART_CROP_CUDA)))
+    message(FATAL_ERROR "This release only enables smart crop in Windows x64 CPU or dedicated CUDA smart crop packages")
+endif()
 if(SMART_CROP_CUDA)
     if(NOT SMART_CROP OR NOT platform STREQUAL "windows" OR NOT arch STREQUAL "x64" OR
        NOT RUNTIME STREQUAL "cuda" OR NOT CHANNEL STREQUAL "candidate" OR
@@ -122,6 +126,9 @@ find_program(ctest ctest PATHS "${cmake_bin}" NO_DEFAULT_PATH REQUIRED)
 find_program(cpack cpack PATHS "${cmake_bin}" NO_DEFAULT_PATH REQUIRED)
 if(NOT DEFINED BUILD_DIR)
     set(BUILD_DIR "${MOSAICRAFT_REPO}/build/release-${preset}-${RUNTIME}-${CHANNEL}")
+    if(SMART_CROP)
+        string(APPEND BUILD_DIR "-smart-crop")
+    endif()
 endif()
 if(NOT DEFINED OUTPUT_DIR)
     set(OUTPUT_DIR "${MOSAICRAFT_REPO}/build/archives")

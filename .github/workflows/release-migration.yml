@@ -102,7 +102,7 @@ jobs:
             options+=(-DALLOW_UNVALIDATED_LINUX_CUDA=ON)
           fi
           command=(cmake "-DRUNTIME=$RUNTIME" "-DCHANNEL=$CHANNEL" -DBUILD_DIR=build/package-migration
-            -DOUTPUT_DIR=build/migration-archives "${options[@]}" -P cmake/Release.cmake)
+            -DOUTPUT_DIR=build/migration-archives -DSMART_CROP=OFF -DSMART_CROP_CUDA=OFF "${options[@]}" -P cmake/Release.cmake)
           if [[ "$RUNNER_OS" == Linux && "$COLD" == true ]]; then
             cmake -DLOG=build/dependency-state/release-execve.log -P cmake/AuditRelease.cmake -- "${command[@]}"
           else
