@@ -440,7 +440,8 @@ SmartCropAnalysis SmartCropInference::analyze(const cv::Mat &image) try
     auto faces = m_impl->real ? m_impl->realFaces(image) : m_impl->animeFaces(image);
     return SmartCropAnalysis{std::move(mask), std::move(faces),
                              std::chrono::duration<double, std::milli>(afterMask - start).count(),
-                             std::chrono::duration<double, std::milli>(Clock::now() - afterMask).count()};
+                             std::chrono::duration<double, std::milli>(Clock::now() - afterMask).count(),
+                             m_impl->real ? CropMode::SmartReal : CropMode::SmartAnime};
 }
 catch (const cv::Exception &error)
 {

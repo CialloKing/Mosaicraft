@@ -2770,6 +2770,33 @@ TEST_CASE("smart crop ranks complete faces before foreground and limits camera m
     CHECK(chooseSmartCrop(cv::Size(200, 400), cv::Size(200, 100), analysis).roi.y == 300);
 }
 
+TEST_CASE("anime crop protects headroom before strong body saliency")
+{
+    using namespace mosaicraft;
+    const cv::Size image(200, 400), target(200, 100);
+    SmartCropAnalysis analysis;
+    analysis.faces.emplace_back(0.30, 0.25, 0.20, 0.10);
+    analysis.foreground = cv::Mat::zeros(40, 20, CV_32F);
+    analysis.foreground.rowRange(14, 30).setTo(1.f);
+    analysis.mode = CropMode::SmartReal;
+    CHECK(chooseSmartCrop(image, target, analysis).roi.y == 96);
+
+    analysis.mode = CropMode::SmartAnime;
+    const cv::Rect head(22, 66, 116, 78);
+    const auto anime = chooseSmartCrop(image, target, analysis);
+    CHECK((anime.roi & head) == head);
+    CHECK_FALSE(anime.mainFaceClipped);
+
+    // When the window is too short for the head, the face still has to fit.
+    const cv::Rect face(60, 100, 40, 40);
+    const auto narrow = chooseSmartCrop(image, cv::Size(200, 60), analysis);
+    CHECK((narrow.roi & face) == face);
+    CHECK((narrow.roi & head).height == 60);
+
+    analysis.faces.front() = cv::Rect2d(0.70, 0.20, 0.125, 0.20);
+    analysis.foreground = analysis.foreground.t();
+    CHECK(chooseSmartCrop(cv::Size(400, 200), cv::Size(100, 200), analysis).roi.x == 255);
+}
 #endif
 
 #if MOSAICRAFT_SMART_CROP_CUDA

@@ -115,6 +115,7 @@ struct SmartCropAnalysis
     // Coordinates are fractions of the uncropped image, independent of either model's input size.
     std::vector<cv::Rect2d> faces;
     double saliencyMs = 0, faceMs = 0;
+    CropMode mode = CropMode::Center;
 };
 
 struct SmartCropModelPair
