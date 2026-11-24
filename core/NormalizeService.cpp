@@ -256,8 +256,10 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
         const std::string_view trial = setting ? setting : "";
         bool pipeline = false;
 #if MOSAICRAFT_SMART_CROP_CUDA && defined(_WIN32) && (defined(_M_X64) || defined(__x86_64__))
-        pipeline = trial == "1" && initial == CropDevice::Cuda && files.size() >= 8 &&
-                   normalizationWorkerCount(request.threads) >= 3;
+        // 真人已通过独立样本门槛；动漫还需全量对照才能打开默认路径。
+        const bool defaultPipeline = request.cropMode == CropMode::SmartReal;
+        pipeline = trial != "0" && (defaultPipeline || trial == "1") && initial == CropDevice::Cuda &&
+                   files.size() >= 8 && normalizationWorkerCount(request.threads) >= 3;
 #endif
         const bool measure = pipeline || trial == "0" || trial == "1";
         ImageNormalizer::StandaloneTimings timings;
