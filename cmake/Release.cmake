@@ -61,15 +61,21 @@ if(DEFINED CUDA_VALIDATION AND NOT cuda)
 endif()
 
 if(SMART_CROP AND (NOT platform STREQUAL "windows" OR NOT arch STREQUAL "x64" OR
-                   (NOT RUNTIME STREQUAL "cpu-only" AND NOT SMART_CROP_CUDA)))
-    message(FATAL_ERROR "This release only enables smart crop in Windows x64 CPU or dedicated CUDA smart crop packages")
+                   NOT SMART_CROP_CUDA))
+    message(FATAL_ERROR "This release only enables smart crop in the Windows x64 CUDA smart crop package")
 endif()
 if(SMART_CROP_CUDA)
     if(NOT SMART_CROP OR NOT platform STREQUAL "windows" OR NOT arch STREQUAL "x64" OR
-       NOT RUNTIME STREQUAL "cuda" OR NOT CHANNEL STREQUAL "candidate" OR
-       NOT CUDA_VALIDATION STREQUAL "Required" OR "$ENV{GITHUB_ACTIONS}" STREQUAL "true" OR
+       NOT RUNTIME STREQUAL "cuda" OR NOT CUDA_VALIDATION STREQUAL "Required" OR
        NOT IS_ABSOLUTE "${SMART_CROP_CUDA_REDIST}")
-        message(FATAL_ERROR "CUDA smart crop requires an explicit local Windows x64 CUDA candidate, real GPU, and an approved redist tree")
+        message(FATAL_ERROR "CUDA smart crop requires Windows x64, Required GPU validation, and an approved redist tree")
+    endif()
+    if(SMART_CROP_CUDA_PREVALIDATION AND "$ENV{GITHUB_ACTIONS}" STREQUAL "true")
+        message(FATAL_ERROR "CUDA smart crop prevalidation is local-only")
+    endif()
+    if(CHANNEL STREQUAL "stable" AND NOT SMART_CROP_CUDA_PREVALIDATION AND
+       (NOT DEFINED SMART_CROP_CUDA_OFFLINE_EVIDENCE OR NOT EXISTS "${SMART_CROP_CUDA_OFFLINE_EVIDENCE}"))
+        message(FATAL_ERROR "Stable CUDA smart crop release requires final archive offline evidence")
     endif()
     set(SMART_CROP_CUDA ON)
     include("${CMAKE_CURRENT_LIST_DIR}/SmartCropRelease.cmake")
@@ -158,6 +164,11 @@ if(SMART_CROP)
     include("${CMAKE_CURRENT_LIST_DIR}/SmartCropRelease.cmake")
     file(READ "${repo}/cmake/smart-crop-models.json" smart_crop_lock)
     smart_crop_release_gate("${repo}" "${smart_crop_lock}")
+    if(NOT DEFINED SMART_CROP_FIXTURE_ROOT)
+        message(FATAL_ERROR "Smart crop packages require SMART_CROP_FIXTURE_ROOT for independent face-crop checks")
+    endif()
+    cmake_path(ABSOLUTE_PATH SMART_CROP_FIXTURE_ROOT BASE_DIRECTORY "${repo}" NORMALIZE)
+    smart_crop_verify_fixtures("${SMART_CROP_FIXTURE_ROOT}" "${smart_crop_lock}")
     if(NOT DEFINED SMART_CROP_MODELS_DIR)
         set(SMART_CROP_MODELS_DIR "${repo}/build/smart-crop-models/prepared")
     endif()
@@ -337,6 +348,9 @@ file(SHA256 "${archive_dir}/${name}" sha)
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DARCHIVE=${archive_dir}/${name}" "-DEXPECTED_SHA256=${sha}"
     "-DEXPECTED_COMMIT=${commit}" "-DEXPECTED_RUNTIME=${RUNTIME}" "-DEXPECTED_GPU_VALIDATION=${gpu_validation}"
     "-DEXPECTED_CHANNEL=${CHANNEL}" "-DLOCAL_SMART_CROP_CUDA_CANDIDATE=${SMART_CROP_CUDA}"
+    "-DSMART_CROP_CUDA_PREVALIDATION=${SMART_CROP_CUDA_PREVALIDATION}"
+    "-DSMART_CROP_FIXTURE_ROOT=${SMART_CROP_FIXTURE_ROOT}"
+    "-DSMART_CROP_CUDA_OFFLINE_EVIDENCE=${SMART_CROP_CUDA_OFFLINE_EVIDENCE}"
     "-DCHECK_TOOL=${bin}/mosaicraft_release_check${suffix}" "-DWORK_ROOT=${work}" -DREQUIRE_CURRENT=ON
     -P "${CMAKE_CURRENT_LIST_DIR}/VerifyPackage.cmake" COMMAND_ERROR_IS_FATAL ANY)
 release_capture(current "${git}" -C "${repo}" rev-parse HEAD)
