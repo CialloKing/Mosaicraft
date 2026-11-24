@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Compare CPU/CUDA smart-normalize end to end; no runtime Python dependency."""
+"""Compare smart-normalize devices, CUDA I/O pipelining, or disjoint CPU/CUDA work."""
 
 import argparse
+from contextlib import ExitStack
 import hashlib
 import json
 import os
@@ -10,6 +11,8 @@ import shutil
 import statistics
 import subprocess
 import time
+
+from benchmark import peak_rss
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
@@ -23,48 +26,132 @@ def nvidia_query(gpu, query):
     return ["nvidia-smi", "-i", gpu, f"--query-gpu={query}", "--format=csv,noheader,nounits"]
 
 
-def run(args, device, name, expected):
+def stop(process, kill=False):
+    if process.poll() is None:
+        (process.kill if kill else process.terminate)()
+    process.wait()
+
+
+def run(args, name, parts):
     samples_path = args.work / f"{name}-vram.csv"
+    has_cuda = any(device == "cuda" for device, *_ in parts)
     baseline = None
-    with samples_path.open("w", encoding="utf-8") as samples:
-        monitor = None
-        if device == "cuda":
+    processes = []
+    with ExitStack() as stack:
+        samples = stack.enter_context(samples_path.open("w", encoding="utf-8"))
+        if has_cuda:
             query = nvidia_query(args.gpu, "memory.used")
             baseline = int(subprocess.check_output(query, text=True).strip())
             monitor = subprocess.Popen(query + ["-lms", "250"], stdout=samples, stderr=subprocess.DEVNULL)
-        output = args.work / name
-        command = [str(args.exe), "library", "normalize", str(args.input), "--recursive",
-                   "-o", str(output), "--size", args.size, "--threads", "1",
-                   "--crop", args.mode, "--crop-device", device, "--json"]
+            stack.callback(stop, monitor)
         start = time.perf_counter()
-        try:
-            with (args.work / f"{name}.json").open("wb") as stdout, (args.work / f"{name}.log").open("wb") as stderr:
-                code = subprocess.run(command, cwd=args.work, stdout=stdout, stderr=stderr,
-                                      timeout=args.timeout, check=False,
-                                      env={**os.environ, "CUDA_VISIBLE_DEVICES": args.gpu_uuid,
-                                           "OPENCV_LOG_LEVEL": "WARNING"}).returncode
-        except subprocess.TimeoutExpired:
-            code = "timeout"
-        finally:
+        for device, pipeline, source, indices in parts:
+            prefix = args.work / f"{name}-{device}"
+            stdout = stack.enter_context(prefix.with_suffix(".json").open("wb"))
+            stderr = stack.enter_context(prefix.with_suffix(".log").open("wb"))
+            env = {**os.environ, "CUDA_VISIBLE_DEVICES": args.gpu_uuid, "OPENCV_LOG_LEVEL": "WARNING",
+                   "MOSAICRAFT_SMART_CROP_PIPELINE": str(int(pipeline))}
+            if device == "cpu" and args.study == "hybrid":
+                env["OPENCV_FOR_THREADS_NUM"] = "2"
+            command = [str(args.exe), "library", "normalize", str(source), "--recursive",
+                       "-o", str(prefix), "--size", args.size, "--threads", "1" if args.study == "devices" else "3",
+                       "--crop", args.mode, "--crop-device", device, "--json"]
+            process = subprocess.Popen(command, cwd=args.work, stdout=stdout, stderr=stderr, env=env)
+            stack.callback(stop, process, True)
+            processes.append((process, device, pipeline, indices, prefix))
+        peaks = [0] * len(processes)
+        timed_out = False
+        while True:
+            running = False
+            for i, (process, *_) in enumerate(processes):
+                peaks[i] = max(peaks[i], peak_rss(process) or 0)
+                running |= process.poll() is None
             elapsed = time.perf_counter() - start
-            if monitor:
-                monitor.terminate()
-                monitor.wait()
-    saved = sum(path.is_file() for path in output.iterdir()) if output.is_dir() else 0
+            if not running:
+                break
+            if elapsed >= args.timeout:
+                timed_out = True
+                break
+            time.sleep(0.025)
+
     memory = [int(s) for s in samples_path.read_text(encoding="utf-8").splitlines() if s.strip().isdigit()]
-    try:
-        runtime = json.loads((args.work / f"{name}.json").read_bytes()).get("runtime", {})
-    except (ValueError, OSError):
-        runtime = {}
-    actual = runtime.get("device")
-    metrics = runtime.get("metrics", {})
-    return {"device": device, "actualDevice": actual, "exit": code, "saved": saved,
-            "failed": max(0, expected - saved), "wallSeconds": elapsed, "imagesPerSecond": saved / elapsed,
+    children, outputs = [], {}
+    for (process, device, pipeline, indices, prefix), peak in zip(processes, peaks):
+        try:
+            runtime = json.loads(prefix.with_suffix(".json").read_bytes()).get("runtime", {})
+        except (ValueError, OSError):
+            runtime = {}
+        actual = runtime.get("device")
+        metrics = runtime.get("metrics", {})
+        saved = {p.name: p for p in prefix.iterdir() if p.is_file()} if prefix.is_dir() else {}
+        if indices is None:
+            outputs.update({name: sha256(path) for name, path in saved.items()})
+        else:
+            for local, original in enumerate(indices):
+                suffix = args.sources[original].suffix
+                if (path := saved.get(f"{local}{suffix}")) is not None:
+                    outputs[f"{original}{suffix}"] = sha256(path)
+        expected = len(args.sources) if indices is None else len(indices)
+        children.append({"device": device, "actualDevice": actual, "exit": "timeout" if timed_out else process.returncode,
+                         "saved": len(saved), "failed": max(0, expected - len(saved)), "metrics": metrics,
+                         "peakWorkingSetBytes": peak or None,
+                         "passed": not timed_out and process.returncode == 0 and actual == device
+                         and len(saved) == expected and all(metrics.get(k, 0) > 0 for k in
+                                                           ("smartCropSaliencyMs", "smartCropFaceMs"))
+                         and (args.study == "devices" or metrics.get("smartCropPipeline") == int(pipeline))})
+    return {"name": name, "wallSeconds": elapsed, "imagesPerSecond": len(outputs) / elapsed,
             "gpuBaselineMiB": baseline, "gpuSampledPeakMiB": max(memory, default=None),
-            "passed": code == 0 and saved == expected and actual == device
-            and (device != "cuda" or bool(memory))
-            and all(metrics.get(k, 0) > 0 for k in ("smartCropSaliencyMs", "smartCropFaceMs")),
-            "metrics": metrics}
+            "peakWorkingSetBytes": sum(peaks) if all(peaks) else None, "children": children,
+            "passed": all(child["passed"] for child in children) and (not has_cuda or bool(memory))
+            and len(outputs) == len(args.sources)}, outputs
+
+
+def staged_input(args, name, indices):
+    folder = args.work / "inputs" / name
+    folder.mkdir(parents=True)
+    for index in indices:
+        source = args.sources[index]
+        target = folder / f"{index:08d}{source.suffix}"
+        try:
+            os.link(source, target)
+        except OSError:
+            shutil.copyfile(source, target)
+    return folder
+
+
+def hybrid_variants(args, report):
+    # Pillow only reads dimensions; inference still uses the unmodified original bytes.
+    from PIL import Image
+
+    def pixels(path):
+        with Image.open(path) as img:
+            return img.width * img.height
+
+    sizes = [pixels(source) for source in args.sources]
+    ordered = sorted(range(len(sizes)), key=sizes.__getitem__)
+    eligible = ordered[:len(sizes) * 9 // 10]
+    all_indices = list(range(len(sizes)))
+    total = sum(sizes)
+    baseline = staged_input(args, "all", all_indices)
+    variants = {"pipeline": [("cuda", True, baseline, all_indices)]}
+    report["partitions"] = {}
+    for share in (5, 10):
+        cpu = []
+        weight = 0
+        for index in eligible:
+            if (weight + sizes[index]) * 100 > total * share:
+                break
+            cpu.append(index)
+            weight += sizes[index]
+        cpu.sort()
+        gpu = sorted(set(all_indices) - set(cpu))
+        if not cpu or len(gpu) < 8:
+            raise ValueError(f"input does not support the {share}% split with at least eight CUDA images")
+        name = f"hybrid{share}"
+        report["partitions"][name] = {"cpuPixelShare": weight / total, "cpuIndices": cpu}
+        variants[name] = [("cuda", True, staged_input(args, f"{name}-cuda", gpu), gpu),
+                          ("cpu", False, staged_input(args, f"{name}-cpu", cpu), cpu)]
+    return variants
 
 
 def main():
@@ -72,41 +159,81 @@ def main():
     for name in ("exe", "input", "work"):
         parser.add_argument(name, type=lambda path: Path(path).resolve())
     parser.add_argument("--mode", choices=("smart-real", "smart-anime"), required=True)
+    parser.add_argument("--study", choices=("devices", "pipeline", "hybrid"), default="devices",
+                        help="CPU vs CUDA, serial vs pipelined CUDA, or pipelined CUDA vs two split variants")
+    parser.add_argument("--rounds", type=int, default=3)
     parser.add_argument("--size", default="180x320")
     parser.add_argument("--gpu", default="0", help="nvidia-smi index/UUID of the only visible GPU")
     parser.add_argument("--timeout", type=int, default=3600, help="seconds per run")
     args = parser.parse_args()
     if not args.exe.is_file() or not args.input.is_dir() or shutil.which("nvidia-smi") is None:
         parser.error("CLI, input directory and nvidia-smi must exist")
-    if args.work == args.input or args.work.is_relative_to(args.input) or args.input.is_relative_to(args.work):
+    if args.work.is_relative_to(args.input) or args.input.is_relative_to(args.work):
         parser.error("work and input must not overlap")
-    inputs = sorted(p for p in args.input.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS)
-    if not inputs:
-        parser.error("no supported inputs")
+    args.sources = sorted((p for p in args.input.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS),
+                          key=lambda p: p.relative_to(args.input).parts)
+    if args.rounds < 1 or len(args.sources) < (1 if args.study == "devices" else 8):
+        parser.error("positive round count and enough supported images are required")
     args.gpu_uuid = subprocess.check_output(nvidia_query(args.gpu, "uuid"), text=True).strip()
     args.work.mkdir(parents=True, exist_ok=False)
-    source_hashes = {str(p.relative_to(args.input)): sha256(p) for p in inputs}
-    report = {"executableSha256": sha256(args.exe), "mode": args.mode, "size": args.size,
+
+    def input_hashes():
+        return {p.relative_to(args.input).as_posix(): sha256(p) for p in args.sources}
+
+    source_hashes = input_hashes()
+    report = {"executableSha256": sha256(args.exe), "mode": args.mode, "size": args.size, "study": args.study,
               "gpu": subprocess.check_output(nvidia_query(args.gpu, "name,driver_version,memory.total"), text=True).strip(),
               "inputSha256": source_hashes, "runs": []}
+    if args.study == "hybrid":
+        variants = hybrid_variants(args, report)
+    elif args.study == "pipeline":
+        variants = {label: [("cuda", pipeline, args.input, None)]
+                    for label, pipeline in (("serial", False), ("pipeline", True))}
+    else:
+        variants = {device: [(device, False, args.input, None)] for device in ("cpu", "cuda")}
+    labels = list(variants)
+    reference = None
     report_path = args.work / "report.json"
-    for cycle in range(3):
-        for device in (("cpu", "cuda") if cycle % 2 == 0 else ("cuda", "cpu")):
-            name = f"{cycle + 1}-{device}"
-            result = run(args, device, name, len(inputs))
+    for cycle in range(args.rounds):
+        offset = cycle % len(labels)
+        for label in labels[offset:] + labels[:offset]:
+            name = f"{cycle + 1}-{label}"
+            result, outputs = run(args, name, variants[label])
+            if reference is None:
+                reference = outputs
+                report["referenceOutputSha256"] = reference
+            result.update(variant=label, round=cycle + 1, identical=outputs == reference,
+                          differingOutputs=sorted(k for k in reference.keys() | outputs.keys()
+                                                  if reference.get(k) != outputs.get(k)))
             report["runs"].append(result)
+            print(f"{name}: {result['wallSeconds']:.2f}s, run OK={result['passed']}, identical={result['identical']}", flush=True)
             report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-            print(f"{name}: {result['saved']}/{len(inputs)}; exit={result['exit']}", flush=True)
-            if not result["passed"]:
-                return 1
-    report["inputUnchanged"] = all(sha256(p) == source_hashes[str(p.relative_to(args.input))] for p in inputs)
-    report["medianImagesPerSecond"] = {
-        dev: statistics.median(r["imagesPerSecond"] for r in report["runs"] if r["device"] == dev)
-        for dev in ("cpu", "cuda")}
-    rates = report["medianImagesPerSecond"]
-    report["speedup"] = rates["cuda"] / rates["cpu"]
+    report["inputUnchanged"] = input_hashes() == source_hashes
+    grouped = {label: sorted((r for r in report["runs"] if r["variant"] == label), key=lambda r: r["round"])
+               for label in labels}
+    medians = {label: statistics.median(r["wallSeconds"] for r in runs) for label, runs in grouped.items()}
+    report["medianWallSeconds"] = medians
+    report["medianImagesPerSecond"] = {label: statistics.median(r["imagesPerSecond"] for r in runs)
+                                       for label, runs in grouped.items()}
+    report["wallSavings"] = {label: 1 - medians[label] / medians[labels[0]] for label in labels[1:]}
+    report["speedup"] = medians[labels[0]] / medians[labels[1]]
+    if args.study == "pipeline":
+        pairs = zip(grouped["serial"], grouped["pipeline"])
+        deltas = [b["peakWorkingSetBytes"] - a["peakWorkingSetBytes"] if a["peakWorkingSetBytes"] and
+                  b["peakWorkingSetBytes"] else None for a, b in pairs]
+        report["workingSetIncreaseBytesByRound"] = deltas
+        gates = report["wallSavings"]["pipeline"] >= .10 and all(d is not None and d <= 512 * 1024**2 for d in deltas)
+    elif args.study == "hybrid":
+        report["hybridCandidates"] = [label for label in labels[1:] if report["wallSavings"][label] >= .05
+                                      and all(r["passed"] and r["identical"] for r in grouped[label])]
+        gates = bool(report["hybridCandidates"]) and all(r["passed"] and r["identical"] for r in grouped["pipeline"])
+    else:
+        gates = report["speedup"] >= 1.5
+    if args.study != "hybrid":
+        gates &= all(r["passed"] and (args.study == "devices" or r["identical"]) for r in report["runs"])
+    report["passed"] = report["inputUnchanged"] and gates
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    return 0 if report["inputUnchanged"] and report["speedup"] >= 1.5 else 1
+    return 0 if report["passed"] else 1
 
 
 if __name__ == "__main__":
