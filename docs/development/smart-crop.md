@@ -57,7 +57,7 @@ cmake --install build/windows-smart-crop --config Release --prefix build/smart-c
 ## 模型锁与发布条件
 
 - `cmake/smart-crop-models.json` 锁定三个权重的来源、大小和哈希。YuNet `2023mar` 有对应的 MIT 声明。原 U²-Net 权重的授权说明不能单独证明 rembg 发布附件的导出来源；DeepGHS 仓库模型卡标为 MIT，但所选权重的上游权利链还需核对。维护者已确认可分发，但对应锁定文件的许可声明和人工审核附件还未归档，因此发布门禁仍拒绝。禁止把私人测试安装目录当作可发布附件。
-- 三份权重的再分发依据和许可证齐备、独立人工标注的质量审核文档及两份可再分发的正例通过后，才可设置仓库变量 `MOSAICRAFT_SMART_CROP_RELEASE=1`（本地发布入口对应 `-DSMART_CROP=ON`）。归档验收用 `scripts/requirements-smart-crop-verification.txt` 的 Pillow 对照像素与人工标注，不属于解包后的运行依赖。
+- 三份权重的再分发依据和许可证齐备、独立人工标注的质量审核文档及两份可再分发的正例通过后，才可在 Native packages 手动运行时启用 `include_smart_crop`（本地发布入口对应 `-DSMART_CROP=ON`）。标签触发的标准发布默认关闭此可选功能。归档验收用 `scripts/requirements-smart-crop-verification.txt` 的 Pillow 对照像素与人工标注，不属于解包后的运行依赖。
 - 初审须覆盖偏侧真人、偏侧动漫、多人、主脸比窗口宽、无脸主体及无明显主体。分别统计两个模式在可保全主脸的样本上是否优于中心裁剪，以及中心裁剪已保全的主脸是否有新切断；另记录无脸主体效果、误移动率、批耗时及峰值内存。把批准的审核文档路径、大小和 SHA-256 写入 `qualityReview`；不得用两个解包正例代替总体质量审核。
 - 解包正例锁定 PNG 和人工标注的 `mainFace: [left, top, right, bottom]`（半开坐标）。每张图高 320、宽大于 180，主脸能完整落入 `180×320`，但中心裁剪切脸。发布和独立验包从其他工作目录运行，以输出像素核对实际裁剪位置和完整主脸，同时检查检测和移动指标。任何目标平台失败都不能交付宣称完整支持的包。复验已有智能裁剪版本时，使用该版本的源码锁及标注。
 
