@@ -2,6 +2,12 @@
 
 本页区分当前源码与公开安装包，详细历史记录见[历史档案](archive/README.md)。软件与数据版本的唯一来源是根目录 contracts.json；安装后的实际能力以该包 BUILD_INFO.txt、contracts.json 和 --help-all 为准。
 
+## v1.15.17
+
+- Windows x64 CUDA 智能裁剪补充包为真人和动漫的 CUDA FP32 推理默认启用卷积权重复用，避免输入尺寸变化时重复准备权重。可设 `OPENCV_DNN_CUDA_REUSE_CONV2_WEIGHTS=0` 回退；CPU 推理、中心裁剪、I/O 流水线启用条件和输出契约不变。
+- RTX 4060 Laptop 开发机上，相对于已有 CUDA 流水线，三轮 A/B 墙钟中位数：HighLikes 动漫 200 张从 31.80 秒降至 26.05 秒（18.1%），独立真人 32 张从 6.53 秒降至 6.25 秒（4.3%）。默认路径复验中两组输出与旧路径 SHA-256 一致，零失败。这是抽样结果，不是全库或最终发布包跑分。见[权重复用实测和限制](development/smart-crop.md)。
+- 普通原生包与 Qt 桌面包仍不包含智能裁剪模型或 CUDA DNN。Windows x64 CUDA 智能裁剪补充包包含 CLI、Web UI、模型和 CPU 推理回退，不单独分发 CPU 智能裁剪包。HTTP API 仍为 1.9，图库格式不变。附件与验收状态见对应 GitHub Release 和包内 `BUILD_INFO.txt`。
+
 ## v1.15.16
 
 - Windows x64 的 CUDA 智能裁剪源码构建默认让读图解码、单会话推理和写盘重叠。仅在 CUDA 启动预检通过、至少 8 张图且应用线程预算至少为 3 时启用。设 `MOSAICRAFT_SMART_CROP_PIPELINE=0` 可恢复串行。中心裁剪与 CPU 智能裁剪路径、推理模型、裁剪规则及编码参数不变。
