@@ -208,7 +208,7 @@ function(smart_crop_cuda_redist repo root dlls notices)
     set(${notices} "${approved_notices}" PARENT_SCOPE)
 endfunction()
 
-function(smart_crop_cuda_offline_gate evidence commit sha)
+function(smart_crop_verify_offline_evidence evidence commit sha)
     if(NOT IS_ABSOLUTE "${evidence}" OR NOT EXISTS "${evidence}")
         message(FATAL_ERROR "Provide SMART_CROP_CUDA_OFFLINE_EVIDENCE from independent Windows GPU ZIP acceptance")
     endif()

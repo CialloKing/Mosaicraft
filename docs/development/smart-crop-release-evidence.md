@@ -1,18 +1,18 @@
-# v1.15.15 智能裁剪发布证据状态
+# 智能裁剪发布证据
 
 
 
-## 验收范围
+## v1.15.15 验收范围
 
 v1.15.15 的审核报告与真人、动漫标注正例已在模型锁中登记并校验。维护者将真实 GPU 干净系统的离线解包验收留待后续版本；本版包内记录 `SmartCropOfflineValidation: not-run`。真实显存耗尽恢复、严格 CUDA 途中失败保留部分输出及独占环境正式性能仍未验收。
 
-## 候选打包与独立验收
+## 当前打包与独立验收
 
 运行 `cmake -DMODE=SmartCropCudaRedist -P cmake/PrepareRelease.cmake` 从两份固定的 NVIDIA 官方归档提取白名单。默认目录 `build/tools/smart-crop-cuda-redist` 只含 cuBLAS 13.10.0.20 的 2 个 DLL、cuDNN 9.28.1.4 的 8 个 DLL，以及 `licenses/cuda-smart-crop/` 下的两份原始许可。DLL 和许可均由 `cmake/smart-crop-cuda-redist-windows.json` 核对大小和 SHA-256，不携带 NVIDIA 驱动 DLL、整个 SDK、NVRTC 或未通过清单的 DLL。运行库清单是打包输入，不是项目再分发许可结论；公开分发前须确认 NVIDIA 条款（CUDA Toolkit 附件 A 和 cuDNN 补充协议）与本项目许可在该分发组合中的适用性。模型锁仍独立控制三个 ONNX 和两份正例的完整性。
 
-使用 `PrepareRelease.cmake` 准备锁定依赖和模型，CUDA DNN 使用独立的 `smart-crop-cuda` 依赖树。`Release.cmake` 参数为 `RUNTIME=cuda`、`CHANNEL=stable`、`CUDA_VALIDATION=Required`、`SMART_CROP=ON`、`SMART_CROP_CUDA=ON`、`SMART_CROP_CUDA_REDIST=<绝对路径>`。v1.15.15 可在本地显式传入 `SMART_CROP_CUDA_DEFER_OFFLINE=ON`，其余版本仍要求绑定最终归档的离线证据。指定独立的 `BUILD_DIR`、`OUTPUT_DIR`、`VCPKG_INSTALLED_DIR`；独立验包仍必须分别运行 CUDA 和显式 CPU 回退两路。v1.15.15 不生成单独的 CPU 智能裁剪包，普通 CPU 包保持不携带智能裁剪模型。
+使用 `PrepareRelease.cmake` 准备锁定依赖和模型，CUDA DNN 使用独立的 `smart-crop-cuda` 依赖树。`Release.cmake` 参数为 `RUNTIME=cuda`、`CHANNEL=stable`、`CUDA_VALIDATION=Required`、`SMART_CROP=ON`、`SMART_CROP_CUDA=ON`、`SMART_CROP_CUDA_REDIST=<绝对路径>`。指定独立的 `BUILD_DIR`、`OUTPUT_DIR`、`VCPKG_INSTALLED_DIR`，以及包含锁定标注正例的 `SMART_CROP_FIXTURE_ROOT`；独立验包仍必须分别运行 CUDA 和显式 CPU 回退两路。不生成单独的 CPU 智能裁剪包，普通 CPU 包保持不携带智能裁剪模型。
 
-在有兼容 NVIDIA 驱动、无 Toolkit/cuDNN 且断网的 Windows x64 环境，用外部 `mosaicraft_release_check`、同提交的模型锁和标注，验证 ZIP 内 CLI 和 Web/API 的真人、动漫两路。确认实际 `device=cuda` 且主脸保全。保留日志，填写 JSON 键 `commit`、`sha256`、`platform`（`windows-x64`）、`gpu`、`driver`，以及布尔通过项 `offline`、`noToolkit`、`noCudnn`、`cliReal`、`cliAnime`、`webReal`、`webAnime`。独立执行 `VerifyPackage.cmake` 时以绝对路径传 `SMART_CROP_CUDA_OFFLINE_EVIDENCE`；脚本重新核对该 ZIP 的内容及 GPU 正例，不接受绑定到其他归档的记录。
+在有兼容 NVIDIA 驱动、无 Toolkit/cuDNN 且断网的 Windows x64 环境做离线实测是可选的，不阻塞发布。若执行，用外部 `mosaicraft_release_check`、同提交的模型锁和标注验证 ZIP 内 CLI 和 Web/API 的真人、动漫两路，确认实际 `device=cuda` 且主脸保全。保留日志和外部 JSON 记录：`commit`、`sha256`、`platform`（`windows-x64`）、`gpu`、`driver`，以及布尔通过项 `offline`、`noToolkit`、`noCudnn`、`cliReal`、`cliAnime`、`webReal`、`webAnime`。可在独立执行 `VerifyPackage.cmake` 时以绝对路径传 `SMART_CROP_CUDA_OFFLINE_EVIDENCE` 校验记录与 ZIP 是否匹配；记录绑定最终 ZIP 的 SHA-256，不回写包内的 `SmartCropOfflineValidation: not-run`，也不替代解包实机验收。
 
 ## 2026-11-24 开发机复验（非正式验收）
 

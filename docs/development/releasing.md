@@ -34,7 +34,7 @@ Windows/Linux x64 正式 Vulkan 包启用 Vulkan → CPU，并在独立无驱动
 
 ## 智能裁剪发布门禁
 
-v1.15.15 不发布单独的 CPU 智能裁剪包。Windows x64 CUDA 智能裁剪归档同时包含 CPU 推理回退，只能由本机 `Release.cmake` 的 Required GPU 流程构建；真实 GPU 验收、锁定的 NVIDIA 运行库、模型和人工质量证据，以及绑定最终 ZIP 哈希的离线验包全部通过后，才可追加到 Release。普通 CPU 包不携带智能裁剪模型。参见[智能裁剪发布条件](smart-crop.md#模型锁与发布条件)。
+Windows x64 CUDA 智能裁剪归档同时包含 CPU 推理回退，只能由 `Release.cmake` 的 Required GPU 流程构建。发布仍要求真实 GPU、CTest、锁定的 NVIDIA 运行库及模型、许可证、人工质量证据，以及对最终 ZIP 的独立解包校验。干净 Windows 上断网且无 Toolkit/cuDNN 的验收不再是发布门禁；未执行不影响发布，包内如实记为 `SmartCropOfflineValidation: not-run`。普通包不因该门禁调整而加入智能裁剪模型。参见[智能裁剪发布条件](smart-crop.md#模型锁与发布条件)。
 
 ## 归档包检查
 
@@ -43,7 +43,7 @@ v1.15.15 不发布单独的 CPU 智能裁剪包。Windows x64 CUDA 智能裁剪�
 - 包含当前 API 参考、版本状态、GPU 验收与数据，历史文件留在 archive/。
 - 不再将百科或 API 复制到包根。旧布局的已发布包仍由独立验证脚本识别。
 - SHA256、版本、提交、平台、架构、运行时和验收字段一致。
-- 在没有开发依赖的独立环境验证程序、中文/空格路径、Unix 权限和 macOS 签名。
+- 独立解包，检查程序、中文/空格路径、Unix 权限和 macOS 签名。按各包型要求隔离开发依赖；CUDA 智能裁剪包的独立解包检查不要求另找无开发依赖的断网 Windows 系统。
 
 ## 使用原生验包器
 
