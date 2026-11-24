@@ -6,7 +6,7 @@
 
 - Windows x64 的 CUDA 智能裁剪源码构建默认让读图解码、单会话推理和写盘重叠。仅在 CUDA 启动预检通过、至少 8 张图且应用线程预算至少为 3 时启用。设 `MOSAICRAFT_SMART_CROP_PIPELINE=0` 可恢复串行。中心裁剪与 CPU 智能裁剪路径、推理模型、裁剪规则及编码参数不变。
 - RTX 4060 Laptop 开发机对照中，真人 32 张的三轮墙钟中位数缩短 16.5%，HighLikes 动漫 200 张的单轮成对复验缩短 24.0%；各自与同后端串行输出逐字节一致。这是抽样结果，不是全库实测。见[流水线实测](development/smart-crop.md#cuda-io-流水线开发机基准)。
-- 普通原生包与 Qt 桌面包不含智能裁剪模型和 CUDA DNN。[GitHub Release](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.16) 另提供 Windows x64 CUDA 智能裁剪候选补充包，包含 CLI、Web UI、模型与 CPU 回退。候选包来自同一标签，在 RTX 4060 Laptop 上通过 Required GPU 检查、7/7 CTest 和解包验收；32 张真人与 200 张动漫的解包流水线输出与串行基准 SHA-256 一致。干净 Windows 离线 GPU 验收仍未运行，包内标为 `SmartCropOfflineValidation: not-run`，不作为正式智能裁剪附件验收结论。HTTP API 仍为 1.9，图库格式不变。
+- 普通原生包与 Qt 桌面包不含智能裁剪模型和 CUDA DNN。[GitHub Release](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.16) 另提供 Windows x64 CUDA 智能裁剪补充包，包含 CLI、Web UI、模型与 CPU 回退。该包来自同一标签，在 RTX 4060 Laptop 上通过 Required GPU 检查、7/7 CTest 和独立解包验收；32 张真人与 200 张动漫的解包流水线输出与串行基准 SHA-256 一致。干净 Windows 离线 GPU 验收未运行，包内仍标为 `SmartCropOfflineValidation: not-run`；按[现行发布门禁](development/releasing.md#智能裁剪发布门禁)不阻塞发布。HTTP API 仍为 1.9，图库格式不变。
 
 ## v1.15.15
 
