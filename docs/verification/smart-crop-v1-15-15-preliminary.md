@@ -34,6 +34,7 @@ populations. The pinned U2-NetP and DeepGHS ONNX artifacts have upstream
 license declarations, but their exact artifact provenance has not been
 independently confirmed. The maintainer's release approval accepts that
 limitation for this package; this record does not claim upstream confirmation.
-The YuNet model has a pinned upstream MIT notice. Final package release still
-requires real-GPU build validation, exact archive hash verification, and
-offline package checks bound to that archive.
+The YuNet model has a pinned upstream MIT notice. The v1.15.15 package requires
+real-GPU build validation and exact archive hash verification. The maintainer
+deferred clean-system offline GPU package checks to a later version; they are
+not represented as passed for this package.

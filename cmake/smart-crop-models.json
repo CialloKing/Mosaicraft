@@ -56,8 +56,8 @@
   "qualityReview": {
     "status": "preliminary-approved",
     "file": "docs/verification/smart-crop-v1-15-15-preliminary.md",
-    "size": 2146,
-    "sha256": "a524acfaf103329094f7c06e26917e44da8ed785f89fa45fbfe73562a19efff4"
+    "size": 2229,
+    "sha256": "6d6a87ff38a286420920d227a4622346baa578d6a8615c014ff40316cb33be8b"
   },
   "releaseApproval": {
     "status": "approved-with-limitations",

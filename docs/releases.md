@@ -4,7 +4,7 @@
 
 ## v1.15.15
 
-已发布普通原生包。CLI / Web 的可选智能裁剪支持手动选择真人或动漫；中心裁剪仍为默认。包含 CUDA DNN 时，自动策略会优先用 CUDA，故障后用 CPU 继续并尝试恢复；显式 CUDA 不回退。HTTP API 为 1.9，图库格式不变。普通原生 CUDA 包不携带 cuDNN。v1.15.15 不发布单独的 CPU 智能裁剪包；追加的 Windows x64 CUDA 智能裁剪包同时包含 CPU 推理回退，并必须通过[发布证据门禁](development/smart-crop-release-evidence.md)。模型再分发证据、质量审核样本和正式离线 GPU 验收以该附件的独立记录为准。发布附件、校验值和验收状态以对应 GitHub Release 及包内 `BUILD_INFO.txt` 为准。
+已发布普通原生包。CLI / Web 的可选智能裁剪支持手动选择真人或动漫；中心裁剪仍为默认。包含 CUDA DNN 时，自动策略会优先用 CUDA，故障后用 CPU 继续并尝试恢复；显式 CUDA 不回退。HTTP API 为 1.9，图库格式不变。普通原生 CUDA 包不携带 cuDNN。v1.15.15 不发布单独的 CPU 智能裁剪包；追加的 Windows x64 CUDA 智能裁剪包同时包含 CPU 推理回退和模型。该包经开发机真实 GPU 与解包验证，干净系统离线 GPU 验收留待后续版本；模型来源与质量审核限制见[发布证据](development/smart-crop-release-evidence.md)。发布附件、校验值和验收状态以对应 GitHub Release 及包内 `BUILD_INFO.txt` 为准。
 
 ## v1.15.14
 

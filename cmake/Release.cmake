@@ -73,10 +73,6 @@ if(SMART_CROP_CUDA)
     if(SMART_CROP_CUDA_PREVALIDATION AND "$ENV{GITHUB_ACTIONS}" STREQUAL "true")
         message(FATAL_ERROR "CUDA smart crop prevalidation is local-only")
     endif()
-    if(CHANNEL STREQUAL "stable" AND NOT SMART_CROP_CUDA_PREVALIDATION AND
-       (NOT DEFINED SMART_CROP_CUDA_OFFLINE_EVIDENCE OR NOT EXISTS "${SMART_CROP_CUDA_OFFLINE_EVIDENCE}"))
-        message(FATAL_ERROR "Stable CUDA smart crop release requires final archive offline evidence")
-    endif()
     set(SMART_CROP_CUDA ON)
     include("${CMAKE_CURRENT_LIST_DIR}/SmartCropRelease.cmake")
     smart_crop_cuda_redist("${MOSAICRAFT_REPO}" "${SMART_CROP_CUDA_REDIST}" approved_dlls approved_notices)
@@ -95,6 +91,18 @@ endif()
 release_capture(commit "${git}" -C "${MOSAICRAFT_REPO}" rev-parse HEAD)
 file(READ "${MOSAICRAFT_REPO}/contracts.json" contracts)
 string(JSON version GET "${contracts}" softwareVersion)
+if(SMART_CROP_CUDA_DEFER_OFFLINE AND
+   (NOT SMART_CROP_CUDA OR NOT version STREQUAL "1.15.15" OR "$ENV{GITHUB_ACTIONS}" STREQUAL "true"))
+    message(FATAL_ERROR "Offline acceptance deferral is limited to local v1.15.15 CUDA smart crop packages")
+endif()
+if(SMART_CROP_CUDA AND CHANNEL STREQUAL "stable" AND SMART_CROP_CUDA_PREVALIDATION)
+    message(FATAL_ERROR "Prevalidation cannot create stable CUDA smart crop packages")
+endif()
+if(SMART_CROP_CUDA AND CHANNEL STREQUAL "stable" AND NOT SMART_CROP_CUDA_PREVALIDATION AND
+   NOT SMART_CROP_CUDA_DEFER_OFFLINE AND
+   (NOT DEFINED SMART_CROP_CUDA_OFFLINE_EVIDENCE OR NOT EXISTS "${SMART_CROP_CUDA_OFFLINE_EVIDENCE}"))
+    message(FATAL_ERROR "Stable CUDA smart crop release requires final archive offline evidence")
+endif()
 file(STRINGS "${MOSAICRAFT_REPO}/docs/releases.md" release_titles REGEX "^## v")
 if("$ENV{GITHUB_REF_TYPE}" STREQUAL "tag" AND NOT "$ENV{GITHUB_REF_NAME}" STREQUAL "v${version}")
     message(FATAL_ERROR "Release tag does not match contracts.json")
@@ -301,6 +309,11 @@ if(SMART_CROP)
 endif()
 if(SMART_CROP_CUDA)
     string(APPEND info "SmartCropCuda: enabled\n")
+    if(SMART_CROP_CUDA_OFFLINE_EVIDENCE)
+        string(APPEND info "SmartCropOfflineValidation: passed\n")
+    else()
+        string(APPEND info "SmartCropOfflineValidation: not-run\n")
+    endif()
 endif()
 string(JSON length LENGTH "${contracts}")
 math(EXPR last "${length} - 1")
@@ -352,6 +365,7 @@ execute_process(COMMAND "${CMAKE_COMMAND}" "-DARCHIVE=${archive_dir}/${name}" "-
     "-DEXPECTED_COMMIT=${commit}" "-DEXPECTED_RUNTIME=${RUNTIME}" "-DEXPECTED_GPU_VALIDATION=${gpu_validation}"
     "-DEXPECTED_CHANNEL=${CHANNEL}" "-DLOCAL_SMART_CROP_CUDA_CANDIDATE=${SMART_CROP_CUDA}"
     "-DSMART_CROP_CUDA_PREVALIDATION=${SMART_CROP_CUDA_PREVALIDATION}"
+    "-DSMART_CROP_CUDA_DEFER_OFFLINE=${SMART_CROP_CUDA_DEFER_OFFLINE}"
     "-DSMART_CROP_FIXTURE_ROOT=${SMART_CROP_FIXTURE_ROOT}"
     "-DSMART_CROP_VERIFY_PYTHON=${SMART_CROP_VERIFY_PYTHON}"
     "-DSMART_CROP_CUDA_OFFLINE_EVIDENCE=${SMART_CROP_CUDA_OFFLINE_EVIDENCE}"
