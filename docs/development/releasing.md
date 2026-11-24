@@ -34,7 +34,7 @@ Windows/Linux x64 正式 Vulkan 包启用 Vulkan → CPU，并在独立无驱动
 
 ## 智能裁剪发布门禁
 
-智能裁剪仅在 Native packages 手动运行时显式启用 `include_smart_crop` 才会进入 Windows CPU 包；标签触发的标准发布默认关闭该可选功能。开启前，权重再分发、人工质量审核和各目标平台解包验证都必须通过。参见[智能裁剪发布条件](smart-crop.md#模型锁与发布条件)。
+v1.15.15 不发布单独的 CPU 智能裁剪包。Windows x64 CUDA 智能裁剪归档同时包含 CPU 推理回退，只能由本机 `Release.cmake` 的 Required GPU 流程构建；真实 GPU 验收、锁定的 NVIDIA 运行库、模型和人工质量证据，以及绑定最终 ZIP 哈希的离线验包全部通过后，才可追加到 Release。普通 CPU 包不携带智能裁剪模型。参见[智能裁剪发布条件](smart-crop.md#模型锁与发布条件)。
 
 ## 归档包检查
 

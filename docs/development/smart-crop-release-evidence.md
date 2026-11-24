@@ -12,7 +12,7 @@
 
 运行 `cmake -DMODE=SmartCropCudaRedist -P cmake/PrepareRelease.cmake` 从两份固定的 NVIDIA 官方归档提取白名单。默认目录 `build/tools/smart-crop-cuda-redist` 只含 cuBLAS 13.10.0.20 的 2 个 DLL、cuDNN 9.28.1.4 的 8 个 DLL，以及 `licenses/cuda-smart-crop/` 下的两份原始许可。DLL 和许可均由 `cmake/smart-crop-cuda-redist-windows.json` 核对大小和 SHA-256，不携带 NVIDIA 驱动 DLL、整个 SDK、NVRTC 或未通过清单的 DLL。运行库清单是打包输入，不是项目再分发许可结论；公开分发前须确认 NVIDIA 条款（CUDA Toolkit 附件 A 和 cuDNN 补充协议）与本项目许可在该分发组合中的适用性。模型锁仍独立控制三个 ONNX 和两份正例的完整性。
 
-使用 `PrepareRelease.cmake` 准备锁定依赖和模型，CUDA DNN 使用独立的 `smart-crop-cuda` 依赖树。`Release.cmake` 的本地候选参数为 `RUNTIME=cuda`、`CHANNEL=candidate`、`CUDA_VALIDATION=Required`、`SMART_CROP=ON`、`SMART_CROP_CUDA=ON`、`SMART_CROP_CUDA_REDIST=<绝对路径>`。指定独立的 `BUILD_DIR`、`OUTPUT_DIR`、`VCPKG_INSTALLED_DIR`。候选的归档不重新打包，用同一 SHA-256 做正式验收。CPU 包使用 `RUNTIME=cpu-only`、`SMART_CROP=ON`、`SMART_CROP_CUDA=OFF` 及独立的 CPU 智能裁剪依赖目录；两个包均先过模型与质量门禁。
+使用 `PrepareRelease.cmake` 准备锁定依赖和模型，CUDA DNN 使用独立的 `smart-crop-cuda` 依赖树。`Release.cmake` 的本地候选参数为 `RUNTIME=cuda`、`CHANNEL=candidate`、`CUDA_VALIDATION=Required`、`SMART_CROP=ON`、`SMART_CROP_CUDA=ON`、`SMART_CROP_CUDA_REDIST=<绝对路径>`。指定独立的 `BUILD_DIR`、`OUTPUT_DIR`、`VCPKG_INSTALLED_DIR`。候选归档通过后不重新打包，用同一 SHA-256 做正式验收；独立验包还必须分别运行 CUDA 和显式 CPU 回退两路。v1.15.15 不生成单独的 CPU 智能裁剪包，普通 CPU 包保持不携带智能裁剪模型。
 
 在有兼容 NVIDIA 驱动、无 Toolkit/cuDNN 且断网的 Windows x64 环境，用外部 `mosaicraft_release_check`、同提交的模型锁和标注，验证 ZIP 内 CLI 和 Web/API 的真人、动漫两路。确认实际 `device=cuda` 且主脸保全。保留日志，填写 JSON 键 `commit`、`sha256`、`platform`（`windows-x64`）、`gpu`、`driver`，以及布尔通过项 `offline`、`noToolkit`、`noCudnn`、`cliReal`、`cliAnime`、`webReal`、`webAnime`。独立执行 `VerifyPackage.cmake` 时以绝对路径传 `SMART_CROP_CUDA_OFFLINE_EVIDENCE`；脚本重新核对该 ZIP 的内容及 GPU 正例，不接受绑定到其他归档的记录。
 

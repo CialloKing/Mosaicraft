@@ -57,7 +57,7 @@ cmake --install build/windows-smart-crop --config Release --prefix build/smart-c
 ## 模型锁与发布条件
 
 - `cmake/smart-crop-models.json` 锁定三个权重的来源、大小和哈希。YuNet `2023mar` 有对应的 MIT 声明。原 U²-Net 权重的授权说明不能单独证明 rembg 发布附件的导出来源；DeepGHS 仓库模型卡标为 MIT，但所选权重的上游权利链还需核对。维护者已确认可分发，但对应锁定文件的许可声明和人工审核附件还未归档，因此发布门禁仍拒绝。禁止把私人测试安装目录当作可发布附件。
-- 三份权重的再分发依据和许可证齐备、独立人工标注的质量审核文档及两份可再分发的正例通过后，才可在 Native packages 手动运行时启用 `include_smart_crop`（本地发布入口对应 `-DSMART_CROP=ON`）。标签触发的标准发布默认关闭此可选功能。归档验收用 `scripts/requirements-smart-crop-verification.txt` 的 Pillow 对照像素与人工标注，不属于解包后的运行依赖。
+- 三份权重的再分发依据和许可证齐备、独立人工标注的质量审核文档及两份可再分发的正例通过后，才可在本机 `Release.cmake` 启用 `SMART_CROP=ON`、`SMART_CROP_CUDA=ON`。该设置只生成 Windows x64 CUDA 智能裁剪包；包内同时保留 CPU 推理回退，普通 CPU 包不携带智能裁剪模型。归档验收用 `scripts/requirements-smart-crop-verification.txt` 的 Pillow 对照像素与人工标注，不属于解包后的运行依赖。
 - 初审须覆盖偏侧真人、偏侧动漫、多人、主脸比窗口宽、无脸主体及无明显主体。分别统计两个模式在可保全主脸的样本上是否优于中心裁剪，以及中心裁剪已保全的主脸是否有新切断；另记录无脸主体效果、误移动率、批耗时及峰值内存。把批准的审核文档路径、大小和 SHA-256 写入 `qualityReview`；不得用两个解包正例代替总体质量审核。
 - 解包正例锁定 PNG 和人工标注的 `mainFace: [left, top, right, bottom]`（半开坐标）。每张图高 320、宽大于 180，主脸能完整落入 `180×320`，但中心裁剪切脸。发布和独立验包从其他工作目录运行，以输出像素核对实际裁剪位置和完整主脸，同时检查检测和移动指标。任何目标平台失败都不能交付宣称完整支持的包。复验已有智能裁剪版本时，使用该版本的源码锁及标注。
 
@@ -99,7 +99,7 @@ cmake --install build/windows-smart-crop-cuda --config Release --prefix build/wi
 
 **性能与发布门槛：**先复验两类正例，逐张核对 CPU 已保全的标注主脸没有被 CUDA 新切断，再测试不同尺寸连续切换、无卡、缺库、显存不足和部分输出。按模式分别运行 `python scripts/bench_smart_crop_cuda.py <cli> <input> <new-work-dir> --mode smart-anime`（真人替换为 `smart-real`，Python 3.11+ 仅用于验收）。脚本交错三轮，比较整条流程的中位吞吐，要求实际后端正确、零失败且比值至少 1.5；记录逐次模型耗时、设备级采样显存、输入 SHA-256 和完整 CLI 日志。显存采样含桌面与其它进程，可能漏掉瞬时峰值，不等同于进程精确峰值。正式比较时应排除后台负载，动漫输入包含 HighLikes 的 96 张样本与 `6534×8802` 最大图；真人用独立标注样本与同等级大图。开发机短测通过后再隔离复跑 HighLikes 全量；已有 CPU 全量任务不停止。
 
-v1.15.15 只准备 Windows x64 CLI / Web 智能裁剪包。Windows CUDA 智能包必须在有真实 GPU、无 Toolkit/cuDNN 的干净环境断网解包；Linux 独立验收，不纳入本轮发布。现有权重授权和人工质量门禁仍生效；`Release.cmake` 只在锁定并校验 Windows NVIDIA 运行库（包括延迟加载的依赖）后生成本地候选；独立验包要求同一个 ZIP 的真实 GPU 断网证据，不套用马赛克 CUDA 的 `BuildOnly` 放行逻辑。见[发布证据与候选命令](smart-crop-release-evidence.md)。
+v1.15.15 只准备 Windows x64 CLI / Web CUDA 智能裁剪包，不发布单独的 CPU 智能裁剪包。Windows CUDA 智能包必须在有真实 GPU、无 Toolkit/cuDNN 的干净环境断网解包；Linux 独立验收，不纳入本轮发布。现有权重授权和人工质量门禁仍生效；`Release.cmake` 只在锁定并校验 Windows NVIDIA 运行库（包括延迟加载的依赖）后生成本地候选；独立验包要求同一个 ZIP 分别通过真实 GPU CUDA 和 CPU 回退检查，且离线证据绑定该 ZIP。见[发布证据与候选命令](smart-crop-release-evidence.md)。
 
 #### 自动策略变更前的 Windows 开发基线（2026-11-24）
 
