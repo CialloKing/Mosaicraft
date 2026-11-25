@@ -8,15 +8,15 @@ Mosaicraft 用图库里的照片拼出一张目标图，提供 Qt 桌面应用�
 
 ## 下载与运行
 
-在 [GitHub Releases](https://github.com/CialloKing/Mosaicraft/releases/latest) 的 **Assets** 中，按平台和文件名后缀选择发布包。NVIDIA 用户可选 CUDA 包；装有兼容 Vulkan 驱动的 Windows/Linux 用户可选 Vulkan 包；只想使用 CPU 则选 CPU 包。
+在 GitHub Releases 的 **Assets** 中，按平台选择智能裁剪包（CLI 与 Web UI）或 Qt 客户端包。下表是新的六附件发布规则，已有版本的附件见版本状态。[下载稳定版](https://github.com/CialloKing/Mosaicraft/releases/latest) · [版本状态](docs/releases.md)
 
-| 平台 | 系统基线 | CPU 包后缀 | CUDA 包后缀 | Vulkan 包后缀 |
-| --- | --- | --- | --- | --- |
-| Windows x64 | Windows 10 22H2 | `_windows-x64_cpu-only.zip` | `_windows-x64_cuda.zip` | `_windows-x64_vulkan.zip` |
-| Linux x64 | Ubuntu 22.04 / glibc 2.35 | `_linux-x64_cpu-only.tar.gz` | `_linux-x64_cuda.tar.gz` | `_linux-x64_vulkan.tar.gz` |
-| macOS ARM64 | macOS 13 | `_macos-arm64_cpu-only.tar.gz` | — | — |
+| 平台 | 智能裁剪包 | Qt 客户端包 |
+| --- | --- | --- |
+| Windows x64 | `_windows-x64_cuda-vulkan-smart-crop.zip` | `_windows-x64_qt_cuda-vulkan.zip` |
+| Linux x64 | `_linux-x64_cuda-vulkan-smart-crop.tar.gz` | `_linux-x64_qt_cuda-vulkan.tar.gz` |
+| macOS ARM64 | `_macos-arm64_cpu-only-smart-crop.tar.gz` | `_macos-arm64_qt.tar.gz` |
 
-Qt 桌面版请选 `_qt`（CPU）或 `_qt_cuda-vulkan`（Windows/Linux x64，同包支持两种 GPU 后端）。双后端包的「自动」优先 CUDA，不可用时回退 CPU；在桌面设置的「默认后端」中显式选 Vulkan 才会使用 Vulkan。原生 `_vulkan` 包仍默认优先 Vulkan。桌面版解压后启动 `MosaicraftDesktop`（macOS 打开 `.app`）。详见[桌面包说明](docs/development/packaging.md#qt-桌面发布包)、[版本状态](docs/releases.md)与[GPU 后端](docs/guides/gpu-backends.md)。
+Windows 和 Linux 的智能裁剪包内置真人与动漫模型，支持 CPU、CUDA 和 Vulkan 推理。Vulkan 推理用于「仅归一化」。macOS 智能裁剪使用 CPU。桌面版解压后启动 `MosaicraftDesktop`（macOS 打开 `.app`）。[智能裁剪用法](docs/development/smart-crop.md) · [桌面包说明](docs/development/packaging.md#qt-桌面发布包)
 
 ## 快速开始
 

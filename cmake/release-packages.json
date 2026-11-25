@@ -1,0 +1,10 @@
+{
+  "include": [
+    {"platform":"windows-x64", "kind":"native", "runtime":"cuda-vulkan", "suffix":"cuda-vulkan-smart-crop", "extension":"zip", "runner":"windows-2025-vs2026", "hostedCandidate":true},
+    {"platform":"linux-x64", "kind":"native", "runtime":"cuda-vulkan", "suffix":"cuda-vulkan-smart-crop", "extension":"tar.gz", "runner":"ubuntu-22.04", "hostedCandidate":false},
+    {"platform":"macos-arm64", "kind":"native", "runtime":"cpu-only", "suffix":"cpu-only-smart-crop", "extension":"tar.gz", "runner":"macos-15", "hostedCandidate":false},
+    {"platform":"windows-x64", "kind":"qt", "runtime":"cuda-vulkan", "suffix":"qt_cuda-vulkan", "extension":"zip", "runner":"windows-2025-vs2026", "hostedCandidate":true},
+    {"platform":"linux-x64", "kind":"qt", "runtime":"cuda-vulkan", "suffix":"qt_cuda-vulkan", "extension":"tar.gz", "runner":"ubuntu-24.04", "hostedCandidate":false},
+    {"platform":"macos-arm64", "kind":"qt", "runtime":"cpu-only", "suffix":"qt", "extension":"tar.gz", "runner":"macos-26", "hostedCandidate":false}
+  ]
+}

@@ -21,7 +21,7 @@
 
 compatible 模式下 Vulkan/Metal 使用 GPU 特征统计与 CPU FP64 评分，两个阶段显示不同计算路径属于正常执行。auto 在准备阶段可能回退到 CPU；应以任务实际状态及原因判断，不能只看表单选项。切换后端、设备或评分模式后应重新计算预览，新的运行身份参与缓存复用校验。
 
-在「建库 → 仅归一化」选择智能裁剪后，支持的实验构建可在「推理设备」中选择「仅 Vulkan」（真人）或「CUDA + Vulkan 双 GPU」（真人、动漫）。两项均为实验性，不一定比单 CUDA 更快。双 GPU 要求额外的 AMD/Intel Vulkan 适配器、至少 8 张图和 4 个线程。所选策略会保留在生成的命令及任务参数中。见 [Vulkan 实验](../SMART_CROP_VULKAN.md)。
+在双后端智能裁剪包的「建库 → 仅归一化」中，真人和动漫均可选「仅 Vulkan」或「CUDA + Vulkan 双 GPU」。双 GPU 仍为实验选项，要求额外的 AMD/Intel Vulkan 适配器、至少 8 张图和 4 个线程。所选策略会保留在生成的命令及任务参数中。[Vulkan 与双 GPU 说明](../SMART_CROP_VULKAN.md)
 
 ## 预览缓存
 

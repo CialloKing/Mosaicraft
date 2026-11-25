@@ -2,11 +2,13 @@
 
 
 
+当前六附件矩阵和标注正例的配置见[发布清单](releasing.md#六个发布附件)。以下记录对应此前的包型和验收。
+
 ## v1.15.15 验收范围
 
 v1.15.15 的审核报告与真人、动漫标注正例已在模型锁中登记并校验。维护者将真实 GPU 干净系统的离线解包验收留待后续版本；本版包内记录 `SmartCropOfflineValidation: not-run`。真实显存耗尽恢复、严格 CUDA 途中失败保留部分输出及独占环境正式性能仍未验收。
 
-## 当前打包与独立验收
+## 早期 Windows cuDNN 包的打包与独立验收
 
 运行 `cmake -DMODE=SmartCropCudaRedist -P cmake/PrepareRelease.cmake` 从两份固定的 NVIDIA 官方归档提取白名单。默认目录 `build/tools/smart-crop-cuda-redist` 只含 cuBLAS 13.10.0.20 的 2 个 DLL、cuDNN 9.28.1.4 的 8 个 DLL，以及 `licenses/cuda-smart-crop/` 下的两份原始许可。DLL 和许可均由 `cmake/smart-crop-cuda-redist-windows.json` 核对大小和 SHA-256，不携带 NVIDIA 驱动 DLL、整个 SDK、NVRTC 或未通过清单的 DLL。运行库清单是打包输入，不是项目再分发许可结论；公开分发前须确认 NVIDIA 条款（CUDA Toolkit 附件 A 和 cuDNN 补充协议）与本项目许可在该分发组合中的适用性。模型锁仍独立控制三个 ONNX 和两份正例的完整性。
 

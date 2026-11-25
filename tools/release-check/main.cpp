@@ -318,7 +318,8 @@ private:
     httplib::Client client_;
 };
 
-void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulkanFallback, bool current)
+void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulkanFallback, bool current,
+               const std::string &smartCrop)
 {
     const auto input = root / "input";
     fs::create_directory(input);
@@ -340,6 +341,24 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
     require(info.at("api").at("structured") == true &&
             info.at("api").at("contractMajorVersion") == contracts.at("apiMajorVersion") &&
             info.at("api").at("contractVersion") == contracts.at("apiVersion"), "Unexpected API contract");
+    if (!smartCrop.empty())
+    {
+        const auto &features = info.at("features");
+        const auto hasFeature = [&](const char *name)
+        {
+            return std::find(features.begin(), features.end(), name) != features.end();
+        };
+        require(hasFeature("smart-crop") && hasFeature("smart-crop-build"), "Missing smart crop API features");
+        if (smartCrop == "cuda-vulkan")
+        {
+            require(hasFeature("smart-crop-cuda") && hasFeature("smart-crop-vulkan") &&
+                    hasFeature("smart-crop-cuda-vulkan"), "Missing CUDA or Vulkan smart crop API features");
+        }
+        else
+        {
+            require(!hasFeature("smart-crop-cuda") && !hasFeature("smart-crop-vulkan"), "Unexpected CPU package GPU features");
+        }
+    }
     const auto endpoints = api.json("/api/endpoints").at("endpoints");
     for (const auto operation : {"info", "endpoints", "submitMosaicJob", "submitBuildJob", "getJob", "cancelJob",
          "clearFinishedJobs", "databaseStats", "databaseHealth", "databaseUsage", "databaseUsageExport",
@@ -629,7 +648,8 @@ void scenarios(Api &api, const fs::path &root, const Json &contracts, bool vulka
             "Clearing history must preserve saved output");
 }
 
-int smoke(const fs::path &exe, const fs::path &contractsFile, bool vulkanFallback, bool current)
+int smoke(const fs::path &exe, const fs::path &contractsFile, bool vulkanFallback, bool current,
+          const std::string &smartCrop)
 {
     const bool legacy = contractsFile == "--legacy";
     require(!legacy || (!vulkanFallback && !current), "Legacy archives cannot use current smoke options");
@@ -658,7 +678,7 @@ int smoke(const fs::path &exe, const fs::path &contractsFile, bool vulkanFallbac
         }
         else
         {
-            scenarios(api, root, contracts, vulkanFallback, current);
+            scenarios(api, root, contracts, vulkanFallback, current, smartCrop);
         }
     }
     catch (...)
@@ -689,9 +709,10 @@ int main(int argc, char **argv)
         {
             return checkDocs(fs::path(argv[2]));
         }
-        require(argc >= 3 && argc <= 5,
-                "Usage: mosaicraft_release_check <WebUI> <contracts.json|--legacy> [--vulkan-fallback] [--current]");
+        require(argc >= 3 && argc <= 6,
+                "Usage: mosaicraft_release_check <WebUI> <contracts.json|--legacy> [--vulkan-fallback] [--current] [--smart-crop-cpu|--smart-crop-cuda-vulkan]");
         bool vulkanFallback = false, current = false;
+        std::string smartCrop;
         for (int i = 3; i < argc; ++i)
         {
             const fs::path option(argv[i]);
@@ -703,12 +724,16 @@ int main(int argc, char **argv)
             {
                 current = true;
             }
+            else if (smartCrop.empty() && (option == "--smart-crop-cpu" || option == "--smart-crop-cuda-vulkan"))
+            {
+                smartCrop = option == "--smart-crop-cpu" ? "cpu" : "cuda-vulkan";
+            }
             else
             {
                 throw std::runtime_error("Unknown or repeated smoke argument: " + option.u8string());
             }
         }
-        return smoke(fs::path(argv[1]), fs::path(argv[2]), vulkanFallback, current);
+        return smoke(fs::path(argv[1]), fs::path(argv[2]), vulkanFallback, current, smartCrop);
     }
     catch (const std::exception &error)
     {

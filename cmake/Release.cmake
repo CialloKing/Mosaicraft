@@ -40,7 +40,7 @@ else()
     endif()
     if(RUNTIME MATCHES "^cuda")
         set(cuda ON)
-        if(RUNTIME STREQUAL "cuda-vulkan" AND
+        if(RUNTIME STREQUAL "cuda-vulkan" AND NOT SMART_CROP_VULKAN AND
            (NOT platform STREQUAL "windows" OR NOT CHANNEL STREQUAL "candidate"))
             message(FATAL_ERROR "The combined backend supports Windows x64 candidates only")
         endif()
@@ -60,24 +60,31 @@ if(DEFINED CUDA_VALIDATION AND NOT cuda)
     message(FATAL_ERROR "CUDA_VALIDATION is only meaningful for a CUDA build")
 endif()
 
-if(SMART_CROP AND (NOT platform STREQUAL "windows" OR NOT arch STREQUAL "x64" OR
-                   NOT SMART_CROP_CUDA))
-    message(FATAL_ERROR "This release only enables smart crop in the Windows x64 CUDA smart crop package")
+foreach(option IN ITEMS SMART_CROP SMART_CROP_CUDA SMART_CROP_CUTLASS SMART_CROP_VULKAN)
+    if(${option})
+        set(${option} ON)
+    else()
+        set(${option} OFF)
+    endif()
 endif()
-if(SMART_CROP_CUDA)
+if(SMART_CROP_VULKAN OR SMART_CROP_CUTLASS)
+    if(NOT SMART_CROP OR NOT SMART_CROP_CUDA OR NOT SMART_CROP_VULKAN OR NOT SMART_CROP_CUTLASS OR
+       NOT RUNTIME STREQUAL "cuda-vulkan" OR NOT arch STREQUAL "x64")
+        message(FATAL_ERROR "The dual smart crop archive needs both CUDA (CUTLASS) and Vulkan on x64")
+    endif()
+elseif(SMART_CROP_CUDA)
     if(NOT SMART_CROP OR NOT platform STREQUAL "windows" OR NOT arch STREQUAL "x64" OR
        NOT RUNTIME STREQUAL "cuda" OR NOT CUDA_VALIDATION STREQUAL "Required" OR
        NOT IS_ABSOLUTE "${SMART_CROP_CUDA_REDIST}")
         message(FATAL_ERROR "CUDA smart crop requires Windows x64, Required GPU validation, and an approved redist tree")
     endif()
-    set(SMART_CROP_CUDA ON)
     include("${CMAKE_CURRENT_LIST_DIR}/SmartCropRelease.cmake")
     smart_crop_cuda_redist("${MOSAICRAFT_REPO}" "${SMART_CROP_CUDA_REDIST}" approved_dlls approved_notices)
     # Tests load OpenCV DNN before the install tree exists, so expose only the
     # audited smart-crop CUDA runtime while the release checks execute.
     set(ENV{PATH} "${SMART_CROP_CUDA_REDIST};$ENV{PATH}")
-else()
-    set(SMART_CROP_CUDA OFF)
+elseif(SMART_CROP AND (NOT platform STREQUAL "macos" OR NOT RUNTIME STREQUAL "cpu-only"))
+    message(FATAL_ERROR "The CPU smart crop archive targets macOS ARM64")
 endif()
 
 find_program(git git REQUIRED)
@@ -156,11 +163,13 @@ if(vulkan)
     endforeach()
 endif()
 if(SMART_CROP)
-    set(SMART_CROP ON)
     include("${CMAKE_CURRENT_LIST_DIR}/SmartCropRelease.cmake")
     file(READ "${repo}/cmake/smart-crop-models.json" smart_crop_lock)
-    smart_crop_release_gate("${repo}" "${smart_crop_lock}")
+    smart_crop_release_gate("${repo}" "${smart_crop_lock}" "${platform}-${arch}-${RUNTIME}-smart-crop")
     if(NOT DEFINED SMART_CROP_FIXTURE_ROOT)
+        set(SMART_CROP_FIXTURE_ROOT "$ENV{SMART_CROP_FIXTURE_ROOT}")
+    endif()
+    if(SMART_CROP_FIXTURE_ROOT STREQUAL "")
         message(FATAL_ERROR "Smart crop packages require SMART_CROP_FIXTURE_ROOT for independent face-crop checks")
     endif()
     cmake_path(ABSOLUTE_PATH SMART_CROP_FIXTURE_ROOT BASE_DIRECTORY "${repo}" NORMALIZE)
@@ -170,8 +179,22 @@ if(SMART_CROP)
     endif()
     cmake_path(ABSOLUTE_PATH SMART_CROP_MODELS_DIR BASE_DIRECTORY "${repo}" NORMALIZE)
     smart_crop_verified_models("${smart_crop_lock}" "${SMART_CROP_MODELS_DIR}" validated_models)
-else()
-    set(SMART_CROP OFF)
+    if(SMART_CROP_VULKAN)
+        foreach(key IN ITEMS MOSAICRAFT_NCNN_DIR MOSAICRAFT_NCNN_LICENSE)
+            if(NOT DEFINED ${key})
+                set(${key} "$ENV{${key}}")
+            endif()
+        endforeach()
+        if(NOT DEFINED SMART_CROP_VULKAN_MODELS_DIR)
+            set(SMART_CROP_VULKAN_MODELS_DIR "${SMART_CROP_MODELS_DIR}/vulkan")
+        endif()
+        cmake_path(ABSOLUTE_PATH SMART_CROP_VULKAN_MODELS_DIR BASE_DIRECTORY "${repo}" NORMALIZE)
+        release_file("${MOSAICRAFT_NCNN_DIR}/ncnnConfig.cmake")
+        release_file("${MOSAICRAFT_NCNN_LICENSE}")
+        list(APPEND sdk_args "-Dncnn_DIR:PATH=${MOSAICRAFT_NCNN_DIR}"
+            "-DMOSAICRAFT_NCNN_LICENSE:FILEPATH=${MOSAICRAFT_NCNN_LICENSE}"
+            "-DMOSAICRAFT_SMART_CROP_VULKAN_MODELS_DIR:PATH=${SMART_CROP_VULKAN_MODELS_DIR}")
+    endif()
 endif()
 message(STATUS "Building v${version} ${platform}-${arch} ${RUNTIME} (${CHANNEL}) at ${commit}")
 execute_process(COMMAND "${CMAKE_COMMAND}" --preset "${preset}" -S "${repo}" -B "${BUILD_DIR}"
@@ -182,13 +205,16 @@ execute_process(COMMAND "${CMAKE_COMMAND}" --preset "${preset}" -S "${repo}" -B 
     "-DMOSAICRAFT_VULKAN_AUTO:BOOL=${vulkan_auto}" -DMOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON
     -DMOSAICRAFT_DESKTOP_BACKEND_INSTALL:BOOL=OFF -DMOSAICRAFT_BUILD_DESKTOP:BOOL=OFF
     "-DMOSAICRAFT_SMART_CROP_CUDA:BOOL=${SMART_CROP_CUDA}"
+    "-DMOSAICRAFT_SMART_CROP_CUTLASS:BOOL=${SMART_CROP_CUTLASS}" "-DMOSAICRAFT_SMART_CROP_VULKAN:BOOL=${SMART_CROP_VULKAN}"
     "-DMOSAICRAFT_SMART_CROP_CUDA_REDIST:PATH=${SMART_CROP_CUDA_REDIST}"
     "-DMOSAICRAFT_SMART_CROP:BOOL=${SMART_CROP}" "-DMOSAICRAFT_SMART_CROP_MODELS_DIR:PATH=${SMART_CROP_MODELS_DIR}" ${sdk_args}
     COMMAND_ERROR_IS_FATAL ANY)
 file(STRINGS "${BUILD_DIR}/CMakeCache.txt" cache)
 set(expected_cache "MOSAICRAFT_CUDA:BOOL=${cuda}" "MOSAICRAFT_VULKAN:BOOL=${vulkan}"
     "MOSAICRAFT_METAL:BOOL=${metal}" "MOSAICRAFT_VULKAN_AUTO:BOOL=${vulkan_auto}"
-    "MOSAICRAFT_SMART_CROP_CUDA:BOOL=${SMART_CROP_CUDA}" "MOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON" "MOSAICRAFT_DESKTOP_BACKEND_INSTALL:BOOL=OFF" "MOSAICRAFT_SMART_CROP:BOOL=${SMART_CROP}")
+    "MOSAICRAFT_SMART_CROP_CUDA:BOOL=${SMART_CROP_CUDA}" "MOSAICRAFT_SMART_CROP_CUTLASS:BOOL=${SMART_CROP_CUTLASS}"
+    "MOSAICRAFT_SMART_CROP_VULKAN:BOOL=${SMART_CROP_VULKAN}" "MOSAICRAFT_BUNDLE_RUNTIME:BOOL=ON"
+    "MOSAICRAFT_DESKTOP_BACKEND_INSTALL:BOOL=OFF" "MOSAICRAFT_SMART_CROP:BOOL=${SMART_CROP}")
 foreach(entry IN LISTS expected_cache)
     if(NOT entry IN_LIST cache)
         message(FATAL_ERROR "Release cache does not contain ${entry}")
@@ -268,9 +294,10 @@ foreach(document IN LISTS documents)
 endforeach()
 
 set(package "Mosaicraft_v${version}_${platform}-${arch}_${RUNTIME}")
-if(SMART_CROP_CUDA)
+if(SMART_CROP)
     string(APPEND package "-smart-crop")
-elseif(CHANNEL STREQUAL "candidate")
+endif()
+if(CHANNEL STREQUAL "candidate")
     string(APPEND package "_candidate")
 endif()
 if(platform STREQUAL "windows")
@@ -295,6 +322,9 @@ endif()
 if(SMART_CROP_CUDA)
     # Any later offline evidence belongs outside the ZIP because it binds to the final hash.
     string(APPEND info "SmartCropCuda: enabled\nSmartCropOfflineValidation: not-run\n")
+endif()
+if(SMART_CROP_VULKAN)
+    string(APPEND info "SmartCropVulkan: enabled\nSmartCropCudaRuntime: cutlass\nSmartCropVulkanValidation: ${gpu_validation}\n")
 endif()
 string(JSON length LENGTH "${contracts}")
 math(EXPR last "${length} - 1")
@@ -345,6 +375,7 @@ file(SHA256 "${archive_dir}/${name}" sha)
 execute_process(COMMAND "${CMAKE_COMMAND}" "-DARCHIVE=${archive_dir}/${name}" "-DEXPECTED_SHA256=${sha}"
     "-DEXPECTED_COMMIT=${commit}" "-DEXPECTED_RUNTIME=${RUNTIME}" "-DEXPECTED_GPU_VALIDATION=${gpu_validation}"
     "-DEXPECTED_CHANNEL=${CHANNEL}"
+    "-DEXPECTED_SMART_CROP=${SMART_CROP}"
     "-DSMART_CROP_FIXTURE_ROOT=${SMART_CROP_FIXTURE_ROOT}"
     "-DSMART_CROP_VERIFY_PYTHON=${SMART_CROP_VERIFY_PYTHON}"
     "-DCHECK_TOOL=${bin}/mosaicraft_release_check${suffix}" "-DWORK_ROOT=${work}" -DREQUIRE_CURRENT=ON

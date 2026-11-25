@@ -2,19 +2,15 @@
 
 日常 `CI` 在 Windows x64、Linux x64 和 macOS ARM64 上编译 CPU 版 CLI 与 Web UI。三个平台均直接使用 CMake 平台预设；Linux 和 macOS 使用系统依赖，Windows 使用固定的 vcpkg 依赖。推送 `v*` 版本标签会触发 `Native packages`，执行完整 CTest、Web UI/API smoke、打包和独立包验收。维护者使用通过验收的 Actions artifacts 创建 GitHub Release。
 
-| 平台 | runner | CPU 包 | 云端 CUDA 包 | Vulkan 包 |
-| --- | --- | --- | --- | --- |
-| Windows x64 | windows-2025-vs2026 | ZIP | ZIP candidate | ZIP |
-| Linux x64 | ubuntu-22.04 | tar.gz | tar.gz，正式附件（GPU 未验收） | tar.gz |
-| macOS ARM64 | macos-15 | tar.gz | 无 | 无 |
+| 平台 | 智能裁剪原生包 | Qt 客户端包 |
+| --- | --- | --- |
+| Windows x64 | CUDA + Vulkan ZIP | CUDA + Vulkan Qt ZIP |
+| Linux x64 | CUDA + Vulkan tar.gz | CUDA + Vulkan Qt tar.gz |
+| macOS ARM64 | CPU tar.gz | CPU Qt tar.gz |
 
-支持基线为 Windows 10 22H2 x64、Ubuntu 22.04/glibc 2.35、macOS 13 ARM64。没有安装器、DMG、Universal 2 或 Developer ID 公证。macOS 包使用 ad-hoc 签名；这不等于 Apple 公证。
+智能裁剪包提供 CLI 和 Web UI。Windows/Linux 的包以 CUDA 优先的自动策略生成马赛克，Vulkan 可显式选择。智能裁剪推理可选 CPU、CUDA 或 Vulkan，Vulkan 用于独立归一化。macOS 智能裁剪使用 CPU。公开附件与候选的区别、六件套校验和标注正例设置见[发布清单](releasing.md#六个发布附件)。
 
-## 正式包后端范围
-
-v1.15.11 保留七个原生包，另提供五个 Qt 桌面包。原生 CPU/CUDA 包关闭 Vulkan 和 Metal；原生 Vulkan 包启用 `MOSAICRAFT_VULKAN_AUTO`，`auto` 优先 Vulkan 并回退 CPU，不编译 CUDA/Metal。`Release.cmake` 显式设置这些开关并核对实际 CMake 缓存。
-
-正式 Vulkan 包不带 `_candidate` 后缀，`BUILD_INFO.txt` 记录 `PortableAutoSelection: vulkan-to-cpu` 和 `PortableGpuValidation: not-run`。独立验收隐藏 Vulkan ICD，验证默认建库和生成自动回退 CPU；实机 GPU 测试另记。`-DCHANNEL=candidate`仍生成仅显式选择的候选包，不得用候选替代正式附件。
+原生支持基线为 Windows 10 22H2 x64、Ubuntu 22.04/glibc 2.35、macOS 13 ARM64。macOS 包使用 ad-hoc 签名。
 
 ## 固定依赖与缓存
 
@@ -38,7 +34,15 @@ Linux/macOS 的日常源码构建使用 CMake 3.21+。发布使用 CMake/CTest/C
 
 `Release.cmake` 校验干净的源提交和实际构建配置，运行必选 CTest，由 CPack 归档，再用独立工具验收解包后的程序。只有通过验收的归档和 `.sha256` 才会进入输出目录。没有跳过测试、冒烟或验包的选项。
 
-先按[源码构建](building.md)运行 `Prepare` 和 `Install`，再执行：
+现行智能裁剪包先准备模型和依赖。macOS 在 `Prepare`、`Install` 时设置 `SMART_CROP=ON`，再以 `-DRUNTIME=cpu-only -DSMART_CROP=ON` 运行 `Release.cmake`。Windows/Linux 先运行 `PrepareRelease.cmake` 的 `CUDA`、`Vulkan`、`SmartCropVulkan`、`Models` 模式，再在 `Prepare`、`Install` 时设置 `SMART_CROP=ON` 与 `SMART_CROP_CUTLASS=ON`。Vulkan 模型在 Windows 用 `-DMODE=SmartCropVulkan -DPREPARE_VULKAN_MODELS=ON` 生成，Linux 使用同一份六文件模型目录。导出准备步骤打印的 ncnn 配置和许可路径，分别赋给 `MOSAICRAFT_NCNN_DIR`、`MOSAICRAFT_NCNN_LICENSE`。打包使用以下参数：
+
+```sh
+cmake -DRUNTIME=cuda-vulkan -DSMART_CROP=ON -DSMART_CROP_CUDA=ON \
+  -DSMART_CROP_CUTLASS=ON -DSMART_CROP_VULKAN=ON -DCUDA_VALIDATION=Required \
+  "-DSMART_CROP_FIXTURE_ROOT=<fixtures>" -P cmake/Release.cmake
+```
+
+以下入口留作历史包复查和单后端开发打包：
 
 ```sh
 cmake -DVCPKG_ROOT=build/tools/vcpkg -DRUNTIME=cpu-only -P cmake/Release.cmake
@@ -71,13 +75,13 @@ cmake -DRUNTIME=cuda -DCUDA_VALIDATION=Required -DCUDAToolkit_ROOT=<sdk> -P cmak
 
 ## Qt 桌面发布包
 
-`Native packages` 除了七个 Web UI / CLI 包，还构建下列 Qt 桌面包。桌面包自带 CLI 和 worker，不依赖原生包。
+`Native packages` 为每个平台构建一个 Qt 桌面包。桌面包自带 CLI 和 worker。
 
-| 平台 | CPU 附件后缀 | CUDA + Vulkan 附件后缀 | 解压后启动 |
-| --- | --- | --- | --- |
-| Windows x64 | `_windows-x64_qt.zip` | `_windows-x64_qt_cuda-vulkan.zip` | `bin/MosaicraftDesktop.exe` |
-| Linux x64 | `_linux-x64_qt.tar.gz` | `_linux-x64_qt_cuda-vulkan.tar.gz` | `./bin/MosaicraftDesktop` |
-| macOS ARM64 | `_macos-arm64_qt.tar.gz` | — | `MosaicraftDesktop.app` |
+| 平台 | 附件后缀 | 解压后启动 |
+| --- | --- | --- |
+| Windows x64 | `_windows-x64_qt_cuda-vulkan.zip` | `bin/MosaicraftDesktop.exe` |
+| Linux x64 | `_linux-x64_qt_cuda-vulkan.tar.gz` | `./bin/MosaicraftDesktop` |
+| macOS ARM64 | `_macos-arm64_qt.tar.gz` | `MosaicraftDesktop.app` |
 
 桌面包均用 `cmake/qt-sdk.json` 锁定的 Qt SDK，随包部署 Qt 共享库、平台插件、SQLite、WebP、TIFF、支持内部 `desktop-worker` 模式的 CLI 及后端依赖。保持解压后的目录结构，无需另装 Qt 或 CUDA Toolkit。Linux 以 Ubuntu 24.04 上的构建为基线，仍需要操作系统的显示服务和驱动；macOS `.app` 为临时签名（ad-hoc），未公证。
 
@@ -102,7 +106,7 @@ Windows/Linux 双后端构建另需准备锁定的 CUDA SDK、Vulkan 头文件�
 
 ## 独立包验收
 
-三个 CPU、两个 CUDA 和两个 Vulkan 包均在独立的新 job 下载附件，不安装项目依赖或 CUDA Toolkit。验证 CLI、API、图片生成、中文与空格路径、依赖加载位置，以及 Unix 执行权限和 macOS 签名。CUDA 候选在无 GPU 环境验证回退运行，仍标记 `not-run`。
+独立验收逐个平台下载两种附件。原生包验证 CLI、Web UI/API、智能裁剪模型及正例、图片生成、中文与空格路径、依赖加载位置和 Unix 执行权限。Qt 包另检查归档布局及 macOS 签名。设备验收状态记录在 `BUILD_INFO.txt`。
 
 用 [独立原生验包器](releasing.md#使用原生验包器)验收本地归档或已发布的附件。历史包缺少新 GPU 证据字段时仍可普通验收；要求指定验收状态时，则必须匹配该状态。
 

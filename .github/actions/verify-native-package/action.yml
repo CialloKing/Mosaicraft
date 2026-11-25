@@ -6,7 +6,7 @@ inputs:
     required: true
   gpu-validation:
     description: Expected GPU validation state.
-    required: true
+    default: ''
   channel:
     description: Expected stable or candidate channel.
     required: true
@@ -15,6 +15,9 @@ inputs:
     default: ${{ github.sha }}
   tag:
     description: Published tag; when empty, verify the artifact in build/download instead.
+    default: ''
+  smart-crop:
+    description: Require the smart crop model bundle and run its CPU tests.
     default: ''
 runs:
   using: composite
@@ -27,7 +30,7 @@ runs:
           -DCMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE="$PWD/build/check-tool/bin"
         cmake --build build/check-tool --config Release --parallel 2
     - name: Prepare the annotation verifier when smart crop has been approved
-      if: ${{ hashFiles('tests/fixtures/smart-crop/*.png') != '' }}
+      if: ${{ inputs.smart-crop == '' && hashFiles('tests/fixtures/smart-crop/*.png') != '' }}
       shell: bash
       run: python -m pip install -r scripts/requirements-smart-crop-verification.txt
     - name: Verify archive without project dependencies
@@ -39,6 +42,7 @@ runs:
         RUNTIME: ${{ inputs.runtime }}
         GPU_VALIDATION: ${{ inputs.gpu-validation }}
         CHANNEL: ${{ inputs.channel }}
+        SMART_CROP: ${{ inputs.smart-crop }}
       run: |
         suffix=
         if [[ "$RUNNER_OS" == Windows ]]; then suffix=.exe; fi
@@ -47,6 +51,12 @@ runs:
         else
           source=(-DARCHIVE_DIR=build/download "-DEXPECTED_COMMIT=$EXPECTED_COMMIT" -DREQUIRE_CURRENT=ON)
         fi
-        cmake "${source[@]}" "-DEXPECTED_RUNTIME=$RUNTIME" "-DEXPECTED_GPU_VALIDATION=$GPU_VALIDATION" \
+        if [[ -n "$SMART_CROP" ]]; then
+          source+=("-DEXPECTED_SMART_CROP=$SMART_CROP" -DSMART_CROP_VERIFY_CPU_ONLY=ON)
+        fi
+        if [[ -n "$GPU_VALIDATION" ]]; then
+          source+=("-DEXPECTED_GPU_VALIDATION=$GPU_VALIDATION")
+        fi
+        cmake "${source[@]}" "-DEXPECTED_RUNTIME=$RUNTIME" \
           "-DEXPECTED_CHANNEL=$CHANNEL" "-DCHECK_TOOL=build/check-tool/bin/mosaicraft_release_check$suffix" \
           -P cmake/VerifyPackage.cmake

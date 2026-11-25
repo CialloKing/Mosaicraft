@@ -3,76 +3,93 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Published release tag (v1.14.7 or later)
+        description: Release tag using the six-package matrix
         required: true
+        type: string
       artifact_run:
-        description: Optional full Native packages run ID to verify before publication instead of downloading release assets.
+        description: Optional Native packages run ID to verify its hosted artifacts before publication
         required: false
         type: string
 permissions:
   actions: read
   contents: read
 jobs:
+  plan:
+    runs-on: ubuntu-22.04
+    outputs:
+      packages: ${{ steps.matrix.outputs.packages }}
+      commit: ${{ steps.matrix.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: matrix
+        env:
+          TAG: ${{ inputs.tag }}
+          ARTIFACT_RUN: ${{ inputs.artifact_run }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git fetch --depth=1 --no-tags origin "refs/tags/$TAG"
+          echo "commit=$(git rev-parse 'FETCH_HEAD^{commit}')" >> "$GITHUB_OUTPUT"
+          if [[ -z "$ARTIFACT_RUN" ]]; then
+            gh release view "$TAG" --json assets > release-assets.json
+            python3 scripts/verify_release_set.py "$TAG" --assets release-assets.json
+          fi
+          echo "packages=$(jq -c --arg tag "$TAG" --arg run "$ARTIFACT_RUN" '
+            .include |= map(. + {asset: (
+              "Mosaicraft_" + $tag + "_" + .platform + "_" + .suffix
+              + (if $run != "" and .hostedCandidate then "_candidate" else "" end)
+              + "." + .extension)})' cmake/release-packages.json)" >> "$GITHUB_OUTPUT"
   verify:
-    name: Verify ${{ matrix.platform }} ${{ matrix.runtime }} release
+    needs: plan
+    name: Verify ${{ matrix.platform }} ${{ matrix.kind }} release
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - platform: windows-x64
-            runtime: cpu-only
-            gpu-validation: not-applicable
-            runner: windows-2025-vs2026
-          - platform: windows-x64
-            runtime: cuda
-            gpu-validation: passed
-            runner: windows-2025-vs2026
-          - platform: linux-x64
-            runtime: cpu-only
-            gpu-validation: not-applicable
-            runner: ubuntu-22.04
-          - platform: linux-x64
-            runtime: cuda
-            gpu-validation: not-run
-            runner: ubuntu-22.04
-          - platform: windows-x64
-            runtime: vulkan
-            gpu-validation: not-run
-            runner: windows-2025-vs2026
-          - platform: linux-x64
-            runtime: vulkan
-            gpu-validation: not-run
-            runner: ubuntu-22.04
-          - platform: macos-arm64
-            runtime: cpu-only
-            gpu-validation: not-applicable
-            runner: macos-15
+      matrix: ${{ fromJSON(needs.plan.outputs.packages) }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Resolve the intended product tag independently of the archive
-        id: source
-        if: inputs.artifact_run
-        shell: bash
-        env:
-          TAG: ${{ inputs.tag }}
-        run: |
-          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          git fetch --depth=1 --no-tags origin "refs/tags/$TAG"
-          echo "commit=$(git rev-parse 'FETCH_HEAD^{commit}')" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: inputs.artifact_run
         with:
           github-token: ${{ github.token }}
           run-id: ${{ inputs.artifact_run }}
-          name: ${{ format('{0}-{1}', matrix.runtime == 'cpu-only' && 'cpu' || matrix.runtime, matrix.platform) }}
+          name: release-${{ matrix.kind }}-${{ matrix.platform }}
           path: build/download
+      - uses: ./.github/actions/smart-crop-fixtures
+        if: matrix.kind == 'native'
+        with:
+          archive-url: ${{ secrets.SMART_CROP_FIXTURE_URL }}
       - uses: ./.github/actions/verify-native-package
+        if: matrix.kind == 'native'
         with:
           runtime: ${{ matrix.runtime }}
-          expected-commit: ${{ steps.source.outputs.commit || github.sha }}
-          gpu-validation: ${{ inputs.artifact_run && matrix.runtime == 'cuda' && runner.os == 'Windows' && 'not-run' || matrix.gpu-validation }}
-          channel: ${{ inputs.artifact_run && matrix.runtime == 'cuda' && runner.os == 'Windows' && 'candidate' || 'stable' }}
+          expected-commit: ${{ needs.plan.outputs.commit }}
+          smart-crop: 'ON'
+          gpu-validation: ${{ matrix.runtime == 'cpu-only' && 'not-applicable' || (inputs.artifact_run && 'not-run' || (matrix.platform == 'windows-x64' && 'passed' || '')) }}
+          channel: ${{ inputs.artifact_run && matrix.hostedCandidate && 'candidate' || 'stable' }}
           tag: ${{ !inputs.artifact_run && inputs.tag || '' }}
+      - name: Verify the Qt archive and detached digest
+        if: matrix.kind == 'qt'
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+          ASSET: ${{ matrix.asset }}
+          ARTIFACT_RUN: ${{ inputs.artifact_run }}
+          EXPECTED_COMMIT: ${{ needs.plan.outputs.commit }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ -n "$ARTIFACT_RUN" ]]; then
+            read -r digest name < "build/download/$ASSET.sha256"
+            [[ "$name" == "$ASSET" ]]
+          else
+            gh release download "$TAG" --pattern "$ASSET" --dir build/download
+            digest=$(gh release view "$TAG" --json assets | jq -er --arg asset "$ASSET" '
+              .assets[] | select(.name == $asset) | .digest | select(startswith("sha256:")) | sub("^sha256:";"")')
+          fi
+          [[ "$digest" =~ ^[0-9a-fA-F]{64}$ ]]
+          cmake "-DARCHIVE=build/download/$ASSET" "-DEXPECTED_SHA256=$digest" \
+            "-DEXPECTED_COMMIT=$EXPECTED_COMMIT" -P cmake/VerifyDesktopPackage.cmake

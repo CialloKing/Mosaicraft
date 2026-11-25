@@ -17,24 +17,26 @@ git status --short --branch
 
 ## 构建和回归
 
-三平台 CPU 包来自同一提交，通过完整 CTest、Web UI/API smoke 和独立附件验收。工程变更另覆盖离线 HTML 浏览、回导、资源检查、ZIP64 与覆盖回滚；CLI/Web UI 参数改动检查命令生成。
+六个附件来自同一提交。原生包运行 CTest、Web UI/API smoke 和独立附件验收，Qt 包运行桌面归档检查。工程变更另覆盖离线 HTML 浏览、回导、资源检查、ZIP64 与覆盖回滚；CLI/Web UI 参数改动检查命令生成。
 
 ```powershell
 ctest --test-dir build/windows-x64 -C Release --output-on-failure
 node tests/test_command_shell.js
 ```
 
-## CUDA 与新后端
+## 六个发布附件
 
-Windows 正式 CUDA 包使用 CUDA 13.5 SDK 与 Required 验收，在实际 GPU 上完整运行，不能跳过 CTest、smoke 或解压验证。云端 BuildOnly 保留 not-run；Linux 的未实机 CUDA 正式附件须按 CMake 入口的显式准入流程执行。
+| 平台 | CLI / Web UI | Qt 客户端 |
+| --- | --- | --- |
+| Windows x64 | CUDA + Vulkan 智能裁剪 ZIP | CUDA + Vulkan Qt ZIP |
+| Linux x64 | CUDA + Vulkan 智能裁剪 tar.gz | CUDA + Vulkan Qt tar.gz |
+| macOS ARM64 | CPU 智能裁剪 tar.gz | CPU Qt tar.gz |
 
-Windows/Linux x64 正式 Vulkan 包启用 Vulkan → CPU，并在独立无驱动环境验证回退；Metal 及显式选择的 Vulkan 构建仍为候选。不得把本机限定场景、其他品牌 GPU 的结果或编译通过写成该平台实机验收。跨后端 1% 质量门槛（素材 ID 差异仅作诊断）、CUDA 5% 回归门槛以及新后端性能准入详见[四后端验收](portable-gpu.md)。
+`cmake/release-packages.json` 是构建与独立验包共用的矩阵。正式集合由 `python scripts/verify_release_set.py v<版本> --directory <附件目录>` 按文件名和校验值检查，并生成 `SHA256SUMS.txt`。旧运行时仍可单独构建以复查历史包。
 
-使用 [CMake 发布入口](packaging.md#cmake-发布入口)构建 CPU、CUDA 和 Vulkan 包。
+三个智能裁剪包均从模型锁准备真人、动漫与显著性 ONNX、许可和标注正例。两个 GPU 包复用同一份哈希锁定的 ncnn 转换模型，CUDA 使用 CUTLASS。云端以仓库 Secret `SMART_CROP_FIXTURE_URL` 读取正例 ZIP，内部保留模型锁中 `real/input/positive.png` 与 `anime/input/positive.png` 两个路径。公开包内只包含模型，不包含验收图片。本机可设 `SMART_CROP_FIXTURE_ROOT` 使用已保存的正例。
 
-## 智能裁剪发布门禁
-
-Windows x64 CUDA 智能裁剪归档同时包含 CPU 推理回退，只能由 `Release.cmake` 的 Required GPU 流程构建。发布仍要求真实 GPU、CTest、锁定的 NVIDIA 运行库及模型、许可证、人工质量证据，以及对最终 ZIP 的独立解包校验。干净 Windows 上断网且无 Toolkit/cuDNN 的验收不再是发布门禁；未执行不影响发布，包内如实记为 `SmartCropOfflineValidation: not-run`。普通包不因该门禁调整而加入智能裁剪模型。参见[智能裁剪发布条件](smart-crop.md#模型锁与发布条件)。
+Windows 云端的两个 GPU 包为候选。正式附件在同提交上用 Required 模式构建并在实机验收，智能裁剪包的 CUDA、Vulkan 与显式 CPU 均运行真人和动漫正例。Linux 云端包按现有显式准入流程标记 GPU 为 `not-run`，并执行独立解包和 CPU 正例检查。[本机打包入口](packaging.md#cmake-发布入口)
 
 ## 归档包检查
 
@@ -60,10 +62,10 @@ cmake "-DTAG=v1.15.10" -DASSET=<release-asset-name> -DCHECK_TOOL=<native-check> 
 
 ## 发布与复核
 
-只有已授权的版本发布才创建并推送 v* 标签，触发 Native packages。检查七个原生包和同一提交的五个 [Qt 桌面包](packaging.md#qt-桌面发布包)，收集 SHA-256 和验收日志。Windows 双后端桌面候选包不可作为正式附件，须用实机验收产物替代；Linux 的 GPU 未实测时标 `not-run`。发布时提供 Qt 许可证和对应源码来源。
+只有已授权的版本发布才创建并推送 v* 标签，触发 Native packages。收集三份智能裁剪包和三份 [Qt 桌面包](packaging.md#qt-桌面发布包) 的 SHA-256 和验收日志。以同提交的实机验收产物替换两个 Windows 候选，再核对正式六件套。发布时提供 Qt 许可证和对应源码来源。
 
-为既有 Release 补发双后端桌面包时，手动运行 Native packages 并填 `desktop_release_tag`。该流程只构建和验包，不发布；核对两个归档的源提交均与原标签一致后，再追加附件并更新校验清单和发布说明，不移动标签。若还需从同一标签补建原生 CUDA 包，同时勾选 `include_native_cuda`。SDK 准备使用当前发布工具，产品和依赖锁仍取自原标签；Windows 正式包仍须实机验收。
+为既有 Release 补发双后端桌面包时，手动运行 Native packages 并填 `desktop_release_tag`。该流程只构建和验包，不发布；核对两个归档的源提交均与原标签一致后，再追加附件并更新校验清单和发布说明，不移动标签。SDK 准备使用当前发布工具，产品和依赖锁仍取自原标签；Windows 正式包仍须实机验收。
 
 如需在发布前重新独立验收整套原生 Actions 归档，运行 `Verify published release` 并填写原标签与完整打包的 `artifact_run` ID。它检查原标签提交，不把 Windows 云端 CUDA 候选当作正式包。
 
-发布后运行 Verify published release 下载真实附件验证，并核对页面的候选、驱动和 not-run 说明。撤下候选时保留真实历史验收记录，更新[版本状态](../releases.md)，不要伪装为从未执行过测试。
+发布后运行 Verify published release 校验六个实际附件，并核对驱动及 not-run 说明。撤下候选时保留真实历史验收记录，更新[版本状态](../releases.md)，不要伪装为从未执行过测试。

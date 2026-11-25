@@ -2,7 +2,7 @@
 
 ## 结论
 
-在 Windows x64 上跑通了 Radeon 780M 的 FP32 真人裁剪，以及 RTX 4060 Laptop（CUDA）与 780M（Vulkan）按图分流。32 张真人样本的输出文件名、裁剪坐标和 SHA-256 均一致。**不建议启用这两个候选路径**：单 Vulkan 比 CPU 快 55.4%，但超出内存门槛；优化后双 GPU 比原双 GPU 快 6.5%，但仍比单 CUDA 慢 17.9%；扩大至 1,000 项复测后仍慢 12.7%。原生动漫模式现已支持显式双 GPU 实验：保留动态原图推理，将坐标网格移至后处理。HighLikes 的 1,000 张原图已验证输出一致；限制核显分流后，双 GPU 中位墙钟仍比单 CUDA 慢 2.8%。现有默认设备、CPU、自动回退和发布配置保持不变。
+在 Windows x64 上跑通了 Radeon 780M 的 FP32 真人裁剪，以及 RTX 4060 Laptop（CUDA）与 780M（Vulkan）按图分流。32 张真人样本的输出文件名、裁剪坐标和 SHA-256 均一致。**不建议启用这两个候选路径**：单 Vulkan 比 CPU 快 55.4%，但超出内存门槛；优化后双 GPU 比原双 GPU 快 6.5%，但仍比单 CUDA 慢 17.9%；扩大至 1,000 项复测后仍慢 12.7%。原生动漫模式现已支持显式双 GPU 实验：保留动态原图推理，将坐标网格移至后处理。HighLikes 的 1,000 张原图已验证输出一致；限制核显分流后，双 GPU 中位墙钟仍比单 CUDA 慢 2.8%。这是开发实验的性能记录。当前发行方式见下文。
 
 ## 如何复现
 
@@ -17,9 +17,9 @@ python scripts/prepare_smart_crop_vulkan.py <锁定ONNX目录> <工具目录> <�
 
 U²-NetP（前景显著性）在固定的既有 320×320 输入上通过。YuNet 只放开 ONNX 的输入宽高和检测输出长度元数据，没有改算子或权重；在 352×256、640×384、352×256、6560×8832、352×256 的同会话序列上通过。动漫原始模型的 `Range` 等动态网格算子不能直接转换。现在从锁定 ONNX 中抽出网格解码前的子图，主干、分布回归（DFL）与置信分数仍在 GPU 执行；主机只对超过原置信阈值的候选恢复坐标，然后复用原来的边界过滤、NMS 和大图复检。未更改权重、FP32、输入分辨率或尺寸对齐规则。探针在同一会话验证非方形输入、尺寸往返及 1,664×2,496 压力输入。
 
-在独立的 Windows x64 智能裁剪构建中设 `MOSAICRAFT_SMART_CROP_VULKAN=ON`（默认 OFF）和 `ncnn_DIR`。在 EXE 旁的 `models/vulkan` 放入通过探针、哈希匹配的 `saliency` 和所选模式的 `real` 或 `anime` 各一对 `.param`、`.bin` 文件（把转换得到的 `model.ncnn.*` 按模型名重命名）；保留原 `models` 中的 ONNX。
+在 Windows 或 Linux x64 智能裁剪源码构建中设 `MOSAICRAFT_SMART_CROP_VULKAN=ON`（默认 OFF）和 `ncnn_DIR`。在 EXE 旁的 `models/vulkan` 放入通过探针、哈希匹配的 `saliency` 和所选模式的 `real` 或 `anime` 各一对 `.param`、`.bin` 文件（把转换得到的 `model.ncnn.*` 按模型名重命名）；保留原 `models` 中的 ONNX。
 
-CLI 的 `library normalize --crop-device vulkan` 和 HTTP/WebUI 的同名策略仅用于真人归一化。`cuda+vulkan` 支持真人和动漫归一化，要求另一块 AMD/Intel Vulkan 适配器、至少 8 张图和 4 个应用线程。默认自动选适配器，也可用 `MOSAICRAFT_SMART_CROP_VULKAN_DEVICE` 指定 ncnn 枚举索引。实验选项不保证比单 CUDA 快；严格预检失败，不回退，也不用于创建或追加图库。
+发布矩阵中的 Windows/Linux 双后端包内置上述模型。CLI 的 `library normalize --crop-device vulkan` 和 HTTP/WebUI 的同名策略支持真人和动漫归一化。`cuda+vulkan` 支持真人和动漫归一化，要求另一块 AMD/Intel Vulkan 适配器、至少 8 张图和 4 个应用线程。默认自动选适配器，也可用 `MOSAICRAFT_SMART_CROP_VULKAN_DEVICE` 指定 ncnn 枚举索引。实验选项不保证比单 CUDA 快；严格预检失败，不回退，也不用于创建或追加图库。
 
 旧基准仍可用 `MOSAICRAFT_SMART_CROP_EXPERIMENT=vulkan|dual` 加显式 Vulkan 枚举索引，配合默认 `--crop-device auto`。该环境开关仅由 CLI 识别，不会为 Web 任务选设备。
 

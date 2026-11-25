@@ -5,41 +5,32 @@ on:
   workflow_dispatch:
     inputs:
       desktop_release_tag:
-        description: Build only CUDA + Vulkan Qt packages from this existing release tag (no publishing)
+        description: Rebuild the CUDA + Vulkan Qt packages from an existing release tag
         required: false
         type: string
-      include_native_cuda:
-        description: Also rebuild native CUDA packages when supplementing a release tag
-        type: boolean
-        default: false
 permissions:
   contents: read
 jobs:
-  native-package:
+  matrix:
+    runs-on: ubuntu-22.04
+    outputs:
+      native: ${{ steps.packages.outputs.native }}
+      qt: ${{ steps.packages.outputs.qt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: packages
+        env:
+          SUPPLEMENT: ${{ inputs.desktop_release_tag }}
+        run: |
+          echo "native=$(jq -c '{include: [.include[] | select(.kind == "native")]}' cmake/release-packages.json)" >> "$GITHUB_OUTPUT"
+          echo "qt=$(jq -c --arg tag "$SUPPLEMENT" \
+            '{include: [.include[] | select(.kind == "qt" and ($tag == "" or .runtime == "cuda-vulkan"))]}' \
+            cmake/release-packages.json)" >> "$GITHUB_OUTPUT"
+  vulkan-models:
     if: ${{ !inputs.desktop_release_tag }}
-    name: Package ${{ matrix.platform }} ${{ matrix.runtime }}
-    env:
-      SMART_CROP: 'OFF'
-    strategy: &native_matrix
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows-x64
-            runtime: cpu-only
-            runner: windows-2025-vs2026
-          - platform: linux-x64
-            runtime: cpu-only
-            runner: ubuntu-22.04
-          - platform: macos-arm64
-            runtime: cpu-only
-            runner: macos-15
-          - platform: windows-x64
-            runtime: vulkan
-            runner: windows-2025-vs2026
-          - platform: linux-x64
-            runtime: vulkan
-            runner: ubuntu-22.04
-    runs-on: ${{ matrix.runner }}
+    runs-on: windows-2025-vs2026
     defaults:
       run:
         shell: bash
@@ -47,173 +38,93 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install packaging tool
+      - name: Convert the locked models once for both Vulkan packages
+        run: |
+          python -m pip install onnx==1.20.1
+          cmake -DMODE=Models -P cmake/PrepareRelease.cmake
+          cmake -DMODE=SmartCropVulkan -DPREPARE_VULKAN_MODELS=ON -P cmake/PrepareRelease.cmake
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: smart-crop-vulkan-models
+          path: build/smart-crop-models/prepared/vulkan
+          if-no-files-found: error
+  native-package:
+    if: ${{ !inputs.desktop_release_tag }}
+    needs: [matrix, vulkan-models]
+    name: Package ${{ matrix.platform }} smart crop
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.native) }}
+    runs-on: ${{ matrix.runner }}
+    env:
+      GPU_BUILD: ${{ matrix.runtime == 'cuda-vulkan' && 'ON' || 'OFF' }}
+      PACKAGE_RUNTIME: ${{ matrix.runtime }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/smart-crop-fixtures
+        with:
+          archive-url: ${{ secrets.SMART_CROP_FIXTURE_URL }}
+      - name: Install Linux packaging tools
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          tools=(ninja-build patchelf)
-          if [[ '${{ matrix.runtime }}' == vulkan ]]; then tools+=(glslang-tools); fi
-          sudo apt-get install -y --no-install-recommends "${tools[@]}"
+          sudo apt-get install -y --no-install-recommends ninja-build patchelf glslang-tools
+      - name: Prepare pinned CUDA and Vulkan SDKs
+        if: matrix.runtime == 'cuda-vulkan'
+        run: |
+          cmake -DMODE=CUDA -P cmake/PrepareRelease.cmake
+          cmake -DMODE=Vulkan -P cmake/PrepareRelease.cmake
+          cmake -DMODE=SmartCropVulkan -P cmake/PrepareRelease.cmake
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: matrix.runtime == 'cuda-vulkan'
+        with:
+          name: smart-crop-vulkan-models
+          path: build/smart-crop-models/prepared/vulkan
       - uses: ./.github/actions/native-dependencies
         with:
-          smart-crop: ${{ env.SMART_CROP }}
-      - name: Prepare pinned Vulkan headers and offline compiler
-        if: matrix.runtime == 'vulkan'
-        run: cmake -DMODE=Vulkan -P cmake/PrepareRelease.cmake
-      - name: Build, test and package native Release
+          smart-crop: 'ON'
+          smart-crop-cutlass: ${{ env.GPU_BUILD }}
+      - name: Build and verify the smart crop package
         run: |
-          build_dir=build/package-${{ matrix.runtime }}
-          cmake -DRUNTIME=${{ matrix.runtime }} "-DBUILD_DIR=$build_dir" "-DSMART_CROP=$SMART_CROP" -DSMART_CROP_CUDA=OFF -P cmake/Release.cmake
+          cmake -DMODE=Models -P cmake/PrepareRelease.cmake
+          options=()
+          if [[ "$GPU_BUILD" == ON ]]; then
+            options+=(-DCUDA_VALIDATION=BuildOnly)
+            if [[ "$RUNNER_OS" == Windows ]]; then
+              options+=(-DCHANNEL=candidate)
+            else
+              options+=(-DALLOW_UNVALIDATED_LINUX_CUDA=ON)
+            fi
+          fi
+          cmake "-DRUNTIME=$PACKAGE_RUNTIME" -DBUILD_DIR=build/package-smart-crop -DSMART_CROP=ON \
+            "-DSMART_CROP_CUDA=$GPU_BUILD" "-DSMART_CROP_VULKAN=$GPU_BUILD" "-DSMART_CROP_CUTLASS=$GPU_BUILD" \
+            "${options[@]}" -P cmake/Release.cmake
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ matrix.runtime == 'cpu-only' && 'cpu' || matrix.runtime }}-${{ matrix.platform }}
+          name: release-native-${{ matrix.platform }}
           path: build/archives/*
           if-no-files-found: error
       - name: Upload build diagnostics
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ matrix.runtime }}-diagnostics-${{ matrix.platform }}
+          name: diagnostics-native-${{ matrix.platform }}
           path: |
             build/dependency-state/
-            build/package-${{ matrix.runtime }}*/Testing/Temporary/
+            build/package-smart-crop/Testing/Temporary/
           if-no-files-found: ignore
-  native-verify:
-    if: ${{ !inputs.desktop_release_tag }}
-    name: Standalone ${{ matrix.platform }} ${{ matrix.runtime }}
-    needs: native-package
-    strategy: *native_matrix
-    runs-on: ${{ matrix.runner }}
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ${{ matrix.runtime == 'cpu-only' && 'cpu' || matrix.runtime }}-${{ matrix.platform }}
-          path: build/download
-      # Build only the independent checker, without project dependencies.
-      - uses: ./.github/actions/verify-native-package
-        with:
-          runtime: ${{ matrix.runtime }}
-          gpu-validation: ${{ matrix.runtime == 'vulkan' && 'not-run' || 'not-applicable' }}
-          channel: stable
-  cuda-package:
-    if: ${{ !inputs.desktop_release_tag || inputs.include_native_cuda }}
-    name: Package ${{ matrix.platform }} CUDA
-    outputs:
-      source-commit: ${{ steps.product.outputs.commit || github.sha }}
-    env:
-      PACKAGE_SOURCE: ${{ inputs.desktop_release_tag && 'build/package-source' || '.' }}
-      SMART_CROP: 'OFF'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows-x64
-            runner: windows-2025-vs2026
-          - platform: linux-x64
-            runner: ubuntu-22.04
-    runs-on: ${{ matrix.runner }}
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # Keep the tag immutable: only SDK preparation comes from the workflow revision.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        id: product
-        if: inputs.desktop_release_tag
-        with:
-          ref: ${{ format('refs/tags/{0}', inputs.desktop_release_tag) }}
-          path: build/package-source
-          persist-credentials: false
-      - name: Check source version before packaging
-        if: inputs.desktop_release_tag
-        env:
-          SOURCE_TAG: ${{ inputs.desktop_release_tag }}
-        run: '[[ "$SOURCE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "$SOURCE_TAG" == "v$(jq -r .softwareVersion "$PACKAGE_SOURCE/contracts.json")" ]]'
-      - name: Install packaging tool
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ninja-build patchelf
-      - uses: ./.github/actions/native-dependencies
-        with:
-          source-directory: ${{ env.PACKAGE_SOURCE }}
-          smart-crop: 'OFF'
-      - name: Install hash-locked CUDA 13.5.37 compiler and runtime
-        run: cmake "-DSOURCE_DIR=$PACKAGE_SOURCE" -DMODE=CUDA -P cmake/PrepareRelease.cmake
-      - name: Build and verify seven CUDA architectures
-        shell: bash
-        run: |
-          options=(-DCHANNEL=candidate)
-          if [[ "$RUNNER_OS" == Linux ]]; then
-            options=(-DCHANNEL=stable -DALLOW_UNVALIDATED_LINUX_CUDA=ON)
-          fi
-          cd "$PACKAGE_SOURCE"
-          cmake -DRUNTIME=cuda -DBUILD_DIR=build/package-cuda -DCUDA_VALIDATION=BuildOnly "-DSMART_CROP=$SMART_CROP" -DSMART_CROP_CUDA=OFF "${options[@]}" -P cmake/Release.cmake
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: cuda-${{ matrix.platform }}
-          path: ${{ env.PACKAGE_SOURCE }}/build/archives/*
-          if-no-files-found: error
-      - name: Upload CUDA diagnostics
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: cuda-diagnostics-${{ matrix.platform }}
-          path: |
-            ${{ env.PACKAGE_SOURCE }}/build/dependency-state/
-            ${{ env.PACKAGE_SOURCE }}/build/package-cuda/Testing/Temporary/
-            ${{ env.PACKAGE_SOURCE }}/build/package-cuda/cuda-architectures.txt
-          if-no-files-found: ignore
-  cuda-verify:
-    name: Standalone ${{ matrix.platform }} CUDA
-    if: ${{ !inputs.desktop_release_tag || inputs.include_native_cuda }}
-    needs: cuda-package
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows-x64
-            runner: windows-2025-vs2026
-          - platform: linux-x64
-            runner: ubuntu-22.04
-    runs-on: ${{ matrix.runner }}
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: cuda-${{ matrix.platform }}
-          path: build/download
-      - uses: ./.github/actions/verify-native-package
-        with:
-          expected-commit: ${{ needs.cuda-package.outputs.source-commit }}
-          runtime: cuda
-          gpu-validation: not-run
-          channel: ${{ runner.os == 'Windows' && 'candidate' || 'stable' }}
   qt-package:
     name: Package ${{ matrix.platform }} Qt Desktop (${{ matrix.runtime }})
+    needs: matrix
     strategy:
       fail-fast: false
-      matrix:
-        platform: [windows-x64, linux-x64, macos-arm64]
-        runtime: ${{ fromJSON(inputs.desktop_release_tag && '["cuda-vulkan"]' || '["cpu", "cuda-vulkan"]') }}
-        exclude:
-          - platform: macos-arm64
-            runtime: cuda-vulkan
-    runs-on: ${{ matrix.platform == 'windows-x64' && 'windows-2025-vs2026' || matrix.platform == 'linux-x64' && 'ubuntu-24.04' || 'macos-26' }}
+      matrix: ${{ fromJSON(needs.matrix.outputs.qt) }}
+    runs-on: ${{ matrix.runner }}
     env:
       PACKAGE_SOURCE: ${{ inputs.desktop_release_tag && 'build/package-source' || '.' }}
     defaults:
@@ -286,7 +197,28 @@ jobs:
             "${options[@]}" -P cmake/ReleaseDesktop.cmake
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ matrix.runtime == 'cpu' && format('qt-{0}', matrix.platform) || format('qt-cuda-vulkan-{0}', matrix.platform) }}
+          name: release-qt-${{ matrix.platform }}
           path: build/archives-qt/Mosaicraft_v*
+          compression-level: 0
+          if-no-files-found: error
+  release-set:
+    if: ${{ !inputs.desktop_release_tag }}
+    needs: [native-package, qt-package]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*-*
+          merge-multiple: true
+          path: build/release-set
+      - name: Check the exact archive set and write SHA256SUMS.txt
+        run: python3 scripts/verify_release_set.py "v$(jq -r .softwareVersion contracts.json)" --hosted --directory build/release-set
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-six-package-set
+          path: build/release-set
           compression-level: 0
           if-no-files-found: error

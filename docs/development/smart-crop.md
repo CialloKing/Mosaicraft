@@ -29,7 +29,7 @@ cmake --install build/windows-smart-crop --config Release --prefix build/smart-c
 
 中心裁剪仍为默认，且不接受设备选项。选择 `smart-real` 或 `smart-anime` 后，`--crop-device`（HTTP 1.9 的 `cropDevice`）可取 `auto`、`cpu`、`cuda`，省略等同于 `auto`。
 
-[Vulkan 实验构建](../SMART_CROP_VULKAN.md)的 WebUI 还会按操作与模型启用 `vulkan` 和 `cuda+vulkan`：仅用于独立归一化，不一定比单 CUDA 快。
+[CUDA + Vulkan 智能裁剪包](../SMART_CROP_VULKAN.md)的 WebUI 会按操作与模型启用 `vulkan` 和 `cuda+vulkan`：仅用于独立归一化，不一定比单 CUDA 快。
 
 | 策略 | 行为 |
 |---|---|
@@ -58,8 +58,8 @@ cmake --install build/windows-smart-crop --config Release --prefix build/smart-c
 
 ## 模型锁与发布条件
 
-- `cmake/smart-crop-models.json` 锁定三个权重的来源、大小和哈希。YuNet `2023mar` 有对应的 MIT 声明。原 U²-Net 权重的授权说明不能单独证明 rembg 发布附件的导出来源；DeepGHS 仓库模型卡标为 MIT，但所选权重的上游权利链还需核对。维护者对 v1.15.15 Windows CUDA 智能裁剪包接受这些来源限制，具体范围见锁定文件和审核记录。
-- 三份权重及审核记录按 `cmake/smart-crop-models.json` 校验，两份独立标注正例由本地验包器检查。`Release.cmake` 的 `SMART_CROP=ON`、`SMART_CROP_CUDA=ON` 只生成 Windows x64 CUDA 智能裁剪包；包内同时保留 CPU 推理回退，普通 CPU 包不携带智能裁剪模型。归档验收用 `scripts/requirements-smart-crop-verification.txt` 的 Pillow 对照像素与人工标注，不属于解包后的运行依赖。
+- `cmake/smart-crop-models.json` 锁定三个权重的来源、大小和哈希。YuNet `2023mar` 有对应的 MIT 声明。原 U²-Net 权重的授权说明不能单独证明 rembg 发布附件的导出来源；DeepGHS 仓库模型卡标为 MIT，但所选权重的上游权利链还需核对。维护者接受范围已扩展至现行三个平台的智能裁剪包，包括 Windows/Linux 使用的 Vulkan 转换权重。具体范围见锁定文件。
+- 三份权重及审核记录按 `cmake/smart-crop-models.json` 校验，两份独立标注正例由本地验包器检查。发布矩阵包含 Windows/Linux 的 CUDA + Vulkan 智能裁剪包和 macOS 的 CPU 智能裁剪包。GPU 包内还包括 CPU 推理和模型回退。归档验收用 `scripts/requirements-smart-crop-verification.txt` 的 Pillow 对照像素与人工标注，不属于解包后的运行依赖。
 - 初审须覆盖偏侧真人、偏侧动漫、多人、主脸比窗口宽、无脸主体及无明显主体。分别统计两个模式在可保全主脸的样本上是否优于中心裁剪，以及中心裁剪已保全的主脸是否有新切断；另记录无脸主体效果、误移动率、批耗时及峰值内存。把批准的审核文档路径、大小和 SHA-256 写入 `qualityReview`；不得用两个解包正例代替总体质量审核。
 - 解包正例锁定 PNG 和人工标注的 `mainFace: [left, top, right, bottom]`（半开坐标）。每张图高 320、宽大于 180，主脸能完整落入 `180×320`，但中心裁剪切脸。发布和独立验包从其他工作目录运行，以输出像素核对实际裁剪位置和完整主脸，同时检查检测和移动指标。任何目标平台失败都不能交付宣称完整支持的包。复验已有智能裁剪版本时，使用该版本的源码锁及标注。
 
