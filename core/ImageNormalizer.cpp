@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
@@ -386,6 +388,17 @@ cv::Mat ImageNormalizer::normalize(const cv::Mat& src)
             m_smartStats->inferenceMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
         }
         const auto decision = chooseSmartCrop(covered.size(), target, analysis);
+        // Benchmark the actual selected ROI without adding fields to the public response.
+        static const bool trace = []
+        {
+            const char *setting = std::getenv("MOSAICRAFT_SMART_CROP_TRACE_ROI");
+            return setting && std::string_view(setting) == "1";
+        }();
+        if (trace)
+        {
+            std::fprintf(stderr, "smart-crop-roi %d %d %d %d %d %d\n", covered.cols, covered.rows,
+                         decision.roi.x, decision.roi.y, decision.roi.width, decision.roi.height);
+        }
         if (m_smartStats)
         {
             const bool moved = decision.roi.x != (covered.cols - target.width) / 2 ||

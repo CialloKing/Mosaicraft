@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare smart-normalize devices, CUDA pipelining, hybrid work, or Conv2 weight reuse."""
+"""Compare smart-normalize devices, pipeline, hybrid work, weight reuse, or CUTLASS."""
 
 import argparse
 from contextlib import ExitStack
@@ -42,7 +42,7 @@ def stop(process, kill=False):
     process.wait()
 
 
-def run(args, name, parts, *, reuse_weights=None):
+def run(args, name, parts, *, reuse_weights=None, executable=None):
     samples_path = args.work / f"{name}-vram.csv"
     has_cuda = any(device == "cuda" for device, *_ in parts)
     baseline = None
@@ -65,7 +65,9 @@ def run(args, name, parts, *, reuse_weights=None):
                 env["OPENCV_DNN_CUDA_REUSE_CONV2_WEIGHTS"] = str(int(reuse_weights))
             if device == "cpu" and args.study == "hybrid":
                 env["OPENCV_FOR_THREADS_NUM"] = "2"
-            command = [str(args.exe), "library", "normalize", str(source), "--recursive",
+            if args.study == "cutlass":
+                env["MOSAICRAFT_SMART_CROP_TRACE_ROI"] = "1"
+            command = [str(executable or args.exe), "library", "normalize", str(source), "--recursive",
                        "-o", str(prefix), "--size", args.size, "--threads", "1" if args.study == "devices" else "3",
                        "--crop", args.mode, "--crop-device", device, "--json"]
             process = subprocess.Popen(command, cwd=args.work, stdout=stdout, stderr=stderr, env=env)
@@ -119,6 +121,13 @@ def run(args, name, parts, *, reuse_weights=None):
     if args.study == "devices":
         # Keep the original CPU/CUDA report's per-run fields for existing consumers.
         result.update(children[0], passed=result["passed"])
+    if args.study == "cutlass":
+        # The single inference worker emits these in input order, even with pipelining.
+        result["cropRois"] = [line.decode("ascii") for line in (args.work / f"{name}.log").read_bytes().splitlines()
+                              if line.startswith(b"smart-crop-roi ")]
+        result["passed"] &= bool(result["cropRois"]) and all(
+            child["metrics"].get(k) == 0 for child in children
+            for k in ("smartCropCpuImages", "smartCropCudaFallbacks", "smartCropCudaRecoveries"))
     return result, outputs
 
 
@@ -175,8 +184,9 @@ def main():
     for name in ("exe", "input", "work"):
         parser.add_argument(name, type=lambda path: Path(path).resolve())
     parser.add_argument("--mode", choices=("smart-real", "smart-anime"), required=True)
-    parser.add_argument("--study", choices=("devices", "pipeline", "hybrid", "weights"), default="devices",
-                        help="device, pipelining, CPU/GPU split or CUDA Conv2 weight reuse comparison")
+    parser.add_argument("--study", choices=("devices", "pipeline", "hybrid", "weights", "cutlass"), default="devices")
+    parser.add_argument("--candidate-exe", type=lambda path: Path(path).resolve(),
+                        help="CUTLASS CLI in a separate directory with its own runtime")
     parser.add_argument("--rounds", type=int, default=3)
     parser.add_argument("--size", default="180x320")
     parser.add_argument("--gpu", default="0", help="nvidia-smi index/UUID of the only visible GPU")
@@ -184,6 +194,11 @@ def main():
     args = parser.parse_args()
     if not args.exe.is_file() or not args.input.is_dir() or shutil.which("nvidia-smi") is None:
         parser.error("CLI, input directory and nvidia-smi must exist")
+    if args.study == "cutlass" and (
+            os.name != "nt" or not args.candidate_exe or args.exe.parent == args.candidate_exe.parent
+            or any(not exe.is_file() or not exe.with_name("opencv_dnn5.dll").is_file()
+                   for exe in (args.exe, args.candidate_exe))):
+        parser.error("CUTLASS comparison requires two Windows CLI directories, each with its own opencv_dnn5.dll")
     dnn = args.exe.with_name("opencv_dnn5.dll")
     if args.study == "weights" and (os.name != "nt" or not dnn.is_file()):
         parser.error("the weights study requires a Windows CUDA CLI beside the experimental opencv_dnn5.dll")
@@ -211,23 +226,35 @@ def main():
     elif args.study == "weights":
         report["opencvDnnSha256"] = sha256(dnn)
         variants = {label: [("cuda", True, args.input, None)] for label in ("pipeline", "reuse-weights")}
+    elif args.study == "cutlass":
+        report["candidateExecutableSha256"] = sha256(args.candidate_exe)
+        report["opencvDnnSha256ByVariant"] = {
+            label: sha256(exe.with_name("opencv_dnn5.dll"))
+            for label, exe in (("baseline", args.exe), ("cutlass", args.candidate_exe))}
+        variants = {label: [("cuda", True, args.input, None)] for label in ("baseline", "cutlass")}
     else:
         variants = {device: [(device, False, args.input, None)] for device in ("cpu", "cuda")}
     labels = list(variants)
     reference = None
+    reference_rois = None
     report_path = args.work / "report.json"
     for cycle in range(args.rounds):
         offset = cycle % len(labels)
         for label in labels[offset:] + labels[:offset]:
             name = f"{cycle + 1}-{label}"
             reuse_weights = label == "reuse-weights" if args.study == "weights" else None
-            result, outputs = run(args, name, variants[label], reuse_weights=reuse_weights)
+            result, outputs = run(args, name, variants[label], reuse_weights=reuse_weights,
+                                  executable=args.candidate_exe if label == "cutlass" else None)
             if reference is None:
                 reference = outputs
                 report["referenceOutputSha256"] = reference
+                reference_rois = result.get("cropRois")
             result.update(variant=label, round=cycle + 1, identical=outputs == reference,
                           differingOutputs=sorted(k for k in reference.keys() | outputs.keys()
                                                   if reference.get(k) != outputs.get(k)))
+            if args.study == "cutlass":
+                result["identicalCropRois"] = result["cropRois"] == reference_rois
+                result["identical"] &= result["identicalCropRois"]
             report["runs"].append(result)
             print(f"{name}: {result['wallSeconds']:.2f}s, run OK={result['passed']}, identical={result['identical']}", flush=True)
             write_report(report_path, report)
@@ -240,7 +267,7 @@ def main():
                                        for label, runs in grouped.items()}
     report["wallSavings"] = {label: 1 - medians[label] / medians[labels[0]] for label in labels[1:]}
     report["speedup"] = medians[labels[0]] / medians[labels[1]]
-    if args.study in {"pipeline", "hybrid", "weights"}:
+    if args.study in {"pipeline", "hybrid", "weights", "cutlass"}:
         def working_set_deltas(label):
             pairs = zip(grouped[labels[0]], grouped[label])
             return [b["peakWorkingSetBytes"] - a["peakWorkingSetBytes"] if a["peakWorkingSetBytes"] and
@@ -255,6 +282,14 @@ def main():
             gates = "pipeline" in acceptable and report["wallSavings"]["pipeline"] >= .10
         elif args.study == "weights":
             gates = "reuse-weights" in acceptable and report["wallSavings"]["reuse-weights"] >= .05
+        elif args.study == "cutlass":
+            vram = [((b["gpuSampledPeakMiB"] - b["gpuBaselineMiB"]) -
+                     (a["gpuSampledPeakMiB"] - a["gpuBaselineMiB"]))
+                    if a["gpuSampledPeakMiB"] is not None and b["gpuSampledPeakMiB"] is not None else None
+                    for a, b in zip(grouped["baseline"], grouped["cutlass"])]
+            report["sampledVramIncreaseMiB"] = vram
+            gates = ("cutlass" in acceptable and medians["cutlass"] <= medians["baseline"] * 1.10
+                     and all(delta is not None and delta <= 512 for delta in vram))
         else:
             # For multi-process runs, the sum of both individual peaks is a conservative ceiling.
             report["hybridCandidates"] = [label for label in acceptable if report["wallSavings"][label] >= .05]
