@@ -10,6 +10,11 @@
     "libjpeg-turbo", "libpng", "libwebp", "tiff", "zlib"
   ],
   "features": {
+    "dnn-cuda-cutlass": {
+      "description": "Experimental native Windows x64 CUDA DNN executors for smart crop",
+      "supports": "windows & x64",
+      "dependencies": [{ "name": "opencv5", "features": ["dnn"] }]
+    },
     "dnn-cuda": {
       "description": "Build the native CUDA DNN executors with the locked CUDA and cuDNN SDKs",
       "dependencies": [{ "name": "opencv5", "features": ["dnn"] }]

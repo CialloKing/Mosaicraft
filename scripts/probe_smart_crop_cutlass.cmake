@@ -1,6 +1,6 @@
 # Run from an x64 Visual Studio Developer PowerShell.
 cmake_minimum_required(VERSION 3.25)
-include("${CMAKE_CURRENT_LIST_DIR}/../cmake/smart-crop-cutlass-lock.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/ports/opencv5/smart-crop-cutlass-lock.cmake")
 if(NOT WIN32 OR NOT DEFINED ENV{VCToolsInstallDir} OR NOT "$ENV{VSCMD_ARG_TGT_ARCH}" MATCHES "^(x64|amd64)$")
     message(FATAL_ERROR "Use an x64 Visual Studio Developer PowerShell")
 endif()

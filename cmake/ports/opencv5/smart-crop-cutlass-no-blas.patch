@@ -1,0 +1,272 @@
+--- a/opencv/modules/dnn/CMakeLists.txt
++++ b/opencv/modules/dnn/CMakeLists.txt
+@@ -49,17 +49,20 @@
+ 
+ ocv_option(OPENCV_DNN_CUDA "Build with CUDA support"
+     HAVE_CUDA
+-    AND HAVE_CUBLAS
++    AND (HAVE_CUBLAS OR MOSAICRAFT_DNN_NO_BLAS)
+     AND (HAVE_CUDNN OR HAVE_CUDNNJIT)
+ )
+ 
+ if(OPENCV_DNN_CUDA)
+-  if(HAVE_CUDA AND HAVE_CUBLAS AND (HAVE_CUDNN OR HAVE_CUDNNJIT))
++  if(HAVE_CUDA AND (HAVE_CUBLAS OR MOSAICRAFT_DNN_NO_BLAS) AND (HAVE_CUDNN OR HAVE_CUDNNJIT))
+     ocv_target_compile_definitions(${the_module} PRIVATE "CV_CUDA4DNN=1")
++    if(MOSAICRAFT_DNN_NO_BLAS)
++      ocv_target_compile_definitions(${the_module} PRIVATE "MOSAICRAFT_DNN_NO_BLAS=1")
++    endif()
+   else()
+     if(NOT HAVE_CUDA)
+       message(SEND_ERROR "DNN: CUDA backend requires CUDA Toolkit. Please resolve dependency or disable OPENCV_DNN_CUDA=OFF")
+-    elseif(NOT HAVE_CUBLAS)
++    elseif(NOT HAVE_CUBLAS AND NOT MOSAICRAFT_DNN_NO_BLAS)
+       message(SEND_ERROR "DNN: CUDA backend requires cuBLAS. Please resolve dependency or disable OPENCV_DNN_CUDA=OFF")
+     elseif(NOT HAVE_CUDNN AND NOT HAVE_CUDNNJIT)
+       message(SEND_ERROR "DNN: CUDA backend requires cuDNN (WITH_CUDNN) or the cuDNN graph API (WITH_CUDNNJIT). Please resolve dependency or disable OPENCV_DNN_CUDA=OFF")
+@@ -455,7 +458,7 @@
+   set(sources_options EXCLUDE_OPENCL)
+ endif()
+ 
+-if(OPENCV_DNN_CUDA AND HAVE_CUDA AND HAVE_CUBLAS AND (HAVE_CUDNN OR HAVE_CUDNNJIT))
++if(OPENCV_DNN_CUDA AND HAVE_CUDA AND (HAVE_CUBLAS OR MOSAICRAFT_DNN_NO_BLAS) AND (HAVE_CUDNN OR HAVE_CUDNNJIT))
+   list(APPEND include_dirs ${CUDA_TOOLKIT_INCLUDE} ${CUDNN_INCLUDE_DIRS} ${CUDNNJIT_INCLUDE_DIRS})
+   set(CC_LIST ${CUDA_ARCH_BIN})
+   separate_arguments(CC_LIST)
+@@ -466,9 +469,12 @@
+   endforeach()
+   unset(CC_LIST)
+   if(ENABLE_CUDA_FIRST_CLASS_LANGUAGE)
+-    list(APPEND libs CUDA::cudart${CUDA_LIB_EXT} ${CUDNN_LIBRARIES} ${CUDNNJIT_LIBRARIES} CUDA::cublas${CUDA_LIB_EXT})
+-    if(NOT CUDA_VERSION VERSION_LESS 10.1)
+-      list(APPEND libs CUDA::cublasLt${CUDA_LIB_EXT})
++    list(APPEND libs CUDA::cudart${CUDA_LIB_EXT} ${CUDNN_LIBRARIES} ${CUDNNJIT_LIBRARIES})
++    if(NOT MOSAICRAFT_DNN_NO_BLAS)
++      list(APPEND libs CUDA::cublas${CUDA_LIB_EXT})
++      if(NOT CUDA_VERSION VERSION_LESS 10.1)
++        list(APPEND libs CUDA::cublasLt${CUDA_LIB_EXT})
++      endif()
+     endif()
+   endif()
+ else()
+--- a/opencv/modules/dnn/src/op_cuda.hpp
++++ b/opencv/modules/dnn/src/op_cuda.hpp
+@@ -8,7 +8,9 @@
+ #ifdef HAVE_CUDA
+ #include "cuda4dnn/csl/stream.hpp"
+ #include "cuda4dnn/csl/event.hpp"
++#ifndef MOSAICRAFT_DNN_NO_BLAS
+ #include "cuda4dnn/csl/cublas.hpp"
++#endif
+ #include "cuda4dnn/csl/cudnn.hpp"
+ #include "cuda4dnn/csl/tensor.hpp"
+ #include "cuda4dnn/csl/memory.hpp"
+@@ -36,7 +38,9 @@
+     namespace cuda4dnn { namespace csl {
+         struct CSLContext {
+             Stream stream;
++#ifndef MOSAICRAFT_DNN_NO_BLAS
+             cublas::Handle cublas_handle;
++#endif
+             cudnn::Handle cudnn_handle;
+             int* error_flag = nullptr;  // device alias of a mapped host int; set by a kernel on invalid input
+         };
+--- a/opencv/modules/dnn/src/op_cuda.cpp
++++ b/opencv/modules/dnn/src/op_cuda.cpp
+@@ -165,7 +165,9 @@
+     {
+         cuda4dnn::csl::CSLContext context;
+         context.stream = cuda4dnn::csl::Stream(true);
++#ifndef MOSAICRAFT_DNN_NO_BLAS
+         context.cublas_handle = cuda4dnn::csl::cublas::Handle(context.stream, useTF32);
++#endif
+         context.cudnn_handle = cuda4dnn::csl::cudnn::Handle(context.stream, useTF32);
+ 
+         cudaInfo = std::make_unique<CudaInfo_t>(std::move(context));
+--- a/opencv/modules/dnn/src/net_impl2.cpp
++++ b/opencv/modules/dnn/src/net_impl2.cpp
+@@ -833,7 +833,9 @@
+         if (!cudaInfo) {
+             cuda4dnn::csl::CSLContext context;
+             context.stream = cuda4dnn::csl::Stream(true);
++#ifndef MOSAICRAFT_DNN_NO_BLAS
+             context.cublas_handle = cuda4dnn::csl::cublas::Handle(context.stream, useTF32);
++#endif
+             context.cudnn_handle = cuda4dnn::csl::cudnn::Handle(context.stream, useTF32);
+             cudaInfo = std::make_unique<CudaInfo_t>(std::move(context));
+         }
+--- a/opencv/modules/dnn/src/cuda4dnn/csl/tensor.hpp
++++ b/opencv/modules/dnn/src/cuda4dnn/csl/tensor.hpp
+@@ -7,7 +7,9 @@
+ 
+ #include "nvcc_defs.hpp"
+ #include "memory.hpp"
++#ifndef MOSAICRAFT_DNN_NO_BLAS
+ #include "cublas.hpp"
++#endif
+ #include "cudnn.hpp"
+ #include "span.hpp"
+ 
+--- a/opencv/modules/dnn/src/cuda4dnn/csl/tensor_ops.hpp
++++ b/opencv/modules/dnn/src/cuda4dnn/csl/tensor_ops.hpp
+@@ -8,7 +8,9 @@
+ #include "stream.hpp"
+ #include "tensor.hpp"
+ #include "pointer.hpp"
++#ifndef MOSAICRAFT_DNN_NO_BLAS
+ #include "cublas.hpp"
++#endif
+ #include "cudnn.hpp"
+ #include "workspace.hpp"
+ 
+@@ -45,6 +47,7 @@
+                 memcpy(dest.get(), src.get(), dest.size(), stream);
+         }
+ 
++#ifndef MOSAICRAFT_DNN_NO_BLAS
+         namespace detail {
+             template <class T>
+             void assertGEMMCompatiblity(const TensorSpan<T>& result, bool transa, const TensorView<T>& A, bool transb, const TensorView<T>& B) {
+@@ -196,6 +199,7 @@
+             }
+         }
+ 
++#endif
+         /** @brief performs element-wise addition with broadcasting
+          *
+          * Pre-conditions:
+--- a/opencv/modules/dnn/src/layers/attention_layer.cpp
++++ b/opencv/modules/dnn/src/layers/attention_layer.cpp
+@@ -11,7 +11,7 @@
+ 
+ #include <opencv2/dnn/shape_utils.hpp>
+ 
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_NO_BLAS)
+ #include "../cuda4dnn/primitives/attention.hpp"
+ #endif
+ 
+@@ -176,7 +176,7 @@
+     }
+ 
+     virtual bool supportBackend(int backendId) CV_OVERRIDE {
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_NO_BLAS)
+         if (backendId == DNN_BACKEND_CUDA) {
+             // AttentionOp takes const float weight/bias blobs, the input and an optional additive
+             // float mask; rotary stays on CPU
+@@ -197,7 +197,7 @@
+         return backendId == DNN_BACKEND_OPENCV;
+     }
+ 
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_NO_BLAS)
+     Ptr<BackendNode> initCUDA(void* context_,
+                               InputArrayOfArrays,
+                               InputArrayOfArrays) CV_OVERRIDE
+--- a/opencv/modules/dnn/src/layers/fully_connected_layer.cpp
++++ b/opencv/modules/dnn/src/layers/fully_connected_layer.cpp
+@@ -56,7 +56,7 @@
+ using namespace cv::dnn::ocl4dnn;
+ #endif
+ 
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_NO_BLAS)
+ #include "../cuda4dnn/primitives/matmul.hpp"
+ #include "../cuda4dnn/primitives/inner_product.hpp"
+ using namespace cv::dnn::cuda4dnn;
+@@ -181,7 +181,9 @@
+     {
+         bool tranAorB = transA || transB;
+         return backendId == DNN_BACKEND_OPENCV ||
++#ifndef MOSAICRAFT_DNN_NO_BLAS
+                backendId == DNN_BACKEND_CUDA ||
++#endif
+                (backendId == DNN_BACKEND_WEBNN && axis == 1 && !tranAorB) ||
+                backendId == DNN_BACKEND_CANN ||
+                backendId == DNN_BACKEND_INFERENCE_ENGINE_NGRAPH ||
+@@ -603,7 +605,7 @@
+         }
+     }
+ 
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_NO_BLAS)
+     Ptr<BackendNode> initCUDA(
+         void *context_,
+         const std::vector<Ptr<BackendWrapper>>& inputs,
+--- a/opencv/modules/dnn/src/layers/gemm_layer.cpp
++++ b/opencv/modules/dnn/src/layers/gemm_layer.cpp
+@@ -8,7 +8,7 @@
+ #include "cpu_kernels/fusion_apply.hpp"
+ // backends
+ #include "../op_cuda.hpp"
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_NO_BLAS)
+ // #include "../cuda4dnn/primitives/matmul.hpp"
+ #include "../cuda4dnn/primitives/inner_product.hpp"
+ #include "fusion_cuda.hpp"
+@@ -91,7 +91,7 @@
+         }
+     }
+ 
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_NO_BLAS)
+     // the fused math has a CUDA form to run after the GEMM; N is the GEMM's output width
+     bool cudaFusedActivation() const
+     {
+@@ -100,7 +100,7 @@
+ #endif
+ 
+     virtual bool supportBackend(int backendId) CV_OVERRIDE {
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_NO_BLAS)
+         if (fusion.expr && !(backendId == DNN_BACKEND_CUDA && cudaFusedActivation()))
+             return backendId == DNN_BACKEND_OPENCV;
+         if (backendId == DNN_BACKEND_CUDA) {
+@@ -650,7 +650,7 @@
+         }
+     }
+ 
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_NO_BLAS)
+     // Y = A * B + C. B should be guaranteed as two dimensional.
+     Ptr<BackendNode> initCUDA(void *context_,
+                               InputArrayOfArrays inputs_,
+--- a/opencv/modules/dnn/src/layers/matmul_layer.cpp
++++ b/opencv/modules/dnn/src/layers/matmul_layer.cpp
+@@ -19,7 +19,7 @@
+ #include "../op_vkcom.hpp"
+ 
+ // CUDA backend
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_NO_BLAS)
+ #include "../cuda4dnn/primitives/matmul_broadcast.hpp"
+ #include "fusion_cuda.hpp"
+ using namespace cv::dnn::cuda4dnn;
+@@ -67,7 +67,7 @@
+     }
+ 
+     virtual bool supportBackend(int backendId) CV_OVERRIDE {
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_NO_BLAS)
+         // CUDA runs a fused activation or scale/shift after the MatMul; N is known for a constant B
+         const int N = (blobs.empty() || blobs[0].dims < 2) ? -1
+                       : blobs[0].size[blobs[0].dims - (trans_b ? 2 : 1)];
+@@ -77,7 +77,7 @@
+ #endif
+         if (fusion.expr && !cudaFusion)
+             return backendId == DNN_BACKEND_OPENCV;
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_NO_BLAS)
+         if (backendId == DNN_BACKEND_CUDA) {
+             // classic-engine nets carry no graph args to inspect; keep their previous answer
+             if (inputs.empty())
+@@ -691,7 +691,7 @@
+     }
+ #endif
+ 
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_NO_BLAS)
+     Ptr<BackendNode> initCUDA(void *context_,
+                               InputArrayOfArrays,
+                               InputArrayOfArrays outputs) override {

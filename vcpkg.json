@@ -7,6 +7,11 @@
     "sqlite3", "tiff", "libpng", "libjpeg-turbo", "zlib"
   ],
   "features": {
+    "smart-crop-cutlass": {
+      "description": "Experimental Windows x64 CUDA smart crop dependency set",
+      "supports": "windows & x64",
+      "dependencies": [{ "name": "opencv5", "features": ["dnn-cuda-cutlass"] }]
+    },
     "smart-crop-cuda": {
       "description": "Enable native CUDA DNN smart image cropping",
       "dependencies": [{ "name": "opencv5", "features": ["dnn-cuda"] }]

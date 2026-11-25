@@ -1,6 +1,14 @@
 # The upstream opencv-python source distribution ships the native OpenCV sources.
 # Extract only its OpenCV subtree; no wheel, Python build or bindings are used.
-if("dnn-cuda" IN_LIST FEATURES)
+set(cutlass OFF)
+if("dnn-cuda-cutlass" IN_LIST FEATURES)
+    if("dnn-cuda" IN_LIST FEATURES OR NOT VCPKG_TARGET_IS_WINDOWS OR NOT VCPKG_TARGET_ARCHITECTURE STREQUAL "x64")
+        message(FATAL_ERROR "Install opencv5[dnn-cuda-cutlass] separately on Windows x64")
+    endif()
+    set(cutlass ON)
+    set(cutlass_patches smart-crop-cutlass-no-blas.patch)
+endif()
+if("dnn-cuda" IN_LIST FEATURES OR cutlass)
     # The matching contrib source distribution also contains the required cudev headers.
     vcpkg_download_distfile(archive
         URLS "https://files.pythonhosted.org/packages/76/f7/52d9f0730e1e067461e6e91926d666b57ec8659ff530bf9e8a0bce309109/opencv_contrib_python_headless-5.1.0.95.tar.gz"
@@ -8,7 +16,7 @@ if("dnn-cuda" IN_LIST FEATURES)
         SHA512 6ac405b261dc2ff2cc019cdee16efc1ec3c473d76d296eaf93630713cd1c25ef1d50648c2193ad2d4b42338aeafa552606c4a773302fc925e1649b35fc11a64b
     )
     vcpkg_extract_source_archive(source ARCHIVE "${archive}" PATCHES
-        face-detector-dnn-graph.patch smart-crop-cuda-operators.patch smart-crop-cuda-reuse-weights.patch)
+        face-detector-dnn-graph.patch smart-crop-cuda-operators.patch smart-crop-cuda-reuse-weights.patch ${cutlass_patches})
     set(extra_modules "${source}/opencv_contrib/modules/cudev")
 else()
     vcpkg_download_distfile(archive
@@ -37,7 +45,7 @@ string(COMPARE EQUAL "${VCPKG_TARGET_ARCHITECTURE}" "arm64" aarch64)
 string(COMPARE EQUAL "${VCPKG_TARGET_ARCHITECTURE}" "x64" x64)
 set(cuda OFF)
 set(cuda_options)
-if("dnn-cuda" IN_LIST FEATURES)
+if("dnn-cuda" IN_LIST FEATURES OR cutlass)
     if(NOT x64 OR (NOT VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_LINUX))
         message(FATAL_ERROR "CUDA DNN is available only for Windows and Linux x64")
     endif()
@@ -82,6 +90,9 @@ if("dnn-cuda" IN_LIST FEATURES)
         "-DCUDAToolkit_ROOT=${cuda_root}" "-DCMAKE_CUDA_COMPILER=${nvcc}" "-DCUDNN_LIBRARY=${cudnn_library}"
         "-DCUDNN_INCLUDE_DIR=${cudnn_root}/include" "-DCUDA_ARCH_BIN=${arches}" -DCUDA_ARCH_PTX=12.0
         -DCMAKE_CUDA_RUNTIME_LIBRARY=Shared)
+    if(cutlass)
+        list(APPEND cuda_options -DWITH_CUBLAS=OFF -DMOSAICRAFT_DNN_NO_BLAS=ON)
+    endif()
 endif()
 vcpkg_cmake_configure(SOURCE_PATH "${source}" OPTIONS
     "-DBUILD_LIST=${modules}"

@@ -23,3 +23,9 @@ python scripts/bench_smart_crop_cuda.py <基线CLI> <输入目录> <新报告目
 ```
 
 真人用 `--mode smart-real`。交错运行，报告逐文件 SHA-256、智能裁剪坐标、CPU 回退、墙钟时间、工作集及显存采样。这个对比不替代仅驱动环境中的模块加载验收。
+
+## 矩阵运算跟踪
+
+三个锁定 ONNX 没有显式 Gemm 或 MatMul。用同源码基线在 RTX 4060 Laptop 上分别运行真人和动漫小样本，并用 Nsight Systems 记录 CUDA、cuBLAS 和 cuDNN API。动漫有 2 次 `cublasLtMatmul`（对应 GEMV 内核），两次都在同线程的 `cudnnConvolutionForward` 内；真人没有 Matmul 执行，但两个模式都从 cuDNN 调用了 cuBLASLt 启发式 API。OpenCV 自身仍各初始化了两个 cuBLAS 句柄。
+
+因此不编译没有实际调用的 CUDA GEMM、MatMul 或 Attention 节点。中间版仅去掉 DNN 的直接 cuBLAS 调用和链接，保留 cuDNN 作为对照，不能作为无 cuBLAS 依赖的包分发。
