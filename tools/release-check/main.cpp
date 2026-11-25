@@ -709,6 +709,12 @@ int main(int argc, char **argv)
         {
             return checkDocs(fs::path(argv[2]));
         }
+        if (argc == 3 && fs::path(argv[1]) == "--write-smart-crop-input")
+        {
+            // A different aspect ratio from the output makes both models run during normalization.
+            bitmap(fs::path(argv[2]), 384, 256, 1);
+            return 0;
+        }
         require(argc >= 3 && argc <= 6,
                 "Usage: mosaicraft_release_check <WebUI> <contracts.json|--legacy> [--vulkan-fallback] [--current] [--smart-crop-cpu|--smart-crop-cuda-vulkan]");
         bool vulkanFallback = false, current = false;

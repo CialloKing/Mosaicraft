@@ -59,7 +59,7 @@ cmake --install build/windows-smart-crop --config Release --prefix build/smart-c
 ## 模型锁与发布条件
 
 - `cmake/smart-crop-models.json` 锁定三个权重的来源、大小和哈希。YuNet `2023mar` 有对应的 MIT 声明。原 U²-Net 权重的授权说明不能单独证明 rembg 发布附件的导出来源；DeepGHS 仓库模型卡标为 MIT，但所选权重的上游权利链还需核对。维护者接受范围已扩展至现行三个平台的智能裁剪包，包括 Windows/Linux 使用的 Vulkan 转换权重。具体范围见锁定文件。
-- 三份权重及审核记录按 `cmake/smart-crop-models.json` 校验，两份独立标注正例由本地验包器检查。发布矩阵包含 Windows/Linux 的 CUDA + Vulkan 智能裁剪包和 macOS 的 CPU 智能裁剪包。GPU 包内还包括 CPU 推理和模型回退。归档验收用 `scripts/requirements-smart-crop-verification.txt` 的 Pillow 对照像素与人工标注，不属于解包后的运行依赖。
+- 三份权重及审核记录按 `cmake/smart-crop-models.json` 校验。发布矩阵包含 Windows/Linux 的 CUDA + Vulkan 智能裁剪包和 macOS 的 CPU 智能裁剪包，GPU 包还支持 CPU 推理回退。验包默认用生成的测试图核对实际推理设备和输出尺寸。可在本机提供锁定的标注正例并安装 `scripts/requirements-smart-crop-verification.txt`，额外检查主脸保全。
 - 初审须覆盖偏侧真人、偏侧动漫、多人、主脸比窗口宽、无脸主体及无明显主体。分别统计两个模式在可保全主脸的样本上是否优于中心裁剪，以及中心裁剪已保全的主脸是否有新切断；另记录无脸主体效果、误移动率、批耗时及峰值内存。把批准的审核文档路径、大小和 SHA-256 写入 `qualityReview`；不得用两个解包正例代替总体质量审核。
 - 解包正例锁定 PNG 和人工标注的 `mainFace: [left, top, right, bottom]`（半开坐标）。每张图高 320、宽大于 180，主脸能完整落入 `180×320`，但中心裁剪切脸。发布和独立验包从其他工作目录运行，以输出像素核对实际裁剪位置和完整主脸，同时检查检测和移动指标。任何目标平台失败都不能交付宣称完整支持的包。复验已有智能裁剪版本时，使用该版本的源码锁及标注。
 

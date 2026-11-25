@@ -34,9 +34,9 @@ node tests/test_command_shell.js
 
 `cmake/release-packages.json` 是构建与独立验包共用的矩阵。正式集合由 `python scripts/verify_release_set.py v<版本> --directory <附件目录>` 按文件名和校验值检查，并生成 `SHA256SUMS.txt`。旧运行时仍可单独构建以复查历史包。
 
-三个智能裁剪包均从模型锁准备真人、动漫与显著性 ONNX、许可和标注正例。两个 GPU 包复用同一份哈希锁定的 ncnn 转换模型，CUDA 使用 CUTLASS。云端以仓库 Secret `SMART_CROP_FIXTURE_URL` 读取正例 ZIP，内部保留模型锁中 `real/input/positive.png` 与 `anime/input/positive.png` 两个路径。公开包内只包含模型，不包含验收图片。本机可设 `SMART_CROP_FIXTURE_ROOT` 使用已保存的正例。
+三个智能裁剪包均按锁准备真人、动漫与显著性 ONNX 及许可。两个 GPU 包复用同一份哈希锁定的 ncnn 转换模型，CUDA 使用 CUTLASS。打包和独立验包默认生成测试图，运行真人和动漫推理，核对实际设备及输出尺寸。在本机设置 `SMART_CROP_FIXTURE_ROOT` 并安装 `scripts/requirements-smart-crop-verification.txt` 中的依赖后，可改用锁定的标注正例检查主脸保全。
 
-Windows 云端的两个 GPU 包为候选。正式附件在同提交上用 Required 模式构建并在实机验收，智能裁剪包的 CUDA、Vulkan 与显式 CPU 均运行真人和动漫正例。Linux 云端包按现有显式准入流程标记 GPU 为 `not-run`，并执行独立解包和 CPU 正例检查。[本机打包入口](packaging.md#cmake-发布入口)
+Windows 云端的两个 GPU 包为候选。正式附件在同提交上用 Required 模式构建并在实机验收，智能裁剪包的 CUDA、Vulkan 与显式 CPU 均运行真人和动漫模式。Linux 云端包按现有显式准入流程标记 GPU 为 `not-run`，并执行独立解包和 CPU 推理检查。[本机打包入口](packaging.md#cmake-发布入口)
 
 ## 归档包检查
 

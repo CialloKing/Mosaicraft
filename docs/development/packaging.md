@@ -39,8 +39,10 @@ Linux/macOS 的日常源码构建使用 CMake 3.21+。发布使用 CMake/CTest/C
 ```sh
 cmake -DRUNTIME=cuda-vulkan -DSMART_CROP=ON -DSMART_CROP_CUDA=ON \
   -DSMART_CROP_CUTLASS=ON -DSMART_CROP_VULKAN=ON -DCUDA_VALIDATION=Required \
-  "-DSMART_CROP_FIXTURE_ROOT=<fixtures>" -P cmake/Release.cmake
+  -P cmake/Release.cmake
 ```
+
+打包默认使用生成的测试图验收推理。需要检查标注样本时，可选传入 `-DSMART_CROP_FIXTURE_ROOT=<fixtures>`。
 
 以下入口留作历史包复查和单后端开发打包：
 
