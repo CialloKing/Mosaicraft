@@ -120,6 +120,13 @@ void SmartCropSession::report(const SmartCropSession *secondary) const
         m_runtime.metric("smartCropVulkanImages", static_cast<double>(secondary ? secondary->m_vulkanImages : m_vulkanImages));
     }
     const SmartCropStats other = secondary ? secondary->m_stats : SmartCropStats{};
+    if (secondary)
+    {
+        m_runtime.metric("smartCropCudaSaliencyMs", m_stats.saliencyMs);
+        m_runtime.metric("smartCropCudaFaceMs", m_stats.faceMs);
+        m_runtime.metric("smartCropVulkanSaliencyMs", other.saliencyMs);
+        m_runtime.metric("smartCropVulkanFaceMs", other.faceMs);
+    }
     m_runtime.metric("smartCropFacesFound", static_cast<double>(m_stats.facesFound + other.facesFound));
     m_runtime.metric("smartCropMoved", static_cast<double>(m_stats.moved + other.moved));
     m_runtime.metric("smartCropCentered", static_cast<double>(m_stats.centered + other.centered));

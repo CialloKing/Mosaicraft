@@ -127,7 +127,7 @@ void detail::runSmartCropPipeline(ImageNormalizer &normalizer, std::size_t count
 void detail::runDualSmartCropPipeline(ImageNormalizer &cuda, ImageNormalizer &vulkan, std::size_t count,
                                       const std::function<NormalizePaths(std::size_t)> &paths,
                                       const std::function<void(bool)> &complete, ImageNormalizer::StandaloneTimings &timings,
-                                      std::size_t queueBytes)
+                                      std::size_t queueBytes, std::size_t vulkanMaxPixels)
 {
     if (!count)
     {
@@ -194,7 +194,7 @@ void detail::runDualSmartCropPipeline(ImageNormalizer &cuda, ImageNormalizer &vu
                     item.bytes = std::max(item.bytes, outputBytes);
                     const auto w = (static_cast<std::uint64_t>(item.image.pixels.cols) + 31) / 32 * 32;
                     const auto h = (static_cast<std::uint64_t>(item.image.pixels.rows) + 31) / 32 * 32;
-                    item.vulkanEligible = count - index >= 4 && w * h <= 4ull * 1024 * 1024;
+                    item.vulkanEligible = count - index >= 4 && w * h <= vulkanMaxPixels;
                 }
                 item.exclusive = item.bytes > readLimit;
             }
@@ -356,7 +356,8 @@ void detail::runDualSmartCropPipeline(ImageNormalizer &cuda, ImageNormalizer &vu
 }
 
 static ServiceResult normalizeImagesImpl(const BuildRequest &request, RuntimeContext &runtime,
-                                         std::optional<int> vulkan, bool dual = false)
+                                         std::optional<int> vulkan, bool dual = false,
+                                         std::size_t vulkanMaxPixels = detail::kDualVulkanMaxPixels)
 {
     namespace fs = std::filesystem;
     std::string error, field;
@@ -515,6 +516,7 @@ static ServiceResult normalizeImagesImpl(const BuildRequest &request, RuntimeCon
                 if (dual)
                 {
                     runtime.metric("smartCropDualOverlapMs", timings.dualOverlapMs);
+                    runtime.metric("smartCropDualVulkanMaxPixels", static_cast<double>(vulkanMaxPixels));
                     runtime.metric("smartCropDualPendingPeak", static_cast<double>(timings.dualPendingPeak));
                     runtime.metric("smartCropDualQueuePeakBytes", static_cast<double>(timings.dualQueuePeakBytes));
                 }
@@ -529,7 +531,8 @@ static ServiceResult normalizeImagesImpl(const BuildRequest &request, RuntimeCon
             if (secondary)
             {
                 auto other = secondary->normalizer(request.normalizeWidth, request.normalizeHeight);
-                detail::runDualSmartCropPipeline(normalizer, other, files.size(), paths, complete, timings);
+                detail::runDualSmartCropPipeline(normalizer, other, files.size(), paths, complete, timings,
+                                                 256ull * 1024 * 1024, vulkanMaxPixels);
                 secondary->finish();
             }
             else if (pipeline)
@@ -611,8 +614,21 @@ std::optional<ServiceResult> runCliSmartCropExperiment(const BuildRequest &reque
     std::lock_guard<std::mutex> lock(pipelineMutex());
     ExecutionScope scope;
     const bool dual = experiment == "dual";
+    auto vulkanMaxPixels = detail::kDualVulkanMaxPixels;
     if (dual)
     {
+        // Tune device selection, never the detector resolution or the hard Vulkan memory bound.
+        if (const char *value = std::getenv("MOSAICRAFT_SMART_CROP_DUAL_MAX_PIXELS"))
+        {
+            const std::string_view limit(value);
+            const auto parsedLimit = std::from_chars(limit.data(), limit.data() + limit.size(), vulkanMaxPixels);
+            if (parsedLimit.ec != std::errc{} || parsedLimit.ptr != limit.data() + limit.size() ||
+                vulkanMaxPixels < 1024 || vulkanMaxPixels > detail::kDualVulkanMaxPixels)
+            {
+                return runtimeFailure(runtime, 1, "dual GPU pixel limit must be in [1024, 4194304]",
+                                      "smart_crop_dual_budget", "cropDevice");
+            }
+        }
 #if MOSAICRAFT_SMART_CROP_CUDA
         // CUDA selects NVIDIA only. Restrict the second device to AMD/Intel rather than guessing adapter identity.
         try
@@ -633,7 +649,7 @@ std::optional<ServiceResult> runCliSmartCropExperiment(const BuildRequest &reque
                               "smart_crop_cuda_unavailable", "cropDevice");
 #endif
     }
-    return runtimeResult(normalizeImagesImpl(request, runtime, device, dual), runtime);
+    return runtimeResult(normalizeImagesImpl(request, runtime, device, dual, vulkanMaxPixels), runtime);
 #else
     return runtimeFailure(runtime, 1, "this build does not support the Vulkan smart crop experiment",
                           "smart_crop_vulkan_unavailable", "cropDevice");

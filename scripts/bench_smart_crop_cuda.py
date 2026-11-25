@@ -45,7 +45,7 @@ def stop(process, kill=False):
     process.wait()
 
 
-def run(args, name, parts, *, reuse_weights=None, executable=None):
+def run(args, name, parts, *, reuse_weights=None, executable=None, dual_max_pixels=None):
     samples_path = args.work / f"{name}-vram.csv"
     hetero = args.study in {"heterogeneous", "dual", "dual-dispatch"}
     trace = hetero or args.study == "cutlass"
@@ -73,6 +73,9 @@ def run(args, name, parts, *, reuse_weights=None, executable=None):
             env = {**os.environ, "CUDA_VISIBLE_DEVICES": args.gpu_uuid, "OPENCV_LOG_LEVEL": "WARNING",
                    "MOSAICRAFT_SMART_CROP_PIPELINE": str(int(pipeline))}
             env.pop("MOSAICRAFT_SMART_CROP_EXPERIMENT", None)
+            env.pop("MOSAICRAFT_SMART_CROP_DUAL_MAX_PIXELS", None)
+            if dual_max_pixels is not None and device == "dual":
+                env["MOSAICRAFT_SMART_CROP_DUAL_MAX_PIXELS"] = str(dual_max_pixels)
             policy = device
             if device in {"vulkan", "dual"}:
                 env["MOSAICRAFT_SMART_CROP_EXPERIMENT"] = device
@@ -253,6 +256,8 @@ def main():
     parser.add_argument("--gpu", default="0", help="nvidia-smi index/UUID of the only visible GPU")
     parser.add_argument("--vulkan-device", type=int, default=1, help="device index from the ncnn Vulkan probe")
     parser.add_argument("--with-dual", action="store_true", help="include the dual-GPU candidate after single-GPU correctness")
+    parser.add_argument("--dual-max-pixels", action="append", type=int, default=[], metavar="PIXELS",
+                        help="add a dual-GPU variant with this aligned Vulkan pixel limit (repeatable, dual study)")
     parser.add_argument("--timeout", type=int, default=3600, help="seconds per run")
     args = parser.parse_args()
     if not args.exe.is_file() or not args.input.is_dir() or shutil.which("nvidia-smi") is None:
@@ -274,6 +279,9 @@ def main():
     def input_hashes(root):
         return {p.relative_to(root).as_posix(): sha256(p) for p in input_files(root)}
 
+    if args.dual_max_pixels and (args.study != "dual" or
+                                 any(not 1024 <= n <= 4 * 1024**2 for n in args.dual_max_pixels)):
+        parser.error("--dual-max-pixels requires the dual study and values in [1024, 4194304]")
     if args.study == "dual-dispatch" and args.mode != "smart-real":
         parser.error("the dual-GPU experiment only supports smart-real")
     original_input = args.input
@@ -299,6 +307,7 @@ def main():
               "inputSha256": source_hashes, "runs": []}
     if repeat_input is not None:
         report["repeatInput"] = repeat_input
+    dual_limits = {f"dual-{n}": n for n in args.dual_max_pixels}
     if args.study == "hybrid":
         variants = hybrid_variants(args, report)
     elif args.study == "pipeline":
@@ -323,8 +332,10 @@ def main():
     elif args.study == "dual":
         if os.name != "nt":
             parser.error("the dual study requires Windows")
-        variants = {label: [(label, True, args.input, None)] for label in ("cuda", "dual")}
+        variants = {label: [("cuda" if label == "cuda" else "dual", True, args.input, None)]
+                    for label in ("cuda", "dual", *dual_limits)}
         report["vulkanDeviceIndex"] = args.vulkan_device
+        report["dualPixelLimitOverrides"] = dual_limits
     elif args.study == "heterogeneous":
         if os.name != "nt":
             parser.error("the heterogeneous study requires Windows")
@@ -346,7 +357,8 @@ def main():
             reuse_weights = label == "reuse-weights" if args.study == "weights" else None
             use_candidate = label == "cutlass" or (args.study == "dual-dispatch" and label != "dual-ordered")
             result, outputs = run(args, name, variants[label], reuse_weights=reuse_weights,
-                                  executable=args.candidate_exe if use_candidate else None)
+                                  executable=args.candidate_exe if use_candidate else None,
+                                  dual_max_pixels=dual_limits.get(label))
             if args.study in {"dual", "dual-dispatch"}:
                 startup = result["children"][0]["metrics"].get("smartCropStartupMs")
                 if startup is not None and 0 <= startup <= result["wallSeconds"] * 1000:
@@ -412,16 +424,20 @@ def main():
             gates = ("cutlass" in acceptable and medians["cutlass"] <= medians["baseline"] * 1.10
                      and all(delta is not None and delta <= 512 for delta in vram))
         elif args.study in {"dual", "dual-dispatch"}:
-            overlap = [run["children"][0]["metrics"].get("smartCropDualOverlapMs", 0) for run in grouped["dual"]]
-            report["dualOverlapMs"] = overlap
+            def overlap(label):
+                return [run["children"][0]["metrics"].get("smartCropDualOverlapMs", 0) for run in grouped[label]]
+
+            report["dualOverlapMs"] = overlap("dual")
             for field, key in (("modelPreflightSeconds", "medianModelPreflightSeconds"),
                                ("wallMinusModelPreflightSeconds", "medianWallMinusModelPreflightSeconds")):
                 report[key] = {label: statistics.median(r[field] for r in runs)
                                if all(field in r for r in runs) else None for label, runs in grouped.items()}
             if args.study == "dual-dispatch":
                 report["gainVsOrderedDual"] = 1 - medians["dual"] / medians["dual-ordered"]
-            gates = ("dual" in acceptable and all(value > 0 for value in overlap)
-                     and report["wallSavings"]["dual"] >= .05)
+            candidates = [label for label in ("dual", *dual_limits) if label in acceptable
+                          and all(value > 0 for value in overlap(label)) and report["wallSavings"][label] >= .05]
+            report["dualCandidates"] = candidates
+            gates = bool(candidates) and all(r["passed"] and r["identical"] for r in grouped["cuda"])
         elif args.study == "heterogeneous":
             correct = {label: all(r["passed"] and r["identical"] for r in runs) for label, runs in grouped.items()}
             vulkan_gain = report["wallSavings"]["vulkan"]
@@ -446,7 +462,7 @@ def main():
             gates = bool(report["hybridCandidates"]) and all(r["passed"] and r["identical"] for r in grouped["pipeline"])
     else:
         gates = report["speedup"] >= 1.5
-    if args.study not in {"hybrid", "heterogeneous"}:
+    if args.study not in {"hybrid", "heterogeneous", "dual"}:
         gates &= all(r["passed"] and (args.study == "devices" or r["identical"]) for r in report["runs"])
     report["passed"] = report["inputUnchanged"] and gates
     write_report(report_path, report)

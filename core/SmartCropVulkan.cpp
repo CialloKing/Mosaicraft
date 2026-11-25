@@ -98,10 +98,17 @@ ncnn::Mat inputTensor(const cv::Mat &blob)
     require(blob.dims == 4 && blob.type() == CV_32FC1 && blob.size[0] == 1 && blob.size[1] == 3 && blob.isContinuous(),
             "invalid FP32 NCHW input for Vulkan smart crop");
     const int width = blob.size[3], height = blob.size[2];
+    const std::size_t plane = static_cast<std::size_t>(width) * height;
+    // The caller owns the OpenCV blob through the synchronous forward. Wrap it
+    // only when ncnn's aligned channel stride matches the packed NCHW storage.
+    ncnn::Mat view(width, height, 3, blob.data);
+    if (view.cstep == plane)
+    {
+        return view;
+    }
     ncnn::Mat input(width, height, 3);
     require(!input.empty(), "cannot allocate Vulkan input staging tensor");
-    // ncnn can pad its channel stride, so wrapping a packed OpenCV blob is unsafe.
-    const std::size_t bytes = static_cast<std::size_t>(width) * height * sizeof(float);
+    const std::size_t bytes = plane * sizeof(float);
     for (int i = 0; i < 3; ++i)
     {
         std::memcpy(input.channel(i).data, blob.ptr(0, i), bytes);
@@ -229,7 +236,8 @@ std::vector<cv::Rect2d> SmartCropVulkan::realBoxes(const cv::Mat &image) const
     const int height = (image.rows + alignment - 1) / alignment * alignment;
     cv::Mat padded;
     cv::copyMakeBorder(image, padded, 0, height - image.rows, 0, width - image.cols, cv::BORDER_CONSTANT, cv::Scalar());
-    const auto input = inputTensor(cv::dnn::blobFromImage(padded));
+    const auto blob = cv::dnn::blobFromImage(padded);
+    const auto input = inputTensor(blob);
     // Keep the original lower-memory extraction for large standalone inputs.
     const bool batch = static_cast<std::int64_t>(width) * height <= 4ll * 1024 * 1024;
     FaceOutputs outputs;
