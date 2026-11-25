@@ -6,7 +6,7 @@ if("dnn-cuda-cutlass" IN_LIST FEATURES)
         message(FATAL_ERROR "Install opencv5[dnn-cuda-cutlass] separately on Windows x64")
     endif()
     set(cutlass ON)
-    set(cutlass_patches smart-crop-cutlass-no-blas.patch)
+    set(cutlass_patches smart-crop-cutlass-no-blas.patch smart-crop-cutlass-operators.patch)
 endif()
 if("dnn-cuda" IN_LIST FEATURES OR cutlass)
     # The matching contrib source distribution also contains the required cudev headers.
@@ -44,34 +44,24 @@ string(COMPARE EQUAL "${VCPKG_CRT_LINKAGE}" "static" static_crt)
 string(COMPARE EQUAL "${VCPKG_TARGET_ARCHITECTURE}" "arm64" aarch64)
 string(COMPARE EQUAL "${VCPKG_TARGET_ARCHITECTURE}" "x64" x64)
 set(cuda OFF)
+set(cudnn OFF)
 set(cuda_options)
 if("dnn-cuda" IN_LIST FEATURES OR cutlass)
     if(NOT x64 OR (NOT VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_LINUX))
         message(FATAL_ERROR "CUDA DNN is available only for Windows and Linux x64")
     endif()
     set(cuda_root "$ENV{MOSAICRAFT_CUDA_SDK}")
-    set(cudnn_root "$ENV{MOSAICRAFT_CUDNN_SDK}")
-    if(NOT IS_ABSOLUTE "${cuda_root}" OR NOT IS_ABSOLUTE "${cudnn_root}")
-        message(FATAL_ERROR "Prepare the locked CUDA and cuDNN SDKs before installing opencv5[dnn-cuda]")
+    if(NOT IS_ABSOLUTE "${cuda_root}")
+        message(FATAL_ERROR "Set MOSAICRAFT_CUDA_SDK to the locked CUDA SDK")
     endif()
     if(VCPKG_TARGET_IS_WINDOWS)
         set(nvcc "${cuda_root}/bin/nvcc.exe")
-        set(cudnn_library "${cudnn_root}/lib/x64/cudnn.lib")
     else()
         set(nvcc "${cuda_root}/bin/nvcc")
-        set(cudnn_library "${cudnn_root}/lib/libcudnn.so")
     endif()
-    foreach(file IN ITEMS "${nvcc}" "${cudnn_library}" "${cudnn_root}/include/cudnn_version.h")
-        if(NOT EXISTS "${file}")
-            message(FATAL_ERROR "Missing CUDA DNN build dependency: ${file}")
-        endif()
-    endforeach()
     execute_process(COMMAND "${nvcc}" --version RESULT_VARIABLE nvcc_status OUTPUT_VARIABLE nvcc_version)
-    file(STRINGS "${cudnn_root}/include/cudnn_version.h" cudnn_version REGEX "^#define CUDNN_(MAJOR|MINOR|PATCHLEVEL) +[0-9]+")
-    if(NOT nvcc_status EQUAL 0 OR NOT nvcc_version MATCHES "V13[.]5[.]37([ ,\r\n]|$)" OR
-       NOT cudnn_version MATCHES "CUDNN_MAJOR +9(;|$)" OR NOT cudnn_version MATCHES "CUDNN_MINOR +28(;|$)" OR
-       NOT cudnn_version MATCHES "CUDNN_PATCHLEVEL +1(;|$)")
-        message(FATAL_ERROR "CUDA DNN requires nvcc 13.5.37 and cuDNN 9.28.1")
+    if(NOT nvcc_status EQUAL 0 OR NOT nvcc_version MATCHES "V13[.]5[.]37([ ,\r\n]|$)")
+        message(FATAL_ERROR "CUDA DNN requires nvcc 13.5.37")
     endif()
     set(arches "$ENV{MOSAICRAFT_OPENCV_CUDA_ARCH}")
     if(NOT arches)
@@ -83,15 +73,42 @@ if("dnn-cuda" IN_LIST FEATURES OR cutlass)
     # Cache only exact SDK locations; searching PATH may pick a different toolkit.
     set(cuda ON)
     string(APPEND modules ",cudev")
-    # WITH_CUDNNJIT satisfies upstream config verification; it is ignored when cuDNN is present.
     list(APPEND cuda_options "-DOPENCV_EXTRA_MODULES_PATH=${extra_modules}"
         -DWITH_NVCUVID=OFF -DWITH_NVCUVENC=OFF -DWITH_CUFFT=OFF
-        -DENABLE_CUDA_FIRST_CLASS_LANGUAGE=ON -DWITH_CUDNNJIT=ON
-        "-DCUDAToolkit_ROOT=${cuda_root}" "-DCMAKE_CUDA_COMPILER=${nvcc}" "-DCUDNN_LIBRARY=${cudnn_library}"
-        "-DCUDNN_INCLUDE_DIR=${cudnn_root}/include" "-DCUDA_ARCH_BIN=${arches}" -DCUDA_ARCH_PTX=12.0
-        -DCMAKE_CUDA_RUNTIME_LIBRARY=Shared)
+        -DENABLE_CUDA_FIRST_CLASS_LANGUAGE=ON "-DCUDAToolkit_ROOT=${cuda_root}"
+        "-DCMAKE_CUDA_COMPILER=${nvcc}" "-DCUDA_ARCH_BIN=${arches}" -DCMAKE_CUDA_RUNTIME_LIBRARY=Shared)
     if(cutlass)
-        list(APPEND cuda_options -DWITH_CUBLAS=OFF -DMOSAICRAFT_DNN_NO_BLAS=ON)
+        include("${CMAKE_CURRENT_LIST_DIR}/smart-crop-cutlass-lock.cmake")
+        set(cutlass_name "cutlass-${MOSAICRAFT_CUTLASS_COMMIT}")
+        vcpkg_download_distfile(cutlass_archive
+            URLS "https://codeload.github.com/NVIDIA/cutlass/zip/${MOSAICRAFT_CUTLASS_COMMIT}"
+            FILENAME "${cutlass_name}.zip" SHA512 "${MOSAICRAFT_CUTLASS_SHA512}")
+        vcpkg_extract_source_archive(cutlass_source ARCHIVE "${cutlass_archive}")
+        file(COPY "${CMAKE_CURRENT_LIST_DIR}/cutlass_convolution.cu" DESTINATION "${source}/modules/dnn/src/cuda")
+        file(COPY "${CMAKE_CURRENT_LIST_DIR}/cutlass_convolution.hpp" DESTINATION "${source}/modules/dnn/src/cuda4dnn/kernels")
+        string(REGEX MATCH "[0-9]+[.][0-9]+$" ptx "${arches}")
+        list(APPEND cuda_options -DWITH_CUBLAS=OFF -DWITH_CUDNNJIT=OFF -DMOSAICRAFT_DNN_NO_BLAS=ON
+            -DMOSAICRAFT_DNN_CUTLASS=ON "-DMOSAICRAFT_CUTLASS_INCLUDE_DIR=${cutlass_source}/include"
+            "-DCUDA_ARCH_PTX=${ptx}")
+    else()
+        set(cudnn ON)
+        set(cudnn_root "$ENV{MOSAICRAFT_CUDNN_SDK}")
+        if(VCPKG_TARGET_IS_WINDOWS)
+            set(cudnn_library "${cudnn_root}/lib/x64/cudnn.lib")
+        else()
+            set(cudnn_library "${cudnn_root}/lib/libcudnn.so")
+        endif()
+        if(NOT IS_ABSOLUTE "${cudnn_root}" OR NOT EXISTS "${cudnn_library}")
+            message(FATAL_ERROR "Set MOSAICRAFT_CUDNN_SDK to the locked cuDNN SDK")
+        endif()
+        file(STRINGS "${cudnn_root}/include/cudnn_version.h" cudnn_version REGEX "^#define CUDNN_(MAJOR|MINOR|PATCHLEVEL) +[0-9]+")
+        if(NOT cudnn_version MATCHES "CUDNN_MAJOR +9(;|$)" OR NOT cudnn_version MATCHES "CUDNN_MINOR +28(;|$)" OR
+           NOT cudnn_version MATCHES "CUDNN_PATCHLEVEL +1(;|$)")
+            message(FATAL_ERROR "CUDA DNN requires cuDNN 9.28.1")
+        endif()
+        # WITH_CUDNNJIT satisfies upstream config verification; cuDNN takes precedence.
+        list(APPEND cuda_options -DWITH_CUDNNJIT=ON "-DCUDNN_LIBRARY=${cudnn_library}"
+            "-DCUDNN_INCLUDE_DIR=${cudnn_root}/include" -DCUDA_ARCH_PTX=12.0)
     endif()
 endif()
 vcpkg_cmake_configure(SOURCE_PATH "${source}" OPTIONS
@@ -107,7 +124,7 @@ vcpkg_cmake_configure(SOURCE_PATH "${source}" OPTIONS
     -DBUILD_opencv_apps=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF -DCV_TRACE=OFF
     -DCV_ENABLE_INTRINSICS=ON -DOPENCV_ENABLE_THREAD_SUPPORT=ON
     -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_CAROTENE=OFF -DWITH_KLEIDICV=OFF
-    -DWITH_OPENCL=OFF "-DWITH_CUDA=${cuda}" "-DWITH_CUDNN=${cuda}" "-DOPENCV_DNN_CUDA=${cuda}"
+    -DWITH_OPENCL=OFF "-DWITH_CUDA=${cuda}" "-DWITH_CUDNN=${cudnn}" "-DOPENCV_DNN_CUDA=${cuda}"
     ${cuda_options}
     -DWITH_OPENCLAMDFFT=OFF -DWITH_OPENCLAMDBLAS=OFF -DWITH_OPENCL_D3D11_NV=OFF
     -DWITH_DIRECTX=OFF -DWITH_DIRECTML=OFF -DWITH_WIN32UI=OFF -DWITH_GTK=OFF
@@ -130,6 +147,9 @@ vcpkg_copy_pdbs()
 file(GLOB_RECURSE notices LIST_DIRECTORIES FALSE "${CURRENT_PACKAGES_DIR}/share/opencv5/licenses/*")
 if(cuda)
     list(APPEND notices "${source}/../opencv_contrib/LICENSE")
+endif()
+if(cutlass)
+    file(INSTALL "${cutlass_source}/LICENSE.txt" DESTINATION "${CURRENT_PACKAGES_DIR}/share/opencv5/licenses/cutlass")
 endif()
 vcpkg_install_copyright(FILE_LIST "${source}/LICENSE" ${notices})
 file(REMOVE "${CURRENT_PACKAGES_DIR}/LICENSE")

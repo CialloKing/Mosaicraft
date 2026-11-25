@@ -1,0 +1,943 @@
+--- a/opencv/modules/dnn/CMakeLists.txt
++++ b/opencv/modules/dnn/CMakeLists.txt
+@@ -50,12 +50,15 @@
+ ocv_option(OPENCV_DNN_CUDA "Build with CUDA support"
+     HAVE_CUDA
+     AND (HAVE_CUBLAS OR MOSAICRAFT_DNN_NO_BLAS)
+-    AND (HAVE_CUDNN OR HAVE_CUDNNJIT)
++    AND (HAVE_CUDNN OR HAVE_CUDNNJIT OR MOSAICRAFT_DNN_CUTLASS)
+ )
+ 
+ if(OPENCV_DNN_CUDA)
+-  if(HAVE_CUDA AND (HAVE_CUBLAS OR MOSAICRAFT_DNN_NO_BLAS) AND (HAVE_CUDNN OR HAVE_CUDNNJIT))
++  if(HAVE_CUDA AND (HAVE_CUBLAS OR MOSAICRAFT_DNN_NO_BLAS) AND (HAVE_CUDNN OR HAVE_CUDNNJIT OR MOSAICRAFT_DNN_CUTLASS))
+     ocv_target_compile_definitions(${the_module} PRIVATE "CV_CUDA4DNN=1")
++    if(MOSAICRAFT_DNN_CUTLASS)
++      ocv_target_compile_definitions(${the_module} PRIVATE "MOSAICRAFT_DNN_CUTLASS=1")
++    endif()
+     if(MOSAICRAFT_DNN_NO_BLAS)
+       ocv_target_compile_definitions(${the_module} PRIVATE "MOSAICRAFT_DNN_NO_BLAS=1")
+     endif()
+@@ -64,7 +67,7 @@
+       message(SEND_ERROR "DNN: CUDA backend requires CUDA Toolkit. Please resolve dependency or disable OPENCV_DNN_CUDA=OFF")
+     elseif(NOT HAVE_CUBLAS AND NOT MOSAICRAFT_DNN_NO_BLAS)
+       message(SEND_ERROR "DNN: CUDA backend requires cuBLAS. Please resolve dependency or disable OPENCV_DNN_CUDA=OFF")
+-    elseif(NOT HAVE_CUDNN AND NOT HAVE_CUDNNJIT)
++    elseif(NOT HAVE_CUDNN AND NOT HAVE_CUDNNJIT AND NOT MOSAICRAFT_DNN_CUTLASS)
+       message(SEND_ERROR "DNN: CUDA backend requires cuDNN (WITH_CUDNN) or the cuDNN graph API (WITH_CUDNNJIT). Please resolve dependency or disable OPENCV_DNN_CUDA=OFF")
+     endif()
+   endif()
+@@ -458,7 +461,12 @@
+   set(sources_options EXCLUDE_OPENCL)
+ endif()
+ 
+-if(OPENCV_DNN_CUDA AND HAVE_CUDA AND (HAVE_CUBLAS OR MOSAICRAFT_DNN_NO_BLAS) AND (HAVE_CUDNN OR HAVE_CUDNNJIT))
++if(OPENCV_DNN_CUDA AND HAVE_CUDA AND (HAVE_CUBLAS OR MOSAICRAFT_DNN_NO_BLAS) AND (HAVE_CUDNN OR HAVE_CUDNNJIT OR MOSAICRAFT_DNN_CUTLASS))
++  if(MOSAICRAFT_DNN_CUTLASS)
++    list(APPEND include_dirs "${MOSAICRAFT_CUTLASS_INCLUDE_DIR}")
++    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/cutlass_convolution.cu"
++      PROPERTIES COMPILE_OPTIONS "--expt-relaxed-constexpr;-Xcompiler=/Zc:preprocessor;-Xcompiler=/utf-8")
++  endif()
+   list(APPEND include_dirs ${CUDA_TOOLKIT_INCLUDE} ${CUDNN_INCLUDE_DIRS} ${CUDNNJIT_INCLUDE_DIRS})
+   set(CC_LIST ${CUDA_ARCH_BIN})
+   separate_arguments(CC_LIST)
+--- a/opencv/modules/dnn/cmake/hooks/INIT_MODULE_SOURCES_opencv_dnn.cmake
++++ b/opencv/modules/dnn/cmake/hooks/INIT_MODULE_SOURCES_opencv_dnn.cmake
+@@ -4,7 +4,7 @@
+   ocv_list_filterout(OPENCV_MODULE_${the_module}_HEADERS "/ocl4dnn/")
+ endif()
+ 
+-if(NOT (OPENCV_DNN_CUDA AND HAVE_CUDA AND HAVE_CUBLAS AND (HAVE_CUDNN OR HAVE_CUDNNJIT)))
++if(NOT (OPENCV_DNN_CUDA AND HAVE_CUDA AND (HAVE_CUBLAS OR MOSAICRAFT_DNN_NO_BLAS) AND (HAVE_CUDNN OR HAVE_CUDNNJIT OR MOSAICRAFT_DNN_CUTLASS)))
+   message(STATUS "opencv_dnn: filter out cuda4dnn source code")
+   ocv_list_filterout(OPENCV_MODULE_${the_module}_SOURCES "/cuda4dnn/")
+   ocv_list_filterout(OPENCV_MODULE_${the_module}_HEADERS "/cuda4dnn/")
+--- a/opencv/cmake/templates/OpenCVConfig-CUDALanguage.cmake.in
++++ b/opencv/cmake/templates/OpenCVConfig-CUDALanguage.cmake.in
+@@ -50,3 +50,5 @@
+ if(NOT __ocv_cuda_found VERSION_EQUAL __ocv_cuda_built)
+   message(FATAL_ERROR "OpenCV library was compiled with CUDA ${OpenCV_CUDA_VERSION} support. Please, use the same version or rebuild OpenCV with CUDA ${CUDA_VERSION_STRING}")
+ endif()
++
++set(OpenCV_MOSAICRAFT_DNN_CUTLASS "@MOSAICRAFT_DNN_CUTLASS@")
+--- a/opencv/modules/dnn/src/op_cuda.hpp
++++ b/opencv/modules/dnn/src/op_cuda.hpp
+@@ -11,7 +11,9 @@
+ #ifndef MOSAICRAFT_DNN_NO_BLAS
+ #include "cuda4dnn/csl/cublas.hpp"
+ #endif
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ #include "cuda4dnn/csl/cudnn.hpp"
++#endif
+ #include "cuda4dnn/csl/tensor.hpp"
+ #include "cuda4dnn/csl/memory.hpp"
+ #include "cuda4dnn/csl/workspace.hpp"
+@@ -41,7 +43,9 @@
+ #ifndef MOSAICRAFT_DNN_NO_BLAS
+             cublas::Handle cublas_handle;
+ #endif
++#ifndef MOSAICRAFT_DNN_CUTLASS
+             cudnn::Handle cudnn_handle;
++#endif
+             int* error_flag = nullptr;  // device alias of a mapped host int; set by a kernel on invalid input
+         };
+ 
+--- a/opencv/modules/dnn/src/op_cuda.cpp
++++ b/opencv/modules/dnn/src/op_cuda.cpp
+@@ -143,8 +143,10 @@
+ {
+     CV_Assert(preferableBackend == DNN_BACKEND_CUDA);
+ 
++#ifndef MOSAICRAFT_DNN_CUTLASS
+     if (!cudaInfo) /* we need to check only once */
+         cuda4dnn::checkVersions();
++#endif
+ 
+     if (cuda4dnn::getDeviceCount() <= 0)
+         CV_Error(Error::StsError, "No CUDA capable device found.");
+@@ -168,7 +170,9 @@
+ #ifndef MOSAICRAFT_DNN_NO_BLAS
+         context.cublas_handle = cuda4dnn::csl::cublas::Handle(context.stream, useTF32);
+ #endif
++#ifndef MOSAICRAFT_DNN_CUTLASS
+         context.cudnn_handle = cuda4dnn::csl::cudnn::Handle(context.stream, useTF32);
++#endif
+ 
+         cudaInfo = std::make_unique<CudaInfo_t>(std::move(context));
+     }
+--- a/opencv/modules/dnn/src/net_impl2.cpp
++++ b/opencv/modules/dnn/src/net_impl2.cpp
+@@ -836,7 +836,9 @@
+ #ifndef MOSAICRAFT_DNN_NO_BLAS
+             context.cublas_handle = cuda4dnn::csl::cublas::Handle(context.stream, useTF32);
+ #endif
++#ifndef MOSAICRAFT_DNN_CUTLASS
+             context.cudnn_handle = cuda4dnn::csl::cudnn::Handle(context.stream, useTF32);
++#endif
+             cudaInfo = std::make_unique<CudaInfo_t>(std::move(context));
+         }
+     }
+--- a/opencv/modules/dnn/src/cuda4dnn/init.hpp
++++ b/opencv/modules/dnn/src/cuda4dnn/init.hpp
+@@ -8,7 +8,9 @@
+ #include "csl/error.hpp"
+ 
+ #include <cuda_runtime.h>
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ #include <cudnn.h>
++#endif
+ 
+ #include <opencv2/core/cuda.hpp>
+ #include <sstream>
+@@ -17,6 +19,7 @@
+ 
+     inline void checkVersions()
+     {
++#ifndef MOSAICRAFT_DNN_CUTLASS
+         // https://docs.nvidia.com/deeplearning/cudnn/developer-guide/index.html#programming-model
+         // cuDNN API Compatibility
+         // Beginning in cuDNN 7, the binary compatibility of a patch and minor releases is maintained as follows:
+@@ -42,6 +45,7 @@
+             oss << "cuDNN reports version " << cudnn_major_bversion << "." << cudnn_minor_bversion << " which is not compatible with the version " << CUDNN_MAJOR << "." << CUDNN_MINOR << " with which OpenCV was built";
+             CV_LOG_WARNING(NULL, oss.str().c_str());
+         }
++#endif
+     }
+ 
+     inline int getDeviceCount()
+@@ -80,6 +84,10 @@
+ 
+     inline bool doesDeviceSupportFP16(int device_id = -1)
+     {
++#ifdef MOSAICRAFT_DNN_CUTLASS
++        CV_UNUSED(device_id);
++        return false;
++#else
+         if (device_id < 0)
+             device_id = getDevice();
+ 
+@@ -92,6 +100,7 @@
+ 
+         int version = major * 10 + minor;
+         return (version >= 53);
++#endif
+     }
+ 
+ }}} /* namespace cv::dnn::cuda4dnn */
+--- a/opencv/modules/dnn/src/cuda4dnn/csl/nvcc_defs.hpp
++++ b/opencv/modules/dnn/src/cuda4dnn/csl/nvcc_defs.hpp
+@@ -6,6 +6,7 @@
+ #define OPENCV_DNN_SRC_CUDA4DNN_CSL_NVCC_DEFS_HPP
+ 
+ #include <cuda_runtime_api.h>
++#include <cuda_fp16.h>
+ 
+ #ifdef __CUDACC__
+ #   define CUDA4DNN_HOST __host__
+--- a/opencv/modules/dnn/src/cuda4dnn/csl/tensor.hpp
++++ b/opencv/modules/dnn/src/cuda4dnn/csl/tensor.hpp
+@@ -10,7 +10,9 @@
+ #ifndef MOSAICRAFT_DNN_NO_BLAS
+ #include "cublas.hpp"
+ #endif
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ #include "cudnn.hpp"
++#endif
+ #include "span.hpp"
+ 
+ #include "../cxx_utils/resizable_static_array.hpp"
+--- a/opencv/modules/dnn/src/cuda4dnn/csl/tensor_ops.hpp
++++ b/opencv/modules/dnn/src/cuda4dnn/csl/tensor_ops.hpp
+@@ -11,16 +11,32 @@
+ #ifndef MOSAICRAFT_DNN_NO_BLAS
+ #include "cublas.hpp"
+ #endif
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ #include "cudnn.hpp"
++#endif
+ #include "workspace.hpp"
+ 
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ #include "cudnn/convolution.hpp"
++#endif
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ #include "cudnn/pooling.hpp"
++#endif
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ #include "cudnn/lrn.hpp"
++#endif
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ #include "cudnn/softmax.hpp"
++#endif
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ #include "cudnn/transform.hpp"
++#endif
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ #include "cudnn/transpose_convolution.hpp"
++#endif
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ #include "cudnn/recurrent.hpp"
++#endif
+ 
+ #include <opencv2/core.hpp>
+ 
+@@ -200,6 +216,7 @@
+         }
+ 
+ #endif
++#ifndef MOSAICRAFT_DNN_CUTLASS
+         /** @brief performs element-wise addition with broadcasting
+          *
+          * Pre-conditions:
+@@ -224,7 +241,9 @@
+             auto outputDesc = TensorDescriptor<T>(shape);
+             cudnn::softmax(handle, outputDesc, output.get(), inputDesc, input.get(), log);
+         }
++#endif
+     }
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ 
+     template <class T>
+     class Convolution {
+@@ -676,6 +695,7 @@
+ #endif
+     };
+ 
++#endif
+ }}}} /* namespace cv::dnn::cuda4dnn::csl */
+ 
+ #endif /* OPENCV_DNN_SRC_CUDA4DNN_CSL_TENSOR_OPS_HPP */
+--- a/opencv/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
++++ b/opencv/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
+@@ -7,6 +7,10 @@
+ 
+ #include "../../op_cuda.hpp"
+ 
++#ifdef MOSAICRAFT_DNN_CUTLASS
++#include "../kernels/cutlass_convolution.hpp"
++#include "../kernels/permute.hpp"
++#else
+ #if defined(HAVE_CUDNN)
+ #include <cudnn.h>
+ #elif defined(HAVE_CUDNNJIT)
+@@ -14,6 +18,7 @@
+ #endif
+ 
+ #include "../csl/cudnn.hpp"
++#endif
+ #include "../csl/stream.hpp"
+ #include "../csl/tensor.hpp"
+ #include "../csl/tensor_ops.hpp"
+@@ -38,6 +43,7 @@
+ 
+ #include <cstddef>
+ #include <cstdint>
++#include <limits>
+ #include <vector>
+ #include <utility>
+ #include <algorithm>
+@@ -100,9 +106,16 @@
+             csl::Tensor<T> filters, bias;
+         };
+ 
+-        ConvolutionOp(csl::Stream stream_, csl::cudnn::Handle handle_, const ConvolutionConfiguration& config,
++        ConvolutionOp(csl::Stream stream_,
++#ifndef MOSAICRAFT_DNN_CUTLASS
++                      csl::cudnn::Handle handle_,
++#endif
++                      const ConvolutionConfiguration& config,
+                       const Mat& filters, const Mat& bias, std::shared_ptr<const DeviceWeights>* cache = nullptr)
+-            : stream(std::move(stream_)), cudnnHandle(std::move(handle_))
++            : stream(std::move(stream_))
++#ifndef MOSAICRAFT_DNN_CUTLASS
++            , cudnnHandle(std::move(handle_))
++#endif
+         {
+             const auto& kernel_size = config.kernel_size;
+             const auto& dilations = config.dilations;
+@@ -134,8 +147,39 @@
+             else
+             {
+                 auto uploaded = std::make_shared<DeviceWeights>();
++#ifdef MOSAICRAFT_DNN_CUTLASS
++                CV_Assert(convolution_order == 2 && filters.dims == 4 && filters.type() == CV_32F);
++                Mat krsc = filters;
++                if (kernel_size[0] == 3 && kernel_size[1] == 3 && input_feature_maps_per_group > 1)
++                {
++                    // Convert the locked OIHW filters once per weight cache, not when the face size changes.
++                    krsc = Mat(filters.dims, filters.size.p, CV_32F);
++                    CV_Assert(filters.isContinuous());
++                    const float* src = filters.ptr<float>();
++                    float* dst = krsc.ptr<float>();
++                    const auto channels = input_feature_maps_per_group;
++                    for (std::size_t k = 0; k < output_feature_maps; ++k)
++                    {
++                        for (std::size_t c = 0; c < channels; ++c)
++                        {
++                            for (std::size_t rs = 0; rs < 9; ++rs)
++                            {
++                                dst[(k * 9 + rs) * channels + c] = src[(k * channels + c) * 9 + rs];
++                            }
++                        }
++                    }
++                }
++                uploaded->filters = csl::makeTensorHeader<T>(krsc);
++                csl::copyMatToTensor<T>(krsc, uploaded->filters, stream);
++                if (krsc.data != filters.data)
++                {
++                    // A transformed host buffer must outlive the asynchronous upload.
++                    stream.synchronize();
++                }
++#else
+                 uploaded->filters = csl::makeTensorHeader<T>(filters);
+                 csl::copyMatToTensor<T>(filters, uploaded->filters, stream);
++#endif
+                 if (!bias.empty())
+                 {
+                     uploaded->bias = csl::makeTensorHeader<T>(bias);
+@@ -143,7 +187,9 @@
+                 }
+                 deviceWeights = std::move(uploaded);
+             }
++#ifndef MOSAICRAFT_DNN_CUTLASS
+             const auto& biasTensor = deviceWeights->bias;
++#endif
+ 
+             /* left and right are misleading as the padding is applicable for any number of dimensions
+              * but we use those identifiers to avoid confusion with `pads_begin` and `pads_end`
+@@ -207,48 +253,6 @@
+                     padding_right[i] = std::max<std::int64_t>(0, padding_right[i] - rem);
+             }
+ 
+-            auto is_not_zero = [](std::size_t i) { return i != 0; };
+-#if !defined(HAVE_CUDNNJIT) || defined(HAVE_CUDNN)
+-            if(std::any_of(std::begin(padding_left), std::end(padding_left), is_not_zero) ||
+-               std::any_of(std::begin(padding_right), std::end(padding_right), is_not_zero))
+-            {
+-                /* csl::Convolution supports symmetric padding only; hence, we deal with asymmetric padding by
+-                 * copying the input to a bigger tensor and padding the ends manually
+-                 */
+-                transformed_shape = input_shape;
+-                for (int i = 0; i < rank; i++)
+-                    transformed_shape[i] += padding_left[i] + padding_right[i];
+-
+-                inputTransformer = csl::TensorTransform<T>(cudnnHandle, padding_left, padding_right);
+-            }
+-#else
+-            // the JIT graph conv takes asymmetric pre/post paddings directly (no legacy cuDNN transform)
+-            CV_UNUSED(is_not_zero);
+-#endif
+-
+-            typename csl::Convolution<T>::params_type params;
+-            if (transformed_shape.empty())
+-            {
+-                params.input_shape.assign(std::begin(input_shape), std::end(input_shape));
+-            }
+-            else
+-            {
+-                /* the convolution operation will be seeing the transformed input */
+-                params.input_shape.assign(std::begin(transformed_shape), std::end(transformed_shape));
+-            }
+-
+-            auto& fshape = params.filter_shape;
+-            fshape.resize(rank);
+-            fshape[0] = output_feature_maps;
+-            fshape[1] = input_feature_maps_per_group;
+-            std::copy(std::begin(kernel_size), std::end(kernel_size), std::begin(fshape) + 2);
+-            CV_Assert(fshape.size() == kernel_size.size() + 2);
+-
+-            params.padding.assign(std::begin(common_padding) + 2, std::end(common_padding));
+-            params.stride = strides;
+-            params.dilation = dilations;
+-            params.groups = config.groups;
+-
+             fusion_mode = config.fusion_mode;
+             activation = config.activation_type;
+             relu_negative_slope = config.relu_negative_slope;
+@@ -257,6 +261,81 @@
+             power_exp = config.power_exp;
+             power_scale = config.power_scale;
+             power_shift = config.power_shift;
++
++#ifdef MOSAICRAFT_DNN_CUTLASS
++            CV_Assert(convolution_order == 2 && input_shape[0] == output_shape[0]);
++            CV_Assert((kernel_size[0] == 1 || kernel_size[0] == 3) && kernel_size[0] == kernel_size[1]);
++            CV_Assert(groups == 1 || (groups == input_feature_maps && groups == output_feature_maps &&
++                                      kernel_size[0] == 3));
++            const auto dim = [](std::size_t n)
++            {
++                CV_Assert(n <= static_cast<std::size_t>(std::numeric_limits<int>::max()));
++                return static_cast<int>(n);
++            };
++            cropShape = {dim(input_shape[0]), dim(input_shape[2]), dim(input_shape[3]), dim(input_feature_maps),
++                         dim(output_shape[2]), dim(output_shape[3]), dim(output_feature_maps),
++                         dim(kernel_size[0]), dim(groups),
++                         dim(common_padding[2] + padding_left[2]), dim(common_padding[2] + padding_right[2]),
++                         dim(common_padding[3] + padding_left[3]), dim(common_padding[3] + padding_right[3]),
++                         dim(strides[0]), dim(strides[1]), dim(dilations[0]), dim(dilations[1])};
++            const auto inputElements = input_shape[0] * input_shape[1] * input_shape[2] * input_shape[3];
++            const auto outputElements = output_shape[0] * output_shape[1] * output_shape[2] * output_shape[3];
++            dim(inputElements);
++            dim(outputElements);
++            pointwise = groups == 1 && cropShape.kernel == 1 && cropShape.strideX == 1 && cropShape.strideY == 1 &&
++                        cropShape.top == 0 && cropShape.bottom == 0 && cropShape.left == 0 && cropShape.right == 0 &&
++                        cropShape.inH == cropShape.outH && cropShape.inW == cropShape.outW;
++            csl::WorkspaceBuilder builder;
++            if (groups == 1 && !pointwise)
++            {
++                inputNHWC = {input_shape[0], input_shape[2], input_shape[3], input_shape[1]};
++                outputNHWC = {output_shape[0], output_shape[2], output_shape[3], output_shape[1]};
++                builder.require<T>(inputElements);
++                builder.require<T>(outputElements);
++            }
++            scratch_mem_in_bytes = builder.required_workspace_size();
++#else
++            auto is_not_zero = [](std::size_t i) { return i != 0; };
++#if !defined(HAVE_CUDNNJIT) || defined(HAVE_CUDNN)
++            if(std::any_of(std::begin(padding_left), std::end(padding_left), is_not_zero) ||
++               std::any_of(std::begin(padding_right), std::end(padding_right), is_not_zero))
++            {
++                /* csl::Convolution supports symmetric padding only; hence, we deal with asymmetric padding by
++                 * copying the input to a bigger tensor and padding the ends manually
++                 */
++                transformed_shape = input_shape;
++                for (int i = 0; i < rank; i++)
++                    transformed_shape[i] += padding_left[i] + padding_right[i];
++
++                inputTransformer = csl::TensorTransform<T>(cudnnHandle, padding_left, padding_right);
++            }
++#else
++            // the JIT graph conv takes asymmetric pre/post paddings directly (no legacy cuDNN transform)
++            CV_UNUSED(is_not_zero);
++#endif
++
++            typename csl::Convolution<T>::params_type params;
++            if (transformed_shape.empty())
++            {
++                params.input_shape.assign(std::begin(input_shape), std::end(input_shape));
++            }
++            else
++            {
++                /* the convolution operation will be seeing the transformed input */
++                params.input_shape.assign(std::begin(transformed_shape), std::end(transformed_shape));
++            }
++
++            auto& fshape = params.filter_shape;
++            fshape.resize(rank);
++            fshape[0] = output_feature_maps;
++            fshape[1] = input_feature_maps_per_group;
++            std::copy(std::begin(kernel_size), std::end(kernel_size), std::begin(fshape) + 2);
++            CV_Assert(fshape.size() == kernel_size.size() + 2);
++
++            params.padding.assign(std::begin(common_padding) + 2, std::end(common_padding));
++            params.stride = strides;
++            params.dilation = dilations;
++            params.groups = config.groups;
+ 
+             /* we normally use cuDNN for convolution and perform bias, activation and eltwise ops ourselves
+              * hence, the activation for cuDNN is IDENTITY by default
+@@ -377,6 +456,7 @@
+             builder.require(convoluter.get_workspace_size());
+ #endif
+             scratch_mem_in_bytes = builder.required_workspace_size();
++#endif
+             if (cache)
+             {
+                 *cache = deviceWeights;
+@@ -398,6 +478,45 @@
+ 
+             auto input = csl::viewOf<T>(inputs[0]);
+ 
++#ifdef MOSAICRAFT_DNN_CUTLASS
++            auto output = csl::spanOf<T>(outputs[0]);
++            if constexpr (std::is_same<T, float>::value)
++            {
++                const auto* weights = filtersTensor.get().get();
++                if (cropShape.groups != 1)
++                {
++                    kernels::direct_crop_conv(cropShape, input.get().get(), weights, output.get().get(), stream.get());
++                }
++                else if (pointwise)
++                {
++                    if (!kernels::pointwise_crop_conv(cropShape, input.get().get(), weights, output.get().get(), stream.get()))
++                    {
++                        kernels::direct_crop_conv(cropShape, input.get().get(), weights, output.get().get(), stream.get());
++                    }
++                }
++                else
++                {
++                    auto clIn = allocator.get_tensor_span<T>(inputNHWC.begin(), inputNHWC.end());
++                    auto clOut = allocator.get_tensor_span<T>(outputNHWC.begin(), outputNHWC.end());
++                    kernels::permute<T>(stream, clIn, input, {0, 2, 3, 1});
++                    if (kernels::cutlass_crop_conv(cropShape, clIn.get().get(), weights, clOut.get().get(), stream.get()))
++                    {
++                        kernels::permute<T>(stream, output, clOut, {0, 3, 1, 2});
++                    }
++                    else
++                    {
++                        kernels::direct_crop_conv(cropShape, input.get().get(), weights, output.get().get(), stream.get());
++                    }
++                }
++            }
++            else
++            {
++                CV_Error(Error::StsNotImplemented, "CUTLASS smart crop requires FP32");
++            }
++            // Preserve the existing NCHW bias, residual and activation order.
++            {
++#else
++
+             if (!transformed_shape.empty())
+             {
+                 auto& shape = transformed_shape;
+@@ -449,6 +568,7 @@
+ #else
+                 convoluter.convolve(output, input, filtersTensor, conv_scratchpad);
+ #endif
++#endif
+ 
+                 if (fusion_mode == ConvolutionConfiguration::FusionMode::ELTWISE_SUM ||
+                     fusion_mode == ConvolutionConfiguration::FusionMode::ELTWISE_SUM_THEN_ACTIVATION ||
+@@ -688,8 +808,13 @@
+ 
+     private:
+         csl::Stream stream;
++        std::shared_ptr<const DeviceWeights> deviceWeights;
++#ifdef MOSAICRAFT_DNN_CUTLASS
++        kernels::CropConv2d cropShape{};
++        std::vector<std::size_t> inputNHWC, outputNHWC;
++        bool pointwise = false;
++#else
+         csl::cudnn::Handle cudnnHandle;
+-        std::shared_ptr<const DeviceWeights> deviceWeights;
+         csl::Convolution<T> convoluter;
+ 
+         std::vector<std::size_t> transformed_shape;
+@@ -703,6 +828,7 @@
+         std::vector<std::size_t> jitNchwToNhwcOrder, jitNhwcToNchwOrder;
+ #endif
+ 
++#endif
+         std::size_t scratch_mem_in_bytes;
+ 
+         ConvolutionConfiguration::FusionMode fusion_mode;
+@@ -710,10 +836,12 @@
+         float relu_negative_slope, crelu_floor, crelu_ceil;
+         float power_exp, power_scale, power_shift;
+ 
++#ifndef MOSAICRAFT_DNN_CUTLASS
+         enum class InternalFusionLocation {
+             CUDNN,
+             NATIVE
+         } fusion_location;
++#endif
+     };
+ 
+ }}} /* namespace cv::dnn::cuda4dnn */
+--- a/opencv/modules/dnn/src/cuda4dnn/primitives/pooling.hpp
++++ b/opencv/modules/dnn/src/cuda4dnn/primitives/pooling.hpp
+@@ -7,6 +7,7 @@
+ 
+ #include "../../op_cuda.hpp"
+ 
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ #if defined(HAVE_CUDNN)
+ #include <cudnn.h>
+ #elif defined(HAVE_CUDNNJIT)
+@@ -14,10 +15,11 @@
+ #endif
+ 
+ #include "../csl/cudnn.hpp"
++#endif
+ #include "../csl/tensor.hpp"
+ #include "../csl/tensor_ops.hpp"
+ 
+-#if defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN)
++#if defined(MOSAICRAFT_DNN_CUTLASS) || (defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN))
+ #include "../kernels/max_unpooling.hpp"
+ #endif
+ 
+@@ -71,6 +73,46 @@
+         std::vector<std::size_t> input_shape;
+     };
+ 
++#ifdef MOSAICRAFT_DNN_CUTLASS
++    template <class T>
++    class PoolingOp final : public CUDABackendNode
++    {
++    public:
++        PoolingOp(csl::Stream stream_, const PoolingConfiguration& config)
++            : stream(std::move(stream_)), window(config.window_size), stride(config.strides), pad(window.size())
++        {
++            CV_Assert(config.poolMode == PoolingConfiguration::PoolingMode::MAX && window.size() == 2);
++            CV_Assert(config.input_shape.size() == 4 && window.size() == stride.size());
++            if (config.padMode == PoolingConfiguration::PaddingMode::MANUAL)
++            {
++                pad = config.pads_begin;
++            }
++            else if (config.padMode == PoolingConfiguration::PaddingMode::SAME)
++            {
++                for (std::size_t i = 0; i < pad.size(); ++i)
++                {
++                    const auto input = static_cast<std::int64_t>(config.input_shape[i + 2]);
++                    const auto step = static_cast<std::int64_t>(stride[i]);
++                    const auto out = (input + step - 1) / step;
++                    pad[i] = std::max<std::int64_t>(0, (out - 1) * step +
++                                                     static_cast<std::int64_t>(window[i]) - input) / 2;
++                }
++            }
++        }
++
++        void forward(const std::vector<UMat>& inputs, const std::vector<UMat>& outputs, csl::Workspace&) override
++        {
++            CV_Assert(inputs.size() == 1 && outputs.size() == 1);
++            // The output tensor shape already incorporates ceil mode and trailing padding.
++            kernels::max_pooling_with_indices<T, std::int64_t>(stream, csl::spanOf<T>(outputs[0]), {},
++                                                               csl::viewOf<T>(inputs[0]), window, stride, pad);
++        }
++
++    private:
++        csl::Stream stream;
++        std::vector<std::size_t> window, stride, pad;
++    };
++#else
+     template <class T>
+     class PoolingOp final : public CUDABackendNode {
+     public:
+@@ -193,7 +235,7 @@
+             }
+ 
+             typename csl::Pooling<T>::params_type params;
+-#if defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN)
++#if defined(MOSAICRAFT_DNN_CUTLASS) || (defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN))
+             params.input_shape.assign(std::begin(input_shape), std::end(input_shape));
+ #else
+             if (transformedInput.empty())
+@@ -234,7 +276,7 @@
+                 params.type = csl::Pooling<T>::PoolingType::AVERAGE_EXCLUDE_PADDING;
+             }
+ 
+-#if defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN)
++#if defined(MOSAICRAFT_DNN_CUTLASS) || (defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN))
+             // JIT builds route average pooling to AveragePoolingOp, so only MAX reaches here
+             CV_Assert(config.poolMode == PoolingConfiguration::PoolingMode::MAX);
+             poolWindow.assign(std::begin(window_size), std::end(window_size));
+@@ -256,7 +298,7 @@
+             auto input = csl::viewOf<T>(inputs[0]);
+             auto output = csl::spanOf<T>(outputs[0]);
+ 
+-#if defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN)
++#if defined(MOSAICRAFT_DNN_CUTLASS) || (defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN))
+             CV_UNUSED(workspace);
+             kernels::max_pooling_with_indices<T, std::int64_t>(stream, output, csl::TensorSpan<std::int64_t>(), input,
+                                                                poolWindow, poolStrides, poolPadsBegin);
+@@ -275,7 +317,7 @@
+         csl::Stream stream;
+         csl::cudnn::Handle cudnnHandle;
+ 
+-#if defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN)
++#if defined(MOSAICRAFT_DNN_CUTLASS) || (defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN))
+         std::vector<std::size_t> poolWindow, poolStrides, poolPadsBegin;
+ #else
+         csl::Pooling<T> pooler;
+@@ -285,6 +327,8 @@
+ #endif
+     };
+ 
++#endif
++
+ }}} /* namespace cv::dnn::cuda4dnn */
+ 
+ #endif /* OPENCV_DNN_SRC_CUDA4DNN_PRIMITIVES_POOLING_HPP */
+--- a/opencv/modules/dnn/src/cuda4dnn/primitives/region.hpp
++++ b/opencv/modules/dnn/src/cuda4dnn/primitives/region.hpp
+@@ -8,7 +8,9 @@
+ #include "../../op_cuda.hpp"
+ 
+ #include "../csl/stream.hpp"
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ #include "../csl/cudnn.hpp"
++#endif
+ #include "../csl/tensor_ops.hpp"
+ 
+ #include "../kernels/region.hpp"
+--- a/opencv/modules/dnn/src/layers/convolution_layer.cpp
++++ b/opencv/modules/dnn/src/layers/convolution_layer.cpp
+@@ -64,7 +64,9 @@
+ 
+ #ifdef HAVE_CUDA
+ #include "../cuda4dnn/primitives/convolution.hpp"
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ #include "../cuda4dnn/primitives/transpose_convolution.hpp"
++#endif
+ using namespace cv::dnn::cuda4dnn;
+ #endif
+ 
+@@ -1299,7 +1301,11 @@
+             biasMat = Mat();
+ 
+         return make_cuda_node<cuda4dnn::ConvolutionOp>(
+-            preferableTarget, std::move(context->stream), std::move(context->cudnn_handle), config, filtersMat, biasMat);
++            preferableTarget, std::move(context->stream),
++#ifndef MOSAICRAFT_DNN_CUTLASS
++            std::move(context->cudnn_handle),
++#endif
++            config, filtersMat, biasMat);
+     }
+ #endif
+ 
+--- a/opencv/modules/dnn/src/layers/conv2_layer.cpp
++++ b/opencv/modules/dnn/src/layers/conv2_layer.cpp
+@@ -1296,11 +1296,17 @@
+         if (cache)
+         {
+             CV_Assert(targetId == DNN_TARGET_CUDA);
+-            return makePtr<ConvolutionOp<float>>(std::move(context.stream), std::move(context.cudnn_handle),
+-                                                 config, filters, biasMat, cache);
++            return makePtr<ConvolutionOp<float>>(std::move(context.stream),
++#ifndef MOSAICRAFT_DNN_CUTLASS
++            std::move(context.cudnn_handle),
++#endif
++            config, filters, biasMat, cache);
+         }
+         return make_cuda_node<ConvolutionOp>(
+-            targetId, std::move(context.stream), std::move(context.cudnn_handle),
++            targetId, std::move(context.stream),
++#ifndef MOSAICRAFT_DNN_CUTLASS
++            std::move(context.cudnn_handle),
++#endif
+             config, filters, biasMat);
+     }
+ #endif
+--- a/opencv/modules/dnn/src/layers/softmax_layer.cpp
++++ b/opencv/modules/dnn/src/layers/softmax_layer.cpp
+@@ -60,7 +60,9 @@
+ #endif
+ 
+ #ifdef HAVE_CUDA
++#ifndef MOSAICRAFT_DNN_CUTLASS
+ #include "../cuda4dnn/primitives/softmax.hpp"
++#endif
+ #include "../cuda4dnn/primitives/softmax_kernel.hpp"
+ using namespace cv::dnn::cuda4dnn;
+ #endif
+@@ -289,7 +291,7 @@
+         auto channel_axis = normalize_axis(axisRaw, rank);
+         // pre-opset-13 reduces the flattened tail [axis, rank), which is one axis only when axis is last
+         const bool flattenTail = coerced2d && channel_axis != rank - 1;
+-#if defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN)
++#if defined(MOSAICRAFT_DNN_CUTLASS) || (defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN))
+         // a JIT-only build does not link cudnnSoftmaxForward, so use the hand-written kernel
+         return make_cuda_node<cuda4dnn::SoftmaxKernelOp>(preferableTarget, std::move(context->stream), channel_axis, logSoftMax, scale, flattenTail);
+ #else
+--- a/opencv/modules/dnn/src/layers/pooling_layer.cpp
++++ b/opencv/modules/dnn/src/layers/pooling_layer.cpp
+@@ -442,7 +442,7 @@
+             return Ptr<BackendNode>();
+         }
+ 
+-#if defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN)
++#if defined(MOSAICRAFT_DNN_CUTLASS) || (defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN))
+         if (type == AVE)
+         {
+             const int nspatial = (int)kernel_size.size();
+@@ -518,7 +518,10 @@
+         config.input_shape.assign(std::begin(input_shape), std::end(input_shape));
+ 
+         return make_cuda_node<cuda4dnn::PoolingOp>(preferableTarget, std::move(context->stream),
+-                                                   std::move(context->cudnn_handle), config);
++#ifndef MOSAICRAFT_DNN_CUTLASS
++                                                   std::move(context->cudnn_handle),
++#endif
++                                                   config);
+     }
+ #endif
+ 
+--- a/opencv/modules/dnn/src/layers/maxpool_layer.cpp
++++ b/opencv/modules/dnn/src/layers/maxpool_layer.cpp
+@@ -651,7 +651,10 @@
+                                      : cuda4dnn::PoolingConfiguration::RoundingMode::FLOOR;
+         config.input_shape.assign(inShape.begin(), inShape.end());
+         return make_cuda_node<cuda4dnn::PoolingOp>(preferableTarget, std::move(context->stream),
+-                                                   std::move(context->cudnn_handle), config);
++#ifndef MOSAICRAFT_DNN_CUTLASS
++                                                   std::move(context->cudnn_handle),
++#endif
++                                                   config);
+     }
+ #endif
+ 
+--- a/opencv/modules/dnn/src/layers/deconvolution_layer.cpp
++++ b/opencv/modules/dnn/src/layers/deconvolution_layer.cpp
+@@ -62,7 +62,7 @@
+ using namespace cv::dnn::ocl4dnn;
+ #endif
+ 
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_CUTLASS)
+ #include "../cuda4dnn/primitives/transpose_convolution.hpp"
+ using namespace cv::dnn::cuda4dnn;
+ #endif
+@@ -168,6 +168,12 @@
+ 
+     virtual bool supportBackend(int backendId) CV_OVERRIDE
+     {
++#ifdef MOSAICRAFT_DNN_CUTLASS
++        if (backendId == DNN_BACKEND_CUDA)
++        {
++            return false;
++        }
++#endif
+ #if defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN)
+         if (backendId == DNN_BACKEND_CUDA)
+             return false;  // TransposeConvolutionOp needs the legacy cuDNN API, absent in a JIT-only build
+@@ -997,7 +1003,7 @@
+         }
+     }
+ 
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_CUTLASS)
+     Ptr<BackendNode> initCUDA(
+         void *context_,
+         const std::vector<Ptr<BackendWrapper>>& inputs,
+--- a/opencv/modules/dnn/src/layers/lrn_layer.cpp
++++ b/opencv/modules/dnn/src/layers/lrn_layer.cpp
+@@ -58,7 +58,7 @@
+ using namespace cv::dnn::ocl4dnn;
+ #endif
+ 
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_CUTLASS)
+ #include "../cuda4dnn/primitives/lrn.hpp"
+ using namespace cv::dnn::cuda4dnn;
+ #endif
+@@ -99,6 +99,12 @@
+ 
+     virtual bool supportBackend(int backendId) CV_OVERRIDE
+     {
++#ifdef MOSAICRAFT_DNN_CUTLASS
++        if (backendId == DNN_BACKEND_CUDA)
++        {
++            return false;
++        }
++#endif
+ #if defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN)
+         if (backendId == DNN_BACKEND_CUDA)
+             return false;  // csl::LRN needs the legacy cuDNN API, absent in a JIT-only build
+@@ -323,7 +329,7 @@
+         }
+     }
+ 
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_CUTLASS)
+     Ptr<BackendNode> initCUDA(
+         void *context_,
+         const std::vector<Ptr<BackendWrapper>>& inputs,
+--- a/opencv/modules/dnn/src/layers/recurrent_layers.cpp
++++ b/opencv/modules/dnn/src/layers/recurrent_layers.cpp
+@@ -45,7 +45,7 @@
+ #include <cmath>
+ #include <opencv2/dnn/shape_utils.hpp>
+ 
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_CUTLASS)
+ #include "../cuda4dnn/primitives/recurrent_cells.hpp"
+ using namespace cv::dnn::cuda4dnn;
+ #endif
+@@ -284,6 +284,12 @@
+ 
+     bool supportBackend(int backendId) CV_OVERRIDE
+     {
++#ifdef MOSAICRAFT_DNN_CUTLASS
++        if (backendId == DNN_BACKEND_CUDA)
++        {
++            return false;
++        }
++#endif
+ #if defined(HAVE_CUDNNJIT) && !defined(HAVE_CUDNN)
+         if (backendId == DNN_BACKEND_CUDA)
+             return false;  // LSTMOp needs the legacy cuDNN RNN API, absent in a JIT-only build
+@@ -810,7 +816,7 @@
+         }
+     }
+ 
+-#ifdef HAVE_CUDA
++#if defined(HAVE_CUDA) && !defined(MOSAICRAFT_DNN_CUTLASS)
+     Ptr<BackendNode> initCUDA(void *context_, const std::vector<Ptr<BackendWrapper>> &inputs,
+                               const std::vector<Ptr<BackendWrapper>> &outputs) override
+     {
+--- a/opencv/modules/dnn/src/cuda/max_unpooling.cu
++++ b/opencv/modules/dnn/src/cuda/max_unpooling.cu
+@@ -74,7 +74,7 @@
+                 const auto outer_offset =  (n * channels + c) * in_spatial_size;
+                 if (Order == 1) {
+                     array<index_type, Order> idx;
+-                    for (idx[0] = start[0]; idx[0] != end[0]; idx[0]++) {
++                    for (idx[0] = start[0]; idx[0] < end[0]; idx[0]++) {
+                         index_type offset = 0;
+                         index_type stride = 1;
+                         for (int i = Order - 1; i >= 0; i--) {
+@@ -89,8 +89,8 @@
+                     }
+                 } else if (Order == 2) {
+                     array<index_type, Order> idx;
+-                    for (idx[0] = start[0]; idx[0] != end[0]; idx[0]++) {
+-                        for (idx[1] = start[1]; idx[1] != end[1]; idx[1]++) {
++                    for (idx[0] = start[0]; idx[0] < end[0]; idx[0]++) {
++                        for (idx[1] = start[1]; idx[1] < end[1]; idx[1]++) {
+                             index_type offset = 0;
+                             index_type stride = 1;
+                             for (int i = Order - 1; i >= 0; i--) {
+@@ -106,9 +106,9 @@
+                     }
+                 } else if(Order == 3) {
+                     array<index_type, Order> idx;
+-                    for (idx[0] = start[0]; idx[0] != end[0]; idx[0]++) {
+-                        for (idx[1] = start[1]; idx[1] != end[1]; idx[1]++) {
+-                            for (idx[2] = start[2]; idx[2] != end[2]; idx[2]++) {
++                    for (idx[0] = start[0]; idx[0] < end[0]; idx[0]++) {
++                        for (idx[1] = start[1]; idx[1] < end[1]; idx[1]++) {
++                            for (idx[2] = start[2]; idx[2] < end[2]; idx[2]++) {
+                                 index_type offset = 0;
+                                 index_type stride = 1;
+                                 for (int i = Order - 1; i >= 0; i--) {
