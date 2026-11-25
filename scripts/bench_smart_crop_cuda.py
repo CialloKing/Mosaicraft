@@ -47,7 +47,7 @@ def stop(process, kill=False):
 
 def run(args, name, parts, *, reuse_weights=None, executable=None):
     samples_path = args.work / f"{name}-vram.csv"
-    hetero = args.study == "heterogeneous"
+    hetero = args.study in {"heterogeneous", "dual-dispatch"}
     trace = hetero or args.study == "cutlass"
     has_cuda = any(device in {"cuda", "dual"} for device, *_ in parts)
     wddm_path = args.work / f"{name}-wddm.csv"
@@ -241,9 +241,10 @@ def main():
     for name in ("exe", "input", "work"):
         parser.add_argument(name, type=lambda path: Path(path).resolve())
     parser.add_argument("--mode", choices=("smart-real", "smart-anime"), required=True)
-    parser.add_argument("--study", choices=("devices", "pipeline", "hybrid", "weights", "cutlass", "heterogeneous"), default="devices")
+    parser.add_argument("--study", choices=("devices", "pipeline", "hybrid", "weights", "cutlass", "heterogeneous", "dual-dispatch"),
+                        default="devices")
     parser.add_argument("--candidate-exe", type=lambda path: Path(path).resolve(),
-                        help="CUTLASS CLI in a separate directory with its own runtime")
+                        help="candidate CLI in a separate directory with its own runtime (cutlass or dual-dispatch)")
     parser.add_argument("--rounds", type=int, default=3)
     parser.add_argument("--size", default="180x320")
     parser.add_argument("--gpu", default="0", help="nvidia-smi index/UUID of the only visible GPU")
@@ -253,11 +254,11 @@ def main():
     args = parser.parse_args()
     if not args.exe.is_file() or not args.input.is_dir() or shutil.which("nvidia-smi") is None:
         parser.error("CLI, input directory and nvidia-smi must exist")
-    if args.study == "cutlass" and (
+    if args.study in {"cutlass", "dual-dispatch"} and (
             os.name != "nt" or not args.candidate_exe or args.exe.parent == args.candidate_exe.parent
             or any(not exe.is_file() or not exe.with_name("opencv_dnn5.dll").is_file()
                    for exe in (args.exe, args.candidate_exe))):
-        parser.error("CUTLASS comparison requires two Windows CLI directories, each with its own opencv_dnn5.dll")
+        parser.error(f"{args.study} requires two Windows CLI directories, each with its own opencv_dnn5.dll")
     dnn = args.exe.with_name("opencv_dnn5.dll")
     if args.study == "weights" and (os.name != "nt" or not dnn.is_file()):
         parser.error("the weights study requires a Windows CUDA CLI beside the experimental opencv_dnn5.dll")
@@ -267,6 +268,8 @@ def main():
         return sorted((p for p in args.input.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS),
                       key=lambda p: p.relative_to(args.input).parts)
 
+    if args.study == "dual-dispatch" and args.mode != "smart-real":
+        parser.error("the dual-GPU experiment only supports smart-real")
     args.sources = input_files()
     if args.rounds < 1 or len(args.sources) < (1 if args.study == "devices" else 8):
         parser.error("positive round count and enough supported images are required")
@@ -288,12 +291,19 @@ def main():
     elif args.study == "weights":
         report["opencvDnnSha256"] = sha256(dnn)
         variants = {label: [("cuda", True, args.input, None)] for label in ("pipeline", "reuse-weights")}
-    elif args.study == "cutlass":
+    elif args.study in {"cutlass", "dual-dispatch"}:
         report["candidateExecutableSha256"] = sha256(args.candidate_exe)
         report["opencvDnnSha256ByVariant"] = {
             label: sha256(exe.with_name("opencv_dnn5.dll"))
             for label, exe in (("baseline", args.exe), ("cutlass", args.candidate_exe))}
-        variants = {label: [("cuda", True, args.input, None)] for label in ("baseline", "cutlass")}
+        if args.study == "cutlass":
+            variants = {label: [("cuda", True, args.input, None)] for label in ("baseline", "cutlass")}
+        else:
+            if len(set(report["opencvDnnSha256ByVariant"].values())) != 1:
+                parser.error("dual-dispatch requires the same OpenCV DNN build")
+            variants = {label: [(device, True, args.input, None)]
+                        for label, device in (("cuda", "cuda"), ("dual-ordered", "dual"), ("dual", "dual"))}
+            report["vulkanDeviceIndex"] = args.vulkan_device
     elif args.study == "heterogeneous":
         if os.name != "nt":
             parser.error("the heterogeneous study requires Windows")
@@ -313,8 +323,9 @@ def main():
         for label in labels[offset:] + labels[:offset]:
             name = f"{cycle + 1}-{label}"
             reuse_weights = label == "reuse-weights" if args.study == "weights" else None
+            use_candidate = label == "cutlass" or (args.study == "dual-dispatch" and label != "dual-ordered")
             result, outputs = run(args, name, variants[label], reuse_weights=reuse_weights,
-                                  executable=args.candidate_exe if label == "cutlass" else None)
+                                  executable=args.candidate_exe if use_candidate else None)
             if reference is None:
                 reference = outputs
                 report["referenceOutputSha256"] = reference
@@ -322,7 +333,7 @@ def main():
             result.update(variant=label, round=cycle + 1, identical=outputs == reference,
                           differingOutputs=sorted(k for k in reference.keys() | outputs.keys()
                                                   if reference.get(k) != outputs.get(k)))
-            if args.study in {"cutlass", "heterogeneous"}:
+            if args.study in {"cutlass", "heterogeneous", "dual-dispatch"}:
                 result["identicalCropRois"] = result["cropRois"] == reference_rois
                 result["identical"] &= result["identicalCropRois"]
                 result["differingOutputSha256"] = {key: outputs.get(key) for key in result["differingOutputs"]}
@@ -348,7 +359,7 @@ def main():
                                        for label, runs in grouped.items()}
     report["wallSavings"] = {label: 1 - medians[label] / medians[labels[0]] for label in labels[1:]}
     report["speedup"] = medians[labels[0]] / medians[labels[1]]
-    if args.study in {"pipeline", "hybrid", "weights", "cutlass", "heterogeneous"}:
+    if args.study in {"pipeline", "hybrid", "weights", "cutlass", "heterogeneous", "dual-dispatch"}:
         def working_set_deltas(label, base=labels[0]):
             pairs = zip(grouped[base], grouped[label])
             return [b["peakWorkingSetBytes"] - a["peakWorkingSetBytes"] if a["peakWorkingSetBytes"] and
@@ -371,6 +382,12 @@ def main():
             report["sampledVramIncreaseMiB"] = vram
             gates = ("cutlass" in acceptable and medians["cutlass"] <= medians["baseline"] * 1.10
                      and all(delta is not None and delta <= 512 for delta in vram))
+        elif args.study == "dual-dispatch":
+            overlap = [run["children"][0]["metrics"].get("smartCropDualOverlapMs", 0) for run in grouped["dual"]]
+            report["dualOverlapMs"] = overlap
+            report["gainVsOrderedDual"] = 1 - medians["dual"] / medians["dual-ordered"]
+            gates = ("dual" in acceptable and all(value > 0 for value in overlap)
+                     and report["wallSavings"]["dual"] >= .05)
         elif args.study == "heterogeneous":
             correct = {label: all(r["passed"] and r["identical"] for r in runs) for label, runs in grouped.items()}
             vulkan_gain = report["wallSavings"]["vulkan"]
