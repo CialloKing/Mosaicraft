@@ -1,4 +1,5 @@
 #include "FastDistance.h"
+#include <cstddef>
 #include <immintrin.h>
 
 namespace mosaicraft::compute
@@ -10,6 +11,33 @@ __m256 accumulate(__m256 sum, __m512 values)
 {
     return _mm256_add_ps(_mm256_add_ps(sum, _mm512_castps512_ps256(values)), _mm512_extractf32x8_ps(values, 1));
 }
+}
+
+float avx512AnnDistance(const void *left, const void *right, const void *dimension)
+{
+    const auto *a = static_cast<const float *>(left);
+    const auto *b = static_cast<const float *>(right);
+    const auto size = *static_cast<const std::size_t *>(dimension);
+    auto sum = _mm_setzero_ps();
+    std::size_t i = 0;
+    for (; i + 16 <= size; i += 16)
+    {
+        const auto diff = _mm512_sub_ps(_mm512_loadu_ps(a + i), _mm512_loadu_ps(b + i));
+        const auto squares = _mm512_mul_ps(diff, diff);
+        // 沿用 HNSW 196 维 SSE 距离的四通道累加顺序，保留已有索引的候选排序。
+        sum = _mm_add_ps(sum, _mm512_castps512_ps128(squares));
+        sum = _mm_add_ps(sum, _mm512_extractf32x4_ps(squares, 1));
+        sum = _mm_add_ps(sum, _mm512_extractf32x4_ps(squares, 2));
+        sum = _mm_add_ps(sum, _mm512_extractf32x4_ps(squares, 3));
+    }
+    for (; i < size; i += 4)
+    {
+        const auto diff = _mm_sub_ps(_mm_loadu_ps(a + i), _mm_loadu_ps(b + i));
+        sum = _mm_add_ps(sum, _mm_mul_ps(diff, diff));
+    }
+    alignas(16) float lanes[4];
+    _mm_store_ps(lanes, sum);
+    return lanes[0] + lanes[1] + lanes[2] + lanes[3];
 }
 
 template<bool Planar>

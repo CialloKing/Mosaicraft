@@ -5,6 +5,7 @@
 #include "Version.h"
 #include "UnicodeIO.h"
 #include "WorkerPool.h"
+#include "compute/FastDistance.h"
 #include <array>
 #include <limits>
 #include <memory>
@@ -100,7 +101,7 @@ class FeatureIndex
             vec[off++] = static_cast<float>(rec.edgeDensity);
         }
 
-        m_space = new hnswlib::L2Space(dim);
+        m_space = new IndexSpace;
         m_index = new hnswlib::HierarchicalNSW<float>(m_space, count, 16, 200);
         // label = image_id（稳定，不随 use_count 排序变化）
         for (int i = 0; i < count; ++i)
@@ -224,7 +225,7 @@ class FeatureIndex
             m_idToIndex[records[i].id] = i;
         }
 
-        m_space = new hnswlib::L2Space(kDim);
+        m_space = new IndexSpace;
         m_index = new hnswlib::HierarchicalNSW<float>(m_space, count, 16, 200);
         try
         {
@@ -377,6 +378,25 @@ class FeatureIndex
     }
 
   private:
+    class IndexSpace final : public hnswlib::L2Space
+    {
+      public:
+        IndexSpace() : hnswlib::L2Space(kDimension)
+        {
+        }
+
+        hnswlib::DISTFUNC<float> get_dist_func() override
+        {
+            // hnswlib 对 4 的倍数但非 16 的倍数采用四通道 SSE 归约。
+            static_assert(kDimension % 4 == 0 && kDimension % 16 != 0);
+            if (const auto distance = compute::acceleratedAnnDistance())
+            {
+                return distance;
+            }
+            return hnswlib::L2Space::get_dist_func();
+        }
+    };
+
     using Neighbors = std::priority_queue<std::pair<float, hnswlib::labeltype>>;
     Neighbors nearest(const float *tileVec, int k) const
     {

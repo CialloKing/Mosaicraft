@@ -1,5 +1,6 @@
 #include "FastDistance.h"
 #if defined(MOSAICRAFT_AVX2_DISTANCE)
+#include <cstddef>
 #include <immintrin.h>
 #else
 #include <arm_neon.h>
@@ -7,6 +8,33 @@
 
 namespace mosaicraft::compute
 {
+#if defined(MOSAICRAFT_AVX2_DISTANCE)
+float avx2AnnDistance(const void *left, const void *right, const void *dimension)
+{
+    const auto *a = static_cast<const float *>(left);
+    const auto *b = static_cast<const float *>(right);
+    const auto size = *static_cast<const std::size_t *>(dimension);
+    auto sum = _mm_setzero_ps();
+    std::size_t i = 0;
+    for (; i + 8 <= size; i += 8)
+    {
+        const auto diff = _mm256_sub_ps(_mm256_loadu_ps(a + i), _mm256_loadu_ps(b + i));
+        const auto squares = _mm256_mul_ps(diff, diff);
+        // 依次累加低、高四项，沿用 SSE 的距离舍入顺序。
+        sum = _mm_add_ps(sum, _mm256_castps256_ps128(squares));
+        sum = _mm_add_ps(sum, _mm256_extractf128_ps(squares, 1));
+    }
+    if (i < size)
+    {
+        const auto diff = _mm_sub_ps(_mm_loadu_ps(a + i), _mm_loadu_ps(b + i));
+        sum = _mm_add_ps(sum, _mm_mul_ps(diff, diff));
+    }
+    alignas(16) float lanes[4];
+    _mm_store_ps(lanes, sum);
+    return lanes[0] + lanes[1] + lanes[2] + lanes[3];
+}
+#endif
+
 template<bool Planar>
 DistanceSums vectorDistanceSums(const float *grid, const float *otherGrid, const float *lbp,
                                 const float *otherLbp, const uint8_t *tiny, const uint8_t *otherTiny,

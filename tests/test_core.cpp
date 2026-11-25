@@ -41,6 +41,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <opencv2/imgproc.hpp>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -2100,6 +2101,36 @@ TEST_CASE("CUDA scoring rejects an invalid library")
                                    scores);
     CHECK(scores[0] == std::numeric_limits<double>::max());
     CHECK(scores[1] == std::numeric_limits<double>::max());
+}
+
+TEST_CASE("ANN SIMD dispatch preserves the four-lane baseline result")
+{
+#if defined(_M_X64) || defined(__x86_64__)
+    using namespace mosaicraft::compute;
+    const auto accelerated = acceleratedAnnDistance();
+    if (!cv::checkHardwareSupport(CV_CPU_AVX2))
+    {
+        CHECK(accelerated == nullptr);
+        return;
+    }
+    const auto expected = cv::checkHardwareSupport(CV_CPU_AVX512_SKX) ? avx512AnnDistance : avx2AnnDistance;
+    REQUIRE(accelerated == expected);
+    constexpr size_t dim = mosaicraft::FeatureIndex::kDimension;
+    hnswlib::L2Space baseline(dim);
+    const auto distance = baseline.get_dist_func();
+    std::array<float, dim> left{}, right{};
+    std::mt19937 rng(42);
+    std::uniform_real_distribution<float> feature(0.0f, 1.0f);
+    for (int trial = 0; trial < 64; ++trial)
+    {
+        for (size_t i = 0; i < dim; ++i)
+        {
+            left[i] = feature(rng);
+            right[i] = feature(rng);
+        }
+        CHECK(accelerated(left.data(), right.data(), &dim) == distance(left.data(), right.data(), &dim));
+    }
+#endif
 }
 
 TEST_CASE("ANN cache validates features and parallel queries preserve ordering")

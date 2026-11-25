@@ -11,6 +11,10 @@ struct DistanceSums
 };
 using ReduceDistances = DistanceSums (*)(const float *, const float *, const float *, const float *,
                                          const uint8_t *, const uint8_t *, const float *);
+using AnnDistance = float (*)(const void *, const void *, const void *);
+AnnDistance acceleratedAnnDistance();
+float avx2AnnDistance(const void *left, const void *right, const void *dimension);
+float avx512AnnDistance(const void *left, const void *right, const void *dimension);
 template<bool Planar>
 DistanceSums vectorDistanceSums(const float *grid, const float *otherGrid, const float *lbp,
                                 const float *otherLbp, const uint8_t *tiny, const uint8_t *otherTiny,

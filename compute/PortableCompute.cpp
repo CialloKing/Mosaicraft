@@ -53,6 +53,14 @@ struct Kernel
     const char *revision;
 };
 
+#if defined(MOSAICRAFT_AVX2_DISTANCE)
+bool supportsAvx512Distance()
+{
+    // OpenCV 同时检查 CPU 指令集和操作系统启用的向量寄存器状态。
+    return cv::checkHardwareSupport(CV_CPU_AVX2) && cv::checkHardwareSupport(CV_CPU_AVX512_SKX);
+}
+#endif
+
 const Kernel &fastKernel()
 {
     static const Kernel selected = []() -> Kernel
@@ -60,9 +68,7 @@ const Kernel &fastKernel()
         const char *setting = std::getenv("MOSAICRAFT_BENCH_KERNEL");
         const std::string_view name = setting ? setting : "auto";
 #if defined(MOSAICRAFT_AVX2_DISTANCE)
-        // 自动分派只在 CPU 和操作系统都支持所需寄存器状态时选择独立的 AVX-512 内核。
-        if ((name == "auto" || name == "avx512") && cv::checkHardwareSupport(CV_CPU_AVX2) &&
-            cv::checkHardwareSupport(CV_CPU_AVX512_SKX))
+        if ((name == "auto" || name == "avx512") && supportsAvx512Distance())
         {
             return {avx512DistanceSums<false>, avx512DistanceSums<true>, ":fp32-v3-avx512"};
         }
@@ -85,6 +91,21 @@ const Kernel &fastKernel()
     return selected;
 }
 } // namespace
+
+AnnDistance acceleratedAnnDistance()
+{
+#if defined(MOSAICRAFT_AVX2_DISTANCE)
+    if (supportsAvx512Distance())
+    {
+        return avx512AnnDistance;
+    }
+    if (cv::checkHardwareSupport(CV_CPU_AVX2))
+    {
+        return avx2AnnDistance;
+    }
+#endif
+    return nullptr;
+}
 
 const char *fastScoreRevision()
 {
