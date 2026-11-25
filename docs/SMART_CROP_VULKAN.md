@@ -2,7 +2,7 @@
 
 ## 结论
 
-在 Windows x64 上跑通了 Radeon 780M 的 FP32 真人裁剪，以及 RTX 4060 Laptop（CUDA）与 780M（Vulkan）按图分流。32 张真人样本的输出文件名、裁剪坐标和 SHA-256 均一致。**不建议启用这两个候选路径**：单 Vulkan 比 CPU 快 55.4%，但超出内存门槛；优化后双 GPU 比原双 GPU 快 6.5%，但仍比单 CUDA 慢 17.9%。动漫模型未通过转换预检，未跑 200 张计时。现有 CUDA、CPU、自动回退和发布配置保持不变。
+在 Windows x64 上跑通了 Radeon 780M 的 FP32 真人裁剪，以及 RTX 4060 Laptop（CUDA）与 780M（Vulkan）按图分流。32 张真人样本的输出文件名、裁剪坐标和 SHA-256 均一致。**不建议启用这两个候选路径**：单 Vulkan 比 CPU 快 55.4%，但超出内存门槛；优化后双 GPU 比原双 GPU 快 6.5%，但仍比单 CUDA 慢 17.9%；扩大至 1,000 项复测后仍慢 12.7%。动漫模型未通过转换预检，未跑 200 张计时。现有 CUDA、CPU、自动回退和发布配置保持不变。
 
 ## 如何复现
 
@@ -78,6 +78,26 @@ python scripts/bench_smart_crop_cuda.py <旧双GPU-CLI> <32张真人图目录> <
 本轮的普通尺寸回归仍只跳过坏图，同尺寸 PNG 未变，旧 Vulkan 与新 Vulkan 的输出也一致。无效设备和缺失 Vulkan 模型均在创建输出前拒绝。原合成超大图仍由 Vulkan 成功处理；双 GPU 仍在同一张图遇到同一个 CUTLASS 错误，保留相同的已完成前缀。
 
 本地证据：`parallel-32/report.json`、`parallel-batched-32/report.json`、`parallel-batched-96/report.json`、`parallel-wddm-engine/positive-per-process.csv`、`parallel-regression/report.json` 和 `ctest-parallel-batched.log`。**并行已经验证，但两组的相对单 CUDA 提速门槛均未通过，双 GPU 继续作为实验。**
+
+### 1,000 项启动开销复测
+
+同样的 32 张原图按原排序循环至 1,000 项（每张重复 31–32 次）。这是一轮长批次吞吐复测，不是 1,000 张独立样本，也不替代上面的三轮对照。三条路径在同一台设备上依次运行，全程重新执行解码、推理和写盘；原图和暂存输入 SHA-256 不变。
+
+```powershell
+python scripts/bench_smart_crop_cuda.py <旧双GPU-CLI> <32张真人图目录> <新报告目录> `
+  --study dual-dispatch --candidate-exe <新CLI> --mode smart-real --rounds 1 `
+  --vulkan-device 1 --repeat-to 1000 --timeout 600
+```
+
+| 路径 | 整批墙钟 | 模型预检 | 墙钟扣除模型预检 | 吞吐量 |
+| --- | ---: | ---: | ---: | ---: |
+| 单 CUDA | 164.43 秒 | 0.47 秒 | 163.96 秒 | 6.08 项/秒 |
+| 旧双 GPU | 188.95 秒 | 1.03 秒 | 187.92 秒 | 5.29 项/秒 |
+| 新双 GPU | 185.36 秒 | 0.61 秒 | 184.75 秒 | 5.39 项/秒 |
+
+模型预检只占墙钟的 0.29%–0.54%。新双 GPU 比旧双 GPU 快 1.9%，但仍比单 CUDA 慢 12.7%；扣除预检后仍慢 12.7%，因此该差距不是模型预检造成的。扣除项只包括 CLI 报告的模型预检，不是全部进程启动成本。三条路径均完成 1,000/1,000 项，逐项文件名、ROI 和 SHA-256 一致，无 CPU 回退。新双 GPU 分配 CUDA 691 项、Vulkan 309 项，裁剪阶段重叠约 63.74 秒，峰值工作集比单 CUDA 多约 327 MiB。
+
+本地报告：`parallel-batched-1000/report.json`。退出码 1 对应未达到相对单 CUDA 的提速门槛，三条路径本身均退出 0。
 
 ## 回归与包体积
 
