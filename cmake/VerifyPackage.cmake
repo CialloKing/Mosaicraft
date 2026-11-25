@@ -330,8 +330,10 @@ if(Runtime MATCHES "^(vulkan|cuda-vulkan|metal)$")
         set(ENV{VK_DRIVER_FILES} "${work}/no-icd.json")
         set(ENV{VK_ICD_FILENAMES} "${work}/no-icd.json")
         list(APPEND smoke_args --vulkan-fallback)
-    elseif(NOT PortableAutoSelection STREQUAL "disabled" OR NOT name MATCHES "_candidate\\.(zip|tar\\.gz)$")
-        message(FATAL_ERROR "Incorrect portable GPU candidate metadata")
+    # Dual smart crop archives have already passed their own channel and runtime checks.
+    elseif(NOT PortableAutoSelection STREQUAL "disabled" OR
+           (NOT smart_crop_vulkan STREQUAL "enabled" AND NOT name MATCHES "_candidate\\.(zip|tar\\.gz)$"))
+        message(FATAL_ERROR "Incorrect portable GPU channel or automatic selection")
     endif()
 endif()
 include("${CMAKE_CURRENT_LIST_DIR}/VerifyRuntime.cmake")
