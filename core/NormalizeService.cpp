@@ -425,11 +425,21 @@ static ServiceResult normalizeImagesImpl(const BuildRequest &request, RuntimeCon
             {
                 throw SmartCropError("smart_crop_dual_budget", "dual GPU trial requires at least eight files and four threads");
             }
-            smartCrop.emplace(request.cropMode, dual ? CropDevice::Cuda : policy, runtime, !dual, dual ? std::nullopt : vulkan);
             if (dual)
             {
-                secondary.emplace(request.cropMode, CropDevice::Cpu, runtime, false, vulkan);
+                // The two strict probes target separate adapters. Join before publishing any output.
+                WorkerPool probe(1);
+                probe.start(1, [&](std::size_t)
+                {
+                    secondary.emplace(request.cropMode, CropDevice::Cpu, runtime, false, vulkan);
+                });
+                smartCrop.emplace(request.cropMode, CropDevice::Cuda, runtime, false);
+                probe.wait();
                 runtime.computeIdentity("dual", "fp32", "opencv-dnn+ncnn-vulkan");
+            }
+            else
+            {
+                smartCrop.emplace(request.cropMode, policy, runtime, true, vulkan);
             }
         }
         catch (const SmartCropError &problem)
