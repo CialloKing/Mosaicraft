@@ -50,6 +50,8 @@ public:
     struct StandaloneTimings
     {
         double readDecodeMs = 0, cropMs = 0, encodeWriteMs = 0, waitInputMs = 0, waitOutputMs = 0;
+        double dualOverlapMs = 0;
+        std::size_t dualPendingPeak = 0, dualQueuePeakBytes = 0;
     };
     struct CropTrace
     {

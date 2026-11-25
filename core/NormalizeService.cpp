@@ -14,8 +14,10 @@
 #include <atomic>
 #include <chrono>
 #include <charconv>
+#include <condition_variable>
 #include <cstdlib>
 #include <deque>
+#include <mutex>
 #include <string_view>
 #include <set>
 #include <thread>
@@ -131,158 +133,226 @@ void detail::runDualSmartCropPipeline(ImageNormalizer &cuda, ImageNormalizer &vu
     {
         return;
     }
+    using Clock = std::chrono::steady_clock;
+    enum class State
+    {
+        Waiting, Running, Done
+    };
     struct Item
     {
+        std::size_t index = 0, bytes = 0;
         NormalizePaths paths;
         ImageNormalizer::PreparedImage image;
-        bool ok = false;
+        std::exception_ptr failure;
+        State state = State::Waiting;
+        bool ok = false, exclusive = false, vulkanEligible = false;
     };
-    struct Lane
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::deque<Item> queue;
+    std::array<ImageNormalizer::StandaloneTimings, 2> laneTimes;
+    std::array<bool, 2> active{};
+    Clock::time_point overlapStart;
+    std::size_t firstFailure = count, reserved = 0;
+    std::exception_ptr failure;
+    bool stopped = false;
+
+    // One prefetched input gets its own reservation. The ordered queue also
+    // holds running tasks and the writer's current item, not just finished results.
+    constexpr std::size_t maxPending = 8;
+    const auto readLimit = queueBytes / 4;
+    const auto pendingLimit = queueBytes - readLimit;
+    const auto outputBytes = cuda.standaloneOutputPixelBytes();
+    const auto read = [&]()
     {
-        Item item;
-        ImageNormalizer::StandaloneTimings timings;
-        std::atomic_bool ready = false;
-        bool occupied = false;
-        WorkerPool worker{1};
-    };
-    Item decoded, cropped;
-    WorkerPool reader(1), writer(1);
-    std::array<Lane, 2> lanes;
-    std::array<ImageNormalizer *, 2> normalizers{&cuda, &vulkan};
-    std::deque<std::size_t> order;
-    const auto waitWriter = [&]()
-    {
-        BenchmarkTimer timer(&timings.waitOutputMs);
-        writer.wait();
-    };
-    const auto readAhead = [&](std::size_t index)
-    {
-        reader.start(1, [&, index](std::size_t)
+        for (std::size_t index = 0; index < count; ++index)
         {
-            decoded.paths = paths(index);
-            decoded.ok = cuda.prepareStandaloneImage(decoded.paths.first, decoded.paths.second, decoded.image, timings);
-        });
-    };
-    const auto handoff = [&]()
-    {
-        auto &lane = lanes[order.front()];
-        // Stop at the first failing input index, even if the other GPU finished a successor.
-        {
-            BenchmarkTimer timer(&timings.waitInputMs);
-            lane.worker.wait();
-        }
-        waitWriter();
-        cropped = std::exchange(lane.item, Item{});
-        lane.occupied = false;
-        order.pop_front();
-        writer.start(1, [&](std::size_t)
-        {
-            auto item = std::exchange(cropped, Item{});
-            complete(item.ok && cuda.saveStandaloneImage(item.paths.first, item.paths.second, item.image, timings));
-        });
-    };
-    const auto dispatch = [&](std::size_t index, Item item)
-    {
-        auto &lane = lanes[index];
-        lane.item = std::move(item);
-        lane.ready = false;
-        lane.occupied = true;
-        order.push_back(index);
-        lane.worker.start(1, [&, index](std::size_t)
-        {
-            auto &slot = lanes[index];
-            try
+            std::unique_lock<std::mutex> lock(mutex);
+            const auto cancelled = [&]()
             {
-                auto &next = slot.item;
-                if (next.ok)
+                return stopped || index >= firstFailure;
+            };
+            changed.wait(lock, [&]()
+            {
+                return cancelled() || queue.empty() || !queue.front().exclusive;
+            });
+            if (cancelled())
+            {
+                return;
+            }
+            lock.unlock();
+
+            Item item;
+            item.index = index;
+            item.paths = paths(index);
+            item.ok = cuda.prepareStandaloneImage(item.paths.first, item.paths.second, item.image, timings);
+            if (item.ok)
+            {
+                item.bytes = item.image.bufferBytes();
+                if (!item.image.copyOriginal)
                 {
-                    next.ok = normalizers[index]->cropStandaloneImage(next.paths.first, next.paths.second, next.image, slot.timings);
+                    item.bytes = std::max(item.bytes, outputBytes);
+                    const auto w = (static_cast<std::uint64_t>(item.image.pixels.cols) + 31) / 32 * 32;
+                    const auto h = (static_cast<std::uint64_t>(item.image.pixels.rows) + 31) / 32 * 32;
+                    item.vulkanEligible = count - index >= 4 && w * h <= 4ull * 1024 * 1024;
                 }
+                item.exclusive = item.bytes > readLimit;
             }
-            catch (...)
+            if (!item.ok || item.image.copyOriginal)
             {
-                slot.ready = true;
-                throw;
+                item.state = State::Done;
             }
-            slot.ready = true;
-        });
-    };
-    const auto collectTimings = [&]()
-    {
-        for (auto &lane : lanes)
-        {
-            try
+
+            lock.lock();
             {
-                lane.worker.wait();
+                BenchmarkTimer timer(&timings.waitOutputMs);
+                changed.wait(lock, [&]()
+                {
+                    return cancelled() || queue.empty() ||
+                           (!item.exclusive && queue.size() < maxPending && item.bytes <= pendingLimit - reserved &&
+                            queue.back().state != State::Waiting);
+                });
             }
-            catch (...)
+            if (cancelled())
             {
-                // A later speculative fault must not replace the first failure.
+                return;
             }
-            timings.cropMs += lane.timings.cropMs;
+            // Oversized inputs drain both lanes before running alone. Do not decode them again.
+            reserved += item.bytes;
+            if (!item.exclusive)
+            {
+                timings.dualQueuePeakBytes = std::max(timings.dualQueuePeakBytes, reserved);
+            }
+            queue.push_back(std::move(item));
+            timings.dualPendingPeak = std::max(timings.dualPendingPeak, queue.size());
+            changed.notify_all();
         }
     };
-    // Fixed reservations cover read-ahead, both lanes and the ordered writer. Decode may reveal an oversize item.
-    const auto slotLimit = queueBytes / 4;
-    const bool largeOutput = cuda.standaloneOutputPixelBytes() > slotLimit;
-    readAhead(0);
-    try
+    const auto infer = [&](std::size_t lane)
     {
+        auto &normalizer = lane == 0 ? cuda : vulkan;
+        const auto other = 1 - lane;
+        std::unique_lock<std::mutex> lock(mutex);
+        for (;;)
+        {
+            changed.wait(lock, [&]()
+            {
+                return stopped || firstFailure < count ||
+                       (!queue.empty() && queue.back().state == State::Waiting &&
+                        (lane == 0 || (active[0] && queue.back().vulkanEligible && !queue.back().exclusive)));
+            });
+            if (stopped || firstFailure < count)
+            {
+                return; // Items already claimed before the failure still finish.
+            }
+            auto &item = queue.back();
+            item.state = State::Running;
+            active[lane] = true;
+            if (active[other])
+            {
+                overlapStart = Clock::now();
+            }
+            changed.notify_all();
+            lock.unlock();
+
+            try
+            {
+                item.ok = normalizer.cropStandaloneImage(item.paths.first, item.paths.second, item.image, laneTimes[lane]);
+            }
+            catch (...)
+            {
+                item.failure = std::current_exception();
+                item.ok = false;
+            }
+            if (!item.ok)
+            {
+                item.image = {};
+            }
+
+            lock.lock();
+            if (active[other])
+            {
+                timings.dualOverlapMs += std::chrono::duration<double, std::milli>(Clock::now() - overlapStart).count();
+            }
+            active[lane] = false;
+            reserved -= item.bytes;
+            item.bytes = item.image.bufferBytes();
+            reserved += item.bytes;
+            if (item.failure)
+            {
+                firstFailure = std::min(firstFailure, item.index);
+            }
+            item.state = State::Done;
+            // The lane can claim more work immediately, even with an unfinished queue head.
+            changed.notify_all();
+        }
+    };
+    const auto write = [&]()
+    {
+        std::unique_lock<std::mutex> lock(mutex);
         for (std::size_t index = 0; index < count; ++index)
         {
             {
                 BenchmarkTimer timer(&timings.waitInputMs);
-                reader.wait();
-            }
-            auto item = std::exchange(decoded, Item{});
-            const bool more = index + 1 < count;
-            if (item.ok && (largeOutput || item.image.bufferBytes() > slotLimit))
-            {
-                while (!order.empty())
+                changed.wait(lock, [&]()
                 {
-                    handoff();
-                }
-                waitWriter();
-                dispatch(0, std::move(item));
-                handoff();
-                waitWriter();
-                if (more)
-                {
-                    readAhead(index + 1);
-                }
-                continue;
+                    return stopped || (!queue.empty() && queue.front().state == State::Done);
+                });
             }
-            while (!order.empty() && lanes[order.front()].ready)
+            if (stopped)
             {
-                handoff();
+                return;
             }
-            const auto w = (static_cast<std::uint64_t>(item.image.pixels.cols) + 31) / 32 * 32;
-            const auto h = (static_cast<std::uint64_t>(item.image.pixels.rows) + 31) / 32 * 32;
-            const bool eligible = count - index >= 4 && item.ok && !item.image.copyOriginal && w * h <= 4ull * 1024 * 1024;
-            while (lanes[0].occupied && (!eligible || lanes[1].occupied))
+            auto &item = queue.front();
+            if (item.failure)
             {
-                handoff();
+                std::rethrow_exception(item.failure);
             }
-            dispatch(lanes[0].occupied ? 1 : 0, std::move(item));
-            if (more)
-            {
-                readAhead(index + 1);
-            }
+            lock.unlock();
+            complete(item.ok && cuda.saveStandaloneImage(item.paths.first, item.paths.second, item.image, timings));
+            lock.lock();
+            reserved -= item.bytes;
+            queue.pop_front();
+            changed.notify_all();
         }
-        while (!order.empty())
-        {
-            handoff();
-        }
-        waitWriter();
-    }
-    catch (...)
+        stopped = true;
+        changed.notify_all();
+    };
+
+    WorkerPool workers(4);
+    workers.run(4, [&](std::size_t role)
     {
-        waitWriter();
-        reader.wait();
-        collectTimings();
-        throw;
+        try
+        {
+            if (role == 0)
+            {
+                read();
+            }
+            else if (role == 3)
+            {
+                write();
+            }
+            else
+            {
+                infer(role - 1);
+            }
+        }
+        catch (...)
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (!failure)
+            {
+                failure = std::current_exception();
+            }
+            stopped = true;
+            changed.notify_all();
+        }
+    });
+    timings.cropMs += laneTimes[0].cropMs + laneTimes[1].cropMs;
+    if (failure)
+    {
+        std::rethrow_exception(failure);
     }
-    collectTimings();
 }
 
 static ServiceResult normalizeImagesImpl(const BuildRequest &request, RuntimeContext &runtime,
@@ -432,6 +502,12 @@ static ServiceResult normalizeImagesImpl(const BuildRequest &request, RuntimeCon
                 runtime.metric("smartCropEncodeWriteMs", timings.encodeWriteMs);
                 runtime.metric("smartCropWaitInputMs", timings.waitInputMs);
                 runtime.metric("smartCropWaitOutputMs", timings.waitOutputMs);
+                if (dual)
+                {
+                    runtime.metric("smartCropDualOverlapMs", timings.dualOverlapMs);
+                    runtime.metric("smartCropDualPendingPeak", static_cast<double>(timings.dualPendingPeak));
+                    runtime.metric("smartCropDualQueuePeakBytes", static_cast<double>(timings.dualQueuePeakBytes));
+                }
             }
             const auto end = processingEnd == processStart ? std::chrono::steady_clock::now() : processingEnd;
             const double seconds = std::chrono::duration<double>(end - processStart).count();
