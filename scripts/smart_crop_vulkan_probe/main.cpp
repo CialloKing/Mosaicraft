@@ -82,6 +82,7 @@ void run(ncnn::Net &net, const std::string &model, int width, int height, const 
         }
         else if (model == "anime")
         {
+            // One record of four DFL distances and one score per native grid cell.
             w = (width / 8) * (height / 8) + (width / 16) * (height / 16) + (width / 32) * (height / 32);
             h = 5;
         }

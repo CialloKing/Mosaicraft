@@ -39,6 +39,24 @@ def yunet_dynamic(source, target):
     onnx.save(model, target)
 
 
+def anime_distances(source, target):
+    import onnx
+
+    model = onnx.load(source)
+    tail = model.graph.node[-1]
+    if (tail.name != "/model.22/Concat_25" or list(tail.output) != ["output0"] or
+            list(tail.input) != ["/model.22/Mul_3_output_0", "/model.22/Sigmoid_output_0"]):
+        raise ValueError("unexpected locked anime detection head")
+    # Keep DFL and the sigmoid on the GPU. Decode the parameter-free anchor
+    # grid in the app because pnnx cannot lower its dynamic Range operations.
+    tail.input[0] = "/model.22/dfl/Reshape_1_output_0"
+    model = onnx.utils.Extractor(model).extract_model(["images"], ["output0"])
+    if any(node.op_type == "Range" for node in model.graph.node):
+        raise ValueError("unexpected dynamic grid in the extracted anime graph")
+    onnx.checker.check_model(model)
+    onnx.save(model, target)
+
+
 def run(command, directory, log):
     with (directory / log).open("wb") as out:
         try:
@@ -85,6 +103,9 @@ def main():
         if model_id == "real":
             result["lockedDynamicConversionExit"] = run([pnnx, "locked.onnx", "fp16=0", *shapes], directory, "locked.log")
             yunet_dynamic(source, directory / "model.onnx")
+        elif model_id == "anime":
+            anime_distances(source, directory / "model.onnx")
+            result["outputLayout"] = ["left", "top", "right", "bottom", "score"]
         else:
             (directory / "locked.onnx").rename(directory / "model.onnx")
         result["conversionInputSha256"] = sha256(directory / "model.onnx")
