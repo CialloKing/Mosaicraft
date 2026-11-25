@@ -1,0 +1,74 @@
+# Windows Vulkan 与双 GPU 智能裁剪实验
+
+## 结论
+
+在 Windows x64 上跑通了 Radeon 780M 的 FP32 真人裁剪，以及 RTX 4060 Laptop（CUDA）与 780M（Vulkan）按图分流。32 张真人样本的输出文件名、裁剪坐标和 SHA-256 均一致。**不建议启用这两个候选路径**：单 Vulkan 比 CPU 快 55.4%，但超出内存门槛；双 GPU 比单 CUDA 慢 25.9%。动漫模型未通过转换预检，未跑 200 张计时。现有 CUDA、CPU、自动回退和发布配置保持不变。
+
+## 如何复现
+
+- 工具链：MSVC 19.51.36257、CUDA 13.5.37、OpenCV 5.1.0 CUTLASS；应用的 CUDA 目标为 `sm_89` 和 `compute_89`。ncnn/pnnx 锁定为 `20261020`（ncnn 提交 `7e36d25cb153092ba87a60530455c7376fedf452`）。
+- 使用 `scripts/smart_crop_vulkan_probe` 构建探针；`ncnn_DIR` 指向解压的 Windows x64 静态 Vulkan SDK 的 `x64/lib/cmake/ncnn`。不带参数启动探针可枚举 Vulkan 适配器；设备索引不是跨机器固定值。
+- 将两个锁定的工具 ZIP 和解压的 pnnx 放在工具目录。用装有 Python `onnx` 的环境运行下列命令。工具及原始 ONNX 的哈希必须匹配；报告记录每个模型的转换产物哈希和在指定设备上的执行结果。
+
+```powershell
+python scripts/prepare_smart_crop_vulkan.py <锁定ONNX目录> <工具目录> <新转换目录> `
+  --probe <探针EXE> --device 1 --max-real 6534 8802 --max-anime 6534 8802
+```
+
+U²-NetP（前景显著性）在固定的既有 320×320 输入上通过。YuNet 只放开 ONNX 的输入宽高和检测输出长度元数据，没有改算子或权重；在 352×256、640×384、352×256、6560×8832、352×256 的同会话序列上通过。动漫原图检测依赖动态网格。pnnx 尽管返回 0，仍报告未转换的 `pnnx.Expression`、`torch.arange` 等操作，ncnn 加载失败。脚本因此整体非零退出；不要把动漫产物放进实验包，也不以固定输入或降分辨率绕过。
+
+在独立的 Windows x64 智能裁剪构建中设 `MOSAICRAFT_SMART_CROP_VULKAN=ON`（默认 OFF）和 `ncnn_DIR`。在 EXE 旁的 `models/vulkan` 放入通过探针、哈希匹配的 `saliency`、`real` 各一对 `.param`、`.bin` 文件；保留原 `models` 中的 ONNX。实验仅限独立 CLI 真人裁剪：`MOSAICRAFT_SMART_CROP_EXPERIMENT=vulkan` 或 `dual`，`MOSAICRAFT_SMART_CROP_VULKAN_DEVICE` 为实测枚举索引，`--crop-device` 保持 `auto`。实验请求是显式选路，不借常规 `auto` 掩盖设备或模型故障。图库构建、HTTP 和 Web 不选用该实验。
+
+双 GPU 至少需要 8 张图、4 个应用线程及另一块 AMD/Intel Vulkan 适配器；本次只实测 AMD。核显至多领取对齐后 4 Mi 像素的可裁剪图，最后三张不再派给核显。读、两路推理、写各有固定缓冲槽，共用 256 MiB 预约；超出槽限的单图排空后由 CUDA 独占处理。该预算不限制模型、驱动分配或正在执行的解码临时内存。允许推理乱序完成，仍按输入索引写盘，遇到推理错误只保留此前成功的输出。
+
+## 性能与一致性
+
+Windows 10 22H2（19045），Ryzen 9 7940H，独显 RTX 4060 Laptop（NVIDIA 621.14），核显 Radeon 780M（AMD 32.0.21030.2001）。用同一实验 CLI、32 张独立真人图、180×320 输出，四种路径各交错运行三轮，按进程启动至结束计时：
+
+```powershell
+python scripts/bench_smart_crop_cuda.py <实验CLI> <32张真人图目录> <新报告目录> `
+  --study heterogeneous --mode smart-real --rounds 3 --vulkan-device 1 --with-dual
+```
+
+| 路径 | 三轮整批墙钟（秒） | 中位墙钟（秒） | 峰值工作集的中位值（MiB） |
+| --- | --- | ---: | ---: |
+| CPU | 35.984 / 36.528 / 36.126 | 36.126 | 2,911.0 |
+| CUDA | 6.169 / 5.975 / 6.135 | 6.135 | 1,114.7 |
+| Vulkan | 16.251 / 15.900 / 16.123 | 16.123 | 7,957.4 |
+| CUDA + Vulkan | 7.705 / 7.762 / 7.721 | 7.721 | 1,479.9 |
+
+- 12 次运行均完成 32/32；输入哈希不变，没有新增失败或隐式 CPU 推理回退。单 Vulkan 与 CPU、双 GPU 与 CUDA 的全部输出文件 SHA-256 和 ROI 完全一致。同轮 CUDA 和 CPU 的结果也相同。
+- **单 Vulkan** 通过相对 CPU 至少快 10% 的门槛，但峰值工作集比 CPU 增加约 5,047 MiB，远超 512 MiB 上限。加入双 GPU 之前的独立三轮对照也重现这一结果（CPU 35.88 s、CUDA 6.12 s、Vulkan 16.10 s）。
+- **双 GPU** 工作集比 CUDA 多 364–367 MiB，过了 512 MiB 门槛，但距离相对最快单设备至少节省 5% 的目标还有差距。三轮均分给 CUDA 24 张、Vulkan 8 张；初始化中位耗时由 0.46 s 增至 1.12 s，两路按序交接累计等待输入或队首约 6.25 s。后者含正常推理等待，不能直接当作可节省时间。
+- WDDM 每秒采样，以下为三轮中观测到的最高值（MiB，适配器全局，含桌面与其他进程）：
+
+  | 路径 | RTX 4060 专用 / 共享 | Radeon 780M 专用 / 共享 |
+  | --- | ---: | ---: |
+  | CPU | 1,184.1 / 46.2 | 50.8 / 48.1 |
+  | CUDA | 3,043.6 / 114.1 | 50.8 / 48.1 |
+  | Vulkan | 1,184.1 / 46.3 | 310.5 / 7,632.8 |
+  | 双 GPU | 3,043.7 / 114.3 | 281.9 / 312.5 |
+
+  RTX 和 780M 分别对应 LUID `0x00000000_0x00011105`、`0x00000000_0x00013f09`。峰值不一定同时出现，核显共享显存与进程工作集不能相加。250 ms 的 `nvidia-smi` 采样中，扣除启动前基线，单 CUDA 为 1,881–2,055 MiB，双 GPU 为 1,899–1,990 MiB。
+
+基准最终退出码 1 表示候选未过准入门槛，不表示上述裁剪命令运行失败。
+
+## 回归与包体积
+
+- CTest 单元和回归目标 2/2 通过，覆盖双路任务乱序完成、推理异常时只写正确前缀，以及原 CUDA `auto` 回退与恢复。
+- 普通尺寸夹具共 9 个输入。串行 CUDA、流水 CUDA、Vulkan、双 GPU 都只跳过索引 1 的坏图，输出其余 8 张；同尺寸 PNG 与输入字节相同，四条路径的所有输出文件名、SHA-256 和 ROI 相同。关闭实验的构建收到 Vulkan 请求时在创建输出前拒绝。无效设备索引、双路指定 NVIDIA Vulkan 设备、不支持的动漫模式均在预检拒绝。真人新建图库保留原 CUDA 智能裁剪，共 8 张入库、跳过 1 张坏图。
+- 混合尺寸压力夹具中，Vulkan 处理了 6534×8802 的合成大图；历史 cuDNN 对照的 8 个原有效压力输入，Vulkan 的 SHA-256 和 ROI 均匹配。当前 CUTLASS 单 CUDA 和双 GPU 都在这张大图的 `cutlass_convolution.cu` 报 `Error Internal`，两者保留相同的一个已完成文件，后续未写出。**根因未证实，不归类为 OOM，也不能宣称大图全路径通过。**
+- 从同一源码和同一组 CUTLASS/OpenCV DLL 构建，唯一实验构建差异是 Vulkan 适配器开关及其 SDK。用相同的 Deflate 9 做两个本地 CLI 审计包（不含 WebUI）：
+
+  | 本地包 | ZIP（MiB） | 解包（MiB） |
+  | --- | ---: | ---: |
+  | Vulkan OFF | 43.01 | 175.75 |
+  | Vulkan ON | 53.49 | 198.76 |
+  | 增量 | 10.48 | 23.01 |
+
+  ZIP 的增量约有 6.14 MiB 来自静态链接后变大的 EXE、4.23 MiB 来自新增的 4 个转换模型文件，其余为 OpenMP 运行库及许可/构建说明。普通和延迟导入扫描中，候选 CLI 只新增了 `VCOMP140.DLL`（锁定的 ncnn SDK 使用 MSVC OpenMP），没有 ncnn DLL、cuBLAS、cuBLASLt 或 cuDNN。从两份 ZIP 解包、将 PATH 限于 Windows 系统目录后运行也成功；进程采样见到了系统的 `vulkan-1.dll`、AMD 驱动的 `amdvlk64.dll` 和包内 `VCOMP140.DLL`，未观测到上述旧推理库。该测试仍在本机，**不是一台未装 Toolkit 的干净系统验收**。
+- ZIP、二进制、权重、原图和采样日志均留在本地，未提交，未发布。
+
+本地证据根目录为 `build/smart-crop-vulkan-dual-gpu`：模型 `repro/report.json`；基准 `single-32/report.json`、`dual-32/report.json` 及同目录的采样 CSV；回归 `ctest.log`、`regression-small-final/report.json`、`regression/report.json`、`regression/historical-cudnn-parity.json`；打包与加载 `zip-audit-final/report.json`、`zip-audit-final/smoke-report.json` 及模块清单。
+
+后续先复现并分析 CUTLASS 大图错误，再限制 Vulkan 大图的工作集、解决动漫动态检测网格转换。只有单设备路径分别通过正确性和性能门槛后，才值得重测双 GPU 调度；本实验未接入 NPU，Intel 核显与其他独显也不在已实测范围内。
