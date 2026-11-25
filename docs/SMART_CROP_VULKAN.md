@@ -2,7 +2,7 @@
 
 ## 结论
 
-在 Windows x64 上跑通了 Radeon 780M 的 FP32 真人裁剪，以及 RTX 4060 Laptop（CUDA）与 780M（Vulkan）按图分流。32 张真人样本的输出文件名、裁剪坐标和 SHA-256 均一致。**不建议启用这两个候选路径**：单 Vulkan 比 CPU 快 55.4%，但超出内存门槛；双 GPU 比单 CUDA 慢 25.9%。动漫模型未通过转换预检，未跑 200 张计时。现有 CUDA、CPU、自动回退和发布配置保持不变。
+在 Windows x64 上跑通了 Radeon 780M 的 FP32 真人裁剪，以及 RTX 4060 Laptop（CUDA）与 780M（Vulkan）按图分流。32 张真人样本的输出文件名、裁剪坐标和 SHA-256 均一致。**不建议启用这两个候选路径**：单 Vulkan 比 CPU 快 55.4%，但超出内存门槛；优化后双 GPU 比原双 GPU 快 6.5%，但仍比单 CUDA 慢 17.9%。动漫模型未通过转换预检，未跑 200 张计时。现有 CUDA、CPU、自动回退和发布配置保持不变。
 
 ## 如何复现
 
@@ -19,9 +19,9 @@ U²-NetP（前景显著性）在固定的既有 320×320 输入上通过。YuNet
 
 在独立的 Windows x64 智能裁剪构建中设 `MOSAICRAFT_SMART_CROP_VULKAN=ON`（默认 OFF）和 `ncnn_DIR`。在 EXE 旁的 `models/vulkan` 放入通过探针、哈希匹配的 `saliency`、`real` 各一对 `.param`、`.bin` 文件；保留原 `models` 中的 ONNX。实验仅限独立 CLI 真人裁剪：`MOSAICRAFT_SMART_CROP_EXPERIMENT=vulkan` 或 `dual`，`MOSAICRAFT_SMART_CROP_VULKAN_DEVICE` 为实测枚举索引，`--crop-device` 保持 `auto`。实验请求是显式选路，不借常规 `auto` 掩盖设备或模型故障。图库构建、HTTP 和 Web 不选用该实验。
 
-双 GPU 至少需要 8 张图、4 个应用线程及另一块 AMD/Intel Vulkan 适配器；本次只实测 AMD。核显至多领取对齐后 4 Mi 像素的可裁剪图，最后三张不再派给核显。读、两路推理、写各有固定缓冲槽，共用 256 MiB 预约；超出槽限的单图排空后由 CUDA 独占处理。该预算不限制模型、驱动分配或正在执行的解码临时内存。允许推理乱序完成，仍按输入索引写盘，遇到推理错误只保留此前成功的输出。
+双 GPU 至少需要 8 张图、4 个应用线程及另一块 AMD/Intel Vulkan 适配器；本次只实测 AMD。核显至多领取对齐后 4 Mi 像素的可裁剪图，最后三张不再派给核显。两个设备独立领取任务，已完成的结果在有界队列里等待按输入索引写出。读预取保留 64 MiB，活动、待写和正在写的缓冲共最多 192 MiB、最多 8 项；超限单图排空队列后由 CUDA 独占处理。这个预算不限制模型、驱动内存或阶段内部的临时分配。遇到推理错误，只写完最早失败索引之前的输出。
 
-## 性能与一致性
+## 首轮性能与一致性（原顺序交接调度）
 
 Windows 10 22H2（19045），Ryzen 9 7940H，独显 RTX 4060 Laptop（NVIDIA 621.14），核显 Radeon 780M（AMD 32.0.21030.2001）。用同一实验 CLI、32 张独立真人图、180×320 输出，四种路径各交错运行三轮，按进程启动至结束计时：
 
@@ -53,12 +53,38 @@ python scripts/bench_smart_crop_cuda.py <实验CLI> <32张真人图目录> <新�
 
 基准最终退出码 1 表示候选未过准入门槛，不表示上述裁剪命令运行失败。
 
+## 独立调度复测
+
+原实现把推理槽的释放绑到按序交接。现在 CUDA 和 Vulkan 各自取图、完成即释放设备，只在结果队列达到条数或内存上限时产生背压。顺序仍由写线程保证，两套会话也改为并行预检，全部成功后才创建输出目录。YuNet 的小尺寸 Vulkan 路径将九个 FP32 检测输出放在同一次命令提交中读回，较大的图仍用原逐输出路径。
+
+```powershell
+python scripts/bench_smart_crop_cuda.py <旧双GPU-CLI> <32张真人图目录> <新报告目录> `
+  --study dual-dispatch --candidate-exe <新CLI> --mode smart-real --rounds 3 --vulkan-device 1
+```
+
+在同一台机器、同一 OpenCV DNN DLL、同一份原始输入上，分别交错测量。墙钟包含预检和输出：
+
+| 32 张真人图对照 | 单 CUDA | 旧双 GPU | 新双 GPU | 相对旧双 GPU | 相对单 CUDA |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 仅解耦调度 | 5.923 s | 7.406 s | 7.256 s | 快 2.0% | 慢 22.5% |
+| 加并行预检及合并读回 | 5.886 s | 7.420 s | 6.938 s | 快 6.5% | 慢 17.9% |
+
+两组各 9 次运行均通过逐文件 SHA-256、ROI、输入不变和无 CPU 回退检查。最终 32 张方案每轮为 CUDA 24 张、Vulkan 8 张，两路裁剪区间重叠 1.67–1.70 秒；该指标包括裁剪阶段的主机预处理，不代表 GPU 内核同时运行了同样长的时间。两套会话的预检中位数从约 1.01 秒降到 0.62 秒，工作集比单 CUDA 多约 364–368 MiB。回归中通过阻塞注入验证：核显的队首图未完成时，CUDA 能继续领取后续图片；核显注入错误后，已完成的后续图也不会写出。
+
+另把同一组 32 张图排成三组，共 96 项，用于看启动成本摊薄后的吞吐，不计作 96 张新的独立样本。每条路径仍交错测三轮，输出完全一致。单 CUDA **16.897 s**、旧双 GPU **20.128 s**、新双 GPU **19.434 s**：新双 GPU 比旧双 GPU 快 **3.4%**，仍比单 CUDA 慢 **15.0%**。新路径每轮为 CUDA 68 项、Vulkan 28 项，两路裁剪区间重叠 5.84–5.92 秒，峰值工作集比单 CUDA 多 328–332 MiB。
+
+另一次 96 项运行中，按 Mosaicraft 进程 PID 和两块卡的 LUID 查 WDDM `GPU Engine`：约 1 秒的 10 个采样窗口里，有 **8 个窗口**同时记录到 RTX 4060 的 `CUDA` 引擎和 780M 的 `Compute 0` 引擎活动。这证明同一进程确实在调度两块硬件，而不是只创建了两支 CPU 线程；没有用这组低频采样推断内核级重叠时长。
+
+本轮的普通尺寸回归仍只跳过坏图，同尺寸 PNG 未变，旧 Vulkan 与新 Vulkan 的输出也一致。无效设备和缺失 Vulkan 模型均在创建输出前拒绝。原合成超大图仍由 Vulkan 成功处理；双 GPU 仍在同一张图遇到同一个 CUTLASS 错误，保留相同的已完成前缀。
+
+本地证据：`parallel-32/report.json`、`parallel-batched-32/report.json`、`parallel-batched-96/report.json`、`parallel-wddm-engine/positive-per-process.csv`、`parallel-regression/report.json` 和 `ctest-parallel-batched.log`。**并行已经验证，但两组的相对单 CUDA 提速门槛均未通过，双 GPU 继续作为实验。**
+
 ## 回归与包体积
 
 - CTest 单元和回归目标 2/2 通过，覆盖双路任务乱序完成、推理异常时只写正确前缀，以及原 CUDA `auto` 回退与恢复。
 - 普通尺寸夹具共 9 个输入。串行 CUDA、流水 CUDA、Vulkan、双 GPU 都只跳过索引 1 的坏图，输出其余 8 张；同尺寸 PNG 与输入字节相同，四条路径的所有输出文件名、SHA-256 和 ROI 相同。关闭实验的构建收到 Vulkan 请求时在创建输出前拒绝。无效设备索引、双路指定 NVIDIA Vulkan 设备、不支持的动漫模式均在预检拒绝。真人新建图库保留原 CUDA 智能裁剪，共 8 张入库、跳过 1 张坏图。
 - 混合尺寸压力夹具中，Vulkan 处理了 6534×8802 的合成大图；历史 cuDNN 对照的 8 个原有效压力输入，Vulkan 的 SHA-256 和 ROI 均匹配。当前 CUTLASS 单 CUDA 和双 GPU 都在这张大图的 `cutlass_convolution.cu` 报 `Error Internal`，两者保留相同的一个已完成文件，后续未写出。**根因未证实，不归类为 OOM，也不能宣称大图全路径通过。**
-- 从同一源码和同一组 CUTLASS/OpenCV DLL 构建，唯一实验构建差异是 Vulkan 适配器开关及其 SDK。用相同的 Deflate 9 做两个本地 CLI 审计包（不含 WebUI）：
+- 首轮打包时，从同一源码和同一组 CUTLASS/OpenCV DLL 构建，唯一实验构建差异是 Vulkan 适配器开关及其 SDK。用相同的 Deflate 9 做两个本地 CLI 审计包（不含 WebUI）：
 
   | 本地包 | ZIP（MiB） | 解包（MiB） |
   | --- | ---: | ---: |
