@@ -101,6 +101,10 @@ endif()
 
 if(WIN32)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION .)
+    if(MOSAICRAFT_SMART_CROP_VULKAN AND NCNN_OPENMP)
+        # The static Windows ncnn SDK still imports the MSVC OpenMP DLL.
+        set(CMAKE_INSTALL_OPENMP_LIBRARIES ON)
+    endif()
     include(InstallRequiredSystemLibraries)
     get_filename_component(_linker_dir "${CMAKE_LINKER}" DIRECTORY)
     set(_runtime_scanner "${_linker_dir}/dumpbin.exe")
