@@ -601,6 +601,8 @@ footer { text-align: center; color: var(--fg2); padding: 20px; font-size: 0.72re
           <option value="auto">自动（CUDA 优先）</option>
           <option value="cpu">仅 CPU</option>
           <option value="cuda">仅 CUDA（不可用时报错）</option>
+          <option value="vulkan">仅 Vulkan（实验性）</option>
+          <option value="cuda+vulkan">CUDA + Vulkan 双 GPU（实验性）</option>
         </select>
         <span id="b-crop-device-hint" class="hint"></span>
       </div>
@@ -1945,6 +1947,21 @@ function supportsSmartCrop(mode) {
   return !serverAvailable || hasFeature(mode === 'build' ? 'smart-crop-build' : 'smart-crop');
 }
 
+function cropDeviceIssue(device, mode, cropMode) {
+  if (device === 'cuda' && serverAvailable && !hasFeature('smart-crop-cuda')) {
+    return '当前服务不支持 CUDA 智能裁剪，请明确选择 CPU 或更换发布包。';
+  }
+  const feature = device === 'vulkan' ? 'smart-crop-vulkan'
+    : device === 'cuda+vulkan' ? 'smart-crop-cuda-vulkan' : '';
+  if (!feature) return '';
+  if (mode !== 'normalize') return 'Vulkan 实验选项仅用于“仅归一化”，不用于建立图库。';
+  if (device === 'vulkan' && cropMode !== 'smart-real') {
+    return '仅 Vulkan 目前只支持真人；动漫请选择 CUDA + Vulkan 或其他设备。';
+  }
+  if (serverAvailable && !hasFeature(feature)) return '当前服务构建不支持此实验性推理设备。';
+  return '';
+}
+
 function buildBuildPayload() {
   const payload = {};
   const mode = val('b-mode');
@@ -1963,12 +1980,9 @@ function buildBuildPayload() {
     }
     payload.cropMode = cropMode;
     const cropDevice = val('b-crop-device');
-    if (cropDevice === 'cuda') {
-      if (serverAvailable && !hasFeature('smart-crop-cuda')) {
-        throw uiFieldError('b-crop-device', '当前服务不支持 CUDA 智能裁剪，请明确选择 CPU 或更换发布包。');
-      }
-      payload.cropDevice = 'cuda';
-    } else if (!serverAvailable || hasFeature('smart-crop-device-auto')) {
+    const issue = cropDeviceIssue(cropDevice, mode, cropMode);
+    if (issue) throw uiFieldError('b-crop-device', issue);
+    if (!['auto', 'cpu'].includes(cropDevice) || !serverAvailable || hasFeature('smart-crop-device-auto')) {
       payload.cropDevice = cropDevice;
     }
     // Older servers use CPU on omission and may not recognize cropDevice at all.
@@ -2445,7 +2459,8 @@ function restoreRequestParameters(job) {
     document.getElementById('b-mode').value = request.normalizeOnly ? 'normalize' : request.appendMode ? 'add' : 'build';
     document.getElementById('b-crop').value = !request.appendMode &&
       ['smart-real', 'smart-anime'].includes(request.cropMode) ? request.cropMode : 'center';
-    document.getElementById('b-crop-device').value = ['auto', 'cpu', 'cuda'].includes(request.cropDevice)
+    const cropDevice = document.getElementById('b-crop-device');
+    cropDevice.value = [...cropDevice.options].some(option => option.value === request.cropDevice)
       ? request.cropDevice : (request.cropMode && request.cropMode !== 'center' ? 'cpu' : 'auto');
     document.getElementById('b-backend').value = request.backend || 'auto';
     restoreDevice('b-device', request.device);
@@ -2616,15 +2631,21 @@ function syncPreviewOption() {
     ? '当前服务在此操作中仅支持中心裁剪。'
     : '每批手动选择一种类型；真人、动漫混合目录请分批处理。智能裁剪离线推理，仅移动裁剪框。';
   const cropCudaUnsupported = serverAvailable && !hasFeature('smart-crop-cuda');
+  const cropMode = val('b-crop');
   const cropDevice = document.getElementById('b-crop-device');
-  document.getElementById('b-crop-device-row').hidden = adding || val('b-crop') === 'center';
+  document.getElementById('b-crop-device-row').hidden = adding || cropMode === 'center';
   const cudaOption = cropDevice.querySelector('[value="cuda"]');
   cudaOption.hidden = cropCudaUnsupported && cropDevice.value !== 'cuda';
-  cudaOption.disabled = cropCudaUnsupported;
-  document.getElementById('b-crop-device-hint').textContent = serverAvailable && !hasFeature('smart-crop-device-auto')
+  for (const option of cropDevice.options) {
+    option.disabled = Boolean(cropDeviceIssue(option.value, mode, cropMode));
+  }
+  const standardHint = serverAvailable && !hasFeature('smart-crop-device-auto')
     ? '当前服务版本不支持自动切换；自动选项沿用旧服务默认的 CPU。'
     : cropCudaUnsupported ? '当前服务未编译 CUDA 智能裁剪；自动使用 CPU。'
     : '自动优先 CUDA，故障时用 CPU 继续，恢复后切回。仅 CUDA 遇到故障会停止。';
+  const experimentalHint = '实验性：不一定比单 CUDA 更快。仅 Vulkan 只支持真人归一化；CUDA + Vulkan 支持真人和动漫归一化，另需 AMD/Intel Vulkan GPU、至少 8 张图和 4 个线程。两项均需实验构建和对应模型。';
+  document.getElementById('b-crop-device-hint').textContent =
+    (cropDeviceIssue(cropDevice.value, mode, cropMode) || standardHint) + ' ' + experimentalHint;
   document.getElementById('b-encoding').style.display = normalizeOnly ? 'none' : '';
   document.getElementById('b-encoding-hint').hidden = normalizeOnly;
   const preview = document.getElementById('m-preview');
