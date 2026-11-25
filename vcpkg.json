@@ -8,8 +8,8 @@
   ],
   "features": {
     "smart-crop-cutlass": {
-      "description": "Experimental Windows x64 CUDA smart crop dependency set",
-      "supports": "windows & x64",
+      "description": "CUTLASS CUDA smart crop dependency set",
+      "supports": "(windows | linux) & x64",
       "dependencies": [{ "name": "opencv5", "features": ["dnn-cuda-cutlass"] }]
     },
     "smart-crop-cuda": {

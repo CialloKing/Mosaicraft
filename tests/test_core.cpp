@@ -2952,7 +2952,7 @@ TEST_CASE("smart crop requests round-trip for build and normalize")
         }
     }
     for (const auto &[mode, device] : {std::pair{"smart-real", "vulkan"}, {"smart-real", "cuda+vulkan"},
-                                      {"smart-anime", "cuda+vulkan"}})
+                                      {"smart-anime", "vulkan"}, {"smart-anime", "cuda+vulkan"}})
     {
         BuildRequest parsed;
         RequestError detail;
@@ -2982,7 +2982,6 @@ TEST_CASE("smart crop requests round-trip for build and normalize")
                              R"({"inputDir":"photos","cropDevice":"cuda"})",
                              R"({"inputDir":"photos","cropMode":"smart-real","cropDevice":"vulkan"})",
                              R"({"inputDir":"photos","cropMode":"smart-anime","cropDevice":"cuda+vulkan"})",
-                             R"({"inputDir":"photos","normalizeOnly":true,"cropMode":"smart-anime","cropDevice":"vulkan"})",
                              R"({"inputDir":"photos","normalizeOnly":true,"cropMode":"smart-real","cropDevice":"dual"})"})
     {
         BuildRequest parsed;

@@ -2,8 +2,9 @@
 # Extract only its OpenCV subtree; no wheel, Python build or bindings are used.
 set(cutlass OFF)
 if("dnn-cuda-cutlass" IN_LIST FEATURES)
-    if("dnn-cuda" IN_LIST FEATURES OR NOT VCPKG_TARGET_IS_WINDOWS OR NOT VCPKG_TARGET_ARCHITECTURE STREQUAL "x64")
-        message(FATAL_ERROR "Install opencv5[dnn-cuda-cutlass] separately on Windows x64")
+    if("dnn-cuda" IN_LIST FEATURES OR (NOT VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_LINUX) OR
+       NOT VCPKG_TARGET_ARCHITECTURE STREQUAL "x64")
+        message(FATAL_ERROR "Install opencv5[dnn-cuda-cutlass] separately on Windows or Linux x64")
     endif()
     set(cutlass ON)
     set(cutlass_patches smart-crop-cutlass-no-blas.patch smart-crop-cutlass-operators.patch)

@@ -11,8 +11,8 @@
   ],
   "features": {
     "dnn-cuda-cutlass": {
-      "description": "Experimental native Windows x64 CUDA DNN executors for smart crop",
-      "supports": "windows & x64",
+      "description": "Native CUTLASS CUDA DNN executors for smart crop",
+      "supports": "(windows | linux) & x64",
       "dependencies": [{ "name": "opencv5", "features": ["dnn"] }]
     },
     "dnn-cuda": {

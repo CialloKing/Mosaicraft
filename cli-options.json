@@ -149,7 +149,7 @@
     "type": "string",
     "field": "cropDevice",
     "commands": "build normalize",
-    "help": "Smart crop device: auto (CUDA preferred), cpu, cuda (strict), vulkan or cuda+vulkan (experimental, normalize only)",
+    "help": "Smart crop device: auto (CUDA preferred), cpu, cuda (strict), vulkan or experimental cuda+vulkan (normalize only)",
     "advanced": false
   },
   {

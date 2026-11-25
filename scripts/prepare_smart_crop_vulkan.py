@@ -10,18 +10,15 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "20261020"
-NCNN_REVISION = "7e36d25cb153092ba87a60530455c7376fedf452"
-ASSETS = {
-    f"ncnn-{VERSION}-windows-vs2026.zip": "3e65e31846afd96e83a4a1c17e2aa825fde75eb9c927663a06a059336cf84312",
-    f"pnnx-{VERSION}-windows.zip": "e4f91348a399a0060a6e7dd323d40427e1cbdcab67469cf1904b5d09b23606c5",
-}
 PNNX_EXE_SHA256 = "b8c56a0b0319e6ce4d229e9a339e4ee377fb0c42f7f3e66eec235ed00cd71b18"
 
 
 def sha256(path):
+    digest = hashlib.sha256()
     with path.open("rb") as source:
-        return hashlib.file_digest(source, "sha256").hexdigest()
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def yunet_dynamic(source, target):
@@ -75,15 +72,17 @@ def main():
     parser.add_argument("--max-real", nargs=2, type=int, metavar=("WIDTH", "HEIGHT"))
     parser.add_argument("--max-anime", nargs=2, type=int, metavar=("WIDTH", "HEIGHT"))
     args = parser.parse_args()
-    for name, expected in ASSETS.items():
+    vulkan_lock = json.loads((ROOT / "cmake/smart-crop-vulkan.json").read_text(encoding="utf-8"))
+    assets = {entry["archive"]: entry["sha256"] for entry in (vulkan_lock["sdk"]["windows"], vulkan_lock["converter"])}
+    for name, expected in assets.items():
         if sha256(args.tools / name) != expected:
             parser.error(f"unexpected SHA-256: {name}")
-    pnnx = args.tools / f"pnnx-{VERSION}-windows" / "pnnx.exe"
+    pnnx = args.tools / Path(vulkan_lock["converter"]["archive"]).stem / "pnnx.exe"
     if sha256(pnnx) != PNNX_EXE_SHA256:
         parser.error("unexpected pnnx executable SHA-256")
     lock = json.loads((ROOT / "cmake/smart-crop-models.json").read_text(encoding="utf-8"))
     args.work.mkdir(parents=True, exist_ok=False)
-    report = {"ncnnRevision": NCNN_REVISION, "toolArchives": ASSETS, "pnnxSha256": PNNX_EXE_SHA256, "models": {}}
+    report = {"ncnnRevision": vulkan_lock["revision"], "toolArchives": assets, "pnnxSha256": PNNX_EXE_SHA256, "models": {}}
     if args.probe:
         report["probeSha256"] = sha256(args.probe)
         report["deviceIndex"] = args.device

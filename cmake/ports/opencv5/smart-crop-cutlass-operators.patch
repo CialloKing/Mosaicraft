@@ -36,7 +36,7 @@
 +  if(MOSAICRAFT_DNN_CUTLASS)
 +    list(APPEND include_dirs "${MOSAICRAFT_CUTLASS_INCLUDE_DIR}")
 +    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/cutlass_convolution.cu"
-+      PROPERTIES COMPILE_OPTIONS "--expt-relaxed-constexpr;-Xcompiler=/Zc:preprocessor;-Xcompiler=/utf-8")
++      PROPERTIES COMPILE_OPTIONS "--expt-relaxed-constexpr;$<$<BOOL:${MSVC}>:-Xcompiler=/Zc:preprocessor>;$<$<BOOL:${MSVC}>:-Xcompiler=/utf-8>")
 +  endif()
    list(APPEND include_dirs ${CUDA_TOOLKIT_INCLUDE} ${CUDNN_INCLUDE_DIRS} ${CUDNNJIT_INCLUDE_DIRS})
    set(CC_LIST ${CUDA_ARCH_BIN})

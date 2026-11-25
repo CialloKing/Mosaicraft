@@ -1,0 +1,11 @@
+#pragma once
+
+namespace mosaicraft
+{
+inline constexpr char kVulkanSaliencyParamHash[] = "@saliency_param@";
+inline constexpr char kVulkanSaliencyBinHash[] = "@saliency_bin@";
+inline constexpr char kVulkanRealParamHash[] = "@real_param@";
+inline constexpr char kVulkanRealBinHash[] = "@real_bin@";
+inline constexpr char kVulkanAnimeParamHash[] = "@anime_param@";
+inline constexpr char kVulkanAnimeBinHash[] = "@anime_bin@";
+}

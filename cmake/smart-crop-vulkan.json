@@ -1,0 +1,33 @@
+{
+  "version": "20261020",
+  "revision": "7e36d25cb153092ba87a60530455c7376fedf452",
+  "licenseSha256": "7c974bac98848df46be1af5bdaa3c3c9c01f6082a90f55caeb7f60c6208aa255",
+  "sdk": {
+    "windows": {
+      "archive": "ncnn-20261020-windows-vs2026.zip",
+      "sha256": "3e65e31846afd96e83a4a1c17e2aa825fde75eb9c927663a06a059336cf84312"
+    },
+    "linux": {
+      "archive": "ncnn-20261020-ubuntu-2204.zip",
+      "sha256": "0e364326f6b6e225f1d1886e2127898c9d3383811a894e2680d156f589fe2641"
+    }
+  },
+  "converter": {
+    "archive": "pnnx-20261020-windows.zip",
+    "sha256": "e4f91348a399a0060a6e7dd323d40427e1cbdcab67469cf1904b5d09b23606c5"
+  },
+  "models": {
+    "saliency": {
+      "param": "315dbc3956dce0cf14f2821c130f1084c62ef9f4f77f3ba9a66d99c258f8e2d1",
+      "bin": "7e18d54080bc4560dff8f9b39f4a5b0392f6a104cf4d59b4c5d86bd24402c908"
+    },
+    "real": {
+      "param": "1ffaf4819c98d60fa811520546c4e710237c25c7e704692a082c9a3a2caa371d",
+      "bin": "8faa696d61ad6bf5c13ed5d6c8ae35e376c660968db53d723a329020856ca5c9"
+    },
+    "anime": {
+      "param": "3f079042cc2f91ed9c8bd4a79745a010a430398178e1fcbe8c701c017a9e4097",
+      "bin": "315c3bf3432b1a062995e7fd6df59ec38d0f2ac51c3da3fcfa5ca95d966cb8e3"
+    }
+  }
+}

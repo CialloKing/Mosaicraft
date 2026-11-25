@@ -1,6 +1,7 @@
 #include "SmartCropVulkan.h"
 #include "ExecutablePath.h"
 #include "SmartCrop.h"
+#include "SmartCropVulkanAssets.h"
 #include "third_party/picosha2/picosha2.h"
 
 #include <command.h>
@@ -195,17 +196,14 @@ struct SmartCropVulkan::Impl
 SmartCropVulkan::SmartCropVulkan(int device, CropMode mode) : m_impl(std::make_unique<Impl>())
 {
     (void)gpuInfo(device);
-    initNet(m_impl->saliency, device, "saliency.param", "315dbc3956dce0cf14f2821c130f1084c62ef9f4f77f3ba9a66d99c258f8e2d1",
-            "saliency.bin", "7e18d54080bc4560dff8f9b39f4a5b0392f6a104cf4d59b4c5d86bd24402c908");
+    initNet(m_impl->saliency, device, "saliency.param", kVulkanSaliencyParamHash, "saliency.bin", kVulkanSaliencyBinHash);
     if (mode == CropMode::SmartAnime)
     {
-        initNet(m_impl->face, device, "anime.param", "3f079042cc2f91ed9c8bd4a79745a010a430398178e1fcbe8c701c017a9e4097",
-                "anime.bin", "315c3bf3432b1a062995e7fd6df59ec38d0f2ac51c3da3fcfa5ca95d966cb8e3");
+        initNet(m_impl->face, device, "anime.param", kVulkanAnimeParamHash, "anime.bin", kVulkanAnimeBinHash);
     }
     else
     {
-        initNet(m_impl->face, device, "real.param", "1ffaf4819c98d60fa811520546c4e710237c25c7e704692a082c9a3a2caa371d",
-                "real.bin", "8faa696d61ad6bf5c13ed5d6c8ae35e376c660968db53d723a329020856ca5c9");
+        initNet(m_impl->face, device, "real.param", kVulkanRealParamHash, "real.bin", kVulkanRealBinHash);
     }
 }
 
