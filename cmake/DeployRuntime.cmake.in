@@ -14,6 +14,7 @@ else()
 endif()
 set(_runtime_dirs "@_runtime_dirs@")
 set(_build_executables "@_build_executables@")
+set(_cutlass_enabled "@MOSAICRAFT_SMART_CROP_CUTLASS@")
 file(GET_RUNTIME_DEPENDENCIES
     EXECUTABLES ${_build_executables}
     DIRECTORIES ${_runtime_dirs}
@@ -31,7 +32,7 @@ else()
     set(_lib_dest "${CMAKE_INSTALL_PREFIX}/lib")
 endif()
 foreach(_dependency IN LISTS _resolved)
-    if("@MOSAICRAFT_SMART_CROP_CUTLASS@" STREQUAL "ON")
+    if(_cutlass_enabled)
         get_filename_component(_name "${_dependency}" NAME)
         string(TOLOWER "${_name}" _name)
         if(_name MATCHES "^(cublas|cudnn).*\\.dll$")

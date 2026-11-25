@@ -15,6 +15,8 @@ import time
 from benchmark import peak_rss
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+OPENCV_CPU_FALLBACK = (b"running the whole graph on CPU", b"fallback to the CPU implementation",
+                       b"switching to CPU")
 
 
 def sha256(path):
@@ -67,6 +69,8 @@ def run(args, name, parts, *, reuse_weights=None, executable=None):
                 env["OPENCV_FOR_THREADS_NUM"] = "2"
             if args.study == "cutlass":
                 env["MOSAICRAFT_SMART_CROP_TRACE_ROI"] = "1"
+                # OpenCV graph fallback can happen below the app's CUDA session metrics.
+                env["OPENCV_LOG_LEVEL"] = "INFO"
             command = [str(executable or args.exe), "library", "normalize", str(source), "--recursive",
                        "-o", str(prefix), "--size", args.size, "--threads", "1" if args.study == "devices" else "3",
                        "--crop", args.mode, "--crop-device", device, "--json"]
@@ -91,8 +95,20 @@ def run(args, name, parts, *, reuse_weights=None, executable=None):
     memory = [int(s) for s in samples_path.read_text(encoding="utf-8").splitlines() if s.strip().isdigit()]
     children, outputs = [], {}
     for (process, device, pipeline, indices, prefix), peak in zip(processes, peaks):
+        opencv_cpu_fallback = False
         try:
-            runtime = json.loads(prefix.with_suffix(".json").read_bytes()).get("runtime", {})
+            stdout = prefix.with_suffix(".json")
+            raw = stdout.read_bytes()
+            if args.study == "cutlass":
+                log = prefix.with_suffix(".log").read_bytes()
+                opencv_cpu_fallback = any(marker in raw or marker in log for marker in OPENCV_CPU_FALLBACK)
+                lines = raw.splitlines()
+                if lines and lines[-1].startswith(b"{"):
+                    # OpenCV INFO goes to stdout before the CLI's single JSON response.
+                    raw = lines[-1]
+                    prefix.with_suffix(".opencv.log").write_bytes(b"\n".join(lines[:-1]) + b"\n")
+                    stdout.write_bytes(raw + b"\n")
+            runtime = json.loads(raw).get("runtime", {})
         except (ValueError, OSError):
             runtime = {}
         actual = runtime.get("device")
@@ -109,10 +125,12 @@ def run(args, name, parts, *, reuse_weights=None, executable=None):
         children.append({"device": device, "actualDevice": actual, "exit": "timeout" if timed_out else process.returncode,
                          "saved": len(saved), "failed": max(0, expected - len(saved)), "metrics": metrics,
                          "peakWorkingSetBytes": peak or None,
-                         "passed": not timed_out and process.returncode == 0 and actual == device
+                         "passed": not timed_out and not opencv_cpu_fallback and process.returncode == 0 and actual == device
                          and len(saved) == expected and all(metrics.get(k, 0) > 0 for k in
                                                            ("smartCropSaliencyMs", "smartCropFaceMs"))
                          and (args.study == "devices" or metrics.get("smartCropPipeline") == int(pipeline))})
+        if args.study == "cutlass":
+            children[-1]["opencvCpuFallback"] = opencv_cpu_fallback
     result = {"name": name, "wallSeconds": elapsed, "imagesPerSecond": len(outputs) / elapsed,
             "gpuBaselineMiB": baseline, "gpuSampledPeakMiB": max(memory, default=None),
             "peakWorkingSetBytes": sum(peaks) if all(peaks) else None, "children": children,
@@ -204,15 +222,18 @@ def main():
         parser.error("the weights study requires a Windows CUDA CLI beside the experimental opencv_dnn5.dll")
     if args.work.is_relative_to(args.input) or args.input.is_relative_to(args.work):
         parser.error("work and input must not overlap")
-    args.sources = sorted((p for p in args.input.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS),
-                          key=lambda p: p.relative_to(args.input).parts)
+    def input_files():
+        return sorted((p for p in args.input.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS),
+                      key=lambda p: p.relative_to(args.input).parts)
+
+    args.sources = input_files()
     if args.rounds < 1 or len(args.sources) < (1 if args.study == "devices" else 8):
         parser.error("positive round count and enough supported images are required")
     args.gpu_uuid = subprocess.check_output(nvidia_query(args.gpu, "uuid"), text=True).strip()
     args.work.mkdir(parents=True, exist_ok=False)
 
     def input_hashes():
-        return {p.relative_to(args.input).as_posix(): sha256(p) for p in args.sources}
+        return {p.relative_to(args.input).as_posix(): sha256(p) for p in input_files()}
 
     source_hashes = input_hashes()
     report = {"executableSha256": sha256(args.exe), "mode": args.mode, "size": args.size, "study": args.study,
@@ -255,6 +276,7 @@ def main():
             if args.study == "cutlass":
                 result["identicalCropRois"] = result["cropRois"] == reference_rois
                 result["identical"] &= result["identicalCropRois"]
+                result["differingOutputSha256"] = {key: outputs.get(key) for key in result["differingOutputs"]}
             report["runs"].append(result)
             print(f"{name}: {result['wallSeconds']:.2f}s, run OK={result['passed']}, identical={result['identical']}", flush=True)
             write_report(report_path, report)

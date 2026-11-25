@@ -249,18 +249,17 @@
  #endif /* OPENCV_DNN_SRC_CUDA4DNN_CSL_TENSOR_OPS_HPP */
 --- a/opencv/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
 +++ b/opencv/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
-@@ -7,6 +7,10 @@
+@@ -7,6 +7,9 @@
  
  #include "../../op_cuda.hpp"
  
 +#ifdef MOSAICRAFT_DNN_CUTLASS
 +#include "../kernels/cutlass_convolution.hpp"
-+#include "../kernels/permute.hpp"
 +#else
  #if defined(HAVE_CUDNN)
  #include <cudnn.h>
  #elif defined(HAVE_CUDNNJIT)
-@@ -14,6 +18,7 @@
+@@ -14,6 +17,7 @@
  #endif
  
  #include "../csl/cudnn.hpp"
@@ -268,7 +267,7 @@
  #include "../csl/stream.hpp"
  #include "../csl/tensor.hpp"
  #include "../csl/tensor_ops.hpp"
-@@ -38,6 +43,7 @@
+@@ -38,6 +42,7 @@
  
  #include <cstddef>
  #include <cstdint>
@@ -276,7 +275,7 @@
  #include <vector>
  #include <utility>
  #include <algorithm>
-@@ -100,9 +106,16 @@
+@@ -100,9 +105,16 @@
              csl::Tensor<T> filters, bias;
          };
  
@@ -295,7 +294,7 @@
          {
              const auto& kernel_size = config.kernel_size;
              const auto& dilations = config.dilations;
-@@ -134,8 +147,39 @@
+@@ -134,8 +146,39 @@
              else
              {
                  auto uploaded = std::make_shared<DeviceWeights>();
@@ -335,7 +334,7 @@
                  if (!bias.empty())
                  {
                      uploaded->bias = csl::makeTensorHeader<T>(bias);
-@@ -143,7 +187,9 @@
+@@ -143,7 +186,9 @@
                  }
                  deviceWeights = std::move(uploaded);
              }
@@ -345,7 +344,7 @@
  
              /* left and right are misleading as the padding is applicable for any number of dimensions
               * but we use those identifiers to avoid confusion with `pads_begin` and `pads_end`
-@@ -207,48 +253,6 @@
+@@ -207,48 +252,6 @@
                      padding_right[i] = std::max<std::int64_t>(0, padding_right[i] - rem);
              }
  
@@ -394,7 +393,7 @@
              fusion_mode = config.fusion_mode;
              activation = config.activation_type;
              relu_negative_slope = config.relu_negative_slope;
-@@ -257,6 +261,81 @@
+@@ -257,6 +260,80 @@
              power_exp = config.power_exp;
              power_scale = config.power_scale;
              power_shift = config.power_shift;
@@ -425,10 +424,9 @@
 +            csl::WorkspaceBuilder builder;
 +            if (groups == 1 && !pointwise)
 +            {
-+                inputNHWC = {input_shape[0], input_shape[2], input_shape[3], input_shape[1]};
-+                outputNHWC = {output_shape[0], output_shape[2], output_shape[3], output_shape[1]};
-+                builder.require<T>(inputElements);
-+                builder.require<T>(outputElements);
++                cropScratch = kernels::crop_conv_scratch(cropShape);
++                builder.require<float>(cropScratch.inputElements);
++                builder.require<float>(cropScratch.outputElements);
 +            }
 +            scratch_mem_in_bytes = builder.required_workspace_size();
 +#else
@@ -476,7 +474,7 @@
  
              /* we normally use cuDNN for convolution and perform bias, activation and eltwise ops ourselves
               * hence, the activation for cuDNN is IDENTITY by default
-@@ -377,6 +456,7 @@
+@@ -377,6 +454,7 @@
              builder.require(convoluter.get_workspace_size());
  #endif
              scratch_mem_in_bytes = builder.required_workspace_size();
@@ -484,7 +482,7 @@
              if (cache)
              {
                  *cache = deviceWeights;
-@@ -398,6 +478,45 @@
+@@ -398,6 +476,46 @@
  
              auto input = csl::viewOf<T>(inputs[0]);
  
@@ -506,14 +504,15 @@
 +                }
 +                else
 +                {
-+                    auto clIn = allocator.get_tensor_span<T>(inputNHWC.begin(), inputNHWC.end());
-+                    auto clOut = allocator.get_tensor_span<T>(outputNHWC.begin(), outputNHWC.end());
-+                    kernels::permute<T>(stream, clIn, input, {0, 2, 3, 1});
-+                    if (kernels::cutlass_crop_conv(cropShape, clIn.get().get(), weights, clOut.get().get(), stream.get()))
++                    bool computed = false;
++                    if (cropScratch.outputRows > 0)
 +                    {
-+                        kernels::permute<T>(stream, output, clOut, {0, 3, 1, 2});
++                        auto clIn = allocator.get_span<float>(cropScratch.inputElements);
++                        auto clOut = allocator.get_span<float>(cropScratch.outputElements);
++                        computed = kernels::cutlass_crop_conv(cropShape, cropScratch, input.get().get(), weights,
++                                                              output.get().get(), clIn.data().get(), clOut.data().get(), stream.get());
 +                    }
-+                    else
++                    if (!computed)
 +                    {
 +                        kernels::direct_crop_conv(cropShape, input.get().get(), weights, output.get().get(), stream.get());
 +                    }
@@ -530,7 +529,7 @@
              if (!transformed_shape.empty())
              {
                  auto& shape = transformed_shape;
-@@ -449,6 +568,7 @@
+@@ -449,6 +567,7 @@
  #else
                  convoluter.convolve(output, input, filtersTensor, conv_scratchpad);
  #endif
@@ -538,14 +537,14 @@
  
                  if (fusion_mode == ConvolutionConfiguration::FusionMode::ELTWISE_SUM ||
                      fusion_mode == ConvolutionConfiguration::FusionMode::ELTWISE_SUM_THEN_ACTIVATION ||
-@@ -688,8 +808,13 @@
+@@ -688,8 +807,13 @@
  
      private:
          csl::Stream stream;
 +        std::shared_ptr<const DeviceWeights> deviceWeights;
 +#ifdef MOSAICRAFT_DNN_CUTLASS
 +        kernels::CropConv2d cropShape{};
-+        std::vector<std::size_t> inputNHWC, outputNHWC;
++        kernels::CropConvScratch cropScratch{};
 +        bool pointwise = false;
 +#else
          csl::cudnn::Handle cudnnHandle;
@@ -553,7 +552,7 @@
          csl::Convolution<T> convoluter;
  
          std::vector<std::size_t> transformed_shape;
-@@ -703,6 +828,7 @@
+@@ -703,6 +827,7 @@
          std::vector<std::size_t> jitNchwToNhwcOrder, jitNhwcToNchwOrder;
  #endif
  
@@ -561,7 +560,7 @@
          std::size_t scratch_mem_in_bytes;
  
          ConvolutionConfiguration::FusionMode fusion_mode;
-@@ -710,10 +836,12 @@
+@@ -710,10 +835,12 @@
          float relu_negative_slope, crelu_floor, crelu_ceil;
          float power_exp, power_scale, power_shift;
  
@@ -748,6 +747,21 @@
 +#endif
              config, filters, biasMat);
      }
+ #endif
+@@ -1379,12 +1385,12 @@
+         if (!node)
+         {
+             Conv2LayerImpl::CudaWeights* cache = nullptr;
+-#if defined(HAVE_CUDNN)
++#if defined(HAVE_CUDNN) || defined(MOSAICRAFT_DNN_CUTLASS)
+             static const bool reuseWeights =
+                 utils::getConfigurationParameterBool("OPENCV_DNN_CUDA_REUSE_CONV2_WEIGHTS", true);
+             if (reuseWeights && preferableTarget == DNN_TARGET_CUDA)
+             {
+-                // The cuDNN descriptors depend on H/W; the FP32 weights belong to this executor.
++                // The convolution plan depends on H/W; the FP32 weights belong to this executor.
+                 cache = &weights;
+             }
  #endif
 --- a/opencv/modules/dnn/src/layers/softmax_layer.cpp
 +++ b/opencv/modules/dnn/src/layers/softmax_layer.cpp

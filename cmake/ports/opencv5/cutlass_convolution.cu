@@ -1,6 +1,8 @@
 #include "../cuda4dnn/kernels/cutlass_convolution.hpp"
 #include "../cuda4dnn/csl/error.hpp"
 
+#include <algorithm>
+#include <cstdint>
 #include <cutlass/conv/conv2d_problem_size.h>
 #include <cutlass/conv/device/implicit_gemm_convolution.h>
 #include <cutlass/conv/kernel/default_conv2d_fprop.h>
@@ -95,10 +97,9 @@ __global__ void directConv(CropConv2d s, const float *input, const float *filter
     }
     output[i] = sum;
 }
-}
 
-bool cutlass_crop_conv(const CropConv2d &s, const float *input, const float *filter,
-                       float *output, cudaStream_t stream)
+bool implicitCropConv(const CropConv2d &s, const float *input, const float *filter,
+                      float *output, cudaStream_t stream)
 {
     const cutlass::Tensor4DCoord in(s.batches, s.inH, s.inW, s.inC);
     const cutlass::Tensor4DCoord weights(s.outC, s.kernel, s.kernel, s.inC);
@@ -112,6 +113,118 @@ bool cutlass_crop_conv(const CropConv2d &s, const float *input, const float *fil
         return true;
     }
     return implicitConv<cutlass::conv::IteratorAlgorithm::kAnalytic>(shape, in, weights, out, input, filter, output, stream);
+}
+
+constexpr int transposeWidth = 32, transposeWarpRows = 8;
+
+// Both passes coalesce global reads and writes; the extra column avoids shared-memory bank conflicts.
+__global__ void transposeCropTile(const float *src, float *dst, int width, int height, int srcStride, int dstStride)
+{
+    __shared__ float values[transposeWidth][transposeWidth + 1];
+    const int x = blockIdx.x * transposeWidth + threadIdx.x;
+    const int y = blockIdx.y * transposeWidth + threadIdx.y;
+    for (int row = 0; row < transposeWidth; row += transposeWarpRows)
+    {
+        if (x < width && y + row < height)
+        {
+            values[threadIdx.y + row][threadIdx.x] = src[(y + row) * srcStride + x];
+        }
+    }
+    __syncthreads();
+    const int outX = blockIdx.y * transposeWidth + threadIdx.x;
+    const int outY = blockIdx.x * transposeWidth + threadIdx.y;
+    for (int row = 0; row < transposeWidth; row += transposeWarpRows)
+    {
+        if (outX < height && outY + row < width)
+        {
+            dst[(outY + row) * dstStride + outX] = values[threadIdx.x][threadIdx.y + row];
+        }
+    }
+}
+
+void transposeCrop(const float *src, float *dst, int width, int height, int srcStride, int dstStride,
+                   cudaStream_t stream)
+{
+    // A wide image after transposition can exceed grid.y's limit.
+    const int xTiles = (width - 1) / transposeWidth + 1;
+    const int yTiles = (height - 1) / transposeWidth + 1;
+    const auto block = dim3(transposeWidth, transposeWarpRows);
+    for (int y = 0; y < yTiles;)
+    {
+        const int rows = std::min(yTiles - y, 65535);
+        const int offset = y * transposeWidth;
+        const int tileHeight = yTiles - y == rows ? height - offset : rows * transposeWidth;
+        transposeCropTile<<<dim3(xTiles, rows), block, 0, stream>>>(
+            src + std::size_t(offset) * srcStride, dst + offset, width, tileHeight, srcStride, dstStride);
+        CUDA4DNN_CHECK_CUDA(cudaGetLastError());
+        y += rows;
+    }
+}
+}
+
+CropConvScratch crop_conv_scratch(const CropConv2d &s)
+{
+    // Bound each graph's layout workspace independently of the source image resolution.
+    constexpr std::size_t maxElements = (64u * 1024u * 1024u) / sizeof(float) - 2 * (256u / sizeof(float));
+    const std::size_t inRow = std::size_t(s.inW) * s.inC;
+    const std::size_t outRow = std::size_t(s.outW) * s.outC;
+    const std::size_t receptive = 1u + std::size_t(s.kernel - 1) * s.dilationY;
+    const auto forRows = [&](int rows)
+    {
+        const auto needed = std::size_t(rows - 1) * s.strideY + receptive;
+        return CropConvScratch{rows, std::min(std::size_t(s.inH), needed) * inRow, rows * outRow};
+    };
+    if (const auto full = forRows(s.outH); full.inputElements + full.outputElements <= maxElements)
+    {
+        return full;
+    }
+    const auto first = forRows(1);
+    const auto firstSize = first.inputElements + first.outputElements;
+    if (firstSize > maxElements)
+    {
+        return {}; // One full-width receptive field exceeds the budget; use the direct kernel.
+    }
+    const auto extraRows = (maxElements - firstSize) / (inRow * s.strideY + outRow);
+    return forRows(1 + static_cast<int>(extraRows));
+}
+
+bool cutlass_crop_conv(const CropConv2d &s, const CropConvScratch &scratch, const float *input,
+                       const float *filter, float *output, float *inputTile, float *outputTile, cudaStream_t stream)
+{
+    const int inPlane = s.inH * s.inW, outPlane = s.outH * s.outW;
+    const std::int64_t receptive = 1 + std::int64_t(s.kernel - 1) * s.dilationY;
+    for (int n = 0; n < s.batches; ++n)
+    {
+        const auto *src = input + n * s.inC * inPlane;
+        auto *dst = output + n * s.outC * outPlane;
+        for (int y = 0; y < s.outH;)
+        {
+            auto tile = s;
+            tile.batches = 1;
+            tile.outH = std::min(scratch.outputRows, s.outH - y);
+            const std::int64_t first = std::int64_t(y) * s.strideY - s.top;
+            const std::int64_t end = first + std::int64_t(tile.outH - 1) * s.strideY + receptive;
+            const auto begin = std::max<std::int64_t>(0, first);
+            const auto limit = std::min<std::int64_t>(s.inH, end);
+            if (begin >= limit)
+            {
+                return false;
+            }
+            // Keep the original receptive fields, including dilation and only the padding beyond the image.
+            tile.inH = static_cast<int>(limit - begin);
+            tile.top = static_cast<int>(begin - first);
+            tile.bottom = static_cast<int>(end - limit);
+            const int inPixels = tile.inH * s.inW, outPixels = tile.outH * s.outW;
+            transposeCrop(src + begin * s.inW, inputTile, inPixels, s.inC, inPlane, s.inC, stream);
+            if (!implicitCropConv(tile, inputTile, filter, outputTile, stream))
+            {
+                return false;
+            }
+            transposeCrop(outputTile, dst + y * s.outW, s.outC, outPixels, s.outC, outPlane, stream);
+            y += tile.outH;
+        }
+    }
+    return true;
 }
 
 bool pointwise_crop_conv(const CropConv2d &s, const float *input, const float *filter,
