@@ -2,7 +2,7 @@
 
 ## 结论
 
-在 Windows x64 上跑通了 Radeon 780M 的 FP32 真人裁剪，以及 RTX 4060 Laptop（CUDA）与 780M（Vulkan）按图分流。32 张真人样本的输出文件名、裁剪坐标和 SHA-256 均一致。**不建议启用这两个候选路径**：单 Vulkan 比 CPU 快 55.4%，但超出内存门槛；优化后双 GPU 比原双 GPU 快 6.5%，但仍比单 CUDA 慢 17.9%；扩大至 1,000 项复测后仍慢 12.7%。动漫模型未通过转换预检，HighLikes 复测只取得原生动漫模式的单 CUDA 耗时；用真人模型在 1,000 张尺寸受限插图上的独立对照中，新双 GPU 慢 24.6%。现有 CUDA、CPU、自动回退和发布配置保持不变。
+在 Windows x64 上跑通了 Radeon 780M 的 FP32 真人裁剪，以及 RTX 4060 Laptop（CUDA）与 780M（Vulkan）按图分流。32 张真人样本的输出文件名、裁剪坐标和 SHA-256 均一致。**不建议启用这两个候选路径**：单 Vulkan 比 CPU 快 55.4%，但超出内存门槛；优化后双 GPU 比原双 GPU 快 6.5%，但仍比单 CUDA 慢 17.9%；扩大至 1,000 项复测后仍慢 12.7%。原生动漫模式现已支持显式双 GPU 实验：保留动态原图推理，将坐标网格移至后处理。HighLikes 的 1,000 张原图已验证输出一致；限制核显分流后，双 GPU 中位墙钟仍比单 CUDA 慢 2.8%。现有默认设备、CPU、自动回退和发布配置保持不变。
 
 ## 如何复现
 
@@ -12,14 +12,14 @@
 
 ```powershell
 python scripts/prepare_smart_crop_vulkan.py <锁定ONNX目录> <工具目录> <新转换目录> `
-  --probe <探针EXE> --device 1 --max-real 6534 8802 --max-anime 6534 8802
+  --probe <探针EXE> --device 1 --max-real 6534 8802 --max-anime 1664 2496
 ```
 
-U²-NetP（前景显著性）在固定的既有 320×320 输入上通过。YuNet 只放开 ONNX 的输入宽高和检测输出长度元数据，没有改算子或权重；在 352×256、640×384、352×256、6560×8832、352×256 的同会话序列上通过。动漫原图检测依赖动态网格。pnnx 尽管返回 0，仍报告未转换的 `pnnx.Expression`、`torch.arange` 等操作，ncnn 加载失败。脚本因此整体非零退出；不要把动漫产物放进实验包，也不以固定输入或降分辨率绕过。
+U²-NetP（前景显著性）在固定的既有 320×320 输入上通过。YuNet 只放开 ONNX 的输入宽高和检测输出长度元数据，没有改算子或权重；在 352×256、640×384、352×256、6560×8832、352×256 的同会话序列上通过。动漫原始模型的 `Range` 等动态网格算子不能直接转换。现在从锁定 ONNX 中抽出网格解码前的子图，主干、分布回归（DFL）与置信分数仍在 GPU 执行；主机只对超过原置信阈值的候选恢复坐标，然后复用原来的边界过滤、NMS 和大图复检。未更改权重、FP32、输入分辨率或尺寸对齐规则。探针在同一会话验证非方形输入、尺寸往返及 1,664×2,496 压力输入。
 
-在独立的 Windows x64 智能裁剪构建中设 `MOSAICRAFT_SMART_CROP_VULKAN=ON`（默认 OFF）和 `ncnn_DIR`。在 EXE 旁的 `models/vulkan` 放入通过探针、哈希匹配的 `saliency`、`real` 各一对 `.param`、`.bin` 文件；保留原 `models` 中的 ONNX。实验仅限独立 CLI 真人裁剪：`MOSAICRAFT_SMART_CROP_EXPERIMENT=vulkan` 或 `dual`，`MOSAICRAFT_SMART_CROP_VULKAN_DEVICE` 为实测枚举索引，`--crop-device` 保持 `auto`。实验请求是显式选路，不借常规 `auto` 掩盖设备或模型故障。图库构建、HTTP 和 Web 不选用该实验。
+在独立的 Windows x64 智能裁剪构建中设 `MOSAICRAFT_SMART_CROP_VULKAN=ON`（默认 OFF）和 `ncnn_DIR`。在 EXE 旁的 `models/vulkan` 放入通过探针、哈希匹配的 `saliency` 和所选模式的 `real` 或 `anime` 各一对 `.param`、`.bin` 文件（把转换得到的 `model.ncnn.*` 按模型名重命名）；保留原 `models` 中的 ONNX。`MOSAICRAFT_SMART_CROP_EXPERIMENT=vulkan` 仍仅支持单 Vulkan 真人；`dual` 支持独立 CLI 的真人与动漫裁剪。`MOSAICRAFT_SMART_CROP_VULKAN_DEVICE` 为实测枚举索引，`--crop-device` 保持 `auto`。实验请求是显式选路，不借常规 `auto` 掩盖设备或模型故障。图库构建、HTTP 和 Web 不选用该实验。
 
-双 GPU 至少需要 8 张图、4 个应用线程及另一块 AMD/Intel Vulkan 适配器；本次只实测 AMD。核显至多领取对齐后 4 Mi 像素的可裁剪图，最后三张不再派给核显。两个设备独立领取任务，已完成的结果在有界队列里等待按输入索引写出。读预取保留 64 MiB，活动、待写和正在写的缓冲共最多 192 MiB、最多 8 项；超限单图排空队列后由 CUDA 独占处理。这个预算不限制模型、驱动内存或阶段内部的临时分配。遇到推理错误，只写完最早失败索引之前的输出。
+双 GPU 至少需要 8 张图、4 个应用线程及另一块 AMD/Intel Vulkan 适配器；本次只实测 AMD。核显至多领取对齐后 4 Mi 像素的可裁剪图；动漫实验默认按实测收紧至 0.75 Mi 像素，超过上限由独显以原图尺寸处理。可以用 `MOSAICRAFT_SMART_CROP_DUAL_MAX_PIXELS` 指定 1,024–4,194,304 像素，不改变模型分辨率。最后三张不再派给核显。两个设备独立领取任务，已完成的结果在有界队列里等待按输入索引写出。读预取保留 64 MiB，活动、待写和正在写的缓冲共最多 192 MiB、最多 8 项；超限单图排空队列后由 CUDA 独占处理。这个预算不限制模型、驱动内存或阶段内部的临时分配。遇到推理错误，只写完最早失败索引之前的输出。
 
 ## 首轮性能与一致性（原顺序交接调度）
 
@@ -99,7 +99,7 @@ python scripts/bench_smart_crop_cuda.py <旧双GPU-CLI> <32张真人图目录> <
 
 本地报告：`parallel-batched-1000/report.json`。退出码 1 对应未达到相对单 CUDA 的提速门槛，三条路径本身均退出 0。
 
-### HighLikes 的 1,000 张动漫原图
+### HighLikes 的 1,000 张动漫原图（接通前的基线）
 
 从 `library/HighLikes` 顶层 12,339 张 JPG/PNG 中按 `SHA-256("HighLikes-dual-gpu-1000-v1" + NUL + 文件名)` 排序抽样、按内容 SHA-256 去重，再按原文件名排序暂存。每个候选路径顺序跑一轮，输出 180×320、4 个应用线程；不修改、不缩小输入原图。两组样本的暂存输入及原图哈希均未改变。
 
@@ -113,14 +113,47 @@ python scripts/bench_smart_crop_cuda.py <旧双GPU-CLI> <32张真人图目录> <
 | 旧双 GPU | 64.63 秒 | 15.47 张/秒 | 1,219.77 |
 | 新双 GPU | 64.62 秒 | 15.48 张/秒 | 1,400.16 |
 
-三路均完成 1,000/1,000 张，逐文件名、SHA-256 及 996 条裁剪坐标一致，无 CPU 回退。新双 GPU 分流 CUDA 673 张、Vulkan 323 张；裁剪阶段重叠约 62.80 秒，但整批仍较单 CUDA 慢 **24.6%**，峰值工作集多约 **1,067 MiB**。与旧双 GPU 的差值不足 0.01 秒，单轮不能判为提速。原生动漫双 GPU 仍不可用，当前默认路径不变。
+三路均完成 1,000/1,000 张，逐文件名、SHA-256 及 996 条裁剪坐标一致，无 CPU 回退。新双 GPU 分流 CUDA 673 张、Vulkan 323 张；裁剪阶段重叠约 62.80 秒，但整批仍较单 CUDA 慢 **24.6%**，峰值工作集多约 **1,067 MiB**。与旧双 GPU 的差值不足 0.01 秒，单轮不能判为提速。此时原生动漫双 GPU 尚不可用。
 
 本地证据位于 `build/smart-crop-vulkan-dual-gpu/highlikes-anime-1000`：`sample.json`、`smart-anime/report.json`、`unsupported.json`、`smart-real-dispatch/report.json`、`size-bounded/sample.json` 和 `size-bounded/smart-real-dispatch/report.json`。
 
+### 原生动漫双 GPU：接通与多轮优化
+
+在 RTX 4060 Laptop + Radeon 780M 上，用上面的同一份 HighLikes 1,000 张原图和 180×320 输出复测，不剔除大图。最初按 4 Mi 像素分流：单 CUDA **105.83 秒**，双 GPU **125.48 秒**；Vulkan 完成了 292 张原生动漫裁剪，输出逐项一致，但墙钟慢 18.6%。
+
+移除对齐 NCHW 张量的一次主机复制后，从这 1,000 张等距取 200 张做两轮交错测量。四档分流上限均满足一致性；下表比较同一二进制上的中位墙钟，不能把降幅单独归功于消除复制：
+
+| 路径 | 200 张中位墙钟 | 相对单 CUDA |
+| --- | ---: | ---: |
+| 单 CUDA | 20.66 秒 | — |
+| 双 GPU · 4 Mi 像素 | 25.07 秒 | 慢 21.4% |
+| 双 GPU · 2.5 Mi 像素 | 24.82 秒 | 慢 20.1% |
+| 双 GPU · 1.5 Mi 像素 | 22.90 秒 | 慢 10.8% |
+| 双 GPU · 0.75 Mi 像素 | 21.15 秒 | 慢 2.4% |
+
+0.75 Mi 像素比同一轮的 4 Mi 双 GPU 用时少 **15.6%**，因此只将**显式双 GPU 动漫实验**的默认分流上限设为该值。用全部 1,000 张做三轮交错对照；这是分流上限，不是降分辨率：
+
+```powershell
+python scripts/bench_smart_crop_cuda.py <实验CLI> <HighLikes的1000张暂存原图> <新报告目录> `
+  --study dual --mode smart-anime --rounds 3 --vulkan-device 1
+```
+
+| 路径 | 三轮墙钟 | 中位墙钟 |
+| --- | ---: | ---: |
+| 单 CUDA | 104.78 / 93.15 / 93.22 秒 | **93.22 秒** |
+| 双 GPU · 0.75 Mi 像素 | 105.57 / 95.42 / 95.85 秒 | **95.85 秒** |
+
+六次运行均完成 1,000/1,000 张，文件名、输出 SHA-256、996 条裁剪坐标和输入哈希一致，无 CPU 回退。Vulkan 每轮处理 79–81 张；两路裁剪阶段重叠 14.71–15.00 秒（含主机预处理），峰值工作集较单 CUDA 增加约 376–383 MiB。**双 GPU 中位墙钟仍慢 2.8%，未过至少节省 5% 的门槛，不改变普通 CUDA 或 `auto` 默认路径。**
+
+每轮核显在 79–81 张上的显著性阶段累计约 11 秒，动漫检测约 3.6–3.7 秒。这提示下一步应测只分担耗时较短的检测阶段、避免核显重复承担较慢的显著性阶段，而非把更多整图派给核显；这里的计时不是纯 GPU 内核时间。
+
+本地报告：`anime-dual-baseline-1000/report.json`、`anime-dual-tune-200/report.json`、`anime-dual-final-1000/report.json`、`repro-anime-dynamic/report.json`，均位于 `build/smart-crop-vulkan-dual-gpu`。
+
 ## 回归与包体积
 
+- 动漫更新后重新构建 CLI 和测试目标，CTest 单元及回归 2/2 通过。真人 32 张单 CUDA / 双 GPU 输出一致，真人的 4 Mi 像素阈值不变；动漫缺权重、非法分流上限、单 Vulkan 动漫请求均在创建输出前拒绝。HighLikes 的 1,000 张原图 SHA-256 再次核验未变。本地回归证据：`ctest-anime-dual-final.log`、`anime-dual-validation/status.json` 及同目录 `real-report/report.json`。
 - CTest 单元和回归目标 2/2 通过，覆盖双路任务乱序完成、推理异常时只写正确前缀，以及原 CUDA `auto` 回退与恢复。
-- 普通尺寸夹具共 9 个输入。串行 CUDA、流水 CUDA、Vulkan、双 GPU 都只跳过索引 1 的坏图，输出其余 8 张；同尺寸 PNG 与输入字节相同，四条路径的所有输出文件名、SHA-256 和 ROI 相同。关闭实验的构建收到 Vulkan 请求时在创建输出前拒绝。无效设备索引、双路指定 NVIDIA Vulkan 设备、不支持的动漫模式均在预检拒绝。真人新建图库保留原 CUDA 智能裁剪，共 8 张入库、跳过 1 张坏图。
+- 普通尺寸夹具共 9 个输入。串行 CUDA、流水 CUDA、Vulkan、双 GPU 都只跳过索引 1 的坏图，输出其余 8 张；同尺寸 PNG 与输入字节相同，四条路径的所有输出文件名、SHA-256 和 ROI 相同。关闭实验的构建收到 Vulkan 请求时在创建输出前拒绝。无效设备索引、双路指定 NVIDIA Vulkan 设备、此前未接通的动漫模式均在预检拒绝。真人新建图库保留原 CUDA 智能裁剪，共 8 张入库、跳过 1 张坏图。
 - 混合尺寸压力夹具中，Vulkan 处理了 6534×8802 的合成大图；历史 cuDNN 对照的 8 个原有效压力输入，Vulkan 的 SHA-256 和 ROI 均匹配。当前 CUTLASS 单 CUDA 和双 GPU 都在这张大图的 `cutlass_convolution.cu` 报 `Error Internal`，两者保留相同的一个已完成文件，后续未写出。**根因未证实，不归类为 OOM，也不能宣称大图全路径通过。**
 - 首轮打包时，从同一源码和同一组 CUTLASS/OpenCV DLL 构建，唯一实验构建差异是 Vulkan 适配器开关及其 SDK。用相同的 Deflate 9 做两个本地 CLI 审计包（不含 WebUI）：
 
@@ -135,4 +168,4 @@ python scripts/bench_smart_crop_cuda.py <旧双GPU-CLI> <32张真人图目录> <
 
 本地证据根目录为 `build/smart-crop-vulkan-dual-gpu`：模型 `repro/report.json`；基准 `single-32/report.json`、`dual-32/report.json` 及同目录的采样 CSV；回归 `ctest.log`、`regression-small-final/report.json`、`regression/report.json`、`regression/historical-cudnn-parity.json`；打包与加载 `zip-audit-final/report.json`、`zip-audit-final/smoke-report.json` 及模块清单。
 
-后续先复现并分析 CUTLASS 大图错误，再限制 Vulkan 大图的工作集、解决动漫动态检测网格转换。只有单设备路径分别通过正确性和性能门槛后，才值得重测双 GPU 调度；本实验未接入 NPU，Intel 核显与其他独显也不在已实测范围内。
+后续仍需排查真人模式的 CUTLASS 大图错误和单 Vulkan 的大图工作集。本实验未接入 NPU，Intel 核显与其他独显也不在已实测范围内。

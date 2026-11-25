@@ -614,7 +614,9 @@ std::optional<ServiceResult> runCliSmartCropExperiment(const BuildRequest &reque
     std::lock_guard<std::mutex> lock(pipelineMutex());
     ExecutionScope scope;
     const bool dual = experiment == "dual";
-    auto vulkanMaxPixels = detail::kDualVulkanMaxPixels;
+    // On the tested 780M, admitting medium anime graphs slowed the CUDA lane.
+    // This only changes assignment in the explicit experiment, never input scale.
+    auto vulkanMaxPixels = request.cropMode == CropMode::SmartAnime ? 768ull * 1024 : detail::kDualVulkanMaxPixels;
     if (dual)
     {
         // Tune device selection, never the detector resolution or the hard Vulkan memory bound.
