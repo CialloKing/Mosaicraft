@@ -17,7 +17,11 @@ python scripts/prepare_smart_crop_vulkan.py <锁定ONNX目录> <工具目录> <�
 
 U²-NetP（前景显著性）在固定的既有 320×320 输入上通过。YuNet 只放开 ONNX 的输入宽高和检测输出长度元数据，没有改算子或权重；在 352×256、640×384、352×256、6560×8832、352×256 的同会话序列上通过。动漫原始模型的 `Range` 等动态网格算子不能直接转换。现在从锁定 ONNX 中抽出网格解码前的子图，主干、分布回归（DFL）与置信分数仍在 GPU 执行；主机只对超过原置信阈值的候选恢复坐标，然后复用原来的边界过滤、NMS 和大图复检。未更改权重、FP32、输入分辨率或尺寸对齐规则。探针在同一会话验证非方形输入、尺寸往返及 1,664×2,496 压力输入。
 
-在独立的 Windows x64 智能裁剪构建中设 `MOSAICRAFT_SMART_CROP_VULKAN=ON`（默认 OFF）和 `ncnn_DIR`。在 EXE 旁的 `models/vulkan` 放入通过探针、哈希匹配的 `saliency` 和所选模式的 `real` 或 `anime` 各一对 `.param`、`.bin` 文件（把转换得到的 `model.ncnn.*` 按模型名重命名）；保留原 `models` 中的 ONNX。`MOSAICRAFT_SMART_CROP_EXPERIMENT=vulkan` 仍仅支持单 Vulkan 真人；`dual` 支持独立 CLI 的真人与动漫裁剪。`MOSAICRAFT_SMART_CROP_VULKAN_DEVICE` 为实测枚举索引，`--crop-device` 保持 `auto`。实验请求是显式选路，不借常规 `auto` 掩盖设备或模型故障。图库构建、HTTP 和 Web 不选用该实验。
+在独立的 Windows x64 智能裁剪构建中设 `MOSAICRAFT_SMART_CROP_VULKAN=ON`（默认 OFF）和 `ncnn_DIR`。在 EXE 旁的 `models/vulkan` 放入通过探针、哈希匹配的 `saliency` 和所选模式的 `real` 或 `anime` 各一对 `.param`、`.bin` 文件（把转换得到的 `model.ncnn.*` 按模型名重命名）；保留原 `models` 中的 ONNX。
+
+CLI 的 `library normalize --crop-device vulkan` 和 HTTP/WebUI 的同名策略仅用于真人归一化。`cuda+vulkan` 支持真人和动漫归一化，要求另一块 AMD/Intel Vulkan 适配器、至少 8 张图和 4 个应用线程。默认自动选适配器，也可用 `MOSAICRAFT_SMART_CROP_VULKAN_DEVICE` 指定 ncnn 枚举索引。实验选项不保证比单 CUDA 快；严格预检失败，不回退，也不用于创建或追加图库。
+
+旧基准仍可用 `MOSAICRAFT_SMART_CROP_EXPERIMENT=vulkan|dual` 加显式 Vulkan 枚举索引，配合默认 `--crop-device auto`。该环境开关仅由 CLI 识别，不会为 Web 任务选设备。
 
 双 GPU 至少需要 8 张图、4 个应用线程及另一块 AMD/Intel Vulkan 适配器；本次只实测 AMD。核显至多领取对齐后 4 Mi 像素的可裁剪图；动漫实验默认按实测收紧至 0.75 Mi 像素，超过上限由独显以原图尺寸处理。可以用 `MOSAICRAFT_SMART_CROP_DUAL_MAX_PIXELS` 指定 1,024–4,194,304 像素，不改变模型分辨率。最后三张不再派给核显。两个设备独立领取任务，已完成的结果在有界队列里等待按输入索引写出。读预取保留 64 MiB，活动、待写和正在写的缓冲共最多 192 MiB、最多 8 项；超限单图排空队列后由 CUDA 独占处理。这个预算不限制模型、驱动内存或阶段内部的临时分配。遇到推理错误，只写完最早失败索引之前的输出。
 

@@ -37,10 +37,15 @@ struct VulkanInstance
     }
 };
 
-const ncnn::GpuInfo &gpuInfo(int device)
+int gpuCount()
 {
     static const VulkanInstance instance;
-    if (device < 0 || device >= ncnn::get_gpu_count())
+    return ncnn::get_gpu_count();
+}
+
+const ncnn::GpuInfo &gpuInfo(int device)
+{
+    if (device < 0 || device >= gpuCount())
     {
         throw SmartCropError("smart_crop_vulkan_device", "Vulkan device index was not enumerated");
     }
@@ -206,9 +211,42 @@ SmartCropVulkan::SmartCropVulkan(int device, CropMode mode) : m_impl(std::make_u
 
 SmartCropVulkan::~SmartCropVulkan() = default;
 
-unsigned SmartCropVulkan::deviceVendor(int device)
+int SmartCropVulkan::selectDevice(int requested, bool separateFromCuda)
 {
-    return gpuInfo(device).vendor_id();
+    const int count = gpuCount();
+    if (count == 0)
+    {
+        throw SmartCropError("smart_crop_vulkan_device", "no compatible Vulkan GPU was enumerated");
+    }
+    // CUDA uses NVIDIA; vendor filtering keeps the second lane off the same physical adapter.
+    const auto separateAdapter = [](int index)
+    {
+        const auto vendor = gpuInfo(index).vendor_id();
+        return vendor == 0x1002 || vendor == 0x8086;
+    };
+    if (requested >= 0)
+    {
+        (void)gpuInfo(requested);
+        if (!separateFromCuda || separateAdapter(requested))
+        {
+            return requested;
+        }
+    }
+    else if (!separateFromCuda)
+    {
+        return ncnn::get_default_gpu_index();
+    }
+    else
+    {
+        for (int index = 0; index < count; ++index)
+        {
+            if (separateAdapter(index))
+            {
+                return index;
+            }
+        }
+    }
+    throw SmartCropError("smart_crop_vulkan_device", "CUDA + Vulkan requires a separate AMD or Intel Vulkan adapter");
 }
 
 cv::Mat SmartCropVulkan::foreground(const cv::Mat &blob) const

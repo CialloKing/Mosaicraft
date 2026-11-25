@@ -504,7 +504,8 @@ add_executable(mosaicraft_tests EXCLUDE_FROM_ALL
 )
 target_compile_definitions(mosaicraft_tests PRIVATE
     MOSAICRAFT_SMART_CROP=$<BOOL:${MOSAICRAFT_SMART_CROP}>
-    MOSAICRAFT_SMART_CROP_CUDA=$<BOOL:${MOSAICRAFT_SMART_CROP_CUDA}>)
+    MOSAICRAFT_SMART_CROP_CUDA=$<BOOL:${MOSAICRAFT_SMART_CROP_CUDA}>
+    MOSAICRAFT_SMART_CROP_VULKAN=$<BOOL:${MOSAICRAFT_SMART_CROP_VULKAN}>)
 target_link_libraries(mosaicraft_tests PRIVATE
     mosaicraft_core
     mosaicraft_cuda

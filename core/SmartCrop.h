@@ -50,8 +50,15 @@ enum class CropDevice
 {
     Auto,
     Cpu,
-    Cuda
+    Cuda,
+    Vulkan,
+    CudaVulkan
 };
+
+inline constexpr bool experimentalCropDevice(CropDevice device)
+{
+    return device == CropDevice::Vulkan || device == CropDevice::CudaVulkan;
+}
 
 inline std::optional<CropDevice> parseCropDevice(std::string_view name)
 {
@@ -67,6 +74,14 @@ inline std::optional<CropDevice> parseCropDevice(std::string_view name)
     {
         return CropDevice::Cuda;
     }
+    if (name == "vulkan")
+    {
+        return CropDevice::Vulkan;
+    }
+    if (name == "cuda+vulkan")
+    {
+        return CropDevice::CudaVulkan;
+    }
     return std::nullopt;
 }
 
@@ -76,6 +91,8 @@ inline const char *cropDeviceName(CropDevice device)
     {
     case CropDevice::Auto: return "auto";
     case CropDevice::Cuda: return "cuda";
+    case CropDevice::Vulkan: return "vulkan";
+    case CropDevice::CudaVulkan: return "cuda+vulkan";
     default: return "cpu";
     }
 }

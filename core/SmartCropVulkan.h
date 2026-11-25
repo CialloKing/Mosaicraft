@@ -15,7 +15,7 @@ public:
     cv::Mat foreground(const cv::Mat &blob) const;
     cv::Mat animeDistances(const cv::Mat &blob, int anchors) const;
     std::vector<cv::Rect2d> realBoxes(const cv::Mat &image) const;
-    static unsigned deviceVendor(int device);
+    static int selectDevice(int requested, bool separateFromCuda);
 
 private:
     struct Impl;

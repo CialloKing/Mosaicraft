@@ -4,7 +4,7 @@
 #include "OutputPublication.h"
 #include "RequestValidation.h"
 #include "SmartCropSession.h"
-#if MOSAICRAFT_SMART_CROP_VULKAN && MOSAICRAFT_SMART_CROP_CUDA
+#if MOSAICRAFT_SMART_CROP_VULKAN
 #include "SmartCropVulkan.h"
 #endif
 #include "UnicodeIO.h"
@@ -355,9 +355,26 @@ void detail::runDualSmartCropPipeline(ImageNormalizer &cuda, ImageNormalizer &vu
     }
 }
 
-static ServiceResult normalizeImagesImpl(const BuildRequest &request, RuntimeContext &runtime,
-                                         std::optional<int> vulkan, bool dual = false,
-                                         std::size_t vulkanMaxPixels = detail::kDualVulkanMaxPixels)
+#if MOSAICRAFT_SMART_CROP_VULKAN
+static int selectVulkanDevice(bool dual, bool legacyTrial)
+{
+    const auto *value = std::getenv("MOSAICRAFT_SMART_CROP_VULKAN_DEVICE");
+    int device = -1;
+    if (value || legacyTrial)
+    {
+        const std::string_view index = value ? value : "";
+        const auto parsed = std::from_chars(index.data(), index.data() + index.size(), device);
+        if (parsed.ec != std::errc{} || parsed.ptr != index.data() + index.size() || device < 0)
+        {
+            throw SmartCropError("smart_crop_vulkan_device",
+                                 "set MOSAICRAFT_SMART_CROP_VULKAN_DEVICE to an enumerated index");
+        }
+    }
+    return SmartCropVulkan::selectDevice(device, dual);
+}
+#endif
+
+static ServiceResult normalizeImagesImpl(const BuildRequest &request, RuntimeContext &runtime, [[maybe_unused]] bool legacyTrial)
 {
     namespace fs = std::filesystem;
     std::string error, field;
@@ -413,7 +430,12 @@ static ServiceResult normalizeImagesImpl(const BuildRequest &request, RuntimeCon
         return runtimeFailure(runtime, 1, "no supported images found", "input_unreadable");
     }
     const auto policy = request.cropDevice.value_or(CropDevice::Auto);
-    const char *diagnosticField = vulkan || policy == CropDevice::Cuda ? "cropDevice" : "cropMode";
+    const bool dual = policy == CropDevice::CudaVulkan;
+    const bool useVulkan = experimentalCropDevice(policy);
+    const char *diagnosticField = useVulkan || policy == CropDevice::Cuda ? "cropDevice" : "cropMode";
+    std::optional<int> vulkan;
+    // On the tested 780M, medium anime graphs slowed the CUDA lane. This changes only assignment, never input scale.
+    std::size_t vulkanMaxPixels = request.cropMode == CropMode::SmartAnime ? 768ull * 1024 : detail::kDualVulkanMaxPixels;
     const char *setting = std::getenv("MOSAICRAFT_SMART_CROP_PIPELINE");
     const std::string_view trial = setting ? setting : "";
     std::optional<SmartCropSession> smartCrop, secondary;
@@ -422,9 +444,37 @@ static ServiceResult normalizeImagesImpl(const BuildRequest &request, RuntimeCon
         const auto start = std::chrono::steady_clock::now();
         try
         {
-            if (dual && (files.size() < 8 || normalizationWorkerCount(request.threads) < 4))
+            if (useVulkan)
             {
-                throw SmartCropError("smart_crop_dual_budget", "dual GPU trial requires at least eight files and four threads");
+#if MOSAICRAFT_SMART_CROP_VULKAN
+#if !MOSAICRAFT_SMART_CROP_CUDA
+                if (dual)
+                {
+                    throw SmartCropError("smart_crop_cuda_unavailable", "CUDA + Vulkan requires a CUDA smart crop build");
+                }
+#endif
+                if (dual && (files.size() < 8 || normalizationWorkerCount(request.threads) < 4))
+                {
+                    throw SmartCropError("smart_crop_dual_budget", "dual GPU trial requires at least eight files and four threads");
+                }
+                if (dual && legacyTrial)
+                {
+                    // Preserve the CLI benchmark override without changing per-job WebUI policy.
+                    if (const auto *value = std::getenv("MOSAICRAFT_SMART_CROP_DUAL_MAX_PIXELS"))
+                    {
+                        const std::string_view limit(value);
+                        const auto parsed = std::from_chars(limit.data(), limit.data() + limit.size(), vulkanMaxPixels);
+                        if (parsed.ec != std::errc{} || parsed.ptr != limit.data() + limit.size() ||
+                            vulkanMaxPixels < 1024 || vulkanMaxPixels > detail::kDualVulkanMaxPixels)
+                        {
+                            throw SmartCropError("smart_crop_dual_budget", "dual GPU pixel limit must be in [1024, 4194304]");
+                        }
+                    }
+                }
+                vulkan = selectVulkanDevice(dual, legacyTrial);
+#else
+                throw SmartCropError("smart_crop_vulkan_unavailable", "this build does not support Vulkan smart crop");
+#endif
             }
             if (dual)
             {
@@ -440,7 +490,8 @@ static ServiceResult normalizeImagesImpl(const BuildRequest &request, RuntimeCon
             }
             else
             {
-                smartCrop.emplace(request.cropMode, policy, runtime, true, vulkan);
+                // The explicit Vulkan index selects the inference backend; do not start a CUDA recovery session.
+                smartCrop.emplace(request.cropMode, vulkan ? CropDevice::Cpu : policy, runtime, true, vulkan);
             }
         }
         catch (const SmartCropError &problem)
@@ -578,13 +629,14 @@ static ServiceResult normalizeImagesImpl(const BuildRequest &request, RuntimeCon
 
 ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runtime)
 {
-    return normalizeImagesImpl(request, runtime, std::nullopt);
+    return normalizeImagesImpl(request, runtime, false);
 }
 
 std::optional<ServiceResult> runCliSmartCropExperiment(const BuildRequest &request, RuntimeContext &runtime)
 {
     const auto *setting = std::getenv("MOSAICRAFT_SMART_CROP_EXPERIMENT");
-    if (!request.normalizeOnly || !setting || !*setting)
+    if (!request.normalizeOnly || (request.cropDevice && experimentalCropDevice(*request.cropDevice)) ||
+        !setting || !*setting)
     {
         return std::nullopt;
     }
@@ -595,66 +647,10 @@ std::optional<ServiceResult> runCliSmartCropExperiment(const BuildRequest &reque
         return runtimeFailure(runtime, 1, "Vulkan trial requires CLI smart normalization and the default crop-device policy",
                               "invalid_argument", "cropDevice");
     }
-#if MOSAICRAFT_SMART_CROP_VULKAN
-    // Standalone Vulkan anime would also claim oversized inputs, unlike bounded dual dispatch.
-    if (request.cropMode == CropMode::SmartAnime && experiment != "dual")
-    {
-        return runtimeFailure(runtime, 1, "Vulkan anime detection is currently limited to the bounded dual GPU experiment",
-                              "smart_crop_vulkan_model", "cropMode");
-    }
-    const auto *value = std::getenv("MOSAICRAFT_SMART_CROP_VULKAN_DEVICE");
-    const std::string_view index = value ? value : "";
-    int device = -1;
-    const auto parsed = std::from_chars(index.data(), index.data() + index.size(), device);
-    if (parsed.ec != std::errc{} || parsed.ptr != index.data() + index.size() || device < 0)
-    {
-        return runtimeFailure(runtime, 1, "set MOSAICRAFT_SMART_CROP_VULKAN_DEVICE to an enumerated index",
-                              "smart_crop_vulkan_device", "cropDevice");
-    }
+    auto trial = request;
+    trial.cropDevice = experiment == "dual" ? CropDevice::CudaVulkan : CropDevice::Vulkan;
     std::lock_guard<std::mutex> lock(pipelineMutex());
     ExecutionScope scope;
-    const bool dual = experiment == "dual";
-    // On the tested 780M, admitting medium anime graphs slowed the CUDA lane.
-    // This only changes assignment in the explicit experiment, never input scale.
-    auto vulkanMaxPixels = request.cropMode == CropMode::SmartAnime ? 768ull * 1024 : detail::kDualVulkanMaxPixels;
-    if (dual)
-    {
-        // Tune device selection, never the detector resolution or the hard Vulkan memory bound.
-        if (const char *value = std::getenv("MOSAICRAFT_SMART_CROP_DUAL_MAX_PIXELS"))
-        {
-            const std::string_view limit(value);
-            const auto parsedLimit = std::from_chars(limit.data(), limit.data() + limit.size(), vulkanMaxPixels);
-            if (parsedLimit.ec != std::errc{} || parsedLimit.ptr != limit.data() + limit.size() ||
-                vulkanMaxPixels < 1024 || vulkanMaxPixels > detail::kDualVulkanMaxPixels)
-            {
-                return runtimeFailure(runtime, 1, "dual GPU pixel limit must be in [1024, 4194304]",
-                                      "smart_crop_dual_budget", "cropDevice");
-            }
-        }
-#if MOSAICRAFT_SMART_CROP_CUDA
-        // CUDA selects NVIDIA only. Restrict the second device to AMD/Intel rather than guessing adapter identity.
-        try
-        {
-            const auto vendor = SmartCropVulkan::deviceVendor(device);
-            if (vendor != 0x1002 && vendor != 0x8086)
-            {
-                return runtimeFailure(runtime, 1, "dual trial requires a separate AMD or Intel Vulkan adapter",
-                                      "smart_crop_vulkan_device", "cropDevice");
-            }
-        }
-        catch (const SmartCropError &problem)
-        {
-            return runtimeFailure(runtime, 1, problem.what(), problem.code(), "cropDevice");
-        }
-#else
-        return runtimeFailure(runtime, 1, "dual GPU trial requires a CUDA smart crop build",
-                              "smart_crop_cuda_unavailable", "cropDevice");
-#endif
-    }
-    return runtimeResult(normalizeImagesImpl(request, runtime, device, dual, vulkanMaxPixels), runtime);
-#else
-    return runtimeFailure(runtime, 1, "this build does not support the Vulkan smart crop experiment",
-                          "smart_crop_vulkan_unavailable", "cropDevice");
-#endif
+    return runtimeResult(normalizeImagesImpl(trial, runtime, true), runtime);
 }
 } // namespace mosaicraft

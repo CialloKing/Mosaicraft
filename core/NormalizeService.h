@@ -6,7 +6,7 @@ namespace mosaicraft
 {
 int normalizationWorkerCount(int requestedThreads);
 ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runtime);
-// Invoked only by the CLI; jobs and the public request schema never enable the trial.
+// Keep environment-based experiment selection confined to the legacy CLI benchmark path.
 std::optional<ServiceResult> runCliSmartCropExperiment(const BuildRequest &request, RuntimeContext &runtime);
 
 namespace detail

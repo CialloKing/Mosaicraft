@@ -264,6 +264,8 @@ render 接受 outputMode、format、nativeTileW/H、quality、pngLevel、writeMo
 
 `smart-real` 和 `smart-anime` 接受 `cropDevice`，可选 `auto`（默认）、`cpu` 或 `cuda`。`cpu` 跳过 CUDA 探测，`cuda` 要求 CUDA 推理成功。中心裁剪请求携带此字段时返回 `400`，`diagnostic.field` 为 `cropDevice`。`smart-crop-device-auto` 表示支持设备策略，`smart-crop-cuda` 表示编译了 CUDA 推理。与仅支持 CPU 的旧版智能归一化服务交换请求时，可省略该字段以沿用旧服务的 CPU 默认策略。
 
+`normalizeOnly: true` 另支持实验值 `vulkan`（仅真人）和 `cuda+vulkan`（真人或动漫），对应构建功能标记 `smart-crop-vulkan` 和 `smart-crop-cuda-vulkan`。标记不保证本机具备适配器或模型；预检失败会报告错误，不会换用其他设备。双设备模式不保证比单 CUDA 快。
+
 自动模式优先用 CUDA。可捕获的 CUDA 故障触发 CPU 回退，并在后台探测恢复，随后从下一张需推理的图片切回 CUDA。模型错误和 CPU 推理错误会终止任务。`job.request.cropDevice` 保存请求策略。仅归一化时 `job.runtime.device` 报告实际推理设备，混用批次完成时为 `mixed`。建库时 `job.runtime.device` 仍表示特征提取设备，推理设备用 `smartCropCpuImages`、`smartCropCudaImages` 查看。两项图片计数均跳过预检推理。`smartCropCudaFallbacks` 和 `smartCropCudaRecoveries` 统计设备切换。
 
 智能任务在 `job.runtime.metrics` 返回 `smartCropFacesFound`（检测到脸的图片数）、`smartCropMoved`、`smartCropCentered`、`smartCropMainFaceClipped` 和 `smartCropInferenceWorkerMs`（推理工作线程耗时总和）。无需裁边的图片不计入裁剪统计。仅归一化任务失败时可能有 `normalized-partial` 目录产物。
