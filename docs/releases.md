@@ -5,7 +5,7 @@
 ## v1.15.18
 
 - 智能裁剪的 CLI、HTTP 和 WebUI 增加两个显式实验策略：`vulkan`（真人）和 `cuda+vulkan`（真人或动漫）。仅适用于启用该实验且装有对应模型的 Windows x64 源码构建，只用于独立归一化，不保证比单 CUDA 更快。见 [Vulkan 双 GPU 实验](SMART_CROP_VULKAN.md)。
-- 普通包不含智能裁剪。Windows x64 CUDA 智能裁剪补充包仍使用正式 NVIDIA 推理运行库，并保留 CPU 回退。[CUTLASS 轻量候选](SMART_CROP_CUTLASS.md)与 Vulkan 智能裁剪均不进入正式附件，不改变默认设备与发布门禁。HTTP API 仍为 1.9，图库格式不变。
+- [v1.15.18 正式附件](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.18)只提供一种智能裁剪包：Windows x64 [CUTLASS CUDA 轻量包](SMART_CROP_CUTLASS.md)（50.58 MiB），包含 CLI、WebUI、真人和动漫模型及 CPU 回退，不随包分发 cuBLAS、cuBLASLt 或 cuDNN。使用这些库的常规 CUDA 智能裁剪包不发布。普通 CPU、CUDA、Vulkan 和 Qt 附件不包含智能裁剪，Vulkan 智能裁剪仍只在实验源码构建中可用。HTTP API 仍为 1.9，图库格式不变。
 
 ## v1.15.17
 

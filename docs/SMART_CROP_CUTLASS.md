@@ -1,6 +1,6 @@
 # Windows CUDA 智能裁剪轻量化实验
 
-本实验不改变默认后端和正式发行包。目标是仅保留三个锁定模型需要的 CUDA 算子，以同源码 cuDNN 路径为对照。
+本文记录开发阶段的实验：仅保留三个锁定模型所需的 CUDA 算子，以同源码 cuDNN 路径为对照。下文的候选 ZIP 与数据是开发记录；v1.15.18 的正式附件和校验值见[版本说明](releases.md#v11518)。
 
 ## 探针
 
@@ -94,6 +94,6 @@ pwsh -File scripts/audit-smart-crop-cutlass-modules.ps1 -Exe <候选CLI> `
 
 候选 ZIP 减少 **93.6%**。两包逐文件尺寸见审计报告；候选含 CUTLASS 许可及构建信息，所有 EXE/DLL 的普通及延迟导入均未命中 cuBLAS、cuBLASLt 或 cuDNN。候选 ZIP 的 CRC 检查通过，打包的 CLI 和 DNN DLL 哈希与跑分二进制一致。
 
-受限 PATH 的本机进程采样中，动漫和真人均加载系统 NVIDIA 驱动，未发现目标 DLL 或 Toolkit 模块。**纯驱动 Windows 环境未实测**：测试机仍安装了 Toolkit，不能将受限 PATH 当作纯驱动验收。本包仅为本地实验，不替代正式包，不切换默认、不更改正式发布门禁。
+受限 PATH 的本机进程采样中，动漫和真人均加载系统 NVIDIA 驱动，未发现目标 DLL 或 Toolkit 模块。**纯驱动 Windows 环境未实测**：测试机仍安装了 Toolkit，不能将受限 PATH 当作纯驱动验收。本节记录的是当时的本地候选，不是 v1.15.18 正式下载文件。
 
 本地证据位于 `build/smart-crop-cutlass/multi`：`ab-anime/report.json`、`ab-real/report.json`、`architectures.txt`、`ctest.log`、`regression/report.json`、`modules-{anime,real}/modules.txt` 及 `zip-audit-final/report.json`。
