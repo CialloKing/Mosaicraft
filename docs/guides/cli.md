@@ -9,7 +9,7 @@
 ./mosaicraft create target.jpg -l library -o result.png --output-tile 18x32 --thumbnail
 ```
 
-CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，全部选项用 `--help-all`。
+每个命令支持 `--help`，完整选项用 `--help-all`。维护旧版脚本时可按命令对照表迁移。[旧命令映射](portable-projects.md#命令迁移)
 `--json` 使 stdout 只输出一个 JSON 结果，进度和诊断写入 stderr；`--quiet` 隐藏普通进度，保留结果和错误。
 
 ## 性能诊断
@@ -43,6 +43,8 @@ CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，�
 ```
 
 两种智能模式都使用 U²-NetP 保留主体，并分别以原图尺寸检测真人或动漫脸。每批手动选择一种类型，逐张推理。大图会增加耗时和内存用量。同尺寸快路径仍然适用。固定比例容不下主体时，裁剪框仍可能切掉部分内容。智能模式需要支持该功能的构建及本地模型。
+
+先检查裁剪效果时，使用 `library normalize photos -o normalized --size 180x320 --crop smart-anime` 生成图片副本。确认结果后，再按同样尺寸建库，或用归一化结果作为建库输入。
 
 `--crop-device` 仅用于智能裁剪，建库特征提取设备由 `--backend` 和 `--device` 控制。`auto` 默认优先 CUDA，遇到可捕获的 GPU 故障后用 CPU 继续并探测恢复。`cpu` 跳过 CUDA 探测。`cuda` 需要支持 CUDA 推理的构建及兼容设备，推理故障会终止任务。
 

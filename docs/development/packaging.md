@@ -1,6 +1,6 @@
 # CI 与原生发布包
 
-日常 `CI` 在 Windows x64、Linux x64 和 macOS ARM64 上编译 CPU 版 CLI 与 Web UI。三个平台均直接使用 CMake 平台预设；Linux 和 macOS 使用系统依赖，Windows 使用固定的 vcpkg 依赖。推送 `v*` 版本标签会触发 `Native packages`，执行完整 CTest、Web UI/API smoke、打包和独立包验收。维护者使用通过验收的 Actions artifacts 创建 GitHub Release。
+日常 `CI` 使用 CMake 平台预设和固定的 vcpkg 依赖，在 Windows x64、Linux x64 和 macOS ARM64 构建 CPU 版 CLI 与 Web UI，并在 Windows 检查 Qt 客户端。推送 `v*` 版本标签触发 `Native packages`，执行构建、测试、归档与验包。维护者汇集通过验收的六个正式包后发布。
 
 | 平台 | 智能裁剪原生包 | Qt 客户端包 |
 | --- | --- | --- |
@@ -16,7 +16,7 @@
 
 `vcpkg.json` 同时固定工具仓库和依赖基线为 `a0400024711b283056538ac19ced80b91a83c24c`。OpenCV 5.1.0 由 `cmake/ports/opencv5` 锁定。该端口只编译上游 `opencv-python-headless 5.1.0.95` 源码发行物内的原生 OpenCV 源码，不安装 Python wheel 或绑定；SQLite 与编解码库仍使用原 vcpkg 基线。默认构建仅请求 `core`、`imgproc`、`imgcodecs`（OpenCV 5.1 同时构建它们的传递依赖），智能裁剪单独加入 `dnn`、`objdetect` 及其必要依赖。TIFF 保留 JPEG、LZMA、ZIP 编解码。三个自定义 triplet 只构建 Release 动态库，Windows 使用动态 CRT。
 
-缓存键包含平台、架构、实际编译器/SDK/CMake/vcpkg 指纹、vcpkg 提交和当前依赖配置哈希。产品版本、README、普通源码不影响依赖缓存；CPU/CUDA 共享同一键。PR 只读取缓存，main/tag 在依赖安装成功后立即保存，项目测试失败不会丢掉成功构建的依赖。GitHub 仍可能淘汰超过七天未访问的缓存。
+缓存键包含平台、架构、实际编译器/SDK/CMake/vcpkg 指纹、vcpkg 提交和当前依赖配置哈希。产品版本、README、普通源码不影响依赖缓存；使用普通 OpenCV 的 CPU/CUDA 构建可共享依赖缓存，CPU 智能裁剪和 CUTLASS 智能裁剪各有独立的依赖与缓存键。PR 只读取缓存，main/tag 在依赖安装成功后立即保存，项目测试失败不会丢掉成功构建的依赖。GitHub 仍可能淘汰超过七天未访问的缓存。
 
 首次本机使用：
 
@@ -108,11 +108,11 @@ Windows/Linux 双后端构建另需准备锁定的 CUDA SDK、Vulkan 头文件�
 
 ## 独立包验收
 
-独立验收逐个平台下载两种附件。原生包验证 CLI、Web UI/API、智能裁剪模型及正例、图片生成、中文与空格路径、依赖加载位置和 Unix 执行权限。Qt 包另检查归档布局及 macOS 签名。设备验收状态记录在 `BUILD_INFO.txt`。
+独立验收逐个平台下载两种附件。原生包验证 CLI、Web UI/API、智能裁剪模型与推理冒烟检查、图片生成、中文与空格路径、依赖加载位置和 Unix 执行权限。Qt 包另检查归档布局及 macOS 签名。设备验收状态记录在 `BUILD_INFO.txt`。
 
 用 [独立原生验包器](releasing.md#使用原生验包器)验收本地归档或已发布的附件。历史包缺少新 GPU 证据字段时仍可普通验收；要求指定验收状态时，则必须匹配该状态。
 
-正式发布后，手动运行 `Verify published release` 并传入版本标签，可在三个原生平台下载、验收真实 Release 上的七个正式附件（旧版本跳过尚未提供的附件）。该流程只读取 Release，不上传或修改附件。
+正式发布后，手动运行 `Verify published release` 并传入版本标签，可下载并验收真实 Release 上的六个正式附件。该流程只读取 Release，不上传或修改附件。
 
 历史测量与旧环境说明已移至[CI 与打包历史采样](../archive/performance/packaging-20261108.md)。
 

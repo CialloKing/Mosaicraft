@@ -1,6 +1,6 @@
 # 四后端实现与历史验收
 
-日期：2026-11-13；原验收目标版本：1.16.0；历史验收对应 API：1.5；本文是历史验收，不覆盖当前的 API 1.7 与 SQLite BLOB 布局。
+本文保留 2026-11-13 的历史验收，原目标版本为 1.16.0，对应 API 1.5。当前发布包的策略见[GPU 使用指南](../guides/gpu-backends.md)，现行数据布局见[架构与数据契约](architecture.md)。
 
 2026-11-18 的 CPU、CUDA、RTX 4060 / Radeon 780M Vulkan 性能和精度准入见[全项目匹配优化报告](matching-optimization-20261118.md)。本文下方的数值阈值和结果是 11 月 13 日历史验收，不将不同目标的绝对耗时混用。
 
@@ -17,7 +17,7 @@
 
 `mosaicraft devices --json` 或 `/api/info.devices` 返回实际设备、能力与不可用原因。建库、追加和生成使用 `--backend`、`--device`；生成和预览使用 `--score-mode`。后端与设备冲突会被拒绝。GPU 提取与评分使用同一选定设备，兼容模式的 CPU 评分是正常计划。
 
-可用设备不等于完成包验收。设备编号属于当前机器的枚举结果，不是跨机器标识。Metal、Intel 和 Linux GPU 的实机结果必须单独补齐；编译通过不等于硬件通过。v1.15.9 的 Vulkan 包按[当前策略](../guides/gpu-backends.md)独立启用 Vulkan 优先；这不是重写原历史性能门槛。Metal 和源码候选仍仅显式启用。
+设备编号属于当前机器的枚举结果。下文按当时的硬件和验收目标记录。早期 v1.15.9 独立 Vulkan 包采用 Vulkan 优先策略。双后端正式包及源码构建的选择规则见[GPU 使用指南](../guides/gpu-backends.md)。
 
 ## 计算与资源边界
 

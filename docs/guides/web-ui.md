@@ -14,7 +14,6 @@
 相对路径以页面顶部显示的服务工作目录为准。更多参数和示例见「使用帮助」。
 目标图和建库素材目录旁的「浏览」可选择服务所在电脑上的图片或目录，也可粘贴路径或选用最近记录。
 
-命令区可选择 Windows PowerShell 5.1、PowerShell 7.3+、CMD、Bash、Zsh 或 POSIX sh，默认按浏览器平台选择并记住设置。程序未加入 PATH 时可填写绝对路径，或 Windows 的 `.\mosaicraft.exe`、Linux/macOS 的 `./mosaicraft`。复制命令使用所选 Shell 的引用规则；页面「运行」继续通过本地服务执行，不受 Shell 选择影响。CMD 遇到 `%`、`!` 或内嵌双引号，PowerShell 5.1 遇到空参数或内嵌双引号时会提示切换 Shell，避免复制后参数被改变。
 ## 实际后端与设备
 
 表单中的 backend、device 和评分模式是请求设置；任务实际使用的计算路径在执行后才能确认。任务排队或尚未完成预检时，页面显示待确认状态。运行后在任务详情、事件和预览状态查看实际后端、设备及评分模式。
@@ -47,7 +46,9 @@ Windows CPU `fast` 预览默认按可用物理内存选择缓存档，无需手�
 | macOS 常用终端 | Zsh | 不需要安装 PowerShell。 |
 | POSIX Shell | POSIX sh | 适用于支持 POSIX sh 的终端。 |
 
-Shell 只决定复制出来的命令文本。点击页面「运行」仍由本地服务处理。跨操作系统复制时，请同时检查可执行文件路径和数据路径；Shell 引用转换不会转换文件系统路径。
+命令区可选择 Windows PowerShell 5.1、PowerShell 7.3+、CMD、Bash、Zsh 或 POSIX sh，默认按浏览器平台选择并记住设置。程序未加入 PATH 时可填写绝对路径，或 Windows 的 `.\mosaicraft.exe`、Linux/macOS 的 `./mosaicraft`。复制命令使用所选 Shell 的引用规则；页面「运行」继续通过本地服务执行，不受 Shell 选择影响。CMD 遇到 `%`、`!` 或内嵌双引号，PowerShell 5.1 遇到空参数或内嵌双引号时会提示切换 Shell，避免复制后参数被改变。
+
+跨平台复制时，请检查可执行文件和数据路径。
 
 ## 便携工程
 

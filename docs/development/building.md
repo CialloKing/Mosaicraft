@@ -75,7 +75,7 @@ Windows x64 依赖装到 `third_party/vcpkg_installed/`，ARM64 依赖装到独�
 
 ## 智能裁剪（可选）
 
-`MOSAICRAFT_SMART_CROP` 默认关闭。启用时需要带 `dnn` 和 `objdetect` 的 OpenCV 5.1.0，以及单独准备的模型文件。参见[智能裁剪本地构建和验收](smart-crop.md)。
+`MOSAICRAFT_SMART_CROP` 默认关闭。CPU 推理需要带 `dnn` 和 `objdetect` 的 OpenCV 5.1.0 和锁定 ONNX 模型。Windows/Linux 双后端发行版还需要 CUTLASS CUDA 依赖、Vulkan ncnn SDK 及转换模型。[本地构建和验收](smart-crop.md) · [双后端打包步骤](packaging.md#cmake-发布入口)
 
 ## GPU 后端与编译配置
 

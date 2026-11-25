@@ -8,7 +8,7 @@ Mosaicraft 用图库里的照片拼出一张目标图，提供 Qt 桌面应用�
 
 ## 下载与运行
 
-在 GitHub Releases 的 **Assets** 中，按平台选择智能裁剪包（CLI 与 Web UI）或 Qt 客户端包。下表是新的六附件发布规则，已有版本的附件见版本状态。[下载稳定版](https://github.com/CialloKing/Mosaicraft/releases/latest) · [版本状态](docs/releases.md)
+在 GitHub Releases 的 **Assets** 中按平台选包。智能裁剪包提供 CLI 和 Web UI，Qt 包提供桌面客户端。v1.15.19 的文件名后缀见下表。[下载稳定版](https://github.com/CialloKing/Mosaicraft/releases/latest) · [版本历史](docs/releases.md)
 
 | 平台 | 智能裁剪包 | Qt 客户端包 |
 | --- | --- | --- |
@@ -20,7 +20,7 @@ Windows 和 Linux 的智能裁剪包内置真人与动漫模型，支持 CPU、C
 
 ## 快速开始
 
-Windows 解压后双击 `MosaicraftWebUI.exe`；Linux/macOS 在解压目录运行 ./MosaicraftWebUI，浏览器默认打开 http://localhost:8080。
+使用 Web UI 时，Windows 启动 `MosaicraftWebUI.exe`，Linux/macOS 在解压目录运行 `./MosaicraftWebUI`。浏览器打开 [http://localhost:8080](http://localhost:8080)。
 
 1. 在「建库」页导入素材，建立新图库。
 2. 在「生成马赛克」页选择目标图、图库和输出路径。

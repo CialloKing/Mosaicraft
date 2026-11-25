@@ -16,7 +16,7 @@ cmake --build build/windows-smart-crop --config Release --target mosaicraft_test
 cmake --install build/windows-smart-crop --config Release --prefix build/smart-crop-local
 ```
 
-模型准备会验证大小和 SHA-256；模型准备与运行均不需要 Python 或 ONNX Runtime。可执行文件在自己的 `models/` 子目录查找文件，不从当前工作目录找模型，也不下载。Windows 私人测试包可以切换到其他目录后用绝对路径运行：
+模型准备会验证大小和 SHA-256；ONNX 模型准备和推理运行不依赖 Python 或 ONNX Runtime。重新转换 Vulkan 模型需要 Python 和锁定的 pnnx 工具。可执行文件在自己的 `models/` 子目录查找文件，不从当前工作目录找模型，也不下载。Windows 私人测试包可以切换到其他目录后用绝对路径运行：
 
 ```text
 <local-install>/mosaicraft library normalize <input> -o <new-output> --size 180x320 --crop smart-real --threads 1 --json
@@ -25,9 +25,9 @@ cmake --install build/windows-smart-crop --config Release --prefix build/smart-c
 
 运行摘要中的 `smartCropFacesFound`、`smartCropMoved`、`smartCropCentered` 和 `smartCropMainFaceClipped` 按图片计数。无需裁边的图片不计入；`smartCropInferenceWorkerMs` 是逐图推理耗时之和，不包括启动时的模型校验和探测，也不等于批处理的墙钟时间。同尺寸特快路径保留旧归一化的行为，包括已有的 PNG 紧凑化规则。
 
-## 设备策略（自 v1.15.15 起）
+## 设备策略
 
-中心裁剪仍为默认，且不接受设备选项。选择 `smart-real` 或 `smart-anime` 后，`--crop-device`（HTTP 1.9 的 `cropDevice`）可取 `auto`、`cpu`、`cuda`，省略等同于 `auto`。
+中心裁剪仍为默认，且不接受设备选项。选择 `smart-real` 或 `smart-anime` 后，`--crop-device`（HTTP 请求中的 `cropDevice`）可取 `auto`、`cpu`、`cuda`，省略等同于 `auto`。
 
 [CUDA + Vulkan 智能裁剪包](../SMART_CROP_VULKAN.md)的 WebUI 会按操作与模型启用 `vulkan` 和 `cuda+vulkan`：仅用于独立归一化，不一定比单 CUDA 快。
 
@@ -61,7 +61,7 @@ cmake --install build/windows-smart-crop --config Release --prefix build/smart-c
 - `cmake/smart-crop-models.json` 锁定三个权重的来源、大小和哈希。YuNet `2023mar` 有对应的 MIT 声明。原 U²-Net 权重的授权说明不能单独证明 rembg 发布附件的导出来源；DeepGHS 仓库模型卡标为 MIT，但所选权重的上游权利链还需核对。维护者接受范围已扩展至现行三个平台的智能裁剪包，包括 Windows/Linux 使用的 Vulkan 转换权重。具体范围见锁定文件。
 - 三份权重及审核记录按 `cmake/smart-crop-models.json` 校验。发布矩阵包含 Windows/Linux 的 CUDA + Vulkan 智能裁剪包和 macOS 的 CPU 智能裁剪包，GPU 包还支持 CPU 推理回退。验包默认用生成的测试图核对实际推理设备和输出尺寸。可在本机提供锁定的标注正例并安装 `scripts/requirements-smart-crop-verification.txt`，额外检查主脸保全。
 - 初审须覆盖偏侧真人、偏侧动漫、多人、主脸比窗口宽、无脸主体及无明显主体。分别统计两个模式在可保全主脸的样本上是否优于中心裁剪，以及中心裁剪已保全的主脸是否有新切断；另记录无脸主体效果、误移动率、批耗时及峰值内存。把批准的审核文档路径、大小和 SHA-256 写入 `qualityReview`；不得用两个解包正例代替总体质量审核。
-- 解包正例锁定 PNG 和人工标注的 `mainFace: [left, top, right, bottom]`（半开坐标）。每张图高 320、宽大于 180，主脸能完整落入 `180×320`，但中心裁剪切脸。发布和独立验包从其他工作目录运行，以输出像素核对实际裁剪位置和完整主脸，同时检查检测和移动指标。任何目标平台失败都不能交付宣称完整支持的包。复验已有智能裁剪版本时，使用该版本的源码锁及标注。
+- 解包正例锁定 PNG 和人工标注的 `mainFace: [left, top, right, bottom]`（半开坐标）。每张图高 320、宽大于 180，主脸能完整落入 `180×320`，但中心裁剪切脸。开启标注验收时，从其他工作目录运行，以输出像素核对裁剪位置和主脸覆盖，同时检查检测和移动指标。复验已有智能裁剪版本时，使用该版本的源码锁及标注。
 
 ## 2026-11-23 本地验收记录
 
@@ -77,7 +77,7 @@ cmake --install build/windows-smart-crop --config Release --prefix build/smart-c
 - 同批 HighLikes 分层抽样 96 张，`180×320`、4 线程：中心和动漫智能裁剪各有 96/96 张与 4.12 对应输出逐字节一致，96 张样本原图哈希未变；同批普通建库的 `grid_lab`、`tiny`、`lbp` 特征也逐条一致。动漫智能模式检测到 77 张、移动 34 张。按检测框复算，能完整放进裁剪窗口的 73 个主脸，中心保全 58 个、智能裁剪保全 73 个；未新切断中心已保全的主脸。另有 4 个主脸大于裁剪窗口。这是同模型复算，不是独立人工质量标注，也不代表全库。
 - 样本单次动漫批处理约 35.49 秒，进程峰值工作集约 1.29 GiB；当时有其他构建活动，不作为版本性能比较。相同工具压缩的两份 Windows x64 私人安装树分别为 9,863,890 和 31,722,528 字节，智能版本增加约 20.85 MiB。Linux、macOS、Windows ARM64、GPU 和 Qt 变体未在这次复验中运行。
 
-### CUDA 智能裁剪（开发构建与候选包）
+### 使用 cuDNN 的历史 CUDA 对照构建
 
 只针对 Windows/Linux x64。`MOSAICRAFT_SMART_CROP_CUDA` 默认关闭，普通智能裁剪仍用 CPU。需要带 `dnn-cuda` 的 `opencv5`，以及锁定的 CUDA 13.5.37 SDK（含 cuBLAS）和 cuDNN 9.28.1.4 CUDA 13。cuDNN 用 `cmake -DMODE=CuDNN -P cmake/PrepareRelease.cmake` 下载、校验并解包；普通依赖安装不会下载 cuDNN。以下示例假定已准备锁定的 vcpkg 和模型：
 
@@ -101,7 +101,7 @@ cmake --install build/windows-smart-crop-cuda --config Release --prefix build/wi
 
 **性能与发布门槛：**先复验两类正例，逐张核对 CPU 已保全的标注主脸没有被 CUDA 新切断，再测试不同尺寸连续切换、无卡、缺库、显存不足和部分输出。按模式分别运行 `python scripts/bench_smart_crop_cuda.py <cli> <input> <new-work-dir> --mode smart-anime`（真人替换为 `smart-real`，Python 3.11+ 仅用于验收）。脚本交错三轮，比较整条流程的中位吞吐，要求实际后端正确、零失败且比值至少 1.5；记录逐次模型耗时、设备级采样显存、输入 SHA-256 和完整 CLI 日志。显存采样含桌面与其它进程，可能漏掉瞬时峰值，不等同于进程精确峰值。正式比较时应排除后台负载，动漫输入包含 HighLikes 的 96 张样本与 `6534×8802` 最大图；真人用独立标注样本与同等级大图。开发机短测通过后再隔离复跑 HighLikes 全量；已有 CPU 全量任务不停止。
 
-智能裁剪单独打包为 Windows x64 CLI / Web CUDA 归档，包含 CPU 推理回退，不另发 CPU 智能裁剪包。现有权重审核和人工质量门禁仍生效；`Release.cmake` 锁定并校验 Windows NVIDIA 运行库（包括延迟加载的依赖），独立验包要求同一个 ZIP 分别通过真实 GPU CUDA 和 CPU 回退检查。干净 Windows 的离线 GPU 验收是可选实测，不是发布条件；没有运行就不记为通过。见[发布证据](smart-crop-release-evidence.md)。
+cuDNN 分发和独立验收的说明适用于早期 Windows CUDA 包。现行 Windows/Linux 正式包的 CUDA 路径使用 CUTLASS，与 Vulkan 推理同包分发。[当前打包入口](packaging.md#cmake-发布入口) · [早期 cuDNN 发布证据](smart-crop-release-evidence.md)
 
 #### 自动策略变更前的 Windows 开发基线（2026-11-24）
 

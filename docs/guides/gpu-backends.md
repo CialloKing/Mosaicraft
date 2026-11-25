@@ -1,6 +1,6 @@
 # GPU 后端与精度模式
 
-当前源码提供 CPU、CUDA、Vulkan、Metal。v1.15.9 在 Windows/Linux x64 提供独立的 Vulkan 包；CPU/CUDA 包不包含 Vulkan，正式包均不包含 Metal。已安装包只支持构建时启用的后端，查看包内 `BUILD_INFO.txt` 和 `mosaicraft devices --json` 确认。
+v1.15.19 的 Windows/Linux 双后端包可选 CPU、CUDA、Vulkan，macOS ARM64 包使用 CPU。Metal 可从源码启用。实际设备及驱动状态可用 `mosaicraft devices --json` 检查。[下载与运行](quick-start.md#下载与运行)
 
 ## 选择后端与设备
 
@@ -14,12 +14,23 @@
 
 | 后端 | 可用范围 | 当前 auto 策略 |
 | --- | --- | --- |
-| CPU | 所有原生平台 | GPU 不可用时的默认路径 |
-| CUDA | NVIDIA，需对应 CUDA 包与兼容驱动 | 保留现有优先策略 |
-| Vulkan | 编译启用后，按实际驱动枚举 | Vulkan 包优先，源码候选默认显式 |
-| Metal | macOS，编译启用后 | 显式候选，实机未验收 |
+| CPU | 所有原生平台 | CPU 包默认使用，双后端包的回退路径 |
+| CUDA | Windows/Linux 双后端包，搭配兼容的 NVIDIA 驱动 | 双后端包优先使用 |
+| Vulkan | Windows/Linux 双后端包，搭配兼容 Vulkan 驱动 | 在双后端包中显式选择 |
+| Metal | macOS 源码构建 | 显式选择 |
 
-`auto` 随发布包而定：Vulkan 包走 Vulkan → CPU（不尝试 CUDA 或软件 Vulkan），CUDA 包走 CUDA → CPU，CPU 包只用 CPU。自动回退只发生在设备不可用或计算资源准备失败时；显式 GPU 请求在相同情况下报错，上传、执行或同步失败也会传播。一个任务的 GPU 提取与 GPU 评分使用同一设备。Vulkan 包动态加载系统 Vulkan 驱动，需要 Vulkan 1.1 和足够的计算能力，不要求安装 SDK。
+`auto` 仅在设备不可用或计算资源准备失败时回退 CPU。显式 GPU 请求遇到同样条件会报错，上传、执行或同步错误也会结束任务。一个任务的 GPU 提取和 GPU 评分共用设备。Vulkan 计算动态加载系统驱动，需要 Vulkan 1.1 和足够的计算能力。
+
+## 智能裁剪推理
+
+`--backend` 和 `--device` 控制建库特征提取及生成匹配。`--crop-device` 独立控制智能裁剪推理。用 CUDA 裁剪并用 Vulkan 提取新图库特征的示例：
+
+```sh
+./mosaicraft library build photos -o library --size 180x320 --backend vulkan --crop smart-real --crop-device cuda
+./mosaicraft library normalize photos -o normalized --size 180x320 --crop smart-anime --crop-device vulkan
+```
+
+第二条命令使用双后端智能裁剪包的 Vulkan 推理。独立归一化可另选实验性 `--crop-device cuda+vulkan`。[智能裁剪与双 GPU 的适用条件](../SMART_CROP_VULKAN.md)
 
 ## 精度模式
 
@@ -32,7 +43,7 @@
 
 ## 当前验收结论
 
-RTX 4060 Laptop 的 CUDA/Vulkan 与 Radeon 780M 的 Vulkan 有本机记录。Vulkan 包优先选择 Vulkan 是按包区分的默认策略，不代表 GPU 在每种任务上都更快。Intel、Linux GPU 和 Apple GPU 实机结果仍为 `not-run`；编译和 CPU 回退通过不等于硬件验收。
+RTX 4060 Laptop 的 CUDA/Vulkan 与 Radeon 780M 的 Vulkan 有本机记录。包内 `BUILD_INFO.txt` 记录该包的验收设备和状态。Intel、Linux GPU 和 Apple GPU 的实机覆盖见相应验收记录。
 
 任务和预览界面显示实际后端、设备与评分路径，兼容模式的 CPU 评分属于正常执行。详见[实现、验收与性能数据](../development/portable-gpu.md)。
 

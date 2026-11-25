@@ -1,18 +1,28 @@
 # 快速开始
 
-> 本指南对应当前源码。已安装版本的可用参数以程序 --help-all 和包内 `BUILD_INFO.txt` 为准；源码开发能力不等于稳定包已发布。
+以下步骤适用于 v1.15.19 的发布包。使用旧版本时可查看对应的附件及包内 `BUILD_INFO.txt`。[版本历史](../releases.md)
 
 ## 下载与运行
 
-在 [GitHub Releases](https://github.com/CialloKing/Mosaicraft/releases/latest) 的 **Assets** 中，按平台和文件名后缀选择发布包。NVIDIA 用户可选 CUDA 包；装有兼容 Vulkan 驱动的 Windows/Linux 用户可选 Vulkan 包；只想使用 CPU 则选 CPU 包。
+在 Release 的 **Assets** 中按下表下载并解压。智能裁剪包提供 CLI 和 Web UI。Qt 包自带桌面界面及其 CLI。下载后可用同一 Release 的 `SHA256SUMS.txt` 核对文件。[下载稳定版](https://github.com/CialloKing/Mosaicraft/releases/latest)
 
-| 平台 | 系统基线 | CPU 包后缀 | CUDA 包后缀 | Vulkan 包后缀 |
-| --- | --- | --- | --- | --- |
-| Windows x64 | Windows 10 22H2 | `_windows-x64_cpu-only.zip` | `_windows-x64_cuda.zip` | `_windows-x64_vulkan.zip` |
-| Linux x64 | Ubuntu 22.04 / glibc 2.35 | `_linux-x64_cpu-only.tar.gz` | `_linux-x64_cuda.tar.gz` | `_linux-x64_vulkan.tar.gz` |
-| macOS ARM64 | macOS 13 | `_macos-arm64_cpu-only.tar.gz` | — | — |
+| 平台 | 智能裁剪包后缀 | Qt 包后缀 |
+| --- | --- | --- |
+| Windows x64 | `_windows-x64_cuda-vulkan-smart-crop.zip` | `_windows-x64_qt_cuda-vulkan.zip` |
+| Linux x64 | `_linux-x64_cuda-vulkan-smart-crop.tar.gz` | `_linux-x64_qt_cuda-vulkan.tar.gz` |
+| macOS ARM64 | `_macos-arm64_cpu-only-smart-crop.tar.gz` | `_macos-arm64_qt.tar.gz` |
 
-需要 Qt 界面时，选择对应平台的 `_qt` CPU 包，或 Windows/Linux x64 的 `_qt_cuda-vulkan` 双后端包，无需另装 Qt。双后端包的「自动」依次尝试 CUDA、CPU；用 Vulkan 时请在设置的「默认后端」中显式选择。独立的原生 `_vulkan` 包默认优先 Vulkan，启动计算前不可用则回退 CPU。Metal 不随正式包发布。见[桌面包说明](../development/packaging.md#qt-桌面发布包)和[本版校验值](https://github.com/CialloKing/Mosaicraft/releases/tag/v1.15.14)。
+Windows 支持基线为 Windows 10 22H2。Linux 的 CLI / Web UI 包以 Ubuntu 22.04（glibc 2.35）为基线，Qt 包以 Ubuntu 24.04 为基线。macOS 原生包以 macOS 13 ARM64 为基线，Qt 客户端的构建要求见[桌面包说明](../development/packaging.md#qt-桌面发布包)。
+
+Windows/Linux 的双后端包自动优先 CUDA，准备阶段无法使用时走 CPU。使用 Vulkan 时，在表单或 Qt 的「设置 → 通用设置」显式选择。GPU 计算与智能裁剪推理可独立设置。[后端与设备](gpu-backends.md)
+
+## Qt 桌面
+
+Windows 启动 `bin/MosaicraftDesktop.exe`，Linux 运行 `./bin/MosaicraftDesktop`，macOS 打开 `MosaicraftDesktop.app`。
+
+1. 在设置的素材库页面选择素材目录和图库目录。可指定已有图库，也可从原始素材创建图库。
+2. 打开目标图，点击「生成预览图」。点击成品中的任意子图查看候选并换图。
+3. 切换到「导出」，设置输出路径、格式和图块尺寸，再点击「开始导出」。
 
 ## Qt 桌面预览的内存
 
@@ -20,9 +30,9 @@
 
 桌面贴图与匹配程序的素材像素缓存合计最多使用物理内存的四分之一，且不超过 8 GiB，按需增长，不预分配。系统余量不足时自动收缩；后台标签页只保留少量热块，开始导出时桌面贴图缓存至多保留 64 MiB。匹配、总览和导出缓冲不计入这项预算，因此它不是整个程序的内存上限。缓存淘汰不改变选图和输出像素。
 
-## 图形界面
+## 本地 Web UI
 
-解压后，Windows 双击 `MosaicraftWebUI.exe`；Linux/macOS 在解压目录运行 ./MosaicraftWebUI。浏览器默认打开 http://localhost:8080。
+解压智能裁剪包后，Windows 启动 `MosaicraftWebUI.exe`，Linux/macOS 在解压目录运行 `./MosaicraftWebUI`。浏览器默认打开 [http://localhost:8080](http://localhost:8080)。
 
 1. 在「建库」页选择素材目录与新图库目录，完成后点击「使用此图库生成」。
 2. 在「生成马赛克」页选择目标图与输出路径，首次尝试可将输出 Tile 尺寸设为 18x32。
@@ -40,7 +50,12 @@
 ./mosaicraft create target.jpg -l library -o result.png --output-tile 18x32 --thumbnail
 ```
 
-CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，全部选项用 `--help-all`。
-`--json` 使 stdout 只输出一个 JSON 结果，进度和诊断写入 stderr；`--quiet` 隐藏普通进度，保留结果和错误。
+如果只想先试智能裁剪，可输出一份归一化图片，之后再决定是否建库：
+
+```sh
+./mosaicraft library normalize photos -o normalized --size 180x320 --crop smart-real --crop-device auto
+```
+
+动漫图片使用 `--crop smart-anime`。每个命令支持 `--help`，完整选项用 `--help-all`。
 
 后续操作见[命令行指南](cli.md)、[GPU 后端](gpu-backends.md)及[便携工程](portable-projects.md)。

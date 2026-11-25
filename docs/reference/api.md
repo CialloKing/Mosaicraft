@@ -23,11 +23,11 @@ API **1.10** accepts `cropMode` and `cropDevice` for new library builds. API **1
 
 API **1.6** keeps major version **1** but removes `upscale` from mosaic requests. Use `targetSize` with the same syntax as `--target-size`, or keep `outW` / `outH` without `targetSize`. The `/api/*` paths and library schema version are unchanged. New requests that omit `scoreMode` use `fast`; saved legacy requests missing that field are restored as `compatible`.
 
-`GET /api/info` 新增 `devices`：每项包含 `id`、`backend`、`name`、`available`、`integrated`、`validated`、`reason`、`maxBufferBytes`。`available` 仅表示运行时发现能力，不能代替性能或包的硬件验收。新后端的 `validated=false` 表示尚未获得跨任务的默认准入。
+`GET /api/info` 的 `info.devices` 返回可用设备：每项包含 `id`、`backend`、`name`、`available`、`integrated`、`validated`、`reason`、`maxBufferBytes`。`available` 仅表示运行时发现能力，不能代替性能或包的硬件验收。发布包的实机验收状态见 `BUILD_INFO.txt`。
 
 建库、追加和生成请求的 `backend` 支持 `auto|cpu|cuda|vulkan|metal`，`device` 缺省 `auto`，也可使用设备发现返回的标识（例如 `vulkan:1`）。后端、设备与 `useGpu` 冲突会拒绝请求。显式 GPU 请求不切换到其他 GPU 后端。
 
-生成和预览增加 `scoreMode=fast|compatible`，新请求缺省 `fast`。显式 `compatible` 保留各后端原有计算行为；Vulkan/Metal 的兼容评分在 CPU FP64 执行。快速模式在所选计算后端计算 FP32 加权基础分，再由 CPU 顺序执行历史和邻域规则。新后端暂不进入 `auto`。
+生成和预览增加 `scoreMode=fast|compatible`，新请求缺省 `fast`。显式 `compatible` 保留各后端原有计算行为；Vulkan/Metal 的兼容评分在 CPU FP64 执行。快速模式在所选计算后端计算 FP32 加权基础分，再由 CPU 顺序执行历史和邻域规则。当前 Windows/Linux 双后端包的 `auto` 优先 CUDA，并在准备阶段不可用时回退 CPU。[设备选择](../guides/gpu-backends.md#选择后端与设备)
 
 运行结果 `runtime` 新增实际 `device`、`scoreMode`、`kernelVersion`。`gpuComputeWaitMs` 是主机提交、执行及等待的合计，不能当作纯内核事件时间；其他便携 GPU 指标包括分配、上传、下载、库常驻及峰值缓冲。`gpuSharedMemoryBytes` 是共享 GPU 缓冲的同一份分配，不应再次加到 CPU RSS 作为物理内存总量。NVML 指标只适用于实际 CUDA 设备，其他不可取得值继续使用不可用语义。
 
