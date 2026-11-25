@@ -188,12 +188,13 @@ def wddm_peaks(path):
         return peaks
 
 
-def staged_input(args, name, indices):
+def staged_input(args, name, indices, *, renumber=False):
     folder = args.work / "inputs" / name
     folder.mkdir(parents=True)
-    for index in indices:
+    for slot, index in enumerate(indices):
         source = args.sources[index]
-        target = folder / f"{index:08d}{source.suffix}"
+        number = slot if renumber else index
+        target = folder / f"{number:08d}{source.suffix}"
         try:
             os.link(source, target)
         except OSError:
@@ -246,6 +247,8 @@ def main():
     parser.add_argument("--candidate-exe", type=lambda path: Path(path).resolve(),
                         help="candidate CLI in a separate directory with its own runtime (cutlass or dual-dispatch)")
     parser.add_argument("--rounds", type=int, default=3)
+    parser.add_argument("--repeat-to", type=int, metavar="COUNT",
+                        help="repeat the sorted source set to COUNT items for the dual-dispatch throughput study")
     parser.add_argument("--size", default="180x320")
     parser.add_argument("--gpu", default="0", help="nvidia-smi index/UUID of the only visible GPU")
     parser.add_argument("--vulkan-device", type=int, default=1, help="device index from the ncnn Vulkan probe")
@@ -264,25 +267,38 @@ def main():
         parser.error("the weights study requires a Windows CUDA CLI beside the experimental opencv_dnn5.dll")
     if args.work.is_relative_to(args.input) or args.input.is_relative_to(args.work):
         parser.error("work and input must not overlap")
-    def input_files():
-        return sorted((p for p in args.input.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS),
-                      key=lambda p: p.relative_to(args.input).parts)
+    def input_files(root):
+        return sorted((p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS),
+                      key=lambda p: p.relative_to(root).parts)
+
+    def input_hashes(root):
+        return {p.relative_to(root).as_posix(): sha256(p) for p in input_files(root)}
 
     if args.study == "dual-dispatch" and args.mode != "smart-real":
         parser.error("the dual-GPU experiment only supports smart-real")
-    args.sources = input_files()
-    if args.rounds < 1 or len(args.sources) < (1 if args.study == "devices" else 8):
+    original_input = args.input
+    args.sources = input_files(original_input)
+    if args.repeat_to is not None and (
+            args.study != "dual-dispatch" or args.repeat_to < max(len(args.sources), 8)):
+        parser.error("--repeat-to requires dual-dispatch and a count at least as large as the source set and eight")
+    if args.rounds < 1 or len(args.sources) < (1 if args.repeat_to is not None or args.study == "devices" else 8):
         parser.error("positive round count and enough supported images are required")
     args.gpu_uuid = subprocess.check_output(nvidia_query(args.gpu, "uuid"), text=True).strip()
     args.work.mkdir(parents=True, exist_ok=False)
 
-    def input_hashes():
-        return {p.relative_to(args.input).as_posix(): sha256(p) for p in input_files()}
-
-    source_hashes = input_hashes()
+    repeat_input = None
+    if args.repeat_to is not None:
+        original_hashes = input_hashes(original_input)
+        count = len(args.sources)
+        args.input = staged_input(args, "repeat", (i % count for i in range(args.repeat_to)), renumber=True)
+        args.sources = input_files(args.input)
+        repeat_input = {"sourceCount": count, "itemCount": len(args.sources), "sourceSha256": original_hashes}
+    source_hashes = input_hashes(args.input)
     report = {"executableSha256": sha256(args.exe), "mode": args.mode, "size": args.size, "study": args.study,
               "gpu": subprocess.check_output(nvidia_query(args.gpu, "name,driver_version,memory.total"), text=True).strip(),
               "inputSha256": source_hashes, "runs": []}
+    if repeat_input is not None:
+        report["repeatInput"] = repeat_input
     if args.study == "hybrid":
         variants = hybrid_variants(args, report)
     elif args.study == "pipeline":
@@ -326,6 +342,11 @@ def main():
             use_candidate = label == "cutlass" or (args.study == "dual-dispatch" and label != "dual-ordered")
             result, outputs = run(args, name, variants[label], reuse_weights=reuse_weights,
                                   executable=args.candidate_exe if use_candidate else None)
+            if args.study == "dual-dispatch":
+                startup = result["children"][0]["metrics"].get("smartCropStartupMs")
+                if startup is not None and 0 <= startup <= result["wallSeconds"] * 1000:
+                    result["modelPreflightSeconds"] = startup / 1000
+                    result["wallMinusModelPreflightSeconds"] = result["wallSeconds"] - startup / 1000
             if reference is None:
                 reference = outputs
                 report["referenceOutputSha256"] = reference
@@ -350,7 +371,10 @@ def main():
             report["runs"].append(result)
             print(f"{name}: {result['wallSeconds']:.2f}s, run OK={result['passed']}, identical={result['identical']}", flush=True)
             write_report(report_path, report)
-    report["inputUnchanged"] = input_hashes() == source_hashes
+    report["inputUnchanged"] = input_hashes(args.input) == source_hashes
+    if repeat_input is not None:
+        repeat_input["sourceUnchanged"] = input_hashes(original_input) == repeat_input["sourceSha256"]
+        report["inputUnchanged"] &= repeat_input["sourceUnchanged"]
     grouped = {label: sorted((r for r in report["runs"] if r["variant"] == label), key=lambda r: r["round"])
                for label in labels}
     medians = {label: statistics.median(r["wallSeconds"] for r in runs) for label, runs in grouped.items()}
@@ -385,6 +409,10 @@ def main():
         elif args.study == "dual-dispatch":
             overlap = [run["children"][0]["metrics"].get("smartCropDualOverlapMs", 0) for run in grouped["dual"]]
             report["dualOverlapMs"] = overlap
+            for field, key in (("modelPreflightSeconds", "medianModelPreflightSeconds"),
+                               ("wallMinusModelPreflightSeconds", "medianWallMinusModelPreflightSeconds")):
+                report[key] = {label: statistics.median(r[field] for r in runs)
+                               if all(field in r for r in runs) else None for label, runs in grouped.items()}
             report["gainVsOrderedDual"] = 1 - medians["dual"] / medians["dual-ordered"]
             gates = ("dual" in acceptable and all(value > 0 for value in overlap)
                      and report["wallSavings"]["dual"] >= .05)
