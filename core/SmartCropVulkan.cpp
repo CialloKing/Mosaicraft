@@ -3,6 +3,7 @@
 #include "SmartCrop.h"
 #include "third_party/picosha2/picosha2.h"
 
+#include <command.h>
 #include <gpu.h>
 #include <layer.h>
 #include <net.h>
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <memory>
 
 namespace mosaicraft
 {
@@ -107,15 +109,69 @@ ncnn::Mat inputTensor(const cv::Mat &blob)
     return input;
 }
 
-ncnn::Mat outputTensor(ncnn::Extractor &extractor, const char *name, int width, int height)
+void checkOutput(const ncnn::Mat &output, const char *name, int width, int height)
 {
-    ncnn::Mat output;
-    require(extractor.extract(name, output) == 0 && !output.empty() && output.elemsize == sizeof(float) &&
-            output.elempack == 1 && output.w == width && output.h == height && output.c == 1 && output.d == 1,
+    require(!output.empty() && output.elemsize == sizeof(float) && output.elempack == 1 &&
+            output.w == width && output.h == height && output.c == 1 && output.d == 1,
             "unexpected Vulkan output: " + std::string(name));
     const cv::Mat view(height, width, CV_32FC1, output.data);
     require(cv::checkRange(view), "non-finite Vulkan output: " + std::string(name));
+}
+
+ncnn::Mat outputTensor(ncnn::Extractor &extractor, const char *name, int width, int height)
+{
+    ncnn::Mat output;
+    require(extractor.extract(name, output) == 0, "cannot read Vulkan output: " + std::string(name));
+    checkOutput(output, name, width, height);
     return output;
+}
+
+using FaceOutputs = std::array<ncnn::Mat, 9>;
+
+FaceOutputs batchFaceOutputs(const ncnn::Net &net, const ncnn::Mat &input)
+{
+    const auto *device = net.vulkan_device();
+    const auto reclaimBlob = [device](ncnn::VkAllocator *allocator)
+    {
+        device->reclaim_blob_allocator(allocator);
+    };
+    const auto reclaimStaging = [device](ncnn::VkAllocator *allocator)
+    {
+        device->reclaim_staging_allocator(allocator);
+    };
+    const std::unique_ptr<ncnn::VkAllocator, decltype(reclaimBlob)> blob(device->acquire_blob_allocator(), reclaimBlob);
+    const std::unique_ptr<ncnn::VkAllocator, decltype(reclaimStaging)> staging(device->acquire_staging_allocator(), reclaimStaging);
+    require(blob && staging, "cannot acquire YuNet Vulkan allocators");
+
+    auto extractor = net.create_extractor();
+    extractor.set_blob_vkallocator(blob.get());
+    extractor.set_workspace_vkallocator(blob.get());
+    extractor.set_staging_vkallocator(staging.get());
+    require(extractor.input("in0", input) == 0, "cannot set Vulkan YuNet input");
+
+    auto download = net.opt;
+    download.blob_vkallocator = download.workspace_vkallocator = blob.get();
+    download.staging_vkallocator = staging.get();
+    download.use_packing_layout = false; // Keep the same FP32 host layout as Extractor::extract(Mat).
+    FaceOutputs outputs;
+    std::array<ncnn::VkMat, 9> deviceOutputs;
+    ncnn::VkCompute commands(device);
+    for (int i = 0; i < 3; ++i)
+    {
+        for (int type = 0; type < 3; ++type)
+        {
+            const auto index = type * 3 + i;
+            const auto name = "out" + std::to_string(index);
+            auto &output = deviceOutputs[index];
+            require(extractor.extract(name.c_str(), output, commands) == 0 && !output.empty(),
+                    "cannot record Vulkan output: " + name);
+            commands.record_download(output, outputs[index], download);
+        }
+    }
+    // Each host extraction otherwise submits and waits separately. Preserve
+    // the dependency order but let the driver execute all nine outputs at once.
+    require(commands.submit_and_wait() == 0, "cannot execute Vulkan YuNet output batch");
+    return outputs;
 }
 }
 
@@ -156,8 +212,29 @@ std::vector<cv::Rect2d> SmartCropVulkan::realBoxes(const cv::Mat &image) const
     const int height = (image.rows + alignment - 1) / alignment * alignment;
     cv::Mat padded;
     cv::copyMakeBorder(image, padded, 0, height - image.rows, 0, width - image.cols, cv::BORDER_CONSTANT, cv::Scalar());
+    const auto input = inputTensor(cv::dnn::blobFromImage(padded));
+    // Keep the original lower-memory extraction for large standalone inputs.
+    const bool batch = static_cast<std::int64_t>(width) * height <= 4ll * 1024 * 1024;
+    FaceOutputs outputs;
     auto extractor = m_impl->real.create_extractor();
-    require(extractor.input("in0", inputTensor(cv::dnn::blobFromImage(padded))) == 0, "cannot set Vulkan YuNet input");
+    if (batch)
+    {
+        outputs = batchFaceOutputs(m_impl->real, input);
+    }
+    else
+    {
+        require(extractor.input("in0", input) == 0, "cannot set Vulkan YuNet input");
+    }
+    const auto readOutput = [&](int index, int columns, int rows)
+    {
+        const auto name = "out" + std::to_string(index);
+        if (!batch)
+        {
+            return outputTensor(extractor, name.c_str(), columns, rows);
+        }
+        checkOutput(outputs[index], name.c_str(), columns, rows);
+        return std::move(outputs[index]);
+    };
 
     // Mirror the locked OpenCV FaceDetectorYN's stride traversal, float box decoding and integer NMS.
     std::vector<cv::Rect2d> boxes;
@@ -166,9 +243,9 @@ std::vector<cv::Rect2d> SmartCropVulkan::realBoxes(const cv::Mat &image) const
     for (int i = 0; i < 3; ++i)
     {
         const int stride = 8 << i, cols = width / stride, rows = height / stride;
-        const auto cls = outputTensor(extractor, ("out" + std::to_string(i)).c_str(), 1, rows * cols);
-        const auto obj = outputTensor(extractor, ("out" + std::to_string(3 + i)).c_str(), 1, rows * cols);
-        const auto reg = outputTensor(extractor, ("out" + std::to_string(6 + i)).c_str(), 4, rows * cols);
+        const auto cls = readOutput(i, 1, rows * cols);
+        const auto obj = readOutput(3 + i, 1, rows * cols);
+        const auto reg = readOutput(6 + i, 4, rows * cols);
         const float *clsValues = cls, *objValues = obj, *regValues = reg;
         for (int r = 0; r < rows; ++r)
         {
