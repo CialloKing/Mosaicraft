@@ -1,13 +1,23 @@
 #include "NormalizeService.h"
+#include "ExecutionScope.h"
+#include "MosaicService.h"
 #include "OutputPublication.h"
 #include "RequestValidation.h"
 #include "SmartCropSession.h"
+#if MOSAICRAFT_SMART_CROP_VULKAN
+#include "SmartCropVulkan.h"
+#endif
 #include "UnicodeIO.h"
 #include "WorkerPool.h"
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <charconv>
+#include <condition_variable>
 #include <cstdlib>
+#include <deque>
+#include <mutex>
 #include <string_view>
 #include <set>
 #include <thread>
@@ -114,7 +124,257 @@ void detail::runSmartCropPipeline(ImageNormalizer &normalizer, std::size_t count
     waitForWriter();
 }
 
-ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runtime)
+void detail::runDualSmartCropPipeline(ImageNormalizer &cuda, ImageNormalizer &vulkan, std::size_t count,
+                                      const std::function<NormalizePaths(std::size_t)> &paths,
+                                      const std::function<void(bool)> &complete, ImageNormalizer::StandaloneTimings &timings,
+                                      std::size_t queueBytes, std::size_t vulkanMaxPixels)
+{
+    if (!count)
+    {
+        return;
+    }
+    using Clock = std::chrono::steady_clock;
+    enum class State
+    {
+        Waiting, Running, Done
+    };
+    struct Item
+    {
+        std::size_t index = 0, bytes = 0;
+        NormalizePaths paths;
+        ImageNormalizer::PreparedImage image;
+        std::exception_ptr failure;
+        State state = State::Waiting;
+        bool ok = false, exclusive = false, vulkanEligible = false;
+    };
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::deque<Item> queue;
+    std::array<ImageNormalizer::StandaloneTimings, 2> laneTimes;
+    std::array<bool, 2> active{};
+    Clock::time_point overlapStart;
+    std::size_t firstFailure = count, reserved = 0;
+    std::exception_ptr failure;
+    bool stopped = false;
+
+    // One prefetched input gets its own reservation. The ordered queue also
+    // holds running tasks and the writer's current item, not just finished results.
+    constexpr std::size_t maxPending = 8;
+    const auto readLimit = queueBytes / 4;
+    const auto pendingLimit = queueBytes - readLimit;
+    const auto outputBytes = cuda.standaloneOutputPixelBytes();
+    const auto read = [&]()
+    {
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            const auto cancelled = [&]()
+            {
+                return stopped || index >= firstFailure;
+            };
+            changed.wait(lock, [&]()
+            {
+                return cancelled() || queue.empty() || !queue.front().exclusive;
+            });
+            if (cancelled())
+            {
+                return;
+            }
+            lock.unlock();
+
+            Item item;
+            item.index = index;
+            item.paths = paths(index);
+            item.ok = cuda.prepareStandaloneImage(item.paths.first, item.paths.second, item.image, timings);
+            if (item.ok)
+            {
+                item.bytes = item.image.bufferBytes();
+                if (!item.image.copyOriginal)
+                {
+                    item.bytes = std::max(item.bytes, outputBytes);
+                    const auto w = (static_cast<std::uint64_t>(item.image.pixels.cols) + 31) / 32 * 32;
+                    const auto h = (static_cast<std::uint64_t>(item.image.pixels.rows) + 31) / 32 * 32;
+                    item.vulkanEligible = count - index >= 4 && w * h <= vulkanMaxPixels;
+                }
+                item.exclusive = item.bytes > readLimit;
+            }
+            if (!item.ok || item.image.copyOriginal)
+            {
+                item.state = State::Done;
+            }
+
+            lock.lock();
+            {
+                BenchmarkTimer timer(&timings.waitOutputMs);
+                changed.wait(lock, [&]()
+                {
+                    return cancelled() || queue.empty() ||
+                           (!item.exclusive && queue.size() < maxPending && item.bytes <= pendingLimit - reserved &&
+                            queue.back().state != State::Waiting);
+                });
+            }
+            if (cancelled())
+            {
+                return;
+            }
+            // Oversized inputs drain both lanes before running alone. Do not decode them again.
+            reserved += item.bytes;
+            if (!item.exclusive)
+            {
+                timings.dualQueuePeakBytes = std::max(timings.dualQueuePeakBytes, reserved);
+            }
+            queue.push_back(std::move(item));
+            timings.dualPendingPeak = std::max(timings.dualPendingPeak, queue.size());
+            changed.notify_all();
+        }
+    };
+    const auto infer = [&](std::size_t lane)
+    {
+        auto &normalizer = lane == 0 ? cuda : vulkan;
+        const auto other = 1 - lane;
+        std::unique_lock<std::mutex> lock(mutex);
+        for (;;)
+        {
+            changed.wait(lock, [&]()
+            {
+                return stopped || firstFailure < count ||
+                       (!queue.empty() && queue.back().state == State::Waiting &&
+                        (lane == 0 || (active[0] && queue.back().vulkanEligible && !queue.back().exclusive)));
+            });
+            if (stopped || firstFailure < count)
+            {
+                return; // Items already claimed before the failure still finish.
+            }
+            auto &item = queue.back();
+            item.state = State::Running;
+            active[lane] = true;
+            if (active[other])
+            {
+                overlapStart = Clock::now();
+            }
+            changed.notify_all();
+            lock.unlock();
+
+            try
+            {
+                item.ok = normalizer.cropStandaloneImage(item.paths.first, item.paths.second, item.image, laneTimes[lane]);
+            }
+            catch (...)
+            {
+                item.failure = std::current_exception();
+                item.ok = false;
+            }
+            if (!item.ok)
+            {
+                item.image = {};
+            }
+
+            lock.lock();
+            if (active[other])
+            {
+                timings.dualOverlapMs += std::chrono::duration<double, std::milli>(Clock::now() - overlapStart).count();
+            }
+            active[lane] = false;
+            reserved -= item.bytes;
+            item.bytes = item.image.bufferBytes();
+            reserved += item.bytes;
+            if (item.failure)
+            {
+                firstFailure = std::min(firstFailure, item.index);
+            }
+            item.state = State::Done;
+            // The lane can claim more work immediately, even with an unfinished queue head.
+            changed.notify_all();
+        }
+    };
+    const auto write = [&]()
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        for (std::size_t index = 0; index < count; ++index)
+        {
+            {
+                BenchmarkTimer timer(&timings.waitInputMs);
+                changed.wait(lock, [&]()
+                {
+                    return stopped || (!queue.empty() && queue.front().state == State::Done);
+                });
+            }
+            if (stopped)
+            {
+                return;
+            }
+            auto &item = queue.front();
+            if (item.failure)
+            {
+                std::rethrow_exception(item.failure);
+            }
+            lock.unlock();
+            complete(item.ok && cuda.saveStandaloneImage(item.paths.first, item.paths.second, item.image, timings));
+            lock.lock();
+            reserved -= item.bytes;
+            queue.pop_front();
+            changed.notify_all();
+        }
+        stopped = true;
+        changed.notify_all();
+    };
+
+    WorkerPool workers(4);
+    workers.run(4, [&](std::size_t role)
+    {
+        try
+        {
+            if (role == 0)
+            {
+                read();
+            }
+            else if (role == 3)
+            {
+                write();
+            }
+            else
+            {
+                infer(role - 1);
+            }
+        }
+        catch (...)
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (!failure)
+            {
+                failure = std::current_exception();
+            }
+            stopped = true;
+            changed.notify_all();
+        }
+    });
+    timings.cropMs += laneTimes[0].cropMs + laneTimes[1].cropMs;
+    if (failure)
+    {
+        std::rethrow_exception(failure);
+    }
+}
+
+#if MOSAICRAFT_SMART_CROP_VULKAN
+static int selectVulkanDevice(bool dual, bool legacyTrial)
+{
+    const auto *value = std::getenv("MOSAICRAFT_SMART_CROP_VULKAN_DEVICE");
+    int device = -1;
+    if (value || legacyTrial)
+    {
+        const std::string_view index = value ? value : "";
+        const auto parsed = std::from_chars(index.data(), index.data() + index.size(), device);
+        if (parsed.ec != std::errc{} || parsed.ptr != index.data() + index.size() || device < 0)
+        {
+            throw SmartCropError("smart_crop_vulkan_device",
+                                 "set MOSAICRAFT_SMART_CROP_VULKAN_DEVICE to an enumerated index");
+        }
+    }
+    return SmartCropVulkan::selectDevice(device, dual);
+}
+#endif
+
+static ServiceResult normalizeImagesImpl(const BuildRequest &request, RuntimeContext &runtime, [[maybe_unused]] bool legacyTrial)
 {
     namespace fs = std::filesystem;
     std::string error, field;
@@ -170,17 +430,77 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
         return runtimeFailure(runtime, 1, "no supported images found", "input_unreadable");
     }
     const auto policy = request.cropDevice.value_or(CropDevice::Auto);
-    const char *diagnosticField = policy == CropDevice::Cuda ? "cropDevice" : "cropMode";
-    std::optional<SmartCropSession> smartCrop;
+    const bool dual = policy == CropDevice::CudaVulkan;
+    const bool useVulkan = experimentalCropDevice(policy);
+    const char *diagnosticField = useVulkan || policy == CropDevice::Cuda ? "cropDevice" : "cropMode";
+    std::optional<int> vulkan;
+    // On the tested 780M, medium anime graphs slowed the CUDA lane. This changes only assignment, never input scale.
+    std::size_t vulkanMaxPixels = request.cropMode == CropMode::SmartAnime ? 768ull * 1024 : detail::kDualVulkanMaxPixels;
+    const char *setting = std::getenv("MOSAICRAFT_SMART_CROP_PIPELINE");
+    const std::string_view trial = setting ? setting : "";
+    std::optional<SmartCropSession> smartCrop, secondary;
     if (request.cropMode != CropMode::Center)
     {
+        const auto start = std::chrono::steady_clock::now();
         try
         {
-            smartCrop.emplace(request.cropMode, policy, runtime, true);
+            if (useVulkan)
+            {
+#if MOSAICRAFT_SMART_CROP_VULKAN
+#if !MOSAICRAFT_SMART_CROP_CUDA
+                if (dual)
+                {
+                    throw SmartCropError("smart_crop_cuda_unavailable", "CUDA + Vulkan requires a CUDA smart crop build");
+                }
+#endif
+                if (dual && (files.size() < 8 || normalizationWorkerCount(request.threads) < 4))
+                {
+                    throw SmartCropError("smart_crop_dual_budget", "dual GPU trial requires at least eight files and four threads");
+                }
+                if (dual && legacyTrial)
+                {
+                    // Preserve the CLI benchmark override without changing per-job WebUI policy.
+                    if (const auto *value = std::getenv("MOSAICRAFT_SMART_CROP_DUAL_MAX_PIXELS"))
+                    {
+                        const std::string_view limit(value);
+                        const auto parsed = std::from_chars(limit.data(), limit.data() + limit.size(), vulkanMaxPixels);
+                        if (parsed.ec != std::errc{} || parsed.ptr != limit.data() + limit.size() ||
+                            vulkanMaxPixels < 1024 || vulkanMaxPixels > detail::kDualVulkanMaxPixels)
+                        {
+                            throw SmartCropError("smart_crop_dual_budget", "dual GPU pixel limit must be in [1024, 4194304]");
+                        }
+                    }
+                }
+                vulkan = selectVulkanDevice(dual, legacyTrial);
+#else
+                throw SmartCropError("smart_crop_vulkan_unavailable", "this build does not support Vulkan smart crop");
+#endif
+            }
+            if (dual)
+            {
+                // The two strict probes target separate adapters. Join before publishing any output.
+                WorkerPool probe(1);
+                probe.start(1, [&](std::size_t)
+                {
+                    secondary.emplace(request.cropMode, CropDevice::Cpu, runtime, false, vulkan);
+                });
+                smartCrop.emplace(request.cropMode, CropDevice::Cuda, runtime, false);
+                probe.wait();
+                runtime.computeIdentity("dual", "fp32", "opencv-dnn+ncnn-vulkan");
+            }
+            else
+            {
+                // The explicit Vulkan index selects the inference backend; do not start a CUDA recovery session.
+                smartCrop.emplace(request.cropMode, vulkan ? CropDevice::Cpu : policy, runtime, true, vulkan);
+            }
         }
         catch (const SmartCropError &problem)
         {
             return runtimeFailure(runtime, 1, problem.what(), problem.code(), diagnosticField);
+        }
+        if (vulkan || trial == "0" || trial == "1")
+        {
+            runtime.metric("smartCropStartupMs", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
         }
     }
     fs::create_directories(output);
@@ -218,22 +538,24 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
     }
     else
     {
-        const char *setting = std::getenv("MOSAICRAFT_SMART_CROP_PIPELINE");
-        const std::string_view trial = setting ? setting : "";
-        bool pipeline = false;
+        bool pipeline = dual;
 #if MOSAICRAFT_SMART_CROP_CUDA && defined(_WIN32) && (defined(_M_X64) || defined(__x86_64__))
         // 只为分别通过同后端字节一致性与性能门槛的模式默认开启。
         const bool defaultPipeline = request.cropMode == CropMode::SmartReal || request.cropMode == CropMode::SmartAnime;
-        pipeline = trial != "0" && (defaultPipeline || trial == "1") && smartCrop->initialDevice() == CropDevice::Cuda &&
-                   files.size() >= 8 && normalizationWorkerCount(request.threads) >= 3;
+        pipeline = pipeline || (trial != "0" && (defaultPipeline || trial == "1") && smartCrop->initialDevice() == CropDevice::Cuda &&
+                   files.size() >= 8 && normalizationWorkerCount(request.threads) >= 3);
 #endif
+        if (vulkan && !dual)
+        {
+            pipeline = trial != "0" && files.size() >= 8 && normalizationWorkerCount(request.threads) >= 3;
+        }
         const bool measure = pipeline || trial == "0" || trial == "1";
         ImageNormalizer::StandaloneTimings timings;
         const auto processStart = std::chrono::steady_clock::now();
         auto processingEnd = processStart;
         const auto emitStats = [&]()
         {
-            smartCrop->report();
+            smartCrop->report(secondary ? &*secondary : nullptr);
             if (measure)
             {
                 runtime.metric("smartCropPipeline", pipeline ? 1 : 0);
@@ -242,6 +564,13 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
                 runtime.metric("smartCropEncodeWriteMs", timings.encodeWriteMs);
                 runtime.metric("smartCropWaitInputMs", timings.waitInputMs);
                 runtime.metric("smartCropWaitOutputMs", timings.waitOutputMs);
+                if (dual)
+                {
+                    runtime.metric("smartCropDualOverlapMs", timings.dualOverlapMs);
+                    runtime.metric("smartCropDualVulkanMaxPixels", static_cast<double>(vulkanMaxPixels));
+                    runtime.metric("smartCropDualPendingPeak", static_cast<double>(timings.dualPendingPeak));
+                    runtime.metric("smartCropDualQueuePeakBytes", static_cast<double>(timings.dualQueuePeakBytes));
+                }
             }
             const auto end = processingEnd == processStart ? std::chrono::steady_clock::now() : processingEnd;
             const double seconds = std::chrono::duration<double>(end - processStart).count();
@@ -250,7 +579,14 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
         try
         {
             auto normalizer = smartCrop->normalizer(request.normalizeWidth, request.normalizeHeight);
-            if (pipeline)
+            if (secondary)
+            {
+                auto other = secondary->normalizer(request.normalizeWidth, request.normalizeHeight);
+                detail::runDualSmartCropPipeline(normalizer, other, files.size(), paths, complete, timings,
+                                                 256ull * 1024 * 1024, vulkanMaxPixels);
+                secondary->finish();
+            }
+            else if (pipeline)
             {
                 detail::runSmartCropPipeline(normalizer, files.size(), paths, complete, timings);
             }
@@ -289,5 +625,32 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
     }
     runtime.artifact("normalized", "directory", pathToUtf8(output));
     return ServiceResult::success("images normalized without creating a database");
+}
+
+ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runtime)
+{
+    return normalizeImagesImpl(request, runtime, false);
+}
+
+std::optional<ServiceResult> runCliSmartCropExperiment(const BuildRequest &request, RuntimeContext &runtime)
+{
+    const auto *setting = std::getenv("MOSAICRAFT_SMART_CROP_EXPERIMENT");
+    if (!request.normalizeOnly || (request.cropDevice && experimentalCropDevice(*request.cropDevice)) ||
+        !setting || !*setting)
+    {
+        return std::nullopt;
+    }
+    const std::string_view experiment(setting);
+    if ((experiment != "vulkan" && experiment != "dual") || request.cropMode == CropMode::Center ||
+        request.cropDevice.value_or(CropDevice::Auto) != CropDevice::Auto)
+    {
+        return runtimeFailure(runtime, 1, "Vulkan trial requires CLI smart normalization and the default crop-device policy",
+                              "invalid_argument", "cropDevice");
+    }
+    auto trial = request;
+    trial.cropDevice = experiment == "dual" ? CropDevice::CudaVulkan : CropDevice::Vulkan;
+    std::lock_guard<std::mutex> lock(pipelineMutex());
+    ExecutionScope scope;
+    return runtimeResult(normalizeImagesImpl(trial, runtime, true), runtime);
 }
 } // namespace mosaicraft

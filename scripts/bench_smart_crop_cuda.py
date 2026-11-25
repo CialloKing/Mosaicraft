@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Compare smart-normalize devices, pipeline, hybrid work, weight reuse, or CUTLASS."""
+"""Compare smart-normalize devices, pipelines, and experimental inference routes."""
 
 import argparse
 from contextlib import ExitStack
+import csv
 import hashlib
 import json
 import os
@@ -44,9 +45,12 @@ def stop(process, kill=False):
     process.wait()
 
 
-def run(args, name, parts, *, reuse_weights=None, executable=None):
+def run(args, name, parts, *, reuse_weights=None, executable=None, dual_max_pixels=None):
     samples_path = args.work / f"{name}-vram.csv"
-    has_cuda = any(device == "cuda" for device, *_ in parts)
+    hetero = args.study in {"heterogeneous", "dual", "dual-dispatch"}
+    trace = hetero or args.study == "cutlass"
+    has_cuda = any(device in {"cuda", "dual"} for device, *_ in parts)
+    wddm_path = args.work / f"{name}-wddm.csv"
     baseline = None
     processes = []
     with ExitStack() as stack:
@@ -56,6 +60,11 @@ def run(args, name, parts, *, reuse_weights=None, executable=None):
             baseline = int(subprocess.check_output(query, text=True).strip())
             monitor = subprocess.Popen(query + ["-lms", "250"], stdout=samples, stderr=subprocess.DEVNULL)
             stack.callback(stop, monitor)
+        if hetero:
+            counters = [r"\GPU Adapter Memory(*)\Dedicated Usage", r"\GPU Adapter Memory(*)\Shared Usage"]
+            monitor = subprocess.Popen(["typeperf", *counters, "-si", "1", "-o", str(wddm_path)],
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            stack.callback(stop, monitor)
         start = time.perf_counter()
         for device, pipeline, source, indices in parts:
             prefix = args.work / (name if len(parts) == 1 else f"{name}-{device}")
@@ -63,17 +72,26 @@ def run(args, name, parts, *, reuse_weights=None, executable=None):
             stderr = stack.enter_context(prefix.with_suffix(".log").open("wb"))
             env = {**os.environ, "CUDA_VISIBLE_DEVICES": args.gpu_uuid, "OPENCV_LOG_LEVEL": "WARNING",
                    "MOSAICRAFT_SMART_CROP_PIPELINE": str(int(pipeline))}
+            env.pop("MOSAICRAFT_SMART_CROP_EXPERIMENT", None)
+            env.pop("MOSAICRAFT_SMART_CROP_DUAL_MAX_PIXELS", None)
+            if dual_max_pixels is not None and device == "dual":
+                env["MOSAICRAFT_SMART_CROP_DUAL_MAX_PIXELS"] = str(dual_max_pixels)
+            policy = device
+            if device in {"vulkan", "dual"}:
+                env["MOSAICRAFT_SMART_CROP_EXPERIMENT"] = device
+                env["MOSAICRAFT_SMART_CROP_VULKAN_DEVICE"] = str(args.vulkan_device)
+                policy = "auto"
             if reuse_weights is not None:
                 env["OPENCV_DNN_CUDA_REUSE_CONV2_WEIGHTS"] = str(int(reuse_weights))
             if device == "cpu" and args.study == "hybrid":
                 env["OPENCV_FOR_THREADS_NUM"] = "2"
-            if args.study == "cutlass":
+            if trace:
                 env["MOSAICRAFT_SMART_CROP_TRACE_ROI"] = "1"
                 # OpenCV graph fallback can happen below the app's CUDA session metrics.
                 env["OPENCV_LOG_LEVEL"] = "INFO"
             command = [str(executable or args.exe), "library", "normalize", str(source), "--recursive",
-                       "-o", str(prefix), "--size", args.size, "--threads", "1" if args.study == "devices" else "3",
-                       "--crop", args.mode, "--crop-device", device, "--json"]
+                       "-o", str(prefix), "--size", args.size, "--threads", "1" if args.study == "devices" else "4" if hetero else "3",
+                       "--crop", args.mode, "--crop-device", policy, "--json"]
             process = subprocess.Popen(command, cwd=args.work, stdout=stdout, stderr=stderr, env=env)
             stack.callback(stop, process, True)
             processes.append((process, device, pipeline, indices, prefix))
@@ -99,9 +117,10 @@ def run(args, name, parts, *, reuse_weights=None, executable=None):
         try:
             stdout = prefix.with_suffix(".json")
             raw = stdout.read_bytes()
-            if args.study == "cutlass":
+            if trace:
                 log = prefix.with_suffix(".log").read_bytes()
-                opencv_cpu_fallback = any(marker in raw or marker in log for marker in OPENCV_CPU_FALLBACK)
+                opencv_cpu_fallback = device in {"cuda", "dual"} and any(
+                    marker in raw or marker in log for marker in OPENCV_CPU_FALLBACK)
                 lines = raw.splitlines()
                 if lines and lines[-1].startswith(b"{"):
                     # OpenCV INFO goes to stdout before the CLI's single JSON response.
@@ -129,7 +148,7 @@ def run(args, name, parts, *, reuse_weights=None, executable=None):
                          and len(saved) == expected and all(metrics.get(k, 0) > 0 for k in
                                                            ("smartCropSaliencyMs", "smartCropFaceMs"))
                          and (args.study == "devices" or metrics.get("smartCropPipeline") == int(pipeline))})
-        if args.study == "cutlass":
+        if trace:
             children[-1]["opencvCpuFallback"] = opencv_cpu_fallback
     result = {"name": name, "wallSeconds": elapsed, "imagesPerSecond": len(outputs) / elapsed,
             "gpuBaselineMiB": baseline, "gpuSampledPeakMiB": max(memory, default=None),
@@ -139,22 +158,46 @@ def run(args, name, parts, *, reuse_weights=None, executable=None):
     if args.study == "devices":
         # Keep the original CPU/CUDA report's per-run fields for existing consumers.
         result.update(children[0], passed=result["passed"])
-    if args.study == "cutlass":
-        # The single inference worker emits these in input order, even with pipelining.
+    if trace:
+        # The standalone writer publishes ROI traces in input order.
         result["cropRois"] = [line.decode("ascii") for line in (args.work / f"{name}.log").read_bytes().splitlines()
                               if line.startswith(b"smart-crop-roi ")]
         result["passed"] &= bool(result["cropRois"]) and all(
             child["metrics"].get(k) == 0 for child in children
-            for k in ("smartCropCpuImages", "smartCropCudaFallbacks", "smartCropCudaRecoveries"))
+            for k in ("smartCropCudaFallbacks", "smartCropCudaRecoveries"))
+        result["passed"] &= all(child["device"] == "cpu" or child["metrics"].get("smartCropCpuImages") == 0 for child in children)
+    if hetero:
+        result["wddmSampledPeakBytes"] = wddm_peaks(wddm_path)
+        metrics = children[0]["metrics"]
+        expected = {"cpu": ("Cpu",), "cuda": ("Cuda",), "vulkan": ("Vulkan",), "dual": ("Cuda", "Vulkan")}
+        counts = [metrics.get(f"smartCrop{key}Images", 0) for key in expected[children[0]["device"]]]
+        result["passed"] &= all(counts) and sum(counts) == len(result["cropRois"])
     return result, outputs
 
 
-def staged_input(args, name, indices):
+def wddm_peaks(path):
+    if not path.is_file():
+        return {}
+    with path.open(encoding="utf-8-sig", errors="replace", newline="") as file:
+        rows = csv.reader(file)
+        header = next(rows, [])
+        peaks = {}
+        for row in rows:
+            for name, value in zip(header[1:], row[1:]):
+                try:
+                    peaks[name] = max(peaks.get(name, 0), int(float(value)))
+                except ValueError:
+                    pass
+        return peaks
+
+
+def staged_input(args, name, indices, *, renumber=False):
     folder = args.work / "inputs" / name
     folder.mkdir(parents=True)
-    for index in indices:
+    for slot, index in enumerate(indices):
         source = args.sources[index]
-        target = folder / f"{index:08d}{source.suffix}"
+        number = slot if renumber else index
+        target = folder / f"{number:08d}{source.suffix}"
         try:
             os.link(source, target)
         except OSError:
@@ -202,43 +245,69 @@ def main():
     for name in ("exe", "input", "work"):
         parser.add_argument(name, type=lambda path: Path(path).resolve())
     parser.add_argument("--mode", choices=("smart-real", "smart-anime"), required=True)
-    parser.add_argument("--study", choices=("devices", "pipeline", "hybrid", "weights", "cutlass"), default="devices")
+    parser.add_argument("--study", choices=("devices", "pipeline", "hybrid", "weights", "cutlass", "heterogeneous", "dual", "dual-dispatch"),
+                        default="devices")
     parser.add_argument("--candidate-exe", type=lambda path: Path(path).resolve(),
-                        help="CUTLASS CLI in a separate directory with its own runtime")
+                        help="candidate CLI in a separate directory with its own runtime (cutlass or dual-dispatch)")
     parser.add_argument("--rounds", type=int, default=3)
+    parser.add_argument("--repeat-to", type=int, metavar="COUNT",
+                        help="repeat the sorted source set to COUNT items for the dual-dispatch throughput study")
     parser.add_argument("--size", default="180x320")
     parser.add_argument("--gpu", default="0", help="nvidia-smi index/UUID of the only visible GPU")
+    parser.add_argument("--vulkan-device", type=int, default=1, help="device index from the ncnn Vulkan probe")
+    parser.add_argument("--with-dual", action="store_true", help="include the dual-GPU candidate after single-GPU correctness")
+    parser.add_argument("--dual-max-pixels", action="append", type=int, default=[], metavar="PIXELS",
+                        help="add a dual-GPU variant with this aligned Vulkan pixel limit (repeatable, dual study)")
     parser.add_argument("--timeout", type=int, default=3600, help="seconds per run")
     args = parser.parse_args()
     if not args.exe.is_file() or not args.input.is_dir() or shutil.which("nvidia-smi") is None:
         parser.error("CLI, input directory and nvidia-smi must exist")
-    if args.study == "cutlass" and (
+    if args.study in {"cutlass", "dual-dispatch"} and (
             os.name != "nt" or not args.candidate_exe or args.exe.parent == args.candidate_exe.parent
             or any(not exe.is_file() or not exe.with_name("opencv_dnn5.dll").is_file()
                    for exe in (args.exe, args.candidate_exe))):
-        parser.error("CUTLASS comparison requires two Windows CLI directories, each with its own opencv_dnn5.dll")
+        parser.error(f"{args.study} requires two Windows CLI directories, each with its own opencv_dnn5.dll")
     dnn = args.exe.with_name("opencv_dnn5.dll")
     if args.study == "weights" and (os.name != "nt" or not dnn.is_file()):
         parser.error("the weights study requires a Windows CUDA CLI beside the experimental opencv_dnn5.dll")
     if args.work.is_relative_to(args.input) or args.input.is_relative_to(args.work):
         parser.error("work and input must not overlap")
-    def input_files():
-        return sorted((p for p in args.input.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS),
-                      key=lambda p: p.relative_to(args.input).parts)
+    def input_files(root):
+        return sorted((p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS),
+                      key=lambda p: p.relative_to(root).parts)
 
-    args.sources = input_files()
-    if args.rounds < 1 or len(args.sources) < (1 if args.study == "devices" else 8):
+    def input_hashes(root):
+        return {p.relative_to(root).as_posix(): sha256(p) for p in input_files(root)}
+
+    if args.dual_max_pixels and (args.study != "dual" or
+                                 any(not 1024 <= n <= 4 * 1024**2 for n in args.dual_max_pixels)):
+        parser.error("--dual-max-pixels requires the dual study and values in [1024, 4194304]")
+    if args.study == "dual-dispatch" and args.mode != "smart-real":
+        parser.error("the dual-GPU experiment only supports smart-real")
+    original_input = args.input
+    args.sources = input_files(original_input)
+    if args.repeat_to is not None and (
+            args.study != "dual-dispatch" or args.repeat_to < max(len(args.sources), 8)):
+        parser.error("--repeat-to requires dual-dispatch and a count at least as large as the source set and eight")
+    if args.rounds < 1 or len(args.sources) < (1 if args.repeat_to is not None or args.study == "devices" else 8):
         parser.error("positive round count and enough supported images are required")
     args.gpu_uuid = subprocess.check_output(nvidia_query(args.gpu, "uuid"), text=True).strip()
     args.work.mkdir(parents=True, exist_ok=False)
 
-    def input_hashes():
-        return {p.relative_to(args.input).as_posix(): sha256(p) for p in input_files()}
-
-    source_hashes = input_hashes()
+    repeat_input = None
+    if args.repeat_to is not None:
+        original_hashes = input_hashes(original_input)
+        count = len(args.sources)
+        args.input = staged_input(args, "repeat", (i % count for i in range(args.repeat_to)), renumber=True)
+        args.sources = input_files(args.input)
+        repeat_input = {"sourceCount": count, "itemCount": len(args.sources), "sourceSha256": original_hashes}
+    source_hashes = input_hashes(args.input)
     report = {"executableSha256": sha256(args.exe), "mode": args.mode, "size": args.size, "study": args.study,
               "gpu": subprocess.check_output(nvidia_query(args.gpu, "name,driver_version,memory.total"), text=True).strip(),
               "inputSha256": source_hashes, "runs": []}
+    if repeat_input is not None:
+        report["repeatInput"] = repeat_input
+    dual_limits = {f"dual-{n}": n for n in args.dual_max_pixels}
     if args.study == "hybrid":
         variants = hybrid_variants(args, report)
     elif args.study == "pipeline":
@@ -247,25 +316,54 @@ def main():
     elif args.study == "weights":
         report["opencvDnnSha256"] = sha256(dnn)
         variants = {label: [("cuda", True, args.input, None)] for label in ("pipeline", "reuse-weights")}
-    elif args.study == "cutlass":
+    elif args.study in {"cutlass", "dual-dispatch"}:
         report["candidateExecutableSha256"] = sha256(args.candidate_exe)
         report["opencvDnnSha256ByVariant"] = {
             label: sha256(exe.with_name("opencv_dnn5.dll"))
             for label, exe in (("baseline", args.exe), ("cutlass", args.candidate_exe))}
-        variants = {label: [("cuda", True, args.input, None)] for label in ("baseline", "cutlass")}
+        if args.study == "cutlass":
+            variants = {label: [("cuda", True, args.input, None)] for label in ("baseline", "cutlass")}
+        else:
+            if len(set(report["opencvDnnSha256ByVariant"].values())) != 1:
+                parser.error("dual-dispatch requires the same OpenCV DNN build")
+            variants = {label: [(device, True, args.input, None)]
+                        for label, device in (("cuda", "cuda"), ("dual-ordered", "dual"), ("dual", "dual"))}
+            report["vulkanDeviceIndex"] = args.vulkan_device
+    elif args.study == "dual":
+        if os.name != "nt":
+            parser.error("the dual study requires Windows")
+        variants = {label: [("cuda" if label == "cuda" else "dual", True, args.input, None)]
+                    for label in ("cuda", "dual", *dual_limits)}
+        report["vulkanDeviceIndex"] = args.vulkan_device
+        report["dualPixelLimitOverrides"] = dual_limits
+    elif args.study == "heterogeneous":
+        if os.name != "nt":
+            parser.error("the heterogeneous study requires Windows")
+        variants = {label: [(label, label != "cpu", args.input, None)]
+                    for label in ("cpu", "cuda", "vulkan", "dual")
+                    if label != "dual" or args.with_dual}
+        report["vulkanDeviceIndex"] = args.vulkan_device
     else:
         variants = {device: [(device, False, args.input, None)] for device in ("cpu", "cuda")}
     labels = list(variants)
     reference = None
     reference_rois = None
     report_path = args.work / "report.json"
+    reference_by_device = {}
     for cycle in range(args.rounds):
         offset = cycle % len(labels)
         for label in labels[offset:] + labels[:offset]:
             name = f"{cycle + 1}-{label}"
             reuse_weights = label == "reuse-weights" if args.study == "weights" else None
+            use_candidate = label == "cutlass" or (args.study == "dual-dispatch" and label != "dual-ordered")
             result, outputs = run(args, name, variants[label], reuse_weights=reuse_weights,
-                                  executable=args.candidate_exe if label == "cutlass" else None)
+                                  executable=args.candidate_exe if use_candidate else None,
+                                  dual_max_pixels=dual_limits.get(label))
+            if args.study in {"dual", "dual-dispatch"}:
+                startup = result["children"][0]["metrics"].get("smartCropStartupMs")
+                if startup is not None and 0 <= startup <= result["wallSeconds"] * 1000:
+                    result["modelPreflightSeconds"] = startup / 1000
+                    result["wallMinusModelPreflightSeconds"] = result["wallSeconds"] - startup / 1000
             if reference is None:
                 reference = outputs
                 report["referenceOutputSha256"] = reference
@@ -273,14 +371,27 @@ def main():
             result.update(variant=label, round=cycle + 1, identical=outputs == reference,
                           differingOutputs=sorted(k for k in reference.keys() | outputs.keys()
                                                   if reference.get(k) != outputs.get(k)))
-            if args.study == "cutlass":
+            if args.study in {"cutlass", "heterogeneous", "dual", "dual-dispatch"}:
                 result["identicalCropRois"] = result["cropRois"] == reference_rois
                 result["identical"] &= result["identicalCropRois"]
                 result["differingOutputSha256"] = {key: outputs.get(key) for key in result["differingOutputs"]}
+            if args.study == "heterogeneous":
+                if cycle == 0 and label in {"cpu", "cuda"}:
+                    reference_by_device[label] = outputs, result["cropRois"]
+                basis = "cuda" if label in {"cuda", "dual"} else "cpu"
+                expected_outputs, expected_rois = reference_by_device[basis]
+                different = sorted(k for k in expected_outputs.keys() | outputs.keys()
+                                   if expected_outputs.get(k) != outputs.get(k))
+                result.update(referenceVariant=basis, identical=not different and result["cropRois"] == expected_rois,
+                              identicalCropRois=result["cropRois"] == expected_rois, differingOutputs=different,
+                              differingOutputSha256={key: outputs.get(key) for key in different})
             report["runs"].append(result)
             print(f"{name}: {result['wallSeconds']:.2f}s, run OK={result['passed']}, identical={result['identical']}", flush=True)
             write_report(report_path, report)
-    report["inputUnchanged"] = input_hashes() == source_hashes
+    report["inputUnchanged"] = input_hashes(args.input) == source_hashes
+    if repeat_input is not None:
+        repeat_input["sourceUnchanged"] = input_hashes(original_input) == repeat_input["sourceSha256"]
+        report["inputUnchanged"] &= repeat_input["sourceUnchanged"]
     grouped = {label: sorted((r for r in report["runs"] if r["variant"] == label), key=lambda r: r["round"])
                for label in labels}
     medians = {label: statistics.median(r["wallSeconds"] for r in runs) for label, runs in grouped.items()}
@@ -289,9 +400,9 @@ def main():
                                        for label, runs in grouped.items()}
     report["wallSavings"] = {label: 1 - medians[label] / medians[labels[0]] for label in labels[1:]}
     report["speedup"] = medians[labels[0]] / medians[labels[1]]
-    if args.study in {"pipeline", "hybrid", "weights", "cutlass"}:
-        def working_set_deltas(label):
-            pairs = zip(grouped[labels[0]], grouped[label])
+    if args.study in {"pipeline", "hybrid", "weights", "cutlass", "heterogeneous", "dual", "dual-dispatch"}:
+        def working_set_deltas(label, base=labels[0]):
+            pairs = zip(grouped[base], grouped[label])
             return [b["peakWorkingSetBytes"] - a["peakWorkingSetBytes"] if a["peakWorkingSetBytes"] and
                     b["peakWorkingSetBytes"] else None for a, b in pairs]
 
@@ -312,13 +423,46 @@ def main():
             report["sampledVramIncreaseMiB"] = vram
             gates = ("cutlass" in acceptable and medians["cutlass"] <= medians["baseline"] * 1.10
                      and all(delta is not None and delta <= 512 for delta in vram))
+        elif args.study in {"dual", "dual-dispatch"}:
+            def overlap(label):
+                return [run["children"][0]["metrics"].get("smartCropDualOverlapMs", 0) for run in grouped[label]]
+
+            report["dualOverlapMs"] = overlap("dual")
+            for field, key in (("modelPreflightSeconds", "medianModelPreflightSeconds"),
+                               ("wallMinusModelPreflightSeconds", "medianWallMinusModelPreflightSeconds")):
+                report[key] = {label: statistics.median(r[field] for r in runs)
+                               if all(field in r for r in runs) else None for label, runs in grouped.items()}
+            if args.study == "dual-dispatch":
+                report["gainVsOrderedDual"] = 1 - medians["dual"] / medians["dual-ordered"]
+            candidates = [label for label in ("dual", *dual_limits) if label in acceptable
+                          and all(value > 0 for value in overlap(label)) and report["wallSavings"][label] >= .05]
+            report["dualCandidates"] = candidates
+            gates = bool(candidates) and all(r["passed"] and r["identical"] for r in grouped["cuda"])
+        elif args.study == "heterogeneous":
+            correct = {label: all(r["passed"] and r["identical"] for r in runs) for label, runs in grouped.items()}
+            vulkan_gain = report["wallSavings"]["vulkan"]
+            vulkan_pass = correct["cpu"] and "vulkan" in acceptable and vulkan_gain >= .10
+            report["vulkanCorrect"] = correct["cpu"] and correct["vulkan"]
+            report["vulkanCandidate"] = vulkan_pass
+            gates = vulkan_pass
+            if "dual" in grouped:
+                eligible = [label for label in ("cpu", "cuda", "vulkan") if correct[label] and (label != "vulkan" or vulkan_pass)]
+                fastest = min(eligible, key=medians.get, default="cuda")
+                growth = working_set_deltas("dual", fastest)
+                gain = 1 - medians["dual"] / medians[fastest]
+                report["dualReference"] = fastest
+                report["dualWallSavings"] = gain
+                report["dualWorkingSetIncreaseBytes"] = growth
+                report["dualCandidate"] = (report["vulkanCorrect"] and correct["cuda"] and correct["dual"] and gain >= .05
+                                           and all(d is not None and d <= 512 * 1024**2 for d in growth))
+                gates = gates or report["dualCandidate"]
         else:
             # For multi-process runs, the sum of both individual peaks is a conservative ceiling.
             report["hybridCandidates"] = [label for label in acceptable if report["wallSavings"][label] >= .05]
             gates = bool(report["hybridCandidates"]) and all(r["passed"] and r["identical"] for r in grouped["pipeline"])
     else:
         gates = report["speedup"] >= 1.5
-    if args.study != "hybrid":
+    if args.study not in {"hybrid", "heterogeneous", "dual"}:
         gates &= all(r["passed"] and (args.study == "devices" or r["identical"]) for r in report["runs"])
     report["passed"] = report["inputUnchanged"] and gates
     write_report(report_path, report)

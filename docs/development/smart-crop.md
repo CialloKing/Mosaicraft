@@ -29,6 +29,8 @@ cmake --install build/windows-smart-crop --config Release --prefix build/smart-c
 
 中心裁剪仍为默认，且不接受设备选项。选择 `smart-real` 或 `smart-anime` 后，`--crop-device`（HTTP 1.9 的 `cropDevice`）可取 `auto`、`cpu`、`cuda`，省略等同于 `auto`。
 
+[Vulkan 实验构建](../SMART_CROP_VULKAN.md)的 WebUI 还会按操作与模型启用 `vulkan` 和 `cuda+vulkan`：仅用于独立归一化，不一定比单 CUDA 快。
+
 | 策略 | 行为 |
 |---|---|
 | `auto` | CUDA 智能版先用 CUDA；可捕获的 CUDA 故障会释放 GPU 会话，当前图用 CPU 重试。CPU 版直接使用 CPU，不探测。 |

@@ -15,6 +15,9 @@
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/objdetect/face.hpp>
+#if MOSAICRAFT_SMART_CROP_VULKAN
+#include "SmartCropVulkan.h"
+#endif
 #if MOSAICRAFT_SMART_CROP_CUDA
 #include <opencv2/core/cuda.hpp>
 #endif
@@ -119,6 +122,29 @@ int animePredictionCount(cv::Size input)
     }
     return count;
 }
+
+#if MOSAICRAFT_SMART_CROP_VULKAN
+cv::Rect2d decodeAnimeGrid(int index, cv::Size input, cv::Point padding, float l, float t, float r, float b)
+{
+    for (const int stride : kAnimeStrides)
+    {
+        const int columns = input.width / stride;
+        const int cells = columns * (input.height / stride);
+        if (index >= cells)
+        {
+            index -= cells;
+            continue;
+        }
+        // Recreate the locked export's grid and float operation order, only for hits.
+        const float ax = index % columns + 0.5f, ay = index / columns + 0.5f;
+        const float left = ax - l, top = ay - t, right = ax + r, bottom = ay + b;
+        const float w = (right - left) * stride, h = (bottom - top) * stride;
+        return cv::Rect2d((left + right) / 2 * stride - w / 2 - padding.x,
+                          (top + bottom) / 2 * stride - h / 2 - padding.y, w, h);
+    }
+    return {};
+}
+#endif
 
 std::vector<unsigned char> readModel(const nlohmann::json &manifest, const char *id)
 {
@@ -243,9 +269,13 @@ cv::Rect2d normalizedBox(cv::Rect2d box, cv::Size input)
 struct SmartCropInference::Impl
 {
     CropDevice device = CropDevice::Cpu;
+    CropMode mode = CropMode::Center;
     cv::dnn::Net saliency;
     cv::Ptr<cv::FaceDetectorYN> real;
     cv::dnn::Net anime;
+#if MOSAICRAFT_SMART_CROP_VULKAN
+    std::unique_ptr<SmartCropVulkan> vulkan;
+#endif
 
     cv::Mat foreground(const cv::Mat &image)
     {
@@ -265,12 +295,22 @@ struct SmartCropInference::Impl
             channels[i].convertTo(channels[i], CV_32F, 1.0 / deviation[i], -mean[i] / deviation[i]);
         }
         cv::merge(channels, rgb);
-        saliency.setInput(cv::dnn::blobFromImage(rgb));
-        // Fused d1 output of this exact ONNX export.
-        const auto out = runDnn(device, [&]()
+        const auto blob = cv::dnn::blobFromImage(rgb);
+        const auto out = [&]()
         {
-            return saliency.forward("1959");
-        });
+#if MOSAICRAFT_SMART_CROP_VULKAN
+            if (vulkan)
+            {
+                return vulkan->foreground(blob);
+            }
+#endif
+            saliency.setInput(blob);
+            // Fused d1 output of this exact ONNX export.
+            return runDnn(device, [&]()
+            {
+                return saliency.forward("1959");
+            });
+        }();
         if (out.type() != CV_32F || out.dims != 4 || out.size[0] != 1 || out.size[1] != 1 ||
             out.size[2] != kForegroundSize || out.size[3] != kForegroundSize || !cv::checkRange(out, true, nullptr, 0, 1.001))
         {
@@ -288,6 +328,21 @@ struct SmartCropInference::Impl
     std::vector<cv::Rect2d> realFaces(const cv::Mat &image)
     {
         const cv::Size size = image.size();
+#if MOSAICRAFT_SMART_CROP_VULKAN
+        if (vulkan)
+        {
+            std::vector<cv::Rect2d> faces;
+            for (const auto &raw : vulkan->realBoxes(image))
+            {
+                const auto box = normalizedBox(raw, size);
+                if (!box.empty())
+                {
+                    faces.push_back(box);
+                }
+            }
+            return faces;
+        }
+#endif
         // YuNet pads internally on the right and bottom, so its boxes stay in the original coordinates.
         cv::Mat detections;
         real->setInputSize(size);
@@ -333,13 +388,24 @@ struct SmartCropInference::Impl
                                padding.x, extraWidth - padding.x, cv::BORDER_CONSTANT | cv::BORDER_ISOLATED,
                                cv::Scalar::all(114));
         }
-        anime.setInput(cv::dnn::blobFromImage(padded, 1.0 / 255, input, cv::Scalar(), true));
-        const auto out = runDnn(device, [&]()
+        const auto blob = cv::dnn::blobFromImage(padded, 1.0 / 255, input, cv::Scalar(), true);
+        const int anchors = animePredictionCount(input);
+        const auto out = [&]()
         {
-            return anime.forward("output0");
-        });
+#if MOSAICRAFT_SMART_CROP_VULKAN
+            if (vulkan)
+            {
+                return vulkan->animeDistances(blob, anchors);
+            }
+#endif
+            anime.setInput(blob);
+            return runDnn(device, [&]()
+            {
+                return anime.forward("output0");
+            });
+        }();
         if (out.type() != CV_32F || out.dims != 3 || out.size[0] != 1 || out.size[1] != 5 ||
-            out.size[2] != animePredictionCount(input) || !cv::checkRange(out))
+            out.size[2] != anchors || !cv::checkRange(out))
         {
             throw SmartCropError("smart_crop_inference", "unexpected Anime Face Detection tensor for " +
                                  std::to_string(input.width) + "x" + std::to_string(input.height));
@@ -360,8 +426,11 @@ struct SmartCropInference::Impl
             if (score[i] > minScore)
             {
                 // Return fractions of the picture, not of the padded detector input.
-                const auto box = normalizedBox(cv::Rect2d(x[i] - w[i] / 2 - padding.x,
-                                                          y[i] - h[i] / 2 - padding.y, w[i], h[i]), content);
+                const auto box = normalizedBox(
+#if MOSAICRAFT_SMART_CROP_VULKAN
+                    vulkan ? decodeAnimeGrid(i, input, padding, x[i], y[i], w[i], h[i]) :
+#endif
+                    cv::Rect2d(x[i] - w[i] / 2 - padding.x, y[i] - h[i] / 2 - padding.y, w[i], h[i]), content);
                 if (!box.empty())
                 {
                     boxes.push_back(box);
@@ -411,10 +480,20 @@ SmartCropModelPair loadSmartCropModelPair(CropMode mode)
                               readModel(manifest, mode == CropMode::SmartReal ? "real" : "anime")};
 }
 
-SmartCropInference::SmartCropInference(const SmartCropModelPair &models, CropDevice device) try
+SmartCropInference::SmartCropInference(const SmartCropModelPair &models, CropDevice device, std::optional<int> vulkan) try
     : m_impl(std::make_unique<Impl>())
 {
     m_impl->device = device;
+    m_impl->mode = models.mode;
+    if (vulkan)
+    {
+#if MOSAICRAFT_SMART_CROP_VULKAN
+        m_impl->vulkan = std::make_unique<SmartCropVulkan>(*vulkan, models.mode);
+        return;
+#else
+        throw SmartCropError("smart_crop_vulkan_unavailable", "this build does not support the Vulkan smart crop experiment");
+#endif
+    }
     m_impl->saliency = modelNet(models.saliency, device);
     if (models.mode == CropMode::SmartReal)
     {
@@ -445,11 +524,11 @@ SmartCropAnalysis SmartCropInference::analyze(const cv::Mat &image) try
     const auto start = Clock::now();
     auto mask = m_impl->foreground(image);
     const auto afterMask = Clock::now();
-    auto faces = m_impl->real ? m_impl->realFaces(image) : m_impl->animeFaces(image);
+    auto faces = m_impl->mode == CropMode::SmartReal ? m_impl->realFaces(image) : m_impl->animeFaces(image);
     return SmartCropAnalysis{std::move(mask), std::move(faces),
                              std::chrono::duration<double, std::milli>(afterMask - start).count(),
                              std::chrono::duration<double, std::milli>(Clock::now() - afterMask).count(),
-                             m_impl->real ? CropMode::SmartReal : CropMode::SmartAnime};
+                             m_impl->mode};
 }
 catch (const cv::Exception &error)
 {
@@ -487,7 +566,7 @@ SmartCropModelPair loadSmartCropModelPair(CropMode)
     throw SmartCropError("smart_crop_unavailable", "this build does not support smart crop");
 }
 
-SmartCropInference::SmartCropInference(const SmartCropModelPair &, CropDevice)
+SmartCropInference::SmartCropInference(const SmartCropModelPair &, CropDevice, std::optional<int>)
 {
     throw SmartCropError("smart_crop_unavailable", "this build does not support smart crop");
 }

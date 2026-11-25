@@ -6,8 +6,8 @@
 
 namespace mosaicraft
 {
-SmartCropSession::SmartCropSession(CropMode mode, CropDevice policy, RuntimeContext &runtime, bool standalone)
-    : m_runtime(runtime), m_policy(policy), m_standalone(standalone),
+SmartCropSession::SmartCropSession(CropMode mode, CropDevice policy, RuntimeContext &runtime, bool standalone, std::optional<int> vulkan)
+    : m_runtime(runtime), m_policy(policy), m_standalone(standalone), m_vulkan(vulkan),
       m_initial(policy == CropDevice::Cuda ? CropDevice::Cuda : CropDevice::Cpu)
 {
     m_runtime.metric("smartCropCudaFallbacks", 0);
@@ -19,7 +19,7 @@ SmartCropSession::SmartCropSession(CropMode mode, CropDevice policy, RuntimeCont
     }
     m_models = loadSmartCropModelPair(mode);
 #if MOSAICRAFT_SMART_CROP_CUDA
-    if (m_policy == CropDevice::Auto)
+    if (!m_vulkan && m_policy == CropDevice::Auto)
     {
         m_autoCuda = std::make_unique<SmartCropCudaRecovery>(m_models, m_runtime, standalone);
         m_initial = m_autoCuda->initialize() ? CropDevice::Cuda : CropDevice::Cpu;
@@ -29,14 +29,14 @@ SmartCropSession::SmartCropSession(CropMode mode, CropDevice policy, RuntimeCont
     {
         useSession(m_initial);
     }
-    reportDevice(cropDeviceName(m_initial));
+    reportDevice(m_vulkan ? "vulkan" : cropDeviceName(m_initial));
 }
 
 SmartCropSession::~SmartCropSession() = default;
 
 void SmartCropSession::useSession(CropDevice device)
 {
-    auto next = std::make_unique<SmartCropInference>(m_models, device);
+    auto next = std::make_unique<SmartCropInference>(m_models, device, m_vulkan);
     next->probe();
     m_session = std::move(next);
 }
@@ -45,7 +45,7 @@ void SmartCropSession::reportDevice(const char *device) const
 {
     if (m_standalone)
     {
-        m_runtime.computeIdentity(device, "fp32", "opencv-dnn");
+        m_runtime.computeIdentity(device, "fp32", m_vulkan ? "ncnn-vulkan" : "opencv-dnn");
     }
 }
 
@@ -69,7 +69,11 @@ SmartCropAnalysis SmartCropSession::analyze(const cv::Mat &image)
         useSession(CropDevice::Cpu);
     }
     auto result = m_session->analyze(image);
-    if (m_policy == CropDevice::Cuda)
+    if (m_vulkan)
+    {
+        m_runtime.metric("smartCropVulkanImages", static_cast<double>(++m_vulkanImages));
+    }
+    else if (m_policy == CropDevice::Cuda)
     {
         m_runtime.metric("smartCropCudaImages", static_cast<double>(++m_cudaImages));
     }
@@ -103,7 +107,7 @@ void SmartCropSession::finish()
 #endif
 }
 
-void SmartCropSession::report() const
+void SmartCropSession::report(const SmartCropSession *secondary) const
 {
     m_runtime.metric("smartCropCpuImages", static_cast<double>(m_cpuImages));
     m_runtime.metric("smartCropCudaImages", static_cast<double>(m_cudaImages));
@@ -111,12 +115,24 @@ void SmartCropSession::report() const
     {
         reportDevice("mixed");
     }
-    m_runtime.metric("smartCropFacesFound", static_cast<double>(m_stats.facesFound));
-    m_runtime.metric("smartCropMoved", static_cast<double>(m_stats.moved));
-    m_runtime.metric("smartCropCentered", static_cast<double>(m_stats.centered));
-    m_runtime.metric("smartCropMainFaceClipped", static_cast<double>(m_stats.mainFaceClipped));
-    m_runtime.metric("smartCropInferenceWorkerMs", m_stats.inferenceMs);
-    m_runtime.metric("smartCropSaliencyMs", m_stats.saliencyMs);
-    m_runtime.metric("smartCropFaceMs", m_stats.faceMs);
+    if (m_vulkan || secondary)
+    {
+        m_runtime.metric("smartCropVulkanImages", static_cast<double>(secondary ? secondary->m_vulkanImages : m_vulkanImages));
+    }
+    const SmartCropStats other = secondary ? secondary->m_stats : SmartCropStats{};
+    if (secondary)
+    {
+        m_runtime.metric("smartCropCudaSaliencyMs", m_stats.saliencyMs);
+        m_runtime.metric("smartCropCudaFaceMs", m_stats.faceMs);
+        m_runtime.metric("smartCropVulkanSaliencyMs", other.saliencyMs);
+        m_runtime.metric("smartCropVulkanFaceMs", other.faceMs);
+    }
+    m_runtime.metric("smartCropFacesFound", static_cast<double>(m_stats.facesFound + other.facesFound));
+    m_runtime.metric("smartCropMoved", static_cast<double>(m_stats.moved + other.moved));
+    m_runtime.metric("smartCropCentered", static_cast<double>(m_stats.centered + other.centered));
+    m_runtime.metric("smartCropMainFaceClipped", static_cast<double>(m_stats.mainFaceClipped + other.mainFaceClipped));
+    m_runtime.metric("smartCropInferenceWorkerMs", m_stats.inferenceMs + other.inferenceMs);
+    m_runtime.metric("smartCropSaliencyMs", m_stats.saliencyMs + other.saliencyMs);
+    m_runtime.metric("smartCropFaceMs", m_stats.faceMs + other.faceMs);
 }
 }

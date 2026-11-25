@@ -2920,6 +2920,16 @@ TEST_CASE("smart crop requests round-trip for build and normalize")
             }
         }
     }
+    for (const auto &[mode, device] : {std::pair{"smart-real", "vulkan"}, {"smart-real", "cuda+vulkan"},
+                                      {"smart-anime", "cuda+vulkan"}})
+    {
+        BuildRequest parsed;
+        RequestError detail;
+        const nlohmann::json body = {{"inputDir", "photos"}, {"normalizeOnly", true},
+                                     {"cropMode", mode}, {"cropDevice", device}};
+        REQUIRE(parseBuildRequestJson(body.dump(), parsed, detail));
+        CHECK(buildRequestToJson(parsed).at("cropDevice") == device);
+    }
     CHECK(buildRequestToJson(request).at("cropMode") == "center");
     {
         BuildRequest parsed;
@@ -2939,7 +2949,10 @@ TEST_CASE("smart crop requests round-trip for build and normalize")
     }
     for (const auto *body : {R"({"inputDir":"photos","normalizeOnly":true,"cropDevice":"cpu"})",
                              R"({"inputDir":"photos","cropDevice":"cuda"})",
-                             R"({"inputDir":"photos","normalizeOnly":true,"cropMode":"smart-real","cropDevice":"vulkan"})"})
+                             R"({"inputDir":"photos","cropMode":"smart-real","cropDevice":"vulkan"})",
+                             R"({"inputDir":"photos","cropMode":"smart-anime","cropDevice":"cuda+vulkan"})",
+                             R"({"inputDir":"photos","normalizeOnly":true,"cropMode":"smart-anime","cropDevice":"vulkan"})",
+                             R"({"inputDir":"photos","normalizeOnly":true,"cropMode":"smart-real","cropDevice":"dual"})"})
     {
         BuildRequest parsed;
         RequestError detail;
@@ -2951,4 +2964,8 @@ TEST_CASE("smart crop requests round-trip for build and normalize")
     CHECK((std::find(features.begin(), features.end(), "smart-crop-build") != features.end()) == smartCropAvailable());
     CHECK((std::find(features.begin(), features.end(), "smart-crop-device-auto") != features.end()) == smartCropAvailable());
     CHECK((std::find(features.begin(), features.end(), "smart-crop-cuda") != features.end()) == smartCropCudaAvailable());
+    constexpr bool vulkan = MOSAICRAFT_SMART_CROP_VULKAN;
+    CHECK((std::find(features.begin(), features.end(), "smart-crop-vulkan") != features.end()) == vulkan);
+    CHECK((std::find(features.begin(), features.end(), "smart-crop-cuda-vulkan") != features.end()) ==
+          (vulkan && smartCropCudaAvailable()));
 }

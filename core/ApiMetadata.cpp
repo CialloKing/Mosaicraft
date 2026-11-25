@@ -820,6 +820,13 @@ std::vector<std::string> apiFeatureList()
     {
         features.push_back("smart-crop-cuda");
     }
+#if MOSAICRAFT_SMART_CROP_VULKAN
+    features.push_back("smart-crop-vulkan");
+    if (smartCropCudaAvailable())
+    {
+        features.push_back("smart-crop-cuda-vulkan");
+    }
+#endif
     return features;
 }
 

@@ -163,6 +163,75 @@ TEST_CASE("smart crop pipeline preserves order, skips bad input and drains only 
     }
 }
 
+TEST_CASE("dual crop reuses a free device behind a slow head without publishing past failure")
+{
+    if (!smartCropAvailable())
+    {
+        return;
+    }
+    TempWorkspace workspace;
+    const auto output = workspace.outputDir();
+    for (int i = 0; i < 8; ++i)
+    {
+        const cv::Size size = i == 0 ? cv::Size(16, 16) : cv::Size(24, 20);
+        requireWriteImage(workspace.inputDir() / (std::to_string(i) + ".png"), cv::Mat(size, CV_8UC3, cv::Scalar(i, 1, 2)));
+    }
+    const auto paths = [&](std::size_t index)
+    {
+        const auto name = std::to_string(index) + ".png";
+        return detail::NormalizePaths{utf8(workspace.inputDir() / name), utf8(output / name)};
+    };
+    const auto [firstSource, firstOutput] = paths(0);
+    const auto expected = utf8(workspace.root / "serial-first.png");
+    // Even a same-size PNG can be compacted by the original standalone path.
+    REQUIRE(ImageNormalizer(16, 16).processStandaloneImage(firstSource, expected));
+    std::promise<void> vulkanStarted, laterCudaStarted;
+    auto vulkanReady = vulkanStarted.get_future();
+    auto laterCudaReady = laterCudaStarted.get_future();
+    bool reusedBeforeHead = false;
+    ImageNormalizer cuda(16, 16, [&](const cv::Mat &image)
+    {
+        const auto index = image.at<cv::Vec3b>(0, 0)[0];
+        if (index == 1)
+        {
+            vulkanReady.wait_for(std::chrono::seconds(3));
+        }
+        if (index == 4)
+        {
+            laterCudaStarted.set_value();
+        }
+        return SmartCropAnalysis{};
+    });
+    ImageNormalizer vulkan(16, 16, [&](const cv::Mat &image)
+    {
+        if (image.at<cv::Vec3b>(0, 0)[0] == 2)
+        {
+            vulkanStarted.set_value();
+            // The old one-slot handoff could not run both successors before this head.
+            reusedBeforeHead = laterCudaReady.wait_for(std::chrono::seconds(3)) == std::future_status::ready;
+            throw SmartCropError("smart_crop_vulkan_inference", "injected failure before completed successors");
+        }
+        return SmartCropAnalysis{};
+    });
+    ImageNormalizer::StandaloneTimings timings;
+    std::vector<int> completed;
+    constexpr std::size_t queueBudget = 32 * 1024;
+    CHECK_THROWS_AS(detail::runDualSmartCropPipeline(cuda, vulkan, 8, paths, [&](bool ok)
+    {
+        completed.push_back(ok);
+    }, timings, queueBudget), SmartCropError);
+    CHECK(reusedBeforeHead);
+    CHECK(timings.dualOverlapMs > 0);
+    CHECK(timings.dualPendingPeak >= 3);
+    CHECK(timings.dualQueuePeakBytes <= queueBudget * 3 / 4);
+    CHECK(completed == std::vector<int>{1, 1});
+    CHECK(readBytesUnicode(firstOutput) == readBytesUnicode(expected));
+    CHECK(fs::exists(output / "1.png"));
+    CHECK_FALSE(fs::exists(output / "2.png"));
+    CHECK_FALSE(fs::exists(output / "3.png"));
+    CHECK_FALSE(fs::exists(output / "4.png"));
+}
+
 TEST_CASE("library add drops only oversized PNG iTXt from the saved copy")
 {
     TempWorkspace workspace;

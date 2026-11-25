@@ -44,7 +44,9 @@ CLI 已重新组织，不保留旧命令别名。每个命令支持 `--help`，�
 
 两种智能模式都使用 U²-NetP 保留主体，并分别以原图尺寸检测真人或动漫脸。每批手动选择一种类型，逐张推理。大图会增加耗时和内存用量。同尺寸快路径仍然适用。固定比例容不下主体时，裁剪框仍可能切掉部分内容。智能模式需要支持该功能的构建及本地模型。
 
-`--crop-device auto|cpu|cuda` 仅用于智能裁剪，建库特征提取设备由 `--backend` 和 `--device` 控制。`auto` 默认优先 CUDA，遇到可捕获的 GPU 故障后用 CPU 继续并探测恢复。`cpu` 跳过 CUDA 探测。`cuda` 需要支持 CUDA 推理的构建及兼容设备，推理故障会终止任务。
+`--crop-device` 仅用于智能裁剪，建库特征提取设备由 `--backend` 和 `--device` 控制。`auto` 默认优先 CUDA，遇到可捕获的 GPU 故障后用 CPU 继续并探测恢复。`cpu` 跳过 CUDA 探测。`cuda` 需要支持 CUDA 推理的构建及兼容设备，推理故障会终止任务。
+
+实验构建的独立归一化还接受 `--crop-device vulkan`（仅真人）和 `--crop-device cuda+vulkan`（真人或动漫，要求 NVIDIA CUDA 和另一块 AMD/Intel Vulkan GPU，至少 8 张图及 4 个应用线程）。两项均需要对应 Vulkan 模型，失败时不自动回退，也不一定比单 CUDA 快。详见 [Vulkan 实验](../SMART_CROP_VULKAN.md)。
 
 建库归一化尺寸默认 180×320，每轴 1～8192。`library build` 和 `library add` 保留 JPG/JPEG、PNG、WebP 的格式及后缀拼写，将 BMP 和 TIFF/TIF 转为 PNG。同尺寸的 JPG/JPEG、PNG、WebP 通常直接复制原字节。若 PNG 含超过解码器上限的 `iTXt` 文本块，建库、追加或单独归一化时会先在内存中的副本移除这些块；移除文本不改变像素，原图不改动；此类素材需要使用独立输出目录。原地建库要求新素材已经符合目标尺寸及格式，需要转换或缩放时请使用独立输出目录。历史图库素材继续可读。
 

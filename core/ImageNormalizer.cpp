@@ -189,6 +189,12 @@ std::size_t ImageNormalizer::PreparedImage::bufferBytes() const
     return bytes.capacity() + (pixels.empty() ? 0 : static_cast<std::size_t>(pixels.datalimit - pixels.datastart));
 }
 
+void ImageNormalizer::CropTrace::emit() const
+{
+    std::fprintf(stderr, "smart-crop-roi %d %d %d %d %d %d\n", covered.width, covered.height,
+                 roi.x, roi.y, roi.width, roi.height);
+}
+
 std::size_t ImageNormalizer::standaloneOutputPixelBytes() const
 {
     return static_cast<std::size_t>(m_targetWidth) * m_targetHeight * 3;
@@ -225,14 +231,14 @@ ImageNormalizer::PreparedImage ImageNormalizer::prepareImage(const std::string& 
         // 推理与写盘不需要保留将被重新编码的原始字节。
         std::vector<uint8_t>().swap(encoded);
     }
-    return PreparedImage{std::move(src), std::move(encoded), sameSizeAndFormat, sameFile};
+    return PreparedImage{std::move(src), std::move(encoded), sameSizeAndFormat, sameFile, {}};
 }
 
 void ImageNormalizer::cropImage(PreparedImage& image)
 {
     if (!image.copyOriginal)
     {
-        image.pixels = normalize(image.pixels);
+        image.pixels = normalize(image.pixels, &image.cropTrace);
     }
 }
 
@@ -240,6 +246,10 @@ void ImageNormalizer::saveImage(const std::string& outputPath, PreparedImage& im
                                 const std::vector<int>& writeParams, cv::Mat* storedPixels, bool compactPng,
                                 LibraryTimings* timings)
 {
+    if (image.cropTrace)
+    {
+        image.cropTrace->emit();
+    }
     const auto write = [&]()
     {
         BenchmarkTimer timer(timings ? &timings->write : nullptr);
@@ -368,7 +378,7 @@ cv::Mat ImageNormalizer::processToMat(const std::string& inputPath)
     return normalize(src);
 }
 
-cv::Mat ImageNormalizer::normalize(const cv::Mat& src)
+cv::Mat ImageNormalizer::normalize(const cv::Mat& src, [[maybe_unused]] std::optional<CropTrace> *deferredTrace)
 {
     if (src.cols == m_targetWidth && src.rows == m_targetHeight)
     {
@@ -396,8 +406,16 @@ cv::Mat ImageNormalizer::normalize(const cv::Mat& src)
         }();
         if (trace)
         {
-            std::fprintf(stderr, "smart-crop-roi %d %d %d %d %d %d\n", covered.cols, covered.rows,
-                         decision.roi.x, decision.roi.y, decision.roi.width, decision.roi.height);
+            const CropTrace entry{covered.size(), decision.roi};
+            if (deferredTrace)
+            {
+                // Report only the ordered writer's output, not speculative successors.
+                *deferredTrace = entry;
+            }
+            else
+            {
+                entry.emit();
+            }
         }
         if (m_smartStats)
         {

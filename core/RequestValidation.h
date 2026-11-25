@@ -64,6 +64,27 @@ inline bool validateBuildRequest(const BuildRequest &request, std::string &error
         error = "crop device requires smart-real or smart-anime";
         return false;
     }
+    if (request.cropDevice && experimentalCropDevice(*request.cropDevice))
+    {
+        if (!request.normalizeOnly || request.appendMode)
+        {
+            if (field)
+            {
+                *field = "cropDevice";
+            }
+            error = "Vulkan smart crop devices are experimental and only available for standalone normalization";
+            return false;
+        }
+        if (*request.cropDevice == CropDevice::Vulkan && request.cropMode != CropMode::SmartReal)
+        {
+            if (field)
+            {
+                *field = "cropDevice";
+            }
+            error = "Vulkan alone currently requires smart-real; use cuda+vulkan for dual GPU anime normalization";
+            return false;
+        }
+    }
     if (request.benchmark && (!request.appendMode || request.normalizeOnly))
     {
         if (field)
