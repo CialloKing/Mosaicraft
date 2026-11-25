@@ -1,8 +1,15 @@
 # 版本状态
 
-后续正式发布采用[六附件矩阵](development/releasing.md#六个发布附件)。下列版本保留各自发布时的附件范围。
+自 v1.15.19 起采用[六附件矩阵](development/releasing.md#六个发布附件)。下列版本保留各自发布时的附件范围。
 
 本页区分当前源码与公开安装包，详细历史记录见[历史档案](archive/README.md)。软件与数据版本的唯一来源是根目录 contracts.json；安装后的实际能力以该包 BUILD_INFO.txt、contracts.json 和 --help-all 为准。
+
+## v1.15.19
+
+- Windows/Linux x64 各提供 CUDA + Vulkan 智能裁剪包与 Qt 客户端包。macOS ARM64 提供 CPU 智能裁剪包与 Qt 客户端包。[选择下载包](guides/quick-start.md#下载与运行)
+- GPU 智能裁剪包可分别选择建库、生成的计算后端与裁剪推理设备。真人和动漫独立归一化均支持 Vulkan 推理。双 GPU 是显式实验选项，需另有 AMD/Intel Vulkan 设备。[设备用法](guides/gpu-backends.md#智能裁剪推理)
+- x64 的 HNSW 候选检索自动选择 AVX-512、AVX2 或 SSE，保留距离累加顺序和已有索引兼容性。
+- 默认使用生成的测试图验收包内推理。本地可选标注验收检查主脸保全。HTTP API 为 1.10，图库格式仍为 1。
 
 ## v1.15.18
 
