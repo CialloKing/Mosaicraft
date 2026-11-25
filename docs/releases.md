@@ -2,6 +2,11 @@
 
 本页区分当前源码与公开安装包，详细历史记录见[历史档案](archive/README.md)。软件与数据版本的唯一来源是根目录 contracts.json；安装后的实际能力以该包 BUILD_INFO.txt、contracts.json 和 --help-all 为准。
 
+## v1.15.18
+
+- 智能裁剪的 CLI、HTTP 和 WebUI 增加两个显式实验策略：`vulkan`（真人）和 `cuda+vulkan`（真人或动漫）。仅适用于启用该实验且装有对应模型的 Windows x64 源码构建，只用于独立归一化，不保证比单 CUDA 更快。见 [Vulkan 双 GPU 实验](SMART_CROP_VULKAN.md)。
+- 普通包不含智能裁剪。Windows x64 CUDA 智能裁剪补充包仍使用正式 NVIDIA 推理运行库，并保留 CPU 回退。[CUTLASS 轻量候选](SMART_CROP_CUTLASS.md)与 Vulkan 智能裁剪均不进入正式附件，不改变默认设备与发布门禁。HTTP API 仍为 1.9，图库格式不变。
+
 ## v1.15.17
 
 - Windows x64 CUDA 智能裁剪补充包为真人和动漫的 CUDA FP32 推理默认启用卷积权重复用，避免输入尺寸变化时重复准备权重。可设 `OPENCV_DNN_CUDA_REUSE_CONV2_WEIGHTS=0` 回退；CPU 推理、中心裁剪、I/O 流水线启用条件和输出契约不变。
