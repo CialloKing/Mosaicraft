@@ -107,7 +107,7 @@ void SmartCropSession::finish()
 #endif
 }
 
-void SmartCropSession::report() const
+void SmartCropSession::report(const SmartCropSession *secondary) const
 {
     m_runtime.metric("smartCropCpuImages", static_cast<double>(m_cpuImages));
     m_runtime.metric("smartCropCudaImages", static_cast<double>(m_cudaImages));
@@ -115,12 +115,17 @@ void SmartCropSession::report() const
     {
         reportDevice("mixed");
     }
-    m_runtime.metric("smartCropFacesFound", static_cast<double>(m_stats.facesFound));
-    m_runtime.metric("smartCropMoved", static_cast<double>(m_stats.moved));
-    m_runtime.metric("smartCropCentered", static_cast<double>(m_stats.centered));
-    m_runtime.metric("smartCropMainFaceClipped", static_cast<double>(m_stats.mainFaceClipped));
-    m_runtime.metric("smartCropInferenceWorkerMs", m_stats.inferenceMs);
-    m_runtime.metric("smartCropSaliencyMs", m_stats.saliencyMs);
-    m_runtime.metric("smartCropFaceMs", m_stats.faceMs);
+    if (m_vulkan || secondary)
+    {
+        m_runtime.metric("smartCropVulkanImages", static_cast<double>(secondary ? secondary->m_vulkanImages : m_vulkanImages));
+    }
+    const SmartCropStats other = secondary ? secondary->m_stats : SmartCropStats{};
+    m_runtime.metric("smartCropFacesFound", static_cast<double>(m_stats.facesFound + other.facesFound));
+    m_runtime.metric("smartCropMoved", static_cast<double>(m_stats.moved + other.moved));
+    m_runtime.metric("smartCropCentered", static_cast<double>(m_stats.centered + other.centered));
+    m_runtime.metric("smartCropMainFaceClipped", static_cast<double>(m_stats.mainFaceClipped + other.mainFaceClipped));
+    m_runtime.metric("smartCropInferenceWorkerMs", m_stats.inferenceMs + other.inferenceMs);
+    m_runtime.metric("smartCropSaliencyMs", m_stats.saliencyMs + other.saliencyMs);
+    m_runtime.metric("smartCropFaceMs", m_stats.faceMs + other.faceMs);
 }
 }

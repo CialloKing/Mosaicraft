@@ -5,7 +5,9 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -113,7 +115,26 @@ int main(int argc, char **argv) try
         {
             const auto &info = ncnn::get_gpu_info(i);
             std::cout << i << ' ' << std::hex << info.vendor_id() << ':' << info.device_id() << std::dec
-                      << ' ' << info.device_name() << '\n';
+                      << ' ' << info.device_name();
+            if (ncnn::vkGetPhysicalDeviceProperties2KHR)
+            {
+                VkPhysicalDeviceIDProperties id{};
+                id.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
+                VkPhysicalDeviceProperties2 properties{};
+                properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+                properties.pNext = &id;
+                ncnn::vkGetPhysicalDeviceProperties2KHR(info.physicalDevice(), &properties);
+                if (id.deviceLUIDValid)
+                {
+                    // Windows performance counters identify adapters by high/low LUID, not Vulkan index.
+                    std::uint32_t low = 0, high = 0;
+                    std::memcpy(&low, id.deviceLUID, sizeof(low));
+                    std::memcpy(&high, id.deviceLUID + sizeof(low), sizeof(high));
+                    std::cout << " luid_0x" << std::hex << std::setfill('0') << std::setw(8) << high
+                              << "_0x" << std::setw(8) << low << std::dec;
+                }
+            }
+            std::cout << '\n';
         }
         return count == 0 ? 1 : 0;
     }

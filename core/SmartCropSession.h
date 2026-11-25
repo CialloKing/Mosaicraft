@@ -17,7 +17,7 @@ public:
     ImageNormalizer normalizer(int width, int height);
     CropDevice initialDevice() const;
     void finish();
-    void report() const;
+    void report(const SmartCropSession *secondary = nullptr) const;
 
 private:
     SmartCropAnalysis analyze(const cv::Mat &image);

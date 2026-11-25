@@ -4,6 +4,7 @@
 #include "LibraryEncodingOptions.h"
 #include <functional>
 #include <opencv2/core.hpp>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -50,12 +51,19 @@ public:
     {
         double readDecodeMs = 0, cropMs = 0, encodeWriteMs = 0, waitInputMs = 0, waitOutputMs = 0;
     };
+    struct CropTrace
+    {
+        cv::Size covered;
+        cv::Rect roi;
+        void emit() const;
+    };
     struct PreparedImage
     {
         cv::Mat pixels;
         std::vector<uint8_t> bytes;
         bool copyOriginal = false;
         bool sameFile = false;
+        std::optional<CropTrace> cropTrace;
 
         std::size_t bufferBytes() const;
     };
@@ -86,7 +94,7 @@ private:
     void cropImage(PreparedImage& image);
     void saveImage(const std::string& outputPath, PreparedImage& image, const std::vector<int>& writeParams,
                    cv::Mat* storedPixels, bool compactPng, LibraryTimings* timings);
-    cv::Mat normalize(const cv::Mat& src);
+    cv::Mat normalize(const cv::Mat& src, std::optional<CropTrace> *deferredTrace = nullptr);
     int m_targetWidth;
     int m_targetHeight;
     SmartAnalysis m_smartCrop;
