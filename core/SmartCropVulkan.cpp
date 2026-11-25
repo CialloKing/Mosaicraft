@@ -177,16 +177,24 @@ FaceOutputs batchFaceOutputs(const ncnn::Net &net, const ncnn::Mat &input)
 
 struct SmartCropVulkan::Impl
 {
-    ncnn::Net saliency, real;
+    ncnn::Net saliency, face;
 };
 
-SmartCropVulkan::SmartCropVulkan(int device) : m_impl(std::make_unique<Impl>())
+SmartCropVulkan::SmartCropVulkan(int device, CropMode mode) : m_impl(std::make_unique<Impl>())
 {
     (void)gpuInfo(device);
     initNet(m_impl->saliency, device, "saliency.param", "315dbc3956dce0cf14f2821c130f1084c62ef9f4f77f3ba9a66d99c258f8e2d1",
             "saliency.bin", "7e18d54080bc4560dff8f9b39f4a5b0392f6a104cf4d59b4c5d86bd24402c908");
-    initNet(m_impl->real, device, "real.param", "1ffaf4819c98d60fa811520546c4e710237c25c7e704692a082c9a3a2caa371d",
-            "real.bin", "8faa696d61ad6bf5c13ed5d6c8ae35e376c660968db53d723a329020856ca5c9");
+    if (mode == CropMode::SmartAnime)
+    {
+        initNet(m_impl->face, device, "anime.param", "3f079042cc2f91ed9c8bd4a79745a010a430398178e1fcbe8c701c017a9e4097",
+                "anime.bin", "315c3bf3432b1a062995e7fd6df59ec38d0f2ac51c3da3fcfa5ca95d966cb8e3");
+    }
+    else
+    {
+        initNet(m_impl->face, device, "real.param", "1ffaf4819c98d60fa811520546c4e710237c25c7e704692a082c9a3a2caa371d",
+                "real.bin", "8faa696d61ad6bf5c13ed5d6c8ae35e376c660968db53d723a329020856ca5c9");
+    }
 }
 
 SmartCropVulkan::~SmartCropVulkan() = default;
@@ -205,6 +213,15 @@ cv::Mat SmartCropVulkan::foreground(const cv::Mat &blob) const
     return cv::Mat(4, sizes, CV_32FC1, out.data).clone();
 }
 
+cv::Mat SmartCropVulkan::animeDistances(const cv::Mat &blob, int anchors) const
+{
+    auto extractor = m_impl->face.create_extractor();
+    require(extractor.input("in0", inputTensor(blob)) == 0, "cannot set Vulkan anime input");
+    const auto out = outputTensor(extractor, "out0", anchors, 5);
+    const int sizes[] = {1, 5, anchors};
+    return cv::Mat(3, sizes, CV_32FC1, out.data).clone();
+}
+
 std::vector<cv::Rect2d> SmartCropVulkan::realBoxes(const cv::Mat &image) const
 {
     constexpr int alignment = 32;
@@ -216,10 +233,10 @@ std::vector<cv::Rect2d> SmartCropVulkan::realBoxes(const cv::Mat &image) const
     // Keep the original lower-memory extraction for large standalone inputs.
     const bool batch = static_cast<std::int64_t>(width) * height <= 4ll * 1024 * 1024;
     FaceOutputs outputs;
-    auto extractor = m_impl->real.create_extractor();
+    auto extractor = m_impl->face.create_extractor();
     if (batch)
     {
-        outputs = batchFaceOutputs(m_impl->real, input);
+        outputs = batchFaceOutputs(m_impl->face, input);
     }
     else
     {

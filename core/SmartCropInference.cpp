@@ -123,6 +123,29 @@ int animePredictionCount(cv::Size input)
     return count;
 }
 
+#if MOSAICRAFT_SMART_CROP_VULKAN
+cv::Rect2d decodeAnimeGrid(int index, cv::Size input, cv::Point padding, float l, float t, float r, float b)
+{
+    for (const int stride : kAnimeStrides)
+    {
+        const int columns = input.width / stride;
+        const int cells = columns * (input.height / stride);
+        if (index >= cells)
+        {
+            index -= cells;
+            continue;
+        }
+        // Recreate the locked export's grid and float operation order, only for hits.
+        const float ax = index % columns + 0.5f, ay = index / columns + 0.5f;
+        const float left = ax - l, top = ay - t, right = ax + r, bottom = ay + b;
+        const float w = (right - left) * stride, h = (bottom - top) * stride;
+        return cv::Rect2d((left + right) / 2 * stride - w / 2 - padding.x,
+                          (top + bottom) / 2 * stride - h / 2 - padding.y, w, h);
+    }
+    return {};
+}
+#endif
+
 std::vector<unsigned char> readModel(const nlohmann::json &manifest, const char *id)
 {
     for (const auto &model : manifest.at("models"))
@@ -365,13 +388,24 @@ struct SmartCropInference::Impl
                                padding.x, extraWidth - padding.x, cv::BORDER_CONSTANT | cv::BORDER_ISOLATED,
                                cv::Scalar::all(114));
         }
-        anime.setInput(cv::dnn::blobFromImage(padded, 1.0 / 255, input, cv::Scalar(), true));
-        const auto out = runDnn(device, [&]()
+        const auto blob = cv::dnn::blobFromImage(padded, 1.0 / 255, input, cv::Scalar(), true);
+        const int anchors = animePredictionCount(input);
+        const auto out = [&]()
         {
-            return anime.forward("output0");
-        });
+#if MOSAICRAFT_SMART_CROP_VULKAN
+            if (vulkan)
+            {
+                return vulkan->animeDistances(blob, anchors);
+            }
+#endif
+            anime.setInput(blob);
+            return runDnn(device, [&]()
+            {
+                return anime.forward("output0");
+            });
+        }();
         if (out.type() != CV_32F || out.dims != 3 || out.size[0] != 1 || out.size[1] != 5 ||
-            out.size[2] != animePredictionCount(input) || !cv::checkRange(out))
+            out.size[2] != anchors || !cv::checkRange(out))
         {
             throw SmartCropError("smart_crop_inference", "unexpected Anime Face Detection tensor for " +
                                  std::to_string(input.width) + "x" + std::to_string(input.height));
@@ -392,8 +426,11 @@ struct SmartCropInference::Impl
             if (score[i] > minScore)
             {
                 // Return fractions of the picture, not of the padded detector input.
-                const auto box = normalizedBox(cv::Rect2d(x[i] - w[i] / 2 - padding.x,
-                                                          y[i] - h[i] / 2 - padding.y, w[i], h[i]), content);
+                const auto box = normalizedBox(
+#if MOSAICRAFT_SMART_CROP_VULKAN
+                    vulkan ? decodeAnimeGrid(i, input, padding, x[i], y[i], w[i], h[i]) :
+#endif
+                    cv::Rect2d(x[i] - w[i] / 2 - padding.x, y[i] - h[i] / 2 - padding.y, w[i], h[i]), content);
                 if (!box.empty())
                 {
                     boxes.push_back(box);
@@ -451,11 +488,7 @@ SmartCropInference::SmartCropInference(const SmartCropModelPair &models, CropDev
     if (vulkan)
     {
 #if MOSAICRAFT_SMART_CROP_VULKAN
-        if (models.mode != CropMode::SmartReal)
-        {
-            throw SmartCropError("smart_crop_vulkan_model", "the Vulkan experiment does not support the dynamic anime graph");
-        }
-        m_impl->vulkan = std::make_unique<SmartCropVulkan>(*vulkan);
+        m_impl->vulkan = std::make_unique<SmartCropVulkan>(*vulkan, models.mode);
         return;
 #else
         throw SmartCropError("smart_crop_vulkan_unavailable", "this build does not support the Vulkan smart crop experiment");

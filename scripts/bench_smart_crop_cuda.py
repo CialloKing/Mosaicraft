@@ -47,7 +47,7 @@ def stop(process, kill=False):
 
 def run(args, name, parts, *, reuse_weights=None, executable=None):
     samples_path = args.work / f"{name}-vram.csv"
-    hetero = args.study in {"heterogeneous", "dual-dispatch"}
+    hetero = args.study in {"heterogeneous", "dual", "dual-dispatch"}
     trace = hetero or args.study == "cutlass"
     has_cuda = any(device in {"cuda", "dual"} for device, *_ in parts)
     wddm_path = args.work / f"{name}-wddm.csv"
@@ -242,7 +242,7 @@ def main():
     for name in ("exe", "input", "work"):
         parser.add_argument(name, type=lambda path: Path(path).resolve())
     parser.add_argument("--mode", choices=("smart-real", "smart-anime"), required=True)
-    parser.add_argument("--study", choices=("devices", "pipeline", "hybrid", "weights", "cutlass", "heterogeneous", "dual-dispatch"),
+    parser.add_argument("--study", choices=("devices", "pipeline", "hybrid", "weights", "cutlass", "heterogeneous", "dual", "dual-dispatch"),
                         default="devices")
     parser.add_argument("--candidate-exe", type=lambda path: Path(path).resolve(),
                         help="candidate CLI in a separate directory with its own runtime (cutlass or dual-dispatch)")
@@ -320,6 +320,11 @@ def main():
             variants = {label: [(device, True, args.input, None)]
                         for label, device in (("cuda", "cuda"), ("dual-ordered", "dual"), ("dual", "dual"))}
             report["vulkanDeviceIndex"] = args.vulkan_device
+    elif args.study == "dual":
+        if os.name != "nt":
+            parser.error("the dual study requires Windows")
+        variants = {label: [(label, True, args.input, None)] for label in ("cuda", "dual")}
+        report["vulkanDeviceIndex"] = args.vulkan_device
     elif args.study == "heterogeneous":
         if os.name != "nt":
             parser.error("the heterogeneous study requires Windows")
@@ -342,7 +347,7 @@ def main():
             use_candidate = label == "cutlass" or (args.study == "dual-dispatch" and label != "dual-ordered")
             result, outputs = run(args, name, variants[label], reuse_weights=reuse_weights,
                                   executable=args.candidate_exe if use_candidate else None)
-            if args.study == "dual-dispatch":
+            if args.study in {"dual", "dual-dispatch"}:
                 startup = result["children"][0]["metrics"].get("smartCropStartupMs")
                 if startup is not None and 0 <= startup <= result["wallSeconds"] * 1000:
                     result["modelPreflightSeconds"] = startup / 1000
@@ -354,7 +359,7 @@ def main():
             result.update(variant=label, round=cycle + 1, identical=outputs == reference,
                           differingOutputs=sorted(k for k in reference.keys() | outputs.keys()
                                                   if reference.get(k) != outputs.get(k)))
-            if args.study in {"cutlass", "heterogeneous", "dual-dispatch"}:
+            if args.study in {"cutlass", "heterogeneous", "dual", "dual-dispatch"}:
                 result["identicalCropRois"] = result["cropRois"] == reference_rois
                 result["identical"] &= result["identicalCropRois"]
                 result["differingOutputSha256"] = {key: outputs.get(key) for key in result["differingOutputs"]}
@@ -383,7 +388,7 @@ def main():
                                        for label, runs in grouped.items()}
     report["wallSavings"] = {label: 1 - medians[label] / medians[labels[0]] for label in labels[1:]}
     report["speedup"] = medians[labels[0]] / medians[labels[1]]
-    if args.study in {"pipeline", "hybrid", "weights", "cutlass", "heterogeneous", "dual-dispatch"}:
+    if args.study in {"pipeline", "hybrid", "weights", "cutlass", "heterogeneous", "dual", "dual-dispatch"}:
         def working_set_deltas(label, base=labels[0]):
             pairs = zip(grouped[base], grouped[label])
             return [b["peakWorkingSetBytes"] - a["peakWorkingSetBytes"] if a["peakWorkingSetBytes"] and
@@ -406,14 +411,15 @@ def main():
             report["sampledVramIncreaseMiB"] = vram
             gates = ("cutlass" in acceptable and medians["cutlass"] <= medians["baseline"] * 1.10
                      and all(delta is not None and delta <= 512 for delta in vram))
-        elif args.study == "dual-dispatch":
+        elif args.study in {"dual", "dual-dispatch"}:
             overlap = [run["children"][0]["metrics"].get("smartCropDualOverlapMs", 0) for run in grouped["dual"]]
             report["dualOverlapMs"] = overlap
             for field, key in (("modelPreflightSeconds", "medianModelPreflightSeconds"),
                                ("wallMinusModelPreflightSeconds", "medianWallMinusModelPreflightSeconds")):
                 report[key] = {label: statistics.median(r[field] for r in runs)
                                if all(field in r for r in runs) else None for label, runs in grouped.items()}
-            report["gainVsOrderedDual"] = 1 - medians["dual"] / medians["dual-ordered"]
+            if args.study == "dual-dispatch":
+                report["gainVsOrderedDual"] = 1 - medians["dual"] / medians["dual-ordered"]
             gates = ("dual" in acceptable and all(value > 0 for value in overlap)
                      and report["wallSavings"]["dual"] >= .05)
         elif args.study == "heterogeneous":

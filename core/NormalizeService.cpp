@@ -593,9 +593,10 @@ std::optional<ServiceResult> runCliSmartCropExperiment(const BuildRequest &reque
                               "invalid_argument", "cropDevice");
     }
 #if MOSAICRAFT_SMART_CROP_VULKAN
-    if (request.cropMode != CropMode::SmartReal)
+    // Standalone Vulkan anime would also claim oversized inputs, unlike bounded dual dispatch.
+    if (request.cropMode == CropMode::SmartAnime && experiment != "dual")
     {
-        return runtimeFailure(runtime, 1, "the Vulkan experiment does not support the dynamic anime graph",
+        return runtimeFailure(runtime, 1, "Vulkan anime detection is currently limited to the bounded dual GPU experiment",
                               "smart_crop_vulkan_model", "cropMode");
     }
     const auto *value = std::getenv("MOSAICRAFT_SMART_CROP_VULKAN_DEVICE");
