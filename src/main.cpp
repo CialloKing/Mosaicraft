@@ -7,6 +7,7 @@
 #endif
 #include "core/LibraryVisuals.h"
 #include "core/NumericParsing.h"
+#include "core/NormalizeService.h"
 #include "core/ProjectService.h"
 #include "core/RequestValidation.h"
 #include "core/UnicodeIO.h"
@@ -455,6 +456,10 @@ ServiceResult execute(const Arguments &args, json &data, RuntimeContext &runtime
         else if (args.has("size") && !parseSize(args.get("size"), request.normalizeWidth, request.normalizeHeight))
         {
             throw std::invalid_argument("--size requires positive WxH");
+        }
+        if (auto result = runCliSmartCropExperiment(request, runtime))
+        {
+            return std::move(*result);
         }
         return BuildService().run(request, runtime);
     }

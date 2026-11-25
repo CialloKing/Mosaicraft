@@ -12,7 +12,7 @@ class SmartCropCudaRecovery;
 class SmartCropSession
 {
 public:
-    SmartCropSession(CropMode mode, CropDevice policy, RuntimeContext &runtime, bool standalone);
+    SmartCropSession(CropMode mode, CropDevice policy, RuntimeContext &runtime, bool standalone, std::optional<int> vulkan = {});
     ~SmartCropSession();
     ImageNormalizer normalizer(int width, int height);
     CropDevice initialDevice() const;
@@ -27,6 +27,7 @@ private:
     RuntimeContext &m_runtime;
     CropDevice m_policy;
     bool m_standalone;
+    std::optional<int> m_vulkan;
     SmartCropModelPair m_models{};
     std::unique_ptr<SmartCropInference> m_session;
 #if MOSAICRAFT_SMART_CROP_CUDA
@@ -34,6 +35,6 @@ private:
 #endif
     CropDevice m_initial;
     SmartCropStats m_stats;
-    size_t m_cpuImages = 0, m_cudaImages = 0;
+    size_t m_cpuImages = 0, m_cudaImages = 0, m_vulkanImages = 0;
 };
 }

@@ -148,7 +148,7 @@ SmartCropModelPair loadSmartCropModelPair(CropMode mode);
 class SmartCropInference
 {
 public:
-    SmartCropInference(const SmartCropModelPair &models, CropDevice device);
+    SmartCropInference(const SmartCropModelPair &models, CropDevice device, std::optional<int> vulkan = {});
     ~SmartCropInference();
     void probe();
     SmartCropAnalysis analyze(const cv::Mat &image);

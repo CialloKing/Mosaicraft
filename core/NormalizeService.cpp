@@ -1,4 +1,6 @@
 #include "NormalizeService.h"
+#include "ExecutionScope.h"
+#include "MosaicService.h"
 #include "OutputPublication.h"
 #include "RequestValidation.h"
 #include "SmartCropSession.h"
@@ -7,6 +9,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <charconv>
 #include <cstdlib>
 #include <string_view>
 #include <set>
@@ -114,7 +117,8 @@ void detail::runSmartCropPipeline(ImageNormalizer &normalizer, std::size_t count
     waitForWriter();
 }
 
-ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runtime)
+static ServiceResult normalizeImagesImpl(const BuildRequest &request, RuntimeContext &runtime,
+                                         std::optional<int> vulkan)
 {
     namespace fs = std::filesystem;
     std::string error, field;
@@ -170,17 +174,22 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
         return runtimeFailure(runtime, 1, "no supported images found", "input_unreadable");
     }
     const auto policy = request.cropDevice.value_or(CropDevice::Auto);
-    const char *diagnosticField = policy == CropDevice::Cuda ? "cropDevice" : "cropMode";
+    const char *diagnosticField = vulkan || policy == CropDevice::Cuda ? "cropDevice" : "cropMode";
     std::optional<SmartCropSession> smartCrop;
     if (request.cropMode != CropMode::Center)
     {
+        const auto start = std::chrono::steady_clock::now();
         try
         {
-            smartCrop.emplace(request.cropMode, policy, runtime, true);
+            smartCrop.emplace(request.cropMode, policy, runtime, true, vulkan);
         }
         catch (const SmartCropError &problem)
         {
             return runtimeFailure(runtime, 1, problem.what(), problem.code(), diagnosticField);
+        }
+        if (vulkan)
+        {
+            runtime.metric("smartCropStartupMs", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
         }
     }
     fs::create_directories(output);
@@ -227,6 +236,10 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
         pipeline = trial != "0" && (defaultPipeline || trial == "1") && smartCrop->initialDevice() == CropDevice::Cuda &&
                    files.size() >= 8 && normalizationWorkerCount(request.threads) >= 3;
 #endif
+        if (vulkan)
+        {
+            pipeline = trial != "0" && files.size() >= 8 && normalizationWorkerCount(request.threads) >= 3;
+        }
         const bool measure = pipeline || trial == "0" || trial == "1";
         ImageNormalizer::StandaloneTimings timings;
         const auto processStart = std::chrono::steady_clock::now();
@@ -289,5 +302,47 @@ ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runti
     }
     runtime.artifact("normalized", "directory", pathToUtf8(output));
     return ServiceResult::success("images normalized without creating a database");
+}
+
+ServiceResult normalizeImages(const BuildRequest &request, RuntimeContext &runtime)
+{
+    return normalizeImagesImpl(request, runtime, std::nullopt);
+}
+
+std::optional<ServiceResult> runCliSmartCropExperiment(const BuildRequest &request, RuntimeContext &runtime)
+{
+    const auto *setting = std::getenv("MOSAICRAFT_SMART_CROP_EXPERIMENT");
+    if (!request.normalizeOnly || !setting || !*setting)
+    {
+        return std::nullopt;
+    }
+    if (std::string_view(setting) != "vulkan" || request.cropMode == CropMode::Center ||
+        request.cropDevice.value_or(CropDevice::Auto) != CropDevice::Auto)
+    {
+        return runtimeFailure(runtime, 1, "Vulkan trial requires CLI smart normalization and the default crop-device policy",
+                              "invalid_argument", "cropDevice");
+    }
+#if MOSAICRAFT_SMART_CROP_VULKAN
+    if (request.cropMode != CropMode::SmartReal)
+    {
+        return runtimeFailure(runtime, 1, "the Vulkan experiment does not support the dynamic anime graph",
+                              "smart_crop_vulkan_model", "cropMode");
+    }
+    const auto *value = std::getenv("MOSAICRAFT_SMART_CROP_VULKAN_DEVICE");
+    const std::string_view index = value ? value : "";
+    int device = -1;
+    const auto parsed = std::from_chars(index.data(), index.data() + index.size(), device);
+    if (parsed.ec != std::errc{} || parsed.ptr != index.data() + index.size() || device < 0)
+    {
+        return runtimeFailure(runtime, 1, "set MOSAICRAFT_SMART_CROP_VULKAN_DEVICE to an enumerated index",
+                              "smart_crop_vulkan_device", "cropDevice");
+    }
+    std::lock_guard<std::mutex> lock(pipelineMutex());
+    ExecutionScope scope;
+    return runtimeResult(normalizeImagesImpl(request, runtime, device), runtime);
+#else
+    return runtimeFailure(runtime, 1, "this build does not support the Vulkan smart crop experiment",
+                          "smart_crop_vulkan_unavailable", "cropDevice");
+#endif
 }
 } // namespace mosaicraft

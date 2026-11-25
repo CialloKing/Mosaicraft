@@ -100,6 +100,17 @@ endif()
 
 option(MOSAICRAFT_SMART_CROP "Enable OpenCV DNN smart image normalization" OFF)
 option(MOSAICRAFT_SMART_CROP_CUDA "Enable native CUDA inference for smart crop (requires CUDA OpenCV)" OFF)
+option(MOSAICRAFT_SMART_CROP_VULKAN "Build the experimental Windows x64 Vulkan smart crop adapter" OFF)
+if(MOSAICRAFT_SMART_CROP_VULKAN)
+    if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR CMAKE_GENERATOR_PLATFORM MATCHES "ARM" OR
+       CMAKE_SYSTEM_PROCESSOR MATCHES "[aA][rR][mM]" OR NOT MOSAICRAFT_SMART_CROP)
+        message(FATAL_ERROR "Vulkan smart crop requires a Windows x64 smart-crop build")
+    endif()
+    find_package(ncnn CONFIG REQUIRED)
+    if(NOT NCNN_VULKAN OR NCNN_SHARED_LIB OR NOT NCNN_VERSION STREQUAL "20261020")
+        message(FATAL_ERROR "Vulkan smart crop requires the pinned static Vulkan ncnn SDK")
+    endif()
+endif()
 set(_opencv_components core imgproc imgcodecs)
 if(MOSAICRAFT_SMART_CROP)
     list(APPEND _opencv_components dnn objdetect)
@@ -371,8 +382,13 @@ endif()
 if(MOSAICRAFT_SMART_CROP_CUDA)
     target_sources(mosaicraft_core PRIVATE core/SmartCropCudaRecovery.cpp)
 endif()
+if(MOSAICRAFT_SMART_CROP_VULKAN)
+    target_sources(mosaicraft_core PRIVATE core/SmartCropVulkan.cpp)
+    target_link_libraries(mosaicraft_core PRIVATE ncnn)
+endif()
 target_compile_definitions(mosaicraft_core PRIVATE
     MOSAICRAFT_SMART_CROP=$<BOOL:${MOSAICRAFT_SMART_CROP}>
+    MOSAICRAFT_SMART_CROP_VULKAN=$<BOOL:${MOSAICRAFT_SMART_CROP_VULKAN}>
     MOSAICRAFT_SMART_CROP_CUDA=$<BOOL:${MOSAICRAFT_SMART_CROP_CUDA}>)
 
 target_include_directories(mosaicraft_core PUBLIC
