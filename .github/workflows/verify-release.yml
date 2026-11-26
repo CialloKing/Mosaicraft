@@ -34,7 +34,7 @@ jobs:
           echo "commit=$(git rev-parse 'FETCH_HEAD^{commit}')" >> "$GITHUB_OUTPUT"
           if [[ -z "$ARTIFACT_RUN" ]]; then
             gh release view "$TAG" --json assets > release-assets.json
-            python3 scripts/verify_release_set.py "$TAG" --assets release-assets.json
+            cmake "-DTAG=$TAG" -DASSETS_FILE=release-assets.json -P cmake/VerifyReleaseSet.cmake
           fi
           echo "packages=$(jq -c --arg tag "$TAG" --arg run "$ARTIFACT_RUN" '
             .include |= map(. + {asset: (

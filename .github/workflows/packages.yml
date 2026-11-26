@@ -212,7 +212,7 @@ jobs:
           merge-multiple: true
           path: build/release-set
       - name: Check the exact archive set and write SHA256SUMS.txt
-        run: python3 scripts/verify_release_set.py "v$(jq -r .softwareVersion contracts.json)" --hosted --directory build/release-set
+        run: cmake "-DTAG=v$(jq -r .softwareVersion contracts.json)" -DHOSTED=ON -DARCHIVE_DIR=build/release-set -P cmake/VerifyReleaseSet.cmake
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: verified-six-package-set
