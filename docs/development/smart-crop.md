@@ -16,7 +16,7 @@ cmake --build build/windows-smart-crop --config Release --target mosaicraft_test
 cmake --install build/windows-smart-crop --config Release --prefix build/smart-crop-local
 ```
 
-模型准备会验证大小和 SHA-256；ONNX 模型准备和推理运行不依赖 Python 或 ONNX Runtime。重新转换 Vulkan 模型需要 Python 和锁定的 pnnx 工具。可执行文件在自己的 `models/` 子目录查找文件，不从当前工作目录找模型，也不下载。Windows 私人测试包可以切换到其他目录后用绝对路径运行：
+模型准备会验证大小和 SHA-256。ONNX 模型准备和推理运行不依赖 Python 或 ONNX Runtime。Windows/Linux 双后端包另运行 `cmake -DMODE=SmartCropVulkanModels -P cmake/PrepareRelease.cmake`，获取已验证的 Vulkan 模型。可执行文件在自己的 `models/` 子目录查找模型。Windows 私人测试包可以切换到其他目录后用绝对路径运行：
 
 ```text
 <local-install>/mosaicraft library normalize <input> -o <new-output> --size 180x320 --crop smart-real --threads 1 --json
@@ -24,6 +24,10 @@ cmake --install build/windows-smart-crop --config Release --prefix build/smart-c
 ```
 
 运行摘要中的 `smartCropFacesFound`、`smartCropMoved`、`smartCropCentered` 和 `smartCropMainFaceClipped` 按图片计数。无需裁边的图片不计入；`smartCropInferenceWorkerMs` 是逐图推理耗时之和，不包括启动时的模型校验和探测，也不等于批处理的墙钟时间。同尺寸特快路径保留旧归一化的行为，包括已有的 PNG 紧凑化规则。
+
+## 更新 Vulkan 模型
+
+模型或转换工具变更时，在 Windows 使用 Python ONNX 和锁定的 pnnx 重新转换，按真人、动漫和显著性模型复验。`cmake/smart-crop-vulkan.json` 记录逐文件哈希，`cmake/smart-crop-vulkan-prebuilt.json` 单独记录获准分发的版本化 ZIP 地址和 SHA-256。ZIP 内的六个模型位于 `models/vulkan/`。当前来源为 v1.15.19 的 Windows 智能裁剪正式包。更新发布输入时同步这两份锁，并从空目录运行 `SmartCropVulkanModels` 验证下载结果。[转换与探针复现](../SMART_CROP_VULKAN.md#如何复现)
 
 ## 设备策略
 

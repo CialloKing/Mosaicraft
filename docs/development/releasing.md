@@ -40,7 +40,7 @@ cmake -DTAG=v1.15.19 "-DARCHIVE_DIR=build/正式附件" -P cmake/VerifyReleaseSe
 
 核对 Actions 下载的候选集合时加上 `-DHOSTED=ON`，此时 Windows 两个包应带 `_candidate` 后缀。发布后可用 `gh release view v1.15.19 --json assets > release-assets.json` 获取附件清单，并用 `-DASSETS_FILE=release-assets.json` 代替 `-DARCHIVE_DIR` 来核对文件名。旧运行时仍可单独构建以复查历史包。
 
-三个智能裁剪包均按锁准备真人、动漫与显著性 ONNX 及许可。两个 GPU 包复用同一份哈希锁定的 ncnn 转换模型，CUDA 使用 CUTLASS。打包和独立验包默认生成测试图，运行真人和动漫推理，核对实际设备及输出尺寸。在本机设置 `SMART_CROP_FIXTURE_ROOT` 并安装 `scripts/requirements-smart-crop-verification.txt` 中的依赖后，可改用锁定的标注正例检查主脸保全。
+三个智能裁剪包均按锁准备真人、动漫与显著性 ONNX 及许可。两个 GPU 包通过 `SmartCropVulkanModels` 获取同一份哈希锁定的 ncnn 模型，模型转换在更新权重或工具时单独运行。CUDA 使用 CUTLASS。打包和独立验包默认生成测试图，运行真人和动漫推理，核对实际设备及输出尺寸。在本机设置 `SMART_CROP_FIXTURE_ROOT` 并安装 `scripts/requirements-smart-crop-verification.txt` 中的依赖后，可改用锁定的标注正例检查主脸保全。
 
 Windows 云端的两个 GPU 包为候选。正式附件在同提交上用 Required 模式构建并在实机验收，智能裁剪包的 CUDA、Vulkan 与显式 CPU 均运行真人和动漫模式。Linux 云端包按现有显式准入流程标记 GPU 为 `not-run`，并执行独立解包和 CPU 推理检查。[本机打包入口](packaging.md#cmake-发布入口)
 

@@ -28,29 +28,9 @@ jobs:
           echo "qt=$(jq -c --arg tag "$SUPPLEMENT" \
             '{include: [.include[] | select(.kind == "qt" and ($tag == "" or .runtime == "cuda-vulkan"))]}' \
             cmake/release-packages.json)" >> "$GITHUB_OUTPUT"
-  vulkan-models:
-    if: ${{ !inputs.desktop_release_tag }}
-    runs-on: windows-2025-vs2026
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Convert the locked models once for both Vulkan packages
-        run: |
-          python -m pip install onnx==1.20.1
-          cmake -DMODE=Models -P cmake/PrepareRelease.cmake
-          cmake -DMODE=SmartCropVulkan -DPREPARE_VULKAN_MODELS=ON -P cmake/PrepareRelease.cmake
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: smart-crop-vulkan-models
-          path: build/smart-crop-models/prepared/vulkan
-          if-no-files-found: error
   native-package:
     if: ${{ !inputs.desktop_release_tag }}
-    needs: [matrix, vulkan-models]
+    needs: matrix
     name: Package ${{ matrix.platform }} smart crop
     strategy:
       fail-fast: false
@@ -77,11 +57,9 @@ jobs:
           cmake -DMODE=CUDA -P cmake/PrepareRelease.cmake
           cmake -DMODE=Vulkan -P cmake/PrepareRelease.cmake
           cmake -DMODE=SmartCropVulkan -P cmake/PrepareRelease.cmake
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - name: Prepare locked Vulkan smart crop models
         if: matrix.runtime == 'cuda-vulkan'
-        with:
-          name: smart-crop-vulkan-models
-          path: build/smart-crop-models/prepared/vulkan
+        run: cmake -DMODE=SmartCropVulkanModels -P cmake/PrepareRelease.cmake
       - uses: ./.github/actions/native-dependencies
         with:
           smart-crop: 'ON'

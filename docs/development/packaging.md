@@ -34,7 +34,11 @@ Linux/macOS 的日常源码构建使用 CMake 3.21+。发布使用 CMake/CTest/C
 
 `Release.cmake` 校验干净的源提交和实际构建配置，运行必选 CTest，由 CPack 归档，再用独立工具验收解包后的程序。只有通过验收的归档和 `.sha256` 才会进入输出目录。没有跳过测试、冒烟或验包的选项。
 
-现行智能裁剪包先准备模型和依赖。macOS 在 `Prepare`、`Install` 时设置 `SMART_CROP=ON`，再以 `-DRUNTIME=cpu-only -DSMART_CROP=ON` 运行 `Release.cmake`。Windows/Linux 先运行 `PrepareRelease.cmake` 的 `CUDA`、`Vulkan`、`SmartCropVulkan`、`Models` 模式，再在 `Prepare`、`Install` 时设置 `SMART_CROP=ON` 与 `SMART_CROP_CUTLASS=ON`。Vulkan 模型在 Windows 用 `-DMODE=SmartCropVulkan -DPREPARE_VULKAN_MODELS=ON` 生成，Linux 使用同一份六文件模型目录。导出准备步骤打印的 ncnn 配置和许可路径，分别赋给 `MOSAICRAFT_NCNN_DIR`、`MOSAICRAFT_NCNN_LICENSE`。打包使用以下参数：
+现行智能裁剪包先准备模型和依赖。macOS 在 `Prepare`、`Install` 时设置 `SMART_CROP=ON`，再以 `-DRUNTIME=cpu-only -DSMART_CROP=ON` 运行 `Release.cmake`。Windows/Linux 先运行 `PrepareRelease.cmake` 的 `CUDA`、`Vulkan`、`SmartCropVulkan`、`Models` 和 `SmartCropVulkanModels` 模式，再在 `Prepare`、`Install` 时设置 `SMART_CROP=ON` 与 `SMART_CROP_CUTLASS=ON`。导出准备步骤打印的 ncnn 配置和许可路径，分别赋给 `MOSAICRAFT_NCNN_DIR`、`MOSAICRAFT_NCNN_LICENSE`。
+
+`SmartCropVulkanModels` 从锁定的已发布归档提取六个模型文件，校验整个归档及每个文件的 SHA-256，默认输出到 `build/smart-crop-models/prepared/vulkan/`。已有模型目录会直接校验，归档缓存在模型根目录的 `.vulkan-downloads/`。常规打包可以在没有 Python 和 pnnx 的环境中准备模型。[模型更新与复验](smart-crop.md#更新-vulkan-模型)
+
+Windows/Linux 双后端打包命令如下。
 
 ```sh
 cmake -DRUNTIME=cuda-vulkan -DSMART_CROP=ON -DSMART_CROP_CUDA=ON \
