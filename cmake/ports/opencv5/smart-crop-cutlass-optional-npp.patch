@@ -1,0 +1,84 @@
+--- a/opencv/modules/core/include/opencv2/core/private.cuda.hpp
++++ b/opencv/modules/core/include/opencv2/core/private.cuda.hpp
+@@ -69,11 +69,15 @@
+ #     include <cuda_fp16.h>
+ #    endif
+ #  endif // defined(__CUDACC_VER_MAJOR__) && (8 <= __CUDACC_VER_MAJOR__)
+-#  include <npp.h>
++// The minimal CUDA SDK used by the CUTLASS build can omit NPP.
++#  if __has_include(<npp.h>)
++#    include <npp.h>
++#    define OPENCV_CORE_HAS_NPP
++#  endif
+ #  include "opencv2/core/cuda_stream_accessor.hpp"
+ #  include "opencv2/core/cuda/common.hpp"
+ 
+-# ifndef NPP_VERSION
++# if defined(OPENCV_CORE_HAS_NPP) && !defined(NPP_VERSION)
+ #  define NPP_VERSION (NPP_VERSION_MAJOR * 1000 + NPP_VERSION_MINOR * 100 + NPP_VERSION_BUILD)
+ # endif
+ 
+@@ -104,22 +108,28 @@
+ 
+ #ifdef HAVE_CUDA
+ 
++#ifdef OPENCV_CORE_HAS_NPP
+ #define nppSafeSetStream(oldStream, newStream) { if(oldStream != newStream) { cudaStreamSynchronize(oldStream); nppSetStream(newStream); } }
++#endif
+ 
+ namespace cv { namespace cuda
+ {
++#ifdef OPENCV_CORE_HAS_NPP
+     inline void checkNppError(int code, const char* file, const int line, const char* func)
+     {
+         if (code < 0)
+             cv::error(cv::Error::GpuApiCallError, getNppErrorMessage(code), func, file, line);
+     }
+ 
++#endif
++
+     inline void checkCudaDriverApiError(int code, const char* file, const int line, const char* func)
+     {
+         if (code != CUDA_SUCCESS)
+             cv::error(cv::Error::GpuApiCallError, getCudaDriverApiErrorMessage(code), func, file, line);
+     }
+ 
++#ifdef OPENCV_CORE_HAS_NPP
+     template<int n> struct NPPTypeTraits;
+     template<> struct NPPTypeTraits<CV_8U>  { typedef Npp8u npp_type; };
+     template<> struct NPPTypeTraits<CV_8S>  { typedef Npp8s npp_type; };
+@@ -199,6 +209,7 @@
+         cudaStream_t oldStream;
+     };
+ #endif
++#endif // OPENCV_CORE_HAS_NPP
+ }}
+ 
+ #define cuSafeCall(expr)  cv::cuda::checkCudaDriverApiError(expr, __FILE__, __LINE__, CV_Func)
+--- a/opencv/modules/core/src/cuda_info.cpp
++++ b/opencv/modules/core/src/cuda_info.cpp
+@@ -1057,6 +1057,7 @@
+         bool operator()(const ErrorEntry& e) const { return e.code == code; }
+     };
+ 
++#ifdef OPENCV_CORE_HAS_NPP
+     const ErrorEntry npp_errors [] =
+     {
+     #if defined (_MSC_VER)
+@@ -1146,6 +1147,7 @@
+     };
+ 
+     const size_t npp_error_num = sizeof(npp_errors) / sizeof(npp_errors[0]);
++#endif
+ 
+     const ErrorEntry cu_errors [] =
+     {
+@@ -1215,7 +1217,7 @@
+ 
+ String cv::cuda::getNppErrorMessage(int code)
+ {
+-#ifndef HAVE_CUDA
++#ifndef OPENCV_CORE_HAS_NPP
+     CV_UNUSED(code);
+     return String();
+ #else

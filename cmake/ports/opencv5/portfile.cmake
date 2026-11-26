@@ -7,7 +7,8 @@ if("dnn-cuda-cutlass" IN_LIST FEATURES)
         message(FATAL_ERROR "Install opencv5[dnn-cuda-cutlass] separately on Windows or Linux x64")
     endif()
     set(cutlass ON)
-    set(cutlass_patches smart-crop-cutlass-no-blas.patch smart-crop-cutlass-operators.patch)
+    set(cutlass_patches smart-crop-cutlass-no-blas.patch smart-crop-cutlass-operators.patch
+        smart-crop-cutlass-optional-npp.patch)
 endif()
 if("dnn-cuda" IN_LIST FEATURES OR cutlass)
     # The matching contrib source distribution also contains the required cudev headers.
