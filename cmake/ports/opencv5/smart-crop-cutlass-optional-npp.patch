@@ -1,5 +1,5 @@
---- a/opencv/modules/core/include/opencv2/core/private.cuda.hpp
-+++ b/opencv/modules/core/include/opencv2/core/private.cuda.hpp
+--- a/modules/core/include/opencv2/core/private.cuda.hpp
++++ b/modules/core/include/opencv2/core/private.cuda.hpp
 @@ -69,11 +69,15 @@
  #     include <cuda_fp16.h>
  #    endif
@@ -55,8 +55,8 @@
  }}
  
  #define cuSafeCall(expr)  cv::cuda::checkCudaDriverApiError(expr, __FILE__, __LINE__, CV_Func)
---- a/opencv/modules/core/src/cuda_info.cpp
-+++ b/opencv/modules/core/src/cuda_info.cpp
+--- a/modules/core/src/cuda_info.cpp
++++ b/modules/core/src/cuda_info.cpp
 @@ -1057,6 +1057,7 @@
          bool operator()(const ErrorEntry& e) const { return e.code == code; }
      };

@@ -1,5 +1,5 @@
---- a/opencv/modules/dnn/src/cuda4dnn/primitives/resize.hpp
-+++ b/opencv/modules/dnn/src/cuda4dnn/primitives/resize.hpp
+--- a/modules/dnn/src/cuda4dnn/primitives/resize.hpp
++++ b/modules/dnn/src/cuda4dnn/primitives/resize.hpp
 @@ -29,8 +29,6 @@
      template <class T>
      class ResizeOp final : public CUDABackendNode {
@@ -33,8 +33,8 @@
 
              const auto compute_scale = [this](std::size_t input_size, std::size_t output_size) {
                  return (align_corners && output_size > 1) ?
---- a/opencv/modules/dnn/src/layers/resize2_layer.cpp
-+++ b/opencv/modules/dnn/src/layers/resize2_layer.cpp
+--- a/modules/dnn/src/layers/resize2_layer.cpp
++++ b/modules/dnn/src/layers/resize2_layer.cpp
 @@ -1108,7 +1108,14 @@
      virtual bool supportBackend(int backendId) CV_OVERRIDE
      {
@@ -65,8 +65,8 @@
      Ptr<BackendNode> initCUDA(
          void *context_,
          const std::vector<Ptr<BackendWrapper>>& inputs,
---- a/opencv/modules/dnn/src/layers/resize_layer.cpp
-+++ b/opencv/modules/dnn/src/layers/resize_layer.cpp
+--- a/modules/dnn/src/layers/resize_layer.cpp
++++ b/modules/dnn/src/layers/resize_layer.cpp
 @@ -544,6 +544,13 @@
 
 
@@ -81,8 +81,8 @@
      Ptr<BackendNode> initCUDA(
          void *context_,
          const std::vector<Ptr<BackendWrapper>>& inputs,
---- a/opencv/modules/dnn/src/net_impl2.cpp
-+++ b/opencv/modules/dnn/src/net_impl2.cpp
+--- a/modules/dnn/src/net_impl2.cpp
++++ b/modules/dnn/src/net_impl2.cpp
 @@ -619,11 +619,11 @@
          // a dynamic op stays on CUDA only if getMemoryShapes() reads its value inputs through
          // argTensor(), i.e. the host copies forwardGraph() downloads before the op runs
@@ -135,8 +135,8 @@
              if (!headerOnly && (opBackend != DNN_BACKEND_CUDA || (dynamicOnCuda && (i > 0 || ninputs == 1))))
                  cudaDownloadArg(inp, argTensor(inp));
  #endif
---- a/opencv/modules/dnn/src/op_cuda.cpp
-+++ b/opencv/modules/dnn/src/op_cuda.cpp
+--- a/modules/dnn/src/op_cuda.cpp
++++ b/modules/dnn/src/op_cuda.cpp
 @@ -74,6 +74,8 @@
      CV_DNN_REGISTER_EXEC_CLASS(NaryEltwise, DNN_BACKEND_CUDA, CUDALegacyExec);
      CV_DNN_REGISTER_EXEC_CLASS(Flatten,     DNN_BACKEND_CUDA, CUDALegacyExec);

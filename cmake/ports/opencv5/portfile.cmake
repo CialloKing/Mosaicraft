@@ -1,5 +1,3 @@
-# The upstream opencv-python source distribution ships the native OpenCV sources.
-# Extract only its OpenCV subtree; no wheel, Python build or bindings are used.
 set(cutlass OFF)
 if("dnn-cuda-cutlass" IN_LIST FEATURES)
     if("dnn-cuda" IN_LIST FEATURES OR (NOT VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_LINUX) OR
@@ -10,25 +8,25 @@ if("dnn-cuda-cutlass" IN_LIST FEATURES)
     set(cutlass_patches smart-crop-cutlass-no-blas.patch smart-crop-cutlass-operators.patch
         smart-crop-cutlass-optional-npp.patch)
 endif()
+set(cuda_patches)
 if("dnn-cuda" IN_LIST FEATURES OR cutlass)
-    # The matching contrib source distribution also contains the required cudev headers.
-    vcpkg_download_distfile(archive
-        URLS "https://files.pythonhosted.org/packages/76/f7/52d9f0730e1e067461e6e91926d666b57ec8659ff530bf9e8a0bce309109/opencv_contrib_python_headless-5.1.0.95.tar.gz"
-        FILENAME "opencv_contrib_python_headless-5.1.0.95.tar.gz"
-        SHA512 6ac405b261dc2ff2cc019cdee16efc1ec3c473d76d296eaf93630713cd1c25ef1d50648c2193ad2d4b42338aeafa552606c4a773302fc925e1649b35fc11a64b
+    # Only CUDA DNN needs the matching contrib cudev headers.
+    vcpkg_from_github(
+        OUT_SOURCE_PATH contrib_source
+        REPO opencv/opencv_contrib
+        REF b67a855188a3d683813731010f6d39ac614733a4 # 5.1.0
+        SHA512 27228ffda43b85af4437717865a9024c2ebcc91a881f14e9d1d6323a8b1e1a625791b515a34d4215efa7c8662e70bb6772c4f7659d452d036d7e923ea0ec87e3
     )
-    vcpkg_extract_source_archive(source ARCHIVE "${archive}" PATCHES
-        face-detector-dnn-graph.patch smart-crop-cuda-operators.patch smart-crop-cuda-reuse-weights.patch ${cutlass_patches})
-    set(extra_modules "${source}/opencv_contrib/modules/cudev")
-else()
-    vcpkg_download_distfile(archive
-        URLS "https://files.pythonhosted.org/packages/6b/51/33b8c7255f3bdd920d6238aa478faf1e2136d5a51f17d826c13902ca7195/opencv_python_headless-5.1.0.95.tar.gz"
-        FILENAME "opencv_python_headless-5.1.0.95.tar.gz"
-        SHA512 09628a35dd5f80207dc2a4a18e75ca377ebc7634d538a362a18116d7bdde2ddaf417c331bba21fa668ab3f0a9f85dc160b17e6e78555266fb99b402f0d174194
-    )
-    vcpkg_extract_source_archive(source ARCHIVE "${archive}")
+    set(cuda_patches face-detector-dnn-graph.patch smart-crop-cuda-operators.patch
+        smart-crop-cuda-reuse-weights.patch ${cutlass_patches})
 endif()
-set(source "${source}/opencv")
+vcpkg_from_github(
+    OUT_SOURCE_PATH source
+    REPO opencv/opencv
+    REF e4f78fbcf1a773fbed69e14500e8b734963eb585 # 5.1.0
+    SHA512 81a631d9d97f8d7edca91722e8dd7295cfb6d508bcff461d86bfd7dd6f6e7530fa818497dc6df159da409788b6302fa133adfbefde6a692f6e116a069467e773
+    PATCHES ${cuda_patches}
+)
 
 set(modules core,imgproc,imgcodecs)
 set(dnn OFF)
@@ -75,7 +73,7 @@ if("dnn-cuda" IN_LIST FEATURES OR cutlass)
     # Cache only exact SDK locations; searching PATH may pick a different toolkit.
     set(cuda ON)
     string(APPEND modules ",cudev")
-    list(APPEND cuda_options "-DOPENCV_EXTRA_MODULES_PATH=${extra_modules}"
+    list(APPEND cuda_options "-DOPENCV_EXTRA_MODULES_PATH=${contrib_source}/modules/cudev"
         -DWITH_NVCUVID=OFF -DWITH_NVCUVENC=OFF -DWITH_CUFFT=OFF
         -DENABLE_CUDA_FIRST_CLASS_LANGUAGE=ON "-DCUDAToolkit_ROOT=${cuda_root}"
         "-DCMAKE_CUDA_COMPILER=${nvcc}" "-DCUDA_ARCH_BIN=${arches}" -DCMAKE_CUDA_RUNTIME_LIBRARY=Shared)
@@ -148,7 +146,7 @@ vcpkg_copy_pdbs()
 # OpenCV installs notices for bundled code such as SoftFloat separately.
 file(GLOB_RECURSE notices LIST_DIRECTORIES FALSE "${CURRENT_PACKAGES_DIR}/share/opencv5/licenses/*")
 if(cuda)
-    list(APPEND notices "${source}/../opencv_contrib/LICENSE")
+    list(APPEND notices "${contrib_source}/LICENSE")
 endif()
 if(cutlass)
     file(INSTALL "${cutlass_source}/LICENSE.txt" DESTINATION "${CURRENT_PACKAGES_DIR}/share/opencv5/licenses/cutlass")

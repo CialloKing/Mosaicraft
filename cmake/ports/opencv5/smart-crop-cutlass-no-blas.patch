@@ -1,5 +1,5 @@
---- a/opencv/modules/dnn/CMakeLists.txt
-+++ b/opencv/modules/dnn/CMakeLists.txt
+--- a/modules/dnn/CMakeLists.txt
++++ b/modules/dnn/CMakeLists.txt
 @@ -49,17 +49,20 @@
  
  ocv_option(OPENCV_DNN_CUDA "Build with CUDA support"
@@ -49,8 +49,8 @@
      endif()
    endif()
  else()
---- a/opencv/modules/dnn/src/op_cuda.hpp
-+++ b/opencv/modules/dnn/src/op_cuda.hpp
+--- a/modules/dnn/src/op_cuda.hpp
++++ b/modules/dnn/src/op_cuda.hpp
 @@ -8,7 +8,9 @@
  #ifdef HAVE_CUDA
  #include "cuda4dnn/csl/stream.hpp"
@@ -71,8 +71,8 @@
              cudnn::Handle cudnn_handle;
              int* error_flag = nullptr;  // device alias of a mapped host int; set by a kernel on invalid input
          };
---- a/opencv/modules/dnn/src/op_cuda.cpp
-+++ b/opencv/modules/dnn/src/op_cuda.cpp
+--- a/modules/dnn/src/op_cuda.cpp
++++ b/modules/dnn/src/op_cuda.cpp
 @@ -165,7 +165,9 @@
      {
          cuda4dnn::csl::CSLContext context;
@@ -83,8 +83,8 @@
          context.cudnn_handle = cuda4dnn::csl::cudnn::Handle(context.stream, useTF32);
  
          cudaInfo = std::make_unique<CudaInfo_t>(std::move(context));
---- a/opencv/modules/dnn/src/net_impl2.cpp
-+++ b/opencv/modules/dnn/src/net_impl2.cpp
+--- a/modules/dnn/src/net_impl2.cpp
++++ b/modules/dnn/src/net_impl2.cpp
 @@ -833,7 +833,9 @@
          if (!cudaInfo) {
              cuda4dnn::csl::CSLContext context;
@@ -95,8 +95,8 @@
              context.cudnn_handle = cuda4dnn::csl::cudnn::Handle(context.stream, useTF32);
              cudaInfo = std::make_unique<CudaInfo_t>(std::move(context));
          }
---- a/opencv/modules/dnn/src/cuda4dnn/csl/tensor.hpp
-+++ b/opencv/modules/dnn/src/cuda4dnn/csl/tensor.hpp
+--- a/modules/dnn/src/cuda4dnn/csl/tensor.hpp
++++ b/modules/dnn/src/cuda4dnn/csl/tensor.hpp
 @@ -7,7 +7,9 @@
  
  #include "nvcc_defs.hpp"
@@ -107,8 +107,8 @@
  #include "cudnn.hpp"
  #include "span.hpp"
  
---- a/opencv/modules/dnn/src/cuda4dnn/csl/tensor_ops.hpp
-+++ b/opencv/modules/dnn/src/cuda4dnn/csl/tensor_ops.hpp
+--- a/modules/dnn/src/cuda4dnn/csl/tensor_ops.hpp
++++ b/modules/dnn/src/cuda4dnn/csl/tensor_ops.hpp
 @@ -8,7 +8,9 @@
  #include "stream.hpp"
  #include "tensor.hpp"
@@ -135,8 +135,8 @@
          /** @brief performs element-wise addition with broadcasting
           *
           * Pre-conditions:
---- a/opencv/modules/dnn/src/layers/attention_layer.cpp
-+++ b/opencv/modules/dnn/src/layers/attention_layer.cpp
+--- a/modules/dnn/src/layers/attention_layer.cpp
++++ b/modules/dnn/src/layers/attention_layer.cpp
 @@ -11,7 +11,7 @@
  
  #include <opencv2/dnn/shape_utils.hpp>
@@ -164,8 +164,8 @@
      Ptr<BackendNode> initCUDA(void* context_,
                                InputArrayOfArrays,
                                InputArrayOfArrays) CV_OVERRIDE
---- a/opencv/modules/dnn/src/layers/fully_connected_layer.cpp
-+++ b/opencv/modules/dnn/src/layers/fully_connected_layer.cpp
+--- a/modules/dnn/src/layers/fully_connected_layer.cpp
++++ b/modules/dnn/src/layers/fully_connected_layer.cpp
 @@ -56,7 +56,7 @@
  using namespace cv::dnn::ocl4dnn;
  #endif
@@ -194,8 +194,8 @@
      Ptr<BackendNode> initCUDA(
          void *context_,
          const std::vector<Ptr<BackendWrapper>>& inputs,
---- a/opencv/modules/dnn/src/layers/gemm_layer.cpp
-+++ b/opencv/modules/dnn/src/layers/gemm_layer.cpp
+--- a/modules/dnn/src/layers/gemm_layer.cpp
++++ b/modules/dnn/src/layers/gemm_layer.cpp
 @@ -8,7 +8,7 @@
  #include "cpu_kernels/fusion_apply.hpp"
  // backends
@@ -232,8 +232,8 @@
      // Y = A * B + C. B should be guaranteed as two dimensional.
      Ptr<BackendNode> initCUDA(void *context_,
                                InputArrayOfArrays inputs_,
---- a/opencv/modules/dnn/src/layers/matmul_layer.cpp
-+++ b/opencv/modules/dnn/src/layers/matmul_layer.cpp
+--- a/modules/dnn/src/layers/matmul_layer.cpp
++++ b/modules/dnn/src/layers/matmul_layer.cpp
 @@ -19,7 +19,7 @@
  #include "../op_vkcom.hpp"
  

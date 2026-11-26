@@ -13,6 +13,8 @@
 *.cmake text working-tree-encoding=UTF-8 eol=lf
 CMakeLists.txt text working-tree-encoding=UTF-8 eol=lf
 CMakePresets.json text working-tree-encoding=UTF-8 eol=lf
+# vcpkg applies these patches to LF archives even on Windows.
+cmake/ports/opencv5/*.patch text eol=lf
 
 # 文档
 *.md    text working-tree-encoding=UTF-8 eol=lf

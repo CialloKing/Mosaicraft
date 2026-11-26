@@ -1,6 +1,6 @@
-diff --git a/opencv/modules/dnn/src/cuda4dnn/primitives/convolution.hpp b/opencv/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
---- a/opencv/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
-+++ b/opencv/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
+diff --git a/modules/dnn/src/cuda4dnn/primitives/convolution.hpp b/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
+--- a/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
++++ b/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
 @@ -95,7 +95,13 @@
      template <class T>
      class ConvolutionOp final : public CUDABackendNode {
@@ -86,9 +86,9 @@ diff --git a/opencv/modules/dnn/src/cuda4dnn/primitives/convolution.hpp b/opencv
          csl::Convolution<T> convoluter;
 
          std::vector<std::size_t> transformed_shape;
-diff --git a/opencv/modules/dnn/src/layers/conv2_layer.cpp b/opencv/modules/dnn/src/layers/conv2_layer.cpp
---- a/opencv/modules/dnn/src/layers/conv2_layer.cpp
-+++ b/opencv/modules/dnn/src/layers/conv2_layer.cpp
+diff --git a/modules/dnn/src/layers/conv2_layer.cpp b/modules/dnn/src/layers/conv2_layer.cpp
+--- a/modules/dnn/src/layers/conv2_layer.cpp
++++ b/modules/dnn/src/layers/conv2_layer.cpp
 @@ -15,6 +15,7 @@
  #include "../op_cuda.hpp"
  #include <opencv2/dnn/layer.details.hpp>  // CV_DNN_REGISTER_EXEC_CLASS

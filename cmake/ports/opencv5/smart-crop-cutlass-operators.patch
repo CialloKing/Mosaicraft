@@ -1,5 +1,5 @@
---- a/opencv/modules/dnn/CMakeLists.txt
-+++ b/opencv/modules/dnn/CMakeLists.txt
+--- a/modules/dnn/CMakeLists.txt
++++ b/modules/dnn/CMakeLists.txt
 @@ -50,12 +50,15 @@
  ocv_option(OPENCV_DNN_CUDA "Build with CUDA support"
      HAVE_CUDA
@@ -41,8 +41,8 @@
    list(APPEND include_dirs ${CUDA_TOOLKIT_INCLUDE} ${CUDNN_INCLUDE_DIRS} ${CUDNNJIT_INCLUDE_DIRS})
    set(CC_LIST ${CUDA_ARCH_BIN})
    separate_arguments(CC_LIST)
---- a/opencv/modules/dnn/cmake/hooks/INIT_MODULE_SOURCES_opencv_dnn.cmake
-+++ b/opencv/modules/dnn/cmake/hooks/INIT_MODULE_SOURCES_opencv_dnn.cmake
+--- a/modules/dnn/cmake/hooks/INIT_MODULE_SOURCES_opencv_dnn.cmake
++++ b/modules/dnn/cmake/hooks/INIT_MODULE_SOURCES_opencv_dnn.cmake
 @@ -4,7 +4,7 @@
    ocv_list_filterout(OPENCV_MODULE_${the_module}_HEADERS "/ocl4dnn/")
  endif()
@@ -52,16 +52,16 @@
    message(STATUS "opencv_dnn: filter out cuda4dnn source code")
    ocv_list_filterout(OPENCV_MODULE_${the_module}_SOURCES "/cuda4dnn/")
    ocv_list_filterout(OPENCV_MODULE_${the_module}_HEADERS "/cuda4dnn/")
---- a/opencv/cmake/templates/OpenCVConfig-CUDALanguage.cmake.in
-+++ b/opencv/cmake/templates/OpenCVConfig-CUDALanguage.cmake.in
+--- a/cmake/templates/OpenCVConfig-CUDALanguage.cmake.in
++++ b/cmake/templates/OpenCVConfig-CUDALanguage.cmake.in
 @@ -50,3 +50,5 @@
  if(NOT __ocv_cuda_found VERSION_EQUAL __ocv_cuda_built)
    message(FATAL_ERROR "OpenCV library was compiled with CUDA ${OpenCV_CUDA_VERSION} support. Please, use the same version or rebuild OpenCV with CUDA ${CUDA_VERSION_STRING}")
  endif()
 +
 +set(OpenCV_MOSAICRAFT_DNN_CUTLASS "@MOSAICRAFT_DNN_CUTLASS@")
---- a/opencv/modules/dnn/src/op_cuda.hpp
-+++ b/opencv/modules/dnn/src/op_cuda.hpp
+--- a/modules/dnn/src/op_cuda.hpp
++++ b/modules/dnn/src/op_cuda.hpp
 @@ -11,7 +11,9 @@
  #ifndef MOSAICRAFT_DNN_NO_BLAS
  #include "cuda4dnn/csl/cublas.hpp"
@@ -82,8 +82,8 @@
              int* error_flag = nullptr;  // device alias of a mapped host int; set by a kernel on invalid input
          };
  
---- a/opencv/modules/dnn/src/op_cuda.cpp
-+++ b/opencv/modules/dnn/src/op_cuda.cpp
+--- a/modules/dnn/src/op_cuda.cpp
++++ b/modules/dnn/src/op_cuda.cpp
 @@ -143,8 +143,10 @@
  {
      CV_Assert(preferableBackend == DNN_BACKEND_CUDA);
@@ -105,8 +105,8 @@
  
          cudaInfo = std::make_unique<CudaInfo_t>(std::move(context));
      }
---- a/opencv/modules/dnn/src/net_impl2.cpp
-+++ b/opencv/modules/dnn/src/net_impl2.cpp
+--- a/modules/dnn/src/net_impl2.cpp
++++ b/modules/dnn/src/net_impl2.cpp
 @@ -836,7 +836,9 @@
  #ifndef MOSAICRAFT_DNN_NO_BLAS
              context.cublas_handle = cuda4dnn::csl::cublas::Handle(context.stream, useTF32);
@@ -117,8 +117,8 @@
              cudaInfo = std::make_unique<CudaInfo_t>(std::move(context));
          }
      }
---- a/opencv/modules/dnn/src/cuda4dnn/init.hpp
-+++ b/opencv/modules/dnn/src/cuda4dnn/init.hpp
+--- a/modules/dnn/src/cuda4dnn/init.hpp
++++ b/modules/dnn/src/cuda4dnn/init.hpp
 @@ -8,7 +8,9 @@
  #include "csl/error.hpp"
  
@@ -164,8 +164,8 @@
      }
  
  }}} /* namespace cv::dnn::cuda4dnn */
---- a/opencv/modules/dnn/src/cuda4dnn/csl/nvcc_defs.hpp
-+++ b/opencv/modules/dnn/src/cuda4dnn/csl/nvcc_defs.hpp
+--- a/modules/dnn/src/cuda4dnn/csl/nvcc_defs.hpp
++++ b/modules/dnn/src/cuda4dnn/csl/nvcc_defs.hpp
 @@ -6,6 +6,7 @@
  #define OPENCV_DNN_SRC_CUDA4DNN_CSL_NVCC_DEFS_HPP
  
@@ -174,8 +174,8 @@
  
  #ifdef __CUDACC__
  #   define CUDA4DNN_HOST __host__
---- a/opencv/modules/dnn/src/cuda4dnn/csl/tensor.hpp
-+++ b/opencv/modules/dnn/src/cuda4dnn/csl/tensor.hpp
+--- a/modules/dnn/src/cuda4dnn/csl/tensor.hpp
++++ b/modules/dnn/src/cuda4dnn/csl/tensor.hpp
 @@ -10,7 +10,9 @@
  #ifndef MOSAICRAFT_DNN_NO_BLAS
  #include "cublas.hpp"
@@ -186,8 +186,8 @@
  #include "span.hpp"
  
  #include "../cxx_utils/resizable_static_array.hpp"
---- a/opencv/modules/dnn/src/cuda4dnn/csl/tensor_ops.hpp
-+++ b/opencv/modules/dnn/src/cuda4dnn/csl/tensor_ops.hpp
+--- a/modules/dnn/src/cuda4dnn/csl/tensor_ops.hpp
++++ b/modules/dnn/src/cuda4dnn/csl/tensor_ops.hpp
 @@ -11,16 +11,32 @@
  #ifndef MOSAICRAFT_DNN_NO_BLAS
  #include "cublas.hpp"
@@ -247,8 +247,8 @@
  }}}} /* namespace cv::dnn::cuda4dnn::csl */
  
  #endif /* OPENCV_DNN_SRC_CUDA4DNN_CSL_TENSOR_OPS_HPP */
---- a/opencv/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
-+++ b/opencv/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
+--- a/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
++++ b/modules/dnn/src/cuda4dnn/primitives/convolution.hpp
 @@ -7,6 +7,9 @@
  
  #include "../../op_cuda.hpp"
@@ -573,8 +573,8 @@
      };
  
  }}} /* namespace cv::dnn::cuda4dnn */
---- a/opencv/modules/dnn/src/cuda4dnn/primitives/pooling.hpp
-+++ b/opencv/modules/dnn/src/cuda4dnn/primitives/pooling.hpp
+--- a/modules/dnn/src/cuda4dnn/primitives/pooling.hpp
++++ b/modules/dnn/src/cuda4dnn/primitives/pooling.hpp
 @@ -7,6 +7,7 @@
  
  #include "../../op_cuda.hpp"
@@ -688,8 +688,8 @@
  }}} /* namespace cv::dnn::cuda4dnn */
  
  #endif /* OPENCV_DNN_SRC_CUDA4DNN_PRIMITIVES_POOLING_HPP */
---- a/opencv/modules/dnn/src/cuda4dnn/primitives/region.hpp
-+++ b/opencv/modules/dnn/src/cuda4dnn/primitives/region.hpp
+--- a/modules/dnn/src/cuda4dnn/primitives/region.hpp
++++ b/modules/dnn/src/cuda4dnn/primitives/region.hpp
 @@ -8,7 +8,9 @@
  #include "../../op_cuda.hpp"
  
@@ -700,8 +700,8 @@
  #include "../csl/tensor_ops.hpp"
  
  #include "../kernels/region.hpp"
---- a/opencv/modules/dnn/src/layers/convolution_layer.cpp
-+++ b/opencv/modules/dnn/src/layers/convolution_layer.cpp
+--- a/modules/dnn/src/layers/convolution_layer.cpp
++++ b/modules/dnn/src/layers/convolution_layer.cpp
 @@ -64,7 +64,9 @@
  
  #ifdef HAVE_CUDA
@@ -725,8 +725,8 @@
      }
  #endif
  
---- a/opencv/modules/dnn/src/layers/conv2_layer.cpp
-+++ b/opencv/modules/dnn/src/layers/conv2_layer.cpp
+--- a/modules/dnn/src/layers/conv2_layer.cpp
++++ b/modules/dnn/src/layers/conv2_layer.cpp
 @@ -1296,11 +1296,17 @@
          if (cache)
          {
@@ -763,8 +763,8 @@
                  cache = &weights;
              }
  #endif
---- a/opencv/modules/dnn/src/layers/softmax_layer.cpp
-+++ b/opencv/modules/dnn/src/layers/softmax_layer.cpp
+--- a/modules/dnn/src/layers/softmax_layer.cpp
++++ b/modules/dnn/src/layers/softmax_layer.cpp
 @@ -60,7 +60,9 @@
  #endif
  
@@ -784,8 +784,8 @@
          // a JIT-only build does not link cudnnSoftmaxForward, so use the hand-written kernel
          return make_cuda_node<cuda4dnn::SoftmaxKernelOp>(preferableTarget, std::move(context->stream), channel_axis, logSoftMax, scale, flattenTail);
  #else
---- a/opencv/modules/dnn/src/layers/pooling_layer.cpp
-+++ b/opencv/modules/dnn/src/layers/pooling_layer.cpp
+--- a/modules/dnn/src/layers/pooling_layer.cpp
++++ b/modules/dnn/src/layers/pooling_layer.cpp
 @@ -442,7 +442,7 @@
              return Ptr<BackendNode>();
          }
@@ -807,8 +807,8 @@
      }
  #endif
  
---- a/opencv/modules/dnn/src/layers/maxpool_layer.cpp
-+++ b/opencv/modules/dnn/src/layers/maxpool_layer.cpp
+--- a/modules/dnn/src/layers/maxpool_layer.cpp
++++ b/modules/dnn/src/layers/maxpool_layer.cpp
 @@ -651,7 +651,10 @@
                                       : cuda4dnn::PoolingConfiguration::RoundingMode::FLOOR;
          config.input_shape.assign(inShape.begin(), inShape.end());
@@ -821,8 +821,8 @@
      }
  #endif
  
---- a/opencv/modules/dnn/src/layers/deconvolution_layer.cpp
-+++ b/opencv/modules/dnn/src/layers/deconvolution_layer.cpp
+--- a/modules/dnn/src/layers/deconvolution_layer.cpp
++++ b/modules/dnn/src/layers/deconvolution_layer.cpp
 @@ -62,7 +62,7 @@
  using namespace cv::dnn::ocl4dnn;
  #endif
@@ -854,8 +854,8 @@
      Ptr<BackendNode> initCUDA(
          void *context_,
          const std::vector<Ptr<BackendWrapper>>& inputs,
---- a/opencv/modules/dnn/src/layers/lrn_layer.cpp
-+++ b/opencv/modules/dnn/src/layers/lrn_layer.cpp
+--- a/modules/dnn/src/layers/lrn_layer.cpp
++++ b/modules/dnn/src/layers/lrn_layer.cpp
 @@ -58,7 +58,7 @@
  using namespace cv::dnn::ocl4dnn;
  #endif
@@ -887,8 +887,8 @@
      Ptr<BackendNode> initCUDA(
          void *context_,
          const std::vector<Ptr<BackendWrapper>>& inputs,
---- a/opencv/modules/dnn/src/layers/recurrent_layers.cpp
-+++ b/opencv/modules/dnn/src/layers/recurrent_layers.cpp
+--- a/modules/dnn/src/layers/recurrent_layers.cpp
++++ b/modules/dnn/src/layers/recurrent_layers.cpp
 @@ -45,7 +45,7 @@
  #include <cmath>
  #include <opencv2/dnn/shape_utils.hpp>
@@ -920,8 +920,8 @@
      Ptr<BackendNode> initCUDA(void *context_, const std::vector<Ptr<BackendWrapper>> &inputs,
                                const std::vector<Ptr<BackendWrapper>> &outputs) override
      {
---- a/opencv/modules/dnn/src/cuda/max_unpooling.cu
-+++ b/opencv/modules/dnn/src/cuda/max_unpooling.cu
+--- a/modules/dnn/src/cuda/max_unpooling.cu
++++ b/modules/dnn/src/cuda/max_unpooling.cu
 @@ -74,7 +74,7 @@
                  const auto outer_offset =  (n * channels + c) * in_spatial_size;
                  if (Order == 1) {

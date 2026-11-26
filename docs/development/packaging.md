@@ -14,7 +14,7 @@
 
 ## 固定依赖与缓存
 
-`vcpkg.json` 同时固定工具仓库和依赖基线为 `a0400024711b283056538ac19ced80b91a83c24c`。OpenCV 5.1.0 由 `cmake/ports/opencv5` 锁定。该端口只编译上游 `opencv-python-headless 5.1.0.95` 源码发行物内的原生 OpenCV 源码，不安装 Python wheel 或绑定；SQLite 与编解码库仍使用原 vcpkg 基线。默认构建仅请求 `core`、`imgproc`、`imgcodecs`（OpenCV 5.1 同时构建它们的传递依赖），智能裁剪单独加入 `dnn`、`objdetect` 及其必要依赖。TIFF 保留 JPEG、LZMA、ZIP 编解码。三个自定义 triplet 只构建 Release 动态库，Windows 使用动态 CRT。
+`vcpkg.json` 同时固定工具仓库和依赖基线为 `a0400024711b283056538ac19ced80b91a83c24c`。`cmake/ports/opencv5` 直接从 GitHub 官方仓库获取 OpenCV 5.1.0 源码，CUDA DNN 构建另取同版本的 `opencv_contrib` 源码以提供 `cudev`。两个归档均锁定上游提交和 SHA-512。SQLite 与编解码库沿用 vcpkg 基线。默认构建仅请求 `core`、`imgproc`、`imgcodecs`（OpenCV 5.1 同时构建它们的传递依赖），智能裁剪单独加入 `dnn`、`objdetect` 及其必要依赖。TIFF 保留 JPEG、LZMA、ZIP 编解码。三个自定义 triplet 只构建 Release 动态库，Windows 使用动态 CRT。[OpenCV 5.1.0](https://github.com/opencv/opencv/releases/tag/5.1.0) · [opencv_contrib 5.1.0](https://github.com/opencv/opencv_contrib/releases/tag/5.1.0)
 
 缓存键包含平台、架构、实际编译器/SDK/CMake/vcpkg 指纹、vcpkg 提交和当前依赖配置哈希。产品版本、README、普通源码不影响依赖缓存；使用普通 OpenCV 的 CPU/CUDA 构建可共享依赖缓存，CPU 智能裁剪和 CUTLASS 智能裁剪各有独立的依赖与缓存键。PR 只读取缓存，main/tag 在依赖安装成功后立即保存，项目测试失败不会丢掉成功构建的依赖。GitHub 仍可能淘汰超过七天未访问的缓存。
 

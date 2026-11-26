@@ -1,5 +1,5 @@
---- a/opencv/modules/objdetect/include/opencv2/objdetect/face.hpp
-+++ b/opencv/modules/objdetect/include/opencv2/objdetect/face.hpp
+--- a/modules/objdetect/include/opencv2/objdetect/face.hpp
++++ b/modules/objdetect/include/opencv2/objdetect/face.hpp
 @@ -6,6 +6,7 @@
  #define OPENCV_OBJDETECT_FACE_HPP
 
@@ -19,8 +19,8 @@
 
      /** @brief Set the size for the network input, which overwrites the input size of creating model. Call this method when the size of input image does not match the input size when creating model
       *
---- a/opencv/modules/objdetect/src/face_detect.cpp
-+++ b/opencv/modules/objdetect/src/face_detect.cpp
+--- a/modules/objdetect/src/face_detect.cpp
++++ b/modules/objdetect/src/face_detect.cpp
 @@ -83,6 +83,16 @@
          topK = top_k;
      }
