@@ -280,6 +280,20 @@ add_custom_command(
         "${CMAKE_SOURCE_DIR}/core/MatchingBatch.h" "${CMAKE_SOURCE_DIR}/core/GridWeights.inc"
     COMMENT "Compiling CPU-compatible CUDA scoring..."
 )
+if(MOSAICRAFT_SMART_CROP_CUTLASS)
+    set(CUDA_CROP_INPUT_OBJ "${CMAKE_BINARY_DIR}/SmartCropCudaInput${CUDA_OBJ_EXT}")
+    add_custom_command(
+        OUTPUT ${CUDA_CROP_INPUT_OBJ}
+        COMMAND "${CUDAToolkit_NVCC_EXECUTABLE}"
+            -c "${CMAKE_SOURCE_DIR}/compute/SmartCropCudaInput.cu"
+            -o "${CUDA_CROP_INPUT_OBJ}"
+            ${CUDA_CODE_FLAGS} -std=c++17 -ccbin "${CMAKE_CXX_COMPILER}" ${NVCC_EXTRA_FLAGS}
+        VERBATIM
+        DEPENDS "${CMAKE_SOURCE_DIR}/compute/SmartCropCudaInput.cu" "${CMAKE_SOURCE_DIR}/compute/SmartCropCudaInput.h"
+            "${CMAKE_BINARY_DIR}/cuda-architectures.txt"
+        COMMENT "Compiling CUDA smart crop input packing..."
+    )
+endif()
 endif()  # MOSAICRAFT_CUDA
 # ============================================================
 # 核心静态库（CPU）
@@ -442,6 +456,7 @@ add_library(mosaicraft_cuda STATIC
     ${CUDA_OBJ2}
     ${CUDA_OBJ3}
     ${CUDA_OBJ4}
+    ${CUDA_CROP_INPUT_OBJ}
 )
 target_include_directories(mosaicraft_cuda PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -543,6 +558,9 @@ add_test(NAME mosaicraft_tests COMMAND mosaicraft_tests)
 add_executable(mosaicraft_regression_tests EXCLUDE_FROM_ALL
     tests/test_regression.cpp
 )
+if(MOSAICRAFT_SMART_CROP_CUTLASS)
+    target_sources(mosaicraft_regression_tests PRIVATE tests/test_smart_crop_cuda_input.cpp)
+endif()
 target_link_libraries(mosaicraft_regression_tests PRIVATE
     mosaicraft_core
     mosaicraft_cuda

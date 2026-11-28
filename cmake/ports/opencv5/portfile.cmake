@@ -6,7 +6,7 @@ if("dnn-cuda-cutlass" IN_LIST FEATURES)
     endif()
     set(cutlass ON)
     set(cutlass_patches smart-crop-cutlass-no-blas.patch smart-crop-cutlass-operators.patch
-        smart-crop-cutlass-optional-npp.patch)
+        smart-crop-cutlass-optional-npp.patch smart-crop-cuda-input.patch)
 endif()
 set(cuda_patches)
 if("dnn-cuda" IN_LIST FEATURES OR cutlass)

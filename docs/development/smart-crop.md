@@ -171,6 +171,17 @@ python scripts/bench_smart_crop_cuda.py <cli> library/HighLikes <新全量报告
 
 两路需逐图输出 SHA-256 和裁剪框一致，且零 CPU 回退。准入阈值为耗时至少缩短 10%、混合及全量的整卡采样显存增量不超过 512 MiB。默认开启还需第二种 CUDA 架构的 Windows 实卡验收。
 
+### DeepGHS CUDA 输入试验
+
+带 `smart-crop-cuda-input.patch` 的 CUTLASS 构建支持 `MOSAICRAFT_SMART_CROP_CUDA_INPUT=legacy|pinned|fused`。`pinned` 沿用 OpenCV 的 CPU 张量转换，复用页锁定的 FP32 上传缓冲。`fused` 上传 8 位 BGR，在 DNN 的同一条 CUDA 流上生成 FP32 RGB 张量。两路都限制在补齐后 400 万像素以内，可在 `smartCropOptimizedCudaInputs` 中核对使用次数。默认 `legacy`。
+
+```text
+python scripts/bench_smart_crop_cuda.py <cli> <混合尺寸输入> <新报告目录> --mode smart-anime --study cuda-input --rounds 3
+python scripts/bench_smart_crop_cuda.py <cli> library/HighLikes <新全量报告目录> --mode smart-anime --study cuda-input --cuda-input-variant fused --rounds 1 --timeout 5400
+```
+
+`--cuda-input-lanes 1` 可固定使用单会话做独立对照。切换默认输入路径前，CUDA 输入张量须逐位一致，整批输出和裁剪框须一致，全量耗时至少缩短 3%。
+
 ### CUDA 卷积权重复用（2026-11-24）
 
 OpenCV 5 新图引擎在尺寸切换时会重建 `Conv2` 节点；尺寸相关的 cuDNN 描述符需要重建，固定卷积权重和偏置不需要再次上传。补丁让每个 FP32 cuDNN 卷积执行器各持有一份设备权重，跨尺寸复用；权重版本变化或会话销毁会清空。不缓存旧尺寸节点，不改卷积算法选择、模型、尺寸、裁剪顺序或恢复策略。

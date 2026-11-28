@@ -240,10 +240,21 @@ TEST_CASE("same-device crop drains before a large image and retries CUDA faults 
     }
     bool enoughMemory = true;
     SmartCropCudaFault fault = SmartCropCudaFault::None;
-    SUBCASE("both lanes, including a large-image fence") {}
-    SUBCASE("a failed secondary returns its decoded image") { fault = SmartCropCudaFault::Retryable; }
-    SUBCASE("a shared device fault stops CUDA before replay") { fault = SmartCropCudaFault::RestartRequired; }
-    SUBCASE("the memory check keeps all work on the primary") { enoughMemory = false; }
+    SUBCASE("both lanes, including a large-image fence")
+    {
+    }
+    SUBCASE("a failed secondary returns its decoded image")
+    {
+        fault = SmartCropCudaFault::Retryable;
+    }
+    SUBCASE("a shared device fault stops CUDA before replay")
+    {
+        fault = SmartCropCudaFault::RestartRequired;
+    }
+    SUBCASE("the memory check keeps all work on the primary")
+    {
+        enoughMemory = false;
+    }
 
     TempWorkspace workspace;
     for (int i = 0; i < 4; ++i)
@@ -294,17 +305,33 @@ TEST_CASE("same-device crop drains before a large image and retries CUDA faults 
         return SmartCropAnalysis{};
     });
     const detail::SameCudaCropPolicy policy{
-        [&]() { return !stoppedCuda; }, [&]() { return enoughMemory; }, [](std::uint64_t) { return false; },
+        [&]()
+        {
+            return !stoppedCuda;
+        },
+        [&]()
+        {
+            return enoughMemory;
+        },
+        [](std::uint64_t)
+        {
+            return false;
+        },
         [&]()
         {
             secondaryActive = false;
             released = true;
         },
-        [&](const SmartCropError &) { stoppedCuda = true; }};
+        [&](const SmartCropError &)
+        {
+            stoppedCuda = true;
+        }};
     std::vector<int> completed;
     ImageNormalizer::StandaloneTimings timings;
-    detail::runDualSmartCropPipeline(primary, secondary, 4, paths, [&](bool ok) { completed.push_back(ok); }, timings,
-                                     32 * 1024, 1024, &policy);
+    detail::runDualSmartCropPipeline(primary, secondary, 4, paths, [&](bool ok)
+    {
+        completed.push_back(ok);
+    }, timings, 32 * 1024, 1024, &policy);
     CHECK(drained);
     CHECK(retried == (!enoughMemory || fault != SmartCropCudaFault::None));
     CHECK(stoppedCuda == (fault == SmartCropCudaFault::RestartRequired));

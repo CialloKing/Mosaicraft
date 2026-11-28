@@ -1,0 +1,133 @@
+--- a/modules/dnn/include/opencv2/dnn/dnn.hpp
++++ b/modules/dnn/include/opencv2/dnn/dnn.hpp
+@@ -562,6 +562,7 @@
+      *
+      * This class supports reference counting of its instances, i. e. copies point to the same instance.
+      */
++#define CV_DNN_MOSAICRAFT_CUDA_INPUT 1
+     class CV_EXPORTS_W_SIMPLE Net
+     {
+     public:
+@@ -733,6 +734,11 @@
+          *  change it. See @ref tutorial_py_bindings_basics for details.
+          */
+         CV_WRAP Mat forward(const String& outputName = String());
++
++        // The caller enqueues a FP32 NCHW input on the graph stream before its first consumer.
++        using MosaicraftCudaInputWriter = void (*)(void*, float*, void*);
++        Mat forwardMosaicraftCudaInput(Size size, MosaicraftCudaInputWriter writer,
++                                       void* userData, const String& outputName);
+
+         /** @brief Runs forward pass to compute output of layer with name @p outputName.
+          *  @param outputName name for layer which output is needed to get
+--- a/modules/dnn/src/net.cpp
++++ b/modules/dnn/src/net.cpp
+@@ -79,6 +79,21 @@
+     CV_Assert(impl);
+     CV_Assert(!empty());
+     return impl->forward(outputName);
++}
++
++Mat Net::forwardMosaicraftCudaInput(Size size, MosaicraftCudaInputWriter writer,
++                                   void* userData, const String& outputName)
++{
++#ifdef HAVE_CUDA
++    CV_Assert(impl);
++    return impl->forwardMosaicraftCudaInput(size, writer, userData, outputName);
++#else
++    CV_UNUSED(size);
++    CV_UNUSED(writer);
++    CV_UNUSED(userData);
++    CV_UNUSED(outputName);
++    CV_Error(Error::StsNotImplemented, "DNN: CUDA image input requires a CUDA build");
++#endif
+ }
+
+ AsyncArray Net::forwardAsync(const String& outputName)
+--- a/modules/dnn/src/net_impl.hpp
++++ b/modules/dnn/src/net_impl.hpp
+@@ -314,6 +314,10 @@
+     std::unique_ptr<CudaInfo_t> cudaInfo;
+
+     void initCUDABackend();
++    Mat forwardMosaicraftCudaInput(Size size, Net::MosaicraftCudaInputWriter writer,
++                                   void* userData, const String& outputName);
++    Net::MosaicraftCudaInputWriter mosaicraftInputWriter = nullptr;
++    void* mosaicraftInputData = nullptr;
+
+     // New graph engine: per-Arg device-resident tensors owned directly by the net (no backend
+     // wrappers). Sized lazily via UMat::fit() and reused across forwards. Dirty flags track
+--- a/modules/dnn/src/net_impl2.cpp
++++ b/modules/dnn/src/net_impl2.cpp
+@@ -1609,6 +1609,44 @@
+     return g;
+ }
+
++Mat Net::Impl::forwardMosaicraftCudaInput(Size size, Net::MosaicraftCudaInputWriter writer,
++                                         void* userData, const String& outputName)
++{
++    CV_Assert(mainGraph && mainGraph->inputs().size() == 1 && writer && !mosaicraftInputWriter &&
++              preferableBackend == DNN_BACKEND_CUDA && preferableTarget == DNN_TARGET_CUDA &&
++              size.width > 0 && size.height > 0);
++    const Arg input = mainGraph->inputs().front();
++    const MatShape shape({1, 3, size.height, size.width});
++    CV_Assert(args.at(input.idx).type == CV_32F &&
++              (pinnedInputShapes.empty() || pinnedInputShapes.front().empty() || pinnedInputShapes.front() == shape));
++    // The host header carries the input shape. Its contents are filled only if a CPU node needs them.
++    argTensor(input).fit(shape, CV_32F);
++    struct ResetWriter
++    {
++        Net::Impl& impl;
++        ~ResetWriter()
++        {
++            impl.mosaicraftInputWriter = nullptr;
++            impl.mosaicraftInputData = nullptr;
++        }
++    } reset{*this};
++    mosaicraftInputWriter = writer;
++    mosaicraftInputData = userData;
++    try
++    {
++        return forward(outputName);
++    }
++    catch (...)
++    {
++        // On failure, the caller may free the staging buffer as soon as this method returns.
++        if (cudaInfo)
++        {
++            cudaStreamSynchronize(cudaInfo->context.stream.get());
++        }
++        throw;
++    }
++}
++
+ void Net::Impl::cudaSetHostDirty(Arg arg)
+ {
+     int idx = arg.idx;
+@@ -1786,8 +1824,25 @@
+     // forward() is called with no explicit inputs). Mark their device copies stale each
+     // forward so the current input is re-uploaded; otherwise a second forward with a
+     // changed input would read the previous forward's stale device data.
+-    if (cudaInfo) {
++    if (isMainGraph && mosaicraftInputWriter)
++    {
++        if (!cudaInfo)
++        {
++            CV_Error(Error::GpuNotSupported, "DNN: CUDA graph input is unavailable");
++        }
++        const Arg input = gr_inputs.front();
++        UMat& device = getCudaArgBuffer(input, argTensor(input));
++        float* dst = reinterpret_cast<float*>(static_cast<uchar*>(device.u->handle) + device.offset);
++        // Keep this outside CUDA graph capture so each replay sees the new image.
++        mosaicraftInputWriter(mosaicraftInputData, dst, cudaInfo->context.stream.get());
++        cudaArgHostDirty[input.idx] = 0;
++        cudaArgDeviceDirty[input.idx] = 1;
++    }
++    else if (cudaInfo)
++    {
+         for (i = 0; i < n_gr_inputs; i++)
++        {
+             cudaSetHostDirty(gr_inputs[i]);
++        }
+     }
+ #endif

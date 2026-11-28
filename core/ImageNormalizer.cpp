@@ -395,6 +395,7 @@ cv::Mat ImageNormalizer::normalize(const cv::Mat& src, [[maybe_unused]] std::opt
         {
             m_smartStats->saliencyMs += analysis.saliencyMs;
             m_smartStats->faceMs += analysis.faceMs;
+            m_smartStats->optimizedCudaInputs += analysis.optimizedCudaInputs;
             m_smartStats->inferenceMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
         }
         const auto decision = chooseSmartCrop(covered.size(), target, analysis);

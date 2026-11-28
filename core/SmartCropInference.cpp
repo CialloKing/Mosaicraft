@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <new>
 #include <string>
@@ -20,6 +22,10 @@
 #endif
 #if MOSAICRAFT_SMART_CROP_CUDA
 #include <opencv2/core/cuda.hpp>
+#endif
+#if MOSAICRAFT_SMART_CROP_CUTLASS && defined(CV_DNN_MOSAICRAFT_CUDA_INPUT)
+#include "compute/DeviceBuffer.cuh"
+#include "compute/SmartCropCudaInput.h"
 #endif
 #endif
 
@@ -255,6 +261,141 @@ auto runDnn(CropDevice device, Forward &&forward)
     return forward();
 }
 
+#if MOSAICRAFT_SMART_CROP_CUTLASS && defined(CV_DNN_MOSAICRAFT_CUDA_INPUT)
+enum class AnimeCudaInputMode
+{
+    Legacy, Pinned, Fused
+};
+
+AnimeCudaInputMode animeCudaInputMode()
+{
+    const auto *value = std::getenv("MOSAICRAFT_SMART_CROP_CUDA_INPUT");
+    const std::string_view mode = value ? value : "legacy";
+    if (mode == "pinned")
+    {
+        return AnimeCudaInputMode::Pinned;
+    }
+    if (mode == "fused")
+    {
+        return AnimeCudaInputMode::Fused;
+    }
+    return AnimeCudaInputMode::Legacy;
+}
+
+void requireCropInputCuda(cudaError_t status)
+{
+    if (status != cudaSuccess)
+    {
+        CV_Error(cv::Error::GpuApiCallError, cudaGetErrorString(status));
+    }
+}
+
+class AnimeCudaInput
+{
+public:
+    template <class Pad>
+    std::optional<cv::Mat> forward(cv::dnn::Net &net, const cv::Mat &image, cv::Size size, cv::Point padding, Pad &&pad)
+    {
+        const auto pixels = static_cast<std::uint64_t>(size.width) * size.height;
+        if (m_mode == AnimeCudaInputMode::Legacy || m_disabled || pixels > 4'000'000 || image.type() != CV_8UC3)
+        {
+            return std::nullopt;
+        }
+        // The host buffer is reused only after synchronous forward has consumed it.
+        const bool fused = m_mode == AnimeCudaInputMode::Fused;
+        const std::size_t bytes = fused ? image.total() * image.elemSize() : pixels * 3 * sizeof(float);
+        if (!reserve(m_pinned.allocate(bytes)) || (fused && !reserve(m_raw.allocate(bytes))))
+        {
+            m_disabled = true;
+            m_pinned.reset();
+            m_raw.reset();
+            return std::nullopt;
+        }
+
+        Transfer input{m_pinned.get(), bytes, nullptr, {}, nullptr};
+        if (fused)
+        {
+            const auto rowBytes = static_cast<std::size_t>(image.cols) * image.elemSize();
+            for (int y = 0; y < image.rows; ++y)
+            {
+                std::memcpy(m_pinned.get() + y * rowBytes, image.ptr(y), rowBytes);
+            }
+            input.rawDevice = m_raw.get();
+            input.layout = {image.cols, image.rows, size.width, size.height, padding.x, padding.y};
+            input.lookup = &pixelValues();
+        }
+        else
+        {
+            const int shape[] = {1, 3, size.height, size.width};
+            cv::Mat blob(4, shape, CV_32F, m_pinned.get());
+            cv::dnn::blobFromImage(pad(), blob, 1.0 / 255, size, cv::Scalar(), true);
+            if (blob.data != m_pinned.get())
+            {
+                std::memcpy(m_pinned.get(), blob.data, bytes);
+            }
+        }
+        return net.forwardMosaicraftCudaInput(size, &upload, &input, "output0");
+    }
+
+private:
+    struct Transfer
+    {
+        const std::uint8_t *source;
+        std::size_t bytes;
+        std::uint8_t *rawDevice;
+        cuda::SmartCropInputLayout layout;
+        const cuda::SmartCropPixelValues *lookup;
+    };
+
+    static bool reserve(cudaError_t status)
+    {
+        if (status == cudaErrorMemoryAllocation)
+        {
+            cudaGetLastError();
+            return false;
+        }
+        requireCropInputCuda(status);
+        return true;
+    }
+
+    static const cuda::SmartCropPixelValues &pixelValues()
+    {
+        static const auto values = []()
+        {
+            // Use OpenCV's exact FP32 values, including the normalization of the padding byte.
+            cv::Mat ramp(1, 256, CV_8UC3);
+            for (int value = 0; value < ramp.cols; ++value)
+            {
+                const auto byte = static_cast<std::uint8_t>(value);
+                ramp.at<cv::Vec3b>(0, value) = cv::Vec3b(byte, byte, byte);
+            }
+            const auto blob = cv::dnn::blobFromImage(ramp, 1.0 / 255, ramp.size(), cv::Scalar(), true);
+            cuda::SmartCropPixelValues result;
+            std::copy_n(blob.ptr<float>(), 256, result.values);
+            return result;
+        }();
+        return values;
+    }
+
+    static void upload(void *opaque, float *destination, void *nativeStream)
+    {
+        const auto &input = *static_cast<const Transfer *>(opaque);
+        const auto stream = static_cast<cudaStream_t>(nativeStream);
+        void *uploadTarget = input.rawDevice ? static_cast<void *>(input.rawDevice) : destination;
+        requireCropInputCuda(cudaMemcpyAsync(uploadTarget, input.source, input.bytes, cudaMemcpyHostToDevice, stream));
+        if (input.rawDevice)
+        {
+            requireCropInputCuda(cuda::launchSmartCropCudaInput(input.rawDevice, destination, input.layout, *input.lookup, stream));
+        }
+    }
+
+    const AnimeCudaInputMode m_mode = animeCudaInputMode();
+    bool m_disabled = false;
+    cuda::PinnedBuffer m_pinned;
+    cuda::DeviceBuffer<std::uint8_t> m_raw;
+};
+#endif
+
 cv::Rect2d normalizedBox(cv::Rect2d box, cv::Size input)
 {
     box &= cv::Rect2d(0, 0, input.width, input.height);
@@ -268,8 +409,13 @@ cv::Rect2d normalizedBox(cv::Rect2d box, cv::Size input)
 
 struct SmartCropInference::Impl
 {
+    size_t optimizedCudaInputs = 0;
     CropDevice device = CropDevice::Cpu;
     CropMode mode = CropMode::Center;
+#if MOSAICRAFT_SMART_CROP_CUTLASS && defined(CV_DNN_MOSAICRAFT_CUDA_INPUT)
+    // Keep the staging buffers alive until the DNN streams have been destroyed.
+    AnimeCudaInput cudaInput;
+#endif
     cv::dnn::Net saliency;
     cv::Ptr<cv::FaceDetectorYN> real;
     cv::dnn::Net anime;
@@ -380,18 +526,36 @@ struct SmartCropInference::Impl
         const int extraWidth = input.width - content.width;
         const int extraHeight = input.height - content.height;
         const cv::Point padding(extraWidth / 2, extraHeight / 2);
-        cv::Mat padded = image;
-        if (extraWidth || extraHeight)
+        const auto pad = [&]()
         {
-            // Keep the original pixels; only the model tensor needs stride-aligned dimensions.
-            cv::copyMakeBorder(image, padded, padding.y, extraHeight - padding.y,
-                               padding.x, extraWidth - padding.x, cv::BORDER_CONSTANT | cv::BORDER_ISOLATED,
-                               cv::Scalar::all(114));
-        }
-        const auto blob = cv::dnn::blobFromImage(padded, 1.0 / 255, input, cv::Scalar(), true);
+            cv::Mat padded = image;
+            if (extraWidth || extraHeight)
+            {
+                // Keep the original pixels; only the model tensor needs stride-aligned dimensions.
+                cv::copyMakeBorder(image, padded, padding.y, extraHeight - padding.y,
+                                   padding.x, extraWidth - padding.x, cv::BORDER_CONSTANT | cv::BORDER_ISOLATED,
+                                   cv::Scalar::all(114));
+            }
+            return padded;
+        };
         const int anchors = animePredictionCount(input);
         const auto out = [&]()
         {
+#if MOSAICRAFT_SMART_CROP_CUTLASS && defined(CV_DNN_MOSAICRAFT_CUDA_INPUT)
+            if (device == CropDevice::Cuda)
+            {
+                auto fast = runDnn(device, [&]()
+                {
+                    return cudaInput.forward(anime, image, input, padding, pad);
+                });
+                if (fast)
+                {
+                    ++optimizedCudaInputs;
+                    return std::move(*fast);
+                }
+            }
+#endif
+            const auto blob = cv::dnn::blobFromImage(pad(), 1.0 / 255, input, cv::Scalar(), true);
 #if MOSAICRAFT_SMART_CROP_VULKAN
             if (vulkan)
             {
@@ -521,6 +685,7 @@ catch (const cv::Exception &error)
 SmartCropAnalysis SmartCropInference::analyze(const cv::Mat &image) try
 {
     using Clock = std::chrono::steady_clock;
+    const auto previousOptimizedInputs = m_impl->optimizedCudaInputs;
     const auto start = Clock::now();
     auto mask = m_impl->foreground(image);
     const auto afterMask = Clock::now();
@@ -528,7 +693,7 @@ SmartCropAnalysis SmartCropInference::analyze(const cv::Mat &image) try
     return SmartCropAnalysis{std::move(mask), std::move(faces),
                              std::chrono::duration<double, std::milli>(afterMask - start).count(),
                              std::chrono::duration<double, std::milli>(Clock::now() - afterMask).count(),
-                             m_impl->mode};
+                             m_impl->mode, m_impl->optimizedCudaInputs - previousOptimizedInputs};
 }
 catch (const cv::Exception &error)
 {

@@ -293,7 +293,10 @@ void detail::runDualSmartCropPipeline(ImageNormalizer &cuda, ImageNormalizer &se
                 // Keep the second worker available to release its session until the writer exits.
                 if (sameCuda && lane == 1)
                 {
-                    changed.wait(lock, [&]() { return stopped || releaseRequested; });
+                    changed.wait(lock, [&]()
+                    {
+                        return stopped || releaseRequested;
+                    });
                     continue;
                 }
                 return;
@@ -677,11 +680,26 @@ static ServiceResult normalizeImagesImpl(const BuildRequest &request, RuntimeCon
             files.size() >= 32 && normalizationWorkerCount(request.threads) >= 4 && cudaMemoryAvailable(3 * kGiB, 15 * kGiB / 2))
         {
             sameCuda.emplace(detail::SameCudaCropPolicy{
-                [&]() { return smartCrop->primaryUsesCuda(); },
-                []() { return cudaMemoryAvailable(3 * kGiB); },
-                [](std::uint64_t pixels) { return cudaMemoryAvailable(3 * kGiB / 2 + 128 * pixels); },
-                [&]() { smartCrop->releaseSecondCuda(); },
-                [&](const SmartCropError &error) { smartCrop->stopCudaForDeviceFault(error); }});
+                [&]()
+                {
+                    return smartCrop->primaryUsesCuda();
+                },
+                []()
+                {
+                    return cudaMemoryAvailable(3 * kGiB);
+                },
+                [](std::uint64_t pixels)
+                {
+                    return cudaMemoryAvailable(3 * kGiB / 2 + 128 * pixels);
+                },
+                [&]()
+                {
+                    smartCrop->releaseSecondCuda();
+                },
+                [&](const SmartCropError &error)
+                {
+                    smartCrop->stopCudaForDeviceFault(error);
+                }});
         }
 #endif
         const bool measure = pipeline || trial == "0" || trial == "1";

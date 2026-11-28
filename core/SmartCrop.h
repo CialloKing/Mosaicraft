@@ -133,6 +133,7 @@ struct SmartCropAnalysis
     std::vector<cv::Rect2d> faces;
     double saliencyMs = 0, faceMs = 0;
     CropMode mode = CropMode::Center;
+    size_t optimizedCudaInputs = 0;
 };
 
 struct SmartCropModelPair
@@ -152,6 +153,7 @@ struct SmartCropDecision
 struct SmartCropStats
 {
     size_t facesFound = 0, moved = 0, centered = 0, mainFaceClipped = 0;
+    size_t optimizedCudaInputs = 0;
     double inferenceMs = 0, saliencyMs = 0, faceMs = 0;
 };
 

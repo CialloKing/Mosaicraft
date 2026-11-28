@@ -177,5 +177,6 @@ void SmartCropSession::report(const SmartCropSession *secondary) const
     m_runtime.metric("smartCropInferenceWorkerMs", m_stats.inferenceMs + other.inferenceMs);
     m_runtime.metric("smartCropSaliencyMs", m_stats.saliencyMs + other.saliencyMs);
     m_runtime.metric("smartCropFaceMs", m_stats.faceMs + other.faceMs);
+    m_runtime.metric("smartCropOptimizedCudaInputs", static_cast<double>(m_stats.optimizedCudaInputs + other.optimizedCudaInputs));
 }
 }

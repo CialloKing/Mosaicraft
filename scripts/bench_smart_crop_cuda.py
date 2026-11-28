@@ -45,10 +45,11 @@ def stop(process, kill=False):
     process.wait()
 
 
-def run(args, name, parts, *, reuse_weights=None, executable=None, dual_max_pixels=None, cuda_lanes=None):
+def run(args, name, parts, *, reuse_weights=None, executable=None, dual_max_pixels=None,
+        cuda_lanes=None, cuda_input=None):
     samples_path = args.work / f"{name}-vram.csv"
     hetero = args.study in {"heterogeneous", "dual", "dual-dispatch"}
-    trace = hetero or args.study in {"cutlass", "same-cuda"}
+    trace = hetero or args.study in {"cutlass", "same-cuda", "cuda-input"}
     has_cuda = any(device in {"cuda", "dual"} for device, *_ in parts)
     wddm_path = args.work / f"{name}-wddm.csv"
     baseline = None
@@ -79,6 +80,7 @@ def run(args, name, parts, *, reuse_weights=None, executable=None, dual_max_pixe
             policy = "auto" if cuda_lanes is not None else device
             if cuda_lanes is not None:
                 env["MOSAICRAFT_SMART_CROP_CUDA_LANES"] = str(cuda_lanes)
+                env["MOSAICRAFT_SMART_CROP_CUDA_INPUT"] = cuda_input or "legacy"
             if device in {"vulkan", "dual"}:
                 env["MOSAICRAFT_SMART_CROP_EXPERIMENT"] = device
                 env["MOSAICRAFT_SMART_CROP_VULKAN_DEVICE"] = str(args.vulkan_device)
@@ -173,6 +175,8 @@ def run(args, name, parts, *, reuse_weights=None, executable=None, dual_max_pixe
         metrics = children[0]["metrics"]
         result["passed"] &= (metrics.get("smartCropCudaLanes") == cuda_lanes
                              and metrics.get("smartCropCudaImages") == len(result["cropRois"]))
+        if cuda_input is not None:
+            result["passed"] &= (metrics.get("smartCropOptimizedCudaInputs", 0) > 0) == (cuda_input != "legacy")
     if hetero:
         result["wddmSampledPeakBytes"] = wddm_peaks(wddm_path)
         metrics = children[0]["metrics"]
@@ -253,11 +257,13 @@ def main():
         parser.add_argument(name, type=lambda path: Path(path).resolve())
     parser.add_argument("--mode", choices=("smart-real", "smart-anime"), required=True)
     parser.add_argument("--study", choices=("devices", "pipeline", "hybrid", "weights", "cutlass", "heterogeneous", "dual",
-                                           "dual-dispatch", "same-cuda"),
+                                           "dual-dispatch", "same-cuda", "cuda-input"),
                         default="devices")
     parser.add_argument("--candidate-exe", type=lambda path: Path(path).resolve(),
                         help="candidate CLI in a separate directory with its own runtime (cutlass or dual-dispatch)")
     parser.add_argument("--rounds", type=int, default=3)
+    parser.add_argument("--cuda-input-variant", choices=("pinned", "fused"), help="compare one CUDA input candidate with legacy")
+    parser.add_argument("--cuda-input-lanes", choices=(1, 2), type=int, default=2, help="fixed lane count for the CUDA input study")
     parser.add_argument("--repeat-to", type=int, metavar="COUNT",
                         help="repeat the sorted source set to COUNT items for the dual-dispatch throughput study")
     parser.add_argument("--size", default="180x320")
@@ -292,8 +298,8 @@ def main():
         parser.error("--dual-max-pixels requires the dual study and values in [1024, 4194304]")
     if args.study == "dual-dispatch" and args.mode != "smart-real":
         parser.error("the dual-GPU experiment only supports smart-real")
-    if args.study == "same-cuda" and (os.name != "nt" or args.mode != "smart-anime"):
-        parser.error("the same-cuda study requires Windows and smart-anime")
+    if args.study in {"same-cuda", "cuda-input"} and (os.name != "nt" or args.mode != "smart-anime"):
+        parser.error(f"the {args.study} study requires Windows and smart-anime")
     original_input = args.input
     args.sources = input_files(original_input)
     if args.repeat_to is not None and (
@@ -301,6 +307,8 @@ def main():
         parser.error("--repeat-to requires dual-dispatch and a count at least as large as the source set and eight")
     if args.rounds < 1 or len(args.sources) < (1 if args.repeat_to is not None or args.study == "devices" else 8):
         parser.error("positive round count and enough supported images are required")
+    if len(args.sources) < 32 and (args.study == "same-cuda" or (args.study == "cuda-input" and args.cuda_input_lanes == 2)):
+        parser.error("the two-lane CUDA study requires at least 32 images")
     args.gpu_uuid = subprocess.check_output(nvidia_query(args.gpu, "uuid"), text=True).strip()
     args.work.mkdir(parents=True, exist_ok=False)
 
@@ -328,6 +336,9 @@ def main():
         variants = {label: [("cuda", True, args.input, None)] for label in ("pipeline", "reuse-weights")}
     elif args.study == "same-cuda":
         variants = {label: [("cuda", True, args.input, None)] for label in ("single", "same-cuda")}
+    elif args.study == "cuda-input":
+        candidates = (args.cuda_input_variant,) if args.cuda_input_variant else ("pinned", "fused")
+        variants = {label: [("cuda", True, args.input, None)] for label in ("legacy", *candidates)}
     elif args.study in {"cutlass", "dual-dispatch"}:
         report["candidateExecutableSha256"] = sha256(args.candidate_exe)
         report["opencvDnnSha256ByVariant"] = {
@@ -368,10 +379,13 @@ def main():
             name = f"{cycle + 1}-{label}"
             reuse_weights = label == "reuse-weights" if args.study == "weights" else None
             use_candidate = label == "cutlass" or (args.study == "dual-dispatch" and label != "dual-ordered")
+            cuda_lanes = {"single": 1, "same-cuda": 2}.get(label) if args.study == "same-cuda" else None
+            if args.study == "cuda-input":
+                cuda_lanes = args.cuda_input_lanes
             result, outputs = run(args, name, variants[label], reuse_weights=reuse_weights,
                                   executable=args.candidate_exe if use_candidate else None,
-                                  dual_max_pixels=dual_limits.get(label),
-                                  cuda_lanes={"single": 1, "same-cuda": 2}.get(label) if args.study == "same-cuda" else None)
+                                  dual_max_pixels=dual_limits.get(label), cuda_lanes=cuda_lanes,
+                                  cuda_input=label if args.study == "cuda-input" else None)
             if args.study in {"dual", "dual-dispatch"}:
                 startup = result["children"][0]["metrics"].get("smartCropStartupMs")
                 if startup is not None and 0 <= startup <= result["wallSeconds"] * 1000:
@@ -384,7 +398,7 @@ def main():
             result.update(variant=label, round=cycle + 1, identical=outputs == reference,
                           differingOutputs=sorted(k for k in reference.keys() | outputs.keys()
                                                   if reference.get(k) != outputs.get(k)))
-            if args.study in {"cutlass", "heterogeneous", "dual", "dual-dispatch", "same-cuda"}:
+            if args.study in {"cutlass", "heterogeneous", "dual", "dual-dispatch", "same-cuda", "cuda-input"}:
                 result["identicalCropRois"] = result["cropRois"] == reference_rois
                 result["identical"] &= result["identicalCropRois"]
                 result["differingOutputSha256"] = {key: outputs.get(key) for key in result["differingOutputs"]}
@@ -413,13 +427,15 @@ def main():
                                        for label, runs in grouped.items()}
     report["wallSavings"] = {label: 1 - medians[label] / medians[labels[0]] for label in labels[1:]}
     report["speedup"] = medians[labels[0]] / medians[labels[1]]
-    if args.study == "same-cuda":
-        vram = [((b["gpuSampledPeakMiB"] - b["gpuBaselineMiB"]) -
-                 (a["gpuSampledPeakMiB"] - a["gpuBaselineMiB"]))
-                if a["gpuSampledPeakMiB"] is not None and b["gpuSampledPeakMiB"] is not None else None
-                for a, b in zip(grouped["single"], grouped["same-cuda"])]
-        report["sampledVramIncreaseMiB"] = vram
-        gates = report["wallSavings"]["same-cuda"] >= .10 and all(d is not None and d <= 512 for d in vram)
+    if args.study in {"same-cuda", "cuda-input"}:
+        vram = {label: [((b["gpuSampledPeakMiB"] - b["gpuBaselineMiB"]) -
+                         (a["gpuSampledPeakMiB"] - a["gpuBaselineMiB"]))
+                        if a["gpuSampledPeakMiB"] is not None and b["gpuSampledPeakMiB"] is not None else None
+                        for a, b in zip(grouped[labels[0]], grouped[label])] for label in labels[1:]}
+        report["sampledVramIncreaseMiBByVariant"] = vram
+        minimum_savings = .10 if args.study == "same-cuda" else .03
+        gates = any(report["wallSavings"][label] >= minimum_savings and all(d is not None and d <= 512 for d in vram[label])
+                    for label in labels[1:])
     elif args.study in {"pipeline", "hybrid", "weights", "cutlass", "heterogeneous", "dual", "dual-dispatch"}:
         def working_set_deltas(label, base=labels[0]):
             pairs = zip(grouped[base], grouped[label])
