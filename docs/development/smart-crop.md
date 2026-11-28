@@ -158,6 +158,19 @@ python scripts/bench_smart_crop_cuda.py <cli> <input> <new-work-dir> --mode smar
 
 同批 97 张再做三轮分工：纯 CUDA 流水线 16.29 s，CPU 分得 4.94% 像素（24 张）时为 22.54 s，分得 9.85% 像素（36 张）时为 34.91 s。两档结果均保持输出字节一致，但都因为总时间变长、工作集上界增加超过 512 MiB 而不采纳。
 
+### 同卡 CUDA 双会话
+
+Windows x64 CUTLASS 构建可用 `MOSAICRAFT_SMART_CROP_CUDA_LANES=2` 试用同卡双会话。独立动漫归一化须选择 `--crop-device auto`，至少有 32 张输入、4 个应用线程，且 CUDA 报告的总显存至少为 7.5 GiB。两张图补齐到 32 的倍数后均不超过 400 万像素、可用显存至少为 3 GiB 时允许并发。大图独占推理，显存余量不足时先释放第二会话。`=1` 选择默认的单会话。
+
+同卡调度沿用原始输出编号。第二会话遇到可恢复的 CUDA 故障时退出本批，由主会话重试该图。`smartCropCudaLanes` 和 `smartCropCudaSecondLaneImages` 记录实际使用情况。`smartCropCudaLaneOverlapMs` 计量两条推理工作线程重叠的时间。
+
+```text
+python scripts/bench_smart_crop_cuda.py <cli> <混合尺寸输入> <新报告目录> --mode smart-anime --study same-cuda --rounds 3
+python scripts/bench_smart_crop_cuda.py <cli> library/HighLikes <新全量报告目录> --mode smart-anime --study same-cuda --rounds 1 --timeout 5400
+```
+
+两路需逐图输出 SHA-256 和裁剪框一致，且零 CPU 回退。准入阈值为耗时至少缩短 10%、混合及全量的整卡采样显存增量不超过 512 MiB。默认开启还需第二种 CUDA 架构的 Windows 实卡验收。
+
 ### CUDA 卷积权重复用（2026-11-24）
 
 OpenCV 5 新图引擎在尺寸切换时会重建 `Conv2` 节点；尺寸相关的 cuDNN 描述符需要重建，固定卷积权重和偏置不需要再次上传。补丁让每个 FP32 cuDNN 卷积执行器各持有一份设备权重，跨尺寸复用；权重版本变化或会话销毁会清空。不缓存旧尺寸节点，不改卷积算法选择、模型、尺寸、裁剪顺序或恢复策略。

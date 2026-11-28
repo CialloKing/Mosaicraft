@@ -29,6 +29,7 @@ SmartCropSession::SmartCropSession(CropMode mode, CropDevice policy, RuntimeCont
     {
         useSession(m_initial);
     }
+    m_primaryCuda = m_initial == CropDevice::Cuda;
     reportDevice(m_vulkan ? "vulkan" : cropDeviceName(m_initial));
 }
 
@@ -56,11 +57,13 @@ SmartCropAnalysis SmartCropSession::analyze(const cv::Mat &image)
     {
         if (auto result = m_autoCuda->tryAnalyze(image))
         {
+            m_primaryCuda = true;
             m_runtime.metric("smartCropCudaImages", static_cast<double>(++m_cudaImages));
             m_session.reset(); // 释放回退时 CPU 会话留下的输入缓冲区。
             reportDevice("cuda");
             return std::move(*result);
         }
+        m_primaryCuda = false;
         reportDevice("cpu");
     }
 #endif
@@ -92,6 +95,43 @@ ImageNormalizer SmartCropSession::normalizer(int width, int height)
     }, &m_stats);
 }
 
+ImageNormalizer SmartCropSession::secondCudaNormalizer(int width, int height)
+{
+    return ImageNormalizer(width, height, [this](const cv::Mat &image)
+    {
+        if (!m_secondCuda)
+        {
+            auto session = std::make_unique<SmartCropInference>(m_models, CropDevice::Cuda);
+            session->probe();
+            m_secondCuda = std::move(session);
+        }
+        auto result = m_secondCuda->analyze(image);
+        ++m_secondCudaImages;
+        return result;
+    }, &m_secondCudaStats);
+}
+
+bool SmartCropSession::primaryUsesCuda() const noexcept
+{
+    return m_primaryCuda;
+}
+
+void SmartCropSession::releaseSecondCuda() noexcept
+{
+    m_secondCuda.reset();
+}
+
+void SmartCropSession::stopCudaForDeviceFault([[maybe_unused]] const SmartCropError &error)
+{
+#if MOSAICRAFT_SMART_CROP_CUDA
+    if (m_autoCuda)
+    {
+        m_primaryCuda = false;
+        m_autoCuda->stopForDeviceFault(error);
+    }
+#endif
+}
+
 CropDevice SmartCropSession::initialDevice() const
 {
     return m_initial;
@@ -110,8 +150,11 @@ void SmartCropSession::finish()
 void SmartCropSession::report(const SmartCropSession *secondary) const
 {
     m_runtime.metric("smartCropCpuImages", static_cast<double>(m_cpuImages));
-    m_runtime.metric("smartCropCudaImages", static_cast<double>(m_cudaImages));
-    if (m_cpuImages && m_cudaImages)
+    const auto cudaImages = m_cudaImages + m_secondCudaImages;
+    m_runtime.metric("smartCropCudaImages", static_cast<double>(cudaImages));
+    m_runtime.metric("smartCropCudaLanes", m_secondCudaImages ? 2 : (cudaImages ? 1 : 0));
+    m_runtime.metric("smartCropCudaSecondLaneImages", static_cast<double>(m_secondCudaImages));
+    if (m_cpuImages && cudaImages)
     {
         reportDevice("mixed");
     }
@@ -119,7 +162,7 @@ void SmartCropSession::report(const SmartCropSession *secondary) const
     {
         m_runtime.metric("smartCropVulkanImages", static_cast<double>(secondary ? secondary->m_vulkanImages : m_vulkanImages));
     }
-    const SmartCropStats other = secondary ? secondary->m_stats : SmartCropStats{};
+    const SmartCropStats &other = secondary ? secondary->m_stats : m_secondCudaStats;
     if (secondary)
     {
         m_runtime.metric("smartCropCudaSaliencyMs", m_stats.saliencyMs);

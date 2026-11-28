@@ -232,6 +232,86 @@ TEST_CASE("dual crop reuses a free device behind a slow head without publishing 
     CHECK_FALSE(fs::exists(output / "4.png"));
 }
 
+TEST_CASE("same-device crop drains before a large image and retries CUDA faults on the primary")
+{
+    if (!smartCropAvailable())
+    {
+        return;
+    }
+    bool enoughMemory = true;
+    SmartCropCudaFault fault = SmartCropCudaFault::None;
+    SUBCASE("both lanes, including a large-image fence") {}
+    SUBCASE("a failed secondary returns its decoded image") { fault = SmartCropCudaFault::Retryable; }
+    SUBCASE("a shared device fault stops CUDA before replay") { fault = SmartCropCudaFault::RestartRequired; }
+    SUBCASE("the memory check keeps all work on the primary") { enoughMemory = false; }
+
+    TempWorkspace workspace;
+    for (int i = 0; i < 4; ++i)
+    {
+        const cv::Size size = i == 2 ? cv::Size(60, 32) : cv::Size(24, 20);
+        requireWriteImage(workspace.inputDir() / (std::to_string(i) + ".png"), cv::Mat(size, CV_8UC3, cv::Scalar(i, 1, 2)));
+    }
+    const auto paths = [&](std::size_t index)
+    {
+        const auto name = std::to_string(index) + ".png";
+        return detail::NormalizePaths{utf8(workspace.inputDir() / name), utf8(workspace.outputDir() / name)};
+    };
+    std::promise<void> secondaryStarted;
+    auto ready = secondaryStarted.get_future();
+    std::atomic<bool> secondaryActive{false}, released{false};
+    std::atomic<bool> stoppedCuda{false};
+    bool drained = false, retried = false;
+    ImageNormalizer primary(16, 16, [&](const cv::Mat &image)
+    {
+        const auto index = image.at<cv::Vec3b>(0, 0)[0];
+        if (index == 0 && enoughMemory)
+        {
+            ready.wait_for(std::chrono::seconds(3));
+        }
+        if (index == 1)
+        {
+            retried = true;
+        }
+        if (index == 2)
+        {
+            drained = !secondaryActive && (!enoughMemory || released);
+        }
+        return SmartCropAnalysis{};
+    });
+    ImageNormalizer secondary(16, 16, [&](const cv::Mat &image)
+    {
+        secondaryActive = true;
+        if (image.at<cv::Vec3b>(0, 0)[0] == 1)
+        {
+            secondaryStarted.set_value();
+            std::this_thread::sleep_for(std::chrono::milliseconds(15));
+            if (fault != SmartCropCudaFault::None)
+            {
+                throw SmartCropError("smart_crop_cuda_inference", "injected secondary CUDA fault", fault);
+            }
+        }
+        secondaryActive = false;
+        return SmartCropAnalysis{};
+    });
+    const detail::SameCudaCropPolicy policy{
+        [&]() { return !stoppedCuda; }, [&]() { return enoughMemory; }, [](std::uint64_t) { return false; },
+        [&]()
+        {
+            secondaryActive = false;
+            released = true;
+        },
+        [&](const SmartCropError &) { stoppedCuda = true; }};
+    std::vector<int> completed;
+    ImageNormalizer::StandaloneTimings timings;
+    detail::runDualSmartCropPipeline(primary, secondary, 4, paths, [&](bool ok) { completed.push_back(ok); }, timings,
+                                     32 * 1024, 1024, &policy);
+    CHECK(drained);
+    CHECK(retried == (!enoughMemory || fault != SmartCropCudaFault::None));
+    CHECK(stoppedCuda == (fault == SmartCropCudaFault::RestartRequired));
+    CHECK(completed == std::vector<int>{1, 1, 1, 1});
+    CHECK((timings.dualOverlapMs > 0) == enoughMemory);
+}
+
 TEST_CASE("library add drops only oversized PNG iTXt from the saved copy")
 {
     TempWorkspace workspace;

@@ -2,6 +2,7 @@
 
 #include "ImageNormalizer.h"
 #include "SmartCrop.h"
+#include <atomic>
 
 namespace mosaicraft
 {
@@ -15,6 +16,10 @@ public:
     SmartCropSession(CropMode mode, CropDevice policy, RuntimeContext &runtime, bool standalone, std::optional<int> vulkan = {});
     ~SmartCropSession();
     ImageNormalizer normalizer(int width, int height);
+    ImageNormalizer secondCudaNormalizer(int width, int height);
+    bool primaryUsesCuda() const noexcept;
+    void releaseSecondCuda() noexcept;
+    void stopCudaForDeviceFault(const SmartCropError &error);
     CropDevice initialDevice() const;
     void finish();
     void report(const SmartCropSession *secondary = nullptr) const;
@@ -35,6 +40,11 @@ private:
 #endif
     CropDevice m_initial;
     SmartCropStats m_stats;
+    SmartCropStats m_secondCudaStats;
+    // The second inference worker owns this session, including its destruction.
+    std::unique_ptr<SmartCropInference> m_secondCuda;
+    std::atomic<bool> m_primaryCuda{false};
+    size_t m_secondCudaImages = 0;
     size_t m_cpuImages = 0, m_cudaImages = 0, m_vulkanImages = 0;
 };
 }

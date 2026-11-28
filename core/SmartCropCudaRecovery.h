@@ -27,6 +27,7 @@ public:
     ~SmartCropCudaRecovery();
     bool initialize();
     void finish();
+    void stopForDeviceFault(const SmartCropError &error);
     std::optional<SmartCropAnalysis> tryAnalyze(const cv::Mat &image);
 
 private:

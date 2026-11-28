@@ -56,6 +56,13 @@ void SmartCropCudaRecovery::finish()
     }
 }
 
+void SmartCropCudaRecovery::stopForDeviceFault(const SmartCropError &error)
+{
+    finish();
+    m_worker.run(1, [&](size_t) { m_operations.release(); });
+    fallback(error);
+}
+
 void SmartCropCudaRecovery::startProbe()
 {
     const auto task = std::make_shared<std::packaged_task<void()>>([&]()
